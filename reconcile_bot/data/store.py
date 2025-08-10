@@ -1,9 +1,16 @@
 from __future__ import annotations
-import json, os, datetime
+
+import datetime
+import json
+import os
 from typing import Dict, List, Optional, Set, Tuple
-from .models import Group, Document, Proposal
+
+from .models import Document, Group, Proposal, Reconcile
+
 
 class ReconcileStore:
+    """Persistence layer for groups, documents and reconcile votes."""
+
     def __init__(self, path: str = "reconcile_data.json") -> None:
         self.path = path
         self.groups: Dict[str, Group] = {}
@@ -15,6 +22,7 @@ class ReconcileStore:
             return
         with open(self.path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
         groups: Dict[str, Group] = {}
         for gname, gdata in data.get("groups", {}).items():
             group = Group(
@@ -46,39 +54,40 @@ class ReconcileStore:
                     document.proposals[prop_id] = proposal
                 group.documents[doc_id] = document
             groups[gname] = group
-        
-self.groups = groups
-# load reconciles
-self._reconciles = {}
-from .models import Reconcile
-for rid_str, rdata in data.get("reconciles", {}).items():
-    rid = int(rid_str)
-    rec = Reconcile(
-        reconcile_id=rid,
-        mode=rdata["mode"],
-        a_side=rdata["a_side"],
-        b_side=rdata["b_side"],
-        guild_id=rdata["guild_id"],
-        channel_id=rdata["channel_id"],
-        thread_id=rdata.get("thread_id"),
-        message_id=rdata.get("message_id"),
-        created_ts=rdata["created_ts"],
-        close_ts=rdata["close_ts"],
-        closed=rdata.get("closed", False),
-        cancelled=rdata.get("cancelled", False),\n                reminded_24=rdata.get("reminded_24", False),\n                reminded_1=rdata.get("reminded_1", False),
-        votes={}
-    )
-    for uid_str, v in rdata.get("votes", {}).items():
-        rec.votes[int(uid_str)] = __import__('types').SimpleNamespace(**v)
-    self._reconciles[rid] = rec
 
+        self.groups = groups
+
+        # load reconciles
+        self._reconciles: Dict[int, Reconcile] = {}
+        for rid_str, rdata in data.get("reconciles", {}).items():
+            rid = int(rid_str)
+            rec = Reconcile(
+                reconcile_id=rid,
+                mode=rdata["mode"],
+                a_side=rdata["a_side"],
+                b_side=rdata["b_side"],
+                guild_id=rdata["guild_id"],
+                channel_id=rdata["channel_id"],
+                thread_id=rdata.get("thread_id"),
+                message_id=rdata.get("message_id"),
+                created_ts=rdata["created_ts"],
+                close_ts=rdata["close_ts"],
+                closed=rdata.get("closed", False),
+                cancelled=rdata.get("cancelled", False),
+                reminded_24=rdata.get("reminded_24", False),
+                reminded_1=rdata.get("reminded_1", False),
+                votes={},
+            )
+            for uid_str, v in rdata.get("votes", {}).items():
+                rec.votes[int(uid_str)] = __import__("types").SimpleNamespace(**v)
+            self._reconciles[rid] = rec
 
     def _to_dict(self) -> Dict:
-        groups_dict = {}
+        groups_dict: Dict[str, Dict] = {}
         for name, group in self.groups.items():
-            documents_dict = {}
+            documents_dict: Dict[str, Dict] = {}
             for doc_id, doc in group.documents.items():
-                proposals_dict = {}
+                proposals_dict: Dict[str, Dict] = {}
                 for pid, prop in doc.proposals.items():
                     proposals_dict[str(pid)] = {
                         "author_id": prop.author_id,
@@ -100,28 +109,37 @@ for rid_str, rdata in data.get("reconciles", {}).items():
                 "members": list(group.members),
                 "documents": documents_dict,
             }
-        
-# serialize reconciles if present
-recs = {}
-if hasattr(self, "_reconciles"):
-    for rid, r in self._reconciles.items():
-        recs[str(rid)] = {
-            "reconcile_id": r.reconcile_id,
-            "mode": r.mode,
-            "a_side": r.a_side,
-            "b_side": r.b_side,
-            "guild_id": r.guild_id,
-            "channel_id": r.channel_id,
-            "thread_id": r.thread_id,
-            "message_id": r.message_id,
-            "created_ts": r.created_ts,
-            "close_ts": r.close_ts,
-            "closed": r.closed,
-            "cancelled": r.cancelled,\n                    "reminded_24": getattr(r, 'reminded_24', False),\n                    "reminded_1": getattr(r, 'reminded_1', False),
-            "votes": {str(uid): {"voter_id": v.voter_id, "side": v.side, "score": v.score, "timestamp": v.timestamp} for uid, v in r.votes.items()},
-        }
-return {"groups": groups_dict, "reconciles": recs}
 
+        recs: Dict[str, Dict] = {}
+        if hasattr(self, "_reconciles"):
+            for rid, r in self._reconciles.items():
+                recs[str(rid)] = {
+                    "reconcile_id": r.reconcile_id,
+                    "mode": r.mode,
+                    "a_side": r.a_side,
+                    "b_side": r.b_side,
+                    "guild_id": r.guild_id,
+                    "channel_id": r.channel_id,
+                    "thread_id": r.thread_id,
+                    "message_id": r.message_id,
+                    "created_ts": r.created_ts,
+                    "close_ts": r.close_ts,
+                    "closed": r.closed,
+                    "cancelled": r.cancelled,
+                    "reminded_24": getattr(r, "reminded_24", False),
+                    "reminded_1": getattr(r, "reminded_1", False),
+                    "votes": {
+                        str(uid): {
+                            "voter_id": v.voter_id,
+                            "side": v.side,
+                            "score": v.score,
+                            "timestamp": v.timestamp,
+                        }
+                        for uid, v in r.votes.items()
+                    },
+                }
+
+        return {"groups": groups_dict, "reconciles": recs}
 
     def save(self) -> None:
         tmp = self.path + ".tmp"
@@ -245,19 +263,29 @@ return {"groups": groups_dict, "reconciles": recs}
         self._ensure_reconciles_loaded()
         rid = self.next_reconcile_id()
         now = datetime.datetime.utcnow().timestamp()
-        close_ts = now + duration_hours*3600
-        from .models import Reconcile
+        close_ts = now + duration_hours * 3600
         rec = Reconcile(
-            reconcile_id=rid, mode=mode, a_side=a_side, b_side=b_side,
-            guild_id=guild_id, channel_id=channel_id, thread_id=None, message_id=None,
-            created_ts=now, close_ts=close_ts, closed=False, cancelled=False, votes={}
+            reconcile_id=rid,
+            mode=mode,
+            a_side=a_side,
+            b_side=b_side,
+            guild_id=guild_id,
+            channel_id=channel_id,
+            thread_id=None,
+            message_id=None,
+            created_ts=now,
+            close_ts=close_ts,
+            closed=False,
+            cancelled=False,
+            votes={},
         )
         self._reconciles[rid] = rec
         self.save()
         return rid
 
     def set_reconcile_message(self, rid: int, thread_id: int, message_id: int):
-        if not hasattr(self, "_reconciles"): return
+        if not hasattr(self, "_reconciles"):
+            return
         rec = self._reconciles.get(rid)
         if rec:
             rec.thread_id = thread_id
@@ -265,32 +293,41 @@ return {"groups": groups_dict, "reconciles": recs}
             self.save()
 
     def get_reconcile(self, rid: int):
-        if not hasattr(self, "_reconciles"): return None
+        if not hasattr(self, "_reconciles"):
+            return None
         return self._reconciles.get(rid)
 
     def list_open_reconciles(self):
-        if not hasattr(self, "_reconciles"): return []
+        if not hasattr(self, "_reconciles"):
+            return []
         return [r for r in self._reconciles.values() if not r.closed and not r.cancelled]
 
     def record_reconcile_vote(self, rid: int, voter_id: int, side: str, score: int) -> Optional[str]:
-        if not hasattr(self, "_reconciles"): return "No such vote."
+        if not hasattr(self, "_reconciles"):
+            return "No such vote."
         rec = self._reconciles.get(rid)
-        if not rec: return "Reconcile not found."
-        if score < -2 or score > 2: return "Score must be between -2 and +2."
-        rec.votes[voter_id] = __import__('types').SimpleNamespace(**{"voter_id": voter_id, "side": side, "score": score, "timestamp": datetime.datetime.utcnow().timestamp()})
+        if not rec:
+            return "Reconcile not found."
+        if score < -2 or score > 2:
+            return "Score must be between -2 and +2."
+        rec.votes[voter_id] = __import__("types").SimpleNamespace(
+            **{"voter_id": voter_id, "side": side, "score": score, "timestamp": datetime.datetime.utcnow().timestamp()}
+        )
         self.save()
         return None
 
     def cancel_reconcile(self, rid: int) -> bool:
         rec = self.get_reconcile(rid)
-        if not rec: return False
+        if not rec:
+            return False
         rec.cancelled = True
         self.save()
         return True
 
     def close_reconcile(self, rid: int) -> bool:
         rec = self.get_reconcile(rid)
-        if not rec: return False
+        if not rec:
+            return False
         rec.closed = True
         self.save()
         return True
