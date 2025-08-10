@@ -45,17 +45,78 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @tree.command(name="create_document", description="Create a document in a group")
-    @discord.app_commands.describe(group_name="Group name", title="Document title", tags="Comma-separated tags")
-    async def create_document(interaction: discord.Interaction, group_name: str, title: str, tags: str) -> None:
-        group = store.groups.get(group_name)
-        if not group:
-            await interaction.response.send_message("Group not found.", ephemeral=True)
-            return
-        if interaction.user.id not in group.members:
-            await interaction.response.send_message("You must be a member of the group to create documents.", ephemeral=True)
-            return
+    @discord.app_commands.describe(
+        group_name="Group name",
+        title="Document title",
+        tags="Comma-separated tags",
+    )
+    async def create_document(
+        interaction: discord.Interaction,
+        group_name: str | None,
+        title: str,
+        tags: str,
+    ) -> None:
+        """Create a document, optionally letting the user pick the group via a dropdown.
+
+        If ``group_name`` is provided we immediately open the modal for entering
+        the document content.  Otherwise the user is presented with a dropdown
+        listing all available groups and the modal is launched once a selection
+        is made.
+        """
+
         tag_list = [t.strip().lower() for t in tags.split(",") if t.strip()]
-        await interaction.response.send_modal(DocumentModal(store, group_name, title, tag_list))
+
+        async def launch_modal(inter: discord.Interaction, gname: str) -> None:
+            group = store.groups.get(gname)
+            if not group:
+                await inter.response.send_message("Group not found.", ephemeral=True)
+                return
+            if inter.user.id not in group.members:
+                await inter.response.send_message(
+                    "You must be a member of the group to create documents.",
+                    ephemeral=True,
+                )
+                return
+            await inter.response.send_modal(DocumentModal(store, gname, title, tag_list))
+
+        if group_name:
+            await launch_modal(interaction, group_name)
+            return
+
+        options = [
+            discord.SelectOption(label=name, value=name)
+            for name in sorted(store.groups.keys())
+        ]
+        if not options:
+            await interaction.response.send_message(
+                "No groups have been created yet.", ephemeral=True
+            )
+            return
+
+        view = discord.ui.View()
+        select = discord.ui.Select(placeholder="Choose group", options=options)
+
+        async def on_select(inter: discord.Interaction) -> None:
+            await launch_modal(inter, select.values[0])
+
+        select.callback = on_select
+        view.add_item(select)
+        await interaction.response.send_message(
+            "Select a group for the document:", view=view, ephemeral=True
+        )
+
+    @create_document.autocomplete("group_name")
+    async def create_document_group_name_autocomplete(
+        interaction: discord.Interaction, current: str
+    ):
+        current_lower = current.lower()
+        results = [
+            discord.app_commands.Choice(name=name, value=name)
+            for name, group in store.groups.items()
+            if interaction.user.id in group.members
+            and current_lower in name.lower()
+        ]
+        return results[:25]
 
     @tree.command(name="list_documents", description="List documents in a group")
     @discord.app_commands.describe(group_name="Group name")
@@ -76,6 +137,17 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @list_documents.autocomplete("group_name")
+    async def list_documents_group_name_autocomplete(
+        interaction: discord.Interaction, current: str
+    ):
+        current_lower = current.lower()
+        return [
+            discord.app_commands.Choice(name=name, value=name)
+            for name in store.groups.keys()
+            if current_lower in name.lower()
+        ][:25]
+
     @tree.command(name="view_document", description="View a document and interact with it")
     @discord.app_commands.describe(group_name="Group name", document_id="Document ID")
     async def view_document(interaction: discord.Interaction, group_name: str, document_id: int) -> None:
@@ -90,6 +162,36 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
         embed = discord.Embed(title=document.title, description=document.content)
         embed.add_field(name="Tags", value=", ".join(sorted(document.tags)) or "(none)", inline=False)
         await interaction.response.send_message(embed=embed, view=DocumentView(store, group_name, document_id), ephemeral=True)
+
+    @view_document.autocomplete("group_name")
+    async def view_document_group_name_autocomplete(
+        interaction: discord.Interaction, current: str
+    ):
+        current_lower = current.lower()
+        return [
+            discord.app_commands.Choice(name=name, value=name)
+            for name in store.groups.keys()
+            if current_lower in name.lower()
+        ][:25]
+
+    @view_document.autocomplete("document_id")
+    async def view_document_document_id_autocomplete(
+        interaction: discord.Interaction, current: str
+    ):
+        gname = getattr(interaction.namespace, "group_name", None)
+        group = store.groups.get(gname)
+        if not group:
+            return []
+        current_lower = current.lower()
+        results = []
+        for doc_id, doc in group.documents.items():
+            if current_lower in str(doc_id) or current_lower in doc.title.lower():
+                results.append(
+                    discord.app_commands.Choice(
+                        name=f"{doc_id}: {doc.title}", value=doc_id
+                    )
+                )
+        return results[:25]
 
     @tree.command(name="recommend", description="Recommend groups based on your current memberships")
     async def recommend(interaction: discord.Interaction) -> None:
