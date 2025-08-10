@@ -101,15 +101,6 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
                 embed.add_field(name=n, value=f"Tags: {', '.join(sorted(g.tags))}\nMembers: {len(g.members)}", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @tree.command(name="join_group", description="Join an existing group")
-    @discord.app_commands.describe(name="Name of the group to join")
-    async def join_group(interaction: discord.Interaction, name: str) -> None:
-        err = store.add_member(name, interaction.user.id)
-        if err:
-            await interaction.response.send_message(err, ephemeral=True)
-        else:
-            await interaction.response.send_message(f"You joined `{name}`.", ephemeral=True)
-
     @tree.command(name="my_groups", description="Show your groups")
     async def my_groups(interaction: discord.Interaction) -> None:
         groups = [g for g in store.groups.values() if interaction.user.id in g.members]
