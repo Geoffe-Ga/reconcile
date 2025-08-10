@@ -14,4 +14,5 @@ def test_bot_and_main_compile() -> None:
 
     py_compile.compile(Path("reconcile_bot/bot.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/main.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/ui/views.py"), doraise=True)
 
