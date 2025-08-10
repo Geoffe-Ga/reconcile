@@ -102,24 +102,35 @@ def progress_bar(avg: float) -> str:
 def reconcile_embed(store: ReconcileStore, rid: int) -> discord.Embed:
     rec = store.get_reconcile(rid)
     if not rec:
-        return discord.Embed(title="Reconcile", description="Not found.", color=discord.Color.red())
-    title = f"Reconcile: {rec.a_side} ↔ {rec.b_side}" if rec.is_group_vs_group() else f"Reconcile: {rec.a_side.replace('solo:', '')} → {rec.b_side}"
+        return discord.Embed(
+            title="Reconcile", description="Not found.", color=discord.Color.red()
+        )
+    title = (
+        f"Reconcile: {rec.a_side} ↔ {rec.b_side}"
+        if rec.is_group_vs_group()
+        else f"Reconcile: {rec.a_side.replace('solo:', '')} → {rec.b_side}"
+    )
     e = discord.Embed(title=title, color=discord.Color.blurple())
     t = rec.tallies()
     a_cnt, a_avg = t[rec.a_side]
     b_cnt, b_avg = t[rec.b_side]
-    e.add_field(name=f"{rec.a_side}", value=f"Votes: {a_cnt}
-Avg: {a_avg:+.2f}
-{progress_bar(a_avg)}", inline=True)
-    e.add_field(name=f"{rec.b_side}", value=f"Votes: {b_cnt}
-Avg: {b_avg:+.2f}
-{progress_bar(b_avg)}", inline=True)
-    e.set_footer(text=f"Closes {datetime.datetime.utcfromtimestamp(rec.close_ts).isoformat()}Z")
+    e.add_field(
+        name=f"{rec.a_side}",
+        value=f"Votes: {a_cnt}\nAvg: {a_avg:+.2f}\n{progress_bar(a_avg)}",
+        inline=True,
+    )
+    e.add_field(
+        name=f"{rec.b_side}",
+        value=f"Votes: {b_cnt}\nAvg: {b_avg:+.2f}\n{progress_bar(b_avg)}",
+        inline=True,
+    )
+    e.set_footer(
+        text=f"Closes {datetime.datetime.utcfromtimestamp(rec.close_ts).isoformat()}Z"
+    )
     if rec.closed or rec.cancelled:
         state = "CANCELLED" if rec.cancelled else ("PASSED" if rec.passes() else "FAILED")
         e.description = f"Vote closed: {state}"
     return e
-
 
 class DocumentView(discord.ui.View):
     def __init__(self, store: ReconcileStore, group_name: str, doc_id: int) -> None:
