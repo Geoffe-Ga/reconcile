@@ -14,5 +14,13 @@ def test_bot_and_main_compile() -> None:
 
     py_compile.compile(Path("reconcile_bot/bot.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/main.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/config.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/logging_config.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/ui/views.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/ui/modals.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/data/models.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/data/store.py"), doraise=True)
+
+
+
 
