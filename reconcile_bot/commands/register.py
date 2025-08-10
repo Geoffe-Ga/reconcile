@@ -166,10 +166,15 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
             await interaction.response.send_message("Use the picker to select mode and groups.", view=reconcile_picker_view(store, interaction.guild.id), ephemeral=True)
             return
         # ensure channels exist
-        docs_id, votes_id = await ensure_channels(interaction.guild)
-        rid = store.create_reconcile(mode, your_group if mode=="group↔group" else f"solo:{interaction.user.display_name}", target_group, interaction.guild.id, votes_id)
+        _, votes_ch = await ensure_channels(interaction.guild)
+        rid = store.create_reconcile(
+            mode,
+            your_group if mode == "group↔group" else f"solo:{interaction.user.display_name}",
+            target_group,
+            interaction.guild.id,
+            votes_ch.id,
+        )
         # create thread and initial embed
-        votes_ch = interaction.guild.get_channel(votes_id)
         title = f"Reconcile: {your_group} ↔ {target_group}" if mode=="group↔group" else f"Reconcile: {interaction.user.display_name} → {target_group}"
         thread = await votes_ch.create_thread(name=title, type=discord.ChannelType.public_thread)
         from ..ui.views import VoteView, reconcile_embed
