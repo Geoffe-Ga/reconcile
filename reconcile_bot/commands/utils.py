@@ -6,8 +6,8 @@ import discord
 async def ensure_channels(
     guild: discord.Guild,
 ) -> tuple[discord.TextChannel, discord.TextChannel]:
-    """Ensure the reconciliation channels exist in ``guild``.
-
+    """
+    Ensure the reconciliation channels exist in ``guild``.
     Returns a tuple of ``(docs_channel, votes_channel)``.
     """
 

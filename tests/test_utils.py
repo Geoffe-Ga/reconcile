@@ -17,7 +17,11 @@ def test_ensure_channels_creates_missing(monkeypatch):
     monkeypatch.setitem(sys.modules, "discord.utils", discord_stub.utils)
     monkeypatch.delitem(sys.modules, "reconcile_bot.commands.utils", raising=False)
 
-    from reconcile_bot.commands.utils import ensure_channels
+    # Reload module to pick up stubbed discord
+    import importlib
+    from reconcile_bot.commands import utils as utils_mod
+    importlib.reload(utils_mod)
+    ensure_channels = utils_mod.ensure_channels
 
     class Channel:
         def __init__(self, name, cid):
@@ -42,6 +46,7 @@ def test_ensure_channels_creates_missing(monkeypatch):
 
     guild = Guild()
     docs_ch, votes_ch = asyncio.run(ensure_channels(guild))
-    assert docs_ch is not votes_ch
+    assert docs_ch.id != votes_ch.id
+
     names = sorted(ch.name for ch in guild.text_channels)
     assert names == ["reconcile-docs", "reconcile-votes"]
