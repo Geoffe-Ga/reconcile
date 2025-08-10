@@ -14,7 +14,8 @@ import datetime
 
 import discord
 from discord.ext import commands, tasks
-
+import datetime
+from datetime import UTC
 from .logging_config import setup_logging
 from .data.store import ReconcileStore
 
@@ -50,7 +51,7 @@ class ReconcileBot(commands.Bot):
     async def on_ready(self) -> None:  # pragma: no cover - requires discord
         await self.change_presence(activity=discord.Game(name="Reconcile"))
         self.log.info("Logged in as %s (%s)", self.user, self.user.id if self.user else "?")
-
+        
 
 class _StoreHolder:
     """Simple indirection so the store can be attached after creation."""
@@ -75,7 +76,8 @@ async def _update_reconcile_messages(bot: ReconcileBot) -> None:
     from .ui.views import VoteView, reconcile_embed
 
     for rec in store.list_open_reconciles():
-        remaining = rec.close_ts - datetime.datetime.utcnow().timestamp()
+        # reminders at 24h and 1h
+        remaining = rec.close_ts - datetime.datetime.now(tz=UTC).timestamp()
 
         # ------------------------------------------------------------------
         # Reminder messages at ~24h and ~1h before closing

@@ -15,6 +15,7 @@ kept as it existed conceptually in the repository but in a much cleaner form.
 from __future__ import annotations
 
 import datetime
+from datetime import UTC
 import json
 import os
 from typing import Dict, List, Optional, Set, Tuple
@@ -257,7 +258,7 @@ class ReconcileStore:
             proposal_id=pid,
             author_id=author_id,
             content=content,
-            timestamp=datetime.datetime.utcnow().timestamp(),
+            timestamp=datetime.datetime.now(tz=UTC).timestamp(),
             votes={},
             merged=False,
         )
@@ -334,7 +335,7 @@ class ReconcileStore:
     ) -> int:
         self._ensure_reconciles_loaded()
         rid = self.next_reconcile_id()
-        now = datetime.datetime.utcnow().timestamp()
+        now = datetime.datetime.now(tz=UTC).timestamp()
         close_ts = now + duration_hours * 3600
         rec = Reconcile(
             reconcile_id=rid,
@@ -385,7 +386,7 @@ class ReconcileStore:
             voter_id=voter_id,
             side=side,
             score=score,
-            timestamp=datetime.datetime.utcnow().timestamp(),
+            timestamp=datetime.datetime.now(tz=UTC).timestamp(),
 
         )
         self.save()
