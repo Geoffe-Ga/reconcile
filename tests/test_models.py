@@ -22,7 +22,7 @@ def test_group_and_document_ids():
 def test_reconcile_helpers():
     r = Reconcile(
         reconcile_id=1,
-        mode="group↔group",
+        mode="group_vs_group",
         a_side="A",
         b_side="B",
         guild_id=1,
@@ -55,7 +55,7 @@ def test_reconcile_helpers():
     # solo to group
     r2 = Reconcile(
         reconcile_id=2,
-        mode="solo→group",
+        mode="solo_to_group",
         a_side="solo:1",
         b_side="B",
         guild_id=1,

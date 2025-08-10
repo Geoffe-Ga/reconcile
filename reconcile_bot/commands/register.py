@@ -126,8 +126,8 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
         v = discord.ui.View(timeout=120)
 
         mode_select = discord.ui.Select(placeholder="Mode", options=[
-            discord.SelectOption(label="Group ↔ Group", value="group↔group"),
-            discord.SelectOption(label="Solo → Group", value="solo→group"),
+            discord.SelectOption(label="Group ↔ Group", value="group_vs_group"),
+            discord.SelectOption(label="Solo → Group", value="solo_to_group"),
         ])
         your_group = discord.ui.Select(placeholder="Your Group (memberships)")
         target_group = discord.ui.Select(placeholder="Target Group (others)")
@@ -152,37 +152,74 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
 
         launch = discord.ui.Button(label="Launch Vote", style=discord.ButtonStyle.success)
         async def do_launch(inter):
-            m = mode_select.values[0] if mode_select.values else "group↔group"
+            m = mode_select.values[0] if mode_select.values else "group_vs_group"
             yg = your_group.values[0] if your_group.values else None
             tg = target_group.values[0] if target_group.values else None
-            await start_reconcile_flow(inter, m, yg, tg, store, guild_id)
+            content, view = await start_reconcile_flow(inter, m, yg, tg, store, guild_id)
+            await inter.response.send_message(content, view=view, ephemeral=True)
         launch.callback = do_launch
         v.add_item(launch)
         return v
 
     async def start_reconcile_flow(interaction: discord.Interaction, mode: str, your_group: str, target_group: str, store: ReconcileStore, guild_id: int):
         # fallback to picker if args missing
-        if not mode or (mode == "group↔group" and (not your_group or not target_group)) or (mode == "solo→group" and not target_group):
-            await interaction.response.send_message("Use the picker to select mode and groups.", view=reconcile_picker_view(store, interaction.guild.id), ephemeral=True)
-            return
+        if not mode or (mode == "group_vs_group" and (not your_group or not target_group)) or (mode == "solo_to_group" and not target_group):
+            return (
+                "Use the picker to select mode and groups.",
+                reconcile_picker_view(store, interaction.guild.id),
+            )
         # ensure channels exist
         docs_id, votes_id = await ensure_channels(interaction.guild)
-        rid = store.create_reconcile(mode, your_group if mode=="group↔group" else f"solo:{interaction.user.display_name}", target_group, interaction.guild.id, votes_id)
+        rid = store.create_reconcile(
+            mode,
+            your_group if mode == "group_vs_group" else f"solo:{interaction.user.display_name}",
+            target_group,
+            interaction.guild.id,
+            votes_id,
+        )
         # create thread and initial embed
         votes_ch = interaction.guild.get_channel(votes_id)
-        title = f"Reconcile: {your_group} ↔ {target_group}" if mode=="group↔group" else f"Reconcile: {interaction.user.display_name} → {target_group}"
+        title = (
+            f"Reconcile: {your_group} ↔ {target_group}"
+            if mode == "group_vs_group"
+            else f"Reconcile: {interaction.user.display_name} → {target_group}"
+        )
         thread = await votes_ch.create_thread(name=title, type=discord.ChannelType.public_thread)
         from ..ui.views import VoteView, reconcile_embed
         embed = reconcile_embed(store, rid)
         view = VoteView(store, rid, store.get_reconcile(rid).a_side, store.get_reconcile(rid).b_side)
         msg = await thread.send(embed=embed, view=view)
         store.set_reconcile_message(rid, thread.id, msg.id)
-        await interaction.response.send_message(f"Launched vote in {thread.mention}", ephemeral=True)
+        return (f"Launched vote in {thread.mention}", None)
 
     @tree.command(name="reconcile", description="Start a reconciliation vote between groups or yourself → group")
-    @discord.app_commands.describe(mode="Group ↔ Group or Solo → Group", your_group="One of your groups", target_group="Target group")
-    async def reconcile_cmd(interaction: discord.Interaction, mode: str | None = None, your_group: str | None = None, target_group: str | None = None) -> None:
-        await start_reconcile_flow(interaction, mode, your_group, target_group, store, interaction.guild.id)
+    @discord.app_commands.describe(
+        mode="Group ↔ Group or Solo → Group",
+        your_group="One of your groups",
+        target_group="Target group",
+    )
+    @discord.app_commands.choices(
+        mode=[
+            discord.app_commands.Choice(name="Group ↔ Group", value="group_vs_group"),
+            discord.app_commands.Choice(name="Solo → Group", value="solo_to_group"),
+        ]
+    )
+    async def reconcile_cmd(
+        interaction: discord.Interaction,
+        mode: discord.app_commands.Choice[str] | None = None,
+        your_group: str | None = None,
+        target_group: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        content, view = await start_reconcile_flow(
+            interaction,
+            mode.value if mode else None,
+            your_group,
+            target_group,
+            store,
+            interaction.guild.id,
+        )
+        await interaction.edit_original_response(content=content, view=view)
 
     @tree.command(name="reconcile_status", description="Show a private status embed for a reconcile")
     async def reconcile_status(interaction: discord.Interaction, reconcile_id: int) -> None:

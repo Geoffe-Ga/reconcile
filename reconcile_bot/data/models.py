@@ -50,7 +50,7 @@ class ReconcileVote:
 @dataclass
 class Reconcile:
     reconcile_id: int
-    mode: str                  # "group↔group" or "solo→group"
+    mode: str                  # "group_vs_group" or "solo_to_group"
     a_side: str                # group name or "solo:<user_id>"
     b_side: str                # group name (target) or "" for solo? (kept in b_side)
     guild_id: int
@@ -69,10 +69,10 @@ class Reconcile:
         return (self.a_side, self.b_side)
 
     def is_group_vs_group(self) -> bool:
-        return self.mode == "group↔group"
+        return self.mode == "group_vs_group"
 
     def is_solo_to_group(self) -> bool:
-        return self.mode == "solo→group"
+        return self.mode == "solo_to_group"
 
     def side_for_member(self, user_id: int, groups: Dict[str, Group]) -> Optional[List[str]]:
         """Return which sides the user is eligible to vote as."""
