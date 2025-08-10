@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 import discord
 from discord.ext import commands
+
 from ..data.store import ReconcileStore
 from ..ui.modals import DocumentModal
 from ..ui.views import DocumentView
+from .utils import ensure_channels
 
 def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
     tree = bot.tree
@@ -156,15 +159,6 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
         launch.callback = do_launch
         v.add_item(launch)
         return v
-
-    async def ensure_channels(guild: discord.Guild) -> tuple[int, int]:
-        docs = discord.utils.get(guild.text_channels, name="reconcile-docs")
-        votes = discord.utils.get(guild.text_channels, name="reconcile-votes")
-        if docs is None:
-            docs = await guild.create_text_channel("reconcile-docs")
-        if votes is None:
-            votes = await guild.create_text_channel("reconcile-votes")
-        return docs.id, votes.id
 
     async def start_reconcile_flow(interaction: discord.Interaction, mode: str, your_group: str, target_group: str, store: ReconcileStore, guild_id: int):
         # fallback to picker if args missing

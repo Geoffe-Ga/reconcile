@@ -20,6 +20,7 @@ def test_bot_and_main_compile() -> None:
     py_compile.compile(Path("reconcile_bot/ui/modals.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/data/models.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/data/store.py"), doraise=True)
+    py_compile.compile(Path("reconcile_bot/commands/utils.py"), doraise=True)
 
 
 

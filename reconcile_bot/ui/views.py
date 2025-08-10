@@ -145,7 +145,10 @@ class DocumentView(discord.ui.View):
         if not doc:
             await interaction.response.send_message("Document not found.", ephemeral=True)
             return
-        await interaction.response.send_message(f"**{doc.title}**\n\n{doc.content[:4000]}", ephemeral=True)
+        text = f"**{doc.title}**\n\n{doc.content}"
+        if len(text) > 1900:
+            text = text[:1900] + "…"
+        await interaction.response.send_message(text, ephemeral=True)
 
     @discord.ui.button(label="Propose Edit", style=discord.ButtonStyle.primary)
     async def propose(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
