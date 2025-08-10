@@ -38,11 +38,11 @@ class ReconcileBot(commands.Bot):
         """Register background tasks when the bot starts."""
 
         # Periodically update open reconciliation messages.
-        self.background_task = tasks.Loop(
-            _update_reconcile_messages,
-            seconds=60.0,
-            count=None,
-            reconnect=True,
+        # ``tasks.Loop`` expects several positional arguments which previously
+        # caused a ``TypeError`` when the bot started.  Using the
+        # ``tasks.loop`` decorator creates the ``Loop`` instance correctly.
+        self.background_task = tasks.loop(seconds=60.0, reconnect=True)(
+            _update_reconcile_messages
         )
         self.background_task.start(self)
         await super().setup_hook()
