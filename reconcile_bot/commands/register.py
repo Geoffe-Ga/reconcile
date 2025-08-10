@@ -140,9 +140,9 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
 
         async def refresh(inter):
             # refresh options according to user
-            member_ids = inter.user.id
-            my_groups = [g.name for g in store.groups.values() if member_ids in g.members]
-            other_groups = [g.name for g in store.groups.values() if member_ids not in g.members]
+            member_id = inter.user.id
+            my_groups = [g.name for g in store.groups.values() if member_id in g.members]
+            other_groups = [g.name for g in store.groups.values() if member_id not in g.members]
             your_group.options = [discord.SelectOption(label=n, value=n) for n in my_groups[:25]] or [discord.SelectOption(label="No memberships", value="")]
             target_group.options = [discord.SelectOption(label=n, value=n) for n in other_groups[:25]] or [discord.SelectOption(label="No other groups", value="")]
         awaitable = refresh  # for closure use
