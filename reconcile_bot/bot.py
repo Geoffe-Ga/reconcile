@@ -43,9 +43,8 @@ class ReconcileBot(commands.Bot):
             seconds=60.0,
             count=None,
             reconnect=True,
-            kwargs={"bot": self},
         )
-        self.background_task.start()
+        self.background_task.start(self)
         await super().setup_hook()
 
     async def on_ready(self) -> None:  # pragma: no cover - requires discord
