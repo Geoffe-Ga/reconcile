@@ -19,6 +19,7 @@ import json
 import os
 from typing import Dict, List, Optional, Set, Tuple
 
+
 from .models import (
     Document,
     Group,
@@ -92,6 +93,7 @@ class ReconcileStore:
         # Load reconciles if present.  The file may not contain this section so
         # we default to an empty dictionary.
         reconciles: Dict[int, Reconcile] = {}
+
         for rid_str, rdata in data.get("reconciles", {}).items():
             rid = int(rid_str)
             rec = Reconcile(
@@ -157,6 +159,7 @@ class ReconcileStore:
             }
 
         recs: Dict[str, Dict] = {}
+
         for rid, r in self._reconciles.items():
             recs[str(rid)] = {
                 "reconcile_id": r.reconcile_id,
@@ -346,12 +349,15 @@ class ReconcileStore:
         self.save()
         return rid
 
+
     def set_reconcile_message(self, rid: int, thread_id: int, message_id: int) -> None:
+
         rec = self._reconciles.get(rid)
         if rec:
             rec.thread_id = thread_id
             rec.message_id = message_id
             self.save()
+
 
     def get_reconcile(self, rid: int) -> Optional[Reconcile]:
         return self._reconciles.get(rid)
@@ -362,16 +368,19 @@ class ReconcileStore:
     def record_reconcile_vote(
         self, rid: int, voter_id: int, side: str, score: int
     ) -> Optional[str]:
+
         rec = self._reconciles.get(rid)
         if not rec:
             return "Reconcile not found."
         if score < -2 or score > 2:
             return "Score must be between -2 and +2."
+
         rec.votes[voter_id] = ReconcileVote(
             voter_id=voter_id,
             side=side,
             score=score,
             timestamp=datetime.datetime.utcnow().timestamp(),
+
         )
         self.save()
         return None
