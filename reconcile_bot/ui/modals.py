@@ -21,15 +21,34 @@ class DocumentModal(discord.ui.Modal, title="Create Document"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         content = self.content_input.value
-        doc_id = self.store.create_document(self.group_name, self.title_text, self.tags, content)
+        doc_id = self.store.create_document(
+            self.group_name, self.title_text, self.tags, content
+        )
         if doc_id is None:
             await interaction.response.send_message(
                 f"Failed to create document in group `{self.group_name}`.",
                 ephemeral=True,
             )
             return
+
+        docs_ch = discord.utils.get(
+            interaction.guild.text_channels, name="reconcile-docs"
+        )
+        if docs_ch is None:
+            docs_ch = await interaction.guild.create_text_channel("reconcile-docs")
+
+        from .views import DocumentView
+
+        embed = discord.Embed(
+            title=self.title_text,
+            description=(content[:300] + ("…" if len(content) > 300 else "")),
+        )
+        embed.set_footer(text=f"{self.group_name} • Doc #{doc_id}")
+        view = DocumentView(self.store, self.group_name, doc_id)
+        await docs_ch.send(embed=embed, view=view)
+
         await interaction.response.send_message(
-            f"Document `{self.title_text}` created with ID `{doc_id}` in group `{self.group_name}`.",
+            f"Document `{self.title_text}` created in `{self.group_name}` and preview posted to {docs_ch.mention}.",
             ephemeral=True,
         )
 

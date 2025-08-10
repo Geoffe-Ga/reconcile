@@ -221,26 +221,3 @@ def register_commands(bot: commands.Bot, store: ReconcileStore) -> None:
         await interaction.response.send_message("Cancelled.", ephemeral=True)
 
 
-    @tree.command(name="doc_create", description="Create a document and post a preview in #reconcile-docs")
-    @discord.app_commands.describe(group="Group name", title="Document title", content="Document content")
-    async def doc_create(interaction: discord.Interaction, group: str, title: str, content: str) -> None:
-        g = store.groups.get(group)
-        if not g:
-            await interaction.response.send_message("Group not found.", ephemeral=True)
-            return
-        if interaction.user.id not in g.members:
-            await interaction.response.send_message("Only members can create documents.", ephemeral=True)
-            return
-        doc_id = store.create_document(group, title, [], content)
-        if doc_id is None:
-            await interaction.response.send_message("Failed to create document.", ephemeral=True)
-            return
-        docs_ch = discord.utils.get(interaction.guild.text_channels, name="reconcile-docs")
-        if docs_ch is None:
-            docs_ch = await interaction.guild.create_text_channel("reconcile-docs")
-        from ..ui.views import DocumentView
-        embed = discord.Embed(title=title, description=(content[:300] + ("…" if len(content) > 300 else "")))
-        embed.set_footer(text=f"{group} • Doc #{doc_id}")
-        view = DocumentView(store, group, doc_id)
-        await docs_ch.send(embed=embed, view=view)
-        await interaction.response.send_message(f"Document created in `{group}` and preview posted to {docs_ch.mention}.", ephemeral=True)

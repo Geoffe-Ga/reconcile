@@ -5,8 +5,9 @@ A modular, JSON-backed Discord bot that lets groups collaborate on documents via
 ## Features
 
 • Slash commands: `/create_group`, `/join_group`, `/list_groups`, `/create_document`, `/list_documents`, `/view_document`,
-  `/recommend`, `/my_groups`, `/reconcile`, `/reconcile_status`, `/reconcile_cancel`, `/doc_create`
-• Proposals: open a modal to submit content changes and vote Accept/Reject with buttons  
+  `/recommend`, `/my_groups`, `/reconcile`, `/reconcile_status`, `/reconcile_cancel`
+• Documents created via `/create_document` are previewed in `#reconcile-docs`
+• Proposals: open a modal to submit content changes and vote Accept/Reject with buttons
 • Simple merge rule: a proposal merges when it has more accepts than rejects and at least a simple majority of current group members have accepted  
 • JSON persistence so state survives restarts  
 
