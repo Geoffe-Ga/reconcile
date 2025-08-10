@@ -11,9 +11,11 @@ def test_ensure_channels_creates_missing(monkeypatch):
                 return item
         return None
 
-    discord_stub = types.SimpleNamespace(utils=types.SimpleNamespace(get=utils_get))
+    discord_stub = types.ModuleType("discord")
+    discord_stub.utils = types.SimpleNamespace(get=utils_get)
     monkeypatch.setitem(sys.modules, "discord", discord_stub)
     monkeypatch.setitem(sys.modules, "discord.utils", discord_stub.utils)
+    monkeypatch.delitem(sys.modules, "reconcile_bot.commands.utils", raising=False)
 
     # Reload module to pick up stubbed discord
     import importlib
@@ -37,7 +39,7 @@ def test_ensure_channels_creates_missing(monkeypatch):
             self.text_channels.append(ch)
             return ch
 
-        def get_channel(self, cid):
+        def get_channel(self, cid):  # pragma: no cover - retained for legacy
             for c in self.text_channels:
                 if c.id == cid:
                     return c
@@ -45,5 +47,6 @@ def test_ensure_channels_creates_missing(monkeypatch):
     guild = Guild()
     docs_ch, votes_ch = asyncio.run(ensure_channels(guild))
     assert docs_ch.id != votes_ch.id
+
     names = sorted(ch.name for ch in guild.text_channels)
     assert names == ["reconcile-docs", "reconcile-votes"]
