@@ -1,10 +1,12 @@
 from __future__ import annotations
-import asyncio, sys
+
+import asyncio
 import discord
+
 from .bot import ReconcileBot, attach_store
+from .commands.register import register_commands
 from .config import load_settings
 from .data.store import ReconcileStore
-from .commands.register import register_commands
 from .logging_config import setup_logging
 
 def main() -> int:
