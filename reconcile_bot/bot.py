@@ -22,6 +22,7 @@ class ReconcileBot(commands.Bot):
 
 from discord.ext import tasks
 import datetime
+from datetime import UTC
 
 class _StoreHolder:
     store: ReconcileStore | None = None
@@ -37,7 +38,7 @@ async def _update_reconcile_messages(bot: ReconcileBot):
     from .ui.views import reconcile_embed, VoteView
     for rec in store.list_open_reconciles():
         # reminders at 24h and 1h
-        remaining = rec.close_ts - datetime.datetime.utcnow().timestamp()
+        remaining = rec.close_ts - datetime.datetime.now(tz=UTC).timestamp()
 
 # reminders
 if 60*59 < remaining <= 60*61 and not getattr(rec, "reminded_1", False):  # ~1h
