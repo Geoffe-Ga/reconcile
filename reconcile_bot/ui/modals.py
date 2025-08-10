@@ -42,8 +42,7 @@ class DocumentModal(discord.ui.Modal, title="Create Document"):
             return
 
         try:
-            docs_id, _ = await ensure_channels(guild)
-            docs_ch = guild.get_channel(docs_id)
+            docs_ch, _ = await ensure_channels(guild)
 
             from .views import DocumentView
 

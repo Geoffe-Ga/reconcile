@@ -141,31 +141,54 @@ class DocumentView(discord.ui.View):
 
     @discord.ui.button(label="View Full Document", style=discord.ButtonStyle.secondary)
     async def view_full(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
-        doc = self.store.get_document(self.group_name, self.doc_id)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            doc = self.store.get_document(self.group_name, self.doc_id)
+        except Exception:
+            await interaction.followup.send("Failed to load document.", ephemeral=True)
+            return
         if not doc:
-            await interaction.response.send_message("Document not found.", ephemeral=True)
+            await interaction.followup.send("Document not found.", ephemeral=True)
             return
         text = f"**{doc.title}**\n\n{doc.content}"
         if len(text) > 1900:
             text = text[:1900] + "…"
-        await interaction.response.send_message(text, ephemeral=True)
+        await interaction.followup.send(text, ephemeral=True)
 
     @discord.ui.button(label="Propose Edit", style=discord.ButtonStyle.primary)
     async def propose(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
+        try:
+            doc = self.store.get_document(self.group_name, self.doc_id)
+        except Exception:
+            await interaction.response.send_message("Failed to load document.", ephemeral=True)
+            return
+        if not doc:
+            await interaction.response.send_message("Document not found.", ephemeral=True)
+            return
         modal = ProposalModal(self.store, self.group_name, self.doc_id)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="View Proposals", style=discord.ButtonStyle.secondary)
     async def view_props(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
-        doc = self.store.get_document(self.group_name, self.doc_id)
-        if not doc:
-            await interaction.response.send_message("Document not found.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            doc = self.store.get_document(self.group_name, self.doc_id)
+        except Exception:
+            await interaction.followup.send("Failed to load document.", ephemeral=True)
             return
-        if not doc.proposals:
-            await interaction.response.send_message("No proposals yet.", ephemeral=True)
+        if not doc:
+            await interaction.followup.send("Document not found.", ephemeral=True)
+            return
+        try:
+            proposals = doc.proposals
+        except Exception:
+            await interaction.followup.send("Failed to load proposals.", ephemeral=True)
+            return
+        if not proposals:
+            await interaction.followup.send("No proposals yet.", ephemeral=True)
             return
         lines = []
-        for pid, p in sorted(doc.proposals.items()):
+        for pid, p in sorted(proposals.items()):
             lines.append(f"• #{pid} by <@{p.author_id}> — {'MERGED' if p.merged else 'OPEN'}")
         txt = "\n".join(lines)
-        await interaction.response.send_message(txt[:1800], ephemeral=True)
+        await interaction.followup.send(txt[:1800], ephemeral=True)

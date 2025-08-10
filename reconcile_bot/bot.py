@@ -18,6 +18,7 @@ import datetime
 from datetime import UTC
 from .logging_config import setup_logging
 from .data.store import ReconcileStore
+from .commands.utils import ensure_channels
 
 
 class ReconcileBot(commands.Bot):
@@ -57,6 +58,15 @@ class ReconcileBot(commands.Bot):
         tree = getattr(self, "tree", None)
         if tree is not None:  # pragma: no cover - exercised in integration
             await tree.sync()
+
+        for guild in self.guilds:
+            try:  # pragma: no cover - best effort during startup
+                await ensure_channels(guild)
+            except Exception:  # pragma: no cover - avoid failing startup
+                self.log.exception(
+                    "Failed to ensure reconcile channels for guild %s",
+                    getattr(guild, "id", "?"),
+                )
 
         await super().setup_hook()
 
