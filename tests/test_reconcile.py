@@ -7,7 +7,7 @@ def test_reconcile_creation_and_vote(tmp_path):
     store = ReconcileStore(path=str(tmp_path / "data.json"))
     # create reconcile
     rid = store.create_reconcile(
-        mode="group↔group", a_side="A", b_side="B", guild_id=1, channel_id=10, duration_hours=1
+        mode="group_vs_group", a_side="A", b_side="B", guild_id=1, channel_id=10, duration_hours=1
     )
     assert rid == 1
     rec = store.get_reconcile(rid)
