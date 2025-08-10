@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import discord
 from typing import List
+
 from ..data.store import ReconcileStore
+from ..commands.utils import ensure_channels
 
 class DocumentModal(discord.ui.Modal, title="Create Document"):
     def __init__(self, store: ReconcileStore, group_name: str, title_text: str, tags: List[str]) -> None:
@@ -31,21 +34,31 @@ class DocumentModal(discord.ui.Modal, title="Create Document"):
             )
             return
 
-        docs_ch = discord.utils.get(
-            interaction.guild.text_channels, name="reconcile-docs"
-        )
-        if docs_ch is None:
-            docs_ch = await interaction.guild.create_text_channel("reconcile-docs")
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This action can only be used inside a server.", ephemeral=True
+            )
+            return
 
-        from .views import DocumentView
+        try:
+            docs_id, _ = await ensure_channels(guild)
+            docs_ch = guild.get_channel(docs_id)
 
-        embed = discord.Embed(
-            title=self.title_text,
-            description=(content[:300] + ("…" if len(content) > 300 else "")),
-        )
-        embed.set_footer(text=f"{self.group_name} • Doc #{doc_id}")
-        view = DocumentView(self.store, self.group_name, doc_id)
-        await docs_ch.send(embed=embed, view=view)
+            from .views import DocumentView
+
+            embed = discord.Embed(
+                title=self.title_text,
+                description=(content[:300] + ("…" if len(content) > 300 else "")),
+            )
+            embed.set_footer(text=f"{self.group_name} • Doc #{doc_id}")
+            view = DocumentView(self.store, self.group_name, doc_id)
+            await docs_ch.send(embed=embed, view=view)
+        except Exception:
+            await interaction.response.send_message(
+                "Failed to post preview to #reconcile-docs.", ephemeral=True
+            )
+            return
 
         await interaction.response.send_message(
             f"Document `{self.title_text}` created in `{self.group_name}` and preview posted to {docs_ch.mention}.",

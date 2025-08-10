@@ -35,7 +35,7 @@ class ReconcileBot(commands.Bot):
         self.background_task = None
 
     async def setup_hook(self) -> None:
-        """Register background tasks when the bot starts."""
+        """Register background tasks and sync slash commands."""
 
         # Periodically update open reconciliation messages.
         # ``tasks.Loop`` expects several positional arguments which previously
@@ -45,6 +45,19 @@ class ReconcileBot(commands.Bot):
             _update_reconcile_messages
         )
         self.background_task.start(self)
+
+        # ``discord.py`` does not automatically register new slash commands with
+        # Discord.  Without an explicit sync newly added commands never show up
+        # for users which is why commands like ``/my_groups`` or ``/reconcile``
+        # were missing.  Syncing in ``setup_hook`` ensures the tree is updated
+        # whenever the bot starts.  The test-suite stubs the ``discord``
+        # library with a very small fake which does not provide an ``app"
+        # command tree.  Guard against that so the bot remains importable in the
+        # tests without the real dependency.
+        tree = getattr(self, "tree", None)
+        if tree is not None:  # pragma: no cover - exercised in integration
+            await tree.sync()
+
         await super().setup_hook()
 
     async def on_ready(self) -> None:  # pragma: no cover - requires discord
