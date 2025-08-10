@@ -277,6 +277,12 @@ class ReconcileStore:
         if not proposal:
             return "Proposal not found."
 
+        # Reject any further voting once the proposal has been merged.  The
+        # test-suite expects a clear message to be returned instead of silently
+        # recording additional votes, which was the previous behaviour.
+        if proposal.merged:
+            return "This proposal has already been merged."
+
         # record vote
         proposal.votes[user_id] = vote
 
