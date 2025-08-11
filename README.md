@@ -60,3 +60,4 @@ In this way we create a map of reconcilable ontologies and recognize
 that we each agree with every other person about something and
 regardless of our differences, we can focus our attention and willpower
 on collaborating on our shared values and objectives.
+See [CONTRIBUTING](CONTRIBUTING.md) for guidelines.
