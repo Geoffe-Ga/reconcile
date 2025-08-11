@@ -40,7 +40,7 @@ class VoteView(discord.ui.View):
         self.a_side = a_side
         self.b_side = b_side
 
-    async def _cast(self, interaction: discord.Interaction, delta: int):
+    async def _cast(self, interaction: discord.Interaction, delta: int) -> None:
         rec = self.store.get_reconcile(self.rid)
         if not rec or rec.closed or rec.cancelled:
             await interaction.response.send_message("This vote is closed.", ephemeral=True)
@@ -53,19 +53,35 @@ class VoteView(discord.ui.View):
         if len(sides) > 1:
             # both hats: prompt ephemeral chooser
             view = discord.ui.View()
-            async def choose_and_vote(inter, chosen):
-                err = self.store.record_reconcile_vote(self.rid, inter.user.id, chosen, delta)
+
+            async def choose_and_vote(
+                inter: discord.Interaction, chosen: str
+            ) -> None:
+                err = self.store.record_reconcile_vote(
+                    self.rid, inter.user.id, chosen, delta
+                )
                 if err:
                     await inter.response.send_message(err, ephemeral=True)
                 else:
-                    await inter.response.send_message(f"Vote recorded as {chosen}: {delta:+d}", ephemeral=True)
+                    await inter.response.send_message(
+                        f"Vote recorded as {chosen}: {delta:+d}", ephemeral=True
+                    )
+
             for s in sides:
-                b = discord.ui.Button(label=f"Vote as {s}", style=discord.ButtonStyle.secondary)
-                async def handler(inter, side=s):
+                b = discord.ui.Button(
+                    label=f"Vote as {s}", style=discord.ButtonStyle.secondary
+                )
+
+                async def handler(inter: discord.Interaction, side: str = s) -> None:
                     await choose_and_vote(inter, side)
+
                 b.callback = handler
                 view.add_item(b)
-            await interaction.response.send_message("Choose which hat to wear for this vote:", view=view, ephemeral=True)
+            await interaction.response.send_message(
+                "Choose which hat to wear for this vote:",
+                view=view,
+                ephemeral=True,
+            )
             return
         # Single side
         err = self.store.record_reconcile_vote(self.rid, interaction.user.id, sides[0], delta)
@@ -75,23 +91,23 @@ class VoteView(discord.ui.View):
             await interaction.response.send_message(f"Vote recorded: {delta:+d}", ephemeral=True)
 
     @discord.ui.button(label="Strongly Against (-2)", style=discord.ButtonStyle.danger)
-    async def b_m2(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def b_m2(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
         await self._cast(interaction, -2)
 
     @discord.ui.button(label="Against (-1)", style=discord.ButtonStyle.danger)
-    async def b_m1(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def b_m1(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
         await self._cast(interaction, -1)
 
     @discord.ui.button(label="Neutral (0)", style=discord.ButtonStyle.secondary)
-    async def b_0(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def b_0(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
         await self._cast(interaction, 0)
 
     @discord.ui.button(label="For (+1)", style=discord.ButtonStyle.success)
-    async def b_p1(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def b_p1(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
         await self._cast(interaction, +1)
 
     @discord.ui.button(label="Strongly For (+2)", style=discord.ButtonStyle.success)
-    async def b_p2(self, button: discord.ui.Button, interaction: discord.Interaction):
+    async def b_p2(self, button: discord.ui.Button, interaction: discord.Interaction) -> None:
         await self._cast(interaction, +2)
 
 def progress_bar(avg: float) -> str:

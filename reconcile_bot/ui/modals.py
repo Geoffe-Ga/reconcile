@@ -6,9 +6,15 @@ from typing import List
 from ..data.store import ReconcileStore
 from ..commands.utils import ensure_channels
 
-class DocumentModal(discord.ui.Modal, title="Create Document"):
-    def __init__(self, store: ReconcileStore, group_name: str, title_text: str, tags: List[str]) -> None:
-        super().__init__()
+class DocumentModal(discord.ui.Modal):
+    def __init__(
+        self,
+        store: ReconcileStore,
+        group_name: str,
+        title_text: str,
+        tags: List[str],
+    ) -> None:
+        super().__init__(title="Create Document")
         self.store = store
         self.group_name = group_name
         self.title_text = title_text
@@ -64,9 +70,9 @@ class DocumentModal(discord.ui.Modal, title="Create Document"):
             ephemeral=True,
         )
 
-class ProposalModal(discord.ui.Modal, title="Propose Edit"):
+class ProposalModal(discord.ui.Modal):
     def __init__(self, store: ReconcileStore, group_name: str, doc_id: int) -> None:
-        super().__init__()
+        super().__init__(title="Propose Edit")
         self.store = store
         self.group_name = group_name
         self.doc_id = doc_id

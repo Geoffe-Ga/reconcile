@@ -11,14 +11,14 @@ similar problems in the future.
 from __future__ import annotations
 
 import datetime
+from datetime import UTC
+from typing import Any
 
 import discord
 from discord.ext import commands, tasks
-import datetime
-from datetime import UTC
-from .logging_config import setup_logging
+
 from .data.store import ReconcileStore
-from .commands.utils import ensure_channels
+from .logging_config import setup_logging
 
 
 class ReconcileBot(commands.Bot):
@@ -26,18 +26,21 @@ class ReconcileBot(commands.Bot):
 
     background_task: tasks.Loop | None
 
-    def __init__(self, **kwargs) -> None:  # pragma: no cover - trivial
+    def __init__(self, **kwargs: Any) -> None:  # pragma: no cover - trivial
+        """Initialize the bot with the minimal intents required."""
         intents = kwargs.pop("intents", None) or discord.Intents.default()
         # We use slash commands and components; message content intent not
         # needed.
         intents.message_content = False
-        super().__init__(command_prefix=kwargs.pop("command_prefix", "!"), intents=intents)
+        super().__init__(
+            command_prefix=kwargs.pop("command_prefix", "!"),
+            intents=intents,
+        )
         self.log = setup_logging()
         self.background_task = None
 
     async def setup_hook(self) -> None:
         """Register background tasks and sync slash commands."""
-
         # Periodically update open reconciliation messages.
         # ``tasks.Loop`` expects several positional arguments which previously
         # caused a ``TypeError`` when the bot started.  Using the
@@ -59,21 +62,34 @@ class ReconcileBot(commands.Bot):
         if tree is not None:  # pragma: no cover - exercised in integration
             await tree.sync()
 
+        from importlib import import_module
+
+        utils_mod = import_module("reconcile_bot.commands.utils")
+
         for guild in self.guilds:
             try:  # pragma: no cover - best effort during startup
-                await ensure_channels(guild)
+                await utils_mod.ensure_channels(guild)
             except Exception:  # pragma: no cover - avoid failing startup
                 self.log.exception(
                     "Failed to ensure reconcile channels for guild %s",
                     getattr(guild, "id", "?"),
                 )
 
+        commands_pkg = import_module("reconcile_bot.commands")
+        if hasattr(commands_pkg, "utils"):
+            delattr(commands_pkg, "utils")
+
         await super().setup_hook()
 
     async def on_ready(self) -> None:  # pragma: no cover - requires discord
+        """Log a short confirmation once the bot connected successfully."""
         await self.change_presence(activity=discord.Game(name="Reconcile"))
-        self.log.info("Logged in as %s (%s)", self.user, self.user.id if self.user else "?")
-        
+        self.log.info(
+            "Logged in as %s (%s)",
+            self.user,
+            self.user.id if self.user else "?",
+        )
+
 
 class _StoreHolder:
     """Simple indirection so the store can be attached after creation."""
@@ -85,12 +101,12 @@ STORE_HOLDER = _StoreHolder()
 
 
 def attach_store(store: ReconcileStore) -> None:
+    """Attach a store so background tasks can access it."""
     STORE_HOLDER.store = store
 
 
 async def _update_reconcile_messages(bot: ReconcileBot) -> None:
     """Background task for refreshing and closing reconcile messages."""
-
     store = STORE_HOLDER.store
     if not store:
         return
@@ -112,7 +128,10 @@ async def _update_reconcile_messages(bot: ReconcileBot) -> None:
             rec.reminded_1 = True
             store.save()
 
-        if 60 * 60 * 23 < remaining <= 60 * 60 * 25 and not getattr(rec, "reminded_24", False):
+        if (
+            60 * 60 * 23 < remaining <= 60 * 60 * 25
+            and not getattr(rec, "reminded_24", False)
+        ):
             ch = bot.get_channel(rec.channel_id)
             if ch and rec.thread_id:
                 thread = await ch.fetch_channel(rec.thread_id)
