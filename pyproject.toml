@@ -1,0 +1,39 @@
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-select = ["E", "F", "W", "I", "D", "UP", "B", "SIM"]
+ignore = ["D203", "D213"]
+fix = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --disable-warnings --maxfail=1 --cov=."
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = ["tests/*", "build/*", "dist/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
