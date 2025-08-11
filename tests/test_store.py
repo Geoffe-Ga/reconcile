@@ -6,14 +6,19 @@ def test_group_document_proposal_flow(tmp_path):
     store = ReconcileStore(path=str(path))
 
     # create group and join members
-    assert store.create_group("Alpha", "A group", ["civic", "open-source"], creator_id=1) is None
+    assert (
+        store.create_group("Alpha", "A group", ["civic", "open-source"], creator_id=1)
+        is None
+    )
     assert store.join_group("Alpha", 2) is None
     assert store.join_group("Alpha", 3) is None
 
     # create a document and proposal
     doc_id = store.create_document("Alpha", "Charter", ["policy"], "We value kindness.")
     assert doc_id == 1
-    pid = store.add_proposal("Alpha", doc_id, author_id=2, content="We value kindness and courage.")
+    pid = store.add_proposal(
+        "Alpha", doc_id, author_id=2, content="We value kindness and courage."
+    )
     assert pid == 1
 
     # two accepts merge the proposal; further votes rejected
@@ -29,7 +34,10 @@ def test_group_document_proposal_flow(tmp_path):
     assert doc.proposals[pid].merged is True
 
     # recommendations: create another group with overlapping tags
-    assert store.create_group("Beta", "B group", ["open-source", "eco"], creator_id=4) is None
+    assert (
+        store.create_group("Beta", "B group", ["open-source", "eco"], creator_id=4)
+        is None
+    )
     recs = store.recommendations_for(user_id=1)
     assert "Beta" in recs
 

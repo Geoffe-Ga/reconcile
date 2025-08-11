@@ -1,6 +1,6 @@
+import asyncio
 import sys
 import types
-import asyncio
 
 
 def setup_discord_stubs():
@@ -19,11 +19,13 @@ def setup_discord_stubs():
     def describe(**kwargs):
         def deco(f):
             return f
+
         return deco
 
     def choices(**kwargs):
         def deco(f):
             return f
+
         return deco
 
     discord.app_commands = types.SimpleNamespace(
@@ -120,6 +122,7 @@ def test_reconcile_cmd_choices():
             def deco(func):
                 setattr(self, func.__name__, func)
                 return func
+
             return deco
 
     class DummyBot:
@@ -142,7 +145,11 @@ def test_reconcile_cmd_choices():
     new_closure = list(cmd.__closure__)
     new_closure[0] = make_cell(fake_start)
     cmd = _types.FunctionType(
-        cmd.__code__, cmd.__globals__, cmd.__name__, cmd.__defaults__, tuple(new_closure)
+        cmd.__code__,
+        cmd.__globals__,
+        cmd.__name__,
+        cmd.__defaults__,
+        tuple(new_closure),
     )
     bot.tree.reconcile_cmd = cmd
 
@@ -150,12 +157,16 @@ def test_reconcile_cmd_choices():
 
     # group vs group
     inter1 = make_interaction()
-    asyncio.run(bot.tree.reconcile_cmd(inter1, Choice("gvg", "group_vs_group"), "A", "B"))
+    asyncio.run(
+        bot.tree.reconcile_cmd(inter1, Choice("gvg", "group_vs_group"), "A", "B")
+    )
     assert inter1.response.deferred is True
     assert inter1.response.content == "ok"
 
     # solo to group
     inter2 = make_interaction()
-    asyncio.run(bot.tree.reconcile_cmd(inter2, Choice("stg", "solo_to_group"), None, "B"))
+    asyncio.run(
+        bot.tree.reconcile_cmd(inter2, Choice("stg", "solo_to_group"), None, "B")
+    )
     assert inter2.response.deferred is True
     assert inter2.response.content == "ok"

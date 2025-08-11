@@ -11,7 +11,6 @@ def test_bot_and_main_compile() -> None:
     be caught by the test-suite without requiring the ``discord`` package to be
     installed.
     """
-
     py_compile.compile(Path("reconcile_bot/bot.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/main.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/config.py"), doraise=True)
@@ -21,7 +20,3 @@ def test_bot_and_main_compile() -> None:
     py_compile.compile(Path("reconcile_bot/data/models.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/data/store.py"), doraise=True)
     py_compile.compile(Path("reconcile_bot/commands/utils.py"), doraise=True)
-
-
-
-

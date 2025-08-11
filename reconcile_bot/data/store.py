@@ -1,33 +1,13 @@
-"""Persistence layer for groups, documents and reconciliation votes.
-
-The original version of this module had become badly corrupted – many lines
-were left outside of function bodies and even contained stray ``"\n"`` escape
-sequences.  Importing the module therefore raised a ``SyntaxError`` and the
-store could not be used at all.
-
-This rewrite restores a minimal but fully functioning implementation of the
-``ReconcileStore`` class.  It focuses on the features used by the tests:
-creation of groups/documents/proposals, voting on proposals and generating
-recommendations.  Support for serialising ``Reconcile`` instances has been
-kept as it existed conceptually in the repository but in a much cleaner form.
-"""
+"""Persistence layer for groups, documents and reconciliation votes."""
 
 from __future__ import annotations
 
 import datetime
-from datetime import UTC
 import json
 import os
-from typing import Dict, List, Optional, Set, Tuple
+from datetime import UTC
 
-
-from .models import (
-    Document,
-    Group,
-    Proposal,
-    Reconcile,
-    ReconcileVote,
-)
+from .models import Document, Group, Proposal, Reconcile, ReconcileVote
 
 
 class ReconcileStore:
@@ -35,10 +15,10 @@ class ReconcileStore:
 
     def __init__(self, path: str = "reconcile_data.json") -> None:
         self.path = path
-        self.groups: Dict[str, Group] = {}
+        self.groups: dict[str, Group] = {}
         # ``_reconciles`` is initialised here so that ``_load`` can populate it
         # even if the file does not yet contain any reconciliation data.
-        self._reconciles: Dict[int, Reconcile] = {}
+        self._reconciles: dict[int, Reconcile] = {}
         self._load()
 
     # ------------------------------------------------------------------
@@ -46,14 +26,13 @@ class ReconcileStore:
     # ------------------------------------------------------------------
     def _load(self) -> None:
         """Load store contents from ``self.path`` if it exists."""
-
         if not os.path.exists(self.path):
             return
 
-        with open(self.path, "r", encoding="utf-8") as f:
+        with open(self.path, encoding="utf-8") as f:
             data = json.load(f)
 
-        groups: Dict[str, Group] = {}
+        groups: dict[str, Group] = {}
         for gname, gdata in data.get("groups", {}).items():
             group = Group(
                 name=gdata["name"],
@@ -93,7 +72,7 @@ class ReconcileStore:
 
         # Load reconciles if present.  The file may not contain this section so
         # we default to an empty dictionary.
-        reconciles: Dict[int, Reconcile] = {}
+        reconciles: dict[int, Reconcile] = {}
 
         for rid_str, rdata in data.get("reconciles", {}).items():
             rid = int(rid_str)
@@ -127,14 +106,13 @@ class ReconcileStore:
 
         self._reconciles = reconciles
 
-    def _to_dict(self) -> Dict:
+    def _to_dict(self) -> dict:
         """Serialise the current state to a JSON-serialisable dict."""
-
-        groups_dict: Dict[str, Dict] = {}
+        groups_dict: dict[str, dict] = {}
         for name, group in self.groups.items():
-            documents_dict: Dict[str, Dict] = {}
+            documents_dict: dict[str, dict] = {}
             for doc_id, doc in group.documents.items():
-                proposals_dict: Dict[str, Dict] = {}
+                proposals_dict: dict[str, dict] = {}
                 for pid, prop in doc.proposals.items():
                     proposals_dict[str(pid)] = {
                         "author_id": prop.author_id,
@@ -159,7 +137,7 @@ class ReconcileStore:
                 "documents": documents_dict,
             }
 
-        recs: Dict[str, Dict] = {}
+        recs: dict[str, dict] = {}
 
         for rid, r in self._reconciles.items():
             recs[str(rid)] = {
@@ -192,7 +170,6 @@ class ReconcileStore:
 
     def save(self) -> None:
         """Persist the current state atomically."""
-
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self._to_dict(), f, indent=2, ensure_ascii=False)
@@ -202,17 +179,21 @@ class ReconcileStore:
     # Group operations
     # ------------------------------------------------------------------
     def create_group(
-        self, name: str, description: str, tags: List[str], creator_id: int
-    ) -> Optional[str]:
+        self, name: str, description: str, tags: list[str], creator_id: int
+    ) -> str | None:
         if name in self.groups:
             return "A group with that name already exists."
-        group = Group(name=name, description=description, tags=set(t.strip().lower() for t in tags))
+        group = Group(
+            name=name,
+            description=description,
+            tags=set(t.strip().lower() for t in tags),
+        )
         group.members.add(creator_id)
         self.groups[name] = group
         self.save()
         return None
 
-    def join_group(self, name: str, user_id: int) -> Optional[str]:
+    def join_group(self, name: str, user_id: int) -> str | None:
         group = self.groups.get(name)
         if not group:
             return "Group not found."
@@ -224,8 +205,8 @@ class ReconcileStore:
     # Document operations
     # ------------------------------------------------------------------
     def create_document(
-        self, group_name: str, title: str, tags: List[str], content: str
-    ) -> Optional[int]:
+        self, group_name: str, title: str, tags: list[str], content: str
+    ) -> int | None:
         group = self.groups.get(group_name)
         if not group:
             return None
@@ -240,7 +221,7 @@ class ReconcileStore:
         self.save()
         return doc_id
 
-    def get_document(self, group_name: str, doc_id: int) -> Optional[Document]:
+    def get_document(self, group_name: str, doc_id: int) -> Document | None:
         group = self.groups.get(group_name)
         if not group:
             return None
@@ -248,7 +229,7 @@ class ReconcileStore:
 
     def add_proposal(
         self, group_name: str, doc_id: int, author_id: int, content: str
-    ) -> Optional[int]:
+    ) -> int | None:
         document = self.get_document(group_name, doc_id)
         if not document:
             return None
@@ -267,7 +248,7 @@ class ReconcileStore:
 
     def record_vote(
         self, group_name: str, doc_id: int, prop_id: int, user_id: int, vote: str
-    ) -> Optional[str]:
+    ) -> str | None:
         if vote not in {"accept", "reject"}:
             return "Invalid vote."
 
@@ -302,13 +283,13 @@ class ReconcileStore:
     # ------------------------------------------------------------------
     # Recommendations
     # ------------------------------------------------------------------
-    def recommendations_for(self, user_id: int, top_n: int = 5) -> List[str]:
-        user_tags: Set[str] = set()
+    def recommendations_for(self, user_id: int, top_n: int = 5) -> list[str]:
+        user_tags: set[str] = set()
         for group in self.groups.values():
             if user_id in group.members:
                 user_tags.update(group.tags)
 
-        scores: List[Tuple[float, str]] = []
+        scores: list[tuple[float, str]] = []
         for group in self.groups.values():
             if user_id in group.members or not group.tags or not user_tags:
                 continue
@@ -331,7 +312,13 @@ class ReconcileStore:
             self._reconciles = {}
 
     def create_reconcile(
-        self, mode: str, a_side: str, b_side: str, guild_id: int, channel_id: int, duration_hours: int = 72
+        self,
+        mode: str,
+        a_side: str,
+        b_side: str,
+        guild_id: int,
+        channel_id: int,
+        duration_hours: int = 72,
     ) -> int:
         self._ensure_reconciles_loaded()
         rid = self.next_reconcile_id()
@@ -356,26 +343,24 @@ class ReconcileStore:
         self.save()
         return rid
 
-
     def set_reconcile_message(self, rid: int, thread_id: int, message_id: int) -> None:
-
         rec = self._reconciles.get(rid)
         if rec:
             rec.thread_id = thread_id
             rec.message_id = message_id
             self.save()
 
-
-    def get_reconcile(self, rid: int) -> Optional[Reconcile]:
+    def get_reconcile(self, rid: int) -> Reconcile | None:
         return self._reconciles.get(rid)
 
-    def list_open_reconciles(self) -> List[Reconcile]:
-        return [r for r in self._reconciles.values() if not r.closed and not r.cancelled]
+    def list_open_reconciles(self) -> list[Reconcile]:
+        return [
+            r for r in self._reconciles.values() if not r.closed and not r.cancelled
+        ]
 
     def record_reconcile_vote(
         self, rid: int, voter_id: int, side: str, score: int
-    ) -> Optional[str]:
-
+    ) -> str | None:
         rec = self._reconciles.get(rid)
         if not rec:
             return "Reconcile not found."
@@ -387,7 +372,6 @@ class ReconcileStore:
             side=side,
             score=score,
             timestamp=datetime.datetime.now(tz=UTC).timestamp(),
-
         )
         self.save()
         return None
@@ -407,4 +391,3 @@ class ReconcileStore:
         rec.closed = True
         self.save()
         return True
-

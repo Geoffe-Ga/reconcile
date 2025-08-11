@@ -11,8 +11,8 @@ module intentionally does not expose ``tasks.Loop``.
 from __future__ import annotations
 
 import asyncio
-import types
 import sys
+import types
 
 
 def test_setup_hook_uses_tasks_loop(monkeypatch) -> None:
@@ -25,7 +25,7 @@ def test_setup_hook_uses_tasks_loop(monkeypatch) -> None:
         message_content: bool = False
 
         @staticmethod
-        def default() -> "Intents":
+        def default() -> Intents:
             return Intents()
 
     discord.Intents = Intents
@@ -94,7 +94,7 @@ def test_setup_hook_creates_channels(monkeypatch) -> None:
         message_content: bool = False
 
         @staticmethod
-        def default() -> "Intents":  # pragma: no cover - simple stub
+        def default() -> Intents:  # pragma: no cover - simple stub
             return Intents()
 
     discord.Intents = Intents

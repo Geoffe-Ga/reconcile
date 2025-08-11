@@ -1,5 +1,4 @@
 import logging
-import os
 
 from reconcile_bot.config import load_settings
 from reconcile_bot.logging_config import setup_logging
