@@ -71,7 +71,7 @@ Follow the 4-gate workflow rigorously.
 **The Process**:
 1. Gate 1: Local checks pass (`./scripts/check-all.sh` → exit 0)
 2. Gate 2: CI pipeline green (all jobs ✅)
-3. Gate 3: Mutation score ≥80%
+3. Gate 3: pre-commit clean on changed files; CI green; review bot passes (canonical list: [`CLAUDE.md`](../../CLAUDE.md))
 4. Gate 4: Code review LGTM
 
 See [Workflow](workflow.md) for complete documentation.
@@ -85,7 +85,7 @@ Quality thresholds are immutable. Meet them, don't lower them.
 **Standards**:
 - Test Coverage: ≥90%
 - Docstring Coverage: ≥95%
-- Mutation Score: ≥80%
+- Mutation Score: ≥80%, recommended before a release (not a merge gate)
 - Cyclomatic Complexity: ≤10 per function
 
 **When code doesn't meet standards**:

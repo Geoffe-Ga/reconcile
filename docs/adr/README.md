@@ -62,6 +62,9 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0056](0056-pilot-plan.md) | The pilot: two contrasting groups for 6 weeks, learned through interviews and Signal, with a plain notice | Accepted |
 | [0057](0057-environments-updates-retention.md) | Staging and production; protocol rules change only by version; blobs 30 days, backups 180 days | Accepted |
 | [0058](0058-security-review-on-demand.md) | A paid security review when an activist group calls for it, booked at the first serious conversation | Accepted |
+| [0059](0059-suspension-during-removal.md) | A suspension lasts until an open removal vote against the member ends | Accepted |
+| [0060](0060-how-phase-1-is-built.md) | Agents build in waves; green merges (no separate human sign-off); main protected; label scheme | Accepted |
+| [0061](0061-quality-gates.md) | Merge gates: TDD, check-all, pre-commit and CI on changes, review bot; mutation testing before a release | Accepted |
 
 **Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck. The governance act once called a "fork" is a **split** (ADR-0050); "fork" now means only forking code.
 

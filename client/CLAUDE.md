@@ -14,7 +14,7 @@ Run from `client/`, or run `./scripts/check-all.sh` from the repo root, which ru
 ```bash
 npm ci
 ./scripts/check-all.sh   # lint, format, typecheck, tests + coverage, architecture, npm audit
-./scripts/mutation.sh    # Stryker (Vitest runner), ≥80%
+./scripts/mutation.sh    # Stryker (Vitest runner), ≥80%; recommended before a release, not a merge gate
 npm run dev              # local dev server
 npm run build            # production build
 ```

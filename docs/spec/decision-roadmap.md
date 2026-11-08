@@ -2,7 +2,7 @@
 
 - **Status:** In progress. Spec decomposition and issue filing wait until every sheet below is answered and recorded.
 - **Started:** 2026-11-07
-- **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0059), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
+- **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0062), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
 
 Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This roadmap covers what's still open.
 
@@ -13,8 +13,8 @@ Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This r
 | 3 | Governance edge cases | Epics 1 and 4 (the protocol) | **Done** 2026-11-08: ADRs 0047–0051 |
 | 4 | Onboarding, notifications, and UX scope | Epics 3 and 6 | **Done** 2026-11-08: ADRs 0052–0055, spec §7 |
 | 5 | Pilot, operations, and release | Epic 2 deploy, Epic 6 acceptance | **Done** 2026-11-08: ADRs 0056–0058 |
-| 6 | Development process (plus #32) | how the issues are written and worked | Next |
-| 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | Waiting |
+| 6 | Development process (plus #32) | how the issues are written and worked | **Done** 2026-11-08: ADRs 0059–0061 |
+| 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | Next |
 
 ## 1. Stack Details
 
@@ -76,7 +76,7 @@ These become protocol rules and test vectors, so they must be fixed before Epic 
 
 - **Review and merge:** branch protection, and whether to merge without the review bot until its API key is set.
 - **CI budget:** limits on private-repo Actions minutes.
-- **Mutation testing scope:** every PR or `main` only, for both Python and the client.
+- **Mutation testing scope:** decided in ADR-0061 (before a release, not a merge gate).
 - **Who builds:** working the issues yourself, with agents (one at a time or a fleet), or a mix. This changes how detailed each issue must be.
 - **Labels and priorities:** the label scheme for the filed issues.
 

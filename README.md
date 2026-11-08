@@ -76,7 +76,7 @@ pre-commit install
 | `./scripts/format.sh` | Auto-format |
 | `./scripts/security.sh` | bandit and pip-audit |
 | `./scripts/complexity.sh` | radon/xenon (cyclomatic complexity ≤10) |
-| `./scripts/mutation.sh` | mutmut (≥80% mutation score) |
+| `./scripts/mutation.sh` | mutmut (≥80%, recommended before a release) |
 
 Development follows TDD with the "Stay Green" workflow. Contributor and AI-agent conventions are in [`CLAUDE.md`](CLAUDE.md) and [`.claude/docs/`](.claude/docs/).
 

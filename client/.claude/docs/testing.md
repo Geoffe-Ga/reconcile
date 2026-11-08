@@ -173,7 +173,7 @@ def test_encode_decode_is_identity(text):
 
 ## 7. Mutation Testing
 
-Every test suite must pass mutation testing. This ensures tests are effective at catching bugs:
+Mutation testing shows whether tests actually catch bugs. It is **recommended before a release, not a merge gate** (ADR-0061):
 
 ```bash
 # Run mutation tests with 80% minimum score
@@ -189,7 +189,7 @@ mutmut show <id>
 # Score must be 80%+ for MAXIMUM QUALITY
 ```
 
-**Important**: Use `./scripts/mutation.sh` instead of running `mutmut` directly. The script enforces the 80% minimum threshold and provides clear feedback.
+**Important**: Use `./scripts/mutation.sh` instead of running the tool directly. The script checks the 80% target and gives clear feedback.
 
 ---
 

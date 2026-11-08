@@ -137,7 +137,7 @@ have gone outside scope — revert and re-plan.
 
 - [ ] All new and existing tests pass (`./scripts/test.sh --all` or repo
   equivalent).
-- [ ] `pre-commit run --all-files` is clean — no skipped hooks, no
+- [ ] `pre-commit run --from-ref origin/main --to-ref HEAD` is clean — no skipped hooks, no
   bypassed checks.
 - [ ] Coverage on changed lines meets the repo threshold (default 90%).
 - [ ] Public API changes are reflected in docstrings and any

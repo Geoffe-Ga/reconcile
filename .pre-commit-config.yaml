@@ -1,6 +1,7 @@
 # Pre-commit hooks for Reconcile
 # Install: pre-commit install --install-hooks -t pre-commit -t commit-msg
-# Run manually (with .venv active): pre-commit run --all-files
+# Run manually (with .venv active): pre-commit run --from-ref origin/main --to-ref HEAD
+# (changed files, as CI does; add --all-files after changing a hook or its config)
 #
 # One set of rules everywhere: hooks that run a project tool are `local` hooks
 # calling the exact versions pinned in requirements-dev.txt (Python) or

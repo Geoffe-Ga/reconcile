@@ -11,7 +11,7 @@ All code must meet these standards before merging to main:
 ### Test Coverage
 - **Code Coverage**: 90% minimum (branch coverage)
 - **Docstring Coverage**: 95% minimum (interrogate)
-- **Mutation Score**: 80% minimum (mutmut)
+- **Mutation Score**: 80% target, checked before a release; not a merge gate (ADR-0061)
 - **Test Types**: Unit, Integration, and E2E coverage required
 
 ### Type Checking

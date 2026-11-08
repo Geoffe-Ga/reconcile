@@ -77,11 +77,19 @@ When work depends on one of these, flag it instead of silently picking an answer
 2. **Don't duplicate content (DRY).** Link to the canonical source, especially `docs/plan/`.
 3. **No shortcuts.** Fix root causes and never bypass quality checks.
 4. **Stay Green.** Never request review with failing checks.
-5. **Quality first:** ≥90% coverage, complexity ≤10, ≥80% mutation score.
+5. **Quality first:** ≥90% line and ≥85% branch coverage, complexity ≤10, ≥95% docstring coverage.
 6. **Work from the project root** and use relative paths.
 7. **Verify before every commit:** `./scripts/check-all.sh` must exit 0.
 
-**The 4 Gates:** (1) `./scripts/check-all.sh` passes · (2) CI is green · (3) mutation score ≥80% · (4) code review LGTM
+**The gates** ([ADR-0061](docs/adr/0061-quality-gates.md); this list is canonical, other docs link here):
+
+1. **TDD:** a failing test first, then the code.
+2. **`./scripts/check-all.sh` passes.** It runs the checks for the areas the change touches.
+3. **Pre-commit is clean on the changed files:** `pre-commit run --from-ref origin/main --to-ref HEAD`. The commit hook already does this for staged files.
+4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes.
+5. **The review bot passes.** LGTM is preferred. COMMENTS can merge, but only after every finding is filed as a P0–P3 follow-up issue: file first, then merge. CHANGES_REQUESTED blocks.
+
+**Mutation testing is recommended before a release, not a merge gate.** Run `./scripts/mutation.sh` (Python) and `client/scripts/mutation.sh` (client), or trigger CI's manual mutation job; aim for ≥80%.
 
 ---
 
@@ -94,11 +102,11 @@ When work depends on one of these, flag it instead of silently picking an answer
 | Code coverage | ≥90% | pytest-cov |
 | Branch coverage | ≥85% | pytest-cov |
 | Docstring coverage | ≥95% | interrogate |
-| Mutation score | ≥80% | mutmut (Python), Stryker (client) |
+| Mutation score (before a release; not a merge gate) | ≥80% | mutmut (Python), Stryker (client) |
 | Cyclomatic complexity | ≤10 per function | radon / xenon |
 | Security vulnerabilities | 0 critical/high | bandit, pip-audit, npm audit |
 
-**One set of rules.** CI runs the same scripts (`./scripts/check-all.sh --python` / `--client`) plus `pre-commit run --all-files`, with the exact tool versions pinned in `requirements-dev.txt`, `client/package-lock.json`, and `client/.nvmrc`. Thresholds and scope live in `pyproject.toml` and the client config, never in `ci.yml`. Change a rule there, once. Run checks with `.venv` active (`python3 -m venv .venv && pip install -r requirements-dev.txt -e .`).
+**One set of rules.** CI runs the same scripts (`./scripts/check-all.sh --python` / `--client`) plus pre-commit on the changed files, with the exact tool versions pinned in `requirements-dev.txt`, `client/package-lock.json`, and `client/.nvmrc`. Thresholds and scope live in `pyproject.toml` and the client config, never in `ci.yml`. Change a rule there, once. Run checks with `.venv` active (`python3 -m venv .venv && pip install -r requirements-dev.txt -e .`).
 
 ---
 
@@ -152,7 +160,7 @@ gh pr create --fill
 ./scripts/typecheck.sh   # mypy
 ./scripts/format.sh      # auto-format
 ./scripts/security.sh    # bandit, pip-audit
-./scripts/mutation.sh    # mutation testing
+./scripts/mutation.sh    # mutation testing (recommended before a release)
 ```
 
 ### Example Domain Test (Hypothesis)
@@ -213,5 +221,5 @@ Give each subagent:
 1. **The task and why it matters.** Name the relevant `docs/plan/` module(s).
 2. **Context:** files, related issues, ADRs, and the domain vocabulary above.
 3. **Privacy impact:** what personal, affiliation, or voting data the change touches, checked against the threat model.
-4. **Acceptance criteria:** `./scripts/check-all.sh` exits 0, coverage ≥90%, mutation score ≥80%, mypy strict passes, security scan is clean, public APIs are documented, and an ADR exists if an architectural decision was made.
+4. **Acceptance criteria:** the gates above pass (`./scripts/check-all.sh` exits 0, coverage ≥90%, mypy strict, security scan clean), public APIs are documented, and an ADR exists if an architectural decision was made.
 5. **Open questions:** any TBD product decision the task depends on, flagged explicitly.
