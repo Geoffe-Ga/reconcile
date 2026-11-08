@@ -16,23 +16,23 @@ The product source of truth is **[`docs/plan/`](docs/plan/)**. **Level names cha
 
 | Term | Meaning |
 |------|---------|
-| **Co-Creator** | A user who writes, pitches, discusses, and votes: the creating level of a group |
-| **Collaborator** | A user who votes on Pitches but doesn't pitch |
+| **Co-Creator** | A user who writes, proposes, discusses, and votes: the creating level of a group |
+| **Collaborator** | A user who votes on Proposals but doesn't propose |
 | **Member** | A follower of a Co-Creator, Organization, or Coalition. Gets notifications but doesn't govern |
 | **Organization** | Any community (a Discord server, a movement, a Facebook group) that keeps shared living documents |
 | **Coalition** | An umbrella entity formed when Organizations **reconcile**. It has a jointly authored mission statement |
 | **Document** | A living, revisable text (personal, organizational, or coalition-level), such as a Mission Statement |
 | **Atom** | The unit of change in a Document: a section, clause, paragraph, or value statement |
-| **Pitch** | A proposed change to an Atom, like a pull request. It has a title, a justification, and the proposed content |
+| **Proposal** | A proposed change to an Atom, like a pull request. It has a title, a justification, and the proposed content. Formerly "Pitch" (renamed 2026-11-07); the verb is *propose* |
 | **Working Copy** | A checked-out draft that autosaves and has a shareable URL. Returning it may surface **Conflicts** |
-| **Vote** | Governance on a Pitch. Voters score it 0–4 within a time window. It passes on a **consent floor**: average ≥ 2.0 and fewer than 10% scoring 0 ([ADR-0002](docs/adr/0002-consent-floor-vote-rule.md)). Competing versions of an Atom all go on the ballot ([ADR-0004](docs/adr/0004-competing-versions-go-to-ballot.md)) |
-| **Dispatch** | A notification a Co-Creator (or a Pitch) sends to followers. Formerly the working name "Push" |
+| **Vote** | Governance on a Proposal. Voters score it 0–4 within a time window. It passes on a **consent floor**: average ≥ 2.0 and fewer than 10% scoring 0 ([ADR-0002](docs/adr/0002-consent-floor-vote-rule.md)). Competing versions of an Atom all go on the ballot ([ADR-0004](docs/adr/0004-competing-versions-go-to-ballot.md)) |
+| **Dispatch** | A notification a Co-Creator (or a Proposal) sends to followers. Formerly the working name "Push" |
 | **Involvement Level** | A person's level in a group: **Member** (follows), **Collaborator** (votes), or **Co-Creator** (votes and creates). Moving between levels is self-selected once admitted. Code checks capabilities, never level names ([ADR-0003](docs/adr/0003-three-tier-involvement-levels.md), [ADR-0021](docs/adr/0021-level-names-and-self-selection.md)) |
 
 ### Core Loops
 
-- **Document editing:** View → Pitch → Discuss → Vote → Update ([04](docs/plan/04_Workflows_Document_Editing.md), [07](docs/plan/07_Voting_and_Governance.md))
-- **Coalition forming:** View → Pitch → Discuss → Vote (both groups) → Reconcile ([05](docs/plan/05_Workflows_Reconciling_Groups.md))
+- **Document editing:** View → Proposal → Discuss → Vote → Update ([04](docs/plan/04_Workflows_Document_Editing.md), [07](docs/plan/07_Voting_and_Governance.md))
+- **Coalition forming:** View → Proposal → Discuss → Vote (both groups) → Reconcile ([05](docs/plan/05_Workflows_Reconciling_Groups.md))
 - **Outer loop:** published or updated Documents notify Members ([08](docs/plan/08_Notifications_and_Pushes.md))
 
 The canonical Document is not the last thing someone typed. **It is the last edit that survived governance.**
@@ -53,8 +53,8 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 ### Roadmap (conceptual; see [14](docs/plan/14_Roadmap_Open_Questions.md))
 
 - **Phase 0:** settle definitions, ethics, and privacy principles
-- **Phase 1:** single-Organization MVP: onboarding, personal page, create/join an org, documents, pitch → vote → update, notifications
-- **Phase 2:** Coalition MVP: discovery, reconciliation pitch, dual voting, coalition documents
+- **Phase 1:** single-Organization MVP: onboarding, personal page, create/join an org, documents, proposal → vote → update, notifications
+- **Phase 2:** Coalition MVP: discovery, reconciliation proposal, dual voting, coalition documents
 - **Phase 3:** outer-loop activation: the Member experience, scheduled Dispatches, calls to action
 
 **Settled decisions** are in [`docs/adr/`](docs/adr/README.md). Read them before designing anything.
@@ -125,7 +125,7 @@ reconcile/
 └── .pre-commit-config.yaml
 ```
 
-Domain modules (Documents, Atoms, Pitches, Votes, Organizations, Coalitions, notifications) don't exist yet. Add them through ADR-backed design. Don't scaffold them speculatively.
+Domain modules (Documents, Atoms, Proposals, Votes, Organizations, Coalitions, notifications) don't exist yet. Add them through ADR-backed design. Don't scaffold them speculatively.
 
 ---
 
@@ -134,11 +134,11 @@ Domain modules (Documents, Atoms, Pitches, Votes, Organizations, Coalitions, not
 **Details: [.claude/docs/workflow.md](.claude/docs/workflow.md)**
 
 ```bash
-git checkout -b feature/pitch-model
+git checkout -b feature/proposal-model
 # TDD: failing test → minimum code → refactor
 ./scripts/format.sh
 ./scripts/check-all.sh          # must exit 0
-git commit -m "feat(pitch): add Pitch entity with justification (#12)"
+git commit -m "feat(proposal): add Proposal entity with justification (#12)"
 gh pr create --fill
 ```
 
@@ -161,7 +161,7 @@ from hypothesis import given, strategies as st
 
 @given(st.lists(st.integers(min_value=0, max_value=4), min_size=1))
 def test_vote_outcome_is_order_independent(scores: list[int]) -> None:
-    """A Pitch's outcome must not depend on ballot order."""
+    """A Proposal's outcome must not depend on ballot order."""
     assert tally(scores) == tally(list(reversed(scores)))
 ```
 

@@ -8,7 +8,7 @@
 
 Co-Creators edit in working copies. When two working copies change the same Atom, the versions conflict. The original slides showed a side-by-side comparison where collaborators "choose which competing text is better," followed by a vote. They didn't say whether that choice was a moderation step before the vote or part of it.
 
-We considered three approaches: put every version on the ballot, have approvers pick one version first, or let the first pitch win and make later ones rebase.
+We considered three approaches: put every version on the ballot, have approvers pick one version first, or let the first proposal win and make later ones rebase.
 
 ## Decision
 
@@ -26,4 +26,4 @@ A small approver group would become a gatekeeper and a natural point of capture,
 
 - **Several versions pass.** If more than one version clears the consent floor, which one wins? Candidates: the highest average, the fewest 0s, or a runoff. Not yet decided.
 - **No version passes.** The current text presumably stands. Confirm it.
-- **Ballot size.** The sheet proposed capping a ballot at three versions, with any further version becoming a new pitch. Not yet decided.
+- **Ballot size.** The sheet proposed capping a ballot at three versions, with any further version becoming a new proposal. Not yet decided.

@@ -13,11 +13,11 @@ Groups often stall in endless discussion that never consolidates. Manifestos wri
 - **Co-Creators** (users) write personal **Mission Statements** and join **Organizations**, such as Discord servers, social movements, or Facebook groups.
 - Organizations maintain living **Documents** through a democratic, Git-like process:
   1. **View**: open a document
-  2. **Pitch**: propose a change to an **Atom** (a section, clause, or value statement), with a title and justification
+  2. **Proposal**: propose a change to an **Atom** (a section, clause, or value statement), with a title and justification
   3. **Discuss**: debate in a temporary channel, thread, or call
   4. **Vote**: opted-in members score the change from 0 to 4. It passes on a consent floor: an average of at least 2 with fewer than 10% strongly opposed
   5. **Update**: the change is merged, or it isn't
-- Organizations can **Reconcile** with each other through the same View → Pitch → Discuss → Vote cycle, with both groups voting. Together they form a **Coalition** that has its own jointly written mission statement.
+- Organizations can **Reconcile** with each other through the same View → Proposal → Discuss → Vote cycle, with both groups voting. Together they form a **Coalition** that has its own jointly written mission statement.
 - **Members** (followers) get notified about new and updated documents, **Dispatches**, and votes. That turns finished documents into calls to action: meetups, voting strategy, outreach.
 
 The result is a map of reconcilable ontologies. Each of us agrees with everyone else about *something*, and we can focus our effort on what we share.
@@ -35,8 +35,8 @@ Planned phases (see the [roadmap](docs/plan/14_Roadmap_Open_Questions.md)):
 | Phase | Focus |
 |-------|-------|
 | 0 | Finalize definitions, ethics, and privacy principles |
-| 1 | Single-Organization MVP: onboarding, documents, pitch → vote → update, notifications |
-| 2 | Coalition MVP: discovery, reconciliation pitches, dual voting, coalition documents |
+| 1 | Single-Organization MVP: onboarding, documents, proposal → vote → update, notifications |
+| 2 | Coalition MVP: discovery, reconciliation proposals, dual voting, coalition documents |
 | 3 | Outer loop: the Member experience, scheduled Dispatches, calls to action |
 
 ## Documentation

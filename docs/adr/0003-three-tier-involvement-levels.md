@@ -6,7 +6,7 @@
 
 ## Context
 
-When people join a group, they choose an involvement level, but the levels and their permissions were never defined. They decide who can pitch changes and who can vote, which is the core of governance and of resistance to capture.
+When people join a group, they choose an involvement level, but the levels and their permissions were never defined. They decide who can propose changes and who can vote, which is the core of governance and of resistance to capture.
 
 We considered fixed tiers, levels each organization defines, and levels earned over time.
 
@@ -14,7 +14,7 @@ We considered fixed tiers, levels each organization defines, and levels earned o
 
 **Three fixed levels, the same in every group:**
 
-| Level | Follows and gets Dispatches | Votes | Pitches changes |
+| Level | Follows and gets Dispatches | Votes | Proposals changes |
 |---|---|---|---|
 | **Member** | ✓ | | |
 | **Collaborator** | ✓ | ✓ | |
@@ -22,7 +22,7 @@ We considered fixed tiers, levels each organization defines, and levels earned o
 
 **Build no more than this (no YAGNI violations), but don't close the door on per-group roles.** The eventual direction is per-group configuration similar to Discord roles, but easier to set up. To keep that path open cheaply:
 
-- Code checks **named capabilities** (`follow`, `vote`, `pitch`, …), never level names directly.
+- Code checks **named capabilities** (`follow`, `vote`, `propose`, …), never level names directly.
 - One place maps each level to its capabilities. Today that map is fixed and global.
 - Moving to per-group roles later means letting a group supply its own map. No permission check has to change.
 

@@ -19,10 +19,10 @@ These follow from ADR-0001, 0009, and 0017. The payment design ADR must satisfy 
   - A strong candidate: **blind-signed credits**, as in GNU Taler or Chaumian e-cash. A person buys Reconcile credits by card, so the processor sees only "bought $10 of Reconcile credits". The credits move inside the encrypted group as unlinkable tokens. The group redeems them, so the payer stays anonymous while the payee is known, as tax and compliance require.
   - A subscription is then an automatic monthly purchase plus an automatic transfer inside the group.
 - **Payees have to be identified; payers don't.** Cashing out fiat needs a verified payee:
-  - Options are a treasurer elected by Pitch, a fiscal sponsor, or the group's own legal entity.
+  - Options are a treasurer elected by Proposal, a fiscal sponsor, or the group's own legal entity.
   - That payee's identity is linked to the group, so each group must choose it knowingly, and the UI must say so plainly.
   - Batching withdrawals monthly also blurs timing.
-- **Splits are governed.** The default coalition share (proposed: 20%) and each group's spending of supporter funds are group rules, changed by Pitch (spec §4).
+- **Splits are governed.** The default coalition share (proposed: 20%) and each group's spending of supporter funds are group rules, changed by Proposal (spec §4).
 - **Nothing here is modal or guilt-driven.** The `DESIGN.md` gift-prompt rules apply.
 
 ## Open Questions
@@ -41,4 +41,4 @@ Phase 3, alongside Dispatches and calls to action. Phase 1 builds none of this. 
 
 ## Amendment (2026-11-07)
 
-Open question 1 (the rail) is resolved by [ADR-0034](0034-blind-credit-payment-rail.md). The payee is a group rule changed by Pitch ([ADR-0040](0040-group-opt-ins-are-governed.md)); the payee options themselves are still open.
+Open question 1 (the rail) is resolved by [ADR-0034](0034-blind-credit-payment-rail.md). The payee is a group rule changed by Proposal ([ADR-0040](0040-group-opt-ins-are-governed.md)); the payee options themselves are still open.

@@ -18,4 +18,4 @@ The threat model lists voting records as high-risk data, but without a trusted s
 
 - **The protocol needs three exit events:** leave, remove, and fork. Fork copies the canonical Document and history into a new group. Removal rules are in the security and moderation sheet.
 - **A seized device shows how every member of its groups voted.** Device protection is in the security and moderation sheet.
-- **Friction is deliberate:** the UI puts "pitch a change" and "reconcile" ahead of "fork", and a fork shows what would be lost.
+- **Friction is deliberate:** the UI puts "propose a change" and "reconcile" ahead of "fork", and a fork shows what would be lost.

@@ -10,7 +10,7 @@ A local-first tool can't stop a group from using it privately (ADR-0001). Reconc
 
 ## Decision
 
-- **Reconcile ships with a short founding covenant:** no calls for violence and no dehumanizing protected groups. It is the first Document of Reconcile-the-group, which its users amend through the normal Pitch → Vote loop, as an entrenched Atom (ADR-0015).
+- **Reconcile ships with a short founding covenant:** no calls for violence and no dehumanizing protected groups. It is the first Document of Reconcile-the-group, which its users amend through the normal Proposal → Vote loop, as an entrenched Atom (ADR-0015).
 - **Breaking the covenant costs reach, not existence.** An offending group loses discovery, coalition invitations, and broadcast. Nobody can read or delete its private data.
 - **The covenant is applied by stewards** that Reconcile-the-group elects (ADR-0016). They judge only content that was made public or reported to them. Their decisions are public, and a group that is denied reach can appeal by vote.
 

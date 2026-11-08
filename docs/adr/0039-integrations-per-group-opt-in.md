@@ -7,15 +7,15 @@
 
 ## Decision
 
-A group decides, by Pitch, how far its bot may **reach** (post into the home chat) and **see** (read from it). The default is the shallowest useful step. Each step up comes with a plain warning about what the chat platform's servers will then hold in plaintext.
+A group decides, by Proposal, how far its bot may **reach** (post into the home chat) and **see** (read from it). The default is the shallowest useful step. Each step up comes with a plain warning about what the chat platform's servers will then hold in plaintext.
 
 | Step | The bot may… | The chat platform then holds |
 |------|--------------|------------------------------|
 | 0. Off | nothing | nothing |
-| **1. Nudge (default)** | post content-free notices ("A new Pitch is open. Open Reconcile.") | that the group uses Reconcile |
+| **1. Nudge (default)** | post content-free notices ("A new Proposal is open. Open Reconcile.") | that the group uses Reconcile |
 | 2. Publish | also post the canonical text of Documents the group voted to publish | published text, which is public anyway |
-| 3. Listen | also read messages in channels the group names, for example to link a discussion to a Pitch | those channels (already on the platform) and that the bot reads them |
-| 4. In-platform | also run Pitches and open-ballot votes in the chat, **only for Documents the group marks non-sensitive** | those Pitches, ballots, and voter handles, in plaintext |
+| 3. Listen | also read messages in channels the group names, for example to link a discussion to a Proposal | those channels (already on the platform) and that the bot reads them |
+| 4. In-platform | also run Proposals and open-ballot votes in the chat, **only for Documents the group marks non-sensitive** | those Proposals, ballots, and voter handles, in plaintext |
 
 These never pass through a bot, at any step: rosters, vouches, sensitive Documents, Working Copies, and duress-hidden groups (ADR-0018).
 
