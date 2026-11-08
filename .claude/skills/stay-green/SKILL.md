@@ -44,7 +44,7 @@ pre-commit run --all-files
 
 When checks fail: read errors, fix issues, run again. Repeat until all green.
 
-Quality checks include: formatting (Black + isort), linting (Ruff), type checking (MyPy), complexity (<=10 per function), security (Bandit), tests with coverage (>=90%), file hygiene.
+Quality checks include: formatting and linting (Ruff), docstring coverage (interrogate), type checking (MyPy), complexity (<=10 per function), security (Bandit), tests with coverage (>=90%), file hygiene.
 
 ### Work is DONE when:
 1. All tests pass (Gate 1 complete)

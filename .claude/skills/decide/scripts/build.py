@@ -73,6 +73,7 @@ class SheetError(ValueError):
 def _check_text(
     obj: dict[str, Any], key: str, where: str, problems: list[str], *, required: bool
 ) -> None:
+    """Append a problem if obj[key] is missing (when required) or not a string."""
     value = obj.get(key)
     if value is None:
         if required:
@@ -85,6 +86,7 @@ def _check_text(
 def _check_matrix(
     rows: Any, row_key: str, option_ids: set[str], where: str, problems: list[str]
 ) -> None:
+    """Check a trade-off or cost matrix: labeled rows, one cell per option."""
     if rows is None:
         return
     if not isinstance(rows, list):
@@ -106,6 +108,7 @@ def _check_matrix(
 
 
 def _check_options(d: dict[str, Any], where: str, problems: list[str]) -> set[str]:
+    """Validate a decision's options and return their ids."""
     options = d.get("options")
     if not isinstance(options, list) or len(options) < 2:
         problems.append(f"{where}: 'options' needs at least two choices")
@@ -137,6 +140,7 @@ def _check_options(d: dict[str, Any], where: str, problems: list[str]) -> set[st
 def _check_risks(
     risks: Any, option_ids: set[str], where: str, problems: list[str]
 ) -> None:
+    """Check each risk has a severity, a mitigation, and only known option ids."""
     if risks is None:
         return
     if not isinstance(risks, list):
@@ -156,6 +160,7 @@ def _check_risks(
 
 
 def _check_examples(examples: Any, where: str, problems: list[str]) -> None:
+    """Check optional examples: each needs a name, and any URL must be https."""
     if examples is None:
         return
     if not isinstance(examples, list):
@@ -175,6 +180,7 @@ def _check_examples(examples: Any, where: str, problems: list[str]) -> None:
 
 
 def _check_decision(d: Any, i: int, seen: set[str], problems: list[str]) -> None:
+    """Validate one decision and record its id in seen to catch duplicates."""
     where = f"decisions[{i}]"
     if not isinstance(d, dict):
         problems.append(f"{where}: must be an object")
@@ -216,6 +222,7 @@ def _check_decision(d: Any, i: int, seen: set[str], problems: list[str]) -> None
 
 
 def _check_theme(theme: Any, problems: list[str]) -> None:
+    """Validate the DESIGN.md theme: plain colors, font stacks, lengths only."""
     if theme is None:
         return
     if not isinstance(theme, dict):
@@ -292,6 +299,7 @@ def theme_css(theme: dict[str, Any] | None) -> str:
         return ""
 
     def block(palette: dict[str, str], extra: str = "") -> str:
+        """Render one palette as CSS custom-property declarations."""
         decls = [f"--{token}: {value.strip()};" for token, value in palette.items()]
         return " ".join(decls) + extra
 

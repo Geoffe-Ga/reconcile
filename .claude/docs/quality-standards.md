@@ -10,7 +10,7 @@ All code must meet these standards before merging to main:
 
 ### Test Coverage
 - **Code Coverage**: 90% minimum (branch coverage)
-- **Docstring Coverage**: 95% minimum (pydocstyle / ruff D rules)
+- **Docstring Coverage**: 95% minimum (interrogate)
 - **Mutation Score**: 80% minimum (mutmut)
 - **Test Types**: Unit, Integration, and E2E coverage required
 
@@ -27,12 +27,10 @@ All code must meet these standards before merging to main:
 - **Max Lines per Function**: 50 lines
 
 ### Linting and Formatting
-- **Ruff**: ALL rules enabled (no exceptions unless documented)
-- **Black**: Line length 88 characters
-- **isort**: Import sorting per configuration
-- **Pylint**: Score of 9.0+ required
-- **Bandit**: Security scanning with zero exceptions
-- **Safety**: Dependency vulnerability checking
+- **Ruff**: the only linter and formatter (line length 88, import sorting via the `I` rules, the rule set in `pyproject.toml`)
+- **interrogate**: docstring coverage ≥95%
+- **Bandit**: security scanning with zero exceptions
+- **pip-audit**: vulnerabilities in the pinned requirement files
 
 ### Documentation Standards
 - **Google-style Docstrings**: All public APIs

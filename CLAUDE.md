@@ -92,10 +92,12 @@ When work depends on one of these, flag it instead of silently picking an answer
 |--------|-----------|------|
 | Code coverage | ≥90% | pytest-cov |
 | Branch coverage | ≥85% | pytest-cov |
-| Docstring coverage | ≥95% | ruff D rules |
-| Mutation score | ≥80% | mutmut |
+| Docstring coverage | ≥95% | interrogate |
+| Mutation score | ≥80% | mutmut (Python), Stryker (client) |
 | Cyclomatic complexity | ≤10 per function | radon / xenon |
-| Security vulnerabilities | 0 critical/high | bandit, pip-audit |
+| Security vulnerabilities | 0 critical/high | bandit, pip-audit, npm audit |
+
+**One set of rules.** CI runs the same scripts (`./scripts/check-all.sh --python` / `--client`) plus `pre-commit run --all-files`, with the exact tool versions pinned in `requirements-dev.txt`, `client/package-lock.json`, and `client/.nvmrc`. Thresholds and scope live in `pyproject.toml` and the client config, never in `ci.yml`. Change a rule there, once. Run checks with `.venv` active (`python3 -m venv .venv && pip install -r requirements-dev.txt -e .`).
 
 ---
 

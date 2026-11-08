@@ -15,6 +15,7 @@ BASH = shutil.which("bash") or "bash"
 
 
 def _git(repo: Path, *args: str) -> None:
+    """Run git in repo with a throwaway identity."""
     subprocess.run(  # nosec B603 - fixed argv, no shell
         [GIT, "-c", "user.name=t", "-c", "user.email=t@t", *args],
         cwd=repo,
@@ -39,6 +40,7 @@ def repo(tmp_path: Path) -> Path:
 
 
 def _areas(repo: Path, base_ref: str | None) -> dict[str, str]:
+    """Run the router in repo and parse its key=value output."""
     env = {k: v for k, v in os.environ.items() if k != "BASE_REF"}
     if base_ref is not None:
         env["BASE_REF"] = base_ref
@@ -60,5 +62,5 @@ def test_docs_only_change_needs_no_code_gate(repo: Path) -> None:
 
 def test_unresolvable_base_ref_checks_everything(repo: Path) -> None:
     """A force-push hands CI a 'before' sha that no longer exists: run all."""
-    missing = "0686b67eb87df48db6c506dee987ea39583bba05"
+    missing = "deadbeef" * 5  # a well-formed sha that exists nowhere
     assert _areas(repo, missing) == {"python": "true", "client": "true"}

@@ -139,11 +139,11 @@ Before creating/updating a PR:
    ./scripts/check-all.sh
    ```
    This runs (in order):
-   - Formatting checks (ruff format, black)
-   - Linting (ruff, pylint, mypy)
+   - Linting (ruff, interrogate) and formatting (ruff format)
+   - Type checking (mypy)
    - Security checks (bandit, pip-audit)
    - Tests with coverage
-   - Docstring coverage (pydocstyle / ruff D rules)
+   - Complexity (radon, xenon) and the package build
    - Code quality metrics
 
 4. **Commit with Conventional Commits**

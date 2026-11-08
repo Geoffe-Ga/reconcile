@@ -9,6 +9,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 VERBOSE=false
 AREAS_FLAG=""
+FORCE_AREAS=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -21,6 +22,14 @@ while [[ $# -gt 0 ]]; do
             AREAS_FLAG="--all"
             shift
             ;;
+        --python)
+            FORCE_AREAS="python=true client=false"
+            shift
+            ;;
+        --client)
+            FORCE_AREAS="python=false client=true"
+            shift
+            ;;
         --help)
             cat << EOF
 Usage: $(basename "$0") [OPTIONS]
@@ -31,16 +40,22 @@ Python config changed; client checks when client/ changed; both when shared
 tooling or protocol/ changed. Docs-only changes run nothing.
 
 Python checks:
-  1. Linting (Ruff)
-  2. Formatting (Black + isort)
+  1. Linting (Ruff + interrogate docstring coverage)
+  2. Formatting (Ruff)
   3. Type checking (MyPy)
-  4. Security checks (Bandit + Safety)
-  5. Complexity analysis (Radon)
+  4. Security checks (Bandit + pip-audit)
+  5. Complexity analysis (Radon + Xenon)
   6. Unit tests
-  7. Coverage report
+  7. Coverage (lines >= 90%, branches >= 85%)
+  8. Build (sdist + wheel, twine check)
+
+CI runs this same script (--python / --client), plus pre-commit, so the
+rules can't differ between a laptop and CI.
 
 OPTIONS:
     --all       Check every area regardless of what changed
+    --python    Check only the Python area (CI's Python job uses this)
+    --client    Check only the client area (CI's client job uses this)
     --verbose   Show detailed output
     --help      Display this help message
 
@@ -94,8 +109,8 @@ run_check() {
     echo ""
 }
 
-AREAS="$("$SCRIPT_DIR/changed-areas.sh" $AREAS_FLAG)"
-echo "Changed areas:" $AREAS
+AREAS="${FORCE_AREAS:-$("$SCRIPT_DIR/changed-areas.sh" $AREAS_FLAG)}"
+echo "Changed areas: ${AREAS//$'\n'/ }"
 echo ""
 
 if [[ "$AREAS" == *"python=true"* ]]; then
@@ -106,6 +121,7 @@ if [[ "$AREAS" == *"python=true"* ]]; then
     run_check "Complexity analysis" "complexity.sh"
     run_check "Unit tests" "test.sh" --unit
     run_check "Coverage report" "coverage.sh"
+    run_check "Build" "build.sh"
 fi
 
 if [[ "$AREAS" == *"client=true"* ]]; then

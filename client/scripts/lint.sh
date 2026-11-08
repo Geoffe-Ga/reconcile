@@ -8,7 +8,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 FIX=false
-CHECK=false
 VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
@@ -18,7 +17,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --check)
-            CHECK=true
+            # Checking is the default; the flag is accepted for symmetry with --fix.
+            FIX=false
             shift
             ;;
         --verbose)

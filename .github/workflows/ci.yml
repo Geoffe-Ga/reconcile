@@ -1,10 +1,15 @@
 name: CI
 
+# Every job here is a thin wrapper around the same scripts developers run
+# locally, with the same pinned tools (requirements-dev.txt, client lockfile,
+# client/.nvmrc). Rules live in pyproject.toml, client config, and scripts/,
+# never in this file, so CI and a laptop can't disagree.
+
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -19,12 +24,11 @@ jobs:
       python: ${{ steps.areas.outputs.python }}
       client: ${{ steps.areas.outputs.client }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Classify changed paths
+      - name: Classify changed paths (scripts/changed-areas.sh)
         id: areas
         env:
           # PRs compare against their base; pushes compare against the previous commit.
@@ -37,37 +41,8 @@ jobs:
             ./scripts/changed-areas.sh | tee -a "$GITHUB_OUTPUT"
           fi
 
-  client:
-    name: Client Quality Checks (TypeScript)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.client == 'true'
-    defaults:
-      run:
-        working-directory: client
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-          cache-dependency-path: client/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run the client quality gate
-        run: ./scripts/check-all.sh
-
-      - name: Run mutation testing (main branch only)
-        if: github.ref == 'refs/heads/main'
-        run: npx stryker run
-
-  quality:
-    name: Quality Checks (Python ${{ matrix.python-version }})
+  python:
+    name: Python gate (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.python == 'true'
@@ -76,228 +51,114 @@ jobs:
       matrix:
         python-version: ['3.11', '3.12', '3.13']
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          cache: pip
+          cache-dependency-path: requirements*.txt
 
-      - name: Install dependencies
+      - name: Install pinned tools
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-xdist ruff pylint mypy bandit pip-audit interrogate
+          pip install -r requirements-dev.txt
+          pip install -e .
 
-      - name: Run Ruff linter
-        run: |
-          ruff check .
+      - name: ./scripts/check-all.sh --python
+        run: ./scripts/check-all.sh --python
 
-      - name: Run Ruff formatter check
-        run: |
-          ruff format --check .
-
-      - name: Run Pylint
-        run: |
-          # Advisory only (--exit-zero): this step reports but never fails CI.
-          pylint reconcile tests --rcfile=.pylintrc --exit-zero
-
-      - name: Run MyPy type checking
-        run: |
-          mypy . --install-types --non-interactive --ignore-missing-imports
-
-      - name: Check docstring coverage
-        run: |
-          interrogate -vv --fail-under=95 .
-
-      - name: Run Bandit security scan
-        run: |
-          bandit -r . -ll -f json -o bandit-report.json || true
-          bandit -r . -ll
-
-      - name: Run pip-audit vulnerability scan
-        run: |
-          pip-audit --desc --format json --output pip-audit-report.json || true
-          pip-audit --desc
-
-      - name: Run tests with coverage
-        run: |
-          pytest \
-            --cov=. \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-branch \
-            --cov-fail-under=90 \
-            --junitxml=pytest-report.xml \
-            -n auto \
-            -v
-
-      - name: Verify branch coverage threshold
-        run: |
-          coverage report --show-missing --skip-covered --fail-under=85
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: python-${{ matrix.python-version }}
-          name: coverage-python-${{ matrix.python-version }}
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Upload coverage reports as artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-reports-${{ matrix.python-version }}
-          path: |
-            coverage.xml
-            htmlcov/
-            pytest-report.xml
-          retention-days: 30
-
-      - name: Upload security scan reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: security-reports-${{ matrix.python-version }}
-          path: |
-            bandit-report.json
-            pip-audit-report.json
-          retention-days: 30
-
-  mutation-testing:
-    name: Mutation Testing
+  client:
+    name: Client gate
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    needs: quality
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
+      - name: Install locked dependencies
+        working-directory: client
+        run: npm ci
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install mutmut pytest
+      - name: ./scripts/check-all.sh --client
+        run: ./scripts/check-all.sh --client
 
-      - name: Run mutation testing
-        run: |
-          mutmut run --paths-to-mutate=. --tests-dir=tests || true
-          mutmut results
-          mutmut junitxml > mutmut-report.xml
-
-      - name: Check mutation score threshold
-        run: |
-          SCORE=$(mutmut results | grep -oP 'survived:\s+\K\d+' || echo "0")
-          TOTAL=$(mutmut results | grep -oP 'total:\s+\K\d+' || echo "1")
-          MUTATION_SCORE=$(echo "scale=2; 100 - ($SCORE * 100 / $TOTAL)" | bc)
-          echo "Mutation score: $MUTATION_SCORE%"
-          if (( $(echo "$MUTATION_SCORE < 80" | bc -l) )); then
-            echo "Mutation score below 80% threshold"
-            exit 1
-          fi
-
-      - name: Upload mutation test reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mutation-reports
-          path: |
-            mutmut-report.xml
-            .mutmut-cache
-          retention-days: 30
-
-  complexity-analysis:
-    name: Code Complexity Analysis
+  pre-commit:
+    name: Pre-commit hooks
     runs-on: ubuntu-latest
-    needs: quality
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements*.txt
 
-      - name: Install complexity tools
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install pinned tools
         run: |
           python -m pip install --upgrade pip
-          pip install radon xenon
+          pip install -r requirements-dev.txt
+          pip install -e .
+          npm ci --prefix client
 
-      - name: Analyze cyclomatic complexity
-        run: |
-          radon cc . -a -nb --total-average -e 'client/*'
-
-      - name: Analyze maintainability index
-        run: |
-          radon mi . -nb -e 'client/*'
-
-      - name: Check complexity thresholds
-        run: |
-          xenon --max-absolute B --max-modules A --max-average A --exclude 'client/*' .
-
-      - name: Generate complexity report
-        if: always()
-        run: |
-          radon cc . -a --total-average --json > complexity-report.json
-          radon mi . --json > maintainability-report.json
-
-      - name: Upload complexity reports
-        uses: actions/upload-artifact@v4
-        if: always()
+      - uses: actions/cache@v4
         with:
-          name: complexity-reports
-          path: |
-            complexity-report.json
-            maintainability-report.json
-          retention-days: 30
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-  build:
-    name: Build Distribution
+      - name: pre-commit run --all-files
+        env:
+          # The branch guard protects local commits; CI checks out main on push.
+          SKIP: no-commit-to-branch
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  mutation:
+    name: Mutation testing (main only)
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [changes, python, client]
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.python == 'true'
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements*.txt
 
-      - name: Install build tools
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs.client == 'true'
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Python (./scripts/mutation.sh)
+        if: needs.changes.outputs.python == 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install build twine
+          pip install -r requirements-dev.txt
+          pip install -e .
+          ./scripts/mutation.sh
 
-      - name: Build distribution packages
+      - name: Client (client/scripts/mutation.sh)
+        if: needs.changes.outputs.client == 'true'
         run: |
-          python -m build
-
-      - name: Check distribution packages
-        run: |
-          twine check dist/*
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-packages
-          path: dist/
-          retention-days: 30
+          npm ci --prefix client
+          cd client && ./scripts/mutation.sh
