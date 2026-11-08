@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0055 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0058 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -124,7 +124,7 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 | `invite` | invite id, invite secret hash, `max_uses` (1–50, default 10), expiry (48 hours) ([ADR-0053](../adr/0053-multi-use-invites.md)) | `invite` (voting levels: Collaborator and Co-Creator; Members can't invite) |
 | `join` | invite id, new member key, display name | the holder of the invite |
 | `vouch` | the vouched-for member's key | `vouch` (voting members) |
-| `level-change` | member, new level | the member themselves. Moving to Collaborator or Co-Creator requires voting rights from admission ([ADR-0014](../adr/0014-invite-and-vouch-admission.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md)) |
+| `level-change` | member, new level, and (when moving to a voting level) a signed recovery-complete self-attestation ([ADR-0052](../adr/0052-newcomer-onboarding.md)) | the member themselves. Moving to Collaborator or Co-Creator requires voting rights from admission ([ADR-0014](../adr/0014-invite-and-vouch-admission.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md)) |
 | `proposal` | `target` (`{kind: atom \| new-atom \| removal \| steward \| rules, …}`), title, justification, version hashes, window, Atom class | `propose` (Co-Creator) |
 | `version` | proposal id, content hash of a competing version ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)) | `propose` |
 | `vote` | proposal id, `{version hash: score 0–4}`, `{version hash: reason}` (required for every 0) | `vote`, plus being eligible at the snapshot |
@@ -224,7 +224,7 @@ Per [ADR-0007](../adr/0007-thin-python-relay.md) and [ADR-0019](../adr/0019-seal
 **Rules:**
 
 - No accounts and no request logging. IP addresses are dropped before any application code sees them, and a test verifies this.
-- Blobs are kept for 30 days by default.
+- Blobs are kept for 30 days; backups are deleted 180 days after their last refresh ([ADR-0057](../adr/0057-environments-updates-retention.md)).
 - Wake-up pushes are batched with 0–60 seconds of random jitter.
 - **Framework:** FastAPI on Uvicorn with access logs off, blobs in SQLite (WAL) with an expiry index ([ADR-0028](../adr/0028-relay-fastapi-sqlite.md)). Hosted on a DigitalOcean VM where we terminate TLS ([ADR-0041](../adr/0041-digitalocean-relay-hosting.md)).
 

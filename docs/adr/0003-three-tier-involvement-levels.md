@@ -42,3 +42,7 @@ Don't build a role editor, per-group configuration, or custom levels until a rea
 ## Amendment (2026-11-07): Names Corrected, Promotion Settled
 
 Superseded in part by [ADR-0021](0021-level-names-and-self-selection.md). The levels are named **Member** (follows), **Collaborator** (votes), and **Co-Creator** (votes and creates). The capability model above is unchanged. "Changing levels" is resolved: it's self-selected once voting rights are earned.
+
+## Amendment (2026-11-08)
+
+Mass joins are answered: 2 vouches and a 14-day wait before voting ([ADR-0014](0014-invite-and-vouch-admission.md)), plus a steward alert when one invite link admits 5 or more people within an hour ([ADR-0053](0053-multi-use-invites.md)).

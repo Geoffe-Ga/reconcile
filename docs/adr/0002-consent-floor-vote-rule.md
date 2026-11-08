@@ -36,3 +36,7 @@ Mission statements are meant to represent the whole group. A consent floor keeps
 ## Update (2026-11-07)
 
 Confirmed with the Phase 1 spec: quorum is at least 3 ballots and 30% of eligible voters; a score of 0 must carry a reason; when several competing versions pass, the winner is the highest average, then fewest zeros, then the earliest submitted. See `docs/spec/phase-1-spec.md` §4.
+
+## Amendment (2026-11-08)
+
+Both open questions are answered. Quorum is at least 3 ballots and 30% of eligible voters, and a missed quorum lapses ([ADR-0047](0047-ballot-cap-quorum-reproposals.md)). Every 0 requires a reason (spec §4, confirmed 2026-11-07).
