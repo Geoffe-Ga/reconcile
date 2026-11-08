@@ -188,4 +188,4 @@ Plain, warm, and direct. Use "your group", not "the community". Write in the act
 - Don't add engagement metrics: no likes, streaks, view counts, or leaderboards.
 - Don't make safety features loud, or suggest the app is for illegal activity.
 - Don't load fonts, icons, or images from third-party hosts in the app.
-- Don't show a fork or split action on vote results (ADR-0015).
+- Don't show a split action on vote results (ADR-0015).

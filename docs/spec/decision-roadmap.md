@@ -2,7 +2,7 @@
 
 - **Status:** In progress. Spec decomposition and issue filing wait until every sheet below is answered and recorded.
 - **Started:** 2026-11-07
-- **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0047), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
+- **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0052), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
 
 Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This roadmap covers what's still open.
 
@@ -10,8 +10,8 @@ Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This r
 |---|-------|--------|--------|
 | 1 | Stack details | every epic | **Done** 2026-11-08: ADRs 0028–0031, 0041, 0042 |
 | 2 | Identity, recovery, and devices | Epic 5, Epic 3 | **Done** 2026-11-08: ADRs 0043–0046 |
-| 3 | Governance edge cases | Epics 1 and 4 (the protocol) | Next |
-| 4 | Onboarding, notifications, and UX scope | Epics 3 and 6 | Waiting |
+| 3 | Governance edge cases | Epics 1 and 4 (the protocol) | **Done** 2026-11-08: ADRs 0047–0051 |
+| 4 | Onboarding, notifications, and UX scope | Epics 3 and 6 | Next |
 | 5 | Pilot, operations, and release | Epic 2 deploy, Epic 6 acceptance | Waiting |
 | 6 | Development process | how the issues are written and worked | Waiting |
 | 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | Waiting |
@@ -45,7 +45,7 @@ These become protocol rules and test vectors, so they must be fixed before Epic 
 - **Missed quorum:** whether the vote lapses, re-runs once, or extends.
 - **Stewards:** how many per group, term length, how they're elected, and the bootstrap before a group has 3 voters.
 - **Removing a member:** who can propose it, the vote rule, and what the removed member keeps.
-- **Fork petitions:** initial numbers for the 20% petition and its triggers (ADR-0015), so the protocol has defaults to tune later.
+- **Split petitions:** initial numbers for the 20% petition and its triggers (ADR-0015), so the protocol has defaults to tune later.
 - **Ballot expiry tuning:** the range a group may set (ADR-0017 defaults to 30 days).
 - **Dissolving a group:** the vote, and what happens to its Documents and logs.
 - **Changing founding rules:** which rules are entrenched at genesis.
@@ -85,7 +85,7 @@ Not needed for Phase 1, but answered now so nothing is left open.
 - **Fiscal sponsor:** which one, against the criteria in ADR-0033.
 - **Eternal core wording:** the exact sentence for Reconcile-the-group (ADR-0035).
 - **Group payee:** an elected treasurer, the fiscal sponsor, or the group's own entity (ADR-0027).
-- **Money edge cases:** splits when several coalitions promote one piece, and a group balance on fork or dissolution (ADR-0027).
+- **Money edge cases:** splits when several coalitions promote one piece, and a group balance on split or dissolution (ADR-0027).
 - **Reach-cost figures:** the numbers behind the gift prompt (ADR-0025).
 
 ## Housekeeping (No Sheet Needed)

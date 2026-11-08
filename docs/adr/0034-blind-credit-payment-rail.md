@@ -19,4 +19,4 @@ It's the only option that meets ADR-0027's binding rule: the payment rail must n
 
 - Before any peer-money code: legal counsel on money transmission, plus a licensed partner to run the exchange (the mint). GNU Taler exchanges are operated by licensed entities.
 - A subscription becomes a monthly credit purchase plus an automatic transfer inside the group.
-- Still open (ADR-0027): who a group's payee is, splits when several coalitions promote one piece, and a balance's fate on fork or dissolution.
+- Still open (ADR-0027): who a group's payee is, splits when several coalitions promote one piece, and a balance's fate on split or dissolution.
