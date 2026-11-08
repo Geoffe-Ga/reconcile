@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0063 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0071 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -23,7 +23,7 @@ Reconcile is friendly to anarchists, "the OS for anarcho-syndicalism" ([ADR-0018
 
 ### Success criteria
 
-1. **A full loop on real devices.** A pilot group from the user's own circle (decided 2026-11-07 on the `2026-11-07-reconcile-product-stack` sheet), at least 5 testers on at least 3 devices (including iOS Safari as an installed PWA, and desktop Chrome) creates an Organization, invites members, proposals an Atom change, votes, and sees the canonical Document update on every device, including one that was offline during the vote.
+1. **A full loop on real devices.** A pilot group from the user's own circle (decided 2026-11-07 on the `2026-11-07-reconcile-product-stack` sheet), at least 5 testers on at least 3 devices (including iOS Safari as an installed PWA, and desktop Chrome) creates an Organization, invites members, proposes an Atom change, votes, and sees the canonical Document update on every device, including one that was offline during the vote.
 2. **The relay learns nothing.** An automated test captures everything the relay stores and logs during a full loop and asserts that it contains no plaintext, no long-lived identity keys, and no sender identities.
 3. **Tallies are deterministic.** The same set of governance events gives the same canonical Document on every device, whatever order they arrive in (property tests).
 4. **Repo quality gates pass.** Python: ≥90% coverage, complexity ≤10 (the gates in CLAUDE.md, [ADR-0061](../adr/0061-quality-gates.md)). TypeScript: the equivalents in §8.
@@ -38,7 +38,7 @@ These are listed so no one builds them early:
 - The Reconcile-hosted coalition room ([ADR-0011](../adr/0011-debate-venues.md), Phase 2)
 - Platform integrations such as Discord or WhatsApp bots ([ADR-0011](../adr/0011-debate-venues.md), [ADR-0039](../adr/0039-integrations-per-group-opt-in.md); Phase 3)
 - Scheduled or recurring Dispatches and the Member experience (Phase 3)
-- The split petition flow ([ADR-0015](../adr/0015-anti-capture.md)). The log reserves the event type, but there's no UI
+- The part-ways petition flow ([ADR-0015](../adr/0015-anti-capture.md), [ADR-0068](../adr/0068-part-ways.md)). The log reserves the event type, but there's no UI
 - Tiered visibility ([ADR-0017](../adr/0017-need-to-see-and-expiry.md), after the MVP)
 - Duress login ([ADR-0018](../adr/0018-device-protection-and-duress.md)). App lock and panic wipe are in scope. Duress waits until hidden storage passes review
 - Anonymous or secret ballots ([ADR-0010](../adr/0010-open-ballots-with-exit.md))
@@ -120,14 +120,14 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 
 | Type | Body | Who may author it (capability, [ADR-0003](../adr/0003-three-tier-involvement-levels.md)) |
 |---|---|---|
-| `genesis` | group name, founding rules (defaults below), founder key | the founder |
+| `genesis` | group name, template (`circle` or `fellowship`; `chapter` is reserved until Phase 2, [ADR-0067](../adr/0067-genesis-templates.md)), founding rules (defaults below), founder key | the founder |
 | `invite` | invite id, invite secret hash, `max_uses` (1–50, default 10), expiry (48 hours) ([ADR-0053](../adr/0053-multi-use-invites.md)) | `invite` (voting levels: Collaborator and Co-Creator; Members can't invite) |
-| `join` | invite id, new member key, display name | the holder of the invite |
+| `join` | invite id, new member key, display name, and optionally the passed `readmit` Proposal id ([ADR-0066](../adr/0066-readmission.md)) | the holder of the invite |
 | `vouch` | the vouched-for member's key | `vouch` (voting members) |
 | `level-change` | member, new level, and (when moving to a voting level) a signed recovery-complete self-attestation ([ADR-0052](../adr/0052-newcomer-onboarding.md)) | the member themselves. Moving to Collaborator or Co-Creator requires voting rights from admission ([ADR-0014](../adr/0014-invite-and-vouch-admission.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md)) |
-| `proposal` | `target` (`{kind: atom \| new-atom \| removal \| steward \| rules, …}`), title, justification, version hashes, window, Atom class | `propose` (Co-Creator) |
+| `proposal` | `target` (`{kind: atom \| new-atom \| removal \| readmit \| steward \| rules, …}`), title, justification, version hashes, window, Atom class | `propose` (Co-Creator) |
 | `version` | proposal id, content hash of a competing version ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)) | `propose` |
-| `vote` | proposal id, `{version hash: score 0–4}`, `{version hash: reason}` (required for every 0) | `vote`, plus being eligible at the snapshot |
+| `vote` | proposal id, `{version hash: score 0–4 or "aside"}`, `{version hash: note}` (optional, at most 280 characters; required for every 0) ([ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md)) | `vote`, plus being eligible at the snapshot |
 | `tally` | proposal id, winning version hash or `none`, totals, ballot commitment | anyone; validators recompute it, and only a correct tally is valid |
 | `suspend` / `unsuspend` | member, reason, expiry ≤ 7 days | `steward` |
 | `remove` | member, the passed proposal id | follows a passed removal Proposal |
@@ -139,11 +139,11 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 | `key-rotate` | new group key epoch, wrapped keys per member | any Co-Creator, required after `remove` |
 | `rules-change` | changed rule fields | follows a passed Proposal at the bar for that rule's class |
 | `checkpoint` | totals and ballot commitments for expired proposals, plus the hash of the log prefix it summarizes | any voting member's device, produced when ballots expire ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)) |
-| `split-petition` | **reserved**, rejected in Phase 1 ([ADR-0050](../adr/0050-splitting.md)) | — |
+| `part-ways-petition` | **reserved**, rejected in Phase 1 ([ADR-0050](../adr/0050-splitting.md), [ADR-0068](../adr/0068-part-ways.md)) | — |
 
 ### Default founding rules
 
-All of these can be changed through `rules-change`.
+These are the **Fellowship** template's defaults. The **Circle** template (under 10 voting members) uses 3- and 7-day windows, 1 steward seat with no term, and invites for 5 people by default, and becomes a Fellowship automatically at 10 voting members ([ADR-0067](../adr/0067-genesis-templates.md)). All of these can be changed through `rules-change`.
 
 | Rule | Default | Source |
 |---|---|---|
@@ -155,15 +155,17 @@ All of these can be changed through `rules-change`.
 | Eligibility | voting members as of the `proposal` event's position in the order | ADR-0015 |
 | Default vote window | 7 days (14 for entrenched) | confirmed 2026-11-07 |
 | Quorum | at least 3 ballots and 30% of eligible voters | confirmed 2026-11-07 |
-| Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty reason for that version | confirmed 2026-11-07 |
+| Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty note for that version | confirmed 2026-11-07 |
+| Stand aside and notes | any version can be marked `aside` (counts toward quorum only); any entry can carry a note of at most 280 characters; notes expire with the ballot | [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md) |
 | Ballot visibility | open until the tally plus 30 days, then devices keep only totals and the commitment | [ADR-0017](../adr/0017-need-to-see-and-expiry.md) |
 | Suspension maximum | 7 days, extended until an open removal vote against the member ends | [ADR-0016](../adr/0016-suspend-then-vote.md), [ADR-0059](../adr/0059-suspension-during-removal.md) |
 | Versions per ballot | at most 3 (fixed) | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md) |
 | Missed quorum | the vote lapses with outcome `none` | ADR-0047 |
-| Re-proposing the same content | 14-day cooldown after a lapse or failure; at most 3 times in 180 days | ADR-0047 |
+| Re-proposing the same content | 14-day cooldown after a failure; at most 3 failures in 180 days; lapses don't count, and a lapsed vote can be re-opened with twice the window (up to 90 days) | ADR-0047, [ADR-0069](../adr/0069-lapses-celebration-relational-pilot.md) |
 | Stewards | 2 seats, staggered 6-month terms (1 seat under 6 voting members); founder holds a seat until the election that opens at 3 voting members; recall by ordinary Proposal | [ADR-0049](../adr/0049-stewards-and-removal.md) |
 | Removal | entrenched bar; the target isn't eligible but may post one `removal-response` | ADR-0049 |
-| Split petition (Phase 2) | 20% of voting members within 14 days of a trigger; signatures sealed until met | [ADR-0050](../adr/0050-splitting.md) |
+| Readmission | ordinary bar by a `readmit` Proposal; the person then joins as a newcomer with fresh vouches | [ADR-0066](../adr/0066-readmission.md) |
+| Part-ways petition (Phase 2) | 20% of voting members within 14 days of a trigger; signatures sealed until met | [ADR-0050](../adr/0050-splitting.md), [ADR-0068](../adr/0068-part-ways.md) |
 | Dissolution | entrenched bar; read-only archives by default, optional wipe | [ADR-0051](../adr/0051-dissolution-and-rule-classes.md) |
 | Ballot expiry range | 7–90 days (default 30) | ADR-0051 |
 | Rule classes | entrenched: pass rules, quorum, eligibility, removal, stewards and suspension, dissolution, entrenchment; ordinary: everything else | ADR-0051 |
@@ -174,10 +176,11 @@ All of these can be changed through `rules-change`.
 
 The tally is a pure function with signature `tally(proposal, eligible_voters, votes) → outcome`:
 
-1. Take each eligible voter's most recent valid `vote` made before the window closed.
-2. For each version, compute the average and the share of zeros, and test them against the Atom class's pass rule. If quorum isn't met, the outcome is `none` and the vote lapses (ADR-0047).
-3. If no version passes, the outcome is `none`. If one passes, it wins. If several pass, apply the **tie rule:** highest average, then the lowest share of zeros, then the earliest `version` event (confirmed 2026-11-07).
-4. The ballot commitment is a Merkle root over the sorted `(voter, scores)` pairs.
+1. Take each eligible voter's most recent valid `vote` made before the window closed. Every such ballot counts toward quorum, including stand-asides.
+2. If quorum isn't met, the outcome is `none` and the vote lapses (ADR-0047). A lapse doesn't count toward the re-proposal limits (ADR-0069).
+3. For each version, compute the average and the share of zeros over the ballots that **scored** it (stand-asides excluded, [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md)), and test them against the Atom class's pass rule. A version nobody scored doesn't pass.
+4. If no version passes, the outcome is `none`. If one passes, it wins. If several pass, apply the **tie rule:** highest average, then the lowest share of zeros, then the earliest `version` event (confirmed 2026-11-07).
+5. The ballot commitment is a Merkle root over the sorted `(voter, scores)` pairs, stand-asides included. Notes aren't part of the commitment, so they can expire.
 
 Only a valid `tally` with a winner changes the canonical Document. The tally must be implemented in **both** Python (reference) and TypeScript, and must agree on every vector in `protocol/vectors/tally/`.
 
@@ -250,20 +253,23 @@ These follow `docs/plan/09` with the ADR changes applied:
 
 1. **Invite preview and welcome:** the preview card (group name, mission excerpt, inviter's pseudonym), the iOS install guide (ADR-0029), passkey creation, name, then recovery: the inviter is the first contact and outside contacts are invited by link; the threshold must be met within the 14-day wait, before voting ([ADR-0052](../adr/0052-newcomer-onboarding.md)). The older-device notice appears once here (ADR-0042).
 2. **Personal page:** a pseudonymous display name and an optional personal mission statement. It's local only and shared per group by choice.
-3. **Create Organization:** name, founding rules (defaults shown, advanced settings collapsed), and the first Document.
+3. **Create Organization:** name, a template (Circle or Fellowship, described in plain words, [ADR-0067](../adr/0067-genesis-templates.md)), founding rules (the template's defaults shown, advanced settings collapsed), and the first Document.
 4. **Invite:** generate a multi-use invite link or QR code (default up to 10 people, 48 hours), see its uses, and revoke it. The UI suggests a video call or meeting as a "vibe check" before vouching ([ADR-0014](../adr/0014-invite-and-vouch-admission.md)).
 5. **Group home:**
-   - Documents, open Proposals, and members. followers (Members) don't see the roster ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
+   - Documents, open Proposals, and members. Followers (Members) don't see the roster ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
+   - Open Proposals sit under two tabs: **Quiet** (the default: short of quorum and closing soon, then fewest ballots, then most concerns) and **Rising** (early enthusiasm). "Newest" and "closing soon" are one tap away ([ADR-0064](../adr/0064-feed-tabs-quiet-and-rising.md)).
    - A linked-chat field, which can hold any URL ([ADR-0011](../adr/0011-debate-venues.md)).
 6. **Document view:** Atoms with class badges (entrenched or eternal) and history.
 7. **Working copy editor:** CRDT editing, with "Return as Proposal" and "Add as competing version" actions.
 8. **Proposal and ballot:**
    - Title, justification, and the versions side by side.
-   - A 0–4 score per version, with labels from `docs/plan/07`.
+   - A 0–4 score or **stand aside** per version, with labels from `docs/plan/07`, and an optional short note on any of them. A 0 requires a note; a 1 asks "What would make this a 3 for you?" ([ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md)).
    - A countdown and the linked-chat button.
-   - **No split action anywhere** ([ADR-0015](../adr/0015-anti-capture.md)).
-9. **Result:** the outcome, the totals, and individual ballots while the 30-day window lasts.
-10. **People:** vouch, change your level, and leave. Stewards also get suspend.
+   - **No part-ways action anywhere** ([ADR-0015](../adr/0015-anti-capture.md)).
+9. **Result:** the outcome, the totals (stand-asides shown separately), and individual ballots with notes while the 30-day window lasts ([ADR-0069](../adr/0069-lapses-celebration-relational-pilot.md)):
+   - a **pass** shows the new canonical text full-width with thanks to its authors, with no counts, streaks, or confetti;
+   - a **lapse** says "Not enough people weighed in. This isn't a no." and offers a one-tap re-open.
+10. **People:** vouch, change your level, and leave. Stewards also get suspend. A removed member can be proposed for readmission ([ADR-0066](../adr/0066-readmission.md)).
 11. **Settings:**
     - Security: app lock and its timeout, and panic wipe, explained calmly. Duress login is absent in Phase 1.
     - Push opt-in, digest time, and relay choice.
@@ -314,7 +320,7 @@ All three spikes were answered by desk research on 2026-11-07 and decided on the
 
 ## 10. Open Questions
 
-**None open.** Every decision is recorded in ADRs 0001–0063. [`decision-roadmap.md`](decision-roadmap.md) tracks the seven decision sheets, all complete as of 2026-11-08, and the items deliberately deferred with a trigger (the eternal-core wording, the fiscal sponsor, the outside security review, and branch protection). None of them blocks Phase 1.
+**None open.** Every decision is recorded in ADRs 0001–0071. [`decision-roadmap.md`](decision-roadmap.md) tracks the seven decision sheets and the four-lenses review, all complete as of 2026-11-08, and the items deliberately deferred with a trigger (the eternal-core wording, the fiscal sponsor, the outside security review, and branch protection). None of them blocks Phase 1.
 
 ---
 

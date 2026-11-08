@@ -27,7 +27,7 @@ The product source of truth is **[`docs/plan/`](docs/plan/)**. **Level names cha
 | **Working Copy** | A checked-out draft that autosaves and has a shareable URL. Returning it may surface **Conflicts** |
 | **Vote** | Governance on a Proposal. Voters score it 0–4 within a time window. It passes on a **consent floor**: average ≥ 2.0 and fewer than 10% scoring 0 ([ADR-0002](docs/adr/0002-consent-floor-vote-rule.md)). Competing versions of an Atom all go on the ballot ([ADR-0004](docs/adr/0004-competing-versions-go-to-ballot.md)) |
 | **Dispatch** | A notification a Co-Creator (or a Proposal) sends to followers. Formerly the working name "Push" |
-| **Split** | A group dividing into two, keeping history. Possible only by petition after a trigger, never from a vote result ([ADR-0050](docs/adr/0050-splitting.md)). Never call it a "fork"; that word means forking code |
+| **Part ways** | A group dividing into two, keeping history. Possible only by petition after a trigger, never from a vote result ([ADR-0050](docs/adr/0050-splitting.md), [ADR-0068](docs/adr/0068-part-ways.md)). Formerly "split". Never call it a "fork"; that word means forking code |
 | **Involvement Level** | A person's level in a group: **Member** (follows), **Collaborator** (votes), or **Co-Creator** (votes and creates). Moving between levels is self-selected once admitted. Code checks capabilities, never level names ([ADR-0003](docs/adr/0003-three-tier-involvement-levels.md), [ADR-0021](docs/adr/0021-level-names-and-self-selection.md)) |
 
 ### Core Loops
@@ -60,7 +60,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **Settled decisions** are in [`docs/adr/`](docs/adr/README.md). Read them before designing anything.
 
-**Decisions:** all recorded in ADRs 0001–0063. [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
+**Decisions:** all recorded in ADRs 0001–0071 (0064–0071 came from the four-lenses review, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
 - the eternal core's wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md)), before Phase 2
 - the fiscal sponsor ([ADR-0062](docs/adr/0062-entity-and-sponsor-timing.md)), after the pilot
 - the outside security review ([ADR-0058](docs/adr/0058-security-review-on-demand.md)), on demand

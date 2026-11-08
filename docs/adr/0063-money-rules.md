@@ -32,3 +32,7 @@
   - balances are visible to the group.
 - Per-group payees mean no central list of funded groups exists.
 - **Upkeep:** a yearly task updates the CPM figure from the M+R release.
+
+## Amendment (2026-11-08, four-lenses review)
+
+Item 2 (the 10% coalition share) is withdrawn, and item 5's M+R CPM anchor is replaced by a cost-of-running anchor ([ADR-0070](0070-patronage-not-attention.md)). Items 1, 3, and 4 stand.

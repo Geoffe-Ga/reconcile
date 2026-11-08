@@ -23,3 +23,7 @@ The likeliest breach is an infiltrator who screenshots what members can see. Not
 ## Amendment (2026-11-07): Checkpoints for Newcomers
 
 Someone who joins after ballots expire can't recount old tallies from the votes. When ballots expire, a voting member's device writes a signed **`checkpoint`** event to the log. It holds the totals, the ballot commitments, and the hash of the log prefix it summarizes. A newcomer verifies the log from the checkpoint forward and accepts the checkpoint itself on the signatures of the members who vouched them in (ADR-0014). If two checkpoints for the same prefix disagree, the conflict is shown to the whole group. Spec §4 has the event.
+
+## Amendment (2026-11-08, four-lenses review)
+
+Ballot notes, including reasons for a 0, expire with the ballot and are never kept in a checkpoint ([ADR-0065](0065-stand-aside-and-ballot-notes.md)).

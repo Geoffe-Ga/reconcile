@@ -67,6 +67,16 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0061](0061-quality-gates.md) | Merge gates: TDD, check-all, pre-commit and CI on changes, review bot; mutation testing before a release | Accepted |
 | [0062](0062-entity-and-sponsor-timing.md) | Stay on the 501(c)(3) path (a nonprofit-owned operating company once there's revenue); choose the sponsor after the pilot | Accepted |
 | [0063](0063-money-rules.md) | Entrenched treasurer changes; 10% coalition share; pay-what-you-want platform fee; balances go to the payee; reach at the yearly M+R CPM | Accepted (direction) |
+| [0064](0064-feed-tabs-quiet-and-rising.md) | Two feed tabs: Quiet (least heard, the default) and Rising (enthusiasm) | Accepted |
+| [0065](0065-stand-aside-and-ballot-notes.md) | Ballots can stand aside; any score can carry a short note; notes expire with ballots | Accepted |
+| [0066](0066-readmission.md) | A removed person can return by an ordinary `readmit` Proposal plus fresh vouches | Accepted |
+| [0067](0067-genesis-templates.md) | Genesis templates (Circle, Fellowship, Chapter) preset rules; privacy floors fixed | Accepted |
+| [0068](0068-part-ways.md) | "Part ways," not "split"; numbers unchanged; a closing note and a shared-Atoms coalition offer | Accepted |
+| [0069](0069-lapses-celebration-relational-pilot.md) | Lapses aren't failures; passes are celebrated quietly; the pilot asks about relationships | Accepted |
+| [0070](0070-patronage-not-attention.md) | No per-read coalition share; gifts anchored to Reconcile's running cost | Accepted (direction) |
+| [0071](0071-self-hosting-and-reach.md) | A license grant to run unmodified relays and clients; promotion stops at coalitions | Accepted |
+
+**Terminology (2026-11-08):** the governance exit formerly called a "split" is now **parting ways** (`part-ways-petition`, [ADR-0068](0068-part-ways.md)); ADRs before 0068 still say "split".
 
 **Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck. The governance act once called a "fork" is a **split** (ADR-0050); "fork" now means only forking code.
 

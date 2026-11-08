@@ -57,3 +57,7 @@ These come from the decision itself and must be settled in follow-up ADRs:
 ## Amendment (2026-11-07)
 
 Holonic promotion is decided in [ADR-0037](0037-holonic-promotion.md): each level decides, the author sets a ceiling, and votes travel with the Dispatch on the voter's own device. Opt-in front doors ([ADR-0038](0038-optional-discovery.md)) are the only public discovery, and they never list people.
+
+## Amendment (2026-11-08, four-lenses review)
+
+There is no Reconcile-wide broadcast. Promotion stops at coalitions, so tensions 2 and 3 shrink ([ADR-0071](0071-self-hosting-and-reach.md)).

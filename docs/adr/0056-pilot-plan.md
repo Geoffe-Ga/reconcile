@@ -21,3 +21,7 @@
 
 - Before inviting testers, check their devices against ADR-0042.
 - Epic 6's acceptance criteria use the success bar above, alongside spec §1's at least 5 testers on at least 3 devices.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The interviews also ask whether anyone changed their mind, whether disagreements ended livably, whether anyone felt shut out, and whether relationships improved, and the write-up lists what we aren't measuring ([ADR-0069](0069-lapses-celebration-relational-pilot.md)).

@@ -36,3 +36,7 @@ Guarding against linkage:
 - The Dispatch event gains a `ceiling` field and a stable `dispatch_id` (Phase 2 or 3 log events: `promote`, `promotion-result`).
 - Ballot expiry (ADR-0017) deletes the group's copy after 30 days. The voter's device keeps its own ballot until the Dispatch's ceiling is reached or it expires.
 - Coalition tip shares (ADR-0027) attach to the promotion record.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The "as far as it can go, including Reconcile-wide broadcast" ceiling and item 4 are withdrawn: the highest ceiling is "as far as the coalitions go" ([ADR-0071](0071-self-hosting-and-reach.md)). Carried ballots never copy notes ([ADR-0065](0065-stand-aside-and-ballot-notes.md)). Coalition tip shares no longer attach to promotion records ([ADR-0070](0070-patronage-not-attention.md)).

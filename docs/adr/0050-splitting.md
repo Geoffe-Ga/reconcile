@@ -19,3 +19,7 @@
 
 - "Fork" survives only where it means forking *code* (ADR-0013, ADR-0024).
 - Phase 1 reserves and rejects `split-petition`. The flow is Phase 2. Members choosing whom to follow after a split is Phase 3.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The name and its stigma rationale are reversed: the act is now **parting ways** and the event `part-ways-petition` ([ADR-0068](0068-part-ways.md)). The 20%-within-14-days rule and sealed signatures stand.

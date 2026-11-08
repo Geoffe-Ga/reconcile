@@ -19,3 +19,7 @@
 
 - Validation tracks lapsed and failed content hashes per group, needed for the cooldown and cap. Test vectors cover the 4th version, a re-proposal inside the cooldown, and a 4th attempt within 180 days.
 - Feed ranking (ADR-0048) keeps busy groups readable.
+
+## Amendment (2026-11-08, four-lenses review)
+
+Lapses no longer count toward the cooldown or the cap; only failed votes do. A lapsed vote offers a one-tap re-open with twice the window, up to 90 days ([ADR-0069](0069-lapses-celebration-relational-pilot.md)).
