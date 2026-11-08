@@ -1,0 +1,13 @@
+dist
+node_modules
+coverage
+.claude
+*.md
+*.yaml
+*.yml
+.github/
+scripts/
+reports
+.stryker-tmp
+plans/architecture/*.cjs
+package-lock.json

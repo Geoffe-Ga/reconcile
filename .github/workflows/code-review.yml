@@ -1,0 +1,158 @@
+name: Claude Code Review
+
+# Contract (emitter side): the review agent returns structured JSON whose
+# `verdict` is an enum; the "Post review" step — not the agent — writes the PR
+# comment as github-actions[bot], beginning with `<!-- reconcile-review pr=N -->`
+# and ending with `## Verdict: <LGTM|CHANGES_REQUESTED|COMMENTS>`.
+# Parser side: .claude/skills/await-claude-review and address-feedback (Step 1).
+# Change all three together.
+
+"on":
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  # Re-review the current head without manufacturing a push (a push would
+  # invalidate any existing verdict). Write-gated by GitHub.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "The pull request to review."
+        required: true
+        type: string
+
+# One review in flight per PR, whatever triggered it. Keyed on the PR number,
+# not github.ref, so a dispatch and a push for the same PR share a group.
+concurrency:
+  group: claude-review-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  claude-review:
+    # GitHub withholds secrets from runs whose ACTOR is Dependabot, so the
+    # action would hard-fail. Keyed on the actor, not the PR author, so a
+    # human push to a bot PR (or a dispatch) still gets a real review.
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    env:
+      # The single place the PR number is resolved. Exactly one of the two
+      # contexts is populated per trigger.
+      PR_NUMBER: ${{ github.event.pull_request.number }}${{ inputs.pr_number }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Pin the merge ref so a dispatch reviews the PR, not the branch it
+          # was fired from. A closed/conflicted PR has no merge ref and fails
+          # loudly — no review beats a review of the wrong code.
+          ref: refs/pull/${{ env.PR_NUMBER }}/merge
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10  # v1.0.210
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          prompt: |
+            You are reviewing pull request #${{ env.PR_NUMBER }}
+            of the repository ${{ github.repository }}.
+
+            THAT NUMBER IS AUTHORITATIVE. The checkout is
+            `refs/pull/${{ env.PR_NUMBER }}/merge` in detached HEAD, so a bare
+            `gh pr view` or `gh pr diff` WILL fail with "not on any branch".
+            That is expected — it is not a reason to search. NEVER infer the PR
+            from `git log`, merge-commit parents, or by listing PRs. Pass the
+            number and repository explicitly on every call:
+
+              gh pr diff ${{ env.PR_NUMBER }} -R ${{ github.repository }}
+              gh pr view ${{ env.PR_NUMBER }} -R ${{ github.repository }}
+
+            Review the change against the repository's CLAUDE.md. Reconcile
+            is a democratic document-governance and coalition platform; treat
+            any change that exposes membership, affiliation, voting records, or
+            identity-to-ideology links as a security issue (see "Defend Against
+            Weaponization" in CLAUDE.md).
+
+            Do NOT post a comment yourself. Return ONLY the structured result:
+
+            - "review_markdown": the full review as GitHub markdown (omit the
+              verdict; it is a separate field):
+
+              Brief overview (2-3 sentences)
+              What's done well?
+              Vulnerabilities / privacy risks? 🔴 BLOCKING | 🟡 HIGH | 🟢 LOW
+              Critical issues blocking merge (mark 🔴)
+              Non-blocking improvements (these are COMMENTS, not blockers)
+              ✅/❌ Coverage, linting, types, patterns, commits
+              Test quality (insufficient testing is BLOCKING)
+              Docs completeness
+
+            - "verdict": exactly one of CHANGES_REQUESTED, COMMENTS, LGTM. Take
+              a clear stance — do NOT default to COMMENTS as a safe middle.
+                1. ANY blocking problem (real bug, 🔴 security/privacy issue,
+                   missing tests, CLAUDE.md violation) → CHANGES_REQUESTED.
+                2. Otherwise, would you merge it as-is now? Nits do not block
+                   → LGTM.
+                3. COMMENTS only for the genuine middle: nothing blocks, but a
+                   substantive suggestion should be weighed first. If you can't
+                   name it, it's LGTM.
+
+            - "verdict_rationale": one or two sentences justifying the verdict
+              (name the blocker, the suggestion, or why it is ready).
+
+            - "reviewed_pr_number": the integer you actually passed to
+              `gh pr diff` — copied from your own command. The workflow
+              discards the review if it differs from the PR being commented on.
+
+          claude_args: >-
+            --model sonnet
+            --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","verdict_rationale","review_markdown","reviewed_pr_number"],"properties":{"verdict":{"type":"string","enum":["CHANGES_REQUESTED","COMMENTS","LGTM"]},"verdict_rationale":{"type":"string"},"review_markdown":{"type":"string"},"reviewed_pr_number":{"type":"integer"}}}'
+            --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      - name: Post review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          STRUCTURED: ${{ steps.claude-review.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STRUCTURED:-}" ]; then
+            # The action declines to run on PRs that modify this workflow.
+            changed_files=$(gh pr diff "$PR_NUMBER" -R "$REPO" --name-only)
+            if grep -qxF '.github/workflows/code-review.yml' <<<"$changed_files"; then
+              echo "::warning::This PR edits the review workflow, so the action self-skips — no automated verdict; review manually."
+              marker_count=$(gh pr view "$PR_NUMBER" -R "$REPO" --json comments \
+                --jq '[.comments[].body | select(. != null and contains("<!-- review-self-skip -->"))] | length')
+              if [ "$marker_count" -eq 0 ]; then
+                self_skip_body=$(printf '%s\n%s\n' \
+                  '<!-- review-self-skip -->' \
+                  '⚠️ This PR edits the review workflow — no automated verdict; manual review required.')
+                gh pr comment "$PR_NUMBER" -R "$REPO" --body "$self_skip_body"
+              fi
+              exit 0
+            fi
+            echo "::error::Claude review produced no structured output — failing so it is re-run, never a silent no-review."
+            exit 1
+          fi
+          reviewed_pr=$(jq -r '.reviewed_pr_number // ""' <<<"$STRUCTURED")
+          if [[ ! "$reviewed_pr" =~ ^[0-9]+$ ]] || [[ "$reviewed_pr" != "$PR_NUMBER" ]]; then
+            echo "::error::The reviewer reports it read PR '${reviewed_pr}', not #${PR_NUMBER}. This is a reviewer error, not a defect in this PR — re-run the review."
+            exit 1
+          fi
+          verdict=$(jq -r '.verdict' <<<"$STRUCTURED")
+          rationale=$(jq -r '.verdict_rationale // ""' <<<"$STRUCTURED")
+          printf '<!-- reconcile-review pr=%s -->\n\n' "$PR_NUMBER" > review.md
+          jq -r '.review_markdown' <<<"$STRUCTURED" >> review.md
+          printf '\n\n## Verdict: %s\n' "$verdict" >> review.md
+          if [ -n "$rationale" ]; then
+            printf '\n' >> review.md
+            printf '%s\n' "$rationale" | sed 's/^/> /' >> review.md
+          fi
+          gh pr comment "$PR_NUMBER" -R "$REPO" --body-file review.md
+          echo "Posted review with verdict: ${verdict}"

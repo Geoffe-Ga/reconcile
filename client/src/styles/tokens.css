@@ -1,0 +1,128 @@
+/* Design tokens. Source of truth: ../../../DESIGN.md (change it there first). */
+:root {
+  color-scheme: light;
+  --canvas: #f6f1e7;
+  --surface: #fffdf8;
+  --sunken: #ece5d6;
+  --hairline: #ddd5c4;
+  --ink: #1d1c19;
+  --body: #3d3a33;
+  --muted: #6b665b;
+  --primary: #1f4a33;
+  --on-primary: #f6f1e7;
+  --primary-soft: #dfe8dc;
+  --ochre: #a8741a;
+  --ochre-ink: #7a5410;
+  --ochre-soft: #f1e3c4;
+  --clay: #8a4b3c;
+  --positive: #2f6b45;
+  --warning: #85560f;
+  --negative: #b3362a;
+  --score-0: #b3362a;
+  --score-1: #a85a35;
+  --score-2: #76705f;
+  --score-3: #4f7746;
+  --score-4: #1f4a33;
+
+  --font-serif: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
+  --font-sans: 'Public Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  --touch: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #15140f;
+    --surface: #1e1d17;
+    --sunken: #26241d;
+    --hairline: #3a372d;
+    --ink: #f1ece0;
+    --body: #d6d0c2;
+    --muted: #a39d8f;
+    --primary: #8fbf98;
+    --on-primary: #10170f;
+    --primary-soft: #233a2a;
+    --ochre: #d9a54a;
+    --ochre-ink: #e2b663;
+    --ochre-soft: #3a2f18;
+    --clay: #d08a76;
+    --positive: #7fbf8e;
+    --warning: #e0b25c;
+    --negative: #e0705f;
+    --score-0: #e0705f;
+    --score-1: #d9946a;
+    --score-2: #a39d8f;
+    --score-3: #93b986;
+    --score-4: #8fbf98;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--body);
+  font: 400 16px/1.55 var(--font-sans);
+}
+
+h1 {
+  color: var(--ink);
+  font: 500 30px/1.15 var(--font-serif);
+  text-wrap: balance;
+  margin: 0;
+}
+
+.shell {
+  display: grid;
+  gap: 16px;
+  max-width: 42rem;
+  margin: 0 auto;
+  padding-block: 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lede {
+  margin: 0;
+  font: 400 19px/1.6 var(--font-serif);
+}
+
+.button-primary {
+  justify-self: start;
+  min-height: var(--touch);
+  padding: 0 24px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: 500 15px/1.4 var(--font-sans);
+  cursor: pointer;
+}
+
+.button-primary[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.button-primary[data-pressed] {
+  filter: brightness(0.92);
+}
