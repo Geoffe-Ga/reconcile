@@ -19,5 +19,5 @@ It's the only option that keeps every ballot in its group and protects small gro
 ## Consequences
 
 - This settles "secret ballots for coalition-wide votes": there are no coalition-wide individual ballots.
-- A group that is repeatedly outvoted under the two-thirds rule can leave the coalition. Fork petitions follow ADR-0015.
+- A group that is repeatedly outvoted under the two-thirds rule can leave the coalition. Split petitions follow ADR-0015.
 - New log event for Phase 2: a signed `group-result`, which a coalition's log accepts from each member group.

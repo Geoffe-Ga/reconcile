@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0046 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0051 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -38,7 +38,7 @@ These are listed so no one builds them early:
 - The Reconcile-hosted coalition room ([ADR-0011](../adr/0011-debate-venues.md), Phase 2)
 - Platform integrations such as Discord or WhatsApp bots ([ADR-0011](../adr/0011-debate-venues.md), [ADR-0039](../adr/0039-integrations-per-group-opt-in.md); Phase 3)
 - Scheduled or recurring Dispatches and the Member experience (Phase 3)
-- The fork petition flow ([ADR-0015](../adr/0015-anti-capture.md)). The log reserves the event type, but there's no UI
+- The split petition flow ([ADR-0015](../adr/0015-anti-capture.md)). The log reserves the event type, but there's no UI
 - Tiered visibility ([ADR-0017](../adr/0017-need-to-see-and-expiry.md), after the MVP)
 - Duress login ([ADR-0018](../adr/0018-device-protection-and-duress.md)). App lock and panic wipe are in scope. Duress waits until hidden storage passes review
 - Anonymous or secret ballots ([ADR-0010](../adr/0010-open-ballots-with-exit.md))
@@ -132,11 +132,14 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 | `suspend` / `unsuspend` | member, reason, expiry ≤ 7 days | `steward` |
 | `remove` | member, the passed proposal id | follows a passed removal Proposal |
 | `leave` | — | the member |
+| `rename` | new display name, unique in the group ([ADR-0045](../adr/0045-names-in-groups.md)) | the member |
+| `removal-response` | removal proposal id, response text (one per removal) | the member being removed ([ADR-0049](../adr/0049-stewards-and-removal.md)) |
+| `dissolve` | the passed proposal id, `wipe` flag | follows a passed dissolution Proposal at the entrenched bar ([ADR-0051](../adr/0051-dissolution-and-rule-classes.md)) |
 | `steward-elect` | member | follows a passed Proposal |
 | `key-rotate` | new group key epoch, wrapped keys per member | any Co-Creator, required after `remove` |
 | `rules-change` | changed rule fields | follows a passed Proposal at the bar for that rule's class |
 | `checkpoint` | totals and ballot commitments for expired proposals, plus the hash of the log prefix it summarizes | any voting member's device, produced when ballots expire ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)) |
-| `fork-petition` | **reserved**, rejected in Phase 1 | — |
+| `split-petition` | **reserved**, rejected in Phase 1 ([ADR-0050](../adr/0050-splitting.md)) | — |
 
 ### Default founding rules
 
@@ -155,6 +158,15 @@ All of these can be changed through `rules-change`.
 | Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty reason for that version | confirmed 2026-11-07 |
 | Ballot visibility | open until the tally plus 30 days, then devices keep only totals and the commitment | [ADR-0017](../adr/0017-need-to-see-and-expiry.md) |
 | Suspension maximum | 7 days | [ADR-0016](../adr/0016-suspend-then-vote.md) |
+| Versions per ballot | at most 3 (fixed) | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md) |
+| Missed quorum | the vote lapses with outcome `none` | ADR-0047 |
+| Re-proposing the same content | 14-day cooldown after a lapse or failure; at most 3 times in 180 days | ADR-0047 |
+| Stewards | 2 seats, staggered 6-month terms (1 seat under 6 voting members); founder holds a seat until the election that opens at 3 voting members; recall by ordinary Proposal | [ADR-0049](../adr/0049-stewards-and-removal.md) |
+| Removal | entrenched bar; the target isn't eligible but may post one `removal-response` | ADR-0049 |
+| Split petition (Phase 2) | 20% of voting members within 14 days of a trigger; signatures sealed until met | [ADR-0050](../adr/0050-splitting.md) |
+| Dissolution | entrenched bar; read-only archives by default, optional wipe | [ADR-0051](../adr/0051-dissolution-and-rule-classes.md) |
+| Ballot expiry range | 7–90 days (default 30) | ADR-0051 |
+| Rule classes | entrenched: pass rules, quorum, eligibility, removal, stewards and suspension, dissolution, entrenchment; ordinary: everything else | ADR-0051 |
 
 **Bootstrap rule (confirmed 2026-11-07).** A group with fewer than 3 voting members can't satisfy vouching or quorum. Until it reaches 3, the founder's invitees count as vouched and voting immediately. The `genesis` event records this, and it switches off automatically and permanently.
 
@@ -163,7 +175,7 @@ All of these can be changed through `rules-change`.
 The tally is a pure function with signature `tally(proposal, eligible_voters, votes) → outcome`:
 
 1. Take each eligible voter's most recent valid `vote` made before the window closed.
-2. For each version, compute the average and the share of zeros, and test them against the Atom class's pass rule. If quorum isn't met, the outcome is `none`.
+2. For each version, compute the average and the share of zeros, and test them against the Atom class's pass rule. If quorum isn't met, the outcome is `none` and the vote lapses (ADR-0047).
 3. If no version passes, the outcome is `none`. If one passes, it wins. If several pass, apply the **tie rule:** highest average, then the lowest share of zeros, then the earliest `version` event (confirmed 2026-11-07).
 4. The ballot commitment is a Merkle root over the sorted `(voter, scores)` pairs.
 
@@ -249,7 +261,7 @@ These follow `docs/plan/09` with the ADR changes applied:
    - Title, justification, and the versions side by side.
    - A 0–4 score per version, with labels from `docs/plan/07`.
    - A countdown and the linked-chat button.
-   - **No fork or split action anywhere** ([ADR-0015](../adr/0015-anti-capture.md)).
+   - **No split action anywhere** ([ADR-0015](../adr/0015-anti-capture.md)).
 9. **Result:** the outcome, the totals, and individual ballots while the 30-day window lasts.
 10. **People:** vouch, change your level, and leave. Stewards also get suspend.
 11. **Settings:**
@@ -310,7 +322,7 @@ Also confirmed: `invite` belongs to the voting levels, every `proposal` carries 
 
 Decided for later phases (ADRs 0032–0040): code hosting, legal staging, payment rail, Reconcile-the-group's founding, group-by-group coalition votes (no coalition-wide individual ballots), holonic promotion, optional front-door discovery, per-group integrations, and group opt-ins decided by Proposal.
 
-Still open, **not needed for Phase 1**: which fiscal sponsor (ADR-0033), the exact eternal-core wording (ADR-0035), group payee options (ADR-0027), fork petition thresholds in practice, and the duress storage design.
+Still open, **not needed for Phase 1**: which fiscal sponsor (ADR-0033), the exact eternal-core wording (ADR-0035), group payee options (ADR-0027), split petition thresholds in practice, and the duress storage design.
 
 ## 11. Suggested Epics (Input for `spec-decomposition`)
 

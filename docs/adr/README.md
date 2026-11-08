@@ -13,12 +13,12 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0007](0007-thin-python-relay.md) | A thin Python relay stores and forwards encrypted blobs by opaque mailbox id | Accepted |
 | [0008](0008-passkeys-and-social-recovery.md) | Passkeys unlock a device key; recovery is social (member-chosen contacts); no platform sign-in | Accepted |
 | [0009](0009-per-group-identities.md) | Separate identity per group, linked only by the member's choice | Accepted |
-| [0010](0010-open-ballots-with-exit.md) | Open ballots within the group, backed by leave, remove, and fork | Accepted |
+| [0010](0010-open-ballots-with-exit.md) | Open ballots within the group, backed by leave, remove, and split | Accepted |
 | [0011](0011-debate-venues.md) | Groups link their own chat; coalitions get an optional Reconcile-hosted encrypted room | Accepted |
 | [0012](0012-content-free-push.md) | Dispatches arrive by opt-in, content-free push | Accepted |
 | [0013](0013-covenant-on-reach.md) | A founding covenant limits reach (discovery, coalitions, broadcast), not existence. Open source vs. closed is open | Accepted |
 | [0014](0014-invite-and-vouch-admission.md) | Admission by invitation, vouches, and a 14-day wait; groups set their own rules | Accepted |
-| [0015](0015-anti-capture.md) | Eligibility snapshots, entrenched and eternal Atoms, and fork only by petition in extreme cases | Accepted |
+| [0015](0015-anti-capture.md) | Eligibility snapshots, entrenched and eternal Atoms, and split only by petition in extreme cases | Accepted |
 | [0016](0016-suspend-then-vote.md) | Stewards can suspend for 7 days; only a vote removes | Accepted |
 | [0017](0017-need-to-see-and-expiry.md) | Pseudonyms by default, no roster for followers (Members), ballots expire 30 days after the tally | Accepted |
 | [0018](0018-device-protection-and-duress.md) | App lock, panic wipe, and an opt-in duress login that hides chosen groups | Accepted |
@@ -50,7 +50,12 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0044](0044-qr-device-linking.md) | A second device links by QR code; devices are listed and revocable | Accepted |
 | [0045](0045-names-in-groups.md) | Names in a group are freely chosen and unique; changes show "formerly X" | Accepted |
 | [0046](0046-padded-vault-and-panic-wipe.md) | A fixed-size padded vault from Phase 1, duress after external review; panic wipe by hold or opt-in wrong codes | Accepted |
+| [0047](0047-ballot-cap-quorum-reproposals.md) | Three versions per ballot; missed quorum lapses; a 14-day cooldown and a 3-in-180-days cap on re-proposing | Accepted |
+| [0048](0048-feed-surfacing.md) | Proposals drawing early enthusiasm rise in a locally computed feed; nothing is hidden | Accepted |
+| [0049](0049-stewards-and-removal.md) | Two staggered 6-month stewards; removal at the entrenched bar without the target voting | Accepted |
+| [0050](0050-splitting.md) | "Split," not "fork": 20% of voters within 14 days of a trigger, signatures sealed | Accepted |
+| [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted |
 
-**Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck.
+**Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck. The governance act once called a "fork" is a **split** (ADR-0050); "fork" now means only forking code.
 
 New ADRs take the next number and record the context, decision, consequences, and open questions. When a decision comes from a `/decide` sheet, note the sheet and decision id.

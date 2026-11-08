@@ -33,7 +33,7 @@ To settle in the payment design ADR, before any money code:
 2. Who a group's payee is: an elected treasurer, a fiscal sponsor, or a legal entity.
 3. Legal: stored value, payouts, and fees on transfers between users likely make Reconcile, or its payment partner, a money transmitter. As a 501(c)(3), fee income may count as unrelated business income. **This needs counsel before building.**
 4. Splits when several coalitions promote the same piece: a read is attributed to the coalition it actually came through, so this only matters for split *defaults*.
-5. What happens to a group's balance on a fork (ADR-0015) or dissolution.
+5. What happens to a group's balance on a split (ADR-0015) or dissolution.
 
 ## Phase
 

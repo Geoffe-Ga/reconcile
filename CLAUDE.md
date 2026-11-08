@@ -27,6 +27,7 @@ The product source of truth is **[`docs/plan/`](docs/plan/)**. **Level names cha
 | **Working Copy** | A checked-out draft that autosaves and has a shareable URL. Returning it may surface **Conflicts** |
 | **Vote** | Governance on a Proposal. Voters score it 0–4 within a time window. It passes on a **consent floor**: average ≥ 2.0 and fewer than 10% scoring 0 ([ADR-0002](docs/adr/0002-consent-floor-vote-rule.md)). Competing versions of an Atom all go on the ballot ([ADR-0004](docs/adr/0004-competing-versions-go-to-ballot.md)) |
 | **Dispatch** | A notification a Co-Creator (or a Proposal) sends to followers. Formerly the working name "Push" |
+| **Split** | A group dividing into two, keeping history. Possible only by petition after a trigger, never from a vote result ([ADR-0050](docs/adr/0050-splitting.md)). Never call it a "fork"; that word means forking code |
 | **Involvement Level** | A person's level in a group: **Member** (follows), **Collaborator** (votes), or **Co-Creator** (votes and creates). Moving between levels is self-selected once admitted. Code checks capabilities, never level names ([ADR-0003](docs/adr/0003-three-tier-involvement-levels.md), [ADR-0021](docs/adr/0021-level-names-and-self-selection.md)) |
 
 ### Core Loops
@@ -61,7 +62,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **Still open:** [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) lists every remaining decision, sheet by sheet. **Spec decomposition and issue filing wait until it is complete.** Among them:
 - which fiscal sponsor ([ADR-0033](docs/adr/0033-legal-entity-staging.md)) and the exact eternal-core wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md))
-- group payee options ([ADR-0027](docs/adr/0027-supporters-and-coalition-tip-share.md)), fork petition thresholds, and the duress storage design ([ADR-0018](docs/adr/0018-device-protection-and-duress.md))
+- group payee options ([ADR-0027](docs/adr/0027-supporters-and-coalition-tip-share.md)), and the external review the duress store needs before it ships ([ADR-0046](docs/adr/0046-padded-vault-and-panic-wipe.md))
 - don't publish the repo or add a LICENSE until publication ([ADR-0024](docs/adr/0024-source-available-license.md))
 
 When work depends on one of these, flag it instead of silently picking an answer.
