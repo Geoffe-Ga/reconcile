@@ -39,6 +39,13 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     all; emit; exit 0
 fi
 
+# An explicit base that doesn't resolve means history was rewritten (a
+# force-push hands CI a "before" sha that no longer exists). Falling back to
+# origin/main there would diff HEAD against itself and check nothing.
+if [[ -n "${BASE_REF:-}" ]] && ! git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
+    all; emit; exit 0
+fi
+
 base=""
 for candidate in "${BASE_REF:-}" origin/main main; do
     [[ -z "$candidate" ]] && continue
