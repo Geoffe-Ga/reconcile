@@ -59,6 +59,9 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0053](0053-multi-use-invites.md) | Invites are multi-use links (default up to 10) that expire in 48 hours | Accepted |
 | [0054](0054-digest-notifications.md) | One daily digest (including votes closing soon); only recovery attempts notify immediately | Accepted |
 | [0055](0055-accessibility-and-languages.md) | WCAG 2.2 AA with automated checks and periodic manual passes; English, translation-ready | Accepted |
+| [0056](0056-pilot-plan.md) | The pilot: two contrasting groups for 6 weeks, learned through interviews and Signal, with a plain notice | Accepted |
+| [0057](0057-environments-updates-retention.md) | Staging and production; protocol rules change only by version; blobs 30 days, backups 180 days | Accepted |
+| [0058](0058-security-review-on-demand.md) | A paid security review when an activist group calls for it, booked at the first serious conversation | Accepted |
 
 **Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck. The governance act once called a "fork" is a **split** (ADR-0050); "fork" now means only forking code.
 
