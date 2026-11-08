@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0042 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0046 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -81,10 +81,13 @@ Per [ADR-0008](../adr/0008-passkeys-and-social-recovery.md) and [ADR-0009](../ad
 - **Per-group identity:** for each group, a fresh keypair derived deterministically from the root key and a random per-group salt stored locally. Display names are pseudonyms and differ per group by default ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
 - **Linking:** an explicit `link-reveal` act, scoped to one group, recorded only on the member's device. Phase 1 only needs the data model and a stub UI, since links matter once there are several groups.
 - **Social recovery:**
-  - The member chooses N recovery contacts, and the root key is split with Shamir secret sharing at a threshold T the member picks (default 3 of 5).
+  - The member chooses N recovery contacts and a threshold T, from 2 of 3 up to 5 of 7 (default 3 of 5), and the root key is split with Shamir secret sharing ([ADR-0043](../adr/0043-recovery-and-backup.md)).
   - Shares are encrypted to each contact's per-recovery key and travel through the relay.
-  - Recovery requires T approvals **and** a 72-hour delay, during which every live device is notified and can cancel.
-  - An optional recovery phrase (BIP39-style) is offered in settings.
+  - Recovery requires T approvals **and** a fixed 72-hour delay, during which every linked device is notified and can cancel.
+  - An encrypted backup of groups, drafts, and personal Documents lives on the relay under an unlinkable mailbox id, padded and updated on a schedule; only the recovered root key decrypts it.
+- **Devices:** a second device links by a short-lived QR code with a confirmation number; Settings lists and revokes devices ([ADR-0044](../adr/0044-qr-device-linking.md)).
+- **Names:** freely chosen per group, unique within it; a `rename` shows "formerly X" until ballot expiry ([ADR-0045](../adr/0045-names-in-groups.md)).
+- **Local store:** a fixed-size padded vault from Phase 1; the duress PIN waits for an external review. Panic wipe: press and hold in Settings, plus an opt-in wipe after wrong app-lock codes ([ADR-0046](../adr/0046-padded-vault-and-panic-wipe.md)).
 - **Library rule:** use audited libraries only: `@noble/curves`, `@noble/hashes`, `@noble/ciphers` and a reviewed Shamir implementation on the client; PyNaCl on the relay. **No hand-rolled cryptography.**
 
 ---
