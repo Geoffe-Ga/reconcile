@@ -55,6 +55,10 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0049](0049-stewards-and-removal.md) | Two staggered 6-month stewards; removal at the entrenched bar without the target voting | Accepted |
 | [0050](0050-splitting.md) | "Split," not "fork": 20% of voters within 14 days of a trigger, signatures sealed | Accepted |
 | [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted |
+| [0052](0052-newcomer-onboarding.md) | Preview first; join provisionally with the inviter as first recovery contact; recovery complete before voting | Accepted |
+| [0053](0053-multi-use-invites.md) | Invites are multi-use links (default up to 10) that expire in 48 hours | Accepted |
+| [0054](0054-digest-notifications.md) | One daily digest (including votes closing soon); only recovery attempts notify immediately | Accepted |
+| [0055](0055-accessibility-and-languages.md) | WCAG 2.2 AA with automated checks and periodic manual passes; English, translation-ready | Accepted |
 
 **Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck. The governance act once called a "fork" is a **split** (ADR-0050); "fork" now means only forking code.
 

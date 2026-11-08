@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0051 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0055 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -121,7 +121,7 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 | Type | Body | Who may author it (capability, [ADR-0003](../adr/0003-three-tier-involvement-levels.md)) |
 |---|---|---|
 | `genesis` | group name, founding rules (defaults below), founder key | the founder |
-| `invite` | invite id, the invitee's one-time key hash, expiry | `invite` (voting levels: Collaborator and Co-Creator; Members can't invite) |
+| `invite` | invite id, invite secret hash, `max_uses` (1–50, default 10), expiry (48 hours) ([ADR-0053](../adr/0053-multi-use-invites.md)) | `invite` (voting levels: Collaborator and Co-Creator; Members can't invite) |
 | `join` | invite id, new member key, display name | the holder of the invite |
 | `vouch` | the vouched-for member's key | `vouch` (voting members) |
 | `level-change` | member, new level | the member themselves. Moving to Collaborator or Co-Creator requires voting rights from admission ([ADR-0014](../adr/0014-invite-and-vouch-admission.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md)) |
@@ -248,10 +248,10 @@ Built with React Aria Components and styled only from [`DESIGN.md`](../../DESIGN
 
 These follow `docs/plan/09` with the ADR changes applied:
 
-1. **Welcome and identity:** create the identity with a passkey, then choose recovery contacts. Skipping is allowed, with a reminder banner that keeps returning.
+1. **Invite preview and welcome:** the preview card (group name, mission excerpt, inviter's pseudonym), the iOS install guide (ADR-0029), passkey creation, name, then recovery: the inviter is the first contact and outside contacts are invited by link; the threshold must be met within the 14-day wait, before voting ([ADR-0052](../adr/0052-newcomer-onboarding.md)). The older-device notice appears once here (ADR-0042).
 2. **Personal page:** a pseudonymous display name and an optional personal mission statement. It's local only and shared per group by choice.
 3. **Create Organization:** name, founding rules (defaults shown, advanced settings collapsed), and the first Document.
-4. **Invite:** generate an invite link or QR code. The UI suggests a video call or meeting as a "vibe check" before vouching ([ADR-0014](../adr/0014-invite-and-vouch-admission.md)).
+4. **Invite:** generate a multi-use invite link or QR code (default up to 10 people, 48 hours), see its uses, and revoke it. The UI suggests a video call or meeting as a "vibe check" before vouching ([ADR-0014](../adr/0014-invite-and-vouch-admission.md)).
 5. **Group home:**
    - Documents, open Proposals, and members. followers (Members) don't see the roster ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
    - A linked-chat field, which can hold any URL ([ADR-0011](../adr/0011-debate-venues.md)).
@@ -266,16 +266,23 @@ These follow `docs/plan/09` with the ADR changes applied:
 10. **People:** vouch, change your level, and leave. Stewards also get suspend.
 11. **Settings:**
     - Security: app lock and its timeout, and panic wipe, explained calmly. Duress login is absent in Phase 1.
-    - Push opt-in, relay choice, and the recovery phrase.
+    - Push opt-in, digest time, and relay choice.
+    - Recovery: contacts, threshold, and the backup (ADR-0043).
+    - Devices: link a device by QR code, and see and revoke linked devices (ADR-0044).
+    - The older-device notice, when it applies (ADR-0042).
+
+All UI strings live in a message catalog, and screens meet WCAG 2.2 AA with axe checks in CI ([ADR-0055](../adr/0055-accessibility-and-languages.md)).
 
 ### Notifications
 
-There are no scheduled Dispatches in Phase 1. Pushes carry no content and only wake the app. Once the app has decrypted the events locally, it shows a local notification for:
+There are no scheduled Dispatches in Phase 1. Pushes carry no content and only wake the app. Once the app has decrypted the events locally, it builds **one daily digest** ([ADR-0054](../adr/0054-digest-notifications.md)) covering:
 
-- a new Proposal
-- a vote closing within 24 hours
-- a completed vote
-- a new member
+- new Proposals
+- votes the person hasn't cast that close within 24 hours
+- completed votes
+- new members and voting rights arriving
+
+Only a recovery attempt on the person's own identity notifies immediately.
 
 ### App lock and panic wipe
 
