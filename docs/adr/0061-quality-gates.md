@@ -11,7 +11,7 @@ From the founder: "Mutation only recommended before release. The gates are: TDD,
 **Merge gates**
 1. **TDD:** a failing test first.
 2. **`./scripts/check-all.sh`** for the areas the change touches.
-3. **Pre-commit on the changed files:** `pre-commit run --from-ref origin/main --to-ref HEAD`.
+3. **Pre-commit on the changed files:** `./scripts/precommit-changed.sh`.
 4. **CI on the changed areas.** The full Python matrix (3.11–3.13) runs only for backend changes. CI's pre-commit job runs on changed files too, and on every file when the hook config changes or no base exists.
 5. **The review bot:**
    - LGTM is preferred.

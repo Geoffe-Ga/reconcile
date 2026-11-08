@@ -127,19 +127,7 @@ jobs:
           SKIP: no-commit-to-branch
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
           FULL: ${{ github.event_name == 'workflow_dispatch' }}
-        run: |
-          # Changed files only (ADR-0061). Fall back to every file when there's
-          # no usable base (manual run, first push, history rewrite) or when the
-          # hook config itself changed.
-          if [[ "$FULL" != "true" ]] && git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null \
-             && ! git diff --quiet "$BASE_REF"...HEAD -- .pre-commit-config.yaml 2>/dev/null; then
-            FULL=true
-          fi
-          if [[ "$FULL" != "true" ]] && git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
-            pre-commit run --from-ref "$(git merge-base "$BASE_REF" HEAD)" --to-ref HEAD --show-diff-on-failure
-          else
-            pre-commit run --all-files --show-diff-on-failure
-          fi
+        run: ./scripts/precommit-changed.sh --show-diff-on-failure
 
   gate:
     name: CI gate

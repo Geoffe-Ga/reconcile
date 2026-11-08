@@ -64,7 +64,7 @@ Run both gates before committing:
 ./scripts/test.sh --all
 
 # Gate 2: All quality checks pass
-pre-commit run --from-ref origin/main --to-ref HEAD
+./scripts/precommit-changed.sh
 ```
 
 ### Step 6: Commit and PR

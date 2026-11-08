@@ -85,7 +85,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 
 1. **TDD:** a failing test first, then the code.
 2. **`./scripts/check-all.sh` passes.** It runs the checks for the areas the change touches.
-3. **Pre-commit is clean on the changed files:** `pre-commit run --from-ref origin/main --to-ref HEAD`. The commit hook already does this for staged files.
+3. **Pre-commit is clean on the changed files:** `./scripts/precommit-changed.sh`. The commit hook already does this for staged files.
 4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes.
 5. **The review bot passes.** LGTM is preferred. COMMENTS can merge, but only after every finding is filed as a P0–P3 follow-up issue: file first, then merge. CHANGES_REQUESTED blocks.
 

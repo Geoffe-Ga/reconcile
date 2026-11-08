@@ -127,7 +127,7 @@ Read every new or modified test. For each test, verify:
 
 ```bash
 source .venv/bin/activate
-pre-commit run --from-ref origin/main --to-ref HEAD
+./scripts/precommit-changed.sh
 ```
 
 If it fails, fix the root causes (see `max-quality-no-shortcuts`) and re-run `./scripts/check-all.sh` until it exits 0 before continuing the review.
