@@ -23,3 +23,7 @@ The onboarding slide says "Sign in with Google/FB". That would hand a platform t
 - **Colluding contacts could take over an identity.** Mitigations: a time delay with a notice to every existing device before recovery completes, a cancel from any live device, and a threshold the member picks.
 - **Passkey PRF support varies by browser.** Where it's missing, fall back to a locally encrypted key with a device PIN.
 - Group recovery counts as onboarding growth, so measure it without building a central social graph. Counts stay on devices.
+
+## Amendment (2026-11-08, four-lenses review)
+
+Recovery contacts are framed as trust, never as growth. The last consequence above ("group recovery counts as onboarding growth") is withdrawn: nothing counts recovery-driven joins, even on devices, and the invitation copy never mentions growing Reconcile.

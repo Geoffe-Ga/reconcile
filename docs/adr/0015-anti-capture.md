@@ -25,3 +25,7 @@ The growth brake was not chosen.
 - This refines ADR-0010: exit stays possible, but splitting is deliberately rare and hard to reach.
 - In a split, Members choose whom to follow. That flow belongs to Phase 3.
 - The trigger list and the 20% default are assumptions. Revisit them once real groups use the feature.
+
+## Amendment (2026-11-08, four-lenses review)
+
+"Split" is now **parting ways** ([ADR-0068](0068-part-ways.md)); the petition rules are unchanged.

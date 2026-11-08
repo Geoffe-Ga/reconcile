@@ -1,6 +1,6 @@
 # Decision Roadmap: Everything Left Before Spec Decomposition
 
-- **Status:** **Complete** (2026-11-08). All seven sheets are answered and recorded in ADRs 0028–0063. Spec decomposition can start.
+- **Status:** **Complete** (2026-11-08). All seven sheets are answered and recorded in ADRs 0028–0063, and the four-lenses review in ADRs 0064–0071 ([four-lenses-review.md](four-lenses-review.md)). Spec decomposition can start.
 - **Started:** 2026-11-07
 - **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0062), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
 
@@ -15,6 +15,7 @@ Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This r
 | 5 | Pilot, operations, and release | Epic 2 deploy, Epic 6 acceptance | **Done** 2026-11-08: ADRs 0056–0058 |
 | 6 | Development process (plus #32) | how the issues are written and worked | **Done** 2026-11-08: ADRs 0059–0061 |
 | 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | **Done** 2026-11-08: ADRs 0062–0063, ADR-0035 amendment |
+| 8 | Four-lenses review (Eisenstein, Rushkoff, Bateson, brown) | Epics 1, 4, 6 (tally, feed, pilot) | **Done** 2026-11-08: ADRs 0064–0071 |
 
 ## 1. Stack Details
 

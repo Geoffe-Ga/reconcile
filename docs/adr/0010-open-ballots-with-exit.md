@@ -19,3 +19,7 @@ The threat model lists voting records as high-risk data, but without a trusted s
 - **The protocol needs three exit events:** leave, remove, and split. Split copies the canonical Document and history into a new group. Removal rules are in the security and moderation sheet.
 - **A seized device shows how every member of its groups voted.** Device protection is in the security and moderation sheet.
 - **Friction is deliberate:** the UI puts "propose a change" and "reconcile" ahead of "split", and a split shows what would be lost.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The exit called "split" here is now **parting ways** ([ADR-0068](0068-part-ways.md)). A removed person can also come back through a `readmit` Proposal ([ADR-0066](0066-readmission.md)).

@@ -42,3 +42,7 @@ Phase 3, alongside Dispatches and calls to action. Phase 1 builds none of this. 
 ## Amendment (2026-11-07)
 
 Open question 1 (the rail) is resolved by [ADR-0034](0034-blind-credit-payment-rail.md). The payee is a group rule changed by Proposal ([ADR-0040](0040-group-opt-ins-are-governed.md)); the payee options themselves are still open.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The coalition tip share (item 2) and its read-attribution constraint are withdrawn. Coalitions are funded by supporters like any group ([ADR-0070](0070-patronage-not-attention.md)).

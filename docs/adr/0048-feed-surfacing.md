@@ -15,3 +15,7 @@
 - Phase 1 ships the sort with simple weights. Tune them after the pilot. Small groups barely notice it.
 - Bandwagon risk: early enthusiasm attracts more attention. Ballots are already open (ADR-0010), so this adds ordering, not new information. The "needs votes" pin offsets it.
 - The ranking function lives in the client engine (`src/engine`), framework-free and unit-tested.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The enthusiasm sort is now the **Rising** tab. The default tab is **Quiet**, which puts the least-heard Proposals first, and it replaces the "needs votes" pin ([ADR-0064](0064-feed-tabs-quiet-and-rising.md)).

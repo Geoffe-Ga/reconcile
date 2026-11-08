@@ -22,3 +22,7 @@
 
 - Test vectors: the target's ballot is rejected, the response is accepted only from the target, and a removal that passes only at the ordinary bar fails.
 - Term expiry opens a `steward` Proposal automatically, shown as a reminder.
+
+## Amendment (2026-11-08, four-lenses review)
+
+A removed person can be readmitted by an ordinary `readmit` Proposal, then joins as a newcomer with fresh vouches ([ADR-0066](0066-readmission.md)). Small groups can use the Circle template's single steward seat ([ADR-0067](0067-genesis-templates.md)).

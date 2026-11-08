@@ -40,3 +40,7 @@ Confirmed with the Phase 1 spec: quorum is at least 3 ballots and 30% of eligibl
 ## Amendment (2026-11-08)
 
 Both open questions are answered. Quorum is at least 3 ballots and 30% of eligible voters, and a missed quorum lapses ([ADR-0047](0047-ballot-cap-quorum-reproposals.md)). Every 0 requires a reason (spec §4, confirmed 2026-11-07).
+
+## Amendment (2026-11-08, four-lenses review)
+
+A ballot can **stand aside** on a version: it counts toward quorum but not toward the average or the share of zeros. Any score can carry an optional note of up to 280 characters, and every note, including the required reason for a 0, expires with the ballot ([ADR-0065](0065-stand-aside-and-ballot-notes.md)).

@@ -15,3 +15,7 @@
 - The client gate adds axe (Epic 3).
 - A message-catalog library is chosen when the first screen is built. The criterion is ICU message support.
 - Each language gets a glossary for governance terms (Proposal, consent floor, split), reviewed by native speakers from the community.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The glossary term "split" is now "part ways" ([ADR-0068](0068-part-ways.md)).

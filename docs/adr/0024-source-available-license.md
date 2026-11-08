@@ -16,3 +16,7 @@
 - Add `LICENSE` with the canonical license text, copied from the license steward and not retyped, when the repo is first published. Until then the repo stays private, and `package.json` and the README say `UNLICENSED` / not yet licensed.
 - Grants that require OSI open source are out of reach unless the nonprofit relicenses. That's acceptable under the gift-economy model (ADR-0025).
 - External security audits can still read everything.
+
+## Amendment (2026-11-08, four-lenses review)
+
+When the license is written, it includes an explicit grant to run unmodified relays and clients without asking. Once Reconcile-the-group exists, it ratifies the license and roadmap as entrenched Atoms ([ADR-0071](0071-self-hosting-and-reach.md)).
