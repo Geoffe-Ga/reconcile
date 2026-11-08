@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0040 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0042 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -77,7 +77,7 @@ These are listed so no one builds them early:
 Per [ADR-0008](../adr/0008-passkeys-and-social-recovery.md) and [ADR-0009](../adr/0009-per-group-identities.md):
 
 - **Root identity:** an Ed25519 signing keypair and an X25519 key-agreement keypair, generated on the device. They never leave it unencrypted.
-- **Unlock:** a passkey through WebAuthn, using the PRF extension to derive the key that encrypts local storage. Fallback: a device PIN fed through Argon2id.
+- **Unlock:** a passkey through WebAuthn, using the PRF extension to derive the key that encrypts local storage. Without PRF (or on iOS below 18.4): a non-extractable device key, plus social recovery set up before joining any group; an Argon2id passphrase is opt-in only ([ADR-0030](../adr/0030-device-key-fallback.md)).
 - **Per-group identity:** for each group, a fresh keypair derived deterministically from the root key and a random per-group salt stored locally. Display names are pseudonyms and differ per group by default ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
 - **Linking:** an explicit `link-reveal` act, scoped to one group, recorded only on the member's device. Phase 1 only needs the data model and a stub UI, since links matter once there are several groups.
 - **Social recovery:**
@@ -173,7 +173,7 @@ Only a valid `tally` with a winner changes the canonical Document. The tally mus
 - **Document:** an ordered list of Atom ids plus metadata, all held in governance state. Its canonical content at any moment is each Atom's winning version hash, resolved through a content-addressed blob store.
 - **Atom:** has an id, a class (`ordinary`, `entrenched`, or `eternal`), and a canonical version hash. Adding an Atom is a Proposal whose target is a new Atom id.
 - **Atom content:** normalized CommonMark-subset Markdown ([ADR-0023](../adr/0023-markdown-atoms.md)), edited in CodeMirror 6 with a toolbar and live preview, rendered through a sanitizing renderer with raw HTML disabled.
-- **Working copy:** a plain-text CRDT document (§9 spike: Automerge vs. Yjs) that a Co-Creator checks out from a canonical version. It autosaves locally and syncs encrypted.
+- **Working copy:** a plain-text Yjs document behind an engine interface, frozen to the hash of its normalized text ([ADR-0031](../adr/0031-yjs-working-copies.md)) that a Co-Creator checks out from a canonical version. It autosaves locally and syncs encrypted.
   - **"Shareable URL"** means a capability link that only group members can open, never a public URL. The link carries a working-copy id; the key comes from the group keyring.
   - **"Returning" a working copy** freezes its content into a version hash and attaches it to a Proposal, creating one with a `proposal` event or adding to one with a `version` event.
 - **Conflicts:** if the canonical version moved since checkout, or another open Proposal targets the same Atom, the versions go side by side on one ballot ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)).
@@ -211,7 +211,7 @@ Per [ADR-0007](../adr/0007-thin-python-relay.md) and [ADR-0019](../adr/0019-seal
 - No accounts and no request logging. IP addresses are dropped before any application code sees them, and a test verifies this.
 - Blobs are kept for 30 days by default.
 - Wake-up pushes are batched with 0–60 seconds of random jitter.
-- **Framework choice is a spec-time assumption:** an ASGI app (Starlette or FastAPI) with SQLite for blob storage. Keep it boring, small, and stateless enough to rebuild.
+- **Framework:** FastAPI on Uvicorn with access logs off, blobs in SQLite (WAL) with an expiry index ([ADR-0028](../adr/0028-relay-fastapi-sqlite.md)). Hosted on a DigitalOcean VM where we terminate TLS ([ADR-0041](../adr/0041-digitalocean-relay-hosting.md)).
 
 ### Sealed sender
 
@@ -220,7 +220,8 @@ The envelope on the wire contains only the mailbox id and the ciphertext. The au
 ### Offline and replication
 
 - Every device keeps the full log and the canonical Documents for its groups.
-- On startup the client calls `navigator.storage.persist()` and shows a clear warning if the browser refuses ([ADR-0005](../adr/0005-pwa-client.md)).
+- On iOS the app must be installed to the Home Screen before it creates keys. Keys, logs, and Working Copies live in IndexedDB. After installing, the client calls `navigator.storage.persist()` and shows the result ([ADR-0029](../adr/0029-install-first-indexeddb.md)).
+- Supported: iOS/iPadOS 16.4+ (installed), Android 10+ with current Chrome, current desktop browsers, with a plain, non-blocking notice on devices below iOS 18.4 or Android 13 ([ADR-0042](../adr/0042-broad-device-support.md)).
 
 ---
 
@@ -285,11 +286,7 @@ These follow [ADR-0018](../adr/0018-device-protection-and-duress.md).
 
 ## 9. Spikes
 
-Each spike is time-boxed and produces an ADR before the code that depends on it:
-
-1. **CRDT:** Automerge 2 or Yjs for working copies. Criteria: bundle size, behavior on iOS Safari, freezing a version to a hash, and the size of encrypted sync deltas. (2 days)
-2. **Passkey PRF coverage:** iOS Safari, Android Chrome, and desktop browsers in 2026, plus the PIN fallback experience. (1 day)
-3. **Storage persistence:** how often iOS and Android browsers evict data from an installed PWA, and whether `persist()` is granted. (1 day)
+All three spikes were answered by desk research on 2026-11-07 and decided on the `2026-11-08-reconcile-stack-details` sheet: the merging library ([ADR-0031](../adr/0031-yjs-working-copies.md)), passkey PRF coverage ([ADR-0030](../adr/0030-device-key-fallback.md)), and storage persistence ([ADR-0029](../adr/0029-install-first-indexeddb.md)). What's left is measurement, not choice: check the Yjs bundle size in our build and verify behavior on the ADR-0042 device matrix.
 
 ---
 

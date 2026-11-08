@@ -59,7 +59,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **Settled decisions** are in [`docs/adr/`](docs/adr/README.md). Read them before designing anything.
 
-**Still open:** the full list is in [docs/spec/phase-1-spec.md §10](docs/spec/phase-1-spec.md). Nothing open blocks Phase 1. Later phases still need:
+**Still open:** [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) lists every remaining decision, sheet by sheet. **Spec decomposition and issue filing wait until it is complete.** Among them:
 - which fiscal sponsor ([ADR-0033](docs/adr/0033-legal-entity-staging.md)) and the exact eternal-core wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md))
 - group payee options ([ADR-0027](docs/adr/0027-supporters-and-coalition-tip-share.md)), fork petition thresholds, and the duress storage design ([ADR-0018](docs/adr/0018-device-protection-and-duress.md))
 - don't publish the repo or add a LICENSE until publication ([ADR-0024](docs/adr/0024-source-available-license.md))
