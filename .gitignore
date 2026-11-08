@@ -25,3 +25,6 @@ client/dist/
 client/coverage/
 client/reports/
 client/.stryker-tmp/
+
+# Agent worktrees (local only)
+.claude/worktrees/

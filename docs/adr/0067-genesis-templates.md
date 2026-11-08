@@ -32,3 +32,7 @@ The founder picks a **template** when creating a group. A template is only a pre
 
 - Spec §4's default founding rules become the Fellowship column. The Create Organization screen (spec §7) asks which template, with plain descriptions.
 - Chapter is reserved in Phase 1 and rejected until Phase 2.
+
+## Amendment (2026-11-08, decomposition details)
+
+A Circle keeps 1 steward seat at any size until the switch. Group state tracks which rules a Proposal has set, so the switch can leave those alone ([ADR-0072](0072-protocol-details-for-decomposition.md)).

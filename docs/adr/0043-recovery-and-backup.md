@@ -20,3 +20,7 @@
 - **A yearly gentle check-in** asks people to confirm their contacts are still reachable.
 - **Spec §3's optional BIP39-style recovery phrase is dropped.** The sheet rejected a printable code, because paper codes get lost or found. *Assumption, stated rather than asked:* the same reasoning applies to a phrase.
 - Phase 1 builds the backup alongside recovery (Epic 5).
+
+## Amendment (2026-11-08, decomposition details)
+
+Backups use their own relay endpoint, `/v1/backup/{id}`, with 180-day retention ([ADR-0072](0072-protocol-details-for-decomposition.md)).

@@ -16,3 +16,7 @@
 
 - With quorum misses lapsing immediately (ADR-0047), listing closing votes in the digest is the main protection against lapses. The "needs votes" pin (ADR-0048) is the other.
 - A suspension or a removal Proposal against someone appears in their next digest. The 7-day suspension limit and the 14-day removal window leave time to respond.
+
+## Amendment (2026-11-08, decomposition details)
+
+Lock-screen text is generic: no group names, counts, or titles ([ADR-0072](0072-protocol-details-for-decomposition.md)).
