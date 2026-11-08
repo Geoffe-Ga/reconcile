@@ -84,7 +84,7 @@ The Stay Green workflow enforces iterative quality improvement through **4 seque
    - Only proceed when all CI jobs show ✅
 
 3. **Gate 3: Pre-commit on changed files**
-   - `pre-commit run --from-ref origin/main --to-ref HEAD` (CI runs the same on the PR's changed files)
+   - `./scripts/precommit-changed.sh` (CI runs the same on the PR's changed files)
 
 4. **Gate 4: Review bot** (canonical rules: the gates in the root `CLAUDE.md`, ADR-0061)
    - LGTM is preferred: merge on green CI

@@ -298,7 +298,7 @@ These follow [ADR-0018](../adr/0018-device-protection-and-duress.md).
 | Area | Gate |
 |---|---|
 | Python relay and reference code | The existing `./scripts/check-all.sh`: ≥90% coverage, mypy strict, complexity ≤10, bandit and pip-audit clean |
-| TypeScript client | **In place:** `client/scripts/check-all.sh` runs ESLint 9 (strict, a11y, complexity ≤ 10), Prettier, `tsc -b`, Vitest with ≥90% lines and ≥85% branches, dependency-cruiser boundaries, and `npm audit`. Stryker (≥80%) runs on main. **To add:** Playwright with axe for the end-to-end loop |
+| TypeScript client | **In place:** `client/scripts/check-all.sh` runs ESLint 9 (strict, a11y, complexity ≤ 10), Prettier, `tsc -b`, Vitest with ≥90% lines and ≥85% branches, dependency-cruiser boundaries, and `npm audit`. Stryker (≥80%) is recommended before a release, not a merge gate ([ADR-0061](../adr/0061-quality-gates.md)). **To add:** Playwright with axe for the end-to-end loop |
 | Protocol | Both implementations pass every vector in `protocol/vectors/`, checked in CI |
 | Property tests | Hypothesis (Python) and fast-check (TypeScript) cover tally order independence, validator determinism, and the effect of eligibility snapshots |
 | Privacy | The "relay learns nothing" test (§1) and the "logs contain no IP addresses" test run in CI |

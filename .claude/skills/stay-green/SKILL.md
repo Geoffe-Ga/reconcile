@@ -39,7 +39,7 @@ Repeat for each small piece of functionality. Write tests incrementally, not all
 ### Gate 2: Pre-Commit Quality Checks
 
 ```bash
-pre-commit run --from-ref origin/main --to-ref HEAD
+./scripts/precommit-changed.sh
 ```
 
 When checks fail: read errors, fix issues, run again. Repeat until all green.
@@ -71,19 +71,19 @@ def calculate_cost(impressions: int, cpm: float) -> float:
     return impressions * (cpm / 1000)
 
 # Gate 1 - Refactor: (already clean, move on)
-# Gate 2: pre-commit run --from-ref origin/main --to-ref HEAD -> All passed!
+# Gate 2: ./scripts/precommit-changed.sh -> All passed!
 ```
 
 ### Example 2: Fixing a Formatting Failure
 
 ```bash
 # Gate 2 fails on formatting
-$ pre-commit run --from-ref origin/main --to-ref HEAD
+$ ./scripts/precommit-changed.sh
 black....Failed
 
 # Auto-fix and re-run
 $ ./scripts/format.sh --fix
-$ pre-commit run --from-ref origin/main --to-ref HEAD
+$ ./scripts/precommit-changed.sh
 # All passed!
 ```
 
@@ -99,12 +99,12 @@ $ pre-commit run --from-ref origin/main --to-ref HEAD
 ```bash
 ./scripts/complexity.sh  # Find complex functions
 # Extract helper functions, simplify branching
-# Then verify: ./scripts/complexity.sh && pre-commit run --from-ref origin/main --to-ref HEAD
+# Then verify: ./scripts/complexity.sh && ./scripts/precommit-changed.sh
 ```
 
 ### Error: Type errors from MyPy
 ```bash
 ./scripts/typecheck.sh  # See specific errors
 # Add/fix type annotations
-# Then verify: ./scripts/typecheck.sh && pre-commit run --from-ref origin/main --to-ref HEAD
+# Then verify: ./scripts/typecheck.sh && ./scripts/precommit-changed.sh
 ```

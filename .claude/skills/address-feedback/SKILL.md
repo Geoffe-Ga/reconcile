@@ -127,7 +127,7 @@ Then run the full local gate before any push:
 
 ```bash
 # Whatever the project uses; pick the equivalents:
-pre-commit run --from-ref origin/main --to-ref HEAD
+./scripts/precommit-changed.sh
 ./scripts/test.sh --all      # or pytest / npm test / go test ./... / cargo test
 ./scripts/typecheck.sh       # or mypy / tsc --noEmit / etc.
 ```
@@ -198,7 +198,7 @@ Confirm the merge succeeded; do not delete the remote branch unless the user ask
 
 1. Parse the comment body: two **Problems** (file:line cited) and one **Code Quality** nit. Build the triage table.
 2. Decide the nit is out of scope for this PR — reply on the top-level Claude comment justifying the deferral.
-3. For the two blockers: Red-Green-Refactor locally, then `pre-commit run --from-ref origin/main --to-ref HEAD` + full test suite + typecheck. All green.
+3. For the two blockers: Red-Green-Refactor locally, then `./scripts/precommit-changed.sh` + full test suite + typecheck. All green.
 4. Single `git push`. Post a summary reply via `add_issue_comment` listing the addressed items and the SHA. The push re-runs the review automatically.
 5. New Claude comment arrives with `Verdict: LGTM` after the new push timestamp → re-enter Step 6.
 
@@ -222,7 +222,7 @@ Do not silently ignore. Reply on the relevant thread (or the top-level comment) 
 
 ### Error: Tempted to push to "see what CI says"
 
-Stop. Reproduce the check locally first (`pre-commit run --from-ref origin/main --to-ref HEAD`, full test suite, typecheck). Pushing speculatively burns minutes per round trip and trains a sloppy loop. Only push when local gates are green.
+Stop. Reproduce the check locally first (`./scripts/precommit-changed.sh`, full test suite, typecheck). Pushing speculatively burns minutes per round trip and trains a sloppy loop. Only push when local gates are green.
 
 ### Error: Merge gate passes but `mergeable` is `false`
 
