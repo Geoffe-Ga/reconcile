@@ -13,7 +13,7 @@ This spec says **what to build first and how**. It links to ADRs for *why* and d
 
 One Organization of 3 to about 150 people can run the core loop on their own devices, with no central database:
 
-> **Invite → Join → View → Pitch → Discuss (linked chat) → Vote → Update**
+> **Invite → Join → View → Proposal → Discuss (linked chat) → Vote → Update**
 
 All of it must hold up against the threat model: the relay learns nothing readable, a member who leaks data exposes only what their level could see, and a seized phone is protected.
 
@@ -23,7 +23,7 @@ Reconcile is friendly to anarchists, "the OS for anarcho-syndicalism" ([ADR-0018
 
 ### Success criteria
 
-1. **A full loop on real devices.** A pilot group from the user's own circle (decided 2026-11-07 on the `2026-11-07-reconcile-product-stack` sheet), at least 5 testers on at least 3 devices (including iOS Safari as an installed PWA, and desktop Chrome) creates an Organization, invites members, pitches an Atom change, votes, and sees the canonical Document update on every device, including one that was offline during the vote.
+1. **A full loop on real devices.** A pilot group from the user's own circle (decided 2026-11-07 on the `2026-11-07-reconcile-product-stack` sheet), at least 5 testers on at least 3 devices (including iOS Safari as an installed PWA, and desktop Chrome) creates an Organization, invites members, proposals an Atom change, votes, and sees the canonical Document update on every device, including one that was offline during the vote.
 2. **The relay learns nothing.** An automated test captures everything the relay stores and logs during a full loop and asserts that it contains no plaintext, no long-lived identity keys, and no sender identities.
 3. **Tallies are deterministic.** The same set of governance events gives the same canonical Document on every device, whatever order they arrive in (property tests).
 4. **Repo quality gates pass.** Python: ≥90% coverage, ≥80% mutation score, complexity ≤10. TypeScript: the equivalents in §8.
@@ -122,17 +122,17 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 | `join` | invite id, new member key, display name | the holder of the invite |
 | `vouch` | the vouched-for member's key | `vouch` (voting members) |
 | `level-change` | member, new level | the member themselves. Moving to Collaborator or Co-Creator requires voting rights from admission ([ADR-0014](../adr/0014-invite-and-vouch-admission.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md)) |
-| `pitch` | `target` (`{kind: atom \| new-atom \| removal \| steward \| rules, …}`), title, justification, version hashes, window, Atom class | `pitch` (Co-Creator) |
-| `version` | pitch id, content hash of a competing version ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)) | `pitch` |
-| `vote` | pitch id, `{version hash: score 0–4}`, `{version hash: reason}` (required for every 0) | `vote`, plus being eligible at the snapshot |
-| `tally` | pitch id, winning version hash or `none`, totals, ballot commitment | anyone; validators recompute it, and only a correct tally is valid |
+| `proposal` | `target` (`{kind: atom \| new-atom \| removal \| steward \| rules, …}`), title, justification, version hashes, window, Atom class | `propose` (Co-Creator) |
+| `version` | proposal id, content hash of a competing version ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)) | `propose` |
+| `vote` | proposal id, `{version hash: score 0–4}`, `{version hash: reason}` (required for every 0) | `vote`, plus being eligible at the snapshot |
+| `tally` | proposal id, winning version hash or `none`, totals, ballot commitment | anyone; validators recompute it, and only a correct tally is valid |
 | `suspend` / `unsuspend` | member, reason, expiry ≤ 7 days | `steward` |
-| `remove` | member, the passed pitch id | follows a passed removal Pitch |
+| `remove` | member, the passed proposal id | follows a passed removal Proposal |
 | `leave` | — | the member |
-| `steward-elect` | member | follows a passed Pitch |
+| `steward-elect` | member | follows a passed Proposal |
 | `key-rotate` | new group key epoch, wrapped keys per member | any Co-Creator, required after `remove` |
-| `rules-change` | changed rule fields | follows a passed Pitch at the bar for that rule's class |
-| `checkpoint` | totals and ballot commitments for expired pitches, plus the hash of the log prefix it summarizes | any voting member's device, produced when ballots expire ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)) |
+| `rules-change` | changed rule fields | follows a passed Proposal at the bar for that rule's class |
+| `checkpoint` | totals and ballot commitments for expired proposals, plus the hash of the log prefix it summarizes | any voting member's device, produced when ballots expire ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)) |
 | `fork-petition` | **reserved**, rejected in Phase 1 | — |
 
 ### Default founding rules
@@ -145,8 +145,8 @@ All of these can be changed through `rules-change`.
 | Wait before voting | 14 days from `join` | ADR-0014 |
 | Pass rule (ordinary Atom) | average ≥ 2.0 and fewer than 10% zeros | [ADR-0002](../adr/0002-consent-floor-vote-rule.md) |
 | Pass rule (entrenched Atom) | average ≥ 3.0, under 5% zeros, window × 2 | [ADR-0015](../adr/0015-anti-capture.md) |
-| Eternal Atom | can't be the target of a valid `pitch` | ADR-0015 |
-| Eligibility | voting members as of the `pitch` event's position in the order | ADR-0015 |
+| Eternal Atom | can't be the target of a valid `proposal` | ADR-0015 |
+| Eligibility | voting members as of the `proposal` event's position in the order | ADR-0015 |
 | Default vote window | 7 days (14 for entrenched) | confirmed 2026-11-07 |
 | Quorum | at least 3 ballots and 30% of eligible voters | confirmed 2026-11-07 |
 | Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty reason for that version | confirmed 2026-11-07 |
@@ -157,7 +157,7 @@ All of these can be changed through `rules-change`.
 
 ### Tally
 
-The tally is a pure function with signature `tally(pitch, eligible_voters, votes) → outcome`:
+The tally is a pure function with signature `tally(proposal, eligible_voters, votes) → outcome`:
 
 1. Take each eligible voter's most recent valid `vote` made before the window closed.
 2. For each version, compute the average and the share of zeros, and test them against the Atom class's pass rule. If quorum isn't met, the outcome is `none`.
@@ -171,12 +171,12 @@ Only a valid `tally` with a winner changes the canonical Document. The tally mus
 ## 5. Documents, Atoms, and Working Copies
 
 - **Document:** an ordered list of Atom ids plus metadata, all held in governance state. Its canonical content at any moment is each Atom's winning version hash, resolved through a content-addressed blob store.
-- **Atom:** has an id, a class (`ordinary`, `entrenched`, or `eternal`), and a canonical version hash. Adding an Atom is a Pitch whose target is a new Atom id.
+- **Atom:** has an id, a class (`ordinary`, `entrenched`, or `eternal`), and a canonical version hash. Adding an Atom is a Proposal whose target is a new Atom id.
 - **Atom content:** normalized CommonMark-subset Markdown ([ADR-0023](../adr/0023-markdown-atoms.md)), edited in CodeMirror 6 with a toolbar and live preview, rendered through a sanitizing renderer with raw HTML disabled.
 - **Working copy:** a plain-text CRDT document (§9 spike: Automerge vs. Yjs) that a Co-Creator checks out from a canonical version. It autosaves locally and syncs encrypted.
   - **"Shareable URL"** means a capability link that only group members can open, never a public URL. The link carries a working-copy id; the key comes from the group keyring.
-  - **"Returning" a working copy** freezes its content into a version hash and attaches it to a Pitch, creating one with a `pitch` event or adding to one with a `version` event.
-- **Conflicts:** if the canonical version moved since checkout, or another open Pitch targets the same Atom, the versions go side by side on one ballot ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)).
+  - **"Returning" a working copy** freezes its content into a version hash and attaches it to a Proposal, creating one with a `proposal` event or adding to one with a `version` event.
+- **Conflicts:** if the canonical version moved since checkout, or another open Proposal targets the same Atom, the versions go side by side on one ballot ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)).
 
 ---
 
@@ -237,11 +237,11 @@ These follow `docs/plan/09` with the ADR changes applied:
 3. **Create Organization:** name, founding rules (defaults shown, advanced settings collapsed), and the first Document.
 4. **Invite:** generate an invite link or QR code. The UI suggests a video call or meeting as a "vibe check" before vouching ([ADR-0014](../adr/0014-invite-and-vouch-admission.md)).
 5. **Group home:**
-   - Documents, open Pitches, and members. followers (Members) don't see the roster ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
+   - Documents, open Proposals, and members. followers (Members) don't see the roster ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)).
    - A linked-chat field, which can hold any URL ([ADR-0011](../adr/0011-debate-venues.md)).
 6. **Document view:** Atoms with class badges (entrenched or eternal) and history.
-7. **Working copy editor:** CRDT editing, with "Return as Pitch" and "Add as competing version" actions.
-8. **Pitch and ballot:**
+7. **Working copy editor:** CRDT editing, with "Return as Proposal" and "Add as competing version" actions.
+8. **Proposal and ballot:**
    - Title, justification, and the versions side by side.
    - A 0–4 score per version, with labels from `docs/plan/07`.
    - A countdown and the linked-chat button.
@@ -256,7 +256,7 @@ These follow `docs/plan/09` with the ADR changes applied:
 
 There are no scheduled Dispatches in Phase 1. Pushes carry no content and only wake the app. Once the app has decrypted the events locally, it shows a local notification for:
 
-- a new Pitch
+- a new Proposal
 - a vote closing within 24 hours
 - a completed vote
 - a new member
@@ -302,13 +302,13 @@ Each spike is time-boxed and produces an ADR before the code that depends on it:
 - the bootstrap rule
 - a required reason for every 0 score
 - the license: source-available ([ADR-0024](../adr/0024-source-available-license.md))
-- moving between levels: self-selected after admission, with at most 3 open Pitches per person ([ADR-0021](../adr/0021-level-names-and-self-selection.md))
+- moving between levels: self-selected after admission, with at most 3 open Proposals per person ([ADR-0021](../adr/0021-level-names-and-self-selection.md))
 
-Also confirmed: `invite` belongs to the voting levels, every `pitch` carries a `target` kind, and expired ballots compact into a signed `checkpoint`.
+Also confirmed: `invite` belongs to the voting levels, every `proposal` carries a `target` kind, and expired ballots compact into a signed `checkpoint`.
 
 **Nothing open blocks Phase 1.**
 
-Decided for later phases (ADRs 0032–0040): code hosting, legal staging, payment rail, Reconcile-the-group's founding, group-by-group coalition votes (no coalition-wide individual ballots), holonic promotion, optional front-door discovery, per-group integrations, and group opt-ins decided by Pitch.
+Decided for later phases (ADRs 0032–0040): code hosting, legal staging, payment rail, Reconcile-the-group's founding, group-by-group coalition votes (no coalition-wide individual ballots), holonic promotion, optional front-door discovery, per-group integrations, and group opt-ins decided by Proposal.
 
 Still open, **not needed for Phase 1**: which fiscal sponsor (ADR-0033), the exact eternal-core wording (ADR-0035), group payee options (ADR-0027), fork petition thresholds in practice, and the duress storage design.
 
@@ -323,4 +323,4 @@ They are listed in tracer-code order. The first item in each epic is its skeleto
 5. **Identity and safety:** root keys, passkey unlock, per-group keys, recovery, app lock, and panic wipe.
 6. **The end-to-end loop:** sync through the relay, working copies, ballots, and tallies updating the canonical Document across devices, plus notifications.
 
-The first demoable milestone is a skeleton that runs **one Pitch through to an Update between two browser profiles**, with stub crypto and the real relay. After that, each epic replaces stubs with the real implementation.
+The first demoable milestone is a skeleton that runs **one Proposal through to an Update between two browser profiles**, with stub crypto and the real relay. After that, each epic replaces stubs with the real implementation.

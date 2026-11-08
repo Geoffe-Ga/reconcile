@@ -6,13 +6,13 @@
 
 ## Context
 
-Document text needs smooth concurrent merging. Governance facts (membership, pitches, votes, level changes) need to be signed, ordered, and auditable. The canonical Document is the last edit that survived governance, so governance must control what reaches it.
+Document text needs smooth concurrent merging. Governance facts (membership, proposals, votes, level changes) need to be signed, ordered, and auditable. The canonical Document is the last edit that survived governance, so governance must control what reaches it.
 
 ## Decision
 
 **Two layers:**
 
-1. **Governance log:** an append-only, hash-linked log of signed events per group (join, level change, pitch, vote, tally, removal, fork). Every member's device validates every event against the group's rules before accepting it.
+1. **Governance log:** an append-only, hash-linked log of signed events per group (join, level change, proposal, vote, tally, removal, fork). Every member's device validates every event against the group's rules before accepting it.
 2. **Working copies:** draft text lives in a CRDT (Automerge or Yjs; choose in the spec after a spike). A CRDT can never change the canonical Document directly.
 
 **Only a valid tally event that passes the consent floor (ADR-0002) moves the canonical Document.** It names the exact version (by content hash) that won.

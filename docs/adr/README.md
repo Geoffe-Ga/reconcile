@@ -39,8 +39,8 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling; votes travel with the Dispatch on the voter's own device | Accepted |
 | [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people | Accepted |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
-| [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Pitch; widening is entrenched, narrowing is easy | Accepted |
+| [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 
-**Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**.
+**Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck.
 
 New ADRs take the next number and record the context, decision, consequences, and open questions. When a decision comes from a `/decide` sheet, note the sheet and decision id.

@@ -18,7 +18,7 @@ We considered three trust models:
 
 ## Decision
 
-**Reconcile is local-first.** Canonical data (documents, memberships, pitches, votes) lives on members' devices and syncs between peers. Any server we run is a relay or store-and-forward node. It must not be able to read, enumerate, or reconstruct membership, affiliation, or voting data.
+**Reconcile is local-first.** Canonical data (documents, memberships, proposals, votes) lives on members' devices and syncs between peers. Any server we run is a relay or store-and-forward node. It must not be able to read, enumerate, or reconstruct membership, affiliation, or voting data.
 
 **Discovery is peer-to-peer and relational, not a global directory.** The working idea: you discover groups through people you already share a group or coalition with ("coalition-mate discovery"), so the network grows outward along existing trust rather than through a searchable index of everyone.
 
@@ -29,7 +29,7 @@ We accept a harder build in exchange for never creating the central list.
 The user proposed this alongside the decision. It's recorded here so it shapes the design, but it is **not** a commitment yet.
 
 - Any member can write an article or essay. Groups vote to promote it to the coalition above them, and each coalition votes again, so a piece rises through an expanding circle of nested groups (holons).
-- **Reconcile itself is the outermost group.** Its users collaboratively edit Reconcile's own mission, vision, and values through the normal Pitch → Vote loop. It can broadcast to the entire user base the articles that cleared every level below it.
+- **Reconcile itself is the outermost group.** Its users collaboratively edit Reconcile's own mission, vision, and values through the normal Proposal → Vote loop. It can broadcast to the entire user base the articles that cleared every level below it.
 - Reach is earned through governance at each level, not through engagement metrics.
 
 ## Consequences

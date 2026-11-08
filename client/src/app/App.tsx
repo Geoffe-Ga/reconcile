@@ -10,7 +10,7 @@ export function App() {
       <p className="eyebrow">Reconcile</p>
       <h1>Your group&rsquo;s living documents</h1>
       <p className="lede">
-        Pitch a change, talk it through, and vote. The document is whatever survives the vote.
+        Propose a change, talk it through, and vote. The document is whatever survives the vote.
       </p>
       <Button className="button-primary">Create an organization</Button>
     </main>

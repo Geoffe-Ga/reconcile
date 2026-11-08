@@ -10,7 +10,7 @@ The usual coup in a voting system is entryism: flood a group, then vote to rewri
 
 ## Decision
 
-1. **Eligibility snapshot.** Only people who were voting members when a Pitch opened may vote on it.
+1. **Eligibility snapshot.** Only people who were voting members when a Proposal opened may vote on it.
 2. **Entrenched Atoms.** A group can mark core Atoms as needing a higher bar to change. Default: average ≥ 3.0, under 5% zeros, and a window twice as long. Entrenchment is itself entrenched.
 3. **Eternal Atoms (eternity clauses).** A group can mark an Atom as unamendable. The only way to escape it is to leave or fork. Marking an Atom eternal needs the entrenched bar, and the UI warns that this is permanent. Reconcile-the-group's covenant core (ADR-0013) is eternal.
 4. **Fork with history, but only in extreme circumstances.** **From the user's notes:** splitting must not appear on every vote that doesn't go someone's way. A fork is available only through a **fork petition**, opened from group settings and never from a vote result. It needs signatures from at least 20% of voting members (a default each group can tune) **and** a trigger:
