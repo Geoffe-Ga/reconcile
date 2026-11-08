@@ -87,7 +87,6 @@ Quality thresholds are immutable. Meet them, don't lower them.
 - Docstring Coverage: ≥95%
 - Mutation Score: ≥80%
 - Cyclomatic Complexity: ≤10 per function
-- Pylint Score: ≥9.0
 
 **When code doesn't meet standards**:
 - ❌ Change `fail_under = 70` in pyproject.toml

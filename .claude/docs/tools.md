@@ -16,10 +16,10 @@
 
 | Task | ❌ NEVER DO THIS | ✅ ALWAYS DO THIS |
 |------|------------------|-------------------|
-| **Format code** | `black .`<br>`isort .` | `./scripts/format.sh` |
-| **Check formatting** | `black --check .` | `./scripts/check-all.sh` |
-| **Lint code** | `ruff check .`<br>`pylint src/` | `./scripts/lint.sh` |
-| **Type check** | `mypy src/` | `./scripts/lint.sh` |
+| **Format code** | `ruff format .` | `./scripts/format.sh` |
+| **Check formatting** | `ruff format --check .` | `./scripts/check-all.sh` |
+| **Lint code** | `ruff check .` | `./scripts/lint.sh` |
+| **Type check** | `mypy src/` | `./scripts/typecheck.sh` |
 | **Run tests** | `pytest` | `./scripts/test.sh` |
 | **Run unit tests** | `pytest tests/unit/` | `./scripts/test.sh --unit` |
 | **Check coverage** | `pytest --cov` | `./scripts/test.sh` |
@@ -45,14 +45,14 @@ pytest tests/
 
 **Issues with direct invocation:**
 - May use different settings than CI
-- Might skip important checks (e.g., isort after black)
+- Might skip important checks (e.g., import sorting or docstring coverage)
 - Won't generate proper coverage reports
 - Results differ from CI pipeline
 - Wastes time debugging CI failures locally
 
 ✅ **GOOD - Use scripts:**
 ```bash
-# Formats with black + isort + ruff, correct config
+# Formats with ruff (formatter + import sorting), correct config
 ./scripts/format.sh
 
 # Fixes formatting and linting issues automatically
@@ -64,7 +64,7 @@ pytest tests/
 
 **Benefits of using scripts:**
 - ✅ Same configuration as CI pipeline
-- ✅ Proper tool ordering (e.g., black before isort)
+- ✅ Proper tool ordering (import sorting before formatting)
 - ✅ Comprehensive coverage reporting
 - ✅ Consistent results across developers
 - ✅ Catches issues before CI runs
@@ -74,12 +74,14 @@ pytest tests/
 **`./scripts/check-all.sh`** - Run all quality checks (use before every commit)
 
 Runs in order:
-1. Formatting checks (ruff, black, isort)
-2. Linting (ruff, pylint, mypy)
-3. Security scanning (bandit, pip-audit)
-4. Complexity analysis (radon, xenon)
-5. Unit tests with coverage
-6. Coverage report validation (90% minimum)
+1. Linting (ruff, interrogate)
+2. Formatting (ruff)
+3. Type checking (mypy)
+4. Security scanning (bandit, pip-audit)
+5. Complexity analysis (radon, xenon)
+6. Unit tests
+7. Coverage (90% lines, 85% branches)
+8. Package build (build, twine check)
 
 **Note**: Mutation testing is NOT included in check-all.sh due to long runtime. It runs automatically in CI on main branch merges.
 

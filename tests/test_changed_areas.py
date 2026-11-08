@@ -62,5 +62,5 @@ def test_docs_only_change_needs_no_code_gate(repo: Path) -> None:
 
 def test_unresolvable_base_ref_checks_everything(repo: Path) -> None:
     """A force-push hands CI a 'before' sha that no longer exists: run all."""
-    missing = "0686b67eb87df48db6c506dee987ea39583bba05"
+    missing = "deadbeef" * 5  # a well-formed sha that exists nowhere
     assert _areas(repo, missing) == {"python": "true", "client": "true"}

@@ -7,7 +7,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-FIX=false
 CHECK=false
 VERBOSE=false
 
@@ -15,7 +14,8 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --fix)
-            FIX=true
+            # Fixing is the default; the flag is accepted for symmetry with --check.
+            CHECK=false
             shift
             ;;
         --check)
@@ -30,7 +30,7 @@ while [[ $# -gt 0 ]]; do
             cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Format code using Black and isort.
+Format code using Ruff (formatter + import sorting).
 
 OPTIONS:
     --fix       Apply formatting changes (default)
@@ -64,26 +64,19 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Formatting (Black + isort) ==="
+echo "=== Formatting (Ruff) ==="
 
-# Determine mode
+# Ruff is the only formatter: the same pinned version runs here, in
+# pre-commit, and in CI (requirements-dev.txt). Import order is ruff's "I" rule.
 if $CHECK; then
     MODE="--check"
+    ruff check --select I . || { echo "✗ Import order is wrong (run ./scripts/format.sh)" >&2; exit 1; }
+    ruff format --check . || { echo "✗ Formatting check failed (run ./scripts/format.sh)" >&2; exit 1; }
 else
     MODE=""
+    ruff check --select I --fix . || { echo "✗ Import sorting failed" >&2; exit 1; }
+    ruff format . || { echo "✗ Formatting failed" >&2; exit 1; }
 fi
-
-# Run isort
-if $VERBOSE; then
-    echo "Running isort..."
-fi
-isort $MODE . || { echo "✗ isort failed" >&2; exit 1; }
-
-# Run Black
-if $VERBOSE; then
-    echo "Running Black..."
-fi
-black $MODE . || { echo "✗ Black failed" >&2; exit 1; }
 
 if [ -n "$MODE" ]; then
     echo "✓ Code formatting check passed"

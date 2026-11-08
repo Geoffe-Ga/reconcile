@@ -199,14 +199,12 @@ git commit -m "feat(module): add feature (#123)"
 [tool.coverage.report]
 fail_under = 70  # Reduced from 90 because it's hard
 
-[tool.pylint.main]
-fail-under = 7.0  # Reduced from 9.0
 ```
 
 ✅ **REQUIRED - Meet the standards:**
 ```python
 # Write better tests to reach 90% coverage
-# Refactor code to improve pylint score
+# Refactor code to reduce complexity instead of raising the limit
 # If truly impossible, create issue to discuss threshold adjustment
 ```
 

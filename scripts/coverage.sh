@@ -73,6 +73,7 @@ PYTEST_ARGS=(
     --cov-branch
     --cov-report=term-missing
     --cov-fail-under=90
+    --cov-report=xml
 )
 
 # Add HTML report if requested
@@ -92,6 +93,19 @@ pytest "${PYTEST_ARGS[@]}" tests/ || {
     echo "✗ Coverage below threshold" >&2
     exit 1
 }
+
+# Branch coverage has its own floor (CLAUDE.md: >= 85%). --cov-fail-under above
+# checks the combined number, so read the branch rate on its own.
+python3 - <<'EOF' || exit 1
+import sys
+import xml.etree.ElementTree as ET
+
+rate = float(ET.parse("coverage.xml").getroot().get("branch-rate", "0")) * 100
+print(f"Branch coverage: {rate:.1f}% (minimum 85%)")
+if rate < 85:
+    print("✗ Branch coverage below 85%", file=sys.stderr)
+    sys.exit(1)
+EOF
 
 echo "✓ Coverage threshold met"
 

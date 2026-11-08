@@ -20,6 +20,77 @@ from pathlib import Path
 MINIMUM_MUTATION_SCORE = 80
 
 
+# Every query joins mutants to their source file and filters by filename. The
+# filter is always applied ("%" matches every file), so each statement is a
+# static string with bound parameters only.
+_JOIN = """
+    FROM Mutant m, Line l, SourceFile sf
+    WHERE m.line = l.id
+      AND l.sourcefile = sf.id
+      AND sf.filename LIKE ?
+"""
+_TOTAL_SQL = "SELECT COUNT(*)" + _JOIN
+_STATUS_SQL = "SELECT m.status, COUNT(*)" + _JOIN + "GROUP BY m.status"
+_TOP_FILES_SQL = (
+    "SELECT sf.filename, COUNT(*) AS count"
+    + _JOIN
+    + 'AND m.status = "bad_survived" GROUP BY sf.filename ORDER BY count DESC LIMIT ?'
+)
+_SAMPLE_SQL = (
+    "SELECT m.id, sf.filename, l.line_number"
+    + _JOIN
+    + 'AND m.status = "bad_survived" ORDER BY sf.filename, l.line_number LIMIT 10'
+)
+
+
+def _print_score(status_counts: dict[str, int], total: int) -> None:
+    """Print the mutation score, its breakdown, and the gap to the threshold."""
+    killed = status_counts.get("ok_killed", 0)
+    untested = status_counts.get("untested", 0)
+    tested_total = total - untested
+    if tested_total <= 0:
+        return
+    score = (killed / tested_total) * 100
+    print(f"Mutation Score: {score:.1f}%")
+    print(f"Required: {MINIMUM_MUTATION_SCORE}%")
+    print()
+    print("Breakdown:")
+    rows = [
+        ("Killed", "ok_killed", " of tested"),
+        ("Survived", "bad_survived", " of tested"),
+        ("Suspicious", "ok_suspicious", ""),
+        ("Timeout", "bad_timeout", ""),
+    ]
+    for label, status, suffix in rows:
+        count = status_counts.get(status, 0)
+        print(f"  {label}: {count} ({count / tested_total * 100:.1f}%{suffix})")
+    print(f"  Untested: {untested}")
+    print()
+    if score < MINIMUM_MUTATION_SCORE:
+        gap = int((MINIMUM_MUTATION_SCORE / 100 * tested_total) - killed)
+        print(f"⚠️  Need to kill {gap} more mutants to reach {MINIMUM_MUTATION_SCORE}%")
+        print()
+
+
+def _print_survivors(
+    cursor: sqlite3.Cursor, pattern: str, survived: int, top_files: int
+) -> None:
+    """Print the files with the most surviving mutants and a sample of them."""
+    print(f"=== Files with Most Survived Mutants (Top {top_files}) ===")
+    cursor.execute(_TOP_FILES_SQL, (pattern, top_files))
+    for filename, count in cursor.fetchall():
+        percentage = (count / survived) * 100
+        print(f"  {count:3d} ({percentage:5.1f}%): {filename}")
+    print()
+    print("Sample of survived mutants (first 10):")
+    cursor.execute(_SAMPLE_SQL, (pattern,))
+    for mutant_id, filename, line_number in cursor.fetchall():
+        print(f"  Mutant {mutant_id}: {filename}:{line_number}")
+    print()
+    print("To view a specific mutant: mutmut show <id>")
+    print("To generate HTML report: mutmut html")
+
+
 def analyze_cache(
     cache_path: Path, top_files: int = 20, filter_file: str | None = None
 ) -> None:
@@ -35,123 +106,28 @@ def analyze_cache(
         print("Run mutation tests first: ./scripts/mutation.sh", file=sys.stderr)
         sys.exit(1)
 
+    pattern = f"%{filter_file}" if filter_file else "%"
+    suffix = f" (filtered: {filter_file})" if filter_file else ""
+    print(f"=== Mutmut Cache Analysis{suffix} ===\n")
+
     conn = sqlite3.connect(cache_path)
     cursor = conn.cursor()
-
-    # Build file filter condition
-    file_filter_sql = ""
-    file_filter_params: tuple[str, ...] = ()
-    if filter_file:
-        # Match any path ending with the specified file
-        file_filter_sql = """
-            AND sf.filename LIKE ?
-        """
-        file_filter_params = (f"%{filter_file}",)
-        print(f"=== Mutmut Cache Analysis (filtered: {filter_file}) ===\n")
-    else:
-        print("=== Mutmut Cache Analysis ===\n")
-
-    # Get total mutants (with optional filter)
-    query = f"""
-        SELECT COUNT(*)
-        FROM Mutant m, Line l, SourceFile sf
-        WHERE m.line = l.id
-          AND l.sourcefile = sf.id
-          {file_filter_sql}
-    """
-    cursor.execute(query, file_filter_params)
+    cursor.execute(_TOTAL_SQL, (pattern,))
     total = cursor.fetchone()[0]
     print(f"Total mutants: {total}")
     print()
 
-    # Get status counts (with optional filter)
-    query = f"""
-        SELECT m.status, COUNT(*)
-        FROM Mutant m, Line l, SourceFile sf
-        WHERE m.line = l.id
-          AND l.sourcefile = sf.id
-          {file_filter_sql}
-        GROUP BY m.status
-    """
-    cursor.execute(query, file_filter_params)
+    cursor.execute(_STATUS_SQL, (pattern,))
     status_counts = dict(cursor.fetchall())
-    killed = status_counts.get("ok_killed", 0)
-    survived = status_counts.get("bad_survived", 0)
-    suspicious = status_counts.get("ok_suspicious", 0)
-    timeout = status_counts.get("bad_timeout", 0)
-    untested = status_counts.get("untested", 0)
-
     print("Status counts:")
     for status, count in sorted(status_counts.items()):
         print(f"  {status}: {count}")
     print()
 
-    # Calculate score
-    if total > 0:
-        tested_total = total - untested
-        if tested_total > 0:
-            score = (killed / tested_total) * 100
-            print(f"Mutation Score: {score:.1f}%")
-            print(f"Required: {MINIMUM_MUTATION_SCORE}%")
-            print()
-            print("Breakdown:")
-            killed_pct = killed / tested_total * 100
-            survived_pct = survived / tested_total * 100
-            suspicious_pct = suspicious / tested_total * 100
-            timeout_pct = timeout / tested_total * 100
-            print(f"  Killed: {killed} ({killed_pct:.1f}% of tested)")
-            print(f"  Survived: {survived} ({survived_pct:.1f}% of tested)")
-            print(f"  Suspicious: {suspicious} ({suspicious_pct:.1f}%)")
-            print(f"  Timeout: {timeout} ({timeout_pct:.1f}%)")
-            print(f"  Untested: {untested}")
-            print()
-
-            if score < MINIMUM_MUTATION_SCORE:
-                gap = int((MINIMUM_MUTATION_SCORE / 100 * tested_total) - killed)
-                msg = f"⚠️  Need to kill {gap} more mutants"
-                msg += f" to reach {MINIMUM_MUTATION_SCORE}%"
-                print(msg)
-                print()
-
-    # Show files with most survived mutants (with optional filter)
+    _print_score(status_counts, total)
+    survived = status_counts.get("bad_survived", 0)
     if survived > 0:
-        print(f"=== Files with Most Survived Mutants (Top {top_files}) ===")
-        query = f"""
-            SELECT sf.filename, COUNT(*) as count
-            FROM Mutant m, Line l, SourceFile sf
-            WHERE m.line = l.id
-              AND l.sourcefile = sf.id
-              AND m.status = "bad_survived"
-              {file_filter_sql}
-            GROUP BY sf.filename
-            ORDER BY count DESC
-            LIMIT ?
-        """
-        cursor.execute(query, (*file_filter_params, top_files))
-        for filename, count in cursor.fetchall():
-            percentage = (count / survived) * 100
-            print(f"  {count:3d} ({percentage:5.1f}%): {filename}")
-        print()
-
-        # Show sample of survived mutants (with optional filter)
-        print("Sample of survived mutants (first 10):")
-        query = f"""
-            SELECT m.id, sf.filename, l.line_number
-            FROM Mutant m, Line l, SourceFile sf
-            WHERE m.line = l.id
-              AND l.sourcefile = sf.id
-              AND m.status = "bad_survived"
-              {file_filter_sql}
-            ORDER BY sf.filename, l.line_number
-            LIMIT 10
-        """
-        cursor.execute(query, file_filter_params)
-        for mutant_id, filename, line_number in cursor.fetchall():
-            print(f"  Mutant {mutant_id}: {filename}:{line_number}")
-        print()
-        print("To view a specific mutant: mutmut show <id>")
-        print("To generate HTML report: mutmut html")
-
+        _print_survivors(cursor, pattern, survived, top_files)
     conn.close()
 
 

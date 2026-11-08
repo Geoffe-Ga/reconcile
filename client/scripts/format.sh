@@ -7,14 +7,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-FIX=false
 CHECK=false
 VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --fix)
-            FIX=true
+            # Fixing is the default; the flag is accepted for symmetry with --check.
+            CHECK=false
             shift
             ;;
         --check)

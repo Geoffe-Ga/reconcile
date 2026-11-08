@@ -118,6 +118,9 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 strict_concatenate = true
+# One file set for local, pre-commit, and CI runs (scripts/typecheck.sh).
+files = ["reconcile", "tests", "scripts", ".claude/skills/decide/scripts"]
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -141,6 +144,8 @@ select = [
     "SIM",    # flake8-simplify
     "TCH",    # flake8-type-checking
     "RUF",    # Ruff-specific rules
+    "TRY",    # tryceratops (exception handling)
+    "FURB",   # refurb (modernization)
 ]
 ignore = []
 
@@ -148,7 +153,7 @@ ignore = []
 "tests/**/*" = ["S101"]  # Allow assert in tests
 
 [tool.bandit]
-exclude_dirs = ["tests", "venv", "virtualenv", "client"]
+exclude_dirs = ["tests", ".venv", "venv", "client", "mutants", "build", "dist"]
 skips = ["B101"]  # Skip assert_used in tests
 
 [tool.mutmut]
@@ -156,3 +161,10 @@ paths_to_mutate = "reconcile/"
 backup = false
 runner = "python -m pytest --exitfirst --quiet --tb=no"
 tests_dir = "tests/"
+
+[tool.interrogate]
+# Docstring coverage (CLAUDE.md: >= 95%). scripts/lint.sh runs this; so does CI.
+fail-under = 95
+exclude = [".venv", "client", "mutants", "build", "dist", "node_modules"]
+ignore-init-module = false
+verbose = 1

@@ -91,37 +91,28 @@ fi
 echo ""
 echo "=== Mutation Test Results ==="
 
-# Get results as JSON
-if ! mutmut junitxml > /dev/null 2>&1; then
-    echo "Warning: Could not generate JUnit XML (may be empty results)" >&2
-fi
-
-# Parse mutmut results
-RESULTS=$(mutmut results)
-echo "$RESULTS"
+mutmut results || true
 echo ""
 
-# Extract counts from results
-KILLED=$(echo "$RESULTS" | grep -o 'Killed: [0-9]*' | \
-    grep -o '[0-9]*$' || echo "0")
-SURVIVED=$(echo "$RESULTS" | grep -o 'Survived: [0-9]*' | \
-    grep -o '[0-9]*$' || echo "0")
-SUSPICIOUS=$(echo "$RESULTS" | grep -o 'Suspicious: [0-9]*' | \
-    grep -o '[0-9]*$' || echo "0")
-TIMEOUT=$(echo "$RESULTS" | grep -o 'Timeout: [0-9]*' | \
-    grep -o '[0-9]*$' || echo "0")
+# Read the counts from mutmut's own cache. (Parsing `mutmut results` text broke
+# when mutmut 2.5 switched to emoji headings: every count read as 0 and the
+# gate passed without checking anything.)
+read -r KILLED SURVIVED SUSPICIOUS TIMEOUT < <(python3 - <<'EOF'
+import sqlite3
 
-# Calculate total and score
+rows = dict(sqlite3.connect(".mutmut-cache").execute(
+    "SELECT status, COUNT(*) FROM Mutant GROUP BY status"
+).fetchall())
+print(*(rows.get(k, 0) for k in ("ok_killed", "bad_survived", "ok_suspicious", "bad_timeout")))
+EOF
+)
+
 TOTAL=$((KILLED + SURVIVED + SUSPICIOUS + TIMEOUT))
 
 if [ "$TOTAL" -eq 0 ]; then
-    echo "Warning: No mutants were generated" >&2
-    echo "This might indicate:"
-    echo "  - No code to mutate in reconcile/"
-    echo "  - Configuration issue with mutmut"
-    echo ""
-    echo "Skipping mutation score validation"
-    exit 0
+    # A mutation gate that tested nothing must not pass.
+    echo "✗ No mutants were tested: check [tool.mutmut] in pyproject.toml" >&2
+    exit 1
 fi
 
 # Calculate mutation score (killed / total * 100)

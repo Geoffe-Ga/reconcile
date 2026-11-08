@@ -8,7 +8,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 FIX=false
-CHECK=false
 VERBOSE=false
 
 # Parse command line arguments
@@ -19,7 +18,8 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --check)
-            CHECK=true
+            # Checking is the default; the flag is accepted for symmetry with --fix.
+            FIX=false
             shift
             ;;
         --verbose)
@@ -64,7 +64,7 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Linting (Ruff) ==="
+echo "=== Linting (Ruff + interrogate) ==="
 
 if $FIX; then
     if $VERBOSE; then
@@ -81,6 +81,8 @@ else
 fi
 
 if [ $EXIT_CODE -eq 0 ]; then
+    # Docstring coverage: threshold and scope live in pyproject.toml [tool.interrogate].
+    interrogate || { echo "✗ Docstring coverage below threshold" >&2; exit 1; }
     echo "✓ Linting checks passed"
     exit 0
 else

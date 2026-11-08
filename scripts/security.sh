@@ -64,7 +64,7 @@ echo "=== Security Checks (Bandit) ==="
 if $VERBOSE; then
     echo "Running Bandit security scanner..."
 fi
-bandit -r reconcile/ || { echo "✗ Bandit found issues" >&2; exit 1; }
+bandit -c pyproject.toml -r . -q || { echo "✗ Bandit found issues" >&2; exit 1; }
 
 echo "=== Security Checks (pip-audit) ==="
 
@@ -88,7 +88,9 @@ if [ -f "$PROJECT_ROOT/.pip-audit-known-vulnerabilities" ]; then
     done < "$PROJECT_ROOT/.pip-audit-known-vulnerabilities"
 fi
 
-pip-audit "${PIP_AUDIT_ARGS[@]}" || { echo "✗ pip-audit found issues" >&2; exit 1; }
+# Audit the pinned requirement files, not whatever happens to be installed, so
+# every machine audits the same set.
+pip-audit -r requirements-dev.txt "${PIP_AUDIT_ARGS[@]+"${PIP_AUDIT_ARGS[@]}"}" || { echo "✗ pip-audit found issues" >&2; exit 1; }
 
 if $FULL; then
     echo "=== Comprehensive Security Scan ==="
