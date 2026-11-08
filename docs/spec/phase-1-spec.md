@@ -157,9 +157,9 @@ These are the **Fellowship** template's defaults. The **Circle** template (under
 | Default vote window | 7 days (14 for entrenched) | confirmed 2026-11-07 |
 | Quorum | at least 3 ballots and 30% of eligible voters | confirmed 2026-11-07 |
 | Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty note for that version | confirmed 2026-11-07 |
-| Stand aside and notes | any version can be marked `aside` (counts toward quorum only); any entry can carry a note of at most 280 code points (NFC); notes expire with the ballot |
+| Stand aside and notes | any version can be marked `aside` (counts toward quorum only); any entry can carry a note of at most 280 code points (NFC); notes expire with the ballot | [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md) |
 | Sensitive text | titles and justifications of `removal` and `readmit` Proposals, `removal-response`, and suspension reasons expire with their vote's ballots (a suspension with no vote: 30 days after it ends) | [ADR-0072](../adr/0072-protocol-details-for-decomposition.md) |
-| Roster | `see-roster` is held by voting levels only; followers don't see the roster | [ADR-0017](../adr/0017-need-to-see-and-expiry.md), ADR-0072 | [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md) |
+| Roster | `see-roster` is held by voting levels only; followers don't see the roster | [ADR-0017](../adr/0017-need-to-see-and-expiry.md), ADR-0072 |
 | Ballot visibility | open until the tally plus 30 days, then devices keep only totals and the commitment | [ADR-0017](../adr/0017-need-to-see-and-expiry.md) |
 | Suspension maximum | 7 days, extended until an open removal vote against the member ends | [ADR-0016](../adr/0016-suspend-then-vote.md), [ADR-0059](../adr/0059-suspension-during-removal.md) |
 | Versions per ballot | at most 3 (fixed) | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md) |
@@ -233,6 +233,7 @@ Per [ADR-0007](../adr/0007-thin-python-relay.md) and [ADR-0019](../adr/0019-seal
 - No accounts and no request logging. IP addresses are dropped before any application code sees them, and a test verifies this.
 - Blobs are kept for 30 days; backups are deleted 180 days after their last refresh ([ADR-0057](../adr/0057-environments-updates-retention.md)).
 - Wake-up pushes are batched with 0–60 seconds of random jitter.
+- Each staging deploy is followed by an informational CI smoke test; production deploys from a tag only after the latest staging run passed ([ADR-0072](../adr/0072-protocol-details-for-decomposition.md)).
 - **Framework:** FastAPI on Uvicorn with access logs off, blobs in SQLite (WAL) with an expiry index ([ADR-0028](../adr/0028-relay-fastapi-sqlite.md)). Hosted on a DigitalOcean VM where we terminate TLS ([ADR-0041](../adr/0041-digitalocean-relay-hosting.md)).
 
 ### Sealed sender
