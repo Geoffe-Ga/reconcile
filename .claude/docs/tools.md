@@ -83,7 +83,7 @@ Runs in order:
 7. Coverage (90% lines, 85% branches)
 8. Package build (build, twine check)
 
-**Note**: Mutation testing is NOT included in check-all.sh due to long runtime. It runs automatically in CI on main branch merges.
+**Note**: Mutation testing is NOT included in check-all.sh due to long runtime. It is recommended before a release (ADR-0061): run it locally or trigger CI's manual mutation job.
 
 ```bash
 # Before committing - REQUIRED
@@ -150,7 +150,7 @@ vim tests/unit/test_my_module.py
 # 9. Final check before commit
 ./scripts/check-all.sh
 
-# 10. (Optional) Run mutation tests locally for significant changes
+# 10. (Optional) Run mutation tests before a release
 # This takes several minutes and is automatically run in CI
 ./scripts/mutation.sh
 
@@ -161,7 +161,7 @@ git commit -m "feat(module): add my feature (#123)"
 # 12. Push
 git push origin feature/my-feature
 
-# 13. Create PR (all CI checks will pass, including mutation testing)
+# 13. Create PR (CI runs the changed areas and pre-commit on changed files)
 gh pr create --fill
 ```
 

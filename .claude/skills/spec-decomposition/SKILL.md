@@ -89,7 +89,7 @@ The full body template is in `references/templates.md`.
 Every issue ends with an explicit Done-Done block. No issue ships without:
 
 - [ ] All new and existing tests pass (`./scripts/test.sh --all` or repo equivalent).
-- [ ] Pre-commit clean (`pre-commit run --all-files`).
+- [ ] Pre-commit clean (`pre-commit run --from-ref origin/main --to-ref HEAD`).
 - [ ] Coverage threshold met for the changed lines.
 - [ ] PR opened with `Refs #<epic>` and `Closes #<this-issue>`.
 

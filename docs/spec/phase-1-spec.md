@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0058 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0061 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -26,7 +26,7 @@ Reconcile is friendly to anarchists, "the OS for anarcho-syndicalism" ([ADR-0018
 1. **A full loop on real devices.** A pilot group from the user's own circle (decided 2026-11-07 on the `2026-11-07-reconcile-product-stack` sheet), at least 5 testers on at least 3 devices (including iOS Safari as an installed PWA, and desktop Chrome) creates an Organization, invites members, proposals an Atom change, votes, and sees the canonical Document update on every device, including one that was offline during the vote.
 2. **The relay learns nothing.** An automated test captures everything the relay stores and logs during a full loop and asserts that it contains no plaintext, no long-lived identity keys, and no sender identities.
 3. **Tallies are deterministic.** The same set of governance events gives the same canonical Document on every device, whatever order they arrive in (property tests).
-4. **Repo quality gates pass.** Python: ≥90% coverage, ≥80% mutation score, complexity ≤10. TypeScript: the equivalents in §8.
+4. **Repo quality gates pass.** Python: ≥90% coverage, complexity ≤10 (the gates in CLAUDE.md, [ADR-0061](../adr/0061-quality-gates.md)). TypeScript: the equivalents in §8.
 
 ### Non-goals for Phase 1
 
@@ -157,7 +157,7 @@ All of these can be changed through `rules-change`.
 | Quorum | at least 3 ballots and 30% of eligible voters | confirmed 2026-11-07 |
 | Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty reason for that version | confirmed 2026-11-07 |
 | Ballot visibility | open until the tally plus 30 days, then devices keep only totals and the commitment | [ADR-0017](../adr/0017-need-to-see-and-expiry.md) |
-| Suspension maximum | 7 days | [ADR-0016](../adr/0016-suspend-then-vote.md) |
+| Suspension maximum | 7 days, extended until an open removal vote against the member ends | [ADR-0016](../adr/0016-suspend-then-vote.md), [ADR-0059](../adr/0059-suspension-during-removal.md) |
 | Versions per ballot | at most 3 (fixed) | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md) |
 | Missed quorum | the vote lapses with outcome `none` | ADR-0047 |
 | Re-proposing the same content | 14-day cooldown after a lapse or failure; at most 3 times in 180 days | ADR-0047 |
@@ -297,7 +297,7 @@ These follow [ADR-0018](../adr/0018-device-protection-and-duress.md).
 
 | Area | Gate |
 |---|---|
-| Python relay and reference code | The existing `./scripts/check-all.sh`: ≥90% coverage, ≥80% mutation score (mutmut), mypy strict, complexity ≤10, bandit and pip-audit clean |
+| Python relay and reference code | The existing `./scripts/check-all.sh`: ≥90% coverage, mypy strict, complexity ≤10, bandit and pip-audit clean |
 | TypeScript client | **In place:** `client/scripts/check-all.sh` runs ESLint 9 (strict, a11y, complexity ≤ 10), Prettier, `tsc -b`, Vitest with ≥90% lines and ≥85% branches, dependency-cruiser boundaries, and `npm audit`. Stryker (≥80%) runs on main. **To add:** Playwright with axe for the end-to-end loop |
 | Protocol | Both implementations pass every vector in `protocol/vectors/`, checked in CI |
 | Property tests | Hypothesis (Python) and fast-check (TypeScript) cover tally order independence, validator determinism, and the effect of eligibility snapshots |

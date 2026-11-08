@@ -16,7 +16,7 @@ When all CI checks pass with zero warnings, zero errors, and maximum quality met
 - ✅ Linting: 0 errors, 0 warnings
 - ✅ Type checking: 0 errors
 - ✅ Security: 0 vulnerabilities
-- ✅ Mutation score: ≥80%
+- ✅ Mutation score ≥80% before a release (not a merge gate)
 - ✅ Docstring coverage: ≥95%
 
 This represents **MAXIMUM QUALITY ENGINEERING**—the standard to which all code must aspire.
@@ -83,17 +83,15 @@ The Stay Green workflow enforces iterative quality improvement through **4 seque
    - If CI fails: fix locally, re-run Gate 1, push again
    - Only proceed when all CI jobs show ✅
 
-3. **Gate 3: Mutation Testing** (Iterate Until 80%+)
-   - Run `./scripts/mutation.sh` (or wait for CI job)
-   - If score < 80%: add tests to kill surviving mutants
-   - Re-run Gate 1, push, wait for CI
-   - Only proceed when mutation score ≥ 80%
+3. **Gate 3: Pre-commit on changed files**
+   - `pre-commit run --from-ref origin/main --to-ref HEAD` (CI runs the same on the PR's changed files)
 
-4. **Gate 4: Code Review** (Iterate Until LGTM)
-   - Wait for code review (AI or human)
-   - If feedback provided: address ALL concerns
-   - Re-run Gate 1, push, wait for CI and mutation
-   - Only merge when review shows LGTM with no reservations
+4. **Gate 4: Review bot** (canonical rules: the gates in the root `CLAUDE.md`, ADR-0061)
+   - LGTM is preferred: merge on green CI
+   - COMMENTS can merge only after each finding is filed as a P0–P3 follow-up issue: file first, then merge (never iterate)
+   - CHANGES_REQUESTED blocks: fix with TDD, push once, wait for the new verdict
+
+Mutation testing is recommended before a release, not per PR (ADR-0061).
 
 ### 2.2 Quick Checklist
 
@@ -102,8 +100,8 @@ Before creating/updating a PR:
 - [ ] Gate 1: `./scripts/check-all.sh` passes locally (exit 0)
 - [ ] Push changes: `git push origin feature-branch`
 - [ ] Gate 2: All CI jobs show ✅ (green)
-- [ ] Gate 3: Mutation score ≥ 80% (if applicable)
-- [ ] Gate 4: Code review shows LGTM
+- [ ] Gate 3: pre-commit clean on changed files
+- [ ] Gate 4: review bot LGTM, or COMMENTS with every follow-up already filed
 - [ ] Ready to merge!
 
 ### 2.3 Anti-Patterns (DO NOT DO)
