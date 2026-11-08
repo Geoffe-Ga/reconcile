@@ -46,6 +46,10 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 | [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off | Accepted |
 | [0042](0042-broad-device-support.md) | iOS 16.4+, Android 10+, current desktop browsers; plain warnings on older devices | Accepted |
+| [0043](0043-recovery-and-backup.md) | Recovery threshold chosen per person (default 3 of 5), a fixed 72-hour wait, and an encrypted relay backup unlocked by recovery | Accepted |
+| [0044](0044-qr-device-linking.md) | A second device links by QR code; devices are listed and revocable | Accepted |
+| [0045](0045-names-in-groups.md) | Names in a group are freely chosen and unique; changes show "formerly X" | Accepted |
+| [0046](0046-padded-vault-and-panic-wipe.md) | A fixed-size padded vault from Phase 1, duress after external review; panic wipe by hold or opt-in wrong codes | Accepted |
 
 **Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck.
 
