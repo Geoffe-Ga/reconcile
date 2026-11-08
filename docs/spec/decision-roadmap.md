@@ -2,7 +2,7 @@
 
 - **Status:** In progress. Spec decomposition and issue filing wait until every sheet below is answered and recorded.
 - **Started:** 2026-11-07
-- **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0052), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
+- **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0056), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
 
 Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This roadmap covers what's still open.
 
@@ -11,8 +11,8 @@ Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This r
 | 1 | Stack details | every epic | **Done** 2026-11-08: ADRs 0028–0031, 0041, 0042 |
 | 2 | Identity, recovery, and devices | Epic 5, Epic 3 | **Done** 2026-11-08: ADRs 0043–0046 |
 | 3 | Governance edge cases | Epics 1 and 4 (the protocol) | **Done** 2026-11-08: ADRs 0047–0051 |
-| 4 | Onboarding, notifications, and UX scope | Epics 3 and 6 | Next |
-| 5 | Pilot, operations, and release | Epic 2 deploy, Epic 6 acceptance | Waiting |
+| 4 | Onboarding, notifications, and UX scope | Epics 3 and 6 | **Done** 2026-11-08: ADRs 0052–0055, spec §7 |
+| 5 | Pilot, operations, and release | Epic 2 deploy, Epic 6 acceptance | Next |
 | 6 | Development process | how the issues are written and worked | Waiting |
 | 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | Waiting |
 
