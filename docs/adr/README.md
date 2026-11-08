@@ -65,6 +65,8 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0059](0059-suspension-during-removal.md) | A suspension lasts until an open removal vote against the member ends | Accepted |
 | [0060](0060-how-phase-1-is-built.md) | Agents build in waves; green merges (no separate human sign-off); main protected; label scheme | Accepted |
 | [0061](0061-quality-gates.md) | Merge gates: TDD, check-all, pre-commit and CI on changes, review bot; mutation testing before a release | Accepted |
+| [0062](0062-entity-and-sponsor-timing.md) | Stay on the 501(c)(3) path (a nonprofit-owned operating company once there's revenue); choose the sponsor after the pilot | Accepted |
+| [0063](0063-money-rules.md) | Entrenched treasurer changes; 10% coalition share; pay-what-you-want platform fee; balances go to the payee; reach at the yearly M+R CPM | Accepted (direction) |
 
 **Terminology (2026-11-07):** the member-initiated notification formerly called a "Push" is now a **Dispatch**. A proposed change formerly called a "Pitch" is now a **Proposal** (verb: *propose*); the log event is `proposal` and the capability is `propose`. "Pitch" survives only in references to the original pitch deck. The governance act once called a "fork" is a **split** (ADR-0050); "fork" now means only forking code.
 

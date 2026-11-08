@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0061 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0063 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -314,22 +314,9 @@ All three spikes were answered by desk research on 2026-11-07 and decided on the
 
 ## 10. Open Questions
 
-**Confirmed 2026-11-07:**
-- quorum: at least 3 ballots and 30% of eligible voters
-- tie rule: highest average, then fewest zeros, then earliest
-- vote window: 7 days, or 14 for entrenched Atoms
-- the bootstrap rule
-- a required reason for every 0 score
-- the license: source-available ([ADR-0024](../adr/0024-source-available-license.md))
-- moving between levels: self-selected after admission, with at most 3 open Proposals per person ([ADR-0021](../adr/0021-level-names-and-self-selection.md))
+**None open.** Every decision is recorded in ADRs 0001–0063. [`decision-roadmap.md`](decision-roadmap.md) tracks the seven decision sheets, all complete as of 2026-11-08, and the items deliberately deferred with a trigger (the eternal-core wording, the fiscal sponsor, the outside security review, and branch protection). None of them blocks Phase 1.
 
-Also confirmed: `invite` belongs to the voting levels, every `proposal` carries a `target` kind, and expired ballots compact into a signed `checkpoint`.
-
-**Nothing open blocks Phase 1.**
-
-Decided for later phases (ADRs 0032–0040): code hosting, legal staging, payment rail, Reconcile-the-group's founding, group-by-group coalition votes (no coalition-wide individual ballots), holonic promotion, optional front-door discovery, per-group integrations, and group opt-ins decided by Proposal.
-
-Still open, **not needed for Phase 1**: which fiscal sponsor (ADR-0033), the exact eternal-core wording (ADR-0035), group payee options (ADR-0027), split petition thresholds in practice, and the duress storage design.
+---
 
 ## 11. Suggested Epics (Input for `spec-decomposition`)
 

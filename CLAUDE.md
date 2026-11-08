@@ -60,9 +60,10 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **Settled decisions** are in [`docs/adr/`](docs/adr/README.md). Read them before designing anything.
 
-**Still open:** [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) lists every remaining decision, sheet by sheet. **Spec decomposition and issue filing wait until it is complete.** Among them:
-- which fiscal sponsor ([ADR-0033](docs/adr/0033-legal-entity-staging.md)) and the exact eternal-core wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md))
-- group payee options ([ADR-0027](docs/adr/0027-supporters-and-coalition-tip-share.md)), and the external review the duress store needs before it ships ([ADR-0046](docs/adr/0046-padded-vault-and-panic-wipe.md))
+**Decisions:** all recorded in ADRs 0001–0063. [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
+- the eternal core's wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md)), before Phase 2
+- the fiscal sponsor ([ADR-0062](docs/adr/0062-entity-and-sponsor-timing.md)), after the pilot
+- the outside security review ([ADR-0058](docs/adr/0058-security-review-on-demand.md)), on demand
 - don't publish the repo or add a LICENSE until publication ([ADR-0024](docs/adr/0024-source-available-license.md))
 
 When work depends on one of these, flag it instead of silently picking an answer.
