@@ -124,7 +124,7 @@ module = "tests.*"
 disallow_untyped_defs = false
 
 [tool.ruff]
-extend-exclude = ["client"]
+extend-exclude = ["client", "*.md"]  # Markdown code samples include deliberate before-examples
 line-length = 88
 target-version = "py311"
 
