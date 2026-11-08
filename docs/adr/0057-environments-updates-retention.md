@@ -27,3 +27,7 @@
 - Epic 2 issue 6 (deploy) covers both environments and the tag-triggered production deploy.
 - The founder creates and pays for both VMs (ADR-0041).
 - Validators dispatch on `v`. Vectors live in `protocol/vectors/v1/` and so on.
+
+## Amendment (2026-11-08, decomposition details)
+
+Backups use their own endpoint, `/v1/backup/{id}`, with the 180-day retention above. Expiry times are rounded to the day. CI smoke-tests staging after each deploy, without blocking merges ([ADR-0072](0072-protocol-details-for-decomposition.md)).

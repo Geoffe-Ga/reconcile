@@ -2,7 +2,7 @@
 
 - **Status:** Draft for decomposition
 - **Date:** 2026-11-07
-- **Inputs:** `docs/plan/` (product), ADRs 0001–0071 (`docs/adr/`)
+- **Inputs:** `docs/plan/` (product), ADRs 0001–0072 (`docs/adr/`)
 - **Feeds:** `spec-decomposition` → issue drafts in `docs/plan/git-issues/` (local only, gitignored)
 
 This spec says **what to build first and how**. It links to ADRs for *why* and doesn't repeat them. When this spec and an ADR disagree, the ADR wins; fix the spec.
@@ -114,6 +114,7 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 
 - **Canonical encoding:** deterministic CBOR (RFC 8949 §4.2). The event id is the BLAKE3 hash of that encoding.
 - `prev` makes the log a hash-linked DAG, so concurrent events are allowed. The total order is (`lamport`, event id).
+- **Time is the author's `ts`, which can't be earlier than any parent's.** Every duration is measured in `ts`, and a vote counts only if it is in the tally's causal past and inside the window. A device's own clock never decides validity. Events with a higher `v` than the device knows are kept and marked "needs an update" ([ADR-0072](../adr/0072-protocol-details-for-decomposition.md)).
 - **Validation is total and deterministic.** Every device runs the same validator. An event is valid only if every rule below holds against the state produced by the events that precede it in the total order. Invalid events are kept but ignored, and they're shown in a "rejected" view for auditing.
 
 ### Phase 1 event types
@@ -121,22 +122,22 @@ Per [ADR-0006](../adr/0006-signed-log-plus-crdt.md).
 | Type | Body | Who may author it (capability, [ADR-0003](../adr/0003-three-tier-involvement-levels.md)) |
 |---|---|---|
 | `genesis` | group name, template (`circle` or `fellowship`; `chapter` is reserved until Phase 2, [ADR-0067](../adr/0067-genesis-templates.md)), founding rules (defaults below), founder key | the founder |
-| `invite` | invite id, invite secret hash, `max_uses` (1–50, default 10), expiry (48 hours) ([ADR-0053](../adr/0053-multi-use-invites.md)) | `invite` (voting levels: Collaborator and Co-Creator; Members can't invite) |
-| `join` | invite id, new member key, display name, and optionally the passed `readmit` Proposal id ([ADR-0066](../adr/0066-readmission.md)) | the holder of the invite |
+| `invite` | invite id, invite secret hash, `max_uses` (1–50, default 10), expiry (48 hours), optional `readmit` Proposal id (then `max_uses` is 1) ([ADR-0053](../adr/0053-multi-use-invites.md)) | `invite` (voting levels: Collaborator and Co-Creator; Members can't invite) |
+| `join` | invite id, new member key, display name, and optionally the passed `readmit` Proposal id, valid only through the single-use invite issued for it ([ADR-0066](../adr/0066-readmission.md), ADR-0072) | the holder of the invite |
 | `vouch` | the vouched-for member's key | `vouch` (voting members) |
 | `level-change` | member, new level, and (when moving to a voting level) a signed recovery-complete self-attestation ([ADR-0052](../adr/0052-newcomer-onboarding.md)) | the member themselves. Moving to Collaborator or Co-Creator requires voting rights from admission ([ADR-0014](../adr/0014-invite-and-vouch-admission.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md)) |
-| `proposal` | `target` (`{kind: atom \| new-atom \| removal \| readmit \| steward \| rules, …}`), title, justification, version hashes, window, Atom class | `propose` (Co-Creator) |
+| `proposal` | `target` (`{kind: atom \| new-atom \| removal \| readmit \| steward \| rules \| dissolve, …}`), title (≤ 120), justification (≤ 2,000), version hashes, window, Atom class, optional `reopens` (a lapsed Proposal's id, [ADR-0072](../adr/0072-protocol-details-for-decomposition.md)) | `propose` (Co-Creator) |
 | `version` | proposal id, content hash of a competing version ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md)) | `propose` |
 | `vote` | proposal id, `{version hash: score 0–4 or "aside"}`, `{version hash: note}` (optional, at most 280 characters; required for every 0) ([ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md)) | `vote`, plus being eligible at the snapshot |
 | `tally` | proposal id, winning version hash or `none`, totals, ballot commitment | anyone; validators recompute it, and only a correct tally is valid |
-| `suspend` / `unsuspend` | member, reason, expiry ≤ 7 days | `steward` |
+| `suspend` / `unsuspend` | member, reason (≤ 280), expiry ≤ 7 days | `steward` |
 | `remove` | member, the passed proposal id | follows a passed removal Proposal |
 | `leave` | — | the member |
 | `rename` | new display name, unique in the group ([ADR-0045](../adr/0045-names-in-groups.md)) | the member |
-| `removal-response` | removal proposal id, response text (one per removal) | the member being removed ([ADR-0049](../adr/0049-stewards-and-removal.md)) |
-| `dissolve` | the passed proposal id, `wipe` flag | follows a passed dissolution Proposal at the entrenched bar ([ADR-0051](../adr/0051-dissolution-and-rule-classes.md)) |
+| `removal-response` | removal proposal id, response text (≤ 1,000; one per removal) | the member being removed ([ADR-0049](../adr/0049-stewards-and-removal.md)) |
+| `dissolve` | the passed proposal id, `wipe` flag | follows a passed `dissolve` Proposal at the entrenched bar ([ADR-0051](../adr/0051-dissolution-and-rule-classes.md)) |
 | `steward-elect` | member | follows a passed Proposal |
-| `key-rotate` | new group key epoch, wrapped keys per member | any Co-Creator, required after `remove` |
+| `key-rotate` | new group key epoch, wrapped keys per member | any Co-Creator, required after `remove` and `leave` |
 | `rules-change` | changed rule fields | follows a passed Proposal at the bar for that rule's class |
 | `checkpoint` | totals and ballot commitments for expired proposals, plus the hash of the log prefix it summarizes | any voting member's device, produced when ballots expire ([ADR-0017](../adr/0017-need-to-see-and-expiry.md)) |
 | `part-ways-petition` | **reserved**, rejected in Phase 1 ([ADR-0050](../adr/0050-splitting.md), [ADR-0068](../adr/0068-part-ways.md)) | — |
@@ -156,7 +157,9 @@ These are the **Fellowship** template's defaults. The **Circle** template (under
 | Default vote window | 7 days (14 for entrenched) | confirmed 2026-11-07 |
 | Quorum | at least 3 ballots and 30% of eligible voters | confirmed 2026-11-07 |
 | Reason for a 0 | required: a `vote` scoring any version 0 must carry a non-empty note for that version | confirmed 2026-11-07 |
-| Stand aside and notes | any version can be marked `aside` (counts toward quorum only); any entry can carry a note of at most 280 characters; notes expire with the ballot | [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md) |
+| Stand aside and notes | any version can be marked `aside` (counts toward quorum only); any entry can carry a note of at most 280 code points (NFC); notes expire with the ballot | [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md) |
+| Sensitive text | titles and justifications of `removal` and `readmit` Proposals, `removal-response`, and suspension reasons expire with their vote's ballots (a suspension with no vote: 30 days after it ends) | [ADR-0072](../adr/0072-protocol-details-for-decomposition.md) |
+| Roster | `see-roster` is held by voting levels only; followers don't see the roster | [ADR-0017](../adr/0017-need-to-see-and-expiry.md), ADR-0072 |
 | Ballot visibility | open until the tally plus 30 days, then devices keep only totals and the commitment | [ADR-0017](../adr/0017-need-to-see-and-expiry.md) |
 | Suspension maximum | 7 days, extended until an open removal vote against the member ends | [ADR-0016](../adr/0016-suspend-then-vote.md), [ADR-0059](../adr/0059-suspension-during-removal.md) |
 | Versions per ballot | at most 3 (fixed) | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md) |
@@ -176,7 +179,7 @@ These are the **Fellowship** template's defaults. The **Circle** template (under
 
 The tally is a pure function with signature `tally(proposal, eligible_voters, votes) → outcome`:
 
-1. Take each eligible voter's most recent valid `vote` made before the window closed. Every such ballot counts toward quorum, including stand-asides.
+1. Take each eligible voter's most recent valid `vote` that is in the tally's causal past with `ts` inside the window. If several valid tallies exist, the first in total order is canonical. Every such ballot counts toward quorum, including stand-asides.
 2. If quorum isn't met, the outcome is `none` and the vote lapses (ADR-0047). A lapse doesn't count toward the re-proposal limits (ADR-0069).
 3. For each version, compute the average and the share of zeros over the ballots that **scored** it (stand-asides excluded, [ADR-0065](../adr/0065-stand-aside-and-ballot-notes.md)), and test them against the Atom class's pass rule. A version nobody scored doesn't pass.
 4. If no version passes, the outcome is `none`. If one passes, it wins. If several pass, apply the **tie rule:** highest average, then the lowest share of zeros, then the earliest `version` event (confirmed 2026-11-07).
@@ -222,6 +225,7 @@ Per [ADR-0007](../adr/0007-thin-python-relay.md) and [ADR-0019](../adr/0019-seal
 | `PUT` | `/v1/mailbox/{id}` | Store one padded, sealed blob (size buckets of 1, 4, 16, and 64 KiB) |
 | `GET` | `/v1/mailbox/{id}?after={cursor}` | Fetch blobs. The request is authorized by a mailbox capability token, not an account |
 | `POST` | `/v1/push/{id}` | Register a Web Push subscription for a mailbox |
+| `PUT` / `GET` | `/v1/backup/{id}` | Store or fetch one padded, encrypted backup; kept 180 days after its last refresh ([ADR-0072](../adr/0072-protocol-details-for-decomposition.md)) |
 | `GET` | `/v1/health` | Liveness check |
 
 **Rules:**
@@ -229,6 +233,7 @@ Per [ADR-0007](../adr/0007-thin-python-relay.md) and [ADR-0019](../adr/0019-seal
 - No accounts and no request logging. IP addresses are dropped before any application code sees them, and a test verifies this.
 - Blobs are kept for 30 days; backups are deleted 180 days after their last refresh ([ADR-0057](../adr/0057-environments-updates-retention.md)).
 - Wake-up pushes are batched with 0–60 seconds of random jitter.
+- Each staging deploy is followed by an informational CI smoke test; production deploys from a tag only after the latest staging run passed ([ADR-0072](../adr/0072-protocol-details-for-decomposition.md)).
 - **Framework:** FastAPI on Uvicorn with access logs off, blobs in SQLite (WAL) with an expiry index ([ADR-0028](../adr/0028-relay-fastapi-sqlite.md)). Hosted on a DigitalOcean VM where we terminate TLS ([ADR-0041](../adr/0041-digitalocean-relay-hosting.md)).
 
 ### Sealed sender
@@ -288,7 +293,7 @@ There are no scheduled Dispatches in Phase 1. Pushes carry no content and only w
 - completed votes
 - new members and voting rights arriving
 
-Only a recovery attempt on the person's own identity notifies immediately.
+Only a recovery attempt on the person's own identity notifies immediately. Lock-screen text is always generic ("Reconcile: you have updates"), with no group names, counts, or titles ([ADR-0072](../adr/0072-protocol-details-for-decomposition.md)).
 
 ### App lock and panic wipe
 
@@ -320,7 +325,7 @@ All three spikes were answered by desk research on 2026-11-07 and decided on the
 
 ## 10. Open Questions
 
-**None open.** Every decision is recorded in ADRs 0001–0071. [`decision-roadmap.md`](decision-roadmap.md) tracks the seven decision sheets and the four-lenses review, all complete as of 2026-11-08, and the items deliberately deferred with a trigger (the eternal-core wording, the fiscal sponsor, the outside security review, and branch protection). None of them blocks Phase 1.
+**None open.** Every decision is recorded in ADRs 0001–0072. [`decision-roadmap.md`](decision-roadmap.md) tracks the seven decision sheets and the four-lenses review, all complete as of 2026-11-08, and the items deliberately deferred with a trigger (the eternal-core wording, the fiscal sponsor, the outside security review, and branch protection). None of them blocks Phase 1.
 
 ---
 

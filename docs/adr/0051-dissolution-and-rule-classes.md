@@ -21,3 +21,7 @@
 
 - `genesis` records each rule's class. Validation applies the class's bar to every `rules-change`.
 - A dissolved group can't be revived. Members keep their read-only copies.
+
+## Amendment (2026-11-08, decomposition details)
+
+Dissolution now uses its own Proposal target kind, `dissolve`, at the entrenched bar, instead of a `rules` target. The Circle → Fellowship switch is the one rule change made without a Proposal; it changes only rules no Proposal ever set ([ADR-0072](0072-protocol-details-for-decomposition.md)).

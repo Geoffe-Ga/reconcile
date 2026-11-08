@@ -60,7 +60,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **Settled decisions** are in [`docs/adr/`](docs/adr/README.md). Read them before designing anything.
 
-**Decisions:** all recorded in ADRs 0001–0071 (0064–0071 came from the four-lenses review, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
+**Decisions:** all recorded in ADRs 0001–0072 (0064–0071 came from the four-lenses review, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
 - the eternal core's wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md)), before Phase 2
 - the fiscal sponsor ([ADR-0062](docs/adr/0062-entity-and-sponsor-timing.md)), after the pilot
 - the outside security review ([ADR-0058](docs/adr/0058-security-review-on-demand.md)), on demand

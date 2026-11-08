@@ -27,3 +27,7 @@ adrienne maree brown, Eisenstein, and Bateson all observed that only a 0 asks fo
 - The `vote` body becomes `{version hash: 0–4 | "aside"}` and `{version hash: note}`. The tally, the Python and TypeScript implementations, and `protocol/vectors/tally/` all change before Epic 1 ships. New vectors cover all-aside ballots, quorum met only through stand-asides, and a 0 with no reason (invalid).
 - The ballot commitment covers stand-asides, so a recount sees them.
 - The consent meter (`DESIGN.md`) shows stand-asides as their own count beside the average and the zero share.
+
+## Amendment (2026-11-08, decomposition details)
+
+Note length is counted in Unicode code points after NFC normalization. Proposal titles and justifications of `removal` and `readmit` Proposals, removal responses, and suspension reasons expire the same way notes do ([ADR-0072](0072-protocol-details-for-decomposition.md)).

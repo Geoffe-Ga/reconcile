@@ -21,3 +21,7 @@ adrienne maree brown's lens found that the tools were suspend, remove, and split
 
 - Spec §4 gains the `readmit` target kind and an optional `readmit` Proposal id on `join`. Phase 1 builds it, because removal ships in Phase 1.
 - A removed person rejoining without a `readmit` Proposal is just a new person with a new invite. Per-group identities mean the app can't stop that and doesn't try.
+
+## Amendment (2026-11-08, decomposition details)
+
+A passed `readmit` Proposal names the removed member's old key and is redeemed through a single-use invite carrying its id. Titles and justifications of `removal` and `readmit` Proposals expire with their ballots ([ADR-0072](0072-protocol-details-for-decomposition.md)).

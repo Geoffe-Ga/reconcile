@@ -26,3 +26,7 @@
 ## Amendment (2026-11-08, four-lenses review)
 
 A removed person can be readmitted by an ordinary `readmit` Proposal, then joins as a newcomer with fresh vouches ([ADR-0066](0066-readmission.md)). Small groups can use the Circle template's single steward seat ([ADR-0067](0067-genesis-templates.md)).
+
+## Amendment (2026-11-08, decomposition details)
+
+A `removal-response` is at most 1,000 code points and expires with the removal vote's ballots, as do the removal Proposal's title and justification. A Circle keeps 1 steward seat at any size until it becomes a Fellowship ([ADR-0072](0072-protocol-details-for-decomposition.md)).
