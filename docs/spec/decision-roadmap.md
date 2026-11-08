@@ -72,6 +72,8 @@ These become protocol rules and test vectors, so they must be fixed before Epic 
 
 ## 6. Development Process
 
+- **Suspension vs. the removal window** ([#32](https://github.com/Geoffe-Ga/reconcile/issues/32), from review): a 7-day suspension (ADR-0016) ends before a 14-day entrenched removal vote (ADR-0049). Extend the suspension while a removal is open, raise the maximum, or allow one renewal. (Governance, but found late; it rides on sheet 6.)
+
 - **Review and merge:** branch protection, and whether to merge without the review bot until its API key is set.
 - **CI budget:** limits on private-repo Actions minutes.
 - **Mutation testing scope:** every PR or `main` only, for both Python and the client.
