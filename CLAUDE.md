@@ -126,7 +126,7 @@ reconcile/
 ├── reconcile/            # Python package: relay + protocol reference (main.py is a placeholder)
 ├── DESIGN.md             # Visual system and voice (client tokens and /decide sheets read it)
 ├── tests/                # pytest suite
-├── scripts/              # Quality gate scripts (check-all, test, lint, …)
+├── scripts/              # Quality gate scripts (check-all, test, lint, …), plus graph/ and ralph/
 ├── .claude/docs/         # Detailed dev guidance (principles, workflow, testing, tools)
 ├── .claude/skills/       # Project skills (<name>/SKILL.md)
 ├── .github/workflows/    # ci.yml, code-review.yml
@@ -212,6 +212,20 @@ Project skills live in `.claude/skills/<name>/SKILL.md`. The set is deliberately
 - Any other value: don't merge; surface it to the user.
 
 The procedure is in `address-feedback`. The workflow, `await-claude-review`, and `address-feedback` must change together.
+
+---
+
+## 🕸️ Knowledge Graph (graphify)
+
+A code-only graph of the repo ([scripts/graph/README.md](scripts/graph/README.md)). When `graphify-out/graph.json` exists, prefer it to broad grep and read sweeps:
+
+- Get it with `./scripts/graph/restore.sh` (the published graph of `main`) or `./scripts/graph/build.sh` (about a minute, no cost).
+- Ask `graphify query "<question>"` first; use `graphify path "A" "B"` for relationships, `graphify explain "X"` for a concept, and `graphify affected "X"` for change impact.
+- Quote each node's `source_location` when you cite it.
+- After changing code, refresh with `./scripts/graph/update.sh`.
+- If there's no graph, proceed without it.
+
+Merged PRs also post a merge-metadata recap to Discord once its secrets are set ([scripts/ralph/RECAP.md](scripts/ralph/RECAP.md)).
 
 ---
 

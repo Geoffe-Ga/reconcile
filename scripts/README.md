@@ -41,3 +41,10 @@ and threshold checks such as minimum coverage), so the scripts remain
 the source of truth; prefer Git Bash when possible.
 
 The toolchain-native commands assume the project virtualenv is active (`.venv\Scripts\activate` on Windows, `source .venv/bin/activate` on POSIX).
+
+## Other tooling
+
+These aren't quality gates:
+
+- [`graph/`](graph/README.md): the graphify knowledge graph (`build.sh`, `update.sh`, `restore.sh`).
+- [`ralph/`](ralph/RECAP.md): the Ralph Recap posted to Discord after each merge (`python -m scripts.ralph.recap`).

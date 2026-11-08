@@ -1,0 +1,44 @@
+name: Ralph Recap
+
+# Posts a recap of the merge loop to Discord every time a pull request merges.
+# Merge metadata only: PR number, title, link, counts, and durations. No PR
+# bodies, diffs, or file contents, and no AI calls (see scripts/ralph/RECAP.md).
+#
+# Configuration (each read from `secrets` first, then a same-named `vars` entry):
+#   DISCORD_BOT_TOKEN  bot token with Send Messages on the channel
+#   RALPH_CHANNEL_ID   target Discord channel ID (all digits)
+#
+# Until both exist, the job exits 0 with a notice, so it never reddens CI.
+# The built-in GITHUB_TOKEN reads the merge history (read-only).
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  recap:
+    name: Post merge recap
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Post Ralph Recap to Discord
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || vars.DISCORD_BOT_TOKEN }}
+          RALPH_CHANNEL_ID: ${{ secrets.RALPH_CHANNEL_ID || vars.RALPH_CHANNEL_ID }}
+        run: python -m scripts.ralph.recap --skip-if-unconfigured
