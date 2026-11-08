@@ -1,6 +1,6 @@
 # Decision Roadmap: Everything Left Before Spec Decomposition
 
-- **Status:** In progress. Spec decomposition and issue filing wait until every sheet below is answered and recorded.
+- **Status:** **Complete** (2026-11-08). All seven sheets are answered and recorded in ADRs 0028–0063. Spec decomposition can start.
 - **Started:** 2026-11-07
 - **Process:** one `/decide` sheet at a time. For each: build the sheet, answer it, record the answers (new ADRs from 0062), update `docs/spec/phase-1-spec.md`, then mark the sheet done here.
 
@@ -14,7 +14,7 @@ Already settled: ADRs 0001–0040 and spec §10 ("Confirmed 2026-11-07"). This r
 | 4 | Onboarding, notifications, and UX scope | Epics 3 and 6 | **Done** 2026-11-08: ADRs 0052–0055, spec §7 |
 | 5 | Pilot, operations, and release | Epic 2 deploy, Epic 6 acceptance | **Done** 2026-11-08: ADRs 0056–0058 |
 | 6 | Development process (plus #32) | how the issues are written and worked | **Done** 2026-11-08: ADRs 0059–0061 |
-| 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | Next |
+| 7 | Later phases (Phase 2 and 3) | nothing in Phase 1, but decided now so nothing is left | **Done** 2026-11-08: ADRs 0062–0063, ADR-0035 amendment |
 
 ## 1. Stack Details
 
@@ -93,3 +93,12 @@ Not needed for Phase 1, but answered now so nothing is left open.
 ## Housekeeping (No Sheet Needed)
 
 **Done 2026-11-08:** ADR-0002, ADR-0003, and ADR-0004 carry amendments pointing at their answers.
+
+## Deliberately Deferred (Not Blocking Phase 1)
+
+These were decided as "later", with a trigger:
+
+- **The eternal core's wording** (ADR-0035): a dedicated drafting session before Reconcile-the-group's genesis in Phase 2.
+- **The fiscal sponsor** (ADR-0062): after a successful pilot, or when money is actually needed.
+- **The outside security review** (ADR-0058): when an activist group calls for it. Start booking at the first serious conversation.
+- **Branch protection on main** (ADR-0060): needs GitHub Pro on a private repo, so it waits on the founder's choice to pay.

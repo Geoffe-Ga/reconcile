@@ -20,3 +20,7 @@ An eternal clause can never be fixed. The less one person writes into permanence
 
 - The eternal wording is irreversible once genesis is signed. Review it with counsel and with pilot groups before Phase 2.
 - Must be settled before Phase 2 discovery (ADR-0038) or any reach enforcement ships.
+
+## Amendment (2026-11-08)
+
+**Wording deliberately deferred** (sheet `2026-11-08-reconcile-later-phases`, decision `eternal-wording`). The founder wants the core longer and more thought-out than one sentence, covering more bases while staying snappy, and expects to draft it in a dedicated back-and-forth session. The one-sentence draft above is a placeholder. The final wording must be settled, and read by counsel, before Reconcile-the-group's genesis (Phase 2). Phase 1 doesn't depend on it.

@@ -13,6 +13,11 @@
 
 set -euo pipefail
 
+if [[ "${1:-}" == "--help" ]]; then
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(dirname "$SCRIPT_DIR")"
 
