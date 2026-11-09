@@ -115,7 +115,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 
 ## 🏗️ Current Layout
 
-The repo is freshly scaffolded. The only code is a hello-world entry point.
+The relay is built (`reconcile/relay/`, #62). The client is being built issue by issue, starting with the tracer epic (#57); `client/CLAUDE.md` describes its layout and rules.
 
 ```
 reconcile/
@@ -124,8 +124,8 @@ reconcile/
 ├── docs/prompts/         # Working prompts (local only, gitignored)
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)
 ├── plans/                # Working implementation plans
-├── client/               # TypeScript PWA (green-init scaffold; see client/CLAUDE.md)
-├── reconcile/            # Python package: relay only (main.py is a placeholder until #62)
+├── client/               # TypeScript PWA (see client/CLAUDE.md)
+├── reconcile/            # Python package: the blind mailbox relay (reconcile/relay/, ADR-0028)
 ├── DESIGN.md             # Visual system and voice (client tokens and /decide sheets read it)
 ├── tests/                # pytest suite
 ├── scripts/              # Quality gate scripts (check-all, test, lint, …), plus graph/ and ralph/
@@ -137,7 +137,7 @@ reconcile/
 └── .pre-commit-config.yaml
 ```
 
-Domain modules (Documents, Atoms, Proposals, Votes, Organizations, Coalitions, notifications) don't exist yet. Add them through ADR-backed design. Don't scaffold them speculatively.
+Domain logic (Documents, Atoms, Proposals, Votes, Organizations, Coalitions, notifications) lives on the device, in the client, never in the relay. Build it through the ADR-backed issues in the backlog. Don't scaffold modules speculatively.
 
 ---
 
