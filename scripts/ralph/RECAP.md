@@ -55,7 +55,7 @@ GITHUB_TOKEN="$(gh auth token)" python -m scripts.ralph.recap --repo OWNER/REPO 
 
 All math lives in `stats.py`. The all-time merged count comes from the search API. Everything else covers the trailing **7 days**, capped at `--max-prs` (default 200).
 
-- **Review iterations:** the non-LGTM verdicts before a PR's first LGTM. PRs that never reached LGTM (for example COMMENTS merges) are left out of the average.
+- **Review iterations:** the non-LGTM verdicts before a PR's first LGTM. PRs that never reached LGTM (for example COMMENTS merges) are left out of the average. Verdicts are read from a PR's first 1,000 comments, oldest first.
 - **Time for review:** `merged_at − created_at`, clamped at zero.
 - **Tick length:** the gap between consecutive merges.
 - **LoC:** additions and deletions summed from each PR's counts, plus the whole repo's net from GitHub's code-frequency stats. That figure warms up asynchronously and shows "—" when GitHub hasn't computed it yet.

@@ -91,6 +91,9 @@ GITHUB_API = "https://api.github.com"
 DISCORD_API = "https://discord.com/api/v10"
 HTTP_TIMEOUT_SECONDS = 30
 PAGE_SIZE = 100
+# Comments read per PR when looking for verdicts: ten pages at most. Paging
+# stops at the first short page, so a typical PR still costs one request.
+MAX_COMMENTS_PER_PR = 1000
 EMBED_COLOR = 0x7C3AED
 # Zero-width space: a non-empty Discord field value that renders as blank.
 BLANK = "​"
@@ -271,14 +274,16 @@ def pr_churn(repo: str, number: int, *, token: str) -> tuple[int, int, int]:
 def fetch_pr_verdicts(repo: str, number: int, *, token: str) -> list[str]:
     """Return the ordered list of normalized review verdicts on one PR.
 
-    Comment bodies are parsed for the verdict line and then discarded; none of
-    their text is kept or posted.
+    Reads up to ``MAX_COMMENTS_PER_PR`` comments, oldest first, so a verdict
+    posted after a long discussion is still found. Comment bodies are parsed
+    for the verdict line and then discarded; none of their text is kept or
+    posted.
     """
     comments = _gh_get_paged(
         f"/repos/{repo}/issues/{number}/comments",
         token=token,
         params={"sort": "created", "direction": "asc"},
-        max_items=PAGE_SIZE,
+        max_items=MAX_COMMENTS_PER_PR,
     )
     verdicts = (stats.normalize_verdict(str(c.get("body", ""))) for c in comments)
     return [v for v in verdicts if v is not None]

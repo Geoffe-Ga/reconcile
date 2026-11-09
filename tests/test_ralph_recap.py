@@ -211,6 +211,45 @@ def test_fetch_pr_verdicts_keeps_only_verdicts(monkeypatch: pytest.MonkeyPatch) 
     assert recap.fetch_pr_verdicts("o/r", 1, token="t") == ["CHANGES_REQUESTED", "LGTM"]
 
 
+def _chatter(count: int) -> list[dict[str, Any]]:
+    """Build ``count`` comments that carry no verdict line."""
+    return [{"body": f"comment {i}"} for i in range(count)]
+
+
+def test_fetch_pr_verdicts_reads_past_the_first_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A verdict after the first 100 comments is still found."""
+    pages = [_chatter(recap.PAGE_SIZE), [{"body": "## Verdict: LGTM"}]]
+    urls: list[str] = []
+
+    def fake(url: str, **_k: Any) -> object:
+        """Record the call and return the next canned page."""
+        urls.append(url)
+        return pages.pop(0)
+
+    monkeypatch.setattr(recap, "_request_json", fake)
+    assert recap.fetch_pr_verdicts("o/r", 1, token="t") == ["LGTM"]
+    assert len(urls) == 2
+    assert "page=2" in urls[1]
+
+
+def test_fetch_pr_verdicts_stops_at_the_comment_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An endless comment thread costs at most ten requests (1,000 comments)."""
+    urls: list[str] = []
+
+    def fake(url: str, **_k: Any) -> object:
+        """Record the call and return another full page of chatter."""
+        urls.append(url)
+        return _chatter(recap.PAGE_SIZE)
+
+    monkeypatch.setattr(recap, "_request_json", fake)
+    assert recap.fetch_pr_verdicts("o/r", 1, token="t") == []
+    assert len(urls) == 10
+
+
 def test_fetch_repo_net_lines(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fetch repo net lines."""
     monkeypatch.setattr(recap, "_request_json", lambda *_a, **_k: [[1, 100, -40]])
