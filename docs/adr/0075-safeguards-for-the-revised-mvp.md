@@ -3,7 +3,8 @@
 - **Status:** Proposed. The founder accepts, edits or rejects each numbered item before any issue it touches is built.
 - **Date:** 2026-11-09
 - **Decided via:** a review of the 57-issue backlog against ADR-0074 and the threat model ([`12_Security_Privacy_Threat_Model.md`](../plan/12_Security_Privacy_Threat_Model.md)). Most findings came from two issues interacting, not from either one alone. The issue edits are drafted in [`plans/2026-11-09-adr-0075-issue-edits.md`](../../plans/2026-11-09-adr-0075-issue-edits.md).
-- **Amends:** [ADR-0074](0074-mvp-scope-revised.md), plus ADR-0060's library rule (§4). Nothing is superseded.
+- **Founder's answers (2026-11-09):** on removal, "With <= 21 people, a zero is non-blocking" (§3). On merge safeguards, "No merge safeguard. We're ai engineering this" (§6).
+- **Amends:** [ADR-0074](0074-mvp-scope-revised.md), plus [ADR-0060](0060-how-phase-1-is-built.md)'s library rule (§4) and its list of safeguards (§6). Nothing is superseded.
 
 ## Context
 
@@ -46,6 +47,10 @@ These rules close the capture paths a steward's powers open ([ADR-0015](0015-ant
 - **Fix: a suspension never shrinks the electorate.** A Proposal's eligible set ignores suspensions. A suspended member stays eligible on Proposals that open during the suspension, and counts toward quorum and early close. They can vote on those Proposals once the suspension ends, if the vote is still open.
 - **Fix: one suspension at a time.** Each steward holds at most one active suspension. A steward facing an open recall can't suspend or narrow.
 - **Fix: the 30-day guard runs from a suspension's end, not its start.**
+- **Fix: a single 0 never blocks a removal.**
+  - A removal passes at an average of at least 3.0, with either at most one 0 or fewer than 5% zeros: `sum ≥ 3·n` and (`zeros ≤ 1` or `20·zeros < n`).
+  - The 5% rule alone would let one 0 block whenever 20 or fewer people score, which in a pilot group means one ally of the person could always block. Two or more 0s still block in a small group, and so does the average.
+  - The entrenched bar for everything else (dissolution, widening an opt-in, entrenched sections) is unchanged.
 - **Fix: removal votes run a fixed 14 days.** They use the entrenched default with no proposer-set window. A suspension that ADR-0059 extends therefore lasts at most 21 days in total.
 - **Fix: narrowing goes to a vote, as [ADR-0040](0040-group-opt-ins-are-governed.md) says.**
   - A steward's `narrow` is valid only alongside an open off-Proposal for that opt-in, authored by the same steward. It lasts until that Proposal closes.
@@ -77,6 +82,18 @@ These rules close the capture paths a steward's powers open ([ADR-0015](0015-ant
   - This is the one place device time decides anything.
 - **Members can read ballots and vouches.** Members hold the group secret, so they can read everything a voting member can. [ADR-0010](0010-open-ballots-with-exit.md)'s "Members see only the result" returns together with the hidden roster ([ADR-0072](0072-protocol-details-for-decomposition.md) §12), which stays deferred.
 
+### 6. Merge safeguards
+
+ADR-0060 let security-critical code merge on green, partly because a Python and a TypeScript implementation had to pass shared test vectors. ADR-0073 removed the Python implementation.
+
+- **Decided: nothing replaces that safeguard.** The project is built by AI agents, and security-critical code keeps merging on green under ADR-0061's gates.
+- **What remains:**
+  - the review bot;
+  - CI's security scans;
+  - audited libraries only: `@noble/*`, plus §4's Shamir library;
+  - the golden vectors beside the TypeScript engine.
+- The outside review (ADR-0058) is still due before groups outside the founder's circle use the app.
+
 ### Accepted pilot risks added
 
 These add to ADR-0073's and ADR-0074's lists, and the outside review covers them:
@@ -92,8 +109,4 @@ These add to ADR-0073's and ADR-0074's lists, and the outside review covers them
 
 ## Open Questions
 
-1. **Removal in small groups.**
-   - At the entrenched bar (an average of at least 3.0, with under 5% zeros), a single 0 blocks a removal whenever 20 or fewer people score it.
-   - In every pilot group, then, one ally of the person being removed can block it.
-   - Is that what ADR-0049 intends, or should removal use its own bar?
-2. **ADR-0060's merge safeguard is gone.** One of the safeguards that justified merging security-critical code on green alone was test vectors shared by a Python and a TypeScript implementation. ADR-0073 removed the Python one. What replaces it? For example: a list of security-critical paths, and a mutation score of at least 80% on those modules at merge.
+None. The founder answered both on 2026-11-09 (§3 and §6).

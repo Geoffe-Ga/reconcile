@@ -70,9 +70,13 @@ These are draft edits to GitHub issues, following from [ADR-0075](../docs/adr/00
 
 ### #115: removal by vote (§3, plus wrong claims)
 
-1. **The threshold is misstated.**
-   - Replace: "or their own 0 could block it in a group of 9 or fewer."
-   - With: "or their own 0 alone would block it whenever 20 or fewer people score it, since under 5% zeros allows no 0 until 21 scorers. ADR-0075 asks the founder whether that is intended."
+1. **The bar: a single 0 never blocks a removal** (ADR-0075 §3).
+   - Replace: "The target isn't eligible, or their own 0 could block it in a group of 9 or fewer."
+   - With: "The target isn't eligible, so their own score never counts. Per ADR-0075 §3, removal has its own bar: an average of at least 3.0, with at most one 0 or fewer than 5% zeros."
+   - Add under Output Format: "**Bar.** A removal version passes when `sum ≥ 3·n` and either `zeros ≤ 1` or `20·zeros < n`, with integers only. Add it to #94's bars as `removal`, and have `targetClass()` return it for a `remove` target. Every other entrenched target keeps the entrenched bar."
+   - Replace: "with the line \"This needs a higher bar: an average of at least 3.0 and fewer than 5% zeros."
+   - With: "with the line \"This needs a higher bar: an average of at least 3.0, and no more than one 0 unless fewer than 5% scored 0."
+   - Add to Acceptance Criteria: "Bar vectors: 20 scorers with one 0 and an average of at least 3.0 pass. 10 scorers with two 0s fail. 41 scorers with two 0s and an average of at least 3.0 pass. A dissolve with 20 scorers and one 0 still fails, because the entrenched bar is unchanged. Dropping the one-zero allowance makes the 20-scorer vector fail (recorded in the PR)."
 2. **Expiry promise.**
    - Replace: "and #111 expires them with the ballots."
    - With: "#111 expires the response with the ballots. The title and justification stay in the signed log, because expiring them stays deferred (ADR-0074)."
