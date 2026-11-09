@@ -26,7 +26,8 @@ Quote each node's `source_location` when you cite the graph.
 ## What's in it
 
 - Code only (Python, TypeScript, shell). Markdown and other docs aren't extracted.
-- **Local-only docs never enter the graph.** `docs/plan/` and `docs/prompts/` are gitignored, so CI never sees them, and graphify honors `.gitignore` locally. `.graphifyignore` lists them again as a second layer, along with `.venv`, `.claude`, `client/node_modules`, `mutants`, and build output.
+- **Local-only drafts never enter the graph.** `docs/plan/git-issues/` and `docs/prompts/` are gitignored, so CI never sees them, and graphify honors `.gitignore` locally. `.graphifyignore` lists them again as a second layer, along with `.venv`, `.claude`, `client/node_modules`, `mutants`, and build output.
+- The vision docs in `docs/plan/` are committed and readable, but graphify extracts Markdown only through its LLM layer, which this build leaves out. Until that's turned on, read them directly.
 - The published graph is a release asset of this private repo, readable only by people who can read the repo.
 
 ## How it's published

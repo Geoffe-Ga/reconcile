@@ -20,4 +20,4 @@ The code, the issues, and CI live in a **private GitHub repository** under the f
 - `code-review.yml` needs an `ANTHROPIC_API_KEY` repository secret, which only the founder can provision.
 - Private-repo Actions minutes are metered. The path-routed CI (`scripts/changed-areas.sh`) keeps runs small.
 - Moving later is cheap: git history and issues export.
-- `docs/plan/` and `docs/prompts/` stay gitignored.
+- `docs/plan/git-issues/` (issue drafts) and `docs/prompts/` stay gitignored. **Amended 2026-11-08** at the founder's direction: the vision docs in `docs/plan/` are committed, so collaborating agents and graphify can read them.

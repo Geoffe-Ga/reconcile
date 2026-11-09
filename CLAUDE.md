@@ -119,7 +119,7 @@ The repo is freshly scaffolded. The only code is a hello-world entry point.
 
 ```
 reconcile/
-├── docs/plan/            # Product definition (source of truth; local only, gitignored)
+├── docs/plan/            # Product definition (source of truth); issue drafts in git-issues/ stay local
 ├── docs/adr/             # Accepted architecture decisions
 ├── docs/prompts/         # Working prompts (local only, gitignored)
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)

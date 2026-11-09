@@ -11,8 +11,8 @@ name: Graph build
 #
 # Tree-sitter AST extraction only: no LLM calls and no API keys. The only token
 # is the built-in GITHUB_TOKEN, scoped per step to the release upsert. CI never
-# sees docs/plan or docs/prompts (gitignored), and .graphifyignore excludes them
-# locally too. Ported from the adepthood repository, without its semantic
+# sees docs/plan/git-issues or docs/prompts (gitignored), and .graphifyignore
+# excludes them locally too. Ported from the adepthood repository, without its semantic
 # layer, benchmark ledger, or failure-reporting tail.
 
 on:
