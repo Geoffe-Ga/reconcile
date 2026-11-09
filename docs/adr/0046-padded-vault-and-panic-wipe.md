@@ -1,6 +1,7 @@
 # ADR-0046: Hidden Groups Use a Padded Vault; Panic Wipe by Hold or Wrong Codes
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-identity-recovery`, decisions `duress-approach`, `panic-wipe`
 - **Refines:** [ADR-0018](0018-device-protection-and-duress.md)

@@ -1,6 +1,7 @@
 # ADR-0052: Newcomers Preview First, Join Provisionally, and Finish Recovery Within the Voting Wait
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-onboarding-ux`, decisions `first-contacts` (chose `both`), `first-run` (chose `preview-first`)
 - **Refines:** [ADR-0030](0030-device-key-fallback.md), [ADR-0043](0043-recovery-and-backup.md), [ADR-0014](0014-invite-and-vouch-admission.md)

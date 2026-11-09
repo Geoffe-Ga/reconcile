@@ -1,6 +1,7 @@
 # ADR-0023: Atom Content Is Markdown
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-07
 - **Decided via:** `/decide` sheet `2026-11-07-reconcile-product-stack`, decision `atom-format`
 

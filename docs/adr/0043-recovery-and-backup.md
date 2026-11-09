@@ -1,6 +1,7 @@
 # ADR-0043: Recovery Numbers, a Fixed 72-Hour Wait, and an Encrypted Backup
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-identity-recovery`, decisions `recovery-threshold`, `recovery-delay`, `lost-everything`
 - **Refines:** [ADR-0008](0008-passkeys-and-social-recovery.md), [ADR-0030](0030-device-key-fallback.md)

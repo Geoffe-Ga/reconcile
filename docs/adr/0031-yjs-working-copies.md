@@ -1,6 +1,7 @@
 # ADR-0031: Working Copies Use Yjs; Frozen Versions Hash Normalized Text
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-stack-details`, decision `crdt`
 - **Refines:** [ADR-0006](0006-signed-log-plus-crdt.md); resolves spec §9 spike 1

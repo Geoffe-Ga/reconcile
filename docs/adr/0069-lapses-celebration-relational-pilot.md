@@ -1,6 +1,7 @@
 # ADR-0069: Lapses Aren't Failures, Passes Are Celebrated, and the Pilot Asks About Relationships
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `learning` (chose `lapse-gentle`, `celebrate`, `relational-pilot`)
 - **Amends:** [ADR-0047](0047-ballot-cap-quorum-reproposals.md), [ADR-0056](0056-pilot-plan.md)

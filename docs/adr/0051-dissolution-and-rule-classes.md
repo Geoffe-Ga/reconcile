@@ -1,6 +1,7 @@
 # ADR-0051: Dissolving a Group; Which Founding Rules Start Entrenched
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-governance-edges`, decisions `dissolution`, `genesis-classes`
 - **Refines:** [ADR-0015](0015-anti-capture.md), [ADR-0040](0040-group-opt-ins-are-governed.md)

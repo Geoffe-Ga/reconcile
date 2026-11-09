@@ -1,6 +1,7 @@
 # ADR-0057: Staging and Production; Versioned Protocol Changes; Relay Retention
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-pilot-ops`, decisions `environments`, `updates`, `retention`
 - **Builds on:** [ADR-0041](0041-digitalocean-relay-hosting.md), [ADR-0043](0043-recovery-and-backup.md)

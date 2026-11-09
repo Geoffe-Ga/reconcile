@@ -1,6 +1,7 @@
 # ADR-0045: Names in a Group Are Freely Chosen, Unique, and Changes Show
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-identity-recovery`, decision `display-names`
 - **Refines:** [ADR-0009](0009-per-group-identities.md), [ADR-0017](0017-need-to-see-and-expiry.md)

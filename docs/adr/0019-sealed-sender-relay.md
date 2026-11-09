@@ -1,6 +1,7 @@
 # ADR-0019: Sealed Sender, Padding, and Batching at the Relay
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-07
 - **Decided via:** `/decide` sheet `2026-11-07-reconcile-trust-safety`, decision `metadata`
 

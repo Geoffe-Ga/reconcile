@@ -1,6 +1,7 @@
 # ADR-0048: Proposals That Draw Early Enthusiasm Rise in the Feed
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-governance-edges`, from the founder's note on `missed-quorum`: "within big groups, a swarm algorithm can help determine what gets viewed. Things that get enthusiastic votes quickly (or trend that way) are surfaced to collaborators higher up in the feed."
 

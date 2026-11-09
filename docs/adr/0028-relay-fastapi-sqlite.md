@@ -1,6 +1,7 @@
 # ADR-0028: The Relay Is FastAPI with SQLite
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-stack-details`, decision `relay-stack`
 - **Builds on:** [ADR-0007](0007-thin-python-relay.md), [ADR-0019](0019-sealed-sender-relay.md)

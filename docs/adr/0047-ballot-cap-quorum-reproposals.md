@@ -1,6 +1,7 @@
 # ADR-0047: Three Versions per Ballot; Missed Quorum Lapses; Limits on Re-Proposing
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-governance-edges`, decisions `ballot-size`, `missed-quorum` (chose `lapse`, with the founder's note)
 - **Refines:** [ADR-0002](0002-consent-floor-vote-rule.md), [ADR-0004](0004-competing-versions-go-to-ballot.md), [ADR-0021](0021-level-names-and-self-selection.md)
