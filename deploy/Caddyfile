@@ -1,0 +1,47 @@
+# deploy/Caddyfile - The one VM's web server: the app and the relay on one origin.
+#
+# TLS ends here, on our own VM, so no platform proxy sees members' addresses
+# (ADR-0041). Nothing is logged: no access log, and the default logger, which
+# would still write handler errors (a 502, say) and TLS handshake errors with
+# the client's IP, discards everything. deploy/no-ip-check.sh proves it.
+#
+# deploy/deploy.sh installs this at /etc/caddy/Caddyfile and sets
+# RECONCILE_SITE (the domain) in a caddy.service drop-in. `admin off` turns off
+# `caddy reload`, so a config change needs `systemctl restart caddy`.
+{
+	admin off
+	skip_install_trust
+	log default {
+		output discard
+	}
+}
+
+{$RECONCILE_SITE} {
+	header {
+		-Server
+		# The main defense against injected script stealing keys, together
+		# with #70's Markdown sanitizer. client/vite.config.ts serves the same
+		# header under `vite preview`; deploy/check.sh keeps the two equal.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+	}
+
+	# The relay (reconcile.relay), bound to loopback. It drops client
+	# addresses and forwarding headers itself; these lines mean Caddy never
+	# hands it any in the first place.
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:8787 {
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Host
+			header_up -X-Forwarded-Proto
+			header_up -X-Real-IP
+			header_up -Forwarded
+		}
+	}
+
+	# The built client (client/dist). Unknown paths get index.html.
+	handle {
+		root * /srv/reconcile/app
+		try_files {path} /index.html
+		file_server
+	}
+}

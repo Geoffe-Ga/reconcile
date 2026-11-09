@@ -32,5 +32,16 @@ export default defineConfig(({ mode }) => {
         thresholds: { lines: 90, statements: 90, functions: 90, branches: 85 },
       },
     },
+    // The CSP below allows no data: URLs, so no asset (a small font subset, say)
+    // may be inlined as one: every asset is a file served from 'self'.
+    build: { assetsInlineLimit: 0 },
+    // deploy/Caddyfile's CSP, so the e2e loop under `vite preview` runs the build
+    // under the policy members get. deploy/check.sh keeps the two equal.
+    preview: {
+      headers: {
+        'Content-Security-Policy':
+          "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      },
+    },
   };
 });

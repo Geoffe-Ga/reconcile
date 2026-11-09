@@ -1,0 +1,26 @@
+# The blind mailbox relay (reconcile.relay, ADR-0028), on loopback behind
+# Caddy. Uvicorn writes no access log, ignores forwarding headers and sends no
+# Server header; the app drops client addresses before any route runs.
+# deploy/deploy.sh installs this unit; the README sets up the user and venv.
+
+[Unit]
+Description=Reconcile relay (blind mailboxes, no logs)
+After=network.target
+
+[Service]
+User=reconcile
+# The source is synced here, so `reconcile.relay` imports from the working
+# directory; the venv holds only requirements.txt.
+WorkingDirectory=/opt/reconcile/src
+Environment=RECONCILE_RELAY_DB=/var/lib/reconcile/relay.db
+StateDirectory=reconcile
+# Only the reconcile user may read the database and its WAL, as with
+# scripts/relay.sh's umask.
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+Restart=on-failure
+ExecStart=/opt/reconcile/venv/bin/uvicorn reconcile.relay.app:create_app --factory --host 127.0.0.1 --port 8787 --no-access-log --no-proxy-headers --no-server-header
+
+[Install]
+WantedBy=multi-user.target

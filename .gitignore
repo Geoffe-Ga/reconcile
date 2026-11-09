@@ -23,6 +23,9 @@ mutants/
 # Local relay database (scripts/relay.sh)
 .relay-data/
 
+# The founder's deploy settings: the VM's SSH destination and the domain
+deploy/.env
+
 # Client (TypeScript)
 client/node_modules/
 client/dist/

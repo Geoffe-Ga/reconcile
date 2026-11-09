@@ -1,0 +1,12 @@
+# Runs reconcile-purge.service once a day. Persistent=true catches up on a
+# run missed while the VM was off.
+
+[Unit]
+Description=Daily purge of expired relay blobs
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
