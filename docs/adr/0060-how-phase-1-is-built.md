@@ -1,6 +1,7 @@
 # ADR-0060: Agents Build in Waves; Green Merges; main Is Protected; Labels
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-dev-process`, decisions `who-builds`, `crypto-review` (chose `green-only`), `branch-protection`, `labels`
 

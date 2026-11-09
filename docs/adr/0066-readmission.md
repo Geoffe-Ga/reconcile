@@ -1,6 +1,7 @@
 # ADR-0066: A Way Back After Removal
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `repair` (chose `readmit`)
 - **Refines:** [ADR-0049](0049-stewards-and-removal.md), [ADR-0016](0016-suspend-then-vote.md)

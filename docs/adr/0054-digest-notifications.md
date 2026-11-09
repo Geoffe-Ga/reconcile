@@ -1,6 +1,7 @@
 # ADR-0054: Notifications Arrive as a Daily Digest; Recovery Attempts Are Immediate
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-onboarding-ux`, decision `notifications` (chose `digest`)
 - **Refines:** [ADR-0012](0012-content-free-push.md)

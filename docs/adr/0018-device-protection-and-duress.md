@@ -1,6 +1,7 @@
 # ADR-0018: App Lock, Panic Wipe, and an Opt-In Duress Login
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-07
 - **Decided via:** `/decide` sheet `2026-11-07-reconcile-trust-safety`, decision `device-seizure` (the user's own approach)
 

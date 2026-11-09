@@ -1,6 +1,7 @@
 # ADR-0053: Invites Are Multi-Use Links That Expire in 48 Hours
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-onboarding-ux`, decision `invites` (chose `multi-48h`)
 - **Refines:** spec §4 (`invite`), [ADR-0014](0014-invite-and-vouch-admission.md)

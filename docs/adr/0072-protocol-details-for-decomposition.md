@@ -1,6 +1,7 @@
 # ADR-0072: Protocol Details Settled During Decomposition
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** spec decomposition of Phase 1 (the 2026-11-08 issue drafts). The drafting agents found these gaps; each was decided under the founder's standing rule: decide, state the assumption, continue.
 - **Refines:** [ADR-0006](0006-signed-log-plus-crdt.md), [ADR-0017](0017-need-to-see-and-expiry.md), [ADR-0043](0043-recovery-and-backup.md), [ADR-0049](0049-stewards-and-removal.md), [ADR-0051](0051-dissolution-and-rule-classes.md), [ADR-0054](0054-digest-notifications.md), [ADR-0057](0057-environments-updates-retention.md), [ADR-0065](0065-stand-aside-and-ballot-notes.md), [ADR-0066](0066-readmission.md), [ADR-0067](0067-genesis-templates.md); spec §4, §6, §7

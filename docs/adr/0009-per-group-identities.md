@@ -1,6 +1,7 @@
 # ADR-0009: Separate Identity Per Group, Linked Only by Choice
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-07
 - **Decided via:** `/decide` sheet `2026-11-07-reconcile-system-design`, decision `linkability`
 

@@ -1,6 +1,7 @@
 # ADR-0055: WCAG 2.2 AA Checked Automatically; English, Translation-Ready
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-onboarding-ux`, decisions `accessibility` (chose `aa-auto`, with the founder's note), `languages`
 

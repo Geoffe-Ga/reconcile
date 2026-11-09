@@ -1,6 +1,7 @@
 # ADR-0064: Two Feed Tabs, Quiet (Default) and Rising
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `feed` (the founder's own approach: "Slow doubts and fast enthusiasm both need a tab. Slow doubts should be default.")
 - **Amends:** [ADR-0048](0048-feed-surfacing.md)

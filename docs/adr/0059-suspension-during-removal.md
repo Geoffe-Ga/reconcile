@@ -1,6 +1,7 @@
 # ADR-0059: A Suspension Lasts Until an Open Removal Vote Ends
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-dev-process`, decision `suspension-window`; resolves issue #32 (found by the review of PR #30)
 - **Refines:** [ADR-0016](0016-suspend-then-vote.md), [ADR-0049](0049-stewards-and-removal.md)

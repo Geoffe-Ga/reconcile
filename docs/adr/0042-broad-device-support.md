@@ -1,6 +1,7 @@
 # ADR-0042: Broad Device Support, with Honest Warnings on Older Devices
 
 - **Status:** Accepted
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-stack-details`, decision `support` (chose `broad`; the founder's note: "Be clear about the hazards of outdated devices, but we can't expect the audience of this app to be tech savvy and fully updated.")
 
