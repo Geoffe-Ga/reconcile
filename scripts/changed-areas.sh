@@ -5,6 +5,7 @@
 #   python=true|false
 #   client=true|false
 #   deploy=true|false
+#   e2e=true|false      (the Playwright loop: the app and the relay together)
 #
 # Used by scripts/check-all.sh locally and by .github/workflows/ci.yml, so the
 # two can never disagree about what needs checking.
@@ -24,13 +25,15 @@ cd "$(dirname "$SCRIPT_DIR")"
 python=false
 client=false
 deploy=false
+e2e=false
 
-all() { python=true; client=true; deploy=true; }
+all() { python=true; client=true; deploy=true; e2e=true; }
 
 emit() {
     echo "python=$python"
     echo "client=$client"
     echo "deploy=$deploy"
+    echo "e2e=$e2e"
 }
 
 if [[ "${1:-}" == "--all" ]]; then
@@ -71,12 +74,16 @@ files="$( {
 while IFS= read -r path; do
     [[ -z "$path" ]] && continue
     case "$path" in
+        # The e2e loop runs the app and the relay, so a change to either runs it.
         # deploy/check.sh holds vite preview's CSP equal to the Caddyfile's.
-        client/vite.config.ts)                      client=true; deploy=true ;;
-        client/*)                                   client=true ;;
+        client/vite.config.ts)                      client=true; deploy=true; e2e=true ;;
+        # tests/test_e2e_script.py checks the script that runs the loop.
+        client/scripts/e2e.sh)                      client=true; python=true; e2e=true ;;
+        client/*)                                   client=true; e2e=true ;;
         # Before *.md: the runbook is checked with the config it explains.
         deploy/*)                                   deploy=true ;;
-        reconcile/*|tests/*|pyproject.toml|requirements*.txt|.pylintrc)
+        reconcile/*)                                python=true; e2e=true ;;
+        tests/*|pyproject.toml|requirements*.txt|.pylintrc)
                                                     python=true ;;
         # Shared contract and shared tooling: every area must re-check.
         protocol/*|scripts/*|.github/workflows/ci.yml|.pre-commit-config.yaml|.secrets.baseline)

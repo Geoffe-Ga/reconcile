@@ -15,7 +15,7 @@ SCRIPT = ROOT / "scripts" / "changed-areas.sh"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 GIT = shutil.which("git") or "git"
 BASH = shutil.which("bash") or "bash"
-AREAS = ("python", "client", "deploy")
+AREAS = ("python", "client", "deploy", "e2e")
 NONE = dict.fromkeys(AREAS, "false")
 EVERY = dict.fromkeys(AREAS, "true")
 
@@ -79,7 +79,7 @@ def test_unresolvable_base_ref_checks_everything(repo: Path) -> None:
 
 
 def test_all_flag_checks_every_area(repo: Path) -> None:
-    """``--all`` forces every area, deploy included, whatever changed."""
+    """``--all`` forces every area, deploy and e2e included, whatever changed."""
     assert _areas(repo, "HEAD~1", "--all") == EVERY
 
 
@@ -92,9 +92,15 @@ def test_all_flag_checks_every_area(repo: Path) -> None:
         # Matched before *.md: the runbook lives beside the config it explains.
         ("deploy/README.md", {"deploy"}),
         # deploy/check.sh holds vite preview's CSP equal to the Caddyfile's.
-        ("client/vite.config.ts", {"client", "deploy"}),
-        ("client/src/main.tsx", {"client"}),
-        ("reconcile/relay/app.py", {"python"}),
+        ("client/vite.config.ts", {"client", "deploy", "e2e"}),
+        # The loop runs the app and the relay, so either one changing runs it.
+        ("client/src/main.tsx", {"client", "e2e"}),
+        ("client/e2e/loop.spec.ts", {"client", "e2e"}),
+        ("reconcile/relay/app.py", {"python", "e2e"}),
+        # tests/test_e2e_script.py checks e2e.sh's ports, temp dir and order.
+        ("client/scripts/e2e.sh", {"client", "python", "e2e"}),
+        ("tests/test_relay.py", {"python"}),
+        ("pyproject.toml", {"python"}),
         ("scripts/check-all.sh", set(AREAS)),
         (".github/workflows/ci.yml", set(AREAS)),
         ("an-unrecognized-file", set(AREAS)),
@@ -111,7 +117,7 @@ def test_path_routes_to_its_areas(repo: Path, path: str, expected: set[str]) -> 
 
 
 def test_router_emits_exactly_the_known_areas() -> None:
-    """The real router, forced, names the three areas in order and nothing else."""
+    """The real router, forced, names the four areas in order and nothing else."""
     out = subprocess.run(  # nosec B603 - fixed argv, no shell
         [BASH, str(SCRIPT), "--all"], check=True, capture_output=True, text=True
     ).stdout
@@ -136,3 +142,15 @@ def test_ci_gates_every_area_on_its_own_check_all_job() -> None:
         steps = jobs[gated[0]]["steps"]
         assert f"./scripts/check-all.sh --{area}" in [s.get("run") for s in steps]
         assert gated[0] in jobs["gate"]["needs"]
+
+
+def test_ci_e2e_job_installs_and_runs_both_browsers() -> None:
+    """CI's e2e job installs Chromium and WebKit and never narrows the run.
+
+    ``E2E_PROJECTS`` lets a laptop without WebKit run Chromium alone; CI must
+    run every project in client/playwright.config.ts.
+    """
+    job = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["e2e"]
+    runs = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "npx playwright install --with-deps chromium webkit" in runs
+    assert "E2E_PROJECTS" not in CI.read_text(encoding="utf-8")
