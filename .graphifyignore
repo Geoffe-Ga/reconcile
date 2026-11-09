@@ -1,6 +1,8 @@
 # Paths graphify never reads. Local-only drafts (docs/plan/git-issues,
 # docs/prompts) are gitignored and must never land in a graph, even one built
 # on a laptop. The vision docs in docs/plan/ are committed and may be read.
+# The docs graph (scripts/graph/build-docs.sh) sends what it reads to the LLM,
+# so a path listed here also never leaves the machine.
 .git/
 .venv/
 venv/

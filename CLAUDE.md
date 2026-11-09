@@ -219,9 +219,10 @@ The procedure is in `address-feedback`. The workflow, `await-claude-review`, and
 
 ## 🕸️ Knowledge Graph (graphify)
 
-A code-only graph of the repo ([scripts/graph/README.md](scripts/graph/README.md)). When `graphify-out/graph.json` exists, prefer it to broad grep and read sweeps:
+A code graph of the repo, plus a docs graph of `docs/` ([scripts/graph/README.md](scripts/graph/README.md)). When `graphify-out/graph.json` exists, prefer it to broad grep and read sweeps:
 
 - Get it with `./scripts/graph/restore.sh` (the published graph of `main`) or `./scripts/graph/build.sh` (about a minute, no cost).
+- For product and decision questions, query the docs graph: `graphify query "..." --graph graphify-out/docs-graph.json`. `restore.sh` fetches it too; confirm answers in the doc it cites (its paths are relative to `docs/`).
 - Ask `graphify query "<question>"` first; use `graphify path "A" "B"` for relationships, `graphify explain "X"` for a concept, and `graphify affected "X"` for change impact.
 - Quote each node's `source_location` when you cite it.
 - After changing code, refresh with `./scripts/graph/update.sh`.
