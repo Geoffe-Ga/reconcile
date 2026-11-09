@@ -43,6 +43,23 @@ gh secret set RALPH_CHANNEL_ID   # or: gh variable set RALPH_CHANNEL_ID --body "
 
 The built-in `GITHUB_TOKEN` reads the merge history (`contents`, `pull-requests`, and `issues`, all read-only).
 
+Keep the bot token a secret, never a variable: variables aren't masked in job logs, and anyone who can read the repo can read them.
+
+## Secrets and trust
+
+The workflow fires on `pull_request: closed` and runs the merged PR's own copy of the recap with `DISCORD_BOT_TOKEN` in its environment. A PR that edits that code runs its edit with the real token as soon as it merges. That's the same trust level as any CI script a collaborator can change, and it needs a merge through protected `main` ([ADR-0060](../../docs/adr/0060-how-phase-1-is-built.md)), so it isn't a new hole. It does mean a change to the files below deserves the care you'd give any code that holds a secret.
+
+Code that runs with `DISCORD_BOT_TOKEN` (keep this list current, per ADR-0060):
+
+- `scripts/ralph/recap.py`, the entry point
+- `scripts/ralph/stats.py`, which it imports
+- `scripts/__init__.py` and `scripts/ralph/__init__.py`, which `python -m` runs first
+- the Python standard library that `actions/setup-python` installs
+
+Only the posting step sees the token; checkout and Python setup run before it, without the secret. The step installs no packages. If a change makes the recap import another module or install a package, add it to this list.
+
+A Discord bot token controls the whole bot account, not one channel. Use a bot made for this recap, add it to this server only, and give it only the two channel permissions above. If the token leaks, reset it in the Discord Developer Portal and run `gh secret set DISCORD_BOT_TOKEN` again.
+
 ## Dry run
 
 `--dry-run` prints the embed as JSON instead of posting, and needs no Discord settings:
