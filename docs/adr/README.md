@@ -76,7 +76,8 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0070](0070-patronage-not-attention.md) | No per-read coalition share; gifts anchored to Reconcile's running cost | Accepted (direction) |
 | [0071](0071-self-hosting-and-reach.md) | A license grant to run unmodified relays and clients; promotion stops at coalitions | Accepted |
 | [0072](0072-protocol-details-for-decomposition.md) | Protocol details settled during decomposition: causal time, length caps, expiring sensitive text, re-open and readmit binding, `dissolve` target, backup endpoint, generic lock-screen text | Accepted |
-| [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks | Accepted |
+| [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks | Accepted; amended by 0074 |
+| [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted |
 
 **Terminology (2026-11-08):** the governance exit formerly called a "split" is now **parting ways** (`part-ways-petition`, [ADR-0068](0068-part-ways.md)); ADRs before 0068 still say "split".
 

@@ -1,7 +1,7 @@
 # ADR-0065: Ballots Can Stand Aside, and Any Score Can Carry a Note
 
 - **Status:** Accepted
-- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it; [ADR-0074](0074-mvp-scope-revised.md) restores part of it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `dissent` (chose `stand-aside` and `words-any-score`)
 - **Amends:** [ADR-0002](0002-consent-floor-vote-rule.md), [ADR-0037](0037-holonic-promotion.md); spec §4

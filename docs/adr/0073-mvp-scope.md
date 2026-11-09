@@ -1,6 +1,6 @@
 # ADR-0073: MVP Scope: Build the Simple Loop First
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0074](0074-mvp-scope-revised.md), which restores part of what this defers and adds Phase 2 coalitions
 - **Date:** 2026-11-08
 - **Decided via:** the founder's direction of 2026-11-08: "I want to have a simple app come out the other end. No feature bloat. No confusing crowded UX. No esoteric bureaucracy. No overcooking. MVP status, with the 20% of the paths covered that enable 80% of the behavior…" and "simplify, chop and retain fidelity to the original vision without covering edgecases that are nearly unreachable."
 - **Defers:** parts of ADRs 0002, 0003, 0006–0010, 0012, 0014–0019, 0021, 0023, 0028, 0030, 0031, 0042–0049, 0051–0055, 0057, 0059, 0060, 0064–0069 and 0072, plus spec §1–§8. Nothing is superseded.
