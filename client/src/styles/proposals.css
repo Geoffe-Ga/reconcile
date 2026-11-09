@@ -1,0 +1,228 @@
+/*
+ * Proposals, the ballot and the outcome (DESIGN.md, Components), styled only
+ * from tokens.css. Score colors are always paired with the number and label.
+ * Numerals and text on a score color use --surface, the lighter paper: it
+ * clears 4.5:1 on every score color in both themes (--canvas falls short on
+ * score-1 and score-2 in the light theme).
+ */
+
+/* Meta lines: "Proposed by Ana", "Closes in 7 days · Mon 16 Nov, 2:05 pm" -- */
+
+.meta {
+  color: var(--muted);
+  font: var(--type-ui);
+}
+
+.meta-lines {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* The dot is drawn here and hidden from screen readers. */
+.countdown > time::before {
+  content: '·' / '';
+  margin-inline: var(--space-2);
+}
+
+.countdown time {
+  white-space: nowrap;
+}
+
+/* The section's text, now and as proposed ------------------------------- */
+
+.texts {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.text-block {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.atom-card {
+  max-width: none;
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.atom-card-current {
+  border-color: transparent;
+  background: var(--sunken);
+  color: var(--body);
+}
+
+/* The outcome: its sentence first, then a pass's new text --------------- */
+
+.outcome {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.outcome-sentence {
+  color: var(--ink);
+  font: var(--type-heading-2);
+  text-wrap: balance;
+}
+
+.outcome .atom-card {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* The ballot -------------------------------------------------------------- */
+
+.vote {
+  display: grid;
+  gap: var(--space-4);
+  padding-block-start: var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+
+.ballot {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.score-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.score-pills {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 24rem;
+  margin-block-start: var(--space-1);
+}
+
+.score-field {
+  display: grid;
+}
+
+.score-pill {
+  --score: var(--score-2);
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: var(--touch);
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.score-pill-0 {
+  --score: var(--score-0);
+}
+
+.score-pill-1 {
+  --score: var(--score-1);
+}
+
+.score-pill-2 {
+  --score: var(--score-2);
+}
+
+.score-pill-3 {
+  --score: var(--score-3);
+}
+
+.score-pill-4 {
+  --score: var(--score-4);
+}
+
+.score-number {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--score);
+  color: var(--surface);
+  font-weight: 700;
+}
+
+.score-pill[data-hovered] {
+  border-color: var(--score);
+}
+
+.score-pill[data-pressed] {
+  filter: brightness(0.96);
+}
+
+.score-pill[data-selected] {
+  border-color: var(--score);
+  background: var(--score);
+  color: var(--surface);
+}
+
+.score-pill[data-selected] .score-number {
+  background: var(--surface);
+  color: var(--score);
+}
+
+/* A check mark as well as the fill, so the choice never rests on color alone. */
+.score-pill[data-selected]::after {
+  content: '✓' / '';
+  margin-inline-start: auto;
+  font-weight: 700;
+}
+
+.score-pill[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.score-pill[data-disabled] {
+  cursor: default;
+}
+
+.score-pill[data-disabled]:not([data-selected]) {
+  opacity: 0.6;
+}
+
+.ballot-send {
+  row-gap: var(--space-2);
+}
+
+/* A primary button that can't be pressed yet, such as while it saves. */
+.button-primary[data-disabled] {
+  opacity: 0.6;
+}
+
+/* Group home -------------------------------------------------------------- */
+
+/* The copy status sits right under the invite link: one caption line, held
+ * open so the live region never shifts the page when it speaks. */
+.field-status {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* The header and the relay notice share one grid cell, so an empty live
+ * region adds no gap of its own. */
+.page-top {
+  display: grid;
+}
+
+.notice {
+  margin-block-start: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}

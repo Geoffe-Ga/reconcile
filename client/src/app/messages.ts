@@ -7,9 +7,16 @@
  * and direct, in the active voice, with no exclamation marks. Terms follow
  * CLAUDE.md's domain vocabulary (Document, Proposal, Atom as "section").
  */
+/** The language these strings are in, which dates, countdowns and counts are formatted in. */
+const LOCALE = 'en-GB';
+
+/** A whole number as this language writes it, such as "2,000". */
+const count = (n: number): string => n.toLocaleString(LOCALE);
+
 export const messages = {
   app: {
     name: 'Reconcile',
+    locale: LOCALE,
     pageTitle: (screen: string) => `${screen} · Reconcile`,
     yourGroups: 'Your groups',
     newTab: '(opens in a new tab)',
@@ -89,10 +96,81 @@ export const messages = {
     copied: 'Copied. Send it to the people you’re inviting.',
     copyFailed: 'Copying is blocked here. Select the link above and copy it yourself.',
     joinDiscussion: 'Join discussion',
+    discussion: 'Discussion',
+    unreachable: 'Can’t reach the relay right now.',
+    unreachableSince: (time: string) => `Can’t reach the relay right now. Last synced ${time}.`,
     missingTitle: 'This group isn’t on this device',
     missing: 'Open an invite link to join it, or go back to your groups.',
     settingUpTitle: 'Setting up your group',
     settingUp: 'Your group is saved on this device. It appears here once it reaches the relay.',
+  },
+  composer: {
+    pageTitle: 'Propose a change',
+    title: 'Propose a change',
+    current: (section: number) => `Section ${String(section)} now reads`,
+    titleLabel: 'Title',
+    titleHint: 'A few words that say what changes.',
+    titleMissing: 'Give your Proposal a title.',
+    titleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    whyLabel: 'Why',
+    whyHint: 'Tell your group what this fixes or makes better.',
+    whyMissing: 'Say why you’re proposing this.',
+    whyTooLong: (max: number) => `Keep it to ${count(max)} characters or fewer.`,
+    textLabel: 'New text',
+    textHint: 'If your group passes it, this replaces the section.',
+    textMissing: 'Write the new text for this section.',
+    tooLarge: 'This is too long to send. Shorten it, then try again.',
+    linkLabel: 'Discussion link (optional)',
+    linkHint: 'Where your group can talk it over. It starts as your group’s latest link.',
+    linkInvalid: 'Use a web link that starts with https:// or http://.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose this change',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    missingTitle: 'This section isn’t in the Document',
+    missing: 'Go back to the Document and choose a section to change.',
+    notAllowedTitle: 'You can’t propose changes here',
+    notAllowed: 'Your place in this group doesn’t include proposing changes.',
+  },
+  proposal: {
+    pageTitle: 'Proposal',
+    eyebrowOpen: 'Open Proposal',
+    eyebrowClosed: 'Closed Proposal',
+    eyebrowNew: 'New Proposal',
+    proposedBy: 'Proposed by',
+    current: (section: number) => `Section ${String(section)} now reads`,
+    proposed: 'Proposed text',
+    result: 'Result',
+    passed: 'This passed. The Document now reads:',
+    failed: 'This didn’t pass.',
+    lapsed: 'Not enough people weighed in. This isn’t a no.',
+    notEligible: 'You joined after this opened, so you can’t vote on it.',
+    missingTitle: 'This Proposal isn’t on this device',
+    missing: 'Go back to your group to see its open Proposals.',
+  },
+  ballot: {
+    heading: 'Your vote',
+    scoreLabel: 'Your score',
+    visibility: 'Everyone in your group sees your score and note.',
+    separator: '·',
+    scores: ['Strongly opposed', 'Opposed', 'Neutral', 'Supportive', 'Strongly supportive'],
+    scoreMissing: 'Choose a score from 0 to 4.',
+    noteLabel: 'Note (optional)',
+    reasonLabel: 'Your reason for a 0',
+    noteMissing: 'Add your reason for the 0.',
+    noteTooLong: (max: number) => `Keep the note to ${count(max)} characters or fewer.`,
+    submit: 'Send your vote',
+    update: 'Update your vote',
+    closed: 'Voting has closed, so this ballot can’t change.',
+    failed: 'Your vote couldn’t be saved on this device. Try again.',
+  },
+  send: {
+    sending: 'Sending…',
+    saved: 'Saved on this device. It will send when you’re back online.',
+    sent: 'Sent',
+  },
+  countdown: {
+    closes: (left: string) => `Closes ${left}`,
+    closed: 'Voting closed',
   },
   document: {
     pageTitle: 'Document',
