@@ -5,19 +5,41 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-/** The engine reads no clock: votes run on relay time, so every device folds alike (spec §4). */
-const NO_CLOCK = ['Date', 'performance'].map((name) => ({
-  selector: `Identifier[name='${name}']`,
-  message: 'src/engine reads no clock. Use relay time (`received`, `relayNow`).',
-}));
+/**
+ * The engine reads no clock: votes run on relay time, so every device folds alike (spec §4).
+ * A computed key, as a string or a plain template (`globalThis['Date']`), reaches the clock
+ * as surely as the name does.
+ */
+const NO_CLOCK = ['Date', 'performance']
+  .flatMap((name) => [
+    `Identifier[name='${name}']`,
+    `MemberExpression > Literal.property[value='${name}']`,
+    `MemberExpression > TemplateLiteral.property[expressions.length=0][quasis.0.value.cooked='${name}']`,
+  ])
+  .map((selector) => ({
+    selector,
+    message: 'src/engine reads no clock. Use relay time (`received`, `relayNow`).',
+  }));
 
-/** The tally uses integers only: no floats, division or rounding (spec §5). */
+/**
+ * Operators that can leave the integers: division and powers make fractions, and the
+ * bitwise ones truncate to 32 bits (`x | 0`, `x >>> 0`), which hides a fraction.
+ */
+const NON_INTEGER_OPERATORS = ['/', '**', '|', '&', '^', '<<', '>>', '>>>'];
+
+/** The engine counts in integers only: no floats, division, powers or rounding (spec §5). */
 const INTEGERS_ONLY = [
-  "BinaryExpression[operator='/']",
-  "AssignmentExpression[operator='/=']",
+  ...NON_INTEGER_OPERATORS.flatMap((operator) => [
+    `BinaryExpression[operator='${operator}']`,
+    `AssignmentExpression[operator='${operator}=']`,
+  ]),
+  "UnaryExpression[operator='~']",
   "MemberExpression[object.name='Math'][property.name=/^(round|floor|ceil|trunc|fround)$/]",
   'Literal[raw=/^[0-9_]*[.eE]/]',
-].map((selector) => ({ selector, message: 'The tally uses integers only: compare products.' }));
+].map((selector) => ({
+  selector,
+  message: 'src/engine counts in integers only. Compare products; never divide, round or truncate.',
+}));
 
 /** The browser's ways to reach the network. Only src/net/ may use them (spec §2). */
 const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'];
@@ -56,13 +78,11 @@ export default tseslint.config(
     },
   },
   {
+    // All of src/engine, not just tally.ts, so a helper the tally imports can't divide for it.
+    // A later block would replace these options rather than merge them: keep this the only
+    // `no-restricted-syntax` block that matches src/engine.
     files: ['src/engine/**/*.ts'],
     ignores: ['src/engine/**/*.test.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK] },
-  },
-  {
-    // A later block replaces a rule's options rather than merging them, so repeat NO_CLOCK.
-    files: ['src/engine/tally.ts'],
     rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK, ...INTEGERS_ONLY] },
   },
   {
