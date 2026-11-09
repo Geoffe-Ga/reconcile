@@ -101,5 +101,11 @@ These were decided as "later", with a trigger:
 
 - **The eternal core's wording** (ADR-0035): a dedicated drafting session before Reconcile-the-group's genesis in Phase 2.
 - **The fiscal sponsor** (ADR-0062): after a successful pilot, or when money is actually needed.
-- **The outside security review** (ADR-0058): when an activist group calls for it. Start booking at the first serious conversation.
+- **The outside security review** (ADR-0058): when an activist group calls for it. Start booking at the first serious conversation. ADRs 0073–0075 also need it done before any group outside the founder's circle uses the app. Tracked in [#132](https://github.com/Geoffe-Ga/reconcile/issues/132), which lists every accepted pilot risk it covers.
 - **Branch protection on main** (ADR-0060): needs GitHub Pro on a private repo, so it waits on the founder's choice to pay.
+
+ADR-0075 adds three **Revisit** items. Each is a `blocked` issue that waits for its trigger:
+
+- **Coalition seat secrets for voting members only** (ADR-0075 §1): wrap each seat secret only to voting members, and rotate it with the group key. Trigger: before the outside review, or the first time a pilot coalition is blocked by a contested seat. Tracked in [#129](https://github.com/Geoffe-Ga/reconcile/issues/129).
+- **Push that doesn't link a phone's groups** (ADR-0075 §2): a separate push address per group, or no push for a group that asks for none. Trigger: before groups outside the founder's circle use the app. Tracked in [#130](https://github.com/Geoffe-Ga/reconcile/issues/130).
+- **A relay-held recovery release** (ADR-0075 §4): the relay releases a backup only 72 hours after a request that the person's devices see and can cancel. Trigger: before the outside review. Tracked in [#131](https://github.com/Geoffe-Ga/reconcile/issues/131).
