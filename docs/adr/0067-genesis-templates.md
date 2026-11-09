@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
-- **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `structure` (chose `templates`)
+- **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `structure` → `templates`. The same decision's other chosen option, `part-ways`, is [ADR-0068](0068-part-ways.md).
 - **Refines:** [ADR-0049](0049-stewards-and-removal.md), [ADR-0051](0051-dissolution-and-rule-classes.md); spec §4 default founding rules
 
 ## Context

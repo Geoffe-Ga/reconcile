@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
-- **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `structure` (chose `part-ways`)
+- **Decided via:** `/decide` sheet `2026-11-08-reconcile-four-lenses`, decision `structure` → `part-ways`. The same decision's other chosen option, `templates`, is [ADR-0067](0067-genesis-templates.md).
 - **Amends:** [ADR-0050](0050-splitting.md) (its naming and rationale; the numbers stand), [ADR-0010](0010-open-ballots-with-exit.md), [ADR-0015](0015-anti-capture.md)
 
 ## Context

@@ -41,3 +41,7 @@ The prompt should anchor on a conservative digital-reach figure per recipient, p
 ## Amendment (2026-11-07)
 
 The rail is decided in [ADR-0034](0034-blind-credit-payment-rail.md): blind-signed credits for peer money, an ordinary processor for platform gifts, never a marketplace processor.
+
+## Amendment (2026-11-08, four-lenses review)
+
+The reach-cost anchor above is replaced: a gift prompt compares a gift with what Reconcile costs to run, never with what ads cost. The coalition tip share that ADR-0027 added is withdrawn ([ADR-0070](0070-patronage-not-attention.md)).
