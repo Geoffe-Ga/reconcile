@@ -25,6 +25,7 @@ scripts/ralph/
 ├── stats.py   # pure statistics
 └── RECAP.md   # this file
 tests/test_ralph_recap.py, tests/test_ralph_stats.py   # run by ./scripts/check-all.sh
+tests/test_workflows.py                                 # the token comes only from secrets
 .github/workflows/ralph-recap.yml                       # fires on every merged PR
 ```
 
@@ -34,7 +35,7 @@ Nothing posts until both settings exist. Until then the workflow prints a notice
 
 1. Create a Discord bot, add it to your server, and give it **View Channel** and **Send Messages** on the target channel.
 2. Copy the channel ID (Developer Mode → right-click the channel → Copy Channel ID).
-3. Add the settings to the repo. The workflow reads `secrets` first, then a same-named `vars` entry:
+3. Add the settings to the repo. The bot token must be a secret: the workflow reads `DISCORD_BOT_TOKEN` from `secrets` only, so a variable of that name is ignored. Variables aren't masked in job logs, and anyone who can read the repo can read them. The channel ID isn't secret, so it can be either; a secret wins over a same-named variable.
 
 ```bash
 gh secret set DISCORD_BOT_TOKEN
@@ -43,7 +44,7 @@ gh secret set RALPH_CHANNEL_ID   # or: gh variable set RALPH_CHANNEL_ID --body "
 
 The built-in `GITHUB_TOKEN` reads the merge history (`contents`, `pull-requests`, and `issues`, all read-only).
 
-Keep the bot token a secret, never a variable: variables aren't masked in job logs, and anyone who can read the repo can read them.
+`tests/test_workflows.py` fails if any workflow reads `DISCORD_BOT_TOKEN` from `vars` or sets it from anything but `secrets.DISCORD_BOT_TOKEN`.
 
 ## Secrets and trust
 
@@ -85,4 +86,4 @@ Review verdicts and diff counts take about two API requests per PR, so only the 
 - **401:** a wrong or revoked token. Use the bot token without a `Bot ` prefix; the script adds it.
 - **403:** the bot isn't in the server, or lacks View Channel or Send Messages.
 - **404:** a wrong `RALPH_CHANNEL_ID`. It's all digits, not the channel name.
-- **"Ralph Recap skipped"** in the job log: one or both settings are missing.
+- **"Ralph Recap skipped"** in the job log: one or both settings are missing. A bot token saved as a variable counts as missing; save it with `gh secret set DISCORD_BOT_TOKEN`.

@@ -68,7 +68,7 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
-    "--cov=reconcile",
+    "--cov",  # measures [tool.coverage.run] source
     "--cov-branch",
     "--cov-report=term-missing:skip-covered",
     "--cov-report=html",
@@ -86,7 +86,9 @@ markers = [
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
-source = ["reconcile"]
+# The one list of what the coverage gate measures (#55). The gate scripts read it
+# through a bare --cov; tests/test_coverage_scope.py keeps it that way.
+source = ["reconcile", "scripts"]
 branch = true
 omit = [
     "*/tests/*",
@@ -162,7 +164,7 @@ exclude_dirs = ["tests", ".venv", "venv", "client", "mutants", "build", "dist"]
 skips = ["B101"]  # Skip assert_used in tests
 
 [tool.mutmut]
-paths_to_mutate = "reconcile/"
+paths_to_mutate = "reconcile/,scripts/"  # = [tool.coverage.run] source
 backup = false
 runner = "python -m pytest --exitfirst --quiet --tb=no"
 tests_dir = "tests/"
