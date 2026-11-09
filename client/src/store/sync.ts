@@ -2,7 +2,9 @@
  * The sync loop (spec §7): framework-free, so the UI only reads the store.
  *
  * While the page is visible, a pass runs every 3 seconds, and at once on focus.
- * After a failure the wait doubles, up to 30 seconds. Each pass, for each group:
+ * After a failure the wait doubles, up to 30 seconds. When the browser comes
+ * back online the wait resets and a pass runs at once, so an event saved
+ * offline doesn't sit out the backoff. Each pass, for each group:
  *
  * 1. posts the outbox in order, removing an entry only once the relay accepts it;
  * 2. reads every record after the cursor, opens each blob (skipping one that
@@ -42,7 +44,7 @@ export interface Timers {
 
 /** Something that runs a job on a schedule. */
 export interface Poller {
-  /** Begin: run at once if the page is visible, and listen for visibility and focus. */
+  /** Begin: run at once if the page is visible, and listen for visibility, focus and `online`. */
   start(): void;
   /** Stop running and listening. */
   stop(): void;
@@ -59,7 +61,9 @@ const browserTimers: Timers = {
  * Run `run` while the page is visible: at once on start, focus or becoming
  * visible, then {@link POLL_MS} after each success, or twice the last wait
  * after a failure (a `false` result or a rejection), up to {@link MAX_WAIT_MS}.
- * Runs never overlap.
+ * The window's `online` event resets the wait to {@link POLL_MS} and, while
+ * the page is visible, runs at once; a run already in flight finishes first,
+ * and its result sets the next wait. Runs never overlap.
  */
 export function createPoller(run: () => Promise<boolean>, timers = browserTimers): Poller {
   let started = false;
@@ -107,6 +111,14 @@ export function createPoller(run: () => Promise<boolean>, timers = browserTimers
     }
   };
 
+  /** The network is back, so the relay may be too: drop the backoff and try now. */
+  const onOnline = (): void => {
+    wait = POLL_MS;
+    if (isVisible()) {
+      wake();
+    }
+  };
+
   return {
     start() {
       if (started) {
@@ -115,6 +127,7 @@ export function createPoller(run: () => Promise<boolean>, timers = browserTimers
       started = true;
       document.addEventListener('visibilitychange', onVisibility);
       window.addEventListener('focus', wake);
+      window.addEventListener('online', onOnline);
       if (isVisible()) {
         wake();
       }
@@ -124,6 +137,7 @@ export function createPoller(run: () => Promise<boolean>, timers = browserTimers
       cancel();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', wake);
+      window.removeEventListener('online', onOnline);
     },
   };
 }
