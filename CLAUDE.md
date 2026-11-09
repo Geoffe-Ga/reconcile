@@ -26,7 +26,7 @@ The product source of truth is **[`docs/plan/`](docs/plan/)**. **Level names cha
 | **Proposal** | A proposed change to an Atom, like a pull request. It has a title, a justification, and the proposed content. Formerly "Pitch" (renamed 2026-11-07); the verb is *propose* |
 | **Working Copy** | A checked-out draft that autosaves and has a shareable URL. Returning it may surface **Conflicts** |
 | **Vote** | Governance on a Proposal. Voters score it 0–4 within a time window. It passes on a **consent floor**: average ≥ 2.0 and fewer than 10% scoring 0 ([ADR-0002](docs/adr/0002-consent-floor-vote-rule.md)). Competing versions of an Atom all go on the ballot ([ADR-0004](docs/adr/0004-competing-versions-go-to-ballot.md)) |
-| **Dispatch** | A notification a Co-Creator (or a Proposal) sends to followers. Formerly the working name "Push" |
+| **Dispatch** | A notification a Co-Creator (or a Proposal) sends to followers. Formerly the working name "Push". In the ADRs and issues, "push" now means Web Push, the browser API that wakes a device with no content ([ADR-0012](docs/adr/0012-content-free-push.md), #89, #99), and never a Dispatch |
 | **Part ways** | A group dividing into two, keeping history. Possible only by petition after a trigger, never from a vote result ([ADR-0050](docs/adr/0050-splitting.md), [ADR-0068](docs/adr/0068-part-ways.md)). Formerly "split". Never call it a "fork"; that word means forking code |
 | **Involvement Level** | A person's level in a group: **Member** (follows), **Collaborator** (votes), or **Co-Creator** (votes and creates). Moving between levels is self-selected once admitted. Code checks capabilities, never level names ([ADR-0003](docs/adr/0003-three-tier-involvement-levels.md), [ADR-0021](docs/adr/0021-level-names-and-self-selection.md)) |
 
@@ -49,13 +49,13 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 - **Safe defaults** for vulnerable participants, plus **anti-capture** governance mechanics
 - Treat membership lists, voting records, coalition graphs, and identity-to-ideology links as **high-risk data**
 
-**Reconcile is local-first** ([ADR-0001](docs/adr/0001-local-first-trust-model.md)). Canonical data lives on members' devices, and any server is a relay that can't read or enumerate membership, affiliation, or votes. Never add a central database of members, affiliations, or votes. Discovery is relational (through people you already share a group with), never a global directory. The stack is a TypeScript PWA client ([ADR-0005](docs/adr/0005-pwa-client.md)), a signed governance log plus CRDT drafts ([ADR-0006](docs/adr/0006-signed-log-plus-crdt.md)), and a thin Python relay ([ADR-0007](docs/adr/0007-thin-python-relay.md)). Each membership has its own identity ([ADR-0009](docs/adr/0009-per-group-identities.md)).
+**Reconcile is local-first** ([ADR-0001](docs/adr/0001-local-first-trust-model.md)). Canonical data lives on members' devices, and any server is a relay that can't read or enumerate membership, affiliation, or votes. Never add a central database of members, affiliations, or votes. Discovery is relational (through people you already share a group with), never a global directory. The stack is a TypeScript PWA client ([ADR-0005](docs/adr/0005-pwa-client.md)), a signed governance log ([ADR-0006](docs/adr/0006-signed-log-plus-crdt.md); its CRDT drafts are deferred by [ADR-0073](docs/adr/0073-mvp-scope.md), so drafts stay private on one device), and a thin Python relay ([ADR-0007](docs/adr/0007-thin-python-relay.md)). Each membership has its own identity ([ADR-0009](docs/adr/0009-per-group-identities.md)).
 
 ### Roadmap (conceptual; see [14](docs/plan/14_Roadmap_Open_Questions.md))
 
 - **Phase 0:** settle definitions, ethics, and privacy principles
-- **Phase 1:** single-Organization MVP: onboarding, personal page, create/join an org, documents, proposal → vote → update, notifications
-- **Phase 2:** Coalition MVP: discovery, reconciliation proposal, dual voting, coalition documents
+- **Phase 1:** the MVP, scoped by [ADR-0073](docs/adr/0073-mvp-scope.md) and [ADR-0074](docs/adr/0074-mvp-scope-revised.md) and specified in [`docs/spec/phase-1-spec.md`](docs/spec/phase-1-spec.md): onboarding, personal page, create/join an org, documents, proposal → vote → update, notifications. Phase 2's coalitions are in the MVP too
+- **Phase 2:** coalitions: reconciliation proposal, dual voting, coalition documents, front doors. In the MVP they form by private group-to-group invitation, with no public index
 - **Phase 3:** outer-loop activation: the Member experience, scheduled Dispatches, calls to action
 
 **Settled decisions** are in [`docs/adr/`](docs/adr/README.md). Read them before designing anything.
@@ -125,7 +125,7 @@ reconcile/
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)
 ├── plans/                # Working implementation plans
 ├── client/               # TypeScript PWA (green-init scaffold; see client/CLAUDE.md)
-├── reconcile/            # Python package: relay + protocol reference (main.py is a placeholder)
+├── reconcile/            # Python package: relay only (main.py is a placeholder until #62)
 ├── DESIGN.md             # Visual system and voice (client tokens and /decide sheets read it)
 ├── tests/                # pytest suite
 ├── scripts/              # Quality gate scripts (check-all, test, lint, …), plus graph/ and ralph/
@@ -166,15 +166,23 @@ gh pr create --fill
 ./scripts/mutation.sh    # mutation testing (recommended before a release)
 ```
 
-### Example Domain Test (Hypothesis)
+### Example Domain Test (fast-check)
 
-```python
-from hypothesis import given, strategies as st
+The governance engine is TypeScript only ([ADR-0073](docs/adr/0073-mvp-scope.md)), so its property tests use fast-check:
 
-@given(st.lists(st.integers(min_value=0, max_value=4), min_size=1))
-def test_vote_outcome_is_order_independent(scores: list[int]) -> None:
-    """A Proposal's outcome must not depend on ballot order."""
-    assert tally(scores) == tally(list(reversed(scores)))
+```ts
+import fc from 'fast-check';
+import { expect, it } from 'vitest';
+import { tally } from './tally';
+
+it("doesn't let ballot order change a Proposal's outcome", () => {
+  const ballot = (scores: number[]) => ({ eligible: scores.length, versions: [{ id: 'v1', scores }] });
+  fc.assert(
+    fc.property(fc.array(fc.integer({ min: 0, max: 4 }), { minLength: 1 }), (scores) => {
+      expect(tally(ballot(scores))).toEqual(tally(ballot([...scores].reverse())));
+    }),
+  );
+});
 ```
 
 ---

@@ -104,12 +104,12 @@ Don't reproduce any of those brands' marks, typefaces, or layouts.
 
 ## Fonts and privacy
 
-**Self-host every font in the PWA** through `@fontsource` packages (`@fontsource-variable/newsreader`, `@fontsource-variable/public-sans`, `@fontsource-variable/jetbrains-mono`). The app must never call Google Fonts or any other third-party host (client rule: the only network calls are to the relay and the push service). Decision-sheet artifacts may use the Google Fonts CSS for the same families.
+**Self-host every font in the PWA** through `@fontsource` packages (`@fontsource-variable/newsreader`, `@fontsource-variable/public-sans`, `@fontsource-variable/jetbrains-mono`). The app must never call Google Fonts or any other third-party host. The client rule in [`client/CLAUDE.md`](client/CLAUDE.md) allows only the relay, the browser's push service, and a Discord webhook for a group that turned its bot on by Proposal. Decision-sheet artifacts may use the Google Fonts CSS for the same families.
 
 ## Colors
 
 - **`primary` (forest):** primary buttons, selected states, links in UI chrome, and the "passes" side of the consent meter.
-- **`ochre`:** highlights, "Claude's lean" and recommendation markers, unread dots. Use `ochre-ink` for small ochre text.
+- **`ochre`:** highlights, and "Claude's lean" and recommendation markers. Use `ochre-ink` for small ochre text.
 - **`clay`:** entrenched-Atom accents and warm emphasis. Never errors.
 - **Semantic** (`positive`, `warning`, `negative`): system status only. Never use `primary` to mean success.
 - **Ballot scale** (`score-0`…`score-4`): a diverging clay → stone → forest ramp. **Always show the number and its label** ("0 · Strongly opposed" … "4 · Strongly supportive"). Color is never the only signal.
@@ -145,11 +145,12 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 Build on **React Aria Components** (unstyled, accessible). Style everything from these tokens.
 
 - **Atom block:** Newsreader text with a left gutter for its badge.
-  - Badges: *Entrenched* has a `clay` outline and a lock glyph. *Eternal* has a double `ink` rule and the eyebrow "ETERNAL".
-  - History opens in a side sheet.
+  - Badges: *Entrenched* has a `clay` outline and a lock glyph. *Eternal* has a double `ink` rule and the eyebrow "ETERNAL". #116 builds them.
+  - History opens in a side sheet. #104 builds it.
 - **Proposal card:** title (heading-3), justification (body), a countdown (ui, `muted`), and a "Join discussion" link to the group's linked chat.
 - **Ballot:**
-  - Competing versions sit side by side on wide screens and stack on phones, with Markdown line diffs (additions on `primary-soft`, deletions on a `negative` tint with strike-through).
+  - Competing versions sit side by side on wide screens and stack on phones.
+  - Each version shows a word diff against the current text: additions on `primary-soft`, and deletions struck through on a `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
 - **Consent meter:** two plain bars:
@@ -159,12 +160,11 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
 - **Result:**
   - The outcome sentence comes first.
   - Totals come next.
-  - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec").
-- **Rejected events view:** `sunken` rows in mono, for auditing. Factual tone, never alarming.
-- **Safety settings** (app lock, panic wipe, and later duress):
-  - neutral styling with the same calm cards as any setting
-  - `negative` appears only on the final confirm of a wipe
-  - no skulls, no red banners, no "stealth" language
+  - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
+- **Erase card** (Settings): one card, "Erase Reconcile from this device", in the same calm style as any setting.
+  - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
+  - `negative` appears only on that final confirm.
+  - No skulls, no red banners, no "stealth" language.
 - **Gift prompt** (ADR-0025):
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line
