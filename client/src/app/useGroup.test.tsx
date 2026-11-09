@@ -171,7 +171,34 @@ describe('useGroup', () => {
     await waitFor(() => {
       expect(getGroup).toHaveBeenCalledWith('elsewhere');
     });
-    expect(result.current).toEqual({ state: null, pending: [], lastSyncAt: null, reachable: true });
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
+    expect(result.current).toEqual({
+      state: null,
+      pending: [],
+      lastSyncAt: null,
+      reachable: true,
+      me: null,
+      invite: null,
+      loaded: true,
+    });
+  });
+
+  it('says who this device is in the group, and what its invite link carries', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    const atFirst = { ...result.current };
+
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
+
+    expect(atFirst).toMatchObject({ me: null, invite: null, loaded: false });
+    expect(result.current.me).toEqual({ author: 'author-ana', name: 'Ana' });
+    expect(result.current.invite?.mailbox).toBe(TEST_MAILBOX);
+    expect(Array.from(result.current.invite?.secret ?? [])).toEqual(Array(32).fill(0));
   });
 
   it('reloads only when its own group changes', async () => {
@@ -207,9 +234,9 @@ describe('useGroup', () => {
     });
 
     rerender({ id: 'other' });
-    const whileLoading = result.current.state;
+    const whileLoading = result.current;
 
-    expect(whileLoading).toBeNull();
+    expect(whileLoading).toMatchObject({ state: null, me: null, invite: null, loaded: false });
     await waitFor(() => {
       expect(result.current.state?.title).toBe('');
     });

@@ -21,7 +21,8 @@ import { parseEvent } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import type { GroupState } from '../engine/fold';
-import type { Group, Store } from '../store/db';
+import type { Group, Me, Store } from '../store/db';
+import type { Invite } from './invite';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -50,19 +51,37 @@ export interface GroupView {
   lastSyncAt: number | null;
   /** Whether the last sync pass reached the relay. */
   reachable: boolean;
+  /** Who this device is in the group, or `null` while loading or when the device isn't in it. */
+  me: Me | null;
+  /** STUB(invite): what this group's invite link carries, or `null` likewise. */
+  invite: Invite | null;
+  /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
+  loaded: boolean;
 }
 
 /** The group `groupId`, kept current as sync and the user change it. */
 export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
-  const group = useStoredGroup(store, groupId);
+  const { group, loaded } = useStoredGroup(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
   const state = useMemo(
     () => (group === undefined ? null : fold(group.log, group.relayNow)),
     [group],
   );
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
-  return { state, pending, lastSyncAt: group?.lastSyncAt ?? null, reachable };
+  const invite = useMemo(
+    () => (group === undefined ? null : { mailbox: group.mailbox, secret: group.secret }),
+    [group],
+  );
+  return {
+    state,
+    pending,
+    lastSyncAt: group?.lastSyncAt ?? null,
+    reachable,
+    me: group?.me ?? null,
+    invite,
+    loaded,
+  };
 }
 
 function useServices(): GroupServices {
@@ -79,8 +98,11 @@ interface Loaded {
   readonly group: Group | undefined;
 }
 
-/** The stored group, read again whenever the store says it changed. */
-function useStoredGroup(store: GroupServices['store'], groupId: string): Group | undefined {
+/** The stored group, read again whenever the store says it changed, and whether it has been read. */
+function useStoredGroup(
+  store: GroupServices['store'],
+  groupId: string,
+): { group: Group | undefined; loaded: boolean } {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   useEffect(() => {
     let live = true;
@@ -109,7 +131,9 @@ function useStoredGroup(store: GroupServices['store'], groupId: string): Group |
       unsubscribe();
     };
   }, [store, groupId]);
-  return loaded?.groupId === groupId ? loaded.group : undefined;
+  return loaded?.groupId === groupId
+    ? { group: loaded.group, loaded: true }
+    : { group: undefined, loaded: false };
 }
 
 /** The outbox's events, skipping any bytes that aren't one. */
