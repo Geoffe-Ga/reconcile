@@ -1,6 +1,8 @@
-# Issue Edits for ADR-0075 (Draft)
+# Issue Edits for ADR-0075
 
-These are draft edits to GitHub issues, following from [ADR-0075](../docs/adr/0075-safeguards-for-the-revised-mvp.md) and the 2026-11-09 backlog review. Nothing here is applied yet. Apply an edit only after the founder accepts the ADR item it cites. Edits marked **bug** are needed whatever the ADR decides.
+These are the edits made to GitHub issues following [ADR-0075](../docs/adr/0075-safeguards-for-the-revised-mvp.md) and the 2026-11-09 backlog review.
+
+**Status:** applied on 2026-11-09, after the founder accepted ADR-0075. Each issue was re-fetched and checked after saving. A few follow-up fixes found while applying them are listed at the end. This file stays as the record of what changed and why.
 
 **How to read this:**
 - **Replace** quotes the current issue text exactly, then gives the new text.
@@ -246,12 +248,12 @@ These are draft edits to GitHub issues, following from [ADR-0075](../docs/adr/00
 
 ## D. Accepted risks to file as `blocked` issues
 
-These come from ADR-0075's **Revisit** items. Each gets one issue labeled `blocked`, with its trigger in the title:
+These come from ADR-0075's **Revisit** items. Each is filed as an issue labeled `blocked`, with its trigger:
 
-1. "Seat secrets wrapped to voting members and rotated with the group key". Trigger: before the outside review, or the first coalition blocked by a contested seat.
-2. "A separate push address per group, or no push for groups that ask for none". Trigger: before groups outside the founder's circle.
-3. "A relay-held recovery release that the owner's devices can cancel". Trigger: before the outside review.
-4. "Track the outside security review (ADR-0058) and the risks it must cover". Trigger: before the first group outside the founder's circle. It lists every accepted risk from ADRs 0073, 0074 and 0075.
+1. #129: "Seat secrets wrapped to voting members and rotated with the group key". Trigger: before the outside review, or the first coalition blocked by a contested seat.
+2. #130: "A separate push address per group, or no push for groups that ask for none". Trigger: before groups outside the founder's circle.
+3. #131: "A relay-held recovery release that the owner's devices can cancel". Trigger: before the outside review.
+4. #132: "Track the outside security review (ADR-0058) and the risks it must cover". Trigger: before the first group outside the founder's circle. It lists every accepted risk from ADRs 0073, 0074 and 0075.
 
 ---
 
@@ -278,3 +280,22 @@ These come from ADR-0075's **Revisit** items. Each gets one issue labeled `block
   - Make the example match "Authors appear only under their coalition names".
   - Note that ADR-0011's threads per Proposal and "argument concluded" message stay deferred.
 - **#127:** "Dee joins A" becomes "Dee joins A as a Collaborator", so her score counts.
+
+---
+
+## F. Follow-ups made while applying
+
+- **#118:** the check number is `u32be(sha256("reconcile/v1/recovery-check" ‖ 0x00 ‖ code)[0..4]) mod 10^6`, shown as six digits with leading zeros. That's the same reduction #96 uses.
+- **#115:**
+  - The comma splice in Privacy is fixed.
+  - `targetClass()` returns `removal`.
+  - Builds on says a removal always runs 14 days, with no window field.
+- **#117:** the ADR-0040 decision bullet now describes narrowing as an off switch that lasts until the group decides.
+- **#126:** the first vector takes A's result from A's own `group-result`. The `dispatch` target passes at the ordinary bar. This moved here from #112, which has no `dispatch` target.
+- **#89:** the long Privacy sentence is split in two.
+- **#122:** the level and cycle checks read only the coalition's own log, so every device folds the same way:
+  - An admitted seat's level is the one its `admit` motion states, and each member group's vote is the check.
+  - The fold refuses only seats already present.
+  - A false level or a cycle across coalitions is left for the voting groups to sort out.
+- **#96, #97:** the link bundle carries the backup key, and #97's older "passphrase file stays as it is" and "exists only on this device" lines now match ADR-0075 §4.
+- **#125:** the deferral note was already there, so nothing was added.
