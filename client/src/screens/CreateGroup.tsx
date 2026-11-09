@@ -61,6 +61,7 @@ export function CreateGroup({ onCreate }: CreateGroupProps) {
     if (busy.current) return;
     busy.current = true;
     setFailed(false);
+    setRefused({});
     const outcome = await onCreate(readValues(form)).catch(() => 'failed' as const);
     busy.current = false;
     if (outcome === 'too-large') setRefused({ text: messages.create.tooLarge });

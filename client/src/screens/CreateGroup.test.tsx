@@ -137,6 +137,28 @@ describe('CreateGroup', () => {
     );
   });
 
+  it('drops the too-long refusal when a shortened Document then fails to save', async () => {
+    const { user, onCreate } = setup('too-large');
+    await fill(user, FULL);
+    const text = box('Document text');
+    expect(text).toHaveAttribute('aria-invalid', 'true');
+
+    onCreate.mockRejectedValueOnce(new Error('store unavailable'));
+    await user.clear(text);
+    await user.paste('Quiet hours start at ten.');
+    await user.click(screen.getByRole('button', { name: 'Create group' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your group couldn’t be saved on this device. Try again.',
+    );
+    expect(onCreate).toHaveBeenCalledTimes(2);
+    expect(onCreate.mock.calls[1]?.[0].text).toBe('Quiet hours start at ten.');
+    expect(text).not.toHaveAttribute('aria-invalid');
+    expect(text).toHaveAccessibleDescription(
+      'Leave a blank line between sections. Your group proposes changes one section at a time.',
+    );
+  });
+
   it('says so when the group couldn’t be saved', async () => {
     const { user } = setup('failed');
     await fill(user, FULL);
