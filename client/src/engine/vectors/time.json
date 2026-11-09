@@ -11,7 +11,7 @@
             "v": 1,
             "type": "genesis",
             "group": "",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762500000000,
             "body": {
               "name": "Riverside Tenants",
@@ -28,7 +28,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762500060000,
             "body": { "name": "Ben" }
           }
@@ -40,7 +40,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "cal",
+            "author": "%cal",
             "ts": 1762500120000,
             "body": { "name": "Cal" }
           }
@@ -52,7 +52,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "dee",
+            "author": "%dee",
             "ts": 1762500180000,
             "body": { "name": "Dee" }
           }
@@ -64,7 +64,7 @@
             "v": 1,
             "type": "proposal",
             "group": "@1",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1761895800000,
             "body": {
               "atom": "@1.0",
@@ -81,7 +81,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762501200000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -93,7 +93,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762501800000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -105,7 +105,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "cal",
+            "author": "%cal",
             "ts": 1763105340000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -139,7 +139,7 @@
             "v": 1,
             "type": "genesis",
             "group": "",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762500000000,
             "body": {
               "name": "Riverside Tenants",
@@ -156,7 +156,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762500060000,
             "body": { "name": "Ben" }
           }
@@ -168,7 +168,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "cal",
+            "author": "%cal",
             "ts": 1762500120000,
             "body": { "name": "Cal" }
           }
@@ -180,7 +180,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "dee",
+            "author": "%dee",
             "ts": 1762500180000,
             "body": { "name": "Dee" }
           }
@@ -192,7 +192,7 @@
             "v": 1,
             "type": "proposal",
             "group": "@1",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1761895800000,
             "body": {
               "atom": "@1.0",
@@ -209,7 +209,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762501200000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -221,7 +221,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762501800000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -233,7 +233,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "cal",
+            "author": "%cal",
             "ts": 1763105340000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -260,7 +260,7 @@
             "v": 1,
             "type": "genesis",
             "group": "",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762500000000,
             "body": {
               "name": "Riverside Tenants",
@@ -277,7 +277,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762500060000,
             "body": { "name": "Ben" }
           }
@@ -289,7 +289,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "cal",
+            "author": "%cal",
             "ts": 1762500120000,
             "body": { "name": "Cal" }
           }
@@ -301,7 +301,7 @@
             "v": 1,
             "type": "join",
             "group": "@1",
-            "author": "dee",
+            "author": "%dee",
             "ts": 1762500180000,
             "body": { "name": "Dee" }
           }
@@ -313,7 +313,7 @@
             "v": 1,
             "type": "proposal",
             "group": "@1",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762500600000,
             "body": {
               "atom": "@1.0",
@@ -330,7 +330,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ana",
+            "author": "%ana",
             "ts": 1762501200000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -342,7 +342,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762501800000,
             "body": { "proposal": "@5", "scores": { "@5": 3 } }
           }
@@ -354,7 +354,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "cal",
+            "author": "%cal",
             "ts": 1762502400000,
             "body": { "proposal": "@5", "scores": { "@5": 4 } }
           }
@@ -366,7 +366,7 @@
             "v": 1,
             "type": "vote",
             "group": "@1",
-            "author": "ben",
+            "author": "%ben",
             "ts": 1762500900000,
             "body": { "proposal": "@5", "scores": { "@5": 0 }, "note": "Changed my mind." }
           }
@@ -380,7 +380,7 @@
             "outcome": { "kind": "pass", "version": "@5" },
             "ballots": [
               { "id": "@6" },
-              { "id": "@7", "voter": "ben", "scores": { "@5": 3 } },
+              { "id": "@7", "voter": "%ben", "scores": { "@5": 3 } },
               { "id": "@8" }
             ]
           }

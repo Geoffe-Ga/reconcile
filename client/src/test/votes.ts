@@ -1,10 +1,12 @@
 /**
  * Groups with Proposals and ballots for screen tests, built through the
- * engine: events made with `createEvent` and folded with `fold`, never
- * hand-written state. Members' authors are their names in lower case.
+ * engine: events signed with `signEvent` and folded with `fold`, never
+ * hand-written state. Each member signs with the test key of their name in
+ * lower case, so `authorOf('ana')` names Ana.
  */
-import { createEvent, type EventInput, type Score } from '../engine/event';
+import type { EventDraft, Score } from '../engine/event';
 import { fold, type GroupState, type LogRecord, VOTE_WINDOW_MINUTES } from '../engine/fold';
+import { signedAs } from './keys';
 
 /** The relay minute the log starts at. */
 export const START_MINUTE = 29_000_000;
@@ -54,12 +56,11 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     minute: START_MINUTE,
     records,
   };
-  const add = (input: EventInput): string => {
-    const { bytes, id } = createEvent(input);
-    records.push({ seq: records.length + 1, received: builder.minute, bytes });
+  const add = (name: string, draft: EventDraft): string => {
+    const { record, id } = signedAs(name.toLowerCase(), draft);
+    records.push({ seq: records.length + 1, received: builder.minute, bytes: record });
     return id;
   };
-  const author = (name: string) => name.toLowerCase();
   const body = {
     name: 'Riverside Tenants',
     founder,
@@ -67,11 +68,11 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     atoms,
     ...(chat === undefined ? {} : { chat }),
   };
-  builder.group = add({ type: 'genesis', group: '', author: author(founder), ts: 0, body });
+  builder.group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   const { group } = builder;
   const log: LogBuilder = Object.assign(builder, {
     join(name: string) {
-      add({ type: 'join', group, author: author(name), ts: 0, body: { name } });
+      add(name, { type: 'join', group, ts: 0, body: { name } });
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {
@@ -86,7 +87,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
       };
-      return add({ type: 'proposal', group, author: author(name), ts: 0, body: proposal });
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },
     vote(name: string, proposal: string, score: Score, note?: string) {
       const vote = {
@@ -94,7 +95,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         scores: { [proposal]: score },
         ...(note === undefined ? {} : { note }),
       };
-      add({ type: 'vote', group, author: author(name), ts: 0, body: vote });
+      add(name, { type: 'vote', group, ts: 0, body: vote });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

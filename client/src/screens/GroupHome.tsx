@@ -10,6 +10,7 @@ import { formatSyncedAt } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { can } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
+import { displayName } from '../engine/names';
 
 /** Props for {@link GroupHome}. */
 export interface GroupHomeProps {
@@ -94,7 +95,7 @@ function People({ state }: { readonly state: GroupState }) {
     <ul className="people">
       {state.members.map((member) => (
         <li key={member.author}>
-          <bdi>{member.name}</bdi>
+          <bdi>{displayName(state, member.author)}</bdi>
         </li>
       ))}
     </ul>

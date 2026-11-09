@@ -11,6 +11,7 @@ import { BackLink, PageHeader } from '../app/ui';
 import { can } from '../engine/capabilities';
 import type { ParsedEvent, ProposalBody, Score } from '../engine/event';
 import type { GroupState, Proposal } from '../engine/fold';
+import { displayName } from '../engine/names';
 
 /** Props for {@link ProposalView}. */
 export interface ProposalViewProps {
@@ -159,7 +160,7 @@ function Vote({ props, proposal }: { props: ProposalViewProps; proposal: Proposa
 
 /** Who proposed it, then the countdown, each on its own line so neither breaks mid-phrase. */
 function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposal; now: number }) {
-  const name = state.members.find((member) => member.author === proposal.author)?.name ?? '';
+  const name = displayName(state, proposal.author) ?? '';
   return (
     <div className="meta-lines">
       <p className="meta">

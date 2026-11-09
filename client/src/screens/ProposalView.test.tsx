@@ -13,6 +13,7 @@ import {
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
+import { authorOf } from '../test/keys';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
 
 type OnVote = (score: Score, note: string) => Promise<void>;
@@ -26,7 +27,14 @@ interface Setup {
   readonly reachable?: boolean;
 }
 
-function setup({ state, proposalId, me = 'ana', now, pending = [], reachable = true }: Setup) {
+function setup({
+  state,
+  proposalId,
+  me = authorOf('ana'),
+  now,
+  pending = [],
+  reachable = true,
+}: Setup) {
   const onVote = vi.fn<OnVote>(() => Promise.resolve());
   const props: ProposalViewProps = {
     state,
@@ -112,9 +120,17 @@ describe('ProposalView', () => {
     );
   });
 
+  it('names a proposer who shares a name with another member with a key suffix', () => {
+    const log = groupLog({ founder: 'Sam', members: ['SAM '] });
+    const proposalId = log.propose('sam', PROPOSAL);
+    setup({ state: log.state(), proposalId, me: authorOf('sam') });
+    const byline = screen.getByText(/^Sam · [0-9a-f]{4}$/, { selector: 'bdi' });
+    expect(byline.parentElement).toHaveTextContent(/^Proposed by Sam · [0-9a-f]{4}$/);
+  });
+
   it('sends the ballot as this member', async () => {
     const { log, proposalId } = openVote();
-    const { user, onVote } = setup({ state: log.state(), proposalId, me: 'ben' });
+    const { user, onVote } = setup({ state: log.state(), proposalId, me: authorOf('ben') });
     await user.click(screen.getByRole('radio', { name: '4 · Strongly supportive' }));
     await user.click(screen.getByRole('button', { name: 'Send your vote' }));
     expect(onVote).toHaveBeenCalledWith(4, '');
@@ -123,7 +139,7 @@ describe('ProposalView', () => {
   it('tells someone who joined after it opened why they can’t vote, with no pills', async () => {
     const { log, proposalId } = openVote();
     log.join('Cy');
-    setup({ state: log.state(), proposalId, me: 'cy' });
+    setup({ state: log.state(), proposalId, me: authorOf('cy') });
     expect(
       screen.getByText('You joined after this opened, so you can’t vote on it.'),
     ).toBeVisible();
@@ -165,7 +181,7 @@ describe('ProposalView', () => {
     const { log, proposalId } = openVote();
     log.vote('ana', proposalId, 1);
     log.vote('ben', proposalId, 0, 'It ends band practice.');
-    setup({ state: log.state(), proposalId, me: 'ben' });
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
 
     const result = screen.getByRole('region', { name: 'Result' });
     expect(result).toHaveTextContent('This didn’t pass.');
@@ -196,11 +212,11 @@ describe('ProposalView', () => {
     const waiting = pendingEvent({
       type: 'vote',
       group: log.group,
-      author: 'ben',
+      author: authorOf('ben'),
       ts: 0,
       body: { proposal: proposalId, scores: { [proposalId]: 2 }, note: 'Fine on weekends.' },
     });
-    const { rerender } = setup({ state: log.state(), proposalId, me: 'ben' });
+    const { rerender } = setup({ state: log.state(), proposalId, me: authorOf('ben') });
     expect(screen.getByRole('radio', { name: '1 · Opposed' })).toBeChecked();
     expect(screen.getByRole('textbox')).toHaveValue('Too late for me.');
     expect(screen.getByRole('button', { name: 'Update your vote' })).toBeVisible();
@@ -219,7 +235,7 @@ describe('ProposalView', () => {
     const waiting = pendingEvent({
       type: 'proposal',
       group: log.group,
-      author: 'ana',
+      author: authorOf('ana'),
       ts: 0,
       body: { atom: `${log.group}.0`, ...PROPOSAL },
     });

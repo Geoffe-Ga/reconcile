@@ -20,3 +20,13 @@ export function text(bytes: Uint8Array): string {
 export function local(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(bytes);
 }
+
+/** Hex as bytes, in the test's realm. */
+export function fromHex(hex: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(hex.match(/../g) ?? [], (pair) => parseInt(pair, 16));
+}
+
+/** The bytes of `parts`, one after another, in the test's realm. */
+export function concat(...parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(parts.flatMap((part) => Array.from(part)));
+}

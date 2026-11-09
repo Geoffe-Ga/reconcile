@@ -151,7 +151,7 @@ function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
-          const result = await propose(services, groupId, me.author, values);
+          const result = await propose(services, groupId, values);
           if (result.outcome === 'too-large') return result.outcome;
           // Replace the composer, so Back from the Proposal returns to the Document.
           replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
@@ -174,7 +174,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
       {(group) => {
         const author = group.me.author;
         const onVote = (score: Score, note: string) =>
-          castBallot(services, groupId, author, { proposal: proposalId, score, note });
+          castBallot(services, groupId, { proposal: proposalId, score, note });
         return (
           <ProposalView
             state={group.state}

@@ -1,17 +1,27 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { signRecord } from '../crypto/record';
+import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
+import { concat } from '../test/bytes';
+import { authorOf, testKeys } from '../test/keys';
 import {
   base64url,
   createEvent,
   decodeEvent,
   type EventInput,
   eventId,
+  fromBase64url,
   parseEvent,
-  stubAuthorId,
+  parseRecord,
+  signEvent,
 } from './event';
 
 const encoder = new TextEncoder();
+
+/** Two members' author keys: 32-byte public keys in base64url. */
+const ANA = authorOf('ana');
+const BEN = authorOf('ben');
 
 /** UTF-8 bytes of `text`. */
 function utf8(text: string): Uint8Array {
@@ -26,14 +36,14 @@ function json(value: unknown): Uint8Array {
 const PROPOSAL: EventInput = {
   type: 'proposal',
   group: 'g1',
-  author: 'ana',
+  author: ANA,
   ts: 1762650000000,
   body: { atom: 'g1.0', title: 'Quiet hours', why: 'Sleep.', text: 'Quiet after 10pm.' },
 };
 
 /** A valid v1 envelope around `body`, for shape tests. */
 function envelope(type: string, body: unknown, overrides: Record<string, unknown> = {}): unknown {
-  return { v: 1, type, group: 'g1', author: 'ana', ts: 1, body, ...overrides };
+  return { v: 1, type, group: 'g1', author: ANA, ts: 1, body, ...overrides };
 }
 
 describe('base64url', () => {
@@ -73,7 +83,7 @@ describe('createEvent', () => {
   it('serializes {v, type, group, author, ts, body} once, in that order', () => {
     const { bytes } = createEvent(PROPOSAL);
     expect(new TextDecoder().decode(bytes)).toBe(
-      '{"v":1,"type":"proposal","group":"g1","author":"ana","ts":1762650000000,' +
+      `{"v":1,"type":"proposal","group":"g1","author":"${ANA}","ts":1762650000000,` +
         '"body":{"atom":"g1.0","title":"Quiet hours","why":"Sleep.","text":"Quiet after 10pm."}}',
     );
   });
@@ -88,7 +98,7 @@ describe('createEvent', () => {
     const { bytes } = createEvent({
       type: 'genesis',
       group: '',
-      author: 'ana',
+      author: ANA,
       ts: 0,
       body: { name: 'Cafe\u0301', founder: 'Jose\u0301', title: 'T', atoms: ['e\u0301te\u0301'] },
     });
@@ -105,7 +115,7 @@ describe('createEvent', () => {
     const vote: EventInput = {
       type: 'vote',
       group: 'g1',
-      author: 'ben',
+      author: BEN,
       ts: 5,
       body: { proposal: 'p1', scores: { p1: 0 }, note: 'Too loud a change.' },
     };
@@ -117,7 +127,7 @@ describe('createEvent', () => {
     const text = fc.string({ unit: 'grapheme', maxLength: 20 });
     const input = fc.record({
       group: fc.string({ maxLength: 10 }),
-      author: fc.stringMatching(/^[A-Za-z0-9_-]{1,22}$/),
+      author: fc.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       ts: fc.nat(),
       body: fc.record(
         { atom: text, title: text, why: text, text, link: text },
@@ -142,7 +152,7 @@ describe('parseEvent', () => {
   it('returns the event and the id of its bytes', () => {
     const bytes = json(envelope('join', { name: 'Ben' }));
     expect(parseEvent(bytes)).toEqual({
-      event: { v: 1, type: 'join', group: 'g1', author: 'ana', ts: 1, body: { name: 'Ben' } },
+      event: { v: 1, type: 'join', group: 'g1', author: ANA, ts: 1, body: { name: 'Ben' } },
       id: eventId(bytes),
     });
   });
@@ -202,7 +212,9 @@ describe('parseEvent', () => {
     ['a missing group', { group: undefined }],
     ['a numeric group', { group: 7 }],
     ['an empty author', { author: '' }],
-    ['an author outside base64url', { author: 'an a' }],
+    ['an author outside base64url', { author: `${ANA.slice(1)} ` }],
+    ['a 42-character author', { author: ANA.slice(1) }],
+    ['a 44-character author', { author: `${ANA}A` }],
     ['a fractional ts', { ts: 1.5 }],
     ['a negative ts', { ts: -1 }],
     ['a string ts', { ts: '1' }],
@@ -293,10 +305,71 @@ describe('parseEvent', () => {
   });
 });
 
-describe('stubAuthorId', () => {
-  it('is 16 random bytes in base64url', () => {
-    const a = stubAuthorId();
-    expect(a).toMatch(/^[A-Za-z0-9_-]{22}$/);
-    expect(stubAuthorId()).not.toBe(a);
+describe('fromBase64url', () => {
+  it('reads the URL-safe alphabet, with or without padding', () => {
+    expect([...fromBase64url('-_8')]).toEqual([0xfb, 0xff]);
+    expect([...fromBase64url('Zm9v')]).toEqual([0x66, 0x6f, 0x6f]);
+    expect([...fromBase64url('Zm8=')]).toEqual([0x66, 0x6f]);
+    expect([...fromBase64url('')]).toEqual([]);
+  });
+
+  it('undoes base64url (property)', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ maxLength: 64 }), (bytes) => {
+        expect([...fromBase64url(base64url(bytes))]).toEqual([...bytes]);
+      }),
+    );
+  });
+});
+
+const JOIN = { type: 'join', group: 'g1', ts: 5, body: { name: 'Ben' } } as const;
+
+describe('signEvent', () => {
+  it('writes the key’s public half as the author, and signs the exact bytes', () => {
+    const { secretKey } = testKeys('ben');
+    const publicKey = publicKeyOf(secretKey);
+    const signed = signEvent(secretKey, JOIN);
+    const { bytes, id } = createEvent({ ...JOIN, author: BEN });
+    expect(BEN).toBe(base64url(publicKey));
+    expect(signed.bytes).toEqual(bytes);
+    expect(signed.id).toBe(id);
+    expect([...signed.record]).toEqual([
+      ...concat(publicKey, sign(EVENT_CONTEXT, secretKey, bytes), bytes),
+    ]);
+  });
+
+  it('signs the same draft to the same record every time', () => {
+    const { secretKey } = testKeys('ben');
+    expect(base64url(signEvent(secretKey, JOIN).record)).toBe(
+      base64url(signEvent(secretKey, JOIN).record),
+    );
+  });
+});
+
+describe('parseRecord', () => {
+  const { record, bytes, id } = signEvent(testKeys('ben').secretKey, JOIN);
+
+  it('reads a record its author signed into the event and its id', () => {
+    expect(parseRecord(record)).toEqual({ event: { v: 1, author: BEN, ...JOIN }, id });
+  });
+
+  it('refuses a record whose signature fails, before reading it', () => {
+    const forged = Uint8Array.from(record);
+    forged[50] = (forged[50] ?? 0) ^ 0x01;
+    expect(parseRecord(forged)).toBeNull();
+  });
+
+  it('refuses a valid signature by a key that isn’t the event’s author', () => {
+    const anaKeys = { publicKey: fromBase64url(ANA), secretKey: testKeys('ana').secretKey };
+    expect(parseRecord(signRecord(anaKeys, bytes))).toBeNull();
+  });
+
+  it('refuses validly signed bytes that aren’t an event', () => {
+    const benKeys = { publicKey: fromBase64url(BEN), secretKey: testKeys('ben').secretKey };
+    expect(parseRecord(signRecord(benKeys, utf8('{"v":1,')))).toBeNull();
+  });
+
+  it('refuses bare event bytes, with no key or signature', () => {
+    expect(parseRecord(bytes)).toBeNull();
   });
 });

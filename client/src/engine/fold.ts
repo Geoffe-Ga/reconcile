@@ -11,12 +11,11 @@
  */
 import { can, type Level, MVP_LEVEL } from './capabilities';
 import {
-  decodeEvent,
   EVENT_VERSION,
-  eventId,
   type GenesisBody,
   type GroupEvent,
   type JoinBody,
+  parseRecord,
   type ProposalBody,
   type Score,
   type VoteBody,
@@ -33,7 +32,10 @@ export const WHY_MAX = 2_000;
 /** The longest ballot note, in code points. */
 export const NOTE_MAX = 280;
 
-/** One record as the relay returned it: its seq, its receipt minute and the event's exact bytes. */
+/**
+ * One record as the relay returned it: its seq, its receipt minute and the
+ * signed record's bytes, `publicKey ‖ signature ‖ event bytes` (spec §3).
+ */
 export interface LogRecord {
   readonly seq: number;
   readonly received: number;
@@ -99,10 +101,15 @@ export interface Proposal {
   readonly outcome: TallyOutcome;
 }
 
-/** A record the fold left out: a repeat, bad bytes, or an event that broke a rule. */
+/**
+ * A record the fold left out: a repeat, bad bytes, or an event that broke a
+ * rule. `id` is null when the record didn't verify, doesn't hold an event, or
+ * names an author other than the key that signed it: such bytes have no
+ * trustworthy event id.
+ */
 export interface IgnoredRecord {
   readonly seq: number;
-  readonly id: string;
+  readonly id: string | null;
 }
 
 /** A group as one device sees it after folding its log. `group` is the genesis id, or null before one. */
@@ -248,11 +255,9 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
     : event.group === draft.group;
 }
 
-/** Applies one record's event to the draft, or returns false to ignore it. */
-function applyRecord(draft: Draft, record: LogRecord, id: string): boolean {
-  const event = decodeEvent(record.bytes);
-  if (event === null || event.v !== EVENT_VERSION || !inGroup(draft, event)) return false;
-  const at = { id, seq: record.seq, received: record.received };
+/** Applies one verified event to the draft, or returns false to ignore it. */
+function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
+  if (event.v !== EVENT_VERSION || !inGroup(draft, event)) return false;
   switch (event.type) {
     case 'genesis':
       return applyGenesis(draft, event.body, event.author, at);
@@ -315,9 +320,13 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
  * Folds a group's records, in relay order, into its state.
  *
  * `relayNow` is the relay's latest `now`, in minutes, or null before the first
- * sync; it decides only which Proposals have reached their deadline. A repeated
- * event id is ignored (the first copy keeps its seq and receipt time), as is any
- * event whose `v` isn't 1 or whose `group` isn't the genesis id.
+ * sync; it decides only which Proposals have reached their deadline. A record
+ * that doesn't verify, or whose event's `author` isn't the key that signed it,
+ * is ignored before it is parsed or claims an event id, so a forged copy of a
+ * real event can never shadow it. A repeated event id is ignored (the first
+ * copy keeps its seq and receipt time), as is any event whose `v` isn't 1 or
+ * whose `group` isn't the genesis id. Only members act, except on their own
+ * join: `can()` is false for anyone else.
  */
 export function fold(records: readonly LogRecord[], relayNow: number | null): GroupState {
   const draft: Draft = {
@@ -331,11 +340,16 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
-  for (const record of records) {
-    const id = eventId(record.bytes);
-    const applied = !seen.has(id) && applyRecord(draft, record, id);
+  for (const { seq, received, bytes } of records) {
+    const parsed = parseRecord(bytes);
+    if (parsed === null) {
+      ignored.push({ seq, id: null });
+      continue;
+    }
+    const { event, id } = parsed;
+    const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
     seen.add(id);
-    if (!applied) ignored.push({ seq: record.seq, id });
+    if (!applied) ignored.push({ seq, id });
   }
   const proposals = draft.proposals.map((p) => settle(p, relayNow));
   const atoms = applyPasses(draft.atoms, proposals);

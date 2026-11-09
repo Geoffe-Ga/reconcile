@@ -1,4 +1,5 @@
 import { IDBDatabase as FakeIDBDatabase } from 'fake-indexeddb';
+import { openDB } from 'idb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_PLAINTEXT_BYTES, PayloadTooLarge } from '../crypto/seal';
@@ -14,6 +15,7 @@ const group: NewGroup = {
   groupId: 'group-1',
   mailbox: TEST_MAILBOX,
   secret: new Uint8Array(32).fill(9),
+  signingKey: new Uint8Array(32).fill(7),
   me: { author: 'author-ana', name: 'Ana' },
 };
 
@@ -40,7 +42,12 @@ describe('a group in the store', () => {
     await store.addGroup(group);
 
     const groups = await store.listGroups();
-    expect(groups.map((stored) => ({ ...stored, secret: local(stored.secret) }))).toEqual([
+    const copies = groups.map((stored) => ({
+      ...stored,
+      secret: local(stored.secret),
+      signingKey: local(stored.signingKey),
+    }));
+    expect(copies).toEqual([
       {
         ...group,
         log: [],
@@ -86,6 +93,22 @@ describe('a group in the store', () => {
     ]);
     expect(back?.outbox.map(text)).toEqual(['{"n":1}']);
     expect(back).toMatchObject({ cursor: 4, relayNow: 29_000_010, instance: 'relay-1' });
+  });
+
+  it('deletes the stub era’s unsigned data when it upgrades, migrating none of it', async () => {
+    const old = await openDB('reconcile', 1, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+      },
+    });
+    await old.put('groups', { groupId: 'stub-era', me: { author: 'random-id', name: 'Ana' } });
+    old.close();
+
+    const store = await openStore();
+
+    expect(await store.listGroups()).toEqual([]);
+    await store.addGroup(group);
+    expect((await store.listGroups()).map((stored) => stored.groupId)).toEqual(['group-1']);
   });
 
   it('keeps separately named stores apart', async () => {

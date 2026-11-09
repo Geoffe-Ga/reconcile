@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
+import { publicKeyOf } from '../crypto/sign';
 import { stubSeal } from '../crypto/stubSeal';
-import { base64url, type ParsedEvent, parseEvent } from '../engine/event';
+import { base64url, type ParsedEvent, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
@@ -50,9 +52,35 @@ async function stored(services: Services, groupId: string): Promise<Group> {
   return group;
 }
 
-/** The parsed event at `index` in the group's outbox. */
+/** The event the signed record at `index` in the group's outbox carries, once it verifies. */
 function queued(group: Group, index = 0): ParsedEvent | null {
-  return parseEvent(group.outbox[index] ?? new Uint8Array());
+  return parseRecord(group.outbox[index] ?? new Uint8Array());
+}
+
+/** Every key, secret and id a group's stored record holds, as text, apart from the relay's instance. */
+function secretsOf(group: Group): Set<string> {
+  // Genesis carries `group: ""`, which is no id.
+  const keys = group.log.flatMap((record) => [
+    base64url(record.bytes.subarray(0, 32)),
+    ...[parseRecord(record.bytes)?.event.group ?? ''].filter((id) => id !== ''),
+  ]);
+  return new Set([
+    group.groupId,
+    group.mailbox,
+    base64url(group.secret),
+    base64url(group.signingKey),
+    group.me.author,
+    ...keys,
+  ]);
+}
+
+/** Whether `needle` occurs anywhere inside `haystack`. */
+function contains(haystack: Uint8Array, needle: Uint8Array): boolean {
+  const last = haystack.length - needle.length;
+  for (let start = 0; start <= last; start += 1) {
+    if (needle.every((byte, i) => haystack[start + i] === byte)) return true;
+  }
+  return false;
 }
 
 async function created(services: Services, values = VALUES): Promise<string> {
@@ -70,7 +98,9 @@ describe('createGroup', () => {
     expect(group.mailbox).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(group.secret).toHaveLength(32);
     expect(group.me.name).toBe('Ana');
-    expect(group.me.author).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(group.signingKey).toHaveLength(32);
+    expect(group.me.author).toBe(base64url(publicKeyOf(group.signingKey)));
+    expect(group.me.author).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(group.outbox).toHaveLength(1);
 
     const genesis = queued(group);
@@ -118,13 +148,74 @@ describe('createGroup', () => {
     expect(fake.requests).toEqual([]);
   });
 
+  it('counts the record’s key and signature toward the blob’s limit', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    // A genesis whose bytes alone fit the largest blob, but not with the 96-byte header.
+    const base = { ...VALUES, chat: null, text: 'x' };
+    const result = await createGroup(ana, base);
+    if (result.outcome !== 'created') throw new Error('Expected a group.');
+    const record = (await stored(ana, result.groupId)).outbox[0] ?? new Uint8Array();
+    const room = MAX_PLAINTEXT_BYTES - record.length;
+    const text = 'x'.repeat(1 + room + 1);
+    expect(await createGroup(ana, { ...base, text })).toEqual({ outcome: 'too-large' });
+    expect(await createGroup(ana, { ...base, text: 'x'.repeat(1 + room) })).toMatchObject({
+      outcome: 'created',
+    });
+  });
+
   it('makes different keys for every group', async () => {
     const ana = await device(createFakeRelay(), 'ana');
     const one = await stored(ana, await created(ana));
     const two = await stored(ana, await created(ana, { ...VALUES, title: 'Other' }));
     expect(one.mailbox).not.toBe(two.mailbox);
     expect(base64url(one.secret)).not.toBe(base64url(two.secret));
+    expect(base64url(one.signingKey)).not.toBe(base64url(two.signingKey));
     expect(one.me.author).not.toBe(two.me.author);
+  });
+});
+
+describe('contains', () => {
+  it('finds a run of bytes anywhere, and nothing that isn’t there', () => {
+    const bytes = Uint8Array.of(1, 2, 3, 4);
+    expect(contains(bytes, Uint8Array.of(3, 4))).toBe(true);
+    expect(contains(bytes, Uint8Array.of(1, 2))).toBe(true);
+    expect(contains(bytes, Uint8Array.of(2, 4))).toBe(false);
+    expect(contains(bytes, Uint8Array.of(4, 5))).toBe(false);
+  });
+});
+
+describe('a device in two groups', () => {
+  it('holds two unrelated keys, and shares no key, secret or id between the groups', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const ben = await device(fake, 'ben');
+    const own = await created(ana);
+    const theirs = await created(ben, { ...VALUES, groupName: 'Hilltop Allotments' });
+    await ben.sync.syncOnce();
+    const benGroup = await stored(ben, theirs);
+    const invite = { mailbox: benGroup.mailbox, secret: benGroup.secret };
+    const lookup = await lookupInvite(ana, invite);
+    if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
+    await joinGroup(ana, invite, lookup.group, 'Ana');
+    await ana.sync.syncOnce();
+
+    const [one, two] = [await stored(ana, own), await stored(ana, theirs)];
+    expect(one.log).toHaveLength(1);
+    expect(two.log).toHaveLength(2);
+    expect(one.me.author).not.toBe(two.me.author);
+    const shared = [...secretsOf(one)].filter((value) => secretsOf(two).has(value));
+    expect(shared).toEqual([]);
+    for (const [group, other] of [
+      [one, two],
+      [two, one],
+    ] as const) {
+      const records = [...group.log.map((record) => record.bytes), ...group.outbox];
+      for (const bytes of records) {
+        expect(contains(bytes, other.signingKey)).toBe(false);
+        expect(contains(bytes, other.secret)).toBe(false);
+        expect(contains(bytes, publicKeyOf(other.signingKey))).toBe(false);
+      }
+    }
   });
 });
 
@@ -208,6 +299,9 @@ describe('joinGroup', () => {
 
     const before = await stored(ben, groupId);
     expect(before.me.name).toBe('Ben');
+    expect(before.signingKey).toHaveLength(32);
+    expect(before.me.author).toBe(base64url(publicKeyOf(before.signingKey)));
+    expect(before.me.author).not.toBe(anaGroup.me.author);
     expect(before.mailbox).toBe(invite.mailbox);
     expect(before.cursor).toBe(lookup.group.page.cursor);
     expect(fold(before.log, before.relayNow).title).toBe('House rules');

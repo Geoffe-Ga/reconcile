@@ -62,7 +62,10 @@ describe('propose, vote, and see the Update', () => {
 
     // A proposes new wording for the first section, and lands on its ballot.
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
-    expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+    // Proposing reads the group's key from the store and signs before the route moves on.
+    await waitFor(() => {
+      expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+    });
     await score(within(a), user, '3 · Supportive');
     expect(await within(a).findByText('Sent')).toBeVisible();
 

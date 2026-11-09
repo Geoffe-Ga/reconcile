@@ -92,8 +92,8 @@ Protective features are real but quiet. Nothing in the UI suggests the app is fo
 
 [ADR-0009](../adr/0009-per-group-identities.md), as ADR-0073 cut it: every membership has its own random keys, with no root identity behind them.
 
-- **Signing keys** (#69). Create group and Join each make a fresh Ed25519 keypair, stored with that group's records only. An event's `author` is the public key in unpadded base64url (43 characters).
-- **Records** (#69). A record is `publicKey (32 bytes) ‖ signature (64) ‖ event bytes`. The signature covers UTF-8 `reconcile/v1/event` ‖ `0x00` ‖ event bytes. An invite token signs under its own tag, `reconcile/v1/invite-token`. Verification calls `ed25519.verify(sig, msg, pub, { zip215: false })`, never the library default.
+- **Signing keys** (#69). Create group and Join each make a fresh Ed25519 keypair, stored with that group's records only. An event's `author` is the public key in unpadded base64url (43 characters). The secret key stays in the store: the actions read it there to sign, and no screen is handed it. Store version 2 brought these keys in and deleted the stub era's unsigned data on upgrade, with no migration.
+- **Records** (#69). A record is `publicKey (32 bytes) ‖ signature (64) ‖ event bytes`. The signature covers UTF-8 `reconcile/v1/event` ‖ `0x00` ‖ event bytes. `sign(ctx, secretKey, msg)` and `verify(ctx, publicKey, sig, msg)` in `src/crypto/sign.ts` take the tag as a typed parameter, and an invite token signs under its own tag, `reconcile/v1/invite-token` (#73). Verification calls `ed25519.verify(sig, msg, pub, { zip215: false })`, never the library default, which accepts non-canonical encodings and small-order keys. The outbox and the log hold records, and a record's verdict is kept per page load by the SHA-256 of its bytes, so a re-fold doesn't verify it again.
 - **Group secret** (#71). Genesis makes 32 random bytes that only members hold. The group's other values derive from it with HKDF-SHA-256, an empty salt and 32 bytes of output:
   - the mailbox id, in unpadded base64url, with info `reconcile/v1/mailbox`;
   - the seal key, with info `reconcile/v1/seal-key`.
@@ -130,10 +130,10 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 
 `fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group id (`group`, its genesis id, or null before one), the group's name and chat link, the Document title, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
 
-1. verifies the signature before it parses the event, and requires `author` to equal the record's key;
+1. verifies the signature before it parses the event, and requires `author` to equal the record's key. A record that fails lands in `ignored` with `id: null` and claims no event id, so a forged copy of a real event never shadows it;
 2. drops a repeated event id, so the first copy keeps its seq and receipt time;
 3. ignores an event whose `v` isn't 1 or whose `group` isn't the genesis id (unknown versions are ignored, ADR-0073);
-4. ignores an event from a non-member, except that person's own `join`;
+4. ignores an event from a non-member, except that person's own `join`: `can()` is false for anyone who isn't a member;
 5. checks the event's rules against the state before it. An event that breaks a rule lands in `ignored` and changes nothing.
 
 ### Foundation event types
@@ -217,7 +217,7 @@ Restored routes: Web Push under `/v1/push/` (#89), and the relay backup at `/v1/
 - **Polling.** While the app is visible, sync runs every 3 seconds, and at once on focus or when the browser comes back online. After a failure it doubles its wait, up to 30 seconds; coming back online resets the wait (#168). There's no WebSocket.
 - **Each pass:**
   1. posts the outbox in order, removing an entry only after a 2xx, so an event made offline survives a reload and goes out exactly once;
-  2. GETs after the cursor, paging until a page holds fewer than `limit` records, opens each blob, skips one that won't open, and appends each record whose event id isn't in the log yet;
+  2. GETs after the cursor, paging until a page holds fewer than `limit` records, opens each blob, skips one that won't open, and appends each record that verifies and whose event id isn't in the log yet;
   3. saves the cursor, `relayNow`, `instance` and the time of the last successful sync.
 - **A new `instance`** resets the cursor to 0 and re-posts the outbox. Dedupe by event id keeps any event from folding twice.
 - **Folded state uses relay records only.** An event in the outbox shows as pending and never in folded state (#66). While it waits, its screen reads "Sending…" if the last sync reached the relay, and "Saved on this device. It will send when you're back online." once a sync has failed; then "Sent" once it leaves the outbox.
