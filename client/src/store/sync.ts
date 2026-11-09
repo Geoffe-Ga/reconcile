@@ -19,7 +19,9 @@ import { stubSeal } from '../crypto/stubSeal';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
-import type { EventIdOf, Group, LogRecord, Pull, Store } from './db';
+import type { LogRecord } from '../engine/fold';
+import type { EventIdOf, Group, Pull, Store } from './db';
+import { eventIdOf } from './eventId';
 
 /** The wait between passes while they succeed. */
 export const POLL_MS = 3000;
@@ -134,8 +136,8 @@ export interface SyncOptions {
   relay?: Relay;
   /** The seal for blobs (default: the stub, until #71). */
   seal?: Seal;
-  /** An event's id, for dedupe. */
-  idOf: EventIdOf;
+  /** An event's id, for dedupe (default: the engine's, via `parseEvent`). */
+  idOf?: EventIdOf;
   /** The device clock in milliseconds, for `lastSyncAt` (default: `Date.now`). */
   clock?: () => number;
   /** The timers the poller uses (default: the window's). */
@@ -154,7 +156,13 @@ export interface Sync extends Poller {
 
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
-  const { store, relay = createRelay(), seal = stubSeal, idOf, clock = Date.now } = options;
+  const {
+    store,
+    relay = createRelay(),
+    seal = stubSeal,
+    idOf = eventIdOf,
+    clock = Date.now,
+  } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let inFlight: Promise<boolean> | null = null;

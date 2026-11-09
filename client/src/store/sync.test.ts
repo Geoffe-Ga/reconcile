@@ -1,20 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { stubSeal } from '../crypto/stubSeal';
+import { base64url, createEvent, decodeEvent } from '../engine/event';
+import type { EncodedEvent, Score } from '../engine/event';
+import { fold } from '../engine/fold';
+import type { GroupState } from '../engine/fold';
 import { createRelay } from '../net/relay';
 import type { Fetch, Relay } from '../net/relay';
-import { text, utf8 } from '../test/bytes';
 import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { openStore } from './db';
-import type { Group, LogRecord, NewGroup, Store } from './db';
+import type { Group, Store } from './db';
 import { createSync } from './sync';
 import type { Sync } from './sync';
 
 freshIndexedDBPerTest();
 
 const GROUP = 'group-1';
+const TS = 1_762_650_000_000;
+const ANA = 'author-ana';
+const BEN = 'author-ben';
 const secret = new Uint8Array(32).fill(9);
 const opened: Sync[] = [];
 
@@ -26,50 +32,93 @@ afterEach(() => {
 
 /** A fresh random mailbox id, so runs against a real relay never share one. */
 function newMailbox(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+  return base64url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-/** A test's event id: the bytes as text, or `null` for anything not JSON-like. */
-function idOf(bytes: Uint8Array): string | null {
-  const body = text(bytes);
-  return body.startsWith('{') ? body : null;
+/** Ana founds the group with a two-Atom Document. */
+function genesis(): EncodedEvent {
+  return createEvent({
+    type: 'genesis',
+    group: '',
+    author: ANA,
+    ts: TS,
+    body: {
+      name: 'Riverside Tenants',
+      founder: 'Ana',
+      title: 'House rules',
+      atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+    },
+  });
 }
 
-/** A distinct event's bytes. */
-function event(name: string): Uint8Array<ArrayBuffer> {
-  return utf8(JSON.stringify({ event: name }));
+/** `author` joins the group founded by `founding` as `name`. */
+function join(founding: EncodedEvent, author: string, name: string): EncodedEvent {
+  return createEvent({ type: 'join', group: founding.id, author, ts: TS, body: { name } });
+}
+
+/** Ana proposes `text` for the group's first Atom. */
+function proposal(founding: EncodedEvent, text: string): EncodedEvent {
+  return createEvent({
+    type: 'proposal',
+    group: founding.id,
+    author: ANA,
+    ts: TS,
+    body: { atom: `${founding.id}.0`, title: 'Later quiet hours', why: 'Shift work.', text },
+  });
+}
+
+/** `author` scores the Proposal `proposed`. */
+function vote(
+  founding: EncodedEvent,
+  author: string,
+  proposed: EncodedEvent,
+  score: Score,
+): EncodedEvent {
+  return createEvent({
+    type: 'vote',
+    group: founding.id,
+    author,
+    ts: TS,
+    body: { proposal: proposed.id, scores: { [proposed.id]: score } },
+  });
 }
 
 interface Device {
   store: Store;
   sync: Sync;
   group: () => Promise<Group>;
+  state: () => Promise<GroupState>;
 }
 
 /** A device in the group, with its own store, syncing through `relay`. */
-async function device(
-  name: string,
-  relay: Relay,
-  mailbox: string,
-  extra: Partial<NewGroup> = {},
-): Promise<Device> {
+async function device(name: string, relay: Relay, mailbox: string): Promise<Device> {
   const store = await openStore(name);
-  await store.addGroup({ groupId: GROUP, mailbox, secret, me: { author: name, name }, ...extra });
-  const sync = createSync({ store, relay, idOf, clock: () => 1_762_650_000_000 });
+  await store.addGroup({ groupId: GROUP, mailbox, secret, me: { author: name, name } });
+  return attach(store, relay);
+}
+
+/** The device `name` after a reload: a new store on the same IndexedDB. */
+async function reopen(name: string, relay: Relay): Promise<Device> {
+  return attach(await openStore(name), relay);
+}
+
+function attach(store: Store, relay: Relay): Device {
+  const sync = createSync({ store, relay, clock: () => TS });
   opened.push(sync);
+  const group = async (): Promise<Group> => {
+    const found = await store.getGroup(GROUP);
+    if (found === undefined) {
+      throw new Error('the group is gone');
+    }
+    return found;
+  };
   return {
     store,
     sync,
-    group: async () => {
-      const group = await store.getGroup(GROUP);
-      if (group === undefined) {
-        throw new Error('the group is gone');
-      }
-      return group;
+    group,
+    state: async () => {
+      const { log, relayNow } = await group();
+      return fold(log, relayNow);
     },
   };
 }
@@ -83,49 +132,55 @@ function relayUnderTest(): Relay {
   return createRelay({ fetch: createFakeRelay().fetch });
 }
 
-/** Each item's bytes as text: a log record's, or the bytes themselves. */
-function texts(items: (Uint8Array | { bytes: Uint8Array })[]): string[] {
-  return items.map((item) => text('bytes' in item ? item.bytes : item));
+/** Each event as `type:name`, from a log, an outbox or a list of events. */
+function labels(items: readonly (Uint8Array | { readonly bytes: Uint8Array })[]): string[] {
+  return items.map((item) => {
+    const event = decodeEvent('bytes' in item ? item.bytes : item);
+    return event === null ? '?' : `${event.type}:${'name' in event.body ? event.body.name : ''}`;
+  });
 }
 
-function plain(log: LogRecord[]): [number, number, string][] {
-  return log.map((record) => [record.seq, record.received, text(record.bytes)]);
-}
-
-/** The event names a fake relay's PUTs carried, opened from their blobs. */
+/** The events a fake relay's PUTs carried, opened from their blobs. */
 function posted(fake: FakeRelay): string[] {
-  return fake.requests
-    .filter((request) => request.method === 'PUT')
-    .map((request) =>
-      text(stubSeal.open('', secret, request.body ?? new Uint8Array()) ?? utf8('?')),
-    );
+  return labels(
+    fake.requests
+      .filter((request) => request.method === 'PUT')
+      .map(
+        (request) =>
+          stubSeal.open('', secret, request.body ?? new Uint8Array()) ?? new Uint8Array(),
+      ),
+  );
 }
 
 describe('two devices on one mailbox', () => {
-  it('reach the same log when they post interleaved events', async () => {
+  it('fold the same state when they post interleaved events', async () => {
     const relay = relayUnderTest();
     const mailbox = newMailbox();
     const ana = await device('ana', relay, mailbox);
     const ben = await device('ben', relay, mailbox);
+    const founding = genesis();
+    const quietLater = proposal(founding, 'Quiet after 11pm.');
 
-    await ana.store.enqueue(GROUP, event('ana-1'));
-    await ben.store.enqueue(GROUP, event('ben-1'));
+    await ana.store.enqueue(GROUP, founding.bytes);
     await ana.sync.syncOnce();
     await ben.sync.syncOnce();
-    await ana.store.enqueue(GROUP, event('ana-2'));
-    await ben.store.enqueue(GROUP, event('ben-2'));
+    await ben.store.enqueue(GROUP, join(founding, BEN, 'Ben').bytes);
+    await ana.store.enqueue(GROUP, quietLater.bytes);
     await ben.sync.syncOnce();
-    await ana.store.enqueue(GROUP, event('ana-3'));
+    await ana.sync.syncOnce();
+    await ben.store.enqueue(GROUP, vote(founding, BEN, quietLater, 4).bytes);
+    await ana.store.enqueue(GROUP, vote(founding, ANA, quietLater, 3).bytes);
     await ana.sync.syncOnce();
     await ben.sync.syncOnce();
     await ana.sync.syncOnce();
 
-    const [a, b] = [await ana.group(), await ben.group()];
-    expect(texts(a.log)).toEqual(
-      ['ana-1', 'ben-1', 'ben-2', 'ana-2', 'ana-3'].map((name) => JSON.stringify({ event: name })),
-    );
-    expect(plain(a.log)).toEqual(plain(b.log));
-    expect([a.outbox, b.outbox]).toEqual([[], []]);
+    const [a, b] = [await ana.state(), await ben.state()];
+    expect(a).toEqual(b);
+    expect(a.members.map((member) => member.name)).toEqual(['Ana', 'Ben']);
+    expect(a.proposals[0]).toMatchObject({ final: true, outcome: { kind: 'pass' } });
+    expect(a.atoms.map((atom) => atom.text)).toEqual(['Quiet after 11pm.', 'Bins out on Sunday.']);
+    expect(a.ignored).toEqual([]);
+    expect([(await ana.group()).outbox, (await ben.group()).outbox]).toEqual([[], []]);
   });
 });
 
@@ -133,7 +188,7 @@ describe('a sync pass', () => {
   it('posts each event sealed in a padded blob, kept 30 days', async () => {
     const fake = createFakeRelay();
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
-    await ana.store.enqueue(GROUP, event('ana-1'));
+    await ana.store.enqueue(GROUP, genesis().bytes);
 
     await ana.sync.syncOnce();
 
@@ -145,7 +200,7 @@ describe('a sync pass', () => {
   it('saves the cursor, relay time, instance and time of the sync', async () => {
     const fake = createFakeRelay({ minute: 29_000_123 });
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
-    await ana.store.enqueue(GROUP, event('ana-1'));
+    await ana.store.enqueue(GROUP, genesis().bytes);
 
     expect(await ana.sync.syncOnce()).toBe(true);
 
@@ -153,52 +208,57 @@ describe('a sync pass', () => {
       cursor: 1,
       relayNow: 29_000_123,
       instance: fake.instance,
-      lastSyncAt: 1_762_650_000_000,
+      lastSyncAt: TS,
     });
   });
 
-  it('keeps an event made offline queued across a reload, then posts it exactly once, in order', async () => {
+  it('keeps events made offline queued across a reload, then posts each once, in order', async () => {
     const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
     fake.offline = true;
-    const mailbox = newMailbox();
-    const before = await device('ana', createRelay({ fetch: fake.fetch }), mailbox);
-    await before.store.enqueue(GROUP, event('offline-1'));
-    await before.store.enqueue(GROUP, event('offline-2'));
+    const founding = genesis();
+    const before = await device('ana', relay, newMailbox());
+    for (const event of [founding, join(founding, BEN, 'Ben'), join(founding, 'author-cy', 'Cy')]) {
+      await before.store.enqueue(GROUP, event.bytes);
+    }
     expect(await before.sync.syncOnce()).toBe(false);
     before.store.close();
 
-    const store = await openStore('ana');
-    const after = createSync({ store, relay: createRelay({ fetch: fake.fetch }), idOf });
-    opened.push(after);
-    const queued = (await store.getGroup(GROUP))?.outbox ?? [];
+    const after = await reopen('ana', relay);
+    const queued = labels((await after.group()).outbox);
     fake.offline = false;
-    expect(await after.syncOnce()).toBe(true);
-    await after.syncOnce();
+    expect(await after.sync.syncOnce()).toBe(true);
+    await after.sync.syncOnce();
 
-    expect(texts(queued)).toEqual(texts([event('offline-1'), event('offline-2')]));
-    expect(posted(fake)).toEqual(texts([event('offline-1'), event('offline-2')]));
-    const group = await store.getGroup(GROUP);
-    expect(group?.outbox).toEqual([]);
-    expect(texts(group?.log ?? [])).toEqual(texts([event('offline-1'), event('offline-2')]));
+    const expected = ['genesis:Riverside Tenants', 'join:Ben', 'join:Cy'];
+    expect(queued).toEqual(expected);
+    expect(posted(fake)).toEqual(expected);
+    const group = await after.group();
+    expect(group.outbox).toEqual([]);
+    expect(labels(group.log)).toEqual(expected);
+    expect((await after.state()).members).toHaveLength(3);
   });
 
-  it('brings every group back from IndexedDB after a reload with the network off', async () => {
+  it('brings every group and its Document back from IndexedDB with the network off', async () => {
     const fake = createFakeRelay();
-    const before = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
-    await before.store.enqueue(GROUP, event('genesis'));
+    const relay = createRelay({ fetch: fake.fetch });
+    const before = await device('ana', relay, newMailbox());
+    await before.store.enqueue(GROUP, genesis().bytes);
     await before.sync.syncOnce();
     before.store.close();
     fake.offline = true;
 
-    const store = await openStore('ana');
-    const sync = createSync({ store, relay: createRelay({ fetch: fake.fetch }), idOf });
-    opened.push(sync);
-    const ok = await sync.syncOnce();
+    const after = await reopen('ana', relay);
+    const ok = await after.sync.syncOnce();
 
     expect(ok).toBe(false);
-    const groups = await store.listGroups();
-    expect(groups.map((group) => group.groupId)).toEqual([GROUP]);
-    expect(texts(groups[0]?.log ?? [])).toEqual(texts([event('genesis')]));
+    expect((await after.store.listGroups()).map((group) => group.groupId)).toEqual([GROUP]);
+    const document = await after.state();
+    expect(document.title).toBe('House rules');
+    expect(document.atoms.map((atom) => atom.text)).toEqual([
+      'Quiet after 10pm.',
+      'Bins out on Sunday.',
+    ]);
   });
 
   it('keeps an entry, and every entry after it, until the relay accepts it', async () => {
@@ -209,17 +269,19 @@ describe('a sync pass', () => {
         ? Promise.resolve(Response.json({ error: 'storage_full' }, { status: 507 }))
         : fake.fetch(input, init);
     const ana = await device('ana', createRelay({ fetch: refusing }), newMailbox());
-    await ana.store.enqueue(GROUP, event('first'));
-    await ana.store.enqueue(GROUP, event('second'));
+    const founding = genesis();
+    for (const event of [founding, join(founding, BEN, 'Ben')]) {
+      await ana.store.enqueue(GROUP, event.bytes);
+    }
 
     const refused = await ana.sync.syncOnce();
-    const kept = texts((await ana.group()).outbox);
+    const kept = labels((await ana.group()).outbox);
     refuse = false;
     await ana.sync.syncOnce();
 
     expect(refused).toBe(false);
-    expect(kept).toEqual(texts([event('first'), event('second')]));
-    expect(posted(fake)).toEqual(texts([event('first'), event('second')]));
+    expect(kept).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
+    expect(posted(fake)).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
     expect((await ana.group()).outbox).toEqual([]);
   });
 
@@ -228,60 +290,70 @@ describe('a sync pass', () => {
     const relay = createRelay({ fetch: fake.fetch });
     const mailbox = newMailbox();
     const ana = await device('ana', relay, mailbox);
-    const junk = new Uint8Array(1024).fill(1);
-    await relay.putBlob(mailbox, junk);
-    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, event('real')));
+    await relay.putBlob(mailbox, new Uint8Array(1024).fill(1));
+    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, genesis().bytes));
 
     await ana.sync.syncOnce();
 
     const group = await ana.group();
-    expect(plain(group.log).map(([seq, , body]) => [seq, body])).toEqual([
-      [2, text(event('real'))],
-    ]);
+    expect(group.log.map((record) => record.seq)).toEqual([2]);
     expect(group.cursor).toBe(2);
+    expect((await ana.state()).title).toBe('House rules');
   });
 
-  it('skips an event already in the log, posted twice by its author', async () => {
+  it('skips a blob that opens to something that is not an event', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const mailbox = newMailbox();
+    const ana = await device('ana', relay, mailbox);
+    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, new Uint8Array([123, 125])));
+
+    await ana.sync.syncOnce();
+
+    expect(await ana.group()).toMatchObject({ log: [], cursor: 1 });
+  });
+
+  it('appends an event once, however many times it was posted', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
     const mailbox = newMailbox();
     const ana = await device('ana', relay, mailbox);
     for (let i = 0; i < 2; i += 1) {
-      await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, event('twice')));
+      await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, genesis().bytes));
     }
 
     await ana.sync.syncOnce();
 
-    expect(plain((await ana.group()).log)).toEqual([[1, fake.minute, text(event('twice'))]]);
+    expect((await ana.group()).log.map((record) => record.seq)).toEqual([1]);
+    expect((await ana.state()).ignored).toEqual([]);
   });
 
   it('goes on to the next group when one fails', async () => {
     const fake = createFakeRelay();
-    const relay = createRelay({ fetch: fake.fetch });
-    const ana = await device('ana', relay, newMailbox());
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
     await ana.store.addGroup({
       groupId: 'broken',
       mailbox: 'not-a-mailbox',
       secret,
-      me: { author: 'a', name: 'Ana' },
+      me: { author: ANA, name: 'Ana' },
     });
-    await ana.store.enqueue(GROUP, event('ana-1'));
+    await ana.store.enqueue(GROUP, genesis().bytes);
 
     const ok = await ana.sync.syncOnce();
 
     expect(ok).toBe(false);
-    expect(texts((await ana.group()).log)).toEqual(texts([event('ana-1')]));
+    expect((await ana.state()).title).toBe('House rules');
   });
 
   it('shares one pass between callers that ask at the same time', async () => {
     const fake = createFakeRelay();
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
-    await ana.store.enqueue(GROUP, event('ana-1'));
+    await ana.store.enqueue(GROUP, genesis().bytes);
 
     const results = await Promise.all([ana.sync.syncOnce(), ana.sync.syncOnce()]);
 
     expect(results).toEqual([true, true]);
-    expect(posted(fake)).toEqual(texts([event('ana-1')]));
+    expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
   });
 
   it('fails without throwing when the store itself fails', async () => {
@@ -300,53 +372,67 @@ describe('a new relay instance', () => {
     const mailbox = newMailbox();
     const ana = await device('ana', relay, mailbox);
     const ben = await device('ben', relay, mailbox);
-    for (const name of ['ana-1', 'ana-2', 'ana-3']) {
-      await ana.store.enqueue(GROUP, event(name));
+    const founding = genesis();
+    for (const event of [
+      founding,
+      join(founding, 'author-cy', 'Cy'),
+      join(founding, 'author-di', 'Di'),
+    ]) {
+      await ana.store.enqueue(GROUP, event.bytes);
     }
     await ana.sync.syncOnce();
     fake.restart();
-    await ben.store.enqueue(GROUP, event('ben-1'));
+    await ben.store.enqueue(GROUP, join(founding, BEN, 'Ben').bytes);
     await ben.sync.syncOnce();
-    await ana.store.enqueue(GROUP, event('ana-4'));
+    await ana.store.enqueue(GROUP, join(founding, 'author-eve', 'Eve').bytes);
     let firstGet = true;
+    const enqueueDuringFirstGet: Fetch = async (input, init) => {
+      const response = await fake.fetch(input, init);
+      if (init?.method === 'GET' && firstGet) {
+        firstGet = false;
+        await ana.store.enqueue(GROUP, join(founding, 'author-fay', 'Fay').bytes);
+      }
+      return response;
+    };
     ana.sync = createSync({
       store: ana.store,
-      idOf,
-      relay: createRelay({
-        fetch: async (input, init) => {
-          const response = await fake.fetch(input, init);
-          if (init?.method === 'GET' && firstGet) {
-            firstGet = false;
-            await ana.store.enqueue(GROUP, event('ana-5'));
-          }
-          return response;
-        },
-      }),
+      relay: createRelay({ fetch: enqueueDuringFirstGet }),
     });
 
     await ana.sync.syncOnce();
 
     const group = await ana.group();
-    expect(texts(group.log)).toEqual(
-      texts(['ana-1', 'ana-2', 'ana-3', 'ben-1', 'ana-4', 'ana-5'].map(event)),
-    );
     expect(group).toMatchObject({ cursor: 3, instance: fake.instance, outbox: [] });
+    const state = await ana.state();
+    expect(state.members.map((member) => member.name)).toEqual([
+      'Ana',
+      'Cy',
+      'Di',
+      'Ben',
+      'Eve',
+      'Fay',
+    ]);
+    expect(state.ignored).toEqual([]);
   });
 
   it('folds no event twice when the new instance still holds the old blobs', async () => {
     const fake = createFakeRelay();
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
-    await ana.store.enqueue(GROUP, event('ana-1'));
-    await ana.store.enqueue(GROUP, event('ana-2'));
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.bytes);
+    await ana.store.enqueue(GROUP, join(founding, BEN, 'Ben').bytes);
     await ana.sync.syncOnce();
     fake.restart({ keep: true });
-    await ana.store.enqueue(GROUP, event('ana-3'));
+    await ana.store.enqueue(GROUP, join(founding, 'author-cy', 'Cy').bytes);
 
     await ana.sync.syncOnce();
 
     const group = await ana.group();
-    expect(texts(group.log)).toEqual(texts(['ana-1', 'ana-2', 'ana-3'].map(event)));
+    expect(group.log.map((record) => record.seq)).toEqual([1, 2, 3]);
     expect(group).toMatchObject({ cursor: 3, instance: fake.instance });
+    const state = await ana.state();
+    expect(state.ignored).toEqual([]);
+    expect(state.members.map((member) => member.name)).toEqual(['Ana', 'Ben', 'Cy']);
   });
 });
 
@@ -376,7 +462,7 @@ describe('polling', () => {
   it('runs a pass at once when started, and stops when asked', async () => {
     const fake = createFakeRelay();
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
-    await ana.store.enqueue(GROUP, event('ana-1'));
+    await ana.store.enqueue(GROUP, genesis().bytes);
 
     ana.sync.start();
     await vi.waitFor(async () => {
@@ -384,6 +470,6 @@ describe('polling', () => {
     });
     ana.sync.stop();
 
-    expect(posted(fake)).toEqual(texts([event('ana-1')]));
+    expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
   });
 });

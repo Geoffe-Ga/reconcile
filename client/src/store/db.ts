@@ -11,6 +11,7 @@ import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 
 import { bucketFor } from '../crypto/seal';
+import type { LogRecord } from '../engine/fold';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -18,16 +19,6 @@ export interface Me {
   author: string;
   /** The name this device joined with. */
   name: string;
-}
-
-/** One relay record in the log: an opened event with its place in relay order. */
-export interface LogRecord {
-  /** The relay's seq for it. */
-  seq: number;
-  /** The relay minute it arrived. */
-  received: number;
-  /** The event's exact bytes, as opened from the blob. */
-  bytes: Uint8Array;
 }
 
 /** Everything the device keeps about one group. */
@@ -40,7 +31,7 @@ export interface Group {
   secret: Uint8Array;
   /** This device's membership. */
   me: Me;
-  /** Relay records in relay order, each event once. */
+  /** Relay records in relay order, each event once: the input to `fold`. */
   log: LogRecord[];
   /** The highest seq read so far; the next GET asks for records after it. */
   cursor: number;
