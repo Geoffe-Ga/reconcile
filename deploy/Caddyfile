@@ -23,6 +23,11 @@
 		# with #70's Markdown sanitizer. client/vite.config.ts serves the same
 		# header under `vite preview`; deploy/check.sh keeps the two equal.
 		Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		# HSTS: for a year after each visit, a browser uses only HTTPS here,
+		# so no later request goes out in plaintext to be downgraded. No
+		# includeSubDomains and no preload: deploy/README.md says why, and
+		# deploy/check.sh keeps exactly this value.
+		Strict-Transport-Security "max-age=31536000"
 	}
 
 	# The relay (reconcile.relay), bound to loopback. It drops client
