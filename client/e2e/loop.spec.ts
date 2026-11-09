@@ -1,10 +1,12 @@
 /**
  * The tracer loop (#67), end to end: three people, each in a browser profile
- * of their own, found a group and join it through the real relay, with the
- * build served under the deploy CSP.
+ * of their own, found a group, join it, propose a change, vote (one of them
+ * offline) and see the Update, through the real relay, with the build served
+ * under the deploy CSP.
  *
  * axe checks every screen they settle on, and any CSP violation in any page
- * fails the test.
+ * fails the test. Nothing here moves time: everyone scores, so the vote
+ * closes early.
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -91,9 +93,17 @@ async function expectAccessible(person: Person, screen: string): Promise<void> {
 }
 
 const GROUP = 'Riverside Tenants';
+const CHAT = 'https://chat.example.org/riverside';
 const TITLE = 'House rules';
-const ATOMS = ['Quiet hours start at 10pm.', 'Shared spaces are cleaned every Sunday.'];
+const FIRST_ATOM = 'Quiet hours start at 10pm.';
+const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
+const ATOMS = [FIRST_ATOM, SECOND_ATOM];
 const PEOPLE = ['Ana', 'Ben', 'Cal'];
+const PROPOSAL = 'Later quiet hours on weekends';
+const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
+
+/** The sync loop backs off to 30 seconds while the relay is out of reach (spec §7). */
+const BACK_ONLINE_MS = 45_000;
 
 /** Joins from Join's form, then waits for Group home. */
 async function join(person: Person): Promise<void> {
@@ -113,9 +123,56 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
   await expect(people).toHaveText(PEOPLE);
   await expectAccessible(person, 'Group home');
-  await page.getByRole('link', { name: new RegExp(TITLE) }).click();
+  await page.getByRole('link', { name: TITLE }).click();
   await expect(heading(page, TITLE)).toBeVisible();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText(ATOMS);
+  await expectAccessible(person, 'Document view');
+}
+
+/** From the Document view, back to Group home, then into the open Proposal. */
+async function openProposal(person: Person): Promise<void> {
+  const { page } = person;
+  await page.getByRole('link', { name: GROUP }).click();
+  const open = page.getByRole('region', { name: 'Open Proposals' });
+  await open.getByRole('link', { name: PROPOSAL }).click();
+  await expect(heading(page, PROPOSAL)).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Your score' })).toBeVisible();
+  await expectAccessible(person, 'Proposal view');
+}
+
+/** The ballot's send status: Sending…, Saved on this device…, then Sent. */
+function sendStatus(page: Page): Locator {
+  return page.getByRole('region', { name: 'Your vote' }).getByRole('status');
+}
+
+/** Picks a score pill and sends the ballot. */
+async function score(person: Person, pill: string): Promise<void> {
+  const { page } = person;
+  const radio = page.getByRole('radio', { name: pill });
+  // React Aria hides the native radio under its pill, so press the pill's label.
+  await page.locator('label', { has: radio }).click();
+  await expect(radio).toBeChecked();
+  await page.getByRole('button', { name: 'Send your vote' }).click();
+}
+
+/** Once the vote has closed: the result, then the Document with the new section. */
+async function expectUpdate(person: Person): Promise<void> {
+  const { page } = person;
+  const result = page.getByRole('region', { name: 'Result' });
+  await expect(result.getByRole('paragraph')).toHaveText([
+    'This passed. The Document now reads:',
+    NEW_TEXT,
+  ]);
+  await expectAccessible(person, 'Result');
+  await page.getByRole('link', { name: GROUP }).click();
+  await expect(page.getByRole('region', { name: 'Open Proposals' })).toContainText(
+    'Nothing to vote on yet.',
+  );
+  await page.getByRole('link', { name: TITLE }).click();
+  await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
+    NEW_TEXT,
+    SECOND_ATOM,
+  ]);
   await expectAccessible(person, 'Document view');
 }
 
@@ -135,9 +192,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await expectAccessible(ana, 'Create group');
     await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
     await page.getByRole('textbox', { name: 'Your name' }).fill(ana.name);
-    await page
-      .getByRole('textbox', { name: 'Chat link (optional)' })
-      .fill('https://chat.example.org/riverside');
+    await page.getByRole('textbox', { name: 'Chat link (optional)' }).fill(CHAT);
     await page.getByRole('textbox', { name: 'Document title' }).fill(TITLE);
     await page.getByRole('textbox', { name: 'Document text' }).fill(ATOMS.join('\n\n'));
     await page.getByRole('button', { name: 'Create group' }).click();
@@ -170,5 +225,55 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
 
   await test.step('all three see the Document and everyone in the group', async () => {
     for (const person of [ana, ben, cal]) await expectGroupAndDocument(person);
+  });
+
+  await test.step('A proposes a change to the first section', async () => {
+    const { page } = ana;
+    await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
+    await expect(heading(page, 'Propose a change')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'New text' })).toHaveValue(FIRST_ATOM);
+    // With no Proposal yet, the discussion link starts as the group's chat link.
+    await expect(page.getByRole('textbox', { name: 'Discussion link (optional)' })).toHaveValue(
+      CHAT,
+    );
+    await expectAccessible(ana, 'Composer');
+    await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
+    await page
+      .getByRole('textbox', { name: 'Why' })
+      .fill('Friday and Saturday evenings run later for most of us.');
+    await page.getByRole('textbox', { name: 'New text' }).fill(NEW_TEXT);
+    await page.getByRole('button', { name: 'Propose this change' }).click();
+    await expect(page).toHaveURL(/#\/g\/[\w-]+\/p\/[\w-]+$/);
+    // The ballot appears once the relay has ordered the Proposal.
+    await expect(page.getByRole('radiogroup', { name: 'Your score' })).toBeVisible();
+    await expectAccessible(ana, 'Proposal view');
+
+    await openProposal(ben);
+    await openProposal(cal);
+  });
+
+  await test.step('C goes offline, scores, and sees its ballot saved on this device', async () => {
+    await cal.page.context().setOffline(true);
+    await score(cal, '3 · Supportive');
+    await expect(sendStatus(cal.page)).toHaveText(
+      'Saved on this device. It will send when you’re back online.',
+    );
+    await expectAccessible(cal, 'ballot, saved offline');
+  });
+
+  await test.step('A and B score', async () => {
+    await score(ana, '4 · Strongly supportive');
+    await score(ben, '3 · Supportive');
+    for (const person of [ana, ben]) await expect(sendStatus(person.page)).toHaveText('Sent');
+    await expectAccessible(ben, 'ballot, sent');
+  });
+
+  await test.step('C comes back online and its ballot sends', async () => {
+    await cal.page.context().setOffline(false);
+    await expect(sendStatus(cal.page)).toHaveText('Sent', { timeout: BACK_ONLINE_MS });
+  });
+
+  await test.step('the vote closes early, and all three show the new section', async () => {
+    for (const person of [ana, ben, cal]) await expectUpdate(person);
   });
 });
