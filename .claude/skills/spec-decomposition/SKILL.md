@@ -32,7 +32,7 @@ This skill stitches four other skills together:
 - **stay-green** — every issue ends with explicit Done-Done gates: tests pass + pre-commit clean.
 - **max-quality-no-shortcuts** — every issue forbids `noqa`, `type: ignore`, and similar bypasses except under the documented escape hatch.
 
-Files land in `docs/plan/git-issues/` (this project keeps drafts local: `docs/plan/` is gitignored) and are filed with `gh issue create --body-file`, the same file-based pattern git-workflow uses.
+Files land in `docs/plan/git-issues/` (this project keeps drafts local: `docs/plan/git-issues/` is gitignored) and are filed with `gh issue create --body-file`, the same file-based pattern git-workflow uses.
 
 ## Instructions
 

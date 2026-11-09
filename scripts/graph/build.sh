@@ -4,7 +4,7 @@
 # Installs the pinned graphify toolchain into the active environment (only when
 # the CLI is absent), runs a deterministic tree-sitter AST extract over the
 # repo, and prints node and edge counts. Local only: no LLM calls, no API keys.
-# .graphifyignore keeps local-only docs (docs/plan, docs/prompts) out.
+# .graphifyignore keeps local-only drafts (docs/plan/git-issues, docs/prompts) out.
 #
 # Usage: ./scripts/graph/build.sh [extra graphify args...]
 # Env:   GRAPHIFY_FORCE=1  bypass graphify's shrink guard after intentional

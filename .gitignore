@@ -1,5 +1,6 @@
-# Private planning material — kept local, never committed
-docs/plan/
+# Issue drafts and working prompts stay local. The founder's vision docs in
+# docs/plan/ are committed so agents and graphify can read them (ADR-0032).
+docs/plan/git-issues/
 docs/prompts/
 
 # Python

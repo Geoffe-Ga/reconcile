@@ -45,7 +45,7 @@ Planned phases (see the [roadmap](docs/plan/14_Roadmap_Open_Questions.md)):
 - [Architecture decisions](docs/adr/README.md) (ADRs 0001–0040)
 - [Phase 1 spec](docs/spec/phase-1-spec.md)
 
-The original product definition lives in `docs/plan/`, which is kept local and isn't in the repository. Suggested reading order:
+The original product definition lives in [`docs/plan/`](docs/plan/). Suggested reading order:
 
 1. [What is Reconcile?](docs/plan/02_What_Is_Reconcile.md)
 2. [Core entities](docs/plan/03_Core_Entities.md)
