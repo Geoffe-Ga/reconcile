@@ -46,8 +46,8 @@ Run the quality checks for every area the current change touches
 (see scripts/changed-areas.sh): Python checks when reconcile/, tests/, or
 Python config changed; client checks when client/ changed; deploy checks
 when deploy/ or client/vite.config.ts changed; the end-to-end loop when
-client/ or reconcile/ changed; all four when shared tooling or protocol/
-changed. Docs-only changes run nothing.
+client/, reconcile/ or requirements.txt changed; all four when shared
+tooling or protocol/ changed. Docs-only changes run nothing.
 
 Python checks:
   1. Linting (Ruff + interrogate docstring coverage)

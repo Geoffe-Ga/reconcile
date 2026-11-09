@@ -86,7 +86,7 @@ pytest tests/
   8. Package build (build, twine check)
 - **Client:** `scripts/client.sh`, which runs the client's own gate (`client/CLAUDE.md`)
 - **Deploy:** `deploy/check.sh`, which validates the Caddy config and the systemd units (`deploy/README.md`)
-- **E2E:** `client/scripts/e2e.sh`, the Playwright loop through the real relay, whenever `client/` or `reconcile/` changed (`client/CLAUDE.md`)
+- **E2E:** `client/scripts/e2e.sh`, the Playwright loop through the real relay, whenever `client/`, `reconcile/`, `requirements.txt` or `scripts/relay.sh` changed (`client/CLAUDE.md`)
 
 **Note**: Mutation testing is NOT included in check-all.sh due to long runtime. It is recommended before a release (ADR-0061): run it locally or trigger CI's manual mutation job.
 

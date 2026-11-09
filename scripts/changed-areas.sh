@@ -82,7 +82,8 @@ while IFS= read -r path; do
         client/*)                                   client=true; e2e=true ;;
         # Before *.md: the runbook is checked with the config it explains.
         deploy/*)                                   deploy=true ;;
-        reconcile/*)                                python=true; e2e=true ;;
+        # requirements.txt is what the relay runs on; scripts/relay.sh is shared tooling.
+        reconcile/*|requirements.txt)               python=true; e2e=true ;;
         tests/*|pyproject.toml|requirements*.txt|.pylintrc)
                                                     python=true ;;
         # Shared contract and shared tooling: every area must re-check.

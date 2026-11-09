@@ -97,6 +97,10 @@ def test_all_flag_checks_every_area(repo: Path) -> None:
         ("client/src/main.tsx", {"client", "e2e"}),
         ("client/e2e/loop.spec.ts", {"client", "e2e"}),
         ("reconcile/relay/app.py", {"python", "e2e"}),
+        # The relay's runtime dependencies and its start script change what it runs.
+        ("requirements.txt", {"python", "e2e"}),
+        ("requirements-dev.txt", {"python"}),
+        ("scripts/relay.sh", set(AREAS)),
         # tests/test_e2e_script.py checks e2e.sh's ports, temp dir and order.
         ("client/scripts/e2e.sh", {"client", "python", "e2e"}),
         ("tests/test_relay.py", {"python"}),
