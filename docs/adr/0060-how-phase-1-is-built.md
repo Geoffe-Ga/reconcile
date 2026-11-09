@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
+- **Amended by:** [ADR-0075](0075-safeguards-for-the-revised-mvp.md): one audited Shamir library joins `@noble/*` (§4), and the shared-vector safeguard isn't replaced (§6).
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-dev-process`, decisions `who-builds`, `crypto-review` (chose `green-only`), `branch-protection`, `labels`
 

@@ -1,6 +1,6 @@
 # ADR-0074: MVP Scope Revised: Each Feature at the Founder's Chosen Depth
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0075](0075-safeguards-for-the-revised-mvp.md) (safeguards for coalition seats, push, stewards and recovery)
 - **Date:** 2026-11-08
 - **Decided via:** the founder's scope slider sheet (2026-11-08). The founder read the 18-issue MVP and said: "You cut too much. Don't remove critical functionality identified in the vision and ship a shell… We are trying to make the vision real, not constrain or inflate it." Each slider started where the vision docs in [`docs/plan/`](../plan/) point, and the founder set the final depth for each feature.
 - **Amends:** [ADR-0073](0073-mvp-scope.md). It lifts some of its deferrals and adds Phase 2 coalitions.

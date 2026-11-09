@@ -1,6 +1,6 @@
 # ADR-0075: Safeguards for the Revised MVP
 
-- **Status:** Proposed. The founder accepts, edits or rejects each numbered item before any issue it touches is built.
+- **Status:** Accepted (2026-11-09)
 - **Date:** 2026-11-09
 - **Decided via:** a review of the 57-issue backlog against ADR-0074 and the threat model ([`12_Security_Privacy_Threat_Model.md`](../plan/12_Security_Privacy_Threat_Model.md)). Most findings came from two issues interacting, not from either one alone. The issue edits are drafted in [`plans/2026-11-09-adr-0075-issue-edits.md`](../../plans/2026-11-09-adr-0075-issue-edits.md).
 - **Founder's answers (2026-11-09):** on removal, "With <= 21 people, a zero is non-blocking" (§3). On merge safeguards, "No merge safeguard. We're ai engineering this" (§6).
