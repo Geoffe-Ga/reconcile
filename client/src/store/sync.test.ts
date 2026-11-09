@@ -10,6 +10,7 @@ import type { Fetch, Relay } from '../net/relay';
 import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { manualTimers } from '../test/timers';
 import { openStore } from './db';
 import type { Group, Store } from './db';
 import { createSync } from './sync';
@@ -471,5 +472,32 @@ describe('polling', () => {
     ana.sync.stop();
 
     expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
+  });
+});
+
+describe('coming back online', () => {
+  it('sends the outbox at once, without waiting out the backoff', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const clock = manualTimers();
+    const ana = await device('ana', relay, newMailbox());
+    ana.sync = createSync({ store: ana.store, relay, clock: () => TS, timers: clock.timers });
+    opened.push(ana.sync);
+    await ana.store.enqueue(GROUP, genesis().bytes);
+    fake.offline = true;
+    ana.sync.start();
+    await vi.waitFor(() => {
+      expect(clock.waits()).toEqual([6000]);
+    });
+
+    fake.offline = false;
+    window.dispatchEvent(new Event('online'));
+    await vi.waitFor(() => {
+      expect(clock.waits()).toEqual([3000]);
+    });
+
+    expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
+    expect((await ana.group()).outbox).toEqual([]);
+    expect(ana.sync.isReachable()).toBe(true);
   });
 });

@@ -102,9 +102,6 @@ const PEOPLE = ['Ana', 'Ben', 'Cal'];
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
-/** The sync loop backs off to 30 seconds while the relay is out of reach (spec §7). */
-const BACK_ONLINE_MS = 45_000;
-
 /** Joins from Join's form, then waits for Group home. */
 async function join(person: Person): Promise<void> {
   await expect(heading(person.page, GROUP)).toBeVisible();
@@ -269,8 +266,9 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
   });
 
   await test.step('C comes back online and its ballot sends', async () => {
+    // Coming back online syncs at once, whatever the backoff (spec §7, #168).
     await cal.page.context().setOffline(false);
-    await expect(sendStatus(cal.page)).toHaveText('Sent', { timeout: BACK_ONLINE_MS });
+    await expect(sendStatus(cal.page)).toHaveText('Sent');
   });
 
   await test.step('the vote closes early, and all three show the new section', async () => {

@@ -214,7 +214,7 @@ Restored routes: Web Push under `/v1/push/` (#89), and the relay backup at `/v1/
 #64, #71 and #73 build it.
 
 - **Mailboxes.** Each group has one mailbox, derived from its group secret (§3), and each invite gets a short-lived one (ADR-0073). Group events are posted with `ttl_days=30`, so the relay keeps them 30 days (ADR-0057).
-- **Polling.** While the app is visible, sync runs every 3 seconds, and at once on focus. After a failure it doubles its wait, up to 30 seconds. There's no WebSocket.
+- **Polling.** While the app is visible, sync runs every 3 seconds, and at once on focus or when the browser comes back online. After a failure it doubles its wait, up to 30 seconds; coming back online resets the wait (#168). There's no WebSocket.
 - **Each pass:**
   1. posts the outbox in order, removing an entry only after a 2xx, so an event made offline survives a reload and goes out exactly once;
   2. GETs after the cursor, paging until a page holds fewer than `limit` records, opens each blob, skips one that won't open, and appends each record whose event id isn't in the log yet;

@@ -1,40 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { manualTimers } from '../test/timers';
 import { MAX_WAIT_MS, POLL_MS, createPoller } from './sync';
-import type { Poller, Timers } from './sync';
-
-/** Timers that only fire when the test says so. */
-function manualTimers(): { timers: Timers; waits: () => number[]; fire: () => void } {
-  const waiting = new Map<number, { callback: () => void; ms: number }>();
-  let last = 0;
-  return {
-    timers: {
-      setTimeout: (callback, ms) => {
-        last += 1;
-        waiting.set(last, { callback, ms });
-        return last;
-      },
-      clearTimeout: (handle) => {
-        waiting.delete(handle);
-      },
-    },
-    waits: () => [...waiting.values()].map((entry) => entry.ms),
-    fire: () => {
-      const [entry] = waiting;
-      if (entry === undefined) {
-        throw new Error('no timer is waiting');
-      }
-      waiting.delete(entry[0]);
-      entry[1].callback();
-    },
-  };
-}
+import type { Poller } from './sync';
 
 /** Let every pending promise settle. */
 function settle(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
+}
+
+/** The listeners `target` gains and loses, as `[type, listener]`, sorted by type. */
+function listenerSpies(target: EventTarget): {
+  added: () => [string, unknown][];
+  removed: () => [string, unknown][];
+} {
+  const add = vi.spyOn(target, 'addEventListener');
+  const remove = vi.spyOn(target, 'removeEventListener');
+  const byType = (calls: Parameters<EventTarget['addEventListener']>[]): [string, unknown][] =>
+    calls
+      .map(([type, listener]): [string, unknown] => [type, listener])
+      .sort(([a], [b]) => a.localeCompare(b));
+  return { added: () => byType(add.mock.calls), removed: () => byType(remove.mock.calls) };
 }
 
 function setVisibility(state: DocumentVisibilityState): void {
@@ -52,6 +40,7 @@ describe('the poller', () => {
   afterEach(() => {
     poller?.stop();
     Reflect.deleteProperty(document, 'visibilityState');
+    vi.restoreAllMocks();
   });
 
   it('runs at once when started, then every 3 seconds while visible', async () => {
@@ -161,6 +150,45 @@ describe('the poller', () => {
     expect(clock.waits()).toEqual([3000]);
   });
 
+  it('runs at once when the browser comes back online, with the backoff reset', async () => {
+    const clock = manualTimers();
+    const run = vi.fn(() => Promise.resolve(false));
+    poller = createPoller(run, clock.timers);
+    poller.start();
+    await settle();
+    clock.fire();
+    await settle();
+    const backedOff = clock.waits();
+
+    window.dispatchEvent(new Event('online'));
+    await settle();
+
+    expect(backedOff).toEqual([12_000]);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(clock.waits()).toEqual([6000]);
+  });
+
+  it('waits to be visible when it comes back online while hidden, with the backoff reset', async () => {
+    const clock = manualTimers();
+    const run = vi.fn(() => Promise.resolve(false));
+    poller = createPoller(run, clock.timers);
+    poller.start();
+    await settle();
+    clock.fire();
+    await settle();
+    setVisibility('hidden');
+
+    window.dispatchEvent(new Event('online'));
+    await settle();
+    const whileHidden = run.mock.calls.length;
+    setVisibility('visible');
+    await settle();
+
+    expect(whileHidden).toBe(2);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(clock.waits()).toEqual([6000]);
+  });
+
   it('never runs twice at once', async () => {
     const clock = manualTimers();
     let finish: (ok: boolean) => void = () => undefined;
@@ -191,11 +219,26 @@ describe('the poller', () => {
 
     poller.stop();
     window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
     setVisibility('visible');
     await settle();
 
     expect(run).toHaveBeenCalledTimes(1);
     expect(clock.waits()).toEqual([]);
+  });
+
+  it('listens for focus, coming online and visibility, and stops listening once stopped', () => {
+    const onWindow = listenerSpies(window);
+    const onDocument = listenerSpies(document);
+    poller = createPoller(() => Promise.resolve(true), manualTimers().timers);
+
+    poller.start();
+    poller.stop();
+
+    expect(onWindow.added().map(([type]) => type)).toEqual(['focus', 'online']);
+    expect(onDocument.added().map(([type]) => type)).toEqual(['visibilitychange']);
+    expect(onWindow.removed()).toEqual(onWindow.added());
+    expect(onDocument.removed()).toEqual(onDocument.added());
   });
 
   it('schedules nothing when a run in flight ends after a stop', async () => {
