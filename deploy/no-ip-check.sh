@@ -10,7 +10,10 @@
 #     no certificate;
 #   - malformed HTTP, over TLS and on the plain HTTP port;
 #   - 4xx requests with a canary in the path;
-#   - a request that gets a 502, after stopping the relay.
+#   - a request that gets a 502, after stopping the relay. Caddy writes that
+#     response itself, so it must carry the app's CSP and HSTS headers, no
+#     Server header, and a body holding nothing from the request or the
+#     relay's error (#159).
 # Each must get the response it expects, or the check isn't testing anything.
 # Finally it greps the captured output, and the raw bytes of the SQLite file
 # and its -wal and -shm, for 127.0.0.2 and the canaries. Any hit fails.
@@ -35,7 +38,7 @@ PYTHON="${PYTHON:-python3}"
 
 case "${1:-}" in
     "") ;;
-    --help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Error: Unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -132,11 +135,13 @@ from_client() {
         --resolve "nocert.invalid:$HTTPS_PORT:127.0.0.1" "$@"
 }
 
-# expect STATUS LABEL CURL_ARGS...: the request must get exactly STATUS.
+# expect STATUS LABEL CURL_ARGS...: the request must get exactly STATUS. Its
+# body lands in $work/body and its headers in $work/headers.
 expect() {
     local want=$1 label=$2 got
     shift 2
-    got="$(from_client -o "$work/body" -w '%{http_code}' "$@" 2>"$work/curl.err")" || true
+    got="$(from_client -o "$work/body" -D "$work/headers" -w '%{http_code}' "$@" \
+        2>"$work/curl.err")" || true
     if [[ "$got" != "$want" ]]; then
         show_output
         die "$label got HTTP ${got:-000}, not $want: $(tr -d '\n' < "$work/curl.err")"
@@ -163,6 +168,16 @@ raw() {
         "telnet://127.0.0.1:$2" >/dev/null 2>&1 || status=$?
     [[ "$status" != 7 ]] || die "$1: couldn't connect to port $2."
     printf '  %-52s %s\n' "$1" "sent"
+}
+
+# security_headers FILE: the CSP, HSTS and Server headers among the response
+# headers curl saved in FILE, as sorted "name: value" lines, names lower-cased.
+security_headers() {
+    tr -d '\r' < "$1" | awk '
+        { name = tolower(substr($0, 1, index($0, ":") - 1)) }
+        name ~ /^(content-security-policy|strict-transport-security|server)$/ {
+            print name ": " substr($0, index($0, ":") + 2)
+        }' | sort
 }
 
 wait_until() {
@@ -194,6 +209,11 @@ expect 200 "GET it back (canary headers)" "${CANARY_HEADERS[@]}" \
 grep -qF "\"data\":\"$(base64 < "$work/blob" | tr -d '\n')\"" "$work/body" ||
     die "the GET didn't return the blob: the relay isn't behind Caddy."
 expect 200 "GET the app (canary headers)" "${CANARY_HEADERS[@]}" "$site/"
+# What the 502 below must match: one CSP, one HSTS and no Server header.
+security_headers "$work/headers" > "$work/app.headers"
+[[ "$(cut -d: -f1 "$work/app.headers" | tr '\n' ' ')" == \
+    "content-security-policy strict-transport-security " ]] ||
+    die "the app must send one CSP and one HSTS header and no Server header, not: $(cat "$work/app.headers")"
 expect 200 "GET an unknown app path: index.html" "${CANARY_HEADERS[@]}" "$site/$canary"
 expect 308 "plain HTTP: redirected to HTTPS" "${CANARY_HEADERS[@]}" \
     "http://localhost:$HTTP_PORT/$canary"
@@ -229,7 +249,19 @@ grep -qaF "$mailbox" "$work/snapshot/"relay.db* ||
 # --- 5. A 502: Caddy's error log would name the client ---------------------
 kill "$relay_pid"
 wait "$relay_pid" 2>/dev/null || true
-expect 502 "GET with the relay stopped (502)" "${CANARY_HEADERS[@]}" "$site/v1/health"
+expect 502 "GET with the relay stopped (502, canary in path)" "${CANARY_HEADERS[@]}" \
+    "$site/v1/$canary"
+# Caddy writes the 502 itself, outside the site's header block (#159).
+security_headers "$work/headers" > "$work/502.headers"
+if ! diff -u "$work/app.headers" "$work/502.headers" > "$work/headers.diff"; then
+    cat "$work/headers.diff" >&2
+    die "the 502 must send the app's CSP and HSTS headers and no Server header."
+fi
+printf '  %-52s %s\n' "  its CSP, HSTS and Server headers" "as the app's"
+if grep -aqF -e "$canary" -e "$canary_ip" -e "$CLIENT_IP" -e "127.0.0.1:$RELAY_PORT" "$work/body"; then
+    die "the 502's body echoes the request or the relay's error: $(head -c 500 "$work/body")"
+fi
+printf '  %-52s %s\n' "  its body" "names nothing"
 
 # --- The verdict -------------------------------------------------------------
 grep -q 'Uvicorn running' "$work/relay.err" ||

@@ -4,7 +4,7 @@ The pilot runs on one small DigitalOcean droplet that serves the app and the rel
 
 | File | What it does |
 |---|---|
-| [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app`. Every log goes to discard |
+| [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app`. Caddy's own error responses get the same headers and a fixed body. Every log goes to discard |
 | [`reconcile-relay.service`](reconcile-relay.service) | The relay under Uvicorn, as the `reconcile` user, with no access log, no proxy headers and no `Server` header |
 | [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)) |
 | [`deploy.sh`](deploy.sh) | Builds, syncs, installs, restarts and smoke-tests. Run it with `--help` for the steps |
@@ -107,8 +107,8 @@ After the first deploy, the founder runs the loop over HTTPS between an iPhone a
 
 ## Checks
 
-- **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it. It also holds the Caddyfile's CSP and HSTS header to their values (see [The CSP](#the-csp) and [HSTS](#hsts)).
-- **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy` and `curl` on your PATH. It starts the relay with the unit's flags and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
+- **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it. It also holds the Caddyfile's CSP and HSTS header to their values, on the site's routes and on [its error routes](#caddys-own-errors) (see [The CSP](#the-csp) and [HSTS](#hsts)).
+- **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy` and `curl` on your PATH. It starts the relay with the unit's flags and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. It also checks that the 502 Caddy writes while the relay is down carries the app's security headers and a body that names nothing. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
 - **`deploy/smoke.sh <base-url>`** works against any running relay, such as `http://127.0.0.1:8787` from `./scripts/relay.sh`.
 
 ## What the VM still sees
@@ -146,6 +146,12 @@ The header leaves out two directives on purpose:
 - **`preload`** asks browsers to build the domain into their HTTPS-only list, which would protect the first visit too. The list requires `includeSubDomains`, and leaving it takes months, while the pilot's domain may still change.
 
 `vite preview` doesn't send it: preview serves plain HTTP, where browsers ignore the header. To change the value, change it in the Caddyfile and in `HSTS` in `deploy/check.sh`: the check fails when they differ.
+
+## Caddy's own errors
+
+Caddy writes some responses itself, such as a 502 while the relay is down. Those skip the site's routes, and with them its `header` block, so the Caddyfile keeps its headers in one `(security_headers)` snippet that the site and its `handle_errors` block both import. An error response therefore carries the same CSP and HSTS header, and no `Server` header. Its body is one fixed sentence: it repeats nothing from the request or the relay's error, so it can't reflect a canary or reveal the upstream's address.
+
+`deploy/check.sh` fails if the error routes lose a header, set one twice or fill in any placeholder, and `deploy/no-ip-check.sh` checks a real 502 (#159).
 
 ## Not here
 
