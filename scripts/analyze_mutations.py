@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import math
 import sqlite3
 import sys
 from pathlib import Path
@@ -67,7 +68,9 @@ def _print_score(status_counts: dict[str, int], total: int) -> None:
     print(f"  Untested: {untested}")
     print()
     if score < MINIMUM_MUTATION_SCORE:
-        gap = int((MINIMUM_MUTATION_SCORE / 100 * tested_total) - killed)
+        # Round the kills needed up, in exact integer-over-100 arithmetic: 3 of 4
+        # killed needs a 4th to reach 80%, and 80% of 15 is 12, not 12.000...02.
+        gap = math.ceil(MINIMUM_MUTATION_SCORE * tested_total / 100) - killed
         print(f"⚠️  Need to kill {gap} more mutants to reach {MINIMUM_MUTATION_SCORE}%")
         print()
 

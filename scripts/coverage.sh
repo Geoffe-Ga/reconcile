@@ -69,7 +69,7 @@ echo "=== Coverage Report ==="
 # Build pytest arguments
 PYTEST_ARGS=(
     -v
-    --cov=reconcile
+    --cov  # source: [tool.coverage.run] in pyproject.toml
     --cov-branch
     --cov-report=term-missing
     --cov-fail-under=90

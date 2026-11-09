@@ -9,7 +9,8 @@
 All code must meet these standards before merging to main:
 
 ### Test Coverage
-- **Code Coverage**: 90% minimum (branch coverage)
+- **Code Coverage**: ≥90% lines and ≥85% branches
+- **Coverage Scope**: `reconcile/` and all Python under `scripts/` (#55). `[tool.coverage.run] source` in `pyproject.toml` is the one list: the gate scripts and pytest's addopts pass a bare `--cov`, `[tool.mutmut]` mutates the same tree, and `tests/test_coverage_scope.py` keeps them in step. Tooling runs in CI, the Ralph Recap with a secret, so it meets the package's bar. New scripts come with tests, not an `omit` rule
 - **Docstring Coverage**: 95% minimum (interrogate)
 - **Mutation Score**: 80% target, checked before a release; not a merge gate (ADR-0061)
 - **Test Types**: Unit, Integration, and E2E coverage required

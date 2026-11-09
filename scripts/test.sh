@@ -112,7 +112,7 @@ esac
 if $COVERAGE; then
     echo "Coverage enabled"
     PYTEST_ARGS+=(
-        --cov=reconcile
+        --cov  # source: [tool.coverage.run] in pyproject.toml
         --cov-branch
         --cov-report=term-missing
         --cov-report=html
