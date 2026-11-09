@@ -23,11 +23,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --python)
-            FORCE_AREAS="python=true client=false"
+            FORCE_AREAS="python=true client=false deploy=false"
             shift
             ;;
         --client)
-            FORCE_AREAS="python=false client=true"
+            FORCE_AREAS="python=false client=true deploy=false"
+            shift
+            ;;
+        --deploy)
+            FORCE_AREAS="python=false client=false deploy=true"
             shift
             ;;
         --help)
@@ -36,7 +40,8 @@ Usage: $(basename "$0") [OPTIONS]
 
 Run the quality checks for every area the current change touches
 (see scripts/changed-areas.sh): Python checks when reconcile/, tests/, or
-Python config changed; client checks when client/ changed; both when shared
+Python config changed; client checks when client/ changed; deploy checks
+when deploy/ or client/vite.config.ts changed; all three when shared
 tooling or protocol/ changed. Docs-only changes run nothing.
 
 Python checks:
@@ -49,13 +54,19 @@ Python checks:
   7. Coverage (lines >= 90%, branches >= 85%)
   8. Build (sdist + wheel, twine check)
 
-CI runs this same script (--python / --client), plus pre-commit, so the
-rules can't differ between a laptop and CI.
+Deploy checks:
+  deploy/check.sh: caddy validate on the Caddyfile, systemd-analyze verify
+  on the units, and vite preview's CSP equal to the Caddyfile's (needs
+  caddy and systemd-analyze on PATH)
+
+CI runs this same script (--python / --client / --deploy), plus pre-commit,
+so the rules can't differ between a laptop and CI.
 
 OPTIONS:
     --all       Check every area regardless of what changed
     --python    Check only the Python area (CI's Python job uses this)
     --client    Check only the client area (CI's client job uses this)
+    --deploy    Check only the deploy area (CI's deploy job uses this)
     --verbose   Show detailed output
     --help      Display this help message
 
@@ -126,6 +137,10 @@ fi
 
 if [[ "$AREAS" == *"client=true"* ]]; then
     run_check "Client (TypeScript)" "client.sh"
+fi
+
+if [[ "$AREAS" == *"deploy=true"* ]]; then
+    run_check "Deploy config (Caddy, systemd)" "../deploy/check.sh"
 fi
 
 if [ ${#PASSED_CHECKS[@]} -eq 0 ] && [ ${#FAILED_CHECKS[@]} -eq 0 ]; then

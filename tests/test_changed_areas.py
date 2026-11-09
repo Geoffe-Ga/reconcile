@@ -8,10 +8,16 @@ import subprocess  # nosec B404 - runs our own script and git in a temp repo
 from pathlib import Path
 
 import pytest
+import yaml
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "changed-areas.sh"
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "changed-areas.sh"
+CI = ROOT / ".github" / "workflows" / "ci.yml"
 GIT = shutil.which("git") or "git"
 BASH = shutil.which("bash") or "bash"
+AREAS = ("python", "client", "deploy")
+NONE = dict.fromkeys(AREAS, "false")
+EVERY = dict.fromkeys(AREAS, "true")
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -24,6 +30,15 @@ def _git(repo: Path, *args: str) -> None:
     )
 
 
+def _commit(repo: Path, path: str) -> None:
+    """Commit a new file at ``path`` (relative to ``repo``) on top of HEAD."""
+    target = repo / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("changed\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", f"touch {path}")
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A repo on main whose single commit touched only docs."""
@@ -32,20 +47,17 @@ def repo(tmp_path: Path) -> Path:
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "base")
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "note.md").write_text("hi\n", encoding="utf-8")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "docs only")
+    _commit(tmp_path, "docs/note.md")
     return tmp_path
 
 
-def _areas(repo: Path, base_ref: str | None) -> dict[str, str]:
-    """Run the router in repo and parse its key=value output."""
+def _areas(repo: Path, base_ref: str | None, *args: str) -> dict[str, str]:
+    """Run the router in repo with ``args`` and parse its key=value output."""
     env = {k: v for k, v in os.environ.items() if k != "BASE_REF"}
     if base_ref is not None:
         env["BASE_REF"] = base_ref
     out = subprocess.run(  # nosec B603 - fixed argv, no shell
-        [BASH, str(repo / "scripts" / "changed-areas.sh")],
+        [BASH, str(repo / "scripts" / "changed-areas.sh"), *args],
         cwd=repo,
         env=env,
         check=True,
@@ -57,10 +69,70 @@ def _areas(repo: Path, base_ref: str | None) -> dict[str, str]:
 
 def test_docs_only_change_needs_no_code_gate(repo: Path) -> None:
     """A docs-only commit against a known base routes to no area."""
-    assert _areas(repo, "HEAD~1") == {"python": "false", "client": "false"}
+    assert _areas(repo, "HEAD~1") == NONE
 
 
 def test_unresolvable_base_ref_checks_everything(repo: Path) -> None:
     """A force-push hands CI a 'before' sha that no longer exists: run all."""
     missing = "deadbeef" * 5  # a well-formed sha that exists nowhere
-    assert _areas(repo, missing) == {"python": "true", "client": "true"}
+    assert _areas(repo, missing) == EVERY
+
+
+def test_all_flag_checks_every_area(repo: Path) -> None:
+    """``--all`` forces every area, deploy included, whatever changed."""
+    assert _areas(repo, "HEAD~1", "--all") == EVERY
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("deploy/Caddyfile", {"deploy"}),
+        ("deploy/reconcile-purge.timer", {"deploy"}),
+        ("deploy/deploy.sh", {"deploy"}),
+        # Matched before *.md: the runbook lives beside the config it explains.
+        ("deploy/README.md", {"deploy"}),
+        # deploy/check.sh holds vite preview's CSP equal to the Caddyfile's.
+        ("client/vite.config.ts", {"client", "deploy"}),
+        ("client/src/main.tsx", {"client"}),
+        ("reconcile/relay/app.py", {"python"}),
+        ("scripts/check-all.sh", set(AREAS)),
+        (".github/workflows/ci.yml", set(AREAS)),
+        ("an-unrecognized-file", set(AREAS)),
+        ("README.md", set()),
+        (".gitignore", set()),
+    ],
+)
+def test_path_routes_to_its_areas(repo: Path, path: str, expected: set[str]) -> None:
+    """Each path turns on exactly the areas whose checks it can break."""
+    _commit(repo, path)
+    assert _areas(repo, "HEAD~1") == {
+        area: str(area in expected).lower() for area in AREAS
+    }
+
+
+def test_router_emits_exactly_the_known_areas() -> None:
+    """The real router, forced, names the three areas in order and nothing else."""
+    out = subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, str(SCRIPT), "--all"], check=True, capture_output=True, text=True
+    ).stdout
+    assert out.split() == [f"{area}=true" for area in AREAS]
+
+
+def test_ci_gates_every_area_on_its_own_check_all_job() -> None:
+    """Each area has one CI job that runs on it, calls check-all, and gate needs.
+
+    So CI runs the same script as a laptop (``./scripts/check-all.sh --<area>``),
+    and a failing area job blocks the merge.
+    """
+    jobs = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]
+    assert sorted(jobs["changes"]["outputs"]) == sorted(AREAS)
+    for area in AREAS:
+        gated = [
+            name
+            for name, job in jobs.items()
+            if job.get("if") == f"needs.changes.outputs.{area} == 'true'"
+        ]
+        assert len(gated) == 1, area
+        steps = jobs[gated[0]]["steps"]
+        assert f"./scripts/check-all.sh --{area}" in [s.get("run") for s in steps]
+        assert gated[0] in jobs["gate"]["needs"]

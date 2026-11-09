@@ -4,6 +4,7 @@
 # Prints GitHub-Actions-style lines, one per area:
 #   python=true|false
 #   client=true|false
+#   deploy=true|false
 #
 # Used by scripts/check-all.sh locally and by .github/workflows/ci.yml, so the
 # two can never disagree about what needs checking.
@@ -22,12 +23,14 @@ cd "$(dirname "$SCRIPT_DIR")"
 
 python=false
 client=false
+deploy=false
 
-all() { python=true; client=true; }
+all() { python=true; client=true; deploy=true; }
 
 emit() {
     echo "python=$python"
     echo "client=$client"
+    echo "deploy=$deploy"
 }
 
 if [[ "${1:-}" == "--all" ]]; then
@@ -68,10 +71,14 @@ files="$( {
 while IFS= read -r path; do
     [[ -z "$path" ]] && continue
     case "$path" in
+        # deploy/check.sh holds vite preview's CSP equal to the Caddyfile's.
+        client/vite.config.ts)                      client=true; deploy=true ;;
         client/*)                                   client=true ;;
+        # Before *.md: the runbook is checked with the config it explains.
+        deploy/*)                                   deploy=true ;;
         reconcile/*|tests/*|pyproject.toml|requirements*.txt|.pylintrc)
                                                     python=true ;;
-        # Shared contract and shared tooling: both sides must re-check.
+        # Shared contract and shared tooling: every area must re-check.
         protocol/*|scripts/*|.github/workflows/ci.yml|.pre-commit-config.yaml|.secrets.baseline)
                                                     all ;;
         # Prose and planning never need a code gate.

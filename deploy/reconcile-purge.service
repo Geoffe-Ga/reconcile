@@ -1,0 +1,17 @@
+# Deletes expired relay blobs (30-day retention, ADR-0057) and truncates the
+# WAL. It prints nothing, not even a count. reconcile-purge.timer starts it
+# daily.
+
+[Unit]
+Description=Reconcile relay purge of expired blobs
+
+[Service]
+Type=oneshot
+User=reconcile
+WorkingDirectory=/opt/reconcile/src
+Environment=RECONCILE_RELAY_DB=/var/lib/reconcile/relay.db
+StateDirectory=reconcile
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ExecStart=/opt/reconcile/venv/bin/python -m reconcile.relay.purge
