@@ -44,7 +44,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people | Accepted |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
-| [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off | Accepted |
+| [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off. The MVP runs it as a systemd service, not a container, until it needs another host | Accepted; amended 2026-11-09 |
 | [0042](0042-broad-device-support.md) | iOS 16.4+, Android 10+, current desktop browsers; plain warnings on older devices | Accepted |
 | [0043](0043-recovery-and-backup.md) | Recovery threshold chosen per person (default 3 of 5), a fixed 72-hour wait, and an encrypted relay backup unlocked by recovery | Accepted; amended by 0072 |
 | [0044](0044-qr-device-linking.md) | A second device links by QR code; devices are listed and revocable | Accepted |
@@ -76,7 +76,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0070](0070-patronage-not-attention.md) | No per-read coalition share; gifts anchored to Reconcile's running cost | Accepted (direction) |
 | [0071](0071-self-hosting-and-reach.md) | A license grant to run unmodified relays and clients; promotion stops at coalitions | Accepted |
 | [0072](0072-protocol-details-for-decomposition.md) | Protocol details settled during decomposition: causal time, length caps, expiring sensitive text, re-open and readmit binding, `dissolve` target, backup endpoint, generic lock-screen text | Accepted; amended 2026-11-09 |
-| [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks | Accepted; amended by 0074 |
+| [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks, and 0041's container until the relay needs another host | Accepted; amended by 0074, and 2026-11-09 |
 | [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted; amended by 0075 |
 | [0075](0075-safeguards-for-the-revised-mvp.md) | Safeguards for the revised MVP: coalition seats, push linkage, steward limits, recovery | Accepted |
 | [0076](0076-merge-recap-to-discord.md) | Merge recaps send only metadata, PR titles included, to a private Discord channel; the bot token runs merged code | Accepted (tooling) |

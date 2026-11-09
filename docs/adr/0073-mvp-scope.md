@@ -3,7 +3,7 @@
 - **Status:** Accepted; amended by [ADR-0074](0074-mvp-scope-revised.md), which restores part of what this defers and adds Phase 2 coalitions
 - **Date:** 2026-11-08
 - **Decided via:** the founder's direction of 2026-11-08: "I want to have a simple app come out the other end. No feature bloat. No confusing crowded UX. No esoteric bureaucracy. No overcooking. MVP status, with the 20% of the paths covered that enable 80% of the behavior…" and "simplify, chop and retain fidelity to the original vision without covering edgecases that are nearly unreachable."
-- **Defers:** parts of ADRs 0002, 0003, 0006–0010, 0012, 0014–0019, 0021, 0023, 0028, 0030, 0031, 0042–0049, 0051–0055, 0057, 0059, 0060, 0064–0069 and 0072, plus spec §1–§8. Nothing is superseded.
+- **Defers:** parts of ADRs 0002, 0003, 0006–0010, 0012, 0014–0019, 0021, 0023, 0028, 0030, 0031, 0042–0049, 0051–0055, 0057, 0059, 0060, 0064–0069 and 0072, plus spec §1–§8, and (since 2026-11-09) ADR-0041's container. Nothing is superseded.
 
 ## Context
 
@@ -66,3 +66,7 @@ Before any group outside the founder's pilot circle uses the app, the outside re
 - The MVP backlog is small: one tracer, the privacy core, the decisions that make Reconcile itself, and pilot readiness. The ADRs above stay as the design to grow back into. Each returns only when pilot feedback asks, by a new ADR that lifts its line here.
 - [phase-1-spec.md](../spec/phase-1-spec.md), DESIGN.md and CLAUDE.md are cut to match by the first MVP issue.
 - Code keeps the seams that make return cheap: the `can()` capability helper, and an Atom's document id.
+
+## Amendment (2026-11-09): ADR-0041's Container Waits Too
+
+The table's row for 0057 (one VM, deployed by a founder-run script) also defers [ADR-0041](0041-digitalocean-relay-hosting.md)'s container. The MVP relay runs as a hardened systemd service on that VM ([#68](https://github.com/Geoffe-Ga/reconcile/issues/68)). Unlike the rest of the table, the container doesn't wait for pilot feedback: it comes back when the relay needs a second host or a new one. ADR-0041's 2026-11-09 amendment says what this costs and what brings containers back.
