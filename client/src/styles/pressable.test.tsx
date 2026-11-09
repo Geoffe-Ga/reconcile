@@ -23,6 +23,13 @@ const ON_UPGRADE =
   'React Aria’s pressable <style> no longer matches our CSP answer (#150). Re-read its ' +
   'usePress, then update src/styles/pressable.css and the claim in index.html to match.';
 
+/** Every stylesheet in src/, as text, keyed by its path from the client root (`/src/…`). */
+const STYLESHEETS = import.meta.glob<string>('/src/**/*.css', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+
 /** CSS text without comments or layout, so the same rule compares equal however it is wrapped. */
 function cssRules(css: string): string {
   return css
@@ -89,6 +96,16 @@ describe('React Aria’s pressable style under the deploy CSP', () => {
     const claim = indexHtmlClaim();
 
     expect(claim?.localName).toBe('meta');
+  });
+
+  it('index.html’s claim names the stylesheet that ships the rule', () => {
+    const named = indexHtmlClaim()?.getAttribute('content') ?? '';
+
+    expect(
+      STYLESHEETS[`/${named}`],
+      `index.html’s claim names "${named}" in its content. Point it at the stylesheet that ships ` +
+        'React Aria’s pressable rule.',
+    ).toBe(pressableCss);
   });
 
   it('with index.html’s claim, pressing a React Aria button adds no inline <style>', async () => {

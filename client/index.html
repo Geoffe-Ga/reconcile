@@ -9,6 +9,10 @@
       React Aria injects an inline <style> with this id unless the id is taken,
       and the CSP blocks inline styles. This claims it; src/styles/pressable.css
       ships the same rule (#150).
+      Only id is load-bearing: React Aria looks the element up by id alone.
+      name and content are set because a valid <meta> needs a name and a
+      content; content names the stylesheet that ships the rule, and
+      src/styles/pressable.test.tsx fails if it stops naming that file.
     -->
     <meta
       id="react-aria-pressable-style"
