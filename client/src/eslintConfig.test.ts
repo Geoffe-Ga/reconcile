@@ -1,7 +1,7 @@
 /**
  * Regression tests for the rules eslint.config.js adds itself (#162): NO_CLOCK and
- * INTEGERS_ONLY in src/engine, the network globals outside src/net, and the messages
- * rule in src/app and src/screens. Each must fire on a bad snippet where it applies,
+ * INTEGERS_ONLY in src/engine, the network globals outside src/net, the messages
+ * rule in src/app and src/screens, and NO_RAW_HTML across src/ (#70). Each must fire on a bad snippet where it applies,
  * and stay quiet on a good snippet or where it doesn't apply.
  *
  * The snippets are linted in memory as if they were files at the paths given, with
@@ -203,4 +203,76 @@ describe('messages: visible text comes from src/app/messages.ts', () => {
       expect(await lint(component('<p aria-label="Hello">Hello</p>'), filePath)).toEqual([]);
     },
   );
+});
+
+describe('NO_RAW_HTML: nothing in src/ is ever parsed as HTML', () => {
+  const RAW =
+    'no-restricted-syntax: Nothing in src/ is parsed as HTML (#70). Build React elements; Atom text goes through <AtomText>.';
+  const BAD = [
+    [
+      'dangerouslySetInnerHTML in JSX',
+      'export const f = (h: string) => <div dangerouslySetInnerHTML={{ __html: h }} />;',
+    ],
+    [
+      'dangerouslySetInnerHTML as a prop key',
+      "export const props = { dangerouslySetInnerHTML: { __html: '' } };",
+    ],
+    [
+      'dangerouslySetInnerHTML as a quoted key',
+      "export const props = { 'dangerouslySetInnerHTML': { __html: '' } };",
+    ],
+    [
+      'dangerouslySetInnerHTML set on an object',
+      'export function f(p: Record<string, unknown>) { p.dangerouslySetInnerHTML = {}; }',
+    ],
+    ['an innerHTML write', 'export function f(e: HTMLElement, h: string) { e.innerHTML = h; }'],
+    ['an innerHTML append', 'export function f(e: HTMLElement, h: string) { e.innerHTML += h; }'],
+    ['an outerHTML write', 'export function f(e: HTMLElement, h: string) { e.outerHTML = h; }'],
+    [
+      'insertAdjacentHTML',
+      "export function f(e: HTMLElement, h: string) { e.insertAdjacentHTML('beforeend', h); }",
+    ],
+    ['document.write', 'export function f(h: string) { document.write(h); }'],
+    [
+      'createContextualFragment',
+      'export function f(r: Range, h: string) { return r.createContextualFragment(h); }',
+    ],
+  ];
+
+  describe.each([
+    'src/app/text/Fixture.tsx',
+    'src/screens/Fixture.tsx',
+    'src/engine/fixture.tsx',
+    'src/store/fixture.tsx',
+    'src/fixture.tsx',
+    'src/app/Fixture.test.tsx',
+    'src/engine/fixture.test.tsx',
+  ])('in %s', (filePath) => {
+    it.each(BAD)('flags %s', async (_name, code) => {
+      expect(await lint(code, filePath)).toEqual([RAW]);
+    });
+  });
+
+  it('allows reading innerHTML, as a test may', async () => {
+    const code = 'export const read = (e: HTMLElement): string => e.innerHTML;';
+    expect(await lint(code, 'src/app/Fixture.test.tsx')).toEqual([]);
+  });
+
+  it('keeps the engine’s own rules beside it', async () => {
+    const code =
+      'export const f = (e: { innerHTML: string }, a: number) => { e.innerHTML = String(a / 2); };';
+    expect(await lint(code, 'src/engine/fixture.ts')).toEqual([
+      RAW,
+      'no-restricted-syntax: src/engine counts in integers only. Compare products; never divide, round or truncate.',
+    ]);
+  });
+
+  it('keeps the messages rule beside it', async () => {
+    const code =
+      'export const f = (h: string) => <p dangerouslySetInnerHTML={{ __html: h }}>Hi</p>;';
+    expect(await lint(code, 'src/screens/Fixture.tsx')).toEqual([
+      RAW,
+      'no-restricted-syntax: Visible text comes from src/app/messages.ts.',
+    ]);
+  });
 });

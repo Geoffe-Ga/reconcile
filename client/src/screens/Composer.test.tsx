@@ -1,35 +1,53 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ProposalValues } from '../app/proposals';
-import type { GroupState } from '../engine/fold';
+import { createGroup } from '../app/actions';
+import { propose, type ProposalValues } from '../app/proposals';
+import { fold, type GroupState } from '../engine/fold';
+import type { Draft, GroupDrafts } from '../store/drafts';
+import { groupDrafts } from '../store/drafts';
+import { testDevice, type TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
+import { memoryDrafts } from '../test/drafts';
+import { createFakeRelay } from '../test/fakeRelay';
+import { freshIndexedDBPerTest } from '../test/idb';
 import { groupLog } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { Composer, type ComposeOutcome } from './Composer';
 
+freshIndexedDBPerTest();
+
 type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
+
+const HINT =
+  '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.';
 
 interface Setup {
   readonly state?: GroupState;
   readonly atom?: number;
   readonly me?: string;
   readonly onPropose?: OnPropose;
+  readonly drafts?: GroupDrafts;
 }
 
-function setup({ state, atom = 0, me = authorOf('ana'), onPropose }: Setup = {}) {
+/** Renders the composer and waits for its draft to be read. */
+async function setup({ state, atom = 0, me = authorOf('ana'), onPropose, drafts }: Setup = {}) {
   const group = state ?? groupLog({ chat: 'https://chat.example.org/riverside' }).state();
   const propose = vi.fn<OnPropose>(onPropose ?? (() => Promise.resolve('proposed')));
-  render(
+  const memory = memoryDrafts();
+  const atomId = `${group.group ?? ''}.${String(atom)}`;
+  const view = render(
     <Composer
       state={group}
       me={me}
-      atomId={`${group.group ?? ''}.${String(atom)}`}
+      atomId={atomId}
+      drafts={drafts ?? memory.drafts}
       onPropose={propose}
     />,
   );
-  return { user: userEvent.setup(), onPropose: propose, state: group };
+  await screen.findByRole('heading', { level: 1 });
+  return { user: userEvent.setup(), onPropose: propose, state: group, atomId, memory, view };
 }
 
 const box = (name: string) => screen.getByRole('textbox', { name });
@@ -48,10 +66,9 @@ async function fill(user: UserEvent, entries: Readonly<Record<string, string>>):
 
 describe('Composer', () => {
   it('shows the section as it reads now, and four fields, prefilled', async () => {
-    const { state } = setup({ atom: 1 });
+    const { state } = await setup({ atom: 1 });
 
     expect(screen.getByRole('heading', { level: 1, name: 'Propose a change' })).toBeVisible();
-    expect(screen.queryByText('Section 2', { selector: 'p' })).not.toBeInTheDocument();
     const now = screen.getByRole('region', { name: 'Section 2 now reads' });
     expect(now).toHaveTextContent('Bins go out on Tuesday.');
     expect(box('Title')).toHaveValue('');
@@ -66,8 +83,11 @@ describe('Composer', () => {
       expect(box(label)).not.toHaveAttribute('maxlength');
     }
     expect(
-      screen.getByText('Everyone in your group sees this Proposal and that you made it.'),
+      screen.getByText(
+        'Your draft stays on this device until you propose it. Then everyone in your group sees this Proposal and that you made it.',
+      ),
     ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
       `#/g/${state.group ?? ''}/doc`,
@@ -76,16 +96,37 @@ describe('Composer', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('prefills the link of the latest Proposal that carries one', () => {
+  it('sets the section as it reads now through the Markdown renderer', async () => {
+    const log = groupLog({ atoms: ['Quiet *after* ten.\n', 'Bins.\n'] });
+    await setup({ state: log.state() });
+    const now = screen.getByRole('region', { name: 'Section 1 now reads' });
+    expect(within(now).getByText('after', { selector: 'em' })).toBeVisible();
+  });
+
+  it('writes the new text in Write and Preview tabs, with one Markdown hint line', async () => {
+    const { user } = await setup();
+    expect(screen.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
+    expect(box('New text')).toHaveAccessibleDescription(
+      `If your group passes it, this replaces the section. ${HINT}`,
+    );
+    await replace(user, 'New text', '# Quiet\r\n\r\nAfter **11pm**.  ');
+    await user.click(screen.getByRole('tab', { name: 'Preview' }));
+    const preview = screen.getByRole('tabpanel', { name: 'Preview' });
+    expect(within(preview).getByRole('heading', { level: 2, name: 'Quiet' })).toBeVisible();
+    expect(within(preview).getByText('11pm', { selector: 'strong' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('prefills the link of the latest Proposal that carries one', async () => {
     const log = groupLog({ chat: 'https://chat.example.org/riverside' });
     log.propose('ana', { link: 'https://chat.example.org/quiet-hours' });
     log.propose('ben', { atom: 1 });
-    setup({ state: log.state() });
+    await setup({ state: log.state() });
     expect(box('Discussion link (optional)')).toHaveValue('https://chat.example.org/quiet-hours');
   });
 
   it('hands over the entries, trimmed, with a blank link as none', async () => {
-    const { user, onPropose, state } = setup();
+    const { user, onPropose, state } = await setup();
     await fill(user, {
       Title: '  Later quiet hours ',
       Why: ' Weekends run late. ',
@@ -103,16 +144,16 @@ describe('Composer', () => {
   });
 
   it('keeps a discussion link, trimmed', async () => {
-    const { user, onPropose } = setup();
-    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    const { user, onPropose } = await setup();
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
     await replace(user, 'Discussion link (optional)', ' https://chat.example.org/later ');
     await user.click(submit());
     expect(onPropose.mock.calls[0]?.[0].link).toBe('https://chat.example.org/later');
   });
 
   it('refuses a javascript: link, with the reason tied to the field', async () => {
-    const { user, onPropose } = setup();
-    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    const { user, onPropose } = await setup();
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
     await replace(user, 'Discussion link (optional)', 'javascript:alert(1)');
     await user.click(submit());
 
@@ -125,7 +166,7 @@ describe('Composer', () => {
   });
 
   it('names every missing entry, and sends nothing', async () => {
-    const { user, onPropose } = setup();
+    const { user, onPropose } = await setup();
     await replace(user, 'New text', ' \n ');
     await user.click(submit());
 
@@ -137,19 +178,42 @@ describe('Composer', () => {
       'Tell your group what this fixes or makes better. Say why you’re proposing this.',
     );
     expect(box('New text')).toHaveAccessibleDescription(
-      'If your group passes it, this replaces the section. Write the new text for this section.',
+      `If your group passes it, this replaces the section. Write the new text for this section. ${HINT}`,
     );
     expect(box('Title')).toHaveFocus();
   });
 
+  it.each([
+    ['unchanged', (text: string) => text],
+    ['but for CRLF line endings', (text: string) => text.replace(/\n/g, '\r\n')],
+    ['but for trailing spaces and newlines', (text: string) => `${text}  \n\n`],
+    ['but for NFD', (text: string) => text.normalize('NFD')],
+  ])('refuses text that reads the same as the section now, %s', async (_name, change) => {
+    const log = groupLog({ atoms: ['Café hours start at ten.\n'] });
+    const { user, onPropose } = await setup({ state: log.state() });
+    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    await replace(user, 'New text', change('Café hours start at ten.\n'));
+    await user.click(submit());
+
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(box('New text')).toHaveAttribute('aria-invalid', 'true');
+    expect(box('New text')).toHaveAccessibleDescription(
+      `If your group passes it, this replaces the section. This reads the same as the section does now. Change it to propose something new. ${HINT}`,
+    );
+  });
+
   it('counts the title and why in code points after NFC, not UTF-16 units', async () => {
-    const { user, onPropose } = setup();
+    const { user, onPropose } = await setup();
     // "é" as e + combining accent: two code points each, one after NFC.
-    await fill(user, { Title: 'é'.repeat(120), Why: '😀'.repeat(2000) });
+    await fill(user, {
+      Title: 'é'.repeat(120),
+      Why: '😀'.repeat(2000),
+      'New text': 'Quiet after 11pm.',
+    });
     await user.click(submit());
     expect(onPropose).toHaveBeenCalledTimes(1);
 
-    await fill(user, { Title: 'é'.repeat(121), Why: '😀'.repeat(2001) });
+    await fill(user, { Title: 'é'.repeat(121), Why: '😀'.repeat(2001) });
     await user.click(submit());
     expect(onPropose).toHaveBeenCalledTimes(1);
     expect(box('Title')).toHaveAccessibleDescription(
@@ -162,23 +226,23 @@ describe('Composer', () => {
 
   it('ties a too-large Proposal to its text', async () => {
     const onPropose = vi.fn<OnPropose>(() => Promise.resolve('too-large'));
-    const { user } = setup({ onPropose });
-    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    const { user } = await setup({ onPropose });
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
     await user.click(submit());
     expect(box('New text')).toHaveAttribute('aria-invalid', 'true');
     expect(box('New text')).toHaveAccessibleDescription(
-      'If your group passes it, this replaces the section. This is too long to send. Shorten it, then try again.',
+      `If your group passes it, this replaces the section. This is too long to send. Shorten it, then try again. ${HINT}`,
     );
   });
 
   it('keeps only the latest submit’s refusal', async () => {
     const outcomes: ComposeOutcome[] = ['too-large', 'failed'];
     const onPropose = vi.fn<OnPropose>(() => Promise.resolve(outcomes.shift() ?? 'failed'));
-    const { user } = setup({ onPropose });
-    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    const { user } = await setup({ onPropose });
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
     await user.click(submit());
     expect(box('New text')).toHaveAttribute('aria-invalid', 'true');
-    await replace(user, 'New text', 'Quiet after 11pm.');
+    await replace(user, 'New text', 'Quiet after midnight.');
     await user.click(submit());
     expect(await screen.findByRole('alert')).toBeVisible();
     expect(box('New text')).not.toHaveAttribute('aria-invalid');
@@ -187,8 +251,8 @@ describe('Composer', () => {
 
   it('says so when the Proposal couldn’t be saved', async () => {
     const onPropose = vi.fn<OnPropose>(() => Promise.reject(new Error('quota')));
-    const { user } = setup({ onPropose });
-    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    const { user } = await setup({ onPropose });
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
     await user.click(submit());
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Your Proposal couldn’t be saved on this device. Try again.',
@@ -204,8 +268,8 @@ describe('Composer', () => {
           finish = resolve;
         }),
     );
-    const { user } = setup({ onPropose });
-    await fill(user, { Title: 'Later', Why: 'Weekends.' });
+    const { user } = await setup({ onPropose });
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
     await user.click(submit());
     expect(submit()).toBeDisabled();
     await user.click(submit());
@@ -217,19 +281,166 @@ describe('Composer', () => {
 
   it('says when the section isn’t in the Document', async () => {
     const state = groupLog().state();
-    render(<Composer state={state} me={authorOf('ana')} atomId="missing.0" onPropose={vi.fn()} />);
+    const { drafts } = memoryDrafts();
+    render(
+      <Composer
+        state={state}
+        me={authorOf('ana')}
+        atomId="missing.0"
+        drafts={drafts}
+        onPropose={vi.fn()}
+      />,
+    );
     expect(
       screen.getByRole('heading', { level: 1, name: 'This section isn’t in the Document' }),
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(drafts.load).not.toHaveBeenCalled();
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('offers no composer to someone who may not propose', () => {
-    setup({ me: 'stranger' });
+  it('offers no composer to someone who may not propose', async () => {
+    await setup({ me: 'stranger' });
     expect(
       screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('Composer drafts, against fake IndexedDB', () => {
+  const devices: TestDevice[] = [];
+
+  afterEach(() => {
+    for (const device of devices.splice(0)) device.services.store.close();
+  });
+
+  /** A real device on fake-indexeddb with a founded, synced group, and its composer. */
+  async function device() {
+    const fake = createFakeRelay();
+    const ana = await testDevice(fake, 'ana');
+    devices.push(ana);
+    const created = await createGroup(ana.services, {
+      groupName: 'Riverside Tenants',
+      yourName: 'Ana',
+      chat: null,
+      title: 'House rules',
+      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+    });
+    if (created.outcome !== 'created') throw new Error('Expected a group.');
+    const { groupId } = created;
+    await ana.services.sync.syncOnce();
+    const group = await ana.services.store.getGroup(groupId);
+    if (group === undefined) throw new Error('Expected the group.');
+    const state = fold(group.log, group.relayNow);
+    const me = group.me.author;
+    const atomId = `${groupId}.0`;
+    const drafts = groupDrafts(ana.services.store, groupId);
+    const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> =>
+      (await propose(ana.services, groupId, values)).outcome;
+    const open = async () => {
+      const view = render(
+        <Composer state={state} me={me} atomId={atomId} drafts={drafts} onPropose={onPropose} />,
+      );
+      await screen.findByRole('textbox', { name: 'Title' });
+      return view;
+    };
+    const stored = () => ana.services.store.readDraft(groupId, atomId);
+    return { open, stored, store: ana.services.store, groupId, fake };
+  }
+
+  const TYPED: Draft = {
+    title: 'Later quiet hours',
+    why: 'Weekends run late.',
+    text: 'Quiet after **11pm**.',
+    link: 'https://chat.example.org/later',
+  };
+
+  async function type(user: UserEvent): Promise<void> {
+    await fill(user, {
+      Title: TYPED.title,
+      Why: TYPED.why,
+      'New text': TYPED.text,
+      'Discussion link (optional)': TYPED.link,
+    });
+  }
+
+  it('keeps a draft on this device that survives a remount, and says it’s back', async () => {
+    const { open, stored } = await device();
+    const user = userEvent.setup();
+    const first = await open();
+    await type(user);
+    await waitFor(async () => {
+      expect(await stored()).toEqual(TYPED);
+    });
+    first.unmount();
+
+    await open();
+    expect(box('Title')).toHaveValue(TYPED.title);
+    expect(box('Why')).toHaveValue(TYPED.why);
+    expect(box('New text')).toHaveValue(TYPED.text);
+    expect(box('Discussion link (optional)')).toHaveValue(TYPED.link);
+    expect(screen.getByText('Your draft is back. It’s saved on this device only.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Discard draft' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('saves what was typed when the composer closes before the pause', async () => {
+    const { open, stored } = await device();
+    const user = userEvent.setup();
+    const first = await open();
+    await replace(user, 'Title', 'Quick');
+    first.unmount();
+    await waitFor(async () => {
+      expect((await stored())?.title).toBe('Quick');
+    });
+  });
+
+  it('clears the draft once its Proposal enters the outbox', async () => {
+    const { open, stored, store, groupId, fake } = await device();
+    const user = userEvent.setup();
+    const first = await open();
+    await type(user);
+    await waitFor(async () => {
+      expect(await stored()).toEqual(TYPED);
+    });
+    // Offline, so the Proposal stays in the outbox where the test can see it.
+    fake.offline = true;
+    await user.click(submit());
+    await waitFor(async () => {
+      expect((await store.getGroup(groupId))?.outbox).toHaveLength(1);
+    });
+    first.unmount();
+    expect(await stored()).toBeUndefined();
+
+    await open();
+    expect(box('Title')).toHaveValue('');
+    expect(box('New text')).toHaveValue('Quiet hours start at ten.\n');
+    expect(screen.queryByText(/Your draft is back/)).not.toBeInTheDocument();
+  });
+
+  it('discards the draft: gone from the device, and the form starts over', async () => {
+    const { open, stored } = await device();
+    const user = userEvent.setup();
+    const first = await open();
+    await type(user);
+    await waitFor(async () => {
+      expect(await stored()).toEqual(TYPED);
+    });
+    await user.click(screen.getByRole('button', { name: 'Discard draft' }));
+
+    expect(box('Title')).toHaveValue('');
+    expect(box('Title')).toHaveFocus();
+    expect(box('New text')).toHaveValue('Quiet hours start at ten.\n');
+    expect(screen.getByRole('status')).toHaveTextContent('Draft discarded.');
+    expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
+    await waitFor(async () => {
+      expect(await stored()).toBeUndefined();
+    });
+    first.unmount();
+    expect(await stored()).toBeUndefined();
+
+    await open();
+    expect(box('Title')).toHaveValue('');
   });
 });

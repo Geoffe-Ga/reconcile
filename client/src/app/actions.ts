@@ -10,9 +10,9 @@
 import type { Seal } from '../crypto/seal';
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
+import { genesisAtoms } from '../engine/atomText';
 import { base64url, signEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
-import { splitAtoms } from '../engine/text';
 import type { Relay } from '../net/relay';
 import type { Store } from '../store/db';
 import { eventIdOf } from '../store/eventId';
@@ -48,9 +48,9 @@ export type CreateResult =
 
 /**
  * Founds a group: fresh keys, a signed genesis carrying the Document's
- * sections, and the group kept under the genesis id, which is the group id
- * (spec §4). A genesis whose record is too large for one blob is refused
- * before anything is kept.
+ * sections (split at blank lines, each normalized as Atom text), and the
+ * group kept under the genesis id, which is the group id (spec §4). A genesis
+ * whose record is too large for one blob is refused before anything is kept.
  */
 export async function createGroup(
   services: Services,
@@ -63,7 +63,7 @@ export async function createGroup(
     name,
     founder,
     title,
-    atoms: splitAtoms(text),
+    atoms: genesisAtoms(text),
     ...(chat === null ? {} : { chat }),
   };
   const genesis = signEvent(keys.secretKey, {

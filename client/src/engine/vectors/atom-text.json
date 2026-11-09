@@ -1,0 +1,129 @@
+{
+  "kind": "atom-text",
+  "vectors": [
+    {
+      "name": "CRLF becomes LF, trailing spaces and tabs leave each line, and extra final newlines go",
+      "input": "Caf\u00e9  \r\nNext\t\n\n\n",
+      "expect": "Caf\u00e9\nNext\n"
+    },
+    {
+      "name": "a lone CR becomes LF",
+      "input": "One\rTwo\r",
+      "expect": "One\nTwo\n"
+    },
+    {
+      "name": "CRLF becomes one LF, not two",
+      "input": "One\r\n\r\nTwo",
+      "expect": "One\n\nTwo\n"
+    },
+    {
+      "name": "NFD becomes NFC",
+      "input": "Cafe\u0301\n",
+      "expect": "Caf\u00e9\n"
+    },
+    {
+      "name": "trailing spaces and tabs leave every line, inner ones stay",
+      "input": "a \t b  \nc\t\t\n d \n",
+      "expect": "a \t b\nc\n d\n"
+    },
+    {
+      "name": "a trailing NBSP stays",
+      "input": "a\u00a0\n",
+      "expect": "a\u00a0\n"
+    },
+    {
+      "name": "other trailing Unicode spaces stay",
+      "input": "a\u2003\nb\u3000\n",
+      "expect": "a\u2003\nb\u3000\n"
+    },
+    {
+      "name": "a missing final newline is added",
+      "input": "No newline",
+      "expect": "No newline\n"
+    },
+    {
+      "name": "several final newlines become one",
+      "input": "Many\n\n\n\n",
+      "expect": "Many\n"
+    },
+    {
+      "name": "leading blank lines and indentation stay",
+      "input": "\n\n    code\n",
+      "expect": "\n\n    code\n"
+    },
+    {
+      "name": "a Markdown hard break written as two trailing spaces goes, a backslash stays",
+      "input": "one  \ntwo\\\nthree\n",
+      "expect": "one\ntwo\\\nthree\n"
+    },
+    {
+      "name": "blank text becomes the empty string",
+      "input": " \n\t\n",
+      "expect": ""
+    },
+    {
+      "name": "empty text stays empty",
+      "input": "",
+      "expect": ""
+    },
+    {
+      "name": "only newlines and carriage returns become the empty string",
+      "input": "\r\n\r\r\n",
+      "expect": ""
+    },
+    {
+      "name": "<b>x</b> is unchanged: the normalizer never touches markup",
+      "input": "<b>x</b>\n",
+      "expect": "<b>x</b>\n"
+    },
+    {
+      "name": "<b>x</b> only gains its final newline",
+      "input": "<b>x</b>",
+      "expect": "<b>x</b>\n"
+    },
+    {
+      "name": "a lone high surrogate becomes U+FFFD",
+      "input": "a\ud800b\n",
+      "expect": "a\ufffdb\n"
+    },
+    {
+      "name": "a lone low surrogate becomes U+FFFD",
+      "input": "\udc00x\n",
+      "expect": "\ufffdx\n"
+    },
+    {
+      "name": "a surrogate pair stays whole",
+      "input": "\ud83d\ude00\n",
+      "expect": "\ud83d\ude00\n"
+    },
+    {
+      "name": "a lone surrogate at the very end becomes U+FFFD before the final newline",
+      "input": "end\ud83d",
+      "expect": "end\ufffd\n"
+    }
+  ],
+  "genesis": [
+    {
+      "name": "the genesis split yields Atoms that each end in one LF",
+      "document": "# House rules\n\nQuiet after 11pm.  \nBins out on Sunday.\t\n\n\n- Be kind\n- Ask first\n",
+      "expect": [
+        "# House rules\n",
+        "Quiet after 11pm.\nBins out on Sunday.\n",
+        "- Be kind\n- Ask first\n"
+      ]
+    },
+    {
+      "name": "the genesis split normalizes CRLF, NFD and trailing spaces in each Atom",
+      "document": "Cafe\u0301 rules \r\n\r\nSecond\r",
+      "expect": [
+        "Caf\u00e9 rules\n",
+        "Second\n"
+      ]
+    },
+    {
+      "name": "the genesis split of blank text yields no Atoms",
+      "document": " \n\t\n\r\n",
+      "expect": []
+    }
+  ]
+}

@@ -22,6 +22,7 @@ colors:
   positive: "#2f6b45"
   warning: "#85560f"
   negative: "#b3362a"
+  negative-soft: "#f5ddd5" # tint under deleted words in a word diff (ink on it: 13.1:1)
   # Ballot scale 0–4 (diverging; always paired with the number and label)
   score-0: "#b3362a"
   score-1: "#a85a35"
@@ -47,6 +48,7 @@ colors-dark:
   positive: "#7fbf8e"
   warning: "#e0b25c"
   negative: "#e0705f"
+  negative-soft: "#402a22" # ink on it: 11.4:1
   score-0: "#e0705f"
   score-1: "#d9946a"
   score-2: "#a39d8f"
@@ -112,6 +114,7 @@ Don't reproduce any of those brands' marks, typefaces, or layouts.
 - **`ochre`:** highlights, and "Claude's lean" and recommendation markers. Use `ochre-ink` for small ochre text.
 - **`clay`:** entrenched-Atom accents and warm emphasis. Never errors.
 - **Semantic** (`positive`, `warning`, `negative`): system status only. Never use `primary` to mean success.
+- **Diff tints** (`primary-soft`, `negative-soft`): the backgrounds under added and deleted words in a word diff. Text on them uses `ink`, and the strike line on `negative-soft` uses `negative` (4.6:1 light, 4.3:1 dark).
 - **Ballot scale** (`score-0`…`score-4`): a diverging clay → stone → forest ramp. **Always show the number and its label** ("0 · Strongly opposed" … "4 · Strongly supportive"). Color is never the only signal.
 
 All text tokens meet WCAG 2.2 AA (4.5:1) on every surface in both themes, and score pills meet 3:1 as UI graphics with paper-colored numerals at 4.5:1 or better. These were checked when the tokens were set (2026-11-07). Check every new pairing.
@@ -153,7 +156,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
 - **Proposal card:** title (heading-3), justification (body), a countdown (ui, `muted`), and a "Join discussion" link to the group's linked chat.
 - **Ballot:**
   - Competing versions sit side by side on wide screens and stack on phones.
-  - Each version shows a word diff against the current text: additions on `primary-soft`, and deletions struck through on a `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
+  - Each version shows a word diff of the Markdown source against the current text, in Newsreader with its line breaks kept: additions underlined on `primary-soft`, and deletions struck through on `negative-soft`, the `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
 - **Consent meter:** two plain bars:

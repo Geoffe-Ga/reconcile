@@ -1,6 +1,7 @@
 import { Button } from 'react-aria-components';
 
 import { messages } from '../app/messages';
+import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
 import type { GroupState } from '../engine/fold';
 
@@ -14,8 +15,8 @@ export interface DocumentViewProps {
 
 /**
  * Document view (`#/g/{groupId}/doc`): the canonical Document, each section
- * (Atom) set as plain text in the document style. Markdown arrives in #70;
- * until then nothing here is ever read as HTML.
+ * (Atom) formatted through `<AtomText>` in the document style. Nothing here is
+ * ever read as HTML.
  */
 export function DocumentView({ state, onPropose }: DocumentViewProps) {
   return (
@@ -32,9 +33,7 @@ export function DocumentView({ state, onPropose }: DocumentViewProps) {
         <article className="document">
           {state.atoms.map((atom, index) => (
             <div key={atom.id} className="atom">
-              <p className="atom-text" dir="auto">
-                {atom.text}
-              </p>
+              <AtomText text={atom.text} />
               <Button
                 className="button button-quiet"
                 aria-label={messages.document.proposeLabel(index + 1)}

@@ -70,7 +70,7 @@ describe('propose', () => {
         atom,
         title: 'Café hours',
         why: 'Quieter evenings.',
-        text: 'Quiet after 10pm.',
+        text: 'Quiet after 10pm.\n',
         link: 'https://chat.example.org/quiet',
       },
     });
@@ -79,6 +79,44 @@ describe('propose', () => {
       outcome: 'proposed',
       proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
     });
+  });
+
+  it('normalizes the proposed text as Atom text before signing it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const text = 'Cafe\u0301 hours  \r\nstart at ten.\t\r\n\r\n';
+    await propose(device.services, groupId, {
+      atom,
+      title: 'Café',
+      why: 'Why not.',
+      text,
+      link: null,
+    });
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.type === 'proposal' ? queued.body.text : null).toBe(
+      'Caf\u00e9 hours\nstart at ten.\n',
+    );
+  });
+
+  it('clears the draft for its Atom in the same change that queues it, and no other', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = { title: 'Café', why: 'Why not.', text: 'Quiet.', link: '' };
+    await device.services.store.writeDraft(groupId, atom, draft);
+    await device.services.store.writeDraft(groupId, 'other-atom', draft);
+    await propose(device.services, groupId, { ...draft, atom, link: null });
+    expect(await device.services.store.readDraft(groupId, atom)).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, 'other-atom')).toEqual(draft);
+  });
+
+  it('keeps the draft when the Proposal is too large to queue', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = { title: 'Long', why: 'Why not.', text: 'x'.repeat(70_000), link: '' };
+    await device.services.store.writeDraft(groupId, atom, draft);
+    await propose(device.services, groupId, { ...draft, atom, link: null });
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
   });
 
   it('leaves the link out when there is none, and sends the Proposal', async () => {

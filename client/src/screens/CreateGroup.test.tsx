@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +32,11 @@ function setup(outcome: CreateOutcome = 'created') {
 }
 
 const box = (name: string) => screen.getByRole('textbox', { name });
+
+const HINT =
+  '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.';
+const TEXT_HINT =
+  'Leave a blank line between sections. Your group proposes changes one section at a time.';
 
 async function fill(user: UserEvent, entry: Entry): Promise<void> {
   const fields: [string, string | undefined][] = [
@@ -114,7 +119,7 @@ describe('CreateGroup', () => {
       'For example, House rules or Our mission. Give the Document a title.',
     );
     expect(box('Document text')).toHaveAccessibleDescription(
-      'Leave a blank line between sections. Your group proposes changes one section at a time. Write at least one section.',
+      `${TEXT_HINT} Write at least one section. ${HINT}`,
     );
     expect(box('Group name')).toHaveFocus();
   });
@@ -133,7 +138,7 @@ describe('CreateGroup', () => {
     const text = box('Document text');
     expect(text).toHaveAttribute('aria-invalid', 'true');
     expect(text).toHaveAccessibleDescription(
-      'Leave a blank line between sections. Your group proposes changes one section at a time. This Document is too long to send. Shorten it, then try again.',
+      `${TEXT_HINT} This Document is too long to send. Shorten it, then try again. ${HINT}`,
     );
   });
 
@@ -154,9 +159,7 @@ describe('CreateGroup', () => {
     expect(onCreate).toHaveBeenCalledTimes(2);
     expect(onCreate.mock.calls[1]?.[0].text).toBe('Quiet hours start at ten.');
     expect(text).not.toHaveAttribute('aria-invalid');
-    expect(text).toHaveAccessibleDescription(
-      'Leave a blank line between sections. Your group proposes changes one section at a time.',
-    );
+    expect(text).toHaveAccessibleDescription(`${TEXT_HINT} ${HINT}`);
   });
 
   it('says so when the group couldn’t be saved', async () => {
@@ -183,6 +186,46 @@ describe('CreateGroup', () => {
     finish('failed');
     await screen.findByRole('alert');
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes the Document in Write and Preview tabs, with the Markdown hint line', () => {
+    setup();
+    expect(screen.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Preview' })).toBeVisible();
+    expect(box('Document text')).toHaveAccessibleDescription(`${TEXT_HINT} ${HINT}`);
+  });
+
+  it('previews each section as it will read, split where the group will see it split', async () => {
+    const { user } = setup();
+    await user.click(box('Document text'));
+    await user.paste(
+      '# House rules\n\nBe *kind*.  \r\nAsk first.\n\n\n- Quiet after ten\n- Bins out',
+    );
+    await user.click(screen.getByRole('tab', { name: 'Preview' }));
+
+    const preview = screen.getByRole('tabpanel', { name: 'Preview' });
+    expect(
+      within(preview)
+        .getAllByText(/^Section \d$/)
+        .map((label) => label.textContent),
+    ).toEqual(['Section 1', 'Section 2', 'Section 3']);
+    expect(
+      within(preview)
+        .getAllByRole('heading')
+        .map((h) => h.textContent),
+    ).toEqual(['House rules']);
+    expect(within(preview).getByRole('heading', { level: 2, name: 'House rules' })).toBeVisible();
+    expect(within(preview).getByText('kind', { selector: 'em' })).toBeVisible();
+    expect(within(preview).getAllByRole('listitem')).toHaveLength(2);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says there is nothing to preview for blank text', async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole('tab', { name: 'Preview' }));
+    expect(screen.getByRole('tabpanel', { name: 'Preview' })).toHaveTextContent(
+      'Nothing to preview yet.',
+    );
   });
 
   it('links back to your groups', () => {

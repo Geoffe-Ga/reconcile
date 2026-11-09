@@ -57,6 +57,7 @@ export const messages = {
     documentTextHint:
       'Leave a blank line between sections. Your group proposes changes one section at a time.',
     documentTextMissing: 'Write at least one section.',
+    section: (section: number) => `Section ${String(section)}`,
     tooLarge: 'This Document is too long to send. Shorten it, then try again.',
     visibility:
       'Everyone you invite sees the group name, your name, the chat link and this Document.',
@@ -119,11 +120,17 @@ export const messages = {
     textLabel: 'New text',
     textHint: 'If your group passes it, this replaces the section.',
     textMissing: 'Write the new text for this section.',
+    textUnchanged:
+      'This reads the same as the section does now. Change it to propose something new.',
     tooLarge: 'This is too long to send. Shorten it, then try again.',
     linkLabel: 'Discussion link (optional)',
     linkHint: 'Where your group can talk it over. It starts as your group’s latest link.',
     linkInvalid: 'Use a web link that starts with https:// or http://.',
-    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    visibility:
+      'Your draft stays on this device until you propose it. Then everyone in your group sees this Proposal and that you made it.',
+    draftRestored: 'Your draft is back. It’s saved on this device only.',
+    discard: 'Discard draft',
+    discarded: 'Draft discarded.',
     submit: 'Propose this change',
     failed: 'Your Proposal couldn’t be saved on this device. Try again.',
     missingTitle: 'This section isn’t in the Document',
@@ -137,7 +144,8 @@ export const messages = {
     eyebrowClosed: 'Closed Proposal',
     eyebrowNew: 'New Proposal',
     proposedBy: 'Proposed by',
-    current: (section: number) => `Section ${String(section)} now reads`,
+    changes: (section: number) => `Changes to section ${String(section)}`,
+    readsAs: 'How it will read',
     proposed: 'Proposed text',
     result: 'Result',
     passed: 'This passed. The Document now reads:',
@@ -171,6 +179,18 @@ export const messages = {
   countdown: {
     closes: (left: string) => `Closes ${left}`,
     closed: 'Voting closed',
+  },
+  markdown: {
+    hint: '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.',
+    modes: 'Write or preview',
+    write: 'Write',
+    preview: 'Preview',
+    previewEmpty: 'Nothing to preview yet.',
+  },
+  diff: {
+    added: 'added',
+    removed: 'removed',
+    legend: 'Added words are underlined and highlighted. Removed words are struck through.',
   },
   document: {
     pageTitle: 'Document',

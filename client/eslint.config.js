@@ -41,6 +41,26 @@ const INTEGERS_ONLY = [
   message: 'src/engine counts in integers only. Compare products; never divide, round or truncate.',
 }));
 
+/**
+ * Nothing in src/ is ever parsed as HTML (#70, spec §9): Atom text and every other group
+ * word reach the page only as React elements and escaped text. These are the sinks that
+ * would parse a string as markup.
+ */
+const RAW_HTML_SINKS = /^(innerHTML|outerHTML)$/;
+const NO_RAW_HTML = [
+  "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+  "Property[key.name='dangerouslySetInnerHTML']",
+  "Property[key.value='dangerouslySetInnerHTML']",
+  "MemberExpression[property.name='dangerouslySetInnerHTML']",
+  `AssignmentExpression > MemberExpression.left[property.name=${String(RAW_HTML_SINKS)}]`,
+  'CallExpression > MemberExpression.callee[property.name=/^(insertAdjacentHTML|createContextualFragment)$/]',
+  "CallExpression > MemberExpression.callee[object.name='document'][property.name=/^(write|writeln)$/]",
+].map((selector) => ({
+  selector,
+  message:
+    'Nothing in src/ is parsed as HTML (#70). Build React elements; Atom text goes through <AtomText>.',
+}));
+
 /** The browser's ways to reach the network. Only src/net/ may use them (spec §2). */
 const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'];
 const NETWORK_MESSAGE =
@@ -78,12 +98,18 @@ export default tseslint.config(
     },
   },
   {
+    // All of src/, tests included. A later block that sets `no-restricted-syntax` replaces
+    // these options for the files it matches rather than merging them, so each such block
+    // below lists NO_RAW_HTML again.
+    files: ['src/**/*.{ts,tsx}'],
+    rules: { 'no-restricted-syntax': ['error', ...NO_RAW_HTML] },
+  },
+  {
     // All of src/engine, not just tally.ts, so a helper the tally imports can't divide for it.
-    // A later block would replace these options rather than merge them: keep this the only
-    // `no-restricted-syntax` block that matches src/engine.
+    // Keep this the only later `no-restricted-syntax` block that matches src/engine.
     files: ['src/engine/**/*.ts'],
     ignores: ['src/engine/**/*.test.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK, ...INTEGERS_ONLY] },
+    rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK, ...INTEGERS_ONLY, ...NO_RAW_HTML] },
   },
   {
     files: ['**/*.{ts,tsx}'],
@@ -104,7 +130,7 @@ export default tseslint.config(
   {
     files: ['src/app/**/*.tsx', 'src/screens/**/*.tsx'],
     ignores: ['**/*.test.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY] },
+    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY, ...NO_RAW_HTML] },
   },
   { files: ['eslint.config.js'], extends: [tseslint.configs.disableTypeChecked] },
 );

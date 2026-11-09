@@ -1,10 +1,13 @@
-import { type SyntheticEvent, useRef, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useRef, useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 
 import type { CreateGroupValues } from '../app/actions';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
+import { AtomText } from '../app/text/AtomText';
+import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
+import { genesisAtoms } from '../engine/atomText';
 import { splitAtoms } from '../engine/text';
 
 /** How creating went: `created` moves on to Group home; the others stay on the form. */
@@ -31,6 +34,23 @@ function checkText(value: string): string | null {
   return splitAtoms(value).length === 0 ? messages.create.documentTextMissing : null;
 }
 
+/** The Document as its sections will read, split and normalized as genesis will be. */
+function preview(value: string): ReactNode {
+  const atoms = genesisAtoms(value);
+  if (atoms.length === 0) return null;
+  return (
+    <div className="document">
+      {atoms.map((atom, index) => (
+        // Sections are numbered by position, as the Document view numbers them.
+        <div key={index} className="atom">
+          <p className="eyebrow">{messages.create.section(index + 1)}</p>
+          <AtomText text={atom} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function readValues(form: HTMLFormElement): CreateGroupValues {
   const data = new FormData(form);
   const read = (name: string): string => {
@@ -49,13 +69,15 @@ function readValues(form: HTMLFormElement): CreateGroupValues {
 
 /**
  * Create group (`#/create`): the group's name, your name, an optional chat
- * link, and the first draft of its Document, which splits into sections at
- * blank lines (spec §8).
+ * link, and the first draft of its Document in Write and Preview tabs. It
+ * splits into sections at blank lines, and Preview shows each section as it
+ * will read (spec §8).
  */
 export function CreateGroup({ onCreate }: CreateGroupProps) {
   const busy = useRef(false);
   const [failed, setFailed] = useState(false);
   const [refused, setRefused] = useState<Record<string, string>>({});
+  const [text, setText] = useState('');
 
   const create = async (form: HTMLFormElement) => {
     if (busy.current) return;
@@ -114,14 +136,15 @@ export function CreateGroup({ onCreate }: CreateGroupProps) {
           isRequired
           validate={checkTitle}
         />
-        <Field
+        <MarkdownField
           name="text"
           label={messages.create.documentText}
           hint={messages.create.documentTextHint}
-          multiline
-          inputClassName="input-document"
+          value={text}
+          onChange={setText}
           isRequired
           validate={checkText}
+          preview={preview}
         />
         <p className="caption">{messages.create.visibility}</p>
         {failed ? (

@@ -94,6 +94,20 @@ h1:focus {
   font: var(--type-caption);
 }
 
+/* Text only screen readers read: the standard clip, from a class, so no style
+ * attribute is needed (the CSP allows none in markup). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
 /* Links ------------------------------------------------------------------- */
 
 a {
@@ -355,13 +369,87 @@ a[data-focus-visible] {
   justify-items: start;
 }
 
+/* An Atom's Markdown, built by <AtomText> from an allowlist of elements. */
 .atom-text {
+  display: grid;
+  gap: var(--space-3);
   /* About 65 characters a line of Newsreader at 19px (DESIGN.md: 60–70). */
   max-width: 30em;
   color: var(--ink);
   font: var(--type-document);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.atom-text :where(p, ul, ol, blockquote, pre, h2, h3, h4, h5, h6, hr) {
+  margin: 0;
+}
+
+/* An Atom's # is an h2 (heading-2); deeper headings take heading-3. */
+.atom-text h2 {
+  color: var(--ink);
+  font: var(--type-heading-2);
+  text-wrap: balance;
+}
+
+.atom-text :where(h3, h4, h5, h6) {
+  color: var(--ink);
+  font: var(--type-heading-3);
+  text-wrap: balance;
+}
+
+.atom-text :where(ul, ol) {
+  display: grid;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-5);
+}
+
+.atom-text li > :where(p, ul, ol, blockquote, pre) + * {
+  margin-block-start: var(--space-2);
+}
+
+.atom-text blockquote {
+  display: grid;
+  gap: var(--space-3);
+  padding-inline-start: var(--space-4);
+  border-inline-start: 3px solid var(--hairline);
+  color: var(--body);
+}
+
+/* Code keeps the mono face. Inline, it sits a step below the document size so
+ * its x-height matches the serif around it; the 13px mono role would read tiny. */
+.atom-text code {
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.atom-text pre {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  font: var(--type-mono);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.atom-text pre code {
+  padding: 0;
+  background: none;
+  font: inherit;
+}
+
+.atom-text hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+/* The source as plain text, when anything falls outside the allowlist. */
+.atom-plain {
+  white-space: pre-wrap;
 }
 
 .card {
@@ -371,6 +459,87 @@ a[data-focus-visible] {
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+
+/* Write and Preview (MarkdownField) ------------------------------------- */
+
+.markdown-tabs {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.tab-list {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  margin-block-end: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.tab[data-hovered] {
+  color: var(--ink);
+}
+
+/* The selected tab gets a rule under it as well as darker text. */
+.tab[data-selected] {
+  border-bottom-color: var(--primary);
+  color: var(--ink);
+}
+
+.tab[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: -3px;
+  border-radius: var(--radius-sm);
+}
+
+.tab-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* The Write panel stays mounted under Preview, so the form keeps its text. */
+.tab-panel[data-inert] {
+  display: none;
+}
+
+.tab-panel[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.markdown-preview {
+  min-height: 14rem;
+  align-content: start;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+/* The composer's draft --------------------------------------------------- */
+
+.draft-note {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* A quiet button beside the primary one keeps its own space. */
+.form-actions .button-quiet {
+  margin-inline-start: 0;
 }
 
 /* Buttons keep their own width; fields and lists take the column's. */

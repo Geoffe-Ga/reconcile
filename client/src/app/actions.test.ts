@@ -116,9 +116,20 @@ describe('createGroup', () => {
         founder: 'Ana',
         chat: 'https://chat.example.org/riverside',
         title: 'House rules',
-        atoms: ['Quiet hours start at ten.', 'Bins go out on Tuesday.'],
+        atoms: ['Quiet hours start at ten.\n', 'Bins go out on Tuesday.\n'],
       },
     });
+  });
+
+  it('normalizes each section as Atom text before signing the genesis', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    const text = 'Cafe\u0301 rules  \r\nstay.\t\r\n\r\n\r\n- Be kind\r- Ask first';
+    const group = await stored(ana, await created(ana, { ...VALUES, text }));
+    const genesis = queued(group)?.event;
+    expect(genesis?.type === 'genesis' ? genesis.body.atoms : null).toEqual([
+      'Caf\u00e9 rules\nstay.\n',
+      '- Be kind\n- Ask first\n',
+    ]);
   });
 
   it('leaves the chat out of genesis when there is none', async () => {
