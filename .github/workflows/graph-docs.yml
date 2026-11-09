@@ -1,0 +1,185 @@
+name: Docs graph build
+
+# Keeps a knowledge graph of the product docs (the docs/plan vision docs and
+# slide images, ADRs, specs, use-cases.md) beside the code graph, as
+# docs-graph.json and docs-graph-meta.json on the same rolling
+# `knowledge-graph` release. ./scripts/graph/restore.sh fetches both graphs.
+#
+#   push to main touching docs/  -> fresh build; only changed docs reach the LLM
+#   manual dispatch              -> the same, or a full re-send (full_rebuild)
+#
+# Separate from graph-build.yml on purpose: `graphify merge-graphs` would
+# re-prefix every code node id, and that workflow's nightly forced rebuild skips
+# graphify's semantic cache, so folding docs in would re-send every doc nightly.
+#
+# The LLM is Claude Code (`claude -p`, graphify's claude-cli backend, sonnet) on
+# the CLAUDE_CODE_OAUTH_TOKEN subscription the review bot also draws on. The
+# semantic cache persists through actions/cache, so a routine run sends only
+# changed docs and an unchanged run sends none. Docs go to Anthropic, the
+# provider that already reviews every PR diff. CI never sees docs/plan/git-issues
+# or docs/prompts (gitignored), and build-docs.sh refuses a graph naming either.
+# Tokens are scoped per step: the OAuth token to extraction, GITHUB_TOKEN to the
+# release upsert.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".graphifyignore"
+      - "scripts/graph/build-docs.sh"
+      - "scripts/graph/requirements.txt"
+      - ".github/workflows/graph-docs.yml"
+  workflow_dispatch:
+    inputs:
+      full_rebuild:
+        description: "Skip the semantic cache and re-send every doc to the LLM (spends subscription quota)."
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Shares graph-build.yml's group so the two never upload to the release at once.
+# GitHub keeps one pending run per group, so a newer code-graph run can replace
+# a pending docs run. Every docs build covers all of docs/, so the next docs
+# push or a manual dispatch catches up.
+concurrency:
+  group: graph-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish docs graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GRAPH_TAG: knowledge-graph
+      OUT_DIR: graphify-out
+      CACHE_DIR: graphify-out/docs-build/cache/semantic
+      CLAUDE_CODE_VERSION: "2.1.319"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # The commit ci.yml's actions/setup-node@v4 resolves to.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version-file: client/.nvmrc
+
+      - name: Resolve pinned graphifyy version
+        id: tool
+        run: |
+          version="$(sed -n 's/^graphifyy==//p' scripts/graph/requirements.txt)"
+          if [[ -z "$version" ]]; then
+            echo "::error::could not read the graphifyy pin from scripts/graph/requirements.txt"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache graphify toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/pip
+          key: graphifyy-${{ runner.os }}-${{ steps.tool.outputs.version }}
+
+      - name: Install graphify and Claude Code
+        run: |
+          pip install -r scripts/graph/requirements.txt
+          npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+
+      # Every run saves under a unique key and restores the newest prior entry.
+      # The cache is content-addressed and pruned to live docs each build, so the
+      # newest entry is always the best seed.
+      - name: Restore semantic cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: graphify-docs-${{ runner.os }}-${{ steps.tool.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            graphify-docs-${{ runner.os }}-${{ steps.tool.outputs.version }}-
+            graphify-docs-${{ runner.os }}-
+
+      # build-docs.sh runs `claude -p` from an empty directory in safe mode (no
+      # hooks, plugins, MCP servers, or CLAUDE.md), and print mode without
+      # --dangerously-skip-permissions denies Bash, Write, WebFetch, and Read
+      # outside that directory and the slide-image folder.
+      - name: Extract docs graph
+        id: extract
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GRAPHIFY_CLAUDE_CLI_MODEL: sonnet
+          GRAPHIFY_FORCE: ${{ inputs.full_rebuild && '1' || '' }}
+          DISABLE_AUTOUPDATER: "1"
+        run: |
+          if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+            echo "::error::the CLAUDE_CODE_OAUTH_TOKEN secret is not set"
+            exit 1
+          fi
+          ./scripts/graph/build-docs.sh
+
+      # Saved even when extraction fails or times out: graphify caches each
+      # finished chunk, so a re-run sends only the docs still missing.
+      - name: Save semantic cache
+        if: always() && steps.extract.outcome != 'skipped' && hashFiles(format('{0}/**', env.CACHE_DIR)) != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: graphify-docs-${{ runner.os }}-${{ steps.tool.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Write docs-graph-meta.json
+        env:
+          GRAPHIFYY_VERSION: ${{ steps.tool.outputs.version }}
+        run: |
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" SHA="$(git rev-parse --short HEAD)" \
+            python3 - "$OUT_DIR/docs-graph.json" "$OUT_DIR/docs-graph-meta.json" <<'PY'
+          import json
+          import os
+          import sys
+
+          graph_path, meta_path = sys.argv[1], sys.argv[2]
+          with open(graph_path, encoding="utf-8") as handle:
+              graph = json.load(handle)
+          meta = {
+              "built_at": os.environ["BUILT_AT"],
+              "sha": os.environ["SHA"],
+              "nodes": len(graph.get("nodes", [])),
+              "edges": len(graph.get("links") or graph.get("edges") or []),
+              "graphifyy": os.environ["GRAPHIFYY_VERSION"],
+              "claude_code": os.environ["CLAUDE_CODE_VERSION"],
+              "model": "sonnet",
+              "kind": "docs",
+          }
+          with open(meta_path, "w", encoding="utf-8") as handle:
+              json.dump(meta, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print(f"docs-graph-meta: {meta['nodes']:,} nodes / {meta['edges']:,} edges @ {meta['sha']}")
+          PY
+
+      - name: Publish to the rolling knowledge-graph release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=("$OUT_DIR/docs-graph.json" "$OUT_DIR/docs-graph-meta.json")
+          if ! gh release view "$GRAPH_TAG" >/dev/null 2>&1; then
+            gh release create "$GRAPH_TAG" \
+              --title "Knowledge graph (rolling)" \
+              --notes "Rolling knowledge graphs of main: code (graph.json) and docs (docs-graph.json), re-uploaded by graph-build and graph-docs runs. Not a version." \
+              --latest=false
+          fi
+          upload() { gh release upload "$GRAPH_TAG" "${assets[@]}" --clobber; }
+          if ! upload; then
+            echo "upload failed; retrying once in 10s"
+            sleep 10
+            if ! upload; then
+              echo "::error::release upload failed twice; the docs graph was NOT published"
+              exit 1
+            fi
+          fi
+          echo "published ${#assets[@]} asset(s) to release $GRAPH_TAG"
