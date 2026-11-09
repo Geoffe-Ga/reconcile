@@ -15,6 +15,7 @@ This repo is private, and its threat model treats project content as sensitive (
 - Review comments are read only to find the `## Verdict:` line, and their text is discarded.
 - It calls no AI service. adepthood's Claude-written headline was removed because it sent PR bodies to a third party.
 - **PR titles do reach Discord.** Keep titles free of anything you wouldn't post in that channel, and keep the channel private.
+- Mentions never ping. The payload sets `allowed_mentions` to parse nothing, so `@everyone`, `@here`, or a role or user mention in a title notifies no one.
 
 ## Files
 

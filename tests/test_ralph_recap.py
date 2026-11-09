@@ -402,6 +402,24 @@ def test_build_recap_renders_metadata_only(monkeypatch: pytest.MonkeyPatch) -> N
     assert {name: fields[name] for name in expected} == expected
 
 
+def test_build_recap_blocks_every_mention(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A PR title with @everyone, @here, or a role mention can never ping anyone."""
+    title = "fix: @everyone @here <@&123> <@456> look"
+    window = [
+        _hit(
+            1,
+            merged="2026-06-27T12:00:00Z",
+            created="2026-06-27T10:00:00Z",
+            title=title,
+        )
+    ]
+    _patch_history(monkeypatch, window)
+    payload = recap.build_recap("o/r", token="t", max_prs=10, now=NOW)
+    assert payload is not None
+    assert payload["allowed_mentions"] == {"parse": []}
+    assert title in json.dumps(payload, ensure_ascii=False)
+
+
 def test_build_recap_single_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     """Build recap single merge."""
     window = [_hit(2, merged="2026-06-27T12:00:00Z", created="2026-06-27T11:00:00Z")]

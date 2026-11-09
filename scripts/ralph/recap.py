@@ -517,7 +517,12 @@ def _loop_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
 def render_embed(
     repo: str, facts: dict[str, Any], *, now: dt.datetime
 ) -> dict[str, Any]:
-    """Turn computed facts into a Discord message payload with one embed."""
+    """Turn computed facts into a Discord message payload with one embed.
+
+    ``allowed_mentions`` with an empty ``parse`` list tells Discord to resolve
+    no mentions at all, so a PR title carrying ``@everyone``, ``@here``, or a
+    role or user mention can never ping the channel.
+    """
     embed = {
         "title": f"Ralph Recap — {repo}",
         "url": f"https://github.com/{repo}/pulls?q=is%3Apr+is%3Amerged",
@@ -530,7 +535,7 @@ def render_embed(
         "footer": {"text": "Ralph Recap · posts on every merge"},
         "timestamp": now.isoformat(),
     }
-    return {"embeds": [embed]}
+    return {"embeds": [embed], "allowed_mentions": {"parse": []}}
 
 
 def _latest_summary(repo: str, pr: dict[str, Any]) -> dict[str, Any]:
