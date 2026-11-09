@@ -4,17 +4,19 @@ name: Ralph Recap
 # Merge metadata only: PR number, title, link, counts, and durations. No PR
 # bodies, diffs, or file contents, and no AI calls (see scripts/ralph/RECAP.md).
 #
-# Configuration (each read from `secrets` first, then a same-named `vars` entry):
-#   DISCORD_BOT_TOKEN  bot token with Send Messages on the channel
-#   RALPH_CHANNEL_ID   target Discord channel ID (all digits)
+# Configuration:
+#   DISCORD_BOT_TOKEN  bot token with Send Messages on the channel. Read from
+#                      `secrets` only: Actions doesn't mask variables in logs
+#                      (tests/test_workflows.py enforces this).
+#   RALPH_CHANNEL_ID   target Discord channel ID (all digits). It isn't secret,
+#                      so a same-named `vars` entry works too; `secrets` wins.
 #
 # Until both exist, the job exits 0 with a notice, so it never reddens CI.
 # The built-in GITHUB_TOKEN reads the merge history (read-only).
 #
 # Trust: the last step runs the merged PR's own scripts/ralph/ code with
-# DISCORD_BOT_TOKEN in its environment. Keep the token a secret, not a var. The
-# code that sees it is listed in RECAP.md, "Secrets and trust"; keep that list
-# current when this step changes.
+# DISCORD_BOT_TOKEN in its environment. The code that sees it is listed in
+# RECAP.md, "Secrets and trust"; keep that list current when this step changes.
 
 on:
   pull_request:
@@ -44,6 +46,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || vars.DISCORD_BOT_TOKEN }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           RALPH_CHANNEL_ID: ${{ secrets.RALPH_CHANNEL_ID || vars.RALPH_CHANNEL_ID }}
         run: python -m scripts.ralph.recap --skip-if-unconfigured
