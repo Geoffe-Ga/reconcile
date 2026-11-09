@@ -48,3 +48,4 @@ These aren't quality gates:
 
 - [`graph/`](graph/README.md): the graphify knowledge graph (`build.sh`, `update.sh`, `restore.sh`).
 - [`ralph/`](ralph/RECAP.md): the Ralph Recap posted to Discord after each merge (`python -m scripts.ralph.recap`).
+- `relay.sh`: runs the blind mailbox relay (`reconcile.relay`) on `127.0.0.1` with one Uvicorn worker and `--no-access-log --no-proxy-headers --no-server-header`. It reads `RECONCILE_RELAY_PORT` (default 8787), `RECONCILE_RELAY_DB` (default `.relay-data/relay.db`, gitignored; the app itself has no default) and `RECONCILE_RELAY_MAX_DB_BYTES` (default 1 GiB). Delete expired blobs with `python -m reconcile.relay.purge`.
