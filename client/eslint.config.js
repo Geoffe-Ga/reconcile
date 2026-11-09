@@ -24,6 +24,16 @@ const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'];
 const NETWORK_MESSAGE =
   'Only src/net/ talks to the network (spec §2), so every request can be audited in one place.';
 
+/** Every visible string comes from src/app/messages.ts (spec §2, ADR-0055), so none escapes it. */
+const TEXT_ATTRIBUTE = 'JSXAttribute[name.name=/^(aria-label|placeholder|title|alt)$/]';
+const MESSAGES_ONLY = [
+  'JSXText[value=/\\S/]',
+  ':matches(JSXElement, JSXFragment) > JSXExpressionContainer > Literal[value=/\\S/]',
+  ':matches(JSXElement, JSXFragment) > JSXExpressionContainer > TemplateLiteral',
+  `${TEXT_ATTRIBUTE} > Literal`,
+  `${TEXT_ATTRIBUTE} > JSXExpressionContainer > :matches(Literal, TemplateLiteral)`,
+].map((selector) => ({ selector, message: 'Visible text comes from src/app/messages.ts.' }));
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'reports', '.stryker-tmp', 'plans/architecture/*.cjs'] },
   {
@@ -70,6 +80,11 @@ export default tseslint.config(
         ),
       ],
     },
+  },
+  {
+    files: ['src/app/**/*.tsx', 'src/screens/**/*.tsx'],
+    ignores: ['**/*.test.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY] },
   },
   { files: ['eslint.config.js'], extends: [tseslint.configs.disableTypeChecked] },
 );

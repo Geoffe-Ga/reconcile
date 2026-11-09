@@ -98,7 +98,7 @@ Protective features are real but quiet. Nothing in the UI suggests the app is fo
   - the mailbox id, in unpadded base64url, with info `reconcile/v1/mailbox`;
   - the seal key, with info `reconcile/v1/seal-key`.
 - **Seal** (#64, #71). XChaCha20-Poly1305 under the seal key, with the mailbox id as associated data. A blob is a 24-byte nonce, then the ciphertext of (a 4-byte big-endian length ‖ the payload ‖ zeros), then a 16-byte tag, in the smallest of the four sizes that fits. A payload is at most 65,492 bytes. A blob that fails to open is skipped.
-- **Invite seed** (#73). Copy invite link makes a random 32-byte seed, and the invite mailbox and key derive from it (infos `reconcile/v1/invite-mailbox` and `reconcile/v1/invite-key`). The link is `${origin}/#join/${seed}`, so the seed never reaches a server.
+- **Invite seed** (#73). Copy invite link makes a random 32-byte seed, and the invite mailbox and key derive from it (infos `reconcile/v1/invite-mailbox` and `reconcile/v1/invite-key`). The link is `${origin}/#join/${seed}`, so the seed never reaches a server. Until then, the tracer's link (#65, marked `STUB(invite)`) carries the group's mailbox id and stub secret instead: `${origin}/#/join/${mailbox}.${secret}`, each 43 base64url characters.
 - **Names** (#69; [ADR-0045](../adr/0045-names-in-groups.md) as cut by ADR-0073). A name is fixed at join. When two members' names match after NFC, trimming and lowercasing, each shows ` · ` and the first 4 hex characters of the SHA-256 of its public key. Names render inside `<bdi>`.
 - **Backup file** (#78; [ADR-0043](../adr/0043-recovery-and-backup.md) and [ADR-0044](../adr/0044-qr-device-linking.md) as cut by ADR-0073). One passphrase-sealed file holds every group's keys, secret and log, and nothing is uploaded.
   - The key is scrypt (N = 2^17, r = 8, p = 1, 32 bytes) over the NFC passphrase and a random 16-byte salt.
@@ -128,7 +128,7 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 
 ### The fold
 
-`fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group's name and chat link, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
+`fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group id (`group`, its genesis id, or null before one), the group's name and chat link, the Document title, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
 
 1. verifies the signature before it parses the event, and requires `author` to equal the record's key;
 2. drops a repeated event id, so the first copy keeps its seq and receipt time;
@@ -234,7 +234,7 @@ Restored routes: Web Push under `/v1/push/` (#89), and the relay backup at `/v1/
 
 ## 8. Screens
 
-Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.md) tokens ([ADR-0022](../adr/0022-react-vite-react-aria.md)). Every string comes from the messages module. Screens meet WCAG 2.2 AA, and axe runs on each one in unit tests and in the Chromium and WebKit e2e runs (ADR-0055, #65, #67). Routes are hash routes, with no router library (#65).
+Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.md) tokens ([ADR-0022](../adr/0022-react-vite-react-aria.md)). Every string comes from the messages module. Screens meet WCAG 2.2 AA, and axe runs on each one in unit tests and in the Chromium and WebKit e2e runs (ADR-0055, #65, #67). Routes are hash routes, with no router library (#65): `#/` Start, `#/create`, `#/join/{payload}` (Join, which replaces the entry with `#/join` once it reads the payload), `#/g/{groupId}` Group home and `#/g/{groupId}/doc` Document view. A group is stored and routed under its group id, so every device uses the same one. Tab titles never carry a group's words, because browser history keeps them.
 
 1. **First run** (#76). An iOS browser outside the installed app shows an install guide, plus an invite link's preview with a Copy button. Everywhere, the pilot notice comes before any key exists. It covers what's stored, what the relay sees (a device's IP address while it connects, without logging it; when messages arrive; their size class; which mailboxes a device checks), that data can be lost, and that this is a test (ADR-0056).
 2. **Start** (#65, #76, #77, #78). The groups on this device, Create group, a field to paste an invite link, and Restore a backup.

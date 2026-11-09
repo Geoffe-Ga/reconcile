@@ -1,0 +1,381 @@
+/*
+ * Screens and components, styled only from tokens.css (DESIGN.md).
+ * Flat surfaces and hairline rules; forest (--primary) is the one action color.
+ */
+
+/* Layout ------------------------------------------------------------------ */
+
+.shell {
+  display: grid;
+  gap: var(--space-6);
+  max-width: calc(var(--reading) + 2 * var(--space-4));
+  margin: 0 auto;
+  padding-block: var(--space-6) var(--space-8);
+  padding-left: max(var(--space-4), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--space-4), env(safe-area-inset-right, 0px));
+}
+
+.page-head {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* Type -------------------------------------------------------------------- */
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol {
+  margin: 0;
+}
+
+h1 {
+  color: var(--ink);
+  font: var(--type-heading-1);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+h1:focus {
+  outline: none;
+}
+
+.title-display {
+  font: var(--type-display);
+}
+
+.heading-2 {
+  color: var(--ink);
+  font: var(--type-heading-2);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.heading-3 {
+  color: var(--ink);
+  font: var(--type-heading-3);
+  text-wrap: balance;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font: var(--type-eyebrow);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.lede {
+  /* About 65 characters a line (DESIGN.md: 60–70). */
+  max-width: 30em;
+  color: var(--body);
+  font: var(--type-body);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.caption {
+  color: var(--muted);
+  font: var(--type-caption);
+}
+
+/* Links ------------------------------------------------------------------- */
+
+a {
+  color: var(--primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:focus-visible,
+a[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch);
+  font: var(--type-ui);
+  text-decoration: none;
+}
+
+.back-link[data-hovered],
+.back-link:hover {
+  text-decoration: underline;
+}
+
+/* Buttons ----------------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch);
+  max-width: 100%;
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  font: var(--type-ui);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button[data-focus-visible],
+.button:focus-visible {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.button-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.button-primary[data-pressed] {
+  filter: brightness(0.92);
+}
+
+.button-secondary {
+  border-color: var(--hairline);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.button-secondary[data-hovered],
+.button-secondary:hover {
+  border-color: var(--muted);
+}
+
+.button-secondary[data-pressed] {
+  background: var(--sunken);
+}
+
+.button-quiet {
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  margin-inline-start: calc(-1 * var(--space-3));
+  background: transparent;
+  color: var(--primary);
+}
+
+.button-quiet[data-hovered] {
+  text-decoration: underline;
+}
+
+.button[data-disabled] {
+  cursor: default;
+}
+
+.button-quiet[data-disabled] {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+/* Forms ------------------------------------------------------------------- */
+
+.form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.field-label {
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+.field-hint {
+  max-width: 34em;
+  color: var(--muted);
+  font: var(--type-caption);
+}
+
+.field-error {
+  color: var(--negative);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-body);
+}
+
+.input[data-focused] {
+  border-color: var(--primary);
+  outline: 3px solid var(--ochre);
+  outline-offset: 1px;
+}
+
+.input[data-invalid] {
+  border-color: var(--negative);
+}
+
+.input-document {
+  min-height: 14rem;
+  resize: vertical;
+  font: var(--type-document);
+}
+
+.input-link {
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-mono);
+  text-overflow: ellipsis;
+}
+
+.form-error {
+  color: var(--negative);
+  font: var(--type-ui);
+}
+
+/* Cards and sections ------------------------------------------------------ */
+
+.card-list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.card-link {
+  display: grid;
+  gap: var(--space-1);
+  min-height: var(--touch);
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.card-link[data-hovered],
+.card-link:hover {
+  border-color: var(--primary);
+}
+
+.card-link-title {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.card-link-arrow {
+  color: var(--primary);
+  font: var(--type-ui);
+}
+
+.sections {
+  display: grid;
+}
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+  padding-block: var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+
+.section:last-child {
+  padding-block-end: 0;
+}
+
+@media (min-width: 40rem) {
+  .section {
+    grid-template-columns: 10rem minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: baseline;
+  }
+}
+
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  padding: 0;
+  color: var(--ink);
+  list-style: none;
+}
+
+.people li + li::before {
+  content: '·' / '';
+  margin-inline-end: var(--space-2);
+  color: var(--muted);
+}
+
+.status {
+  min-height: 1lh;
+  color: var(--muted);
+  font: var(--type-caption);
+}
+
+/* The Document ------------------------------------------------------------ */
+
+.document {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.atom {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+.atom-text {
+  /* About 65 characters a line of Newsreader at 19px (DESIGN.md: 60–70). */
+  max-width: 30em;
+  color: var(--ink);
+  font: var(--type-document);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+/* Buttons keep their own width; fields and lists take the column's. */
+.shell > .button,
+.stack > .button,
+.form > .button {
+  justify-self: start;
+}
