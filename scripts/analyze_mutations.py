@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import math
 import sqlite3
 import sys
@@ -113,25 +114,25 @@ def analyze_cache(
     suffix = f" (filtered: {filter_file})" if filter_file else ""
     print(f"=== Mutmut Cache Analysis{suffix} ===\n")
 
-    conn = sqlite3.connect(cache_path)
-    cursor = conn.cursor()
-    cursor.execute(_TOTAL_SQL, (pattern,))
-    total = cursor.fetchone()[0]
-    print(f"Total mutants: {total}")
-    print()
+    # closing() releases the file even when a malformed cache raises mid-query.
+    with contextlib.closing(sqlite3.connect(cache_path)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_TOTAL_SQL, (pattern,))
+        total = cursor.fetchone()[0]
+        print(f"Total mutants: {total}")
+        print()
 
-    cursor.execute(_STATUS_SQL, (pattern,))
-    status_counts = dict(cursor.fetchall())
-    print("Status counts:")
-    for status, count in sorted(status_counts.items()):
-        print(f"  {status}: {count}")
-    print()
+        cursor.execute(_STATUS_SQL, (pattern,))
+        status_counts = dict(cursor.fetchall())
+        print("Status counts:")
+        for status, count in sorted(status_counts.items()):
+            print(f"  {status}: {count}")
+        print()
 
-    _print_score(status_counts, total)
-    survived = status_counts.get("bad_survived", 0)
-    if survived > 0:
-        _print_survivors(cursor, pattern, survived, top_files)
-    conn.close()
+        _print_score(status_counts, total)
+        survived = status_counts.get("bad_survived", 0)
+        if survived > 0:
+            _print_survivors(cursor, pattern, survived, top_files)
 
 
 def main() -> None:

@@ -241,3 +241,26 @@ def test_all_untested_prints_no_score(
         "Status counts:\n"
         "  untested: 2\n\n"
     )
+
+
+def test_connection_closes_when_the_cache_is_malformed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cache without mutmut's tables raises, and its connection still closes."""
+    bad = tmp_path / "cache"
+    with contextlib.closing(sqlite3.connect(bad)) as conn:
+        conn.execute("CREATE TABLE Unrelated (x INTEGER)")
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def spy(path: Path) -> sqlite3.Connection:
+        conn = real_connect(path)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(analyze_mutations.sqlite3, "connect", spy)
+    with pytest.raises(sqlite3.OperationalError):
+        analyze_mutations.analyze_cache(bad)
+    # A closed connection refuses to hand out a cursor.
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].cursor()
