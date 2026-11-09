@@ -20,6 +20,9 @@ build/
 mutants/
 .mutmut-cache
 
+# Local relay database (scripts/relay.sh)
+.relay-data/
+
 # Client (TypeScript)
 client/node_modules/
 client/dist/

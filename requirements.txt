@@ -1,2 +1,8 @@
-# Runtime dependencies
-# Add your production dependencies here
+# Runtime dependencies of the relay (ADR-0028), pinned exactly.
+#
+# pyproject.toml reads this file for [project] dependencies, so this is the one
+# place to bump a pin. Starlette is pinned because reconcile/relay imports it
+# directly; FastAPI alone would accept any Starlette from 0.46 up.
+fastapi==0.162.2
+starlette==1.10.0
+uvicorn==0.54.0
