@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)" />
+    <!--
+      React Aria injects an inline <style> with this id unless the id is taken,
+      and the CSP blocks inline styles. This claims it; src/styles/pressable.css
+      ships the same rule (#150).
+    -->
+    <meta
+      id="react-aria-pressable-style"
+      name="react-aria-pressable-style"
+      content="src/styles/pressable.css"
+    />
     <title>Reconcile</title>
   </head>
   <body>

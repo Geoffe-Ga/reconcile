@@ -2,6 +2,7 @@ import '@fontsource-variable/newsreader';
 import '@fontsource-variable/public-sans';
 import '@fontsource-variable/jetbrains-mono';
 import './styles/tokens.css';
+import './styles/pressable.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

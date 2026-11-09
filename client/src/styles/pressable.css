@@ -1,0 +1,15 @@
+/*
+ * Pressable controls react on the first tap and keep pinch zoom (DESIGN.md, Layout).
+ *
+ * React Aria's usePress would inject this rule as an inline <style> at runtime,
+ * which the deploy CSP blocks (spec §9). index.html claims that <style>'s id, so
+ * React Aria injects nothing, and the rule ships here instead, from 'self'.
+ * src/styles/pressable.test.tsx fails if React Aria's own copy ever changes.
+ *
+ * The anonymous layer keeps React Aria's cascade: any unlayered rule wins.
+ */
+@layer {
+  [data-react-aria-pressable] {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+}
