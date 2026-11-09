@@ -9,7 +9,7 @@ Ported from the adepthood repository and trimmed for Reconcile.
 
 ## Privacy
 
-This repo is private, and its threat model treats project content as sensitive (`CLAUDE.md`, "Defend Against Weaponization"). The recap posts **merge metadata only**: PR numbers, titles, links, counts, durations, and review-round numbers.
+This repo is private, and its threat model treats project content as sensitive (`CLAUDE.md`, "Defend Against Weaponization"). The recap posts **merge metadata only**: PR numbers, titles, links, counts, durations, and review-round numbers. [ADR-0076](../../docs/adr/0076-merge-recap-to-discord.md) records this decision and its trust model.
 
 - It never reads or posts PR bodies, diffs, file names, or file contents.
 - Review comments are read only to find the `## Verdict:` line, and their text is discarded.
@@ -47,7 +47,7 @@ Keep the bot token a secret, never a variable: variables aren't masked in job lo
 
 ## Secrets and trust
 
-The workflow fires on `pull_request: closed` and runs the merged PR's own copy of the recap with `DISCORD_BOT_TOKEN` in its environment. A PR that edits that code runs its edit with the real token as soon as it merges. That's the same trust level as any CI script a collaborator can change, and it needs a merge through protected `main` ([ADR-0060](../../docs/adr/0060-how-phase-1-is-built.md)), so it isn't a new hole. It does mean a change to the files below deserves the care you'd give any code that holds a secret.
+The workflow fires on `pull_request: closed` and runs the merged PR's own copy of the recap with `DISCORD_BOT_TOKEN` in its environment. A PR that edits that code runs its edit with the real token as soon as it merges. That's the same trust level as any CI script a collaborator can change, and it needs a merge to `main`, so it isn't a new hole. It does mean a change to the files below deserves the care you'd give any code that holds a secret. Branch protection on `main` ([ADR-0060](../../docs/adr/0060-how-phase-1-is-built.md)) waits on GitHub Pro, so until then the gate is write access to the repo.
 
 Code that runs with `DISCORD_BOT_TOKEN` (keep this list current, per ADR-0060):
 

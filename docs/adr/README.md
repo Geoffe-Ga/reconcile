@@ -79,6 +79,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks | Accepted; amended by 0074 |
 | [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted; amended by 0075 |
 | [0075](0075-safeguards-for-the-revised-mvp.md) | Safeguards for the revised MVP: coalition seats, push linkage, steward limits, recovery | Accepted |
+| [0076](0076-merge-recap-to-discord.md) | Merge recaps send only metadata, PR titles included, to a private Discord channel; the bot token runs merged code | Accepted (tooling) |
 
 **Terminology (2026-11-08):** the governance exit formerly called a "split" is now **parting ways** (`part-ways-petition`, [ADR-0068](0068-part-ways.md)); ADRs before 0068 still say "split".
 
