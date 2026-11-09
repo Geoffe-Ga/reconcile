@@ -439,6 +439,7 @@ def test_build_recap_renders_metadata_only(monkeypatch: pytest.MonkeyPatch) -> N
         "Backlog remaining": "**4** open · ETA ~9.3 days (about 2026-07-07)",
     }
     assert {name: fields[name] for name in expected} == expected
+    assert embed["footer"]["text"] == "Ralph Recap · posts on every merge"
 
 
 def test_build_recap_blocks_every_mention(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -457,6 +458,80 @@ def test_build_recap_blocks_every_mention(monkeypatch: pytest.MonkeyPatch) -> No
     assert payload is not None
     assert payload["allowed_mentions"] == {"parse": []}
     assert title in json.dumps(payload, ensure_ascii=False)
+
+
+def _busy_window(count: int) -> list[dict[str, Any]]:
+    """``count`` merges, newest first, half an hour apart, all inside 7 days."""
+    hits: list[dict[str, Any]] = []
+    for number in range(1, count + 1):
+        merged = NOW - dt.timedelta(minutes=30 * number)
+        opened = merged - dt.timedelta(hours=1)
+        hits.append(_hit(number, merged=merged.isoformat(), created=opened.isoformat()))
+    return hits
+
+
+def _record_detail_calls(
+    monkeypatch: pytest.MonkeyPatch, window: list[dict[str, Any]]
+) -> list[tuple[str, int]]:
+    """Patch the history and record every per-PR API call build_recap makes."""
+    _patch_history(monkeypatch, window)
+    calls: list[tuple[str, int]] = []
+
+    def verdicts(_repo: str, number: int, **_k: Any) -> list[str]:
+        """Record a verdict lookup; every PR passed on the first try."""
+        calls.append(("verdicts", number))
+        return ["LGTM"]
+
+    def churn(_repo: str, number: int, **_k: Any) -> tuple[int, int, int]:
+        """Record a diff-count lookup."""
+        calls.append(("churn", number))
+        return (number, 1, 1)
+
+    monkeypatch.setattr(recap, "fetch_pr_verdicts", verdicts)
+    monkeypatch.setattr(recap, "pr_churn", churn)
+    return calls
+
+
+def test_build_recap_bounds_per_pr_calls_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 200-PR window makes per-PR calls for the newest 50 merges only."""
+    calls = _record_detail_calls(monkeypatch, _busy_window(200))
+    payload = recap.build_recap("o/r", token="t", max_prs=200, now=NOW)
+    assert payload is not None
+    assert len(calls) == 100
+    assert {number for _kind, number in calls} == set(range(1, 51))
+
+
+def test_build_recap_says_when_detail_is_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capped figures cover the newest merges, and the footer says so."""
+    _record_detail_calls(monkeypatch, _busy_window(5))
+    payload = recap.build_recap("o/r", token="t", max_prs=10, now=NOW, max_detail_prs=2)
+    assert payload is not None
+    embed = payload["embeds"][0]
+    fields = {f["name"]: f["value"] for f in embed["fields"]}
+    assert fields["PRs merged"] == "5 in 24h · 5 in 7d · **9** all-time"
+    assert fields["LoC"] == "+3 / -2 (24h) · +3 / -2 (7d) · 1,234 net (full repo)"
+    assert fields["Review iterations (7d)"].endswith("(n=2)")
+    assert embed["footer"]["text"] == (
+        "Ralph Recap · posts on every merge · "
+        "LoC and review iterations cover the newest 2 of 5 merges"
+    )
+
+
+def test_build_recap_always_details_the_latest_pr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even a zero cap still reads the just-merged PR's rounds and footprint."""
+    calls = _record_detail_calls(monkeypatch, _busy_window(3))
+    payload = recap.build_recap("o/r", token="t", max_prs=10, now=NOW, max_detail_prs=0)
+    assert payload is not None
+    assert calls == [("verdicts", 1), ("churn", 1)]
+    fields = {f["name"]: f["value"] for f in payload["embeds"][0]["fields"]}
+    assert fields["Review iterations"] == "**0** rounds · clean first try"
+    assert fields["Footprint"] == "+1 / -1 across 1 file(s)"
 
 
 def test_build_recap_single_merge(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -544,6 +619,24 @@ def test_main_dry_run_prints_payload(
     clean_env.setattr(recap, "build_recap", lambda *_a, **_k: {"embeds": ["x"]})
     assert recap.main(["--repo", "o/r", "--dry-run"]) == 0
     assert json.loads(capsys.readouterr().out) == {"embeds": ["x"]}
+
+
+def test_main_passes_the_detail_cap(
+    clean_env: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--max-detail-prs reaches build_recap, defaulting to 50."""
+    clean_env.setenv("GITHUB_TOKEN", "t")
+    caps: list[int] = []
+
+    def fake(*_a: Any, **kwargs: Any) -> None:
+        """Record the detail cap and report nothing to recap."""
+        caps.append(kwargs["max_detail_prs"])
+
+    clean_env.setattr(recap, "build_recap", fake)
+    assert recap.main(["--repo", "o/r", "--dry-run"]) == 0
+    assert recap.main(["--repo", "o/r", "--dry-run", "--max-detail-prs", "5"]) == 0
+    assert caps == [50, 5]
+    assert "nothing to recap" in capsys.readouterr().out
 
 
 def test_main_nothing_to_recap(

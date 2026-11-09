@@ -55,6 +55,8 @@ GITHUB_TOKEN="$(gh auth token)" python -m scripts.ralph.recap --repo OWNER/REPO 
 
 All math lives in `stats.py`. The all-time merged count comes from the search API. Everything else covers the trailing **7 days**, capped at `--max-prs` (default 200).
 
+Review verdicts and diff counts take about two API requests per PR, so only the newest `--max-detail-prs` merges (default 50, and always the one that just merged) get them. That keeps a typical run near 110 requests, where a full 200-PR window would cost about 400, and inside the 1,000 per hour per repository that GitHub allows the Actions `GITHUB_TOKEN`, even when several PRs merge in an hour. When the window holds more PRs than that, LoC and review iterations cover only the newest ones, and the embed's footer says so. Merge counts, rates, and durations still cover the whole window.
+
 - **Review iterations:** the non-LGTM verdicts before a PR's first LGTM. PRs that never reached LGTM (for example COMMENTS merges) are left out of the average. Verdicts are read from a PR's first 1,000 comments, oldest first.
 - **Time for review:** `merged_at − created_at`, clamped at zero.
 - **Tick length:** the gap between consecutive merges.
