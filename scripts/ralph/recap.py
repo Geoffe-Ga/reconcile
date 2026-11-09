@@ -20,6 +20,9 @@ Run it from ``.github/workflows/ralph-recap.yml`` or locally:
         python -m scripts.ralph.recap --repo OWNER/REPO --dry-run
 
 ``--dry-run`` prints the embed as JSON instead of posting it.
+``--max-prs`` caps the 7-day window (default 200). ``--max-detail-prs`` caps
+how many of its newest PRs get per-PR API calls for review verdicts and diff
+counts (default 50), which keeps a run inside the token's hourly budget.
 ``--skip-if-unconfigured`` exits 0 with a notice when the Discord settings are
 absent, so the workflow stays green until the secrets exist. Ported from the
 adepthood repository; the statistics live in ``stats.py``.
@@ -91,6 +94,9 @@ GITHUB_API = "https://api.github.com"
 DISCORD_API = "https://discord.com/api/v10"
 HTTP_TIMEOUT_SECONDS = 30
 PAGE_SIZE = 100
+# Comments read per PR when looking for verdicts: ten pages at most. Paging
+# stops at the first short page, so a typical PR still costs one request.
+MAX_COMMENTS_PER_PR = 1000
 EMBED_COLOR = 0x7C3AED
 # Zero-width space: a non-empty Discord field value that renders as blank.
 BLANK = "​"
@@ -99,6 +105,12 @@ THIS_PR_HEADER = f"{_RULE}THIS PR{_RULE}"
 LOOP_HEADER = f"{_RULE}THE LOOP{_RULE}"
 RECENT_WINDOW_DAYS = 7
 DEFAULT_MAX_PRS = 200
+# Per-PR detail (verdicts and diff counts) costs about two REST requests per PR,
+# so only the newest merges get it. Fifty keeps a typical run near 110 requests
+# (a full 200-PR window would cost about 400), well inside the Actions
+# GITHUB_TOKEN's budget of 1,000 per hour per repository.
+DEFAULT_MAX_DETAIL_PRS = 50
+FOOTER = "Ralph Recap · posts on every merge"
 HEADLINE_WORDS = 10
 MINUTES_PER_HOUR = 60
 HOURS_SHOWN_AS_HOURS = 48
@@ -271,14 +283,16 @@ def pr_churn(repo: str, number: int, *, token: str) -> tuple[int, int, int]:
 def fetch_pr_verdicts(repo: str, number: int, *, token: str) -> list[str]:
     """Return the ordered list of normalized review verdicts on one PR.
 
-    Comment bodies are parsed for the verdict line and then discarded; none of
-    their text is kept or posted.
+    Reads up to ``MAX_COMMENTS_PER_PR`` comments, oldest first, so a verdict
+    posted after a long discussion is still found. Comment bodies are parsed
+    for the verdict line and then discarded; none of their text is kept or
+    posted.
     """
     comments = _gh_get_paged(
         f"/repos/{repo}/issues/{number}/comments",
         token=token,
         params={"sort": "created", "direction": "asc"},
-        max_items=PAGE_SIZE,
+        max_items=MAX_COMMENTS_PER_PR,
     )
     verdicts = (stats.normalize_verdict(str(c.get("body", ""))) for c in comments)
     return [v for v in verdicts if v is not None]
@@ -433,6 +447,16 @@ def loc_line(
     return f"{_churn(loc_24h)} (24h) · {_churn(loc_7d)} (7d) · {full_repo} (full repo)"
 
 
+def footer_text(detailed: int, merged: int) -> str:
+    """The embed footer, noting when per-PR figures cover only the newest merges."""
+    if detailed >= merged:
+        return FOOTER
+    return (
+        f"{FOOTER} · LoC and review iterations cover the newest "
+        f"{detailed} of {merged} merges"
+    )
+
+
 def iter_summary_line(iters: dict[str, float]) -> str:
     """Render the 7-day review-round summary."""
     if not iters["sample"]:
@@ -517,7 +541,12 @@ def _loop_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
 def render_embed(
     repo: str, facts: dict[str, Any], *, now: dt.datetime
 ) -> dict[str, Any]:
-    """Turn computed facts into a Discord message payload with one embed."""
+    """Turn computed facts into a Discord message payload with one embed.
+
+    ``allowed_mentions`` with an empty ``parse`` list tells Discord to resolve
+    no mentions at all, so a PR title carrying ``@everyone``, ``@here``, or a
+    role or user mention can never ping the channel.
+    """
     embed = {
         "title": f"Ralph Recap — {repo}",
         "url": f"https://github.com/{repo}/pulls?q=is%3Apr+is%3Amerged",
@@ -527,10 +556,10 @@ def render_embed(
         ),
         "color": EMBED_COLOR,
         "fields": _this_pr_fields(facts) + _loop_fields(facts),
-        "footer": {"text": "Ralph Recap · posts on every merge"},
+        "footer": {"text": footer_text(*facts["detail"])},
         "timestamp": now.isoformat(),
     }
-    return {"embeds": [embed]}
+    return {"embeds": [embed], "allowed_mentions": {"parse": []}}
 
 
 def _latest_summary(repo: str, pr: dict[str, Any]) -> dict[str, Any]:
@@ -546,7 +575,11 @@ def _latest_summary(repo: str, pr: dict[str, Any]) -> dict[str, Any]:
 def _review_rounds(
     repo: str, window: list[dict[str, Any]], *, token: str
 ) -> tuple[list[int], int | None, list[tuple[int, int, int]]]:
-    """Per-PR review rounds and churn for the window; index 0 is the latest PR."""
+    """Per-PR review rounds and churn for ``window``; index 0 is the latest PR.
+
+    This is the one place that makes API calls per PR (two each, typically), so
+    callers pass only the PRs they can afford to detail.
+    """
     iterations: list[int] = []
     churn: list[tuple[int, int, int]] = []
     latest_iterations: int | None = None
@@ -564,18 +597,28 @@ def _review_rounds(
 
 
 def build_recap(
-    repo: str, *, token: str, max_prs: int, now: dt.datetime
+    repo: str,
+    *,
+    token: str,
+    max_prs: int,
+    now: dt.datetime,
+    max_detail_prs: int = DEFAULT_MAX_DETAIL_PRS,
 ) -> dict[str, Any] | None:
     """Gather the merge history and assemble the Discord payload.
 
-    Returns None when nothing merged in the window.
+    Per-PR detail (review verdicts and diff counts) is fetched only for the
+    newest ``max_detail_prs`` merges, and always for the just-merged one, so
+    the API calls a run makes stay bounded however busy the window is. Counts,
+    rates, and durations come from the window listing and still cover all of
+    it. Returns None when nothing merged in the window.
     """
     since = (now - dt.timedelta(days=RECENT_WINDOW_DAYS)).date()
     window = fetch_recent_merged_prs(repo, token=token, since=since, max_prs=max_prs)
     if not window:
         return None
     merged_at = [pr_merged_at(pr) for pr in window]
-    iterations, latest_iterations, churn = _review_rounds(repo, window, token=token)
+    detailed = window[: max(1, max_detail_prs)]
+    iterations, latest_iterations, churn = _review_rounds(repo, detailed, token=token)
     rate = stats.merge_rate(merged_at, now=now)
     day_ago = now - dt.timedelta(hours=stats.HOURS_PER_DAY)
     latest = _latest_summary(repo, window[0])
@@ -593,7 +636,11 @@ def build_recap(
         ),
         "latest_churn": stats.churn_totals(churn[:1]),
         "loc_24h": stats.churn_totals(
-            [c for c, ts in zip(churn, merged_at, strict=True) if ts >= day_ago]
+            [
+                c
+                for c, ts in zip(churn, merged_at[: len(churn)], strict=True)
+                if ts >= day_ago
+            ]
         ),
         "loc_7d": stats.churn_totals(churn),
         "repo_net": fetch_repo_net_lines(repo, token=token),
@@ -601,6 +648,7 @@ def build_recap(
         "latest_iterations": latest_iterations,
         "latest_ttm_hours": open_to_merge_hours(window[0]),
         "latest_tick_hours": tick_hours[0] if tick_hours else None,
+        "detail": (len(detailed), len(window)),
     }
     return render_embed(repo, facts, now=now)
 
@@ -625,11 +673,19 @@ def post_to_discord(channel_id: str, token: str, payload: dict[str, Any]) -> Non
     )
 
 
-def _gather(repo: str, gh_token: str, max_prs: int) -> dict[str, Any] | None:
+def _gather(
+    repo: str, gh_token: str, max_prs: int, max_detail_prs: int
+) -> dict[str, Any] | None:
     """Build the payload, mapping network failures to RecapError."""
     now = dt.datetime.now(dt.UTC)
     try:
-        return build_recap(repo, token=gh_token, max_prs=max_prs, now=now)
+        return build_recap(
+            repo,
+            token=gh_token,
+            max_prs=max_prs,
+            now=now,
+            max_detail_prs=max_detail_prs,
+        )
     except urllib.error.URLError as exc:  # HTTPError is a subclass
         raise ServiceError("GitHub", exc) from exc
 
@@ -667,7 +723,9 @@ def _run(args: argparse.Namespace) -> int:
     gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not gh_token:
         raise MissingSettingError("github-token")
-    payload = _gather(str(args.repo), gh_token, int(args.max_prs))
+    payload = _gather(
+        str(args.repo), gh_token, int(args.max_prs), int(args.max_detail_prs)
+    )
     if payload is None:
         print("No merged PRs in the window; nothing to recap.")
         return 0
@@ -687,6 +745,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--channel-id", default=os.environ.get("RALPH_CHANNEL_ID"))
     parser.add_argument("--max-prs", type=int, default=DEFAULT_MAX_PRS)
+    parser.add_argument("--max-detail-prs", type=int, default=DEFAULT_MAX_DETAIL_PRS)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-if-unconfigured", action="store_true")
     args = parser.parse_args(argv)

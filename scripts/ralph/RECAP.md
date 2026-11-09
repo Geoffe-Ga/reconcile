@@ -15,6 +15,7 @@ This repo is private, and its threat model treats project content as sensitive (
 - Review comments are read only to find the `## Verdict:` line, and their text is discarded.
 - It calls no AI service. adepthood's Claude-written headline was removed because it sent PR bodies to a third party.
 - **PR titles do reach Discord.** Keep titles free of anything you wouldn't post in that channel, and keep the channel private.
+- Mentions never ping. The payload sets `allowed_mentions` to parse nothing, so `@everyone`, `@here`, or a role or user mention in a title notifies no one.
 
 ## Files
 
@@ -42,6 +43,23 @@ gh secret set RALPH_CHANNEL_ID   # or: gh variable set RALPH_CHANNEL_ID --body "
 
 The built-in `GITHUB_TOKEN` reads the merge history (`contents`, `pull-requests`, and `issues`, all read-only).
 
+Keep the bot token a secret, never a variable: variables aren't masked in job logs, and anyone who can read the repo can read them.
+
+## Secrets and trust
+
+The workflow fires on `pull_request: closed` and runs the merged PR's own copy of the recap with `DISCORD_BOT_TOKEN` in its environment. A PR that edits that code runs its edit with the real token as soon as it merges. That's the same trust level as any CI script a collaborator can change, and it needs a merge through protected `main` ([ADR-0060](../../docs/adr/0060-how-phase-1-is-built.md)), so it isn't a new hole. It does mean a change to the files below deserves the care you'd give any code that holds a secret.
+
+Code that runs with `DISCORD_BOT_TOKEN` (keep this list current, per ADR-0060):
+
+- `scripts/ralph/recap.py`, the entry point
+- `scripts/ralph/stats.py`, which it imports
+- `scripts/__init__.py` and `scripts/ralph/__init__.py`, which `python -m` runs first
+- the Python standard library that `actions/setup-python` installs
+
+Only the posting step sees the token; checkout and Python setup run before it, without the secret. The step installs no packages. If a change makes the recap import another module or install a package, add it to this list.
+
+A Discord bot token controls the whole bot account, not one channel. Use a bot made for this recap, add it to this server only, and give it only the two channel permissions above. If the token leaks, reset it in the Discord Developer Portal and run `gh secret set DISCORD_BOT_TOKEN` again.
+
 ## Dry run
 
 `--dry-run` prints the embed as JSON instead of posting, and needs no Discord settings:
@@ -54,7 +72,9 @@ GITHUB_TOKEN="$(gh auth token)" python -m scripts.ralph.recap --repo OWNER/REPO 
 
 All math lives in `stats.py`. The all-time merged count comes from the search API. Everything else covers the trailing **7 days**, capped at `--max-prs` (default 200).
 
-- **Review iterations:** the non-LGTM verdicts before a PR's first LGTM. PRs that never reached LGTM (for example COMMENTS merges) are left out of the average.
+Review verdicts and diff counts take about two API requests per PR, so only the newest `--max-detail-prs` merges (default 50, and always the one that just merged) get them. That keeps a typical run near 110 requests, where a full 200-PR window would cost about 400, and inside the 1,000 per hour per repository that GitHub allows the Actions `GITHUB_TOKEN`, even when several PRs merge in an hour. When the window holds more PRs than that, LoC and review iterations cover only the newest ones, and the embed's footer says so. Merge counts, rates, and durations still cover the whole window.
+
+- **Review iterations:** the non-LGTM verdicts before a PR's first LGTM. PRs that never reached LGTM (for example COMMENTS merges) are left out of the average. Verdicts are read from a PR's first 1,000 comments, oldest first.
 - **Time for review:** `merged_at − created_at`, clamped at zero.
 - **Tick length:** the gap between consecutive merges.
 - **LoC:** additions and deletions summed from each PR's counts, plus the whole repo's net from GitHub's code-frequency stats. That figure warms up asynchronously and shows "—" when GitHub hasn't computed it yet.
