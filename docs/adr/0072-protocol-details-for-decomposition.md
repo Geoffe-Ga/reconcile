@@ -58,3 +58,17 @@ Validation must be deterministic: every device reaches the same verdict from the
   - a `readmit` join through the wrong invite;
   - a Circle switching with one rule already changed;
   - an event with a higher `v`.
+
+## Amendment (2026-11-09): Events That Build on an Unknown-Version Event
+
+Item 3 didn't say what happens to a later event that builds on an event the device leaves out of state ([#48](https://github.com/Geoffe-Ga/reconcile/issues/48)). The MVP's rules already answer it, so this amendment adds no new rule:
+
+- **The MVP has no `prev`.** [ADR-0073](0073-mvp-scope.md) defers it, and [ADR-0074](0074-mvp-scope-revised.md) keeps that architecture. Events apply in relay order, and an event builds on another only by naming its id. A vote, for example, names its Proposal.
+- **ADR-0073 ignores unknown event versions.** An event with a `v` the app doesn't understand changes nothing. Its record stays in the device's log, as item 3 requires, because sync keeps every record that opens.
+- **An event that names an ignored event is ignored too.** Each event is checked against the state that the events before it produced ([ADR-0006](0006-signed-log-plus-crdt.md); [the spec's fold](../spec/phase-1-spec.md#the-fold), step 5), and the event it names isn't in that state. So state never applies an event to a missing target.
+- **Updating the app applies both.** State is a fold over every record in the log. Once the app understands the newer `v`, the next fold applies that event and the events that name it.
+- Until a device updates, its state can differ from an updated device's. Item 3 already accepts that cost.
+
+**Test vector,** landing with the MVP engine's fold vectors (#63): a Proposal with `v: 2` and a `v: 1` vote on it are both ignored, and state is unchanged.
+
+**When `prev` returns** (ADR-0006's hash-linked log), the ADR that restores it decides what happens to an event whose `prev` includes an unknown-version event.
