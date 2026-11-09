@@ -16,6 +16,14 @@ module.exports = {
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {
+      name: 'engine-does-no-io',
+      comment:
+        'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63).',
+      severity: 'error',
+      from: { path: '^src/engine/' },
+      to: { path: '^src/net/' },
+    },
+    {
       name: 'only-the-net-module-talks-to-the-network',
       comment:
         'The only network calls are to the relay and push service (client rule). Keep them in src/net/ so they can be audited in one place.',
