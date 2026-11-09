@@ -87,7 +87,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 **The gates** ([ADR-0061](docs/adr/0061-quality-gates.md); this list is canonical, other docs link here):
 
 1. **TDD:** a failing test first, then the code.
-2. **`./scripts/check-all.sh` passes.** It runs the checks for the areas the change touches (Python, client, deploy); `--all` forces every area.
+2. **`./scripts/check-all.sh` passes.** It runs the checks for the areas the change touches (Python, client, deploy, and the end-to-end loop); `--all` forces every area.
 3. **Pre-commit is clean on the changed files:** `./scripts/precommit-changed.sh`. The commit hook already does this for staged files.
 4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes.
 5. **The review bot passes.** LGTM is preferred. COMMENTS can merge, but only after every finding is filed as a P0–P3 follow-up issue: file first, then merge. CHANGES_REQUESTED blocks.
@@ -109,7 +109,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 | Cyclomatic complexity | ≤10 per function | radon / xenon |
 | Security vulnerabilities | 0 critical/high | bandit, pip-audit, npm audit |
 
-**One set of rules.** CI runs the same scripts (`./scripts/check-all.sh --python` / `--client` / `--deploy`) plus pre-commit on the changed files, with the exact tool versions pinned in `requirements-dev.txt`, `client/package-lock.json`, and `client/.nvmrc`. Thresholds and scope live in `pyproject.toml` and the client config, never in `ci.yml`. Change a rule there, once. Run checks with `.venv` active (`python3 -m venv .venv && pip install -r requirements-dev.txt -e .`).
+**One set of rules.** CI runs the same scripts (`./scripts/check-all.sh --python` / `--client` / `--deploy` / `--e2e`) plus pre-commit on the changed files, with the exact tool versions pinned in `requirements-dev.txt`, `client/package-lock.json`, and `client/.nvmrc`. Thresholds and scope live in `pyproject.toml` and the client config, never in `ci.yml`. Change a rule there, once. Run checks with `.venv` active (`python3 -m venv .venv && pip install -r requirements-dev.txt -e .`).
 
 ---
 
@@ -157,7 +157,7 @@ gh pr create --fill
 ### Primary Commands
 
 ```bash
-./scripts/check-all.sh   # checks for every area the change touches (Python, client, deploy); --all forces every area
+./scripts/check-all.sh   # checks for every area the change touches (Python, client, deploy, e2e); --all forces every area
 ./scripts/test.sh        # tests + coverage
 ./scripts/lint.sh        # linting
 ./scripts/typecheck.sh   # mypy

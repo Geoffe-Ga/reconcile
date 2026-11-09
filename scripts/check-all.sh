@@ -23,15 +23,19 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --python)
-            FORCE_AREAS="python=true client=false deploy=false"
+            FORCE_AREAS="python=true client=false deploy=false e2e=false"
             shift
             ;;
         --client)
-            FORCE_AREAS="python=false client=true deploy=false"
+            FORCE_AREAS="python=false client=true deploy=false e2e=false"
             shift
             ;;
         --deploy)
-            FORCE_AREAS="python=false client=false deploy=true"
+            FORCE_AREAS="python=false client=false deploy=true e2e=false"
+            shift
+            ;;
+        --e2e)
+            FORCE_AREAS="python=false client=false deploy=false e2e=true"
             shift
             ;;
         --help)
@@ -41,7 +45,8 @@ Usage: $(basename "$0") [OPTIONS]
 Run the quality checks for every area the current change touches
 (see scripts/changed-areas.sh): Python checks when reconcile/, tests/, or
 Python config changed; client checks when client/ changed; deploy checks
-when deploy/ or client/vite.config.ts changed; all three when shared
+when deploy/ or client/vite.config.ts changed; the end-to-end loop when
+client/, reconcile/ or requirements.txt changed; all four when shared
 tooling or protocol/ changed. Docs-only changes run nothing.
 
 Python checks:
@@ -59,14 +64,20 @@ Deploy checks:
   on the units, and vite preview's CSP equal to the Caddyfile's (needs
   caddy and systemd-analyze on PATH)
 
-CI runs this same script (--python / --client / --deploy), plus pre-commit,
-so the rules can't differ between a laptop and CI.
+End-to-end checks:
+  client/scripts/e2e.sh: builds the app and runs the Playwright loop in
+  Chromium and WebKit through the real relay (needs the browsers: run
+  "npx playwright install chromium webkit" in client/ once)
+
+CI runs this same script (--python / --client / --deploy / --e2e), plus
+pre-commit, so the rules can't differ between a laptop and CI.
 
 OPTIONS:
     --all       Check every area regardless of what changed
     --python    Check only the Python area (CI's Python job uses this)
     --client    Check only the client area (CI's client job uses this)
     --deploy    Check only the deploy area (CI's deploy job uses this)
+    --e2e       Run only the end-to-end loop (CI's e2e job uses this)
     --verbose   Show detailed output
     --help      Display this help message
 
@@ -141,6 +152,10 @@ fi
 
 if [[ "$AREAS" == *"deploy=true"* ]]; then
     run_check "Deploy config (Caddy, systemd)" "../deploy/check.sh"
+fi
+
+if [[ "$AREAS" == *"e2e=true"* ]]; then
+    run_check "End-to-end loop (Playwright)" "../client/scripts/e2e.sh"
 fi
 
 if [ ${#PASSED_CHECKS[@]} -eq 0 ] && [ ${#FAILED_CHECKS[@]} -eq 0 ]; then

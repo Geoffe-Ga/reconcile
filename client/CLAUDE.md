@@ -14,10 +14,21 @@ Run from `client/`, or run `./scripts/check-all.sh` from the repo root, which ru
 ```bash
 npm ci
 ./scripts/check-all.sh   # lint, format, typecheck, tests + coverage, architecture, npm audit
+./scripts/e2e.sh         # the end-to-end loop in Chromium and WebKit, through the real relay
 ./scripts/mutation.sh    # Stryker (Vitest runner), ≥80%; recommended before a release, not a merge gate
 npm run dev              # local dev server
 npm run build            # production build
 ```
+
+### End-to-end loop
+
+`e2e/loop.spec.ts` is the tracer loop: three browser profiles create a group, join it from the invite link, propose, vote (one of them offline) and see the Update. axe runs on every screen they visit, and any CSP violation fails the run.
+
+- **Run it** with `./scripts/e2e.sh`, never bare `npx playwright test`. The script picks two free loopback ports (`E2E_WEB_PORT`, `RECONCILE_RELAY_PORT`) and puts the relay's database (`RECONCILE_RELAY_DB`) in a temp directory it deletes afterwards. It builds the app, then runs Playwright, whose config starts `../scripts/relay.sh` and `vite preview` (which sends the deploy CSP) and stops both.
+- **Browsers:** install them once with `npx playwright install chromium webkit` (on Linux, add `--with-deps`). On a machine where WebKit won't install, `E2E_PROJECTS=chromium ./scripts/e2e.sh` runs Chromium alone and says so. CI always runs both.
+- **Arguments** go to `playwright test`: `./scripts/e2e.sh --project=chromium --headed`, or `--trace on` to debug. A run that matches no test fails.
+- **Gate:** the repo root's `./scripts/check-all.sh` runs it whenever `client/`, `reconcile/`, `requirements.txt` or `scripts/relay.sh` changed, and CI's `e2e` job runs `./scripts/check-all.sh --e2e`. It stays out of this directory's `check-all.sh`, so the client gate needs no browser.
+- **Rules:** keep `bypassCSP` off, and don't add a test-only relay mode or route, or time travel (`page.clock`): the relay runs exactly as `relay.sh` starts it.
 
 ## Client rules
 
@@ -30,7 +41,7 @@ npm run build            # production build
 ## Toolchain
 
 - **Stack:** React 19, Vite, TypeScript (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), and React Aria Components
-- **Testing:** Vitest + Testing Library (globals off: import `describe`/`it`/`expect` from `vitest`); Playwright is planned for the end-to-end loop
+- **Testing:** Vitest + Testing Library (globals off: import `describe`/`it`/`expect` from `vitest`), and Playwright with `@axe-core/playwright` for the end-to-end loop (`e2e/`, `tsconfig.e2e.json`)
 - **Linting:** ESLint 9 flat config with `strictTypeChecked`, jsx-a11y strict, and complexity ≤ 10
   - ESLint stays on 9 until `eslint-plugin-jsx-a11y` supports 10
 - **Coverage:** ≥ 90% lines, ≥ 85% branches, enforced in `vite.config.ts`

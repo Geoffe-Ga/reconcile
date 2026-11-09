@@ -136,7 +136,7 @@ Before creating/updating a PR:
    ```bash
    ./scripts/check-all.sh
    ```
-   This runs the checks for every area the change touches (Python, client, deploy); `--all` forces every area. [Tools](tools.md#available-scripts) lists each area's checks.
+   This runs the checks for every area the change touches (Python, client, deploy, e2e); `--all` forces every area. [Tools](tools.md#available-scripts) lists each area's checks.
 
 4. **Commit with Conventional Commits**
    ```bash

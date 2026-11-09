@@ -1,7 +1,8 @@
-"""Tests for how scripts/check-all.sh routes the deploy area to deploy/check.sh.
+"""Tests for how scripts/check-all.sh routes the deploy and e2e areas.
 
-The tests run a copy of check-all.sh in a temp tree whose deploy/check.sh and
-changed-areas.sh are stubs, so they check the routing, not Caddy or systemd.
+The tests run a copy of check-all.sh in a temp tree whose deploy/check.sh,
+client/scripts/e2e.sh and changed-areas.sh are stubs, so they check the
+routing, not Caddy, systemd or browsers.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CHECK_ALL = ROOT / "scripts" / "check-all.sh"
 BASH = shutil.which("bash") or "bash"
 RAN = "stub deploy/check.sh ran with:"
+E2E_RAN = "stub client/scripts/e2e.sh ran with:"
 
 
 def _stub(path: Path, body: str) -> None:
@@ -27,10 +29,14 @@ def _stub(path: Path, body: str) -> None:
 
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
-    """check-all.sh beside a deploy/check.sh stub that exits with $STUB_EXIT."""
+    """check-all.sh beside deploy and e2e stubs that exit with $STUB_EXIT."""
     (tmp_path / "scripts").mkdir()
     shutil.copy(CHECK_ALL, tmp_path / "scripts" / "check-all.sh")
     _stub(tmp_path / "deploy" / "check.sh", f'echo "{RAN} $*"; exit "$STUB_EXIT"')
+    _stub(
+        tmp_path / "client" / "scripts" / "e2e.sh",
+        f'echo "{E2E_RAN} $*"; exit "$STUB_EXIT"',
+    )
     return tmp_path
 
 
@@ -80,8 +86,50 @@ def test_changed_deploy_area_runs_the_deploy_check(tree: Path) -> None:
     assert "Passed: 1\nFailed: 0" in out
 
 
-def test_python_and_client_flags_skip_the_deploy_check(tree: Path) -> None:
+def test_other_area_flags_skip_the_deploy_check(tree: Path) -> None:
     """CI's other jobs don't run the deploy check (it needs Caddy installed)."""
-    for flag in ("--python", "--client"):
+    for flag in ("--python", "--client", "--e2e"):
         _code, out = _check_all(tree, flag, stub_exit=1)
         assert RAN not in out, flag
+
+
+def test_e2e_flag_runs_only_the_e2e_loop(tree: Path) -> None:
+    """``--e2e`` (CI's e2e job) runs client/scripts/e2e.sh and nothing else."""
+    code, out = _check_all(tree, "--e2e")
+    assert code == 0
+    assert f"{E2E_RAN} \n" in out
+    assert "✓ End-to-end loop (Playwright) passed" in out
+    assert "Passed: 1\nFailed: 0" in out
+
+
+def test_verbose_reaches_the_e2e_loop(tree: Path) -> None:
+    """``--verbose`` is passed on to e2e.sh too."""
+    _code, out = _check_all(tree, "--e2e", "--verbose")
+    assert f"{E2E_RAN} --verbose\n" in out
+
+
+def test_failing_e2e_loop_fails_check_all(tree: Path) -> None:
+    """A failing loop makes check-all exit 1 and name it."""
+    code, out = _check_all(tree, "--e2e", stub_exit=1)
+    assert code == 1
+    assert "  ✗ End-to-end loop (Playwright)" in out
+
+
+def test_changed_e2e_area_runs_the_e2e_loop(tree: Path) -> None:
+    """When the router says only e2e changed, only the loop runs."""
+    _stub(
+        tree / "scripts" / "changed-areas.sh",
+        'printf "python=false\\nclient=false\\ndeploy=false\\ne2e=true\\n"',
+    )
+    code, out = _check_all(tree)
+    assert code == 0
+    assert "Changed areas: python=false client=false deploy=false e2e=true" in out
+    assert E2E_RAN in out
+    assert "Passed: 1\nFailed: 0" in out
+
+
+def test_other_area_flags_skip_the_e2e_loop(tree: Path) -> None:
+    """CI's Python, client and deploy jobs stay browser-free."""
+    for flag in ("--python", "--client", "--deploy"):
+        _code, out = _check_all(tree, flag, stub_exit=1)
+        assert E2E_RAN not in out, flag

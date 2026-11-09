@@ -73,7 +73,7 @@ pytest tests/
 
 **`./scripts/check-all.sh`** - Run the quality checks for every area the change touches (use before every commit)
 
-`scripts/changed-areas.sh` picks the areas from the diff: Python, client and deploy. `--all` forces every area, and `--python`, `--client` or `--deploy` checks just one (CI's jobs use these).
+`scripts/changed-areas.sh` picks the areas from the diff: Python, client, deploy and e2e. `--all` forces every area, and `--python`, `--client`, `--deploy` or `--e2e` checks just one (CI's jobs use these).
 
 - **Python**, in order:
   1. Linting (ruff, interrogate)
@@ -86,6 +86,7 @@ pytest tests/
   8. Package build (build, twine check)
 - **Client:** `scripts/client.sh`, which runs the client's own gate (`client/CLAUDE.md`)
 - **Deploy:** `deploy/check.sh`, which validates the Caddy config and the systemd units (`deploy/README.md`)
+- **E2E:** `client/scripts/e2e.sh`, the Playwright loop through the real relay, whenever `client/`, `reconcile/`, `requirements.txt` or `scripts/relay.sh` changed (`client/CLAUDE.md`)
 
 **Note**: Mutation testing is NOT included in check-all.sh due to long runtime. It is recommended before a release (ADR-0061): run it locally or trigger CI's manual mutation job.
 
