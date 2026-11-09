@@ -16,7 +16,8 @@
 	}
 }
 
-{$RECONCILE_SITE} {
+# Every response's headers, Caddy's own error responses included.
+(security_headers) {
 	header {
 		-Server
 		# The main defense against injected script stealing keys, together
@@ -29,6 +30,10 @@
 		# deploy/check.sh keeps exactly this value.
 		Strict-Transport-Security "max-age=31536000"
 	}
+}
+
+{$RECONCILE_SITE} {
+	import security_headers
 
 	# The relay (reconcile.relay), bound to loopback. It drops client
 	# addresses and forwarding headers itself; these lines mean Caddy never
@@ -48,5 +53,14 @@
 		root * /srv/reconcile/app
 		try_files {path} /index.html
 		file_server
+	}
+
+	# Caddy writes some responses itself, such as a 502 while the relay is
+	# down, and those skip the routes above. Send them the same headers, and
+	# a fixed body that repeats nothing from the request or the relay's error.
+	# deploy/check.sh and deploy/no-ip-check.sh hold this.
+	handle_errors {
+		import security_headers
+		respond "Reconcile couldn't answer that request. Try again in a moment."
 	}
 }
