@@ -32,6 +32,14 @@ module.exports = {
       to: { path: 'node_modules/(axios|ky|ofetch|socket\\.io-client)/' },
     },
     {
+      name: 'test-helpers-stay-in-tests',
+      comment:
+        'src/test/ holds fakes (an in-memory relay, fake IndexedDB). Only tests may import them, so the app can never talk to a fake.',
+      severity: 'error',
+      from: { pathNot: ['\\.test\\.tsx?$', '^src/test/'] },
+      to: { path: ['^src/test/', 'node_modules/fake-indexeddb/'] },
+    },
+    {
       name: 'no-test-imports-in-prod',
       severity: 'error',
       from: { pathNot: '\\.test\\.tsx?$|test-setup\\.ts$' },
