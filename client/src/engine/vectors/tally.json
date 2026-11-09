@@ -1,0 +1,174 @@
+{
+  "kind": "tally",
+  "vectors": [
+    {
+      "name": "pass at an average of exactly 2.0",
+      "eligible": 3,
+      "versions": [{ "id": "v1", "scores": [2, 2, 2] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "fail just below an average of 2.0",
+      "eligible": 3,
+      "versions": [{ "id": "v1", "scores": [2, 2, 1] }],
+      "expect": { "kind": "fail" }
+    },
+    {
+      "name": "fail at exactly 10% zeros",
+      "eligible": 10,
+      "versions": [{ "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4] }],
+      "expect": { "kind": "fail" }
+    },
+    {
+      "name": "pass just under 10% zeros",
+      "eligible": 11,
+      "versions": [{ "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "lapse below quorum",
+      "eligible": 10,
+      "versions": [{ "id": "v1", "scores": [4, 4] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "lapse with no scorers",
+      "eligible": 4,
+      "versions": [{ "id": "v1", "scores": [] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "a version nobody scored is never at quorum, even with no one eligible",
+      "eligible": 0,
+      "versions": [{ "id": "v1", "scores": [] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "a 2-member group passes with 2 of 2 ballots",
+      "eligible": 2,
+      "versions": [{ "id": "v1", "scores": [2, 3] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "a 2-member group lapses with 1 of 2 ballots",
+      "eligible": 2,
+      "versions": [{ "id": "v1", "scores": [4] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "a 1-member group passes with its one ballot",
+      "eligible": 1,
+      "versions": [{ "id": "v1", "scores": [3] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "at 3 eligible, 2 scorers lapse",
+      "eligible": 3,
+      "versions": [{ "id": "v1", "scores": [4, 4] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "at 11 eligible, 3 scorers lapse",
+      "eligible": 11,
+      "versions": [{ "id": "v1", "scores": [4, 4, 4] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "at 11 eligible, 4 scorers meet quorum",
+      "eligible": 11,
+      "versions": [{ "id": "v1", "scores": [4, 4, 4, 4] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "at 15 eligible, 4 scorers lapse",
+      "eligible": 15,
+      "versions": [{ "id": "v1", "scores": [4, 4, 4, 4] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "at 15 eligible, 5 scorers meet quorum",
+      "eligible": 15,
+      "versions": [{ "id": "v1", "scores": [4, 4, 4, 4, 4] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "a three-way tie goes to the earliest version",
+      "eligible": 3,
+      "versions": [
+        { "id": "first", "scores": [3, 2, 4] },
+        { "id": "second", "scores": [4, 3, 2] },
+        { "id": "third", "scores": [2, 4, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "first" }
+    },
+    {
+      "name": "the higher average wins, not the higher total",
+      "eligible": 5,
+      "versions": [
+        { "id": "v1", "scores": [4, 4, 4] },
+        { "id": "v2", "scores": [3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "the higher average wins even with more zeros",
+      "eligible": 11,
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] },
+        { "id": "v2", "scores": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "an equal average goes to the version with fewer zeros",
+      "eligible": 20,
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] },
+        { "id": "v2", "scores": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v2" }
+    },
+    {
+      "name": "an equal average stays with the earlier version when it has fewer zeros",
+      "eligible": 20,
+      "versions": [
+        { "id": "v1", "scores": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] },
+        { "id": "v2", "scores": [0, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "fewer zeros is a count, not a share",
+      "eligible": 36,
+      "versions": [
+        {
+          "id": "v2",
+          "scores": [
+            0, 0, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3
+          ]
+        },
+        { "id": "v1", "scores": [0, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "a version below quorum can't win",
+      "eligible": 10,
+      "versions": [
+        { "id": "v1", "scores": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2] },
+        { "id": "late", "scores": [4, 4] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "a version at quorum failing, with none passing, is a fail",
+      "eligible": 10,
+      "versions": [
+        { "id": "v1", "scores": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+        { "id": "late", "scores": [4, 4] }
+      ],
+      "expect": { "kind": "fail" }
+    }
+  ]
+}

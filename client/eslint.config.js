@@ -5,6 +5,25 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+/** The engine reads no clock: votes run on relay time, so every device folds alike (spec §4). */
+const NO_CLOCK = ['Date', 'performance'].map((name) => ({
+  selector: `Identifier[name='${name}']`,
+  message: 'src/engine reads no clock. Use relay time (`received`, `relayNow`).',
+}));
+
+/** The tally uses integers only: no floats, division or rounding (spec §5). */
+const INTEGERS_ONLY = [
+  "BinaryExpression[operator='/']",
+  "AssignmentExpression[operator='/=']",
+  "MemberExpression[object.name='Math'][property.name=/^(round|floor|ceil|trunc|fround)$/]",
+  'Literal[raw=/^[0-9_]*[.eE]/]',
+].map((selector) => ({ selector, message: 'The tally uses integers only: compare products.' }));
+
+/** The browser's ways to reach the network. Only src/net/ may use them (spec §2). */
+const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'];
+const NETWORK_MESSAGE =
+  'Only src/net/ talks to the network (spec §2), so every request can be audited in one place.';
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'reports', '.stryker-tmp', 'plans/architecture/*.cjs'] },
   {
@@ -24,6 +43,32 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       complexity: ['error', 10],
+    },
+  },
+  {
+    files: ['src/engine/**/*.ts'],
+    ignores: ['src/engine/**/*.test.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK] },
+  },
+  {
+    // A later block replaces a rule's options rather than merging them, so repeat NO_CLOCK.
+    files: ['src/engine/tally.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK, ...INTEGERS_ONLY] },
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
+    ignores: ['src/net/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...NETWORK_GLOBALS.map((name) => ({ name, message: NETWORK_MESSAGE })),
+      ],
+      'no-restricted-properties': [
+        'error',
+        ...['window', 'self', 'globalThis'].flatMap((object) =>
+          NETWORK_GLOBALS.map((property) => ({ object, property, message: NETWORK_MESSAGE })),
+        ),
+      ],
     },
   },
   { files: ['eslint.config.js'], extends: [tseslint.configs.disableTypeChecked] },

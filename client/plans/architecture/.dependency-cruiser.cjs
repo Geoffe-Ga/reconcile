@@ -16,12 +16,28 @@ module.exports = {
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {
+      name: 'engine-does-no-io',
+      comment:
+        'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63).',
+      severity: 'error',
+      from: { path: '^src/engine/' },
+      to: { path: '^src/net/' },
+    },
+    {
       name: 'only-the-net-module-talks-to-the-network',
       comment:
         'The only network calls are to the relay and push service (client rule). Keep them in src/net/ so they can be audited in one place.',
       severity: 'error',
       from: { pathNot: ['^src/net/', '\\.test\\.tsx?$'] },
       to: { path: 'node_modules/(axios|ky|ofetch|socket\\.io-client)/' },
+    },
+    {
+      name: 'test-helpers-stay-in-tests',
+      comment:
+        'src/test/ holds fakes (an in-memory relay, fake IndexedDB). Only tests may import them, so the app can never talk to a fake.',
+      severity: 'error',
+      from: { pathNot: ['\\.test\\.tsx?$', '^src/test/'] },
+      to: { path: ['^src/test/', 'node_modules/fake-indexeddb/'] },
     },
     {
       name: 'no-test-imports-in-prod',
