@@ -87,8 +87,18 @@ reset_build_dir
 # skills, so every call is just the extraction prompt.
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
-mkdir "$WORK_DIR/cwd"
+mkdir "$WORK_DIR/cwd" "$WORK_DIR/bin"
 LOG="$WORK_DIR/extract.log"
+
+# graphify runs the bare `claude` from PATH, so a wrapper first on PATH adds the
+# lockdown flags to every call. --restricted ignores user, project, and local
+# settings (a laptop's allow rules never apply), removes Bash and WebFetch, and
+# confines Read to the empty cwd and the slide-image folders graphify passes
+# with --add-dir. --strict-mcp-config loads no MCP servers.
+printf '#!/usr/bin/env bash\nexec %q --restricted --strict-mcp-config "$@"\n' \
+  "$(command -v claude)" >"$WORK_DIR/bin/claude"
+chmod +x "$WORK_DIR/bin/claude"
+export PATH="$WORK_DIR/bin:$PATH"
 
 export CLAUDE_CODE_SAFE_MODE=1
 export GRAPHIFY_CLAUDE_CLI_MODEL="${GRAPHIFY_CLAUDE_CLI_MODEL:-sonnet}"
