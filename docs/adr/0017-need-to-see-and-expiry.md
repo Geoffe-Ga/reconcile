@@ -1,7 +1,7 @@
 # ADR-0017: Need-to-See Visibility and Ballot Expiry
 
 - **Status:** Accepted
-- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it; [ADR-0074](0074-mvp-scope-revised.md) restores part of it.
 - **Date:** 2026-11-07
 - **Decided via:** `/decide` sheet `2026-11-07-reconcile-trust-safety`, decision `leaks`
 

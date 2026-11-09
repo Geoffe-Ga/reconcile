@@ -1,7 +1,7 @@
 # ADR-0044: A Second Device Links by QR Code
 
 - **Status:** Accepted
-- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
+- **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it; [ADR-0074](0074-mvp-scope-revised.md) restores part of it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-identity-recovery`, decision `multi-device`
 
