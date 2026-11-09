@@ -107,7 +107,7 @@ After the first deploy, the founder runs the loop over HTTPS between an iPhone a
 
 ## Checks
 
-- **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It fails on any `systemd-analyze verify` warning, because systemd ignores a misspelled setting rather than refusing it.
+- **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it.
 - **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy` and `curl` on your PATH. It starts the relay with the unit's flags and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
 - **`deploy/smoke.sh <base-url>`** works against any running relay, such as `http://127.0.0.1:8787` from `./scripts/relay.sh`.
 

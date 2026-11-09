@@ -5,10 +5,13 @@
 #      RECONCILE_SITE=localhost:8443.
 #   2. The adapted config keeps the privacy settings: the admin API is off,
 #      and the only logger is the default one, writing to discard.
-#   3. systemd-analyze verify: the three units, in a temp root holding the
-#      system's own units and a stub at each ExecStart binary (verify refuses
-#      a missing one). Any output fails: verify exits 0 on an unknown key or
-#      an unparsable value, which systemd would then ignore.
+#   3. systemd-analyze verify --recursive-errors=no: the three units, in a
+#      temp root holding only them and a stub at each ExecStart binary
+#      (verify refuses a missing one). Only these units are judged, so the
+#      host's own units (a CI runner's dracut units, say) can't fail it. A
+#      misspelled key or an unparsable value fails, though systemd would
+#      merely ignore it, and so does any other output. A control copy with
+#      a misspelled key must fail, or the check isn't testing anything.
 #   4. client/vite.config.ts serves the Caddyfile's CSP under vite preview.
 #
 # Needs caddy and systemd-analyze on PATH (Linux; see deploy/README.md).
@@ -23,14 +26,13 @@ PROJECT_ROOT="$(dirname "$DEPLOY_DIR")"
 UNITS=(reconcile-relay.service reconcile-purge.service reconcile-purge.timer)
 # What the README's one-time setup and requirements.txt put in the venv.
 EXECUTABLES=(/opt/reconcile/venv/bin/uvicorn /opt/reconcile/venv/bin/python)
-SYSTEM_UNITS=/usr/lib/systemd/system
 TEST_SITE=localhost:8443
 
 VERBOSE=false
 for arg in "$@"; do
     case "$arg" in
         --verbose) VERBOSE=true ;;
-        --help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Error: Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -77,15 +79,11 @@ check_privacy_settings() {
     return "$status"
 }
 
-verify_units() {
-    local root="$work/root" exe unit out
-    local paths=()
-    if [[ ! -d "$SYSTEM_UNITS" ]]; then
-        echo "No $SYSTEM_UNITS here: systemd-analyze verify needs the system's units."
-        return 1
-    fi
-    mkdir -p "$root/etc/systemd/system" "$root/usr/lib/systemd" || return 1
-    cp -R "$SYSTEM_UNITS" "$root/usr/lib/systemd/" || return 1
+# make_root ROOT: a tree holding only our units, and a stub at each ExecStart
+# binary.
+make_root() {
+    local root=$1 exe unit
+    mkdir -p "$root/etc/systemd/system" || return 1
     for exe in "${EXECUTABLES[@]}"; do
         mkdir -p "$root$(dirname "$exe")" || return 1
         printf '#!/bin/sh\nexit 0\n' > "$root$exe" || return 1
@@ -93,15 +91,35 @@ verify_units() {
     done
     for unit in "${UNITS[@]}"; do
         cp "$DEPLOY_DIR/$unit" "$root/etc/systemd/system/$unit" || return 1
+    done
+}
+
+# verify_in ROOT: verify our units in ROOT, failing on any output.
+verify_in() {
+    local root=$1 unit out
+    local paths=()
+    for unit in "${UNITS[@]}"; do
         paths+=("$root/etc/systemd/system/$unit")
     done
-    out="$(systemd-analyze verify --root="$root" "${paths[@]}" 2>&1)" || {
+    out="$(systemd-analyze verify --recursive-errors=no --root="$root" \
+        "${paths[@]}" 2>&1)" || {
         printf '%s\n' "$out"
         return 1
     }
     if [[ -n "$out" ]]; then
         printf '%s\n' "$out"
-        echo "systemd-analyze verify warned: systemd would ignore that setting."
+        return 1
+    fi
+}
+
+verify_units() {
+    make_root "$work/root" || return 1
+    verify_in "$work/root" || return 1
+    make_root "$work/control" || return 1
+    printf '[Service]\nRestat=on-failure\n' >> "$work/control/etc/systemd/system/${UNITS[0]}" ||
+        return 1
+    if verify_in "$work/control" >/dev/null; then
+        echo "systemd-analyze verify accepted a misspelled key, so it can't vouch for the units."
         return 1
     fi
 }
