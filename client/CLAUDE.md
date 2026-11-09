@@ -21,7 +21,7 @@ npm run build            # production build
 
 ## Client rules
 
-- **No hand-rolled cryptography.** Use audited `@noble/*` libraries (spec §3).
+- **No hand-rolled cryptography.** Use audited `@noble/*` libraries (spec §3), plus `shamir-secret-sharing`, imported only by `src/crypto/shares.ts` ([ADR-0075](../docs/adr/0075-safeguards-for-the-revised-mvp.md) §4).
 - **Nothing readable leaves the device.** Anything sent to the relay is a sealed, padded, encrypted blob (ADR-0019).
 - **No analytics, telemetry, or third-party scripts.** The app makes no network calls except to the relay and the push service.
 - **Quiet safety:** protective features live in Settings and aren't promoted (ADR-0018).
