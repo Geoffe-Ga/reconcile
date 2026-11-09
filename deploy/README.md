@@ -4,7 +4,7 @@ The pilot runs on one small DigitalOcean droplet that serves the app and the rel
 
 | File | What it does |
 |---|---|
-| [`Caddyfile`](Caddyfile) | TLS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app`. Every log goes to discard |
+| [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app`. Every log goes to discard |
 | [`reconcile-relay.service`](reconcile-relay.service) | The relay under Uvicorn, as the `reconcile` user, with no access log, no proxy headers and no `Server` header |
 | [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)) |
 | [`deploy.sh`](deploy.sh) | Builds, syncs, installs, restarts and smoke-tests. Run it with `--help` for the steps |
@@ -107,7 +107,7 @@ After the first deploy, the founder runs the loop over HTTPS between an iPhone a
 
 ## Checks
 
-- **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it.
+- **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it. It also holds the Caddyfile's CSP and HSTS header to their values (see [The CSP](#the-csp) and [HSTS](#hsts)).
 - **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy` and `curl` on your PATH. It starts the relay with the unit's flags and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
 - **`deploy/smoke.sh <base-url>`** works against any running relay, such as `http://127.0.0.1:8787` from `./scripts/relay.sh`.
 
@@ -130,6 +130,22 @@ default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame
 This CSP and #70's Markdown sanitizer are the main defense against injected script stealing keys. The page can load script only from its own origin: no inline script, no third party, no plugins. No `<base>` tag can redirect its URLs, and no other site can frame it.
 
 To change the CSP, change both files: `deploy/check.sh` fails when they differ. Since the CSP allows no `data:` URLs, the client build inlines no assets (`build.assetsInlineLimit: 0`).
+
+## HSTS
+
+Caddy also sends this header on every HTTPS response:
+
+```
+Strict-Transport-Security: max-age=31536000
+```
+
+Caddy answers a plain-HTTP request with a redirect to HTTPS, but the request itself travels in plaintext, so anyone on the network path can answer it instead and keep the browser on HTTP. HSTS tells a browser that has reached the site over HTTPS to use only HTTPS here for the next year, counted again from each visit. After that first visit, a typed or bookmarked `http://` address never leaves the device in plaintext. The very first visit from a device is still exposed.
+
+The header leaves out two directives on purpose:
+- **`includeSubDomains`** would also force HTTPS, for a year, on every name under `RECONCILE_SITE`. If the site is a domain's apex, that means every subdomain, including any the founder doesn't run or that serve only HTTP. Add it only if the founder owns the whole domain for Reconcile.
+- **`preload`** asks browsers to build the domain into their HTTPS-only list, which would protect the first visit too. The list requires `includeSubDomains`, and leaving it takes months, while the pilot's domain may still change.
+
+`vite preview` doesn't send it: preview serves plain HTTP, where browsers ignore the header. To change the value, change it in the Caddyfile and in `HSTS` in `deploy/check.sh`: the check fails when they differ.
 
 ## Not here
 
