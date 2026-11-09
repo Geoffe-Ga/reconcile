@@ -81,7 +81,7 @@ sudo install -d -m 755 -o deploy -g deploy /opt/reconcile/src /opt/reconcile/ven
 python3 -m venv /opt/reconcile/venv
 ```
 
-**7. Your machine.** You need Node (the version in `client/.nvmrc`), `rsync`, `curl` and `ssh`, with your key in `ssh-agent`. Put the two settings in `deploy/.env`, which git ignores, or export them:
+**7. Your machine.** You need Node (the version in `client/.nvmrc`), `git`, `rsync`, `curl` and `ssh`, with your key in `ssh-agent`. Put the two settings in `deploy/.env`, which git ignores, or export them:
 
 ```bash
 RECONCILE_DEPLOY_HOST=deploy@<vm>

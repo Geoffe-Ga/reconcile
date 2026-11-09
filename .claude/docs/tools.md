@@ -71,17 +71,21 @@ pytest tests/
 
 ### Available Scripts
 
-**`./scripts/check-all.sh`** - Run all quality checks (use before every commit)
+**`./scripts/check-all.sh`** - Run the quality checks for every area the change touches (use before every commit)
 
-Runs in order:
-1. Linting (ruff, interrogate)
-2. Formatting (ruff)
-3. Type checking (mypy)
-4. Security scanning (bandit, pip-audit)
-5. Complexity analysis (radon, xenon)
-6. Unit tests
-7. Coverage (90% lines, 85% branches)
-8. Package build (build, twine check)
+`scripts/changed-areas.sh` picks the areas from the diff: Python, client and deploy. `--all` forces every area, and `--python`, `--client` or `--deploy` checks just one (CI's jobs use these).
+
+- **Python**, in order:
+  1. Linting (ruff, interrogate)
+  2. Formatting (ruff)
+  3. Type checking (mypy)
+  4. Security scanning (bandit, pip-audit)
+  5. Complexity analysis (radon, xenon)
+  6. Unit tests
+  7. Coverage (90% lines, 85% branches)
+  8. Package build (build, twine check)
+- **Client:** `scripts/client.sh`, which runs the client's own gate (`client/CLAUDE.md`)
+- **Deploy:** `deploy/check.sh`, which validates the Caddy config and the systemd units (`deploy/README.md`)
 
 **Note**: Mutation testing is NOT included in check-all.sh due to long runtime. It is recommended before a release (ADR-0061): run it locally or trigger CI's manual mutation job.
 

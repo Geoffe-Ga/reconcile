@@ -85,7 +85,7 @@ check_settings() {
         die "RECONCILE_SITE must be a domain name, without a scheme, port or path."
 }
 
-for tool in npm rsync ssh curl base64; do
+for tool in git npm rsync ssh curl base64; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool isn't on PATH."
 done
 load_env_file

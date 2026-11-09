@@ -136,13 +136,7 @@ Before creating/updating a PR:
    ```bash
    ./scripts/check-all.sh
    ```
-   This runs (in order):
-   - Linting (ruff, interrogate) and formatting (ruff format)
-   - Type checking (mypy)
-   - Security checks (bandit, pip-audit)
-   - Tests with coverage
-   - Complexity (radon, xenon) and the package build
-   - Code quality metrics
+   This runs the checks for every area the change touches (Python, client, deploy); `--all` forces every area. [Tools](tools.md#available-scripts) lists each area's checks.
 
 4. **Commit with Conventional Commits**
    ```bash
