@@ -16,6 +16,9 @@ export default defineConfig(({ mode }) => {
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
       include: ['src/**/*.test.{ts,tsx}'],
+      // Vitest blanks stylesheets unless told otherwise. A `?raw` import of one
+      // returns its text, as in a build, so a test can check what ships.
+      css: { include: [/\.css\?raw$/] },
       coverage: {
         provider: 'v8',
         include: ['src/**/*.{ts,tsx}'],

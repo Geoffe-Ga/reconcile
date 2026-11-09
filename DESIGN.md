@@ -133,6 +133,7 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 - 4px spacing base. Use the scale only.
 - Single column on phones with a 16px side gutter. Reading column max 42rem. App shell max 72rem.
 - Touch targets are at least 44px.
+- Pressable controls respond to the first tap without waiting out double-tap zoom, and pinch zoom always stays on (`touch-action: pan-x pan-y pinch-zoom`, in `client/src/styles/pressable.css`).
 - Lay out with grid or flex and `gap`. Avoid margin stacks.
 
 ## Shapes and depth
