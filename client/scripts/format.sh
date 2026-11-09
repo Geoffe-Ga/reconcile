@@ -61,6 +61,7 @@ echo "=== Formatting (Prettier) ==="
 
 PRETTIER_GLOBS=(
     "src/**/*.{ts,tsx,css}"
+    "e2e/**/*.ts"
     "*.{js,ts,json,html}"
 )
 

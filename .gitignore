@@ -32,6 +32,7 @@ client/dist/
 client/coverage/
 client/reports/
 client/.stryker-tmp/
+client/test-results/
 graphify-out/
 
 # Agent worktrees (local only)
