@@ -4,6 +4,7 @@ import '@fontsource-variable/jetbrains-mono';
 import './styles/tokens.css';
 import './styles/pressable.css';
 import './styles/app.css';
+import './styles/proposals.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

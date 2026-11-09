@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { navigate, parseRoute, replaceRoute, routeHref, type Route, useRoute } from './router';
 
 const GROUP = 'g'.repeat(43);
+const ATOM = `${GROUP}.0`;
+const PROPOSAL = 'p'.repeat(43);
 
 afterEach(() => {
   window.history.replaceState(null, '', '#/');
@@ -19,6 +21,8 @@ describe('parseRoute', () => {
     ['#/join/abc.def', { name: 'join', payload: 'abc.def' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
+    [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
+    [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -31,6 +35,14 @@ describe('parseRoute', () => {
     '#/g/%2e%2e',
     `#/g/${GROUP}/doc/extra`,
     `#/g/${GROUP}/settings`,
+    `#/g/${GROUP}/propose`,
+    `#/g/${GROUP}/propose/`,
+    `#/g/${GROUP}/propose/has space`,
+    `#/g/${GROUP}/propose/${ATOM}/extra`,
+    `#/g/${GROUP}/p`,
+    `#/g/${GROUP}/p/${ATOM}`,
+    `#/g/${GROUP}/p/${PROPOSAL}/extra`,
+    `#/g/${GROUP}/doc/${ATOM}`,
     '#/join/',
     'create',
   ])('sends the unknown %j to Start', (hash) => {
@@ -46,6 +58,8 @@ describe('routeHref', () => {
     [{ name: 'join', payload: 'abc.def' }, '#/join/abc.def'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
+    [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
+    [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

@@ -6,12 +6,16 @@
  */
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
+import { can } from '../engine/capabilities';
+import type { Score } from '../engine/event';
 import type { GroupState } from '../engine/fold';
+import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import { ProposalView } from '../screens/ProposalView';
 import { Start } from '../screens/Start';
 import type { Me } from '../store/db';
 import {
@@ -22,10 +26,13 @@ import {
   lookupInvite,
 } from './actions';
 import { type Invite, inviteLink } from './invite';
+import { castBallot, propose, type ProposalValues } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
-import { GroupServicesContext, useGroup } from './useGroup';
+import { relayMinuteNow } from './time';
+import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
+import { useNow } from './useNow';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -75,7 +82,7 @@ function JoinScreen({ services, payload, heldInvite, onJoined }: JoinScreenProps
 }
 
 /** A group on this device whose genesis is back from the relay. */
-interface ReadyGroup {
+interface ReadyGroup extends GroupView {
   readonly state: GroupState;
   readonly me: Me;
   readonly invite: Invite;
@@ -88,11 +95,12 @@ interface GroupGateProps {
 
 /** Renders `children` once the group is ready, or says why it isn't. */
 function GroupGate({ groupId, children }: GroupGateProps) {
-  const { loaded, state, me, invite } = useGroup(groupId);
+  const group = useGroup(groupId);
+  const { loaded, state, me, invite } = group;
   if (!loaded) return null;
   if (state === null || me === null || invite === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  return children({ state, me, invite });
+  return children({ ...group, state, me, invite });
 }
 
 interface GroupScreenProps {
@@ -101,14 +109,17 @@ interface GroupScreenProps {
 }
 
 function GroupScreen({ services, groupId }: GroupScreenProps) {
+  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, invite }) => (
+      {(group) => (
         <GroupHome
-          state={state}
-          me={me.author}
-          inviteLink={inviteLink(services.origin, invite)}
+          state={group.state}
+          me={group.me.author}
+          inviteLink={inviteLink(services.origin, group.invite)}
           copyText={services.copyText}
+          now={relayMinuteNow(group, deviceNow)}
+          sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
         />
       )}
     </GroupGate>
@@ -116,7 +127,68 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
 }
 
 function DocumentScreen({ groupId }: { readonly groupId: string }) {
-  return <GroupGate groupId={groupId}>{({ state }) => <DocumentView state={state} />}</GroupGate>;
+  const openComposer = (atomId: string) => {
+    navigate({ name: 'propose', groupId, atomId });
+  };
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => (
+        <DocumentView
+          state={state}
+          {...(can(state, me.author, 'propose') ? { onPropose: openComposer } : {})}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+interface ProposeScreenProps extends GroupScreenProps {
+  readonly atomId: string;
+}
+
+function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => {
+        const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
+          const result = await propose(services, groupId, me.author, values);
+          if (result.outcome === 'too-large') return result.outcome;
+          // Replace the composer, so Back from the Proposal returns to the Document.
+          replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+          return result.outcome;
+        };
+        return <Composer state={state} me={me.author} atomId={atomId} onPropose={onPropose} />;
+      }}
+    </GroupGate>
+  );
+}
+
+interface ProposalScreenProps extends GroupScreenProps {
+  readonly proposalId: string;
+}
+
+function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) {
+  const deviceNow = useNow(services.now);
+  return (
+    <GroupGate groupId={groupId}>
+      {(group) => {
+        const author = group.me.author;
+        const onVote = (score: Score, note: string) =>
+          castBallot(services, groupId, author, { proposal: proposalId, score, note });
+        return (
+          <ProposalView
+            state={group.state}
+            me={author}
+            proposalId={proposalId}
+            pending={group.pending}
+            reachable={group.reachable}
+            now={relayMinuteNow(group, deviceNow)}
+            onVote={onVote}
+          />
+        );
+      }}
+    </GroupGate>
+  );
 }
 
 interface ScreenProps {
@@ -155,6 +227,12 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
       return <GroupScreen services={services} groupId={route.groupId} />;
     case 'document':
       return <DocumentScreen groupId={route.groupId} />;
+    case 'propose':
+      return <ProposeScreen services={services} groupId={route.groupId} atomId={route.atomId} />;
+    case 'proposal':
+      return (
+        <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />
+      );
   }
 }
 

@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest';
+
+import { createEvent, type EventInput } from '../engine/event';
+import { fold, type LogRecord } from '../engine/fold';
+import { latestLink } from './latestLink';
+
+const MINUTE = 29_000_000;
+
+/** Folds a group whose genesis carries `chat`, then one Proposal per entry of `links`. */
+function groupWith(chat: string | undefined, links: readonly (string | undefined)[]) {
+  const records: LogRecord[] = [];
+  const add = (input: EventInput): string => {
+    const { bytes, id } = createEvent(input);
+    records.push({ seq: records.length + 1, received: MINUTE, bytes });
+    return id;
+  };
+  const body = {
+    name: 'Riverside Tenants',
+    founder: 'Ana',
+    title: 'House rules',
+    atoms: ['Quiet hours start at ten.'],
+    ...(chat === undefined ? {} : { chat }),
+  };
+  const group = add({ type: 'genesis', group: '', author: 'ana', ts: 0, body });
+  links.forEach((link, index) => {
+    const proposal = {
+      atom: `${group}.0`,
+      title: `Proposal ${String(index + 1)}`,
+      why: 'Why not.',
+      text: 'New text.',
+      ...(link === undefined ? {} : { link }),
+    };
+    add({ type: 'proposal', group, author: 'ana', ts: 0, body: proposal });
+  });
+  return fold(records, MINUTE);
+}
+
+describe('latestLink', () => {
+  it('is the group’s chat link before any Proposal carries one', () => {
+    expect(latestLink(groupWith('https://chat.example.org/a', []))).toBe(
+      'https://chat.example.org/a',
+    );
+    expect(latestLink(groupWith('https://chat.example.org/a', [undefined]))).toBe(
+      'https://chat.example.org/a',
+    );
+  });
+
+  it('is the most recent Proposal’s link, in relay order', () => {
+    const state = groupWith('https://chat.example.org/a', [
+      'https://chat.example.org/b',
+      undefined,
+      'https://chat.example.org/c',
+      undefined,
+    ]);
+    expect(latestLink(state)).toBe('https://chat.example.org/c');
+  });
+
+  it('skips a Proposal whose link isn’t an http(s) link', () => {
+    const state = groupWith('https://chat.example.org/a', [
+      'https://chat.example.org/b',
+      'javascript:alert(1)',
+      'not a link',
+    ]);
+    expect(latestLink(state)).toBe('https://chat.example.org/b');
+  });
+
+  it('is null when nothing in the group carries a usable link', () => {
+    expect(latestLink(groupWith(undefined, []))).toBeNull();
+    expect(latestLink(groupWith('javascript:alert(1)', ['data:text/html,hi']))).toBeNull();
+  });
+});

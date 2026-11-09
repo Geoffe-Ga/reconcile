@@ -220,7 +220,7 @@ Restored routes: Web Push under `/v1/push/` (#89), and the relay backup at `/v1/
   2. GETs after the cursor, paging until a page holds fewer than `limit` records, opens each blob, skips one that won't open, and appends each record whose event id isn't in the log yet;
   3. saves the cursor, `relayNow`, `instance` and the time of the last successful sync.
 - **A new `instance`** resets the cursor to 0 and re-posts the outbox. Dedupe by event id keeps any event from folding twice.
-- **Folded state uses relay records only.** An event in the outbox shows as pending ("Saved on this device. It will send when you're back online.") and never in folded state (#66).
+- **Folded state uses relay records only.** An event in the outbox shows as pending and never in folded state (#66). While it waits, its screen reads "Sending…" if the last sync reached the relay, and "Saved on this device. It will send when you're back online." once a sync has failed; then "Sent" once it leaves the outbox.
 - **Joining with full history** (#73). An invite envelope is a header blob followed by chunk blobs, each sealed under the invite key and posted with `ttl_days=1`.
   - The header is JSON `{groupSecret, preview: {groupName, inviterName, documentTitle, excerpt}, token, chunkCount}`. The excerpt is the first Atom as plain text, cut to 280 code points.
   - Chunks carry the relay-accepted log in seq order, as `seq (8 bytes) ‖ received (8) ‖ length (4) ‖ record`. `received` travels with each record, because deadlines depend on it.
@@ -234,7 +234,7 @@ Restored routes: Web Push under `/v1/push/` (#89), and the relay backup at `/v1/
 
 ## 8. Screens
 
-Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.md) tokens ([ADR-0022](../adr/0022-react-vite-react-aria.md)). Every string comes from the messages module. Screens meet WCAG 2.2 AA, and axe runs on each one in unit tests and in the Chromium and WebKit e2e runs (ADR-0055, #65, #67). Routes are hash routes, with no router library (#65): `#/` Start, `#/create`, `#/join/{payload}` (Join, which replaces the entry with `#/join` once it reads the payload), `#/g/{groupId}` Group home and `#/g/{groupId}/doc` Document view. A group is stored and routed under its group id, so every device uses the same one. Tab titles never carry a group's words, because browser history keeps them.
+Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.md) tokens ([ADR-0022](../adr/0022-react-vite-react-aria.md)). Every string comes from the messages module. Screens meet WCAG 2.2 AA, and axe runs on each one in unit tests and in the Chromium and WebKit e2e runs (ADR-0055, #65, #67). Routes are hash routes, with no router library (#65): `#/` Start, `#/create`, `#/join/{payload}` (Join, which replaces the entry with `#/join` once it reads the payload), `#/g/{groupId}` Group home, `#/g/{groupId}/doc` Document view, `#/g/{groupId}/propose/{atomId}` the composer, and `#/g/{groupId}/p/{proposalId}` a Proposal and its ballot (#66). Sending a Proposal replaces the composer's entry with the Proposal's. A group is stored and routed under its group id, so every device uses the same one. Tab titles never carry a group's words, because browser history keeps them.
 
 1. **First run** (#76). An iOS browser outside the installed app shows an install guide, plus an invite link's preview with a Copy button. Everywhere, the pilot notice comes before any key exists. It covers what's stored, what the relay sees (a device's IP address while it connects, without logging it; when messages arrive; their size class; which mailboxes a device checks), that data can be lost, and that this is a test (ADR-0056).
 2. **Start** (#65, #76, #77, #78). The groups on this device, Create group, a field to paste an invite link, and Restore a backup.
@@ -253,7 +253,8 @@ Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.m
 8. **Proposal and ballot** (#66, #72, #74, #77).
    - The title and why, then each version as a word diff against the current text, with its own five score pills, "0 · Strongly opposed" through "4 · Strongly supportive".
    - One note per ballot. It's required when any score is 0, and labelled "What would make this a 3 for you?" when the person gives a 1 and no 0.
-   - A countdown with the absolute deadline, Join discussion, and a consent meter for each version.
+   - A countdown with the absolute deadline in a `<time>` element, Join discussion (the Proposal's own link, or else the group's latest), and a consent meter for each version.
+   - Screens count down on the device's estimate of relay time: the last relay `now` plus the device time since that sync, or the device clock before any sync, so a device clock set to the wrong date can't move a deadline. Once that estimate reaches the deadline the ballot is disabled; the outcome shows only once the fold says the Proposal has closed (#66).
    - Someone who joined after the Proposal opened reads "You joined after this opened, so you can't vote on it." and sees no pills.
    - After sending a Proposal or a version, Tell your group shares fixed text with no title (§9).
 9. **Result** (#74). The outcome sentence comes first.

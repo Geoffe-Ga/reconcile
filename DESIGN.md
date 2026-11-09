@@ -116,6 +116,8 @@ Don't reproduce any of those brands' marks, typefaces, or layouts.
 
 All text tokens meet WCAG 2.2 AA (4.5:1) on every surface in both themes, and score pills meet 3:1 as UI graphics with paper-colored numerals at 4.5:1 or better. These were checked when the tokens were set (2026-11-07). Check every new pairing.
 
+- Numerals and text on a score color use `surface`, the lighter paper: at least 4.86:1 in light and 5.35:1 in dark. `canvas` falls just short on `score-1` and `score-2` in light (4.46 and 4.39:1), so don't use it there (#66).
+
 ## Typography
 
 | Role | Face | Use |

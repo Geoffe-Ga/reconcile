@@ -49,6 +49,8 @@ export interface GroupView {
   pending: ParsedEvent[];
   /** When the last sync succeeded, in device milliseconds, or `null` before one. */
   lastSyncAt: number | null;
+  /** The relay's minute at that sync (its `now`), or `null` before one. */
+  relayNow: number | null;
   /** Whether the last sync pass reached the relay. */
   reachable: boolean;
   /** Who this device is in the group, or `null` while loading or when the device isn't in it. */
@@ -77,6 +79,7 @@ export function useGroup(groupId: string): GroupView {
     state,
     pending,
     lastSyncAt: group?.lastSyncAt ?? null,
+    relayNow: group?.relayNow ?? null,
     reachable,
     me: group?.me ?? null,
     invite,

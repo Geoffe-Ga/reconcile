@@ -13,19 +13,31 @@ export type Route =
   | { readonly name: 'create' }
   | { readonly name: 'join'; readonly payload: string | null }
   | { readonly name: 'group'; readonly groupId: string }
-  | { readonly name: 'document'; readonly groupId: string };
+  | { readonly name: 'document'; readonly groupId: string }
+  | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
+  | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
+/** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
+const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
+/** A page inside a group: `doc`, `propose/{atomId}` or `p/{proposalId}`. */
+function groupPage(groupId: string, page: string, arg: string | undefined): Route {
+  if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
+  if (arg === undefined) return START;
+  if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
+  if (page === 'p' && ID.test(arg)) return { name: 'proposal', groupId, proposalId: arg };
+  return START;
+}
+
 function groupRoute(rest: readonly string[]): Route {
-  const [groupId, page, ...extra] = rest;
+  const [groupId, page, arg, ...extra] = rest;
   if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
-  if (page === undefined) return { name: 'group', groupId };
-  return page === 'doc' ? { name: 'document', groupId } : START;
+  return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
 }
 
 function joinRoute(rest: readonly string[]): Route {
@@ -65,6 +77,10 @@ export function routeHref(route: Route): string {
       return `#/g/${route.groupId}`;
     case 'document':
       return `#/g/${route.groupId}/doc`;
+    case 'propose':
+      return `#/g/${route.groupId}/propose/${route.atomId}`;
+    case 'proposal':
+      return `#/g/${route.groupId}/p/${route.proposalId}`;
   }
 }
 

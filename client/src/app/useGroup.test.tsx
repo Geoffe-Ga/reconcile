@@ -130,13 +130,14 @@ describe('useGroup', () => {
     await waitFor(() => {
       expect(result.current.lastSyncAt).toBe(TS);
     });
+    expect(result.current.relayNow).toBe(fake.minute);
     fake.offline = true;
     await act(() => sync.syncOnce());
     const offline = result.current.reachable;
     fake.offline = false;
     await act(() => sync.syncOnce());
 
-    expect(before).toMatchObject({ lastSyncAt: null, reachable: true });
+    expect(before).toMatchObject({ lastSyncAt: null, relayNow: null, reachable: true });
     expect(offline).toBe(false);
     expect(result.current.reachable).toBe(true);
   });
@@ -178,6 +179,7 @@ describe('useGroup', () => {
       state: null,
       pending: [],
       lastSyncAt: null,
+      relayNow: null,
       reachable: true,
       me: null,
       invite: null,
