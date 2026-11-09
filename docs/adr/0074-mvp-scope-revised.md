@@ -64,6 +64,20 @@ Three of ADR-0073's accepted pilot risks are lifted:
 
 The relay is still trusted for order and time.
 
+### Clarified while writing the issues
+
+These follow from the levels above:
+- **Passkeys without PRF.** Keys stay as ADR-0073 left them, and the app suggests recovery contacts rather than requiring them. ADR-0030's non-extractable key and mandatory recovery stay deferred, along with ADR-0052's recovery before voting.
+- **Removal and suspension text.** The text of removal Proposals and suspension reasons stays in the signed log. Expiring it (ADR-0072 §5) stays deferred. A removal response is a separate event, so it expires with ballots.
+- **Promotion ceilings.** A promotion ceiling is fixed once voting opens. Lowering it later (ADR-0037) stays deferred.
+- **Mailboxes after dissolution.** The relay's 30-day retention deletes a dissolved group's mailboxes (ADR-0051), since nothing writes to them after the dissolve.
+
+**Accepted pilot risks added:**
+- **Coalition keys don't rotate.** Someone who leaves or is removed from a member group can still read that coalition and its room. They can contest that group's results, which then count as a fail, but they can't make a motion pass.
+- **Push shows the relay some metadata.** It learns which mailboxes have opted-in phones. The "closing soon" nudge times reveal Proposal deadlines.
+
+ADR-0058's outside review covers these too.
+
 ### Still deferred
 
 Everything else in ADR-0073's table stays deferred:
