@@ -17,6 +17,7 @@ import { type Group, openStore, type Store } from './db';
 import { eventIdOf } from './eventId';
 import {
   backedUpGroups,
+  deviceSnapshot,
   encodeSnapshot,
   exportGroups,
   importGroups,
@@ -555,6 +556,20 @@ describe('importSnapshot', () => {
 
     expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
     expect(local((await second.getRelayBackup())?.key ?? new Uint8Array())).toEqual(BACKUP_KEY);
+  });
+
+  it('carries the key in the device’s own snapshot, so a second-device link (#96) brings it too', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    // A link sends the snapshot's plaintext with no passphrase layer: this one.
+    const plaintext = encodeSnapshot(await deviceSnapshot(device));
+    const linked = await openStore('linked');
+
+    expect(await importSnapshot(linked, plaintext)).toBe(1);
+
+    expect(await folded(linked, group.groupId)).toEqual(await folded(device, group.groupId));
+    expect(local((await linked.getRelayBackup())?.key ?? new Uint8Array())).toEqual(BACKUP_KEY);
   });
 
   it('refuses a plaintext that doesn’t check out, and writes nothing', async () => {
