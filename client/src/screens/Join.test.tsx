@@ -490,7 +490,7 @@ describe('Join, reading the Document before joining (#91)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Join group' }));
     await waitFor(() => {
-      expect(onJoin).toHaveBeenCalledExactlyOnceWith(group, 'Eve', 'member');
+      expect(onJoin).toHaveBeenCalledExactlyOnceWith(group, 'Eve', LEVELS[0]);
     });
     await waitFor(async () => {
       expect(await ben.services.store.listGroups()).toHaveLength(1);

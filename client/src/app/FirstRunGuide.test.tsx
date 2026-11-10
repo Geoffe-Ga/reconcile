@@ -7,7 +7,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Level } from '../engine/capabilities';
+import { type Level, LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
 import { GUIDE_KEY, guideRecord } from '../platform/guide';
@@ -30,6 +30,9 @@ afterEach(() => {
   window.history.replaceState(null, '', '#/');
   window.localStorage.clear();
 });
+
+/** The levels, from following to creating; code never spells their names (ADR-0021). */
+const [FOLLOWING, VOTING, CREATING] = LEVELS;
 
 const PROPOSE =
   'Suggest new wording for any section, with a short reason. Nothing changes until the group agrees.';
@@ -70,7 +73,7 @@ function card() {
 
 describe('FirstRunGuide', () => {
   it('walks a Co-Creator through Propose, Vote and Discuss, with Back, Next and Skip on each', async () => {
-    const { user, onClose } = showGuide(bensGroup('co-creator'), authorOf('ben'));
+    const { user, onClose } = showGuide(bensGroup(CREATING), authorOf('ben'));
 
     expect(card()).toMatchObject({
       title: 'Propose',
@@ -112,24 +115,24 @@ describe('FirstRunGuide', () => {
   });
 
   it('closes on Skip from the first card, and on Escape', async () => {
-    const skipped = showGuide(bensGroup('co-creator'), authorOf('ben'));
+    const skipped = showGuide(bensGroup(CREATING), authorOf('ben'));
     await skipped.user.click(screen.getByRole('button', { name: 'Skip' }));
     expect(skipped.onClose).toHaveBeenCalledTimes(1);
 
     cleanup();
-    const escaped = showGuide(bensGroup('co-creator'), authorOf('ben'));
+    const escaped = showGuide(bensGroup(CREATING), authorOf('ben'));
     await escaped.user.keyboard('{Escape}');
     expect(escaped.onClose).toHaveBeenCalledTimes(1);
   });
 
   it('shows no Propose card to someone who may not propose', () => {
-    showGuide(bensGroup('collaborator'), authorOf('ben'));
+    showGuide(bensGroup(VOTING), authorOf('ben'));
     expect(card()).toMatchObject({ title: 'Vote 0–4', step: '1 of 2', body: VOTE });
     expect(screen.queryByText(PROPOSE)).not.toBeInTheDocument();
   });
 
   it('shows a Member, who follows along, only the Discuss card', () => {
-    showGuide(bensGroup('member'), authorOf('ben'));
+    showGuide(bensGroup(FOLLOWING), authorOf('ben'));
     expect(card()).toMatchObject({
       title: 'Discuss in your chat',
       step: '1 of 1',
@@ -142,13 +145,13 @@ describe('FirstRunGuide', () => {
   });
 
   it('waits until the relay has returned the person’s join', () => {
-    showGuide(bensGroup('co-creator'), authorOf('cal'));
+    showGuide(bensGroup(CREATING), authorOf('cal'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('reads its numbers from the group’s ordinary bar and the score scale, never the copy', () => {
     expect(DEFAULT_RULES.bars.ordinary).toEqual({ avgAtLeast: 2, zerosUnderPercent: 10 });
-    const state = bensGroup('collaborator');
+    const state = bensGroup(VOTING);
     const ordinary = { avgAtLeast: 3, zerosUnderPercent: 5 };
     const rules = { ...state.rules, bars: { ...state.rules.bars, ordinary } };
     showGuide({ ...state, rules }, authorOf('ben'));
