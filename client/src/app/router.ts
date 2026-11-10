@@ -9,6 +9,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import { isOptIn, type OptIn } from '../engine/optIns';
 import { SEATS, type SeatNumber } from '../engine/stewards';
 
 /** Where the app is. Unknown hashes read as Start. */
@@ -27,7 +28,18 @@ export type Route =
       readonly seat: SeatNumber;
       /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
       readonly recall: boolean;
+    }
+  | { readonly name: 'rules'; readonly groupId: string }
+  | {
+      readonly name: 'optIn';
+      readonly groupId: string;
+      readonly optIn: OptIn;
+      /** True for a steward's Turn off now, which also narrows it at once (#117). */
+      readonly narrow: boolean;
     };
+
+/** A route inside one group. */
+type GroupRoute = Extract<Route, { readonly groupId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -48,6 +60,17 @@ function stewardPage(groupId: string, recall: boolean, arg: string): Route {
   return seat === undefined ? START : { name: 'steward', groupId, seat, recall };
 }
 
+/** `rules/{optIn}` or, when `narrow`, `narrow/{optIn}`: the opt-in composer (#117). */
+function optInPage(groupId: string, narrow: boolean, arg: string): Route {
+  return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
+}
+
+/** A page with no argument: `doc` or `rules` (#117). */
+function barePage(groupId: string, page: string): Route {
+  if (page === 'doc') return { name: 'document', groupId };
+  return page === 'rules' ? { name: 'rules', groupId } : START;
+}
+
 /** `p/{proposalId}` or `again/{proposalId}`. */
 function proposalPage(groupId: string, page: string, arg: string): Route {
   if (!ID.test(arg)) return START;
@@ -56,14 +79,15 @@ function proposalPage(groupId: string, page: string, arg: string): Route {
 }
 
 /**
- * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`,
- * `again/{proposalId}`, `steward/{seat}` or `recall/{seat}`.
+ * A page inside a group: `doc`, `rules`, `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
+ * `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
-  if (arg === undefined) return START;
+  if (arg === undefined) return barePage(groupId, page);
   if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
   if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
+  if (page === 'rules' || page === 'narrow') return optInPage(groupId, page === 'narrow', arg);
   return proposalPage(groupId, page, arg);
 }
 
@@ -109,10 +133,37 @@ function joinHref(payload: string | null): string {
   return payload === null ? '#/join' : `${INVITE_PREFIX}${payload}`;
 }
 
-/** A steward composer's `href`: `recall/{seat}` for a recall, else `steward/{seat}` (#102). */
-function stewardHref(route: Extract<Route, { readonly name: 'steward' }>): string {
+/** A steward composer's path: `/recall/{seat}` for a recall, else `/steward/{seat}` (#102). */
+function stewardPath(route: Extract<Route, { readonly name: 'steward' }>): string {
   const page = route.recall ? 'recall' : 'steward';
-  return `#/g/${route.groupId}/${page}/${String(route.seat)}`;
+  return `/${page}/${String(route.seat)}`;
+}
+
+/** An opt-in composer's path: `/narrow/{optIn}` for Turn off now, else `/rules/{optIn}` (#117). */
+function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
+  return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
+}
+
+/** The path of a page inside a group, after `#/g/{groupId}`. */
+function groupPath(route: GroupRoute): string {
+  switch (route.name) {
+    case 'group':
+      return '';
+    case 'document':
+      return '/doc';
+    case 'rules':
+      return '/rules';
+    case 'propose':
+      return `/propose/${route.atomId}`;
+    case 'proposal':
+      return `/p/${route.proposalId}`;
+    case 'again':
+      return `/again/${route.proposalId}`;
+    case 'steward':
+      return stewardPath(route);
+    case 'optIn':
+      return optInPath(route);
+  }
 }
 
 /** The `href` of a route, starting with `#`. */
@@ -124,18 +175,8 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'join':
       return joinHref(route.payload);
-    case 'group':
-      return `#/g/${route.groupId}`;
-    case 'document':
-      return `#/g/${route.groupId}/doc`;
-    case 'propose':
-      return `#/g/${route.groupId}/propose/${route.atomId}`;
-    case 'proposal':
-      return `#/g/${route.groupId}/p/${route.proposalId}`;
-    case 'again':
-      return `#/g/${route.groupId}/again/${route.proposalId}`;
-    case 'steward':
-      return stewardHref(route);
+    default:
+      return `#/g/${route.groupId}${groupPath(route)}`;
   }
 }
 

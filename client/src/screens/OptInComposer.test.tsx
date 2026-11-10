@@ -1,0 +1,272 @@
+/**
+ * The opt-in composer (#117): a rules Proposal turning an opt-in on or off,
+ * with its warning; turning the bot on asks for a webhook the engine's own
+ * validator accepts; Turn off now also narrows it, for a steward only.
+ */
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+
+import { messages } from '../app/messages';
+import type { RulesValues } from '../app/proposals';
+import { LEVELS } from '../engine/capabilities';
+import type { GroupState } from '../engine/fold';
+import type { OptIn } from '../engine/optIns';
+import { axeViolations } from '../test/axe';
+import { authorOf } from '../test/keys';
+import { groupLog } from '../test/votes';
+import { OptInComposer, type OptInOutcome } from './OptInComposer';
+
+const [, VOTING] = LEVELS;
+const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ';
+const { optIns } = messages;
+
+interface Options {
+  readonly me?: string;
+  readonly optIn?: OptIn;
+  readonly narrow?: boolean;
+  readonly outcome?: OptInOutcome;
+}
+
+/** The device clock in tests, in ms. */
+const NOW_MS = 1_762_650_000_000;
+
+function renderComposer(state: GroupState, options: Options = {}) {
+  const { me = 'ana', optIn = 'chatBot', narrow = false, outcome = 'proposed' } = options;
+  const onPropose = vi.fn<(values: RulesValues) => Promise<OptInOutcome>>(() =>
+    Promise.resolve(outcome),
+  );
+  render(
+    <OptInComposer
+      state={state}
+      me={authorOf(me)}
+      optIn={optIn}
+      narrow={narrow}
+      now={NOW_MS}
+      onPropose={onPropose}
+    />,
+  );
+  return { user: userEvent.setup(), onPropose };
+}
+
+/** Ana, Ben and Cal's group, with the chat bot on by an entrenched pass. */
+function botOn() {
+  const log = groupLog({ members: ['Ben', 'Cal'] });
+  const on = log.rules('Ana', 'chatBot', { webhook: WEBHOOK });
+  for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, on, 4);
+  return log;
+}
+
+async function type(user: ReturnType<typeof userEvent.setup>, label: string, text: string) {
+  await user.click(screen.getByRole('textbox', { name: label }));
+  await user.paste(text);
+}
+
+describe('OptInComposer: turning the chat bot on', () => {
+  it('heads the form with the motion, its warning and the higher bar, and asks for the webhook', async () => {
+    renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Turn on the Discord chat bot',
+    );
+    expect(screen.getByText(optIns.warnings.chatBot)).toBeVisible();
+    expect(
+      screen.getByText(/higher bar: an average of 3\.0 or more, with zeros under 5%/),
+    ).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Discord webhook URL' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Turn on the Discord chat bot',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it.each([
+    ['an http: link', 'http://discord.com/api/webhooks/1/abc'],
+    ['another host', 'https://example.com/api/webhooks/1/abc'],
+    ['a link with a query', `${WEBHOOK}?wait=true`],
+  ])('refuses %s with the same validator as the fold, and sends nothing', async (_name, url) => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    await type(user, 'Discord webhook URL', url);
+    await type(user, 'Why', 'Nudges help.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(screen.getByText(optIns.webhookInvalid)).toBeVisible();
+    expect(onPropose).not.toHaveBeenCalled();
+  });
+
+  it('asks for a webhook when none is pasted', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    await type(user, 'Why', 'Nudges help.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(screen.getByText(optIns.webhookMissing)).toBeVisible();
+    expect(onPropose).not.toHaveBeenCalled();
+  });
+
+  it('proposes the trimmed webhook, the title and the why, without narrowing', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    await type(user, 'Discord webhook URL', `  ${WEBHOOK}\n`);
+    await type(user, 'Why', '  Nudges help.  ');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      optIn: 'chatBot',
+      value: { webhook: WEBHOOK },
+      title: 'Turn on the Discord chat bot',
+      why: 'Nudges help.',
+      narrow: false,
+      window: 14,
+    });
+  });
+
+  it('sends once however often the button is pressed, and stays off once proposed', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    await type(user, 'Discord webhook URL', WEBHOOK);
+    await type(user, 'Why', 'Nudges help.');
+    const send = screen.getByRole('button', { name: 'Propose this change' });
+    await user.click(send);
+    await user.click(send);
+    expect(onPropose).toHaveBeenCalledTimes(1);
+    expect(send).toBeDisabled();
+  });
+
+  it('says so when it couldn’t be saved, and keeps the form', async () => {
+    const { user } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      outcome: 'failed',
+    });
+    await type(user, 'Discord webhook URL', WEBHOOK);
+    await type(user, 'Why', 'Nudges help.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(messages.stewards.failed);
+    expect(screen.getByRole('button', { name: 'Propose this change' })).toBeEnabled();
+  });
+
+  it('ties a too-large Proposal’s message to the why', async () => {
+    const { user } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      outcome: 'too-large',
+    });
+    await type(user, 'Discord webhook URL', WEBHOOK);
+    await type(user, 'Why', 'Nudges help.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(await screen.findByText(messages.composer.tooLarge)).toBeVisible();
+  });
+});
+
+describe('OptInComposer: the voting time (#106)', () => {
+  it('bounds turning the bot on to the entrenched 14 to 28 days, starting at 14', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    const days = screen.getByRole('textbox', { name: 'Voting time (days)' });
+    expect(days).toHaveValue('14');
+    expect(screen.getByText(/^Closes about /)).toBeVisible();
+    await user.clear(days);
+    await user.type(days, '13');
+    await user.tab();
+    await type(user, 'Discord webhook URL', WEBHOOK);
+    await type(user, 'Why', 'Nudges help.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(screen.getByText('Choose from 14 to 28 days.')).toBeVisible();
+    expect(onPropose).not.toHaveBeenCalled();
+  });
+
+  it('sends the days chosen within the bounds', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state());
+    const days = screen.getByRole('textbox', { name: 'Voting time (days)' });
+    await user.clear(days);
+    await user.type(days, '28');
+    await user.tab();
+    await type(user, 'Discord webhook URL', WEBHOOK);
+    await type(user, 'Why', 'Nudges help.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(onPropose).toHaveBeenCalledWith(expect.objectContaining({ window: 28 }));
+  });
+
+  it('bounds turning it off to the ordinary 3 to 14 days, starting at 7', () => {
+    renderComposer(botOn().state(), { me: 'ben' });
+    expect(screen.getByRole('textbox', { name: 'Voting time (days)' })).toHaveValue('7');
+    expect(screen.queryByText(/higher bar/)).toBeNull();
+  });
+});
+
+describe('OptInComposer: other changes', () => {
+  it('opens a front door with no webhook field', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      optIn: 'frontDoor',
+    });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Open a front door');
+    expect(screen.getByText(optIns.warnings.frontDoor)).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Discord webhook URL' })).toBeNull();
+    await type(user, 'Why', 'People keep asking how to join.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(onPropose).toHaveBeenCalledWith(
+      expect.objectContaining({ optIn: 'frontDoor', value: true, narrow: false }),
+    );
+  });
+
+  it('turns the bot off at the ordinary bar, with no webhook field and no higher bar', async () => {
+    const { user, onPropose } = renderComposer(botOn().state(), { me: 'ben' });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Turn off the Discord chat bot',
+    );
+    expect(screen.queryByText(/higher bar/)).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Discord webhook URL' })).toBeNull();
+    await type(user, 'Why', 'Too many pings.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(onPropose).toHaveBeenCalledWith(
+      expect.objectContaining({ optIn: 'chatBot', value: null, narrow: false }),
+    );
+  });
+});
+
+describe('OptInComposer: Turn off now', () => {
+  it('lets the steward turn the bot off at once, with the line saying what happens', async () => {
+    const { user, onPropose } = renderComposer(botOn().state(), { narrow: true });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Turn off the Discord chat bot now',
+    );
+    expect(screen.getByText(optIns.nowLine)).toBeVisible();
+    await type(user, 'Why', 'Someone posted the webhook in public.');
+    await user.click(screen.getByRole('button', { name: 'Turn off now' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      optIn: 'chatBot',
+      value: null,
+      title: 'Turn off the Discord chat bot',
+      why: 'Someone posted the webhook in public.',
+      narrow: true,
+      window: 7,
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no form to a member who holds no seat', () => {
+    renderComposer(botOn().state(), { me: 'ben', narrow: true });
+    expect(screen.getByText(optIns.nowUnavailable)).toBeVisible();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('offers no form while the bot is already off', () => {
+    renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), { narrow: true });
+    expect(screen.getByText(optIns.nowUnavailable)).toBeVisible();
+  });
+});
+
+describe('OptInComposer: where the fold would refuse it', () => {
+  it('offers no form while a rules Proposal for the opt-in is open', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.rules('Ben', 'frontDoor', true);
+    renderComposer(log.state(), { optIn: 'frontDoor' });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(optIns.unavailableTitle);
+    expect(screen.getByText(optIns.unavailable)).toBeVisible();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('shows a suspended member the suspended line, and no form', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.suspend('Ana', 'Ben');
+    renderComposer(log.state(), { me: 'ben' });
+    expect(screen.getByText(/^A steward suspended you until/)).toBeVisible();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('offers no form to someone who can’t propose', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'], levels: { Ben: VOTING } });
+    renderComposer(log.state(), { me: 'ben' });
+    expect(screen.getByText(messages.stewards.notAllowed)).toBeVisible();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+});

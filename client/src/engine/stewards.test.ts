@@ -10,9 +10,12 @@ import {
   EMPTY_SEATS,
   electionsDue,
   FIRST_SECOND_SEAT_TERM_DAYS,
+  mayNarrow,
   mayProposeSteward,
   maySuspend,
+  mayTurnOffNow,
   mayUseSuspend,
+  NARROW_GAP_DAYS,
   REASON_MAX,
   reasonFits,
   type Seat,
@@ -203,5 +206,100 @@ describe('vacate', () => {
       { seat: 2, holder: 'ben', termEnd: 5, elected: true },
     ]);
     expect(vacate(seats, 'kim')).toEqual(seats);
+  });
+});
+
+const WEBHOOK = { webhook: 'https://discord.com/api/webhooks/1/abc' };
+
+/** Ana, Ben and Cal's group, which has turned its chat bot on by an entrenched pass. */
+function botOn() {
+  const log = group(['Ben', 'Cal']);
+  const on = log.rules('Ana', 'chatBot', WEBHOOK);
+  for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, on, 4);
+  return log;
+}
+
+describe('narrowing an opt-in (ADR-0040, ADR-0075 §3)', () => {
+  it('waits 30 days after an off-Proposal is turned down', () => {
+    expect(NARROW_GAP_DAYS).toBe(30);
+  });
+
+  it('offers Turn off now to the steward while the bot is on, and to nobody else', () => {
+    const state = botOn().state();
+    expect(state.rules.optIns.chatBot).toEqual(WEBHOOK);
+    expect(mayTurnOffNow(state, ANA, 'chatBot')).toBe(true);
+    expect(mayTurnOffNow(state, BEN, 'chatBot')).toBe(false);
+    expect(mayTurnOffNow(state, ANA, 'frontDoor')).toBe(false);
+  });
+
+  it('offers it to no steward who can’t propose the off-Proposal it needs', () => {
+    const log = botOn();
+    log.level('Ana', VOTING);
+    expect(mayTurnOffNow(log.state(), ANA, 'chatBot')).toBe(false);
+  });
+
+  it('offers it to no steward while any rules Proposal for the opt-in is open, or a recall of them is', () => {
+    const open = botOn();
+    open.rules('Ben', 'chatBot', null);
+    expect(mayTurnOffNow(open.state(), ANA, 'chatBot')).toBe(false);
+    const recalled = botOn();
+    recalled.steward('Ben', 1, null);
+    expect(mayTurnOffNow(recalled.state(), ANA, 'chatBot')).toBe(false);
+  });
+
+  it('holds a narrow only beside the same steward’s own open off-Proposal for that opt-in', () => {
+    const log = botOn();
+    const off = log.rules('Ana', 'chatBot', null);
+    const state = log.state();
+    expect(mayNarrow(state, ANA, { optIn: 'chatBot', proposal: off })).toBe(true);
+    expect(mayNarrow(state, ANA, { optIn: 'frontDoor', proposal: off })).toBe(false);
+    expect(mayNarrow(state, ANA, { optIn: 'signalBot', proposal: off })).toBe(false);
+    expect(mayNarrow(state, ANA, { optIn: 'chatBot', proposal: 'missing' })).toBe(false);
+    expect(mayNarrow(state, BEN, { optIn: 'chatBot', proposal: off })).toBe(false);
+    const theirs = botOn();
+    const bens = theirs.rules('Ben', 'chatBot', null);
+    expect(mayNarrow(theirs.state(), ANA, { optIn: 'chatBot', proposal: bens })).toBe(false);
+  });
+
+  it('refuses a narrow beside an on-Proposal, or once the off-Proposal has closed', () => {
+    const log = group(['Ben', 'Cal']);
+    const on = log.rules('Ana', 'frontDoor', true);
+    expect(mayNarrow(log.state(), ANA, { optIn: 'frontDoor', proposal: on })).toBe(false);
+    const closed = botOn();
+    const off = closed.rules('Ana', 'chatBot', null);
+    for (const name of ['Ana', 'Ben', 'Cal']) closed.vote(name, off, 0, 'Keep it.');
+    expect(mayNarrow(closed.state(), ANA, { optIn: 'chatBot', proposal: off })).toBe(false);
+  });
+
+  it('waits 30 days, to the minute, after the group turns an off-Proposal down', () => {
+    const log = botOn();
+    const off = log.rules('Ben', 'chatBot', null);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, off, 0, 'Keep it.');
+    const closedAt = log.minute;
+    expect(log.state().proposals.at(-1)?.outcome.kind).toBe('fail');
+    expect(mayTurnOffNow(log.state(), ANA, 'chatBot')).toBe(false);
+    const gap = NARROW_GAP_DAYS * DAY_MINUTES;
+    expect(mayTurnOffNow(log.state(closedAt + gap), ANA, 'chatBot')).toBe(false);
+    expect(mayTurnOffNow(log.state(closedAt + gap + 1), ANA, 'chatBot')).toBe(true);
+  });
+
+  it('doesn’t wait after an on-Proposal turned down, or after an off-Proposal that passed', () => {
+    const log = group(['Ben', 'Cal']);
+    const failed = log.rules('Ana', 'chatBot', WEBHOOK, { title: 'A bot' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, failed, 0, 'Not yet.');
+    const on = log.rules('Ana', 'chatBot', WEBHOOK, { title: 'A bot, now' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, on, 4);
+    expect(mayTurnOffNow(log.state(), ANA, 'chatBot')).toBe(true);
+    const off = log.rules('Ben', 'chatBot', null);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, off, 4);
+    const again = log.rules('Ana', 'chatBot', WEBHOOK, { title: 'The bot again' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, again, 4);
+    expect(log.state().proposals.map((p) => p.outcome.kind)).toEqual([
+      'fail',
+      'pass',
+      'pass',
+      'pass',
+    ]);
+    expect(mayTurnOffNow(log.state(), ANA, 'chatBot')).toBe(true);
   });
 });
