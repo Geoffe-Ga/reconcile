@@ -1,19 +1,23 @@
 import { type ReactNode, useId, useState } from 'react';
-import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
+import { Link } from 'react-aria-components';
 
-import { Ballot } from '../app/Ballot';
+import { Ballot, type Scores } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
 import { Countdown } from '../app/Countdown';
 import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
+import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
+import { VersionList } from '../app/Versions';
+import { type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
-import type { ParsedEvent, ProposalBody, Score } from '../engine/event';
+import { composeOption } from '../engine/composeOption';
+import type { ParsedEvent, ProposalBody } from '../engine/event';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 
@@ -31,8 +35,8 @@ export interface ProposalViewProps {
   readonly reachable: boolean;
   /** The relay's minute now, as this device estimates it. */
   readonly now: number;
-  /** Queues this member's ballot; rejects when it couldn't be saved. */
-  readonly onVote: (score: Score, note: string) => Promise<void>;
+  /** Queues this member's ballot, a score for every version; rejects when it couldn't be saved. */
+  readonly onVote: (scores: Scores, note: string) => Promise<void>;
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -56,24 +60,33 @@ function Block({
   );
 }
 
-function Screen({ state, children }: { readonly state: GroupState; readonly children: ReactNode }) {
+interface ScreenProps {
+  readonly state: GroupState;
+  /** Wider than the reading column, so several versions fit side by side. */
+  readonly wide?: boolean;
+  readonly children: ReactNode;
+}
+
+function Screen({ state, wide = false, children }: ScreenProps) {
   return (
-    <main className="shell">
+    <main className={wide ? 'shell shell-wide' : 'shell'}>
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
       {children}
     </main>
   );
 }
 
-/** The outcome sentence, first on a closed Proposal; a pass also shows the Document's new text. */
+/** The outcome sentence, first on a closed Proposal; a pass also names its version and shows the new text. */
 function Outcome({ proposal }: { readonly proposal: Proposal }) {
-  const { outcome } = proposal;
+  const { outcome, versions } = proposal;
   if (outcome.kind === 'pass') {
-    const text = proposal.versions.find((version) => version.id === outcome.version)?.text ?? '';
+    const index = versions.findIndex((version) => version.id === outcome.version);
+    const sentence =
+      versions.length > 1 ? messages.proposal.passedVersion(index + 1) : messages.proposal.passed;
     return (
       <Block title={messages.proposal.result} className="outcome">
-        <p className="outcome-sentence">{messages.proposal.passed}</p>
-        <AtomText text={text} className="atom-card" />
+        <p className="outcome-sentence">{sentence}</p>
+        <AtomText text={versions[index]?.text ?? ''} className="atom-card" />
       </Block>
     );
   }
@@ -85,52 +98,29 @@ function Outcome({ proposal }: { readonly proposal: Proposal }) {
   );
 }
 
-/** The proposed text as the Document will show it, one tap away from the diff. */
-function ReadsAs({ text }: { readonly text: string }) {
-  return (
-    <Disclosure className="reads-as">
-      <Heading level={3} className="reads-as-heading">
-        <Button slot="trigger" className="reads-as-toggle">
-          {messages.proposal.readsAs}
-        </Button>
-      </Heading>
-      <DisclosurePanel>
-        <AtomText text={text} className="atom-card" />
-      </DisclosurePanel>
-    </Disclosure>
-  );
-}
-
-interface ChangesProps {
-  readonly state: GroupState;
-  /** The Atom the Proposal would change. */
-  readonly atom: string;
-  /** The proposed text. */
-  readonly text: string;
+/** What the versions are shown against: the section's text now, under "Changes to section N". */
+interface Comparison {
+  readonly title: string;
+  /** The section's text now, or null when there's nothing to compare with. */
+  readonly current: string | null;
 }
 
 /**
- * What a Proposal changes: a word diff of the section's source against the
- * proposed text, then the proposed text as it will read. A Proposal whose
- * section is gone shows its text alone.
+ * Each version is a word diff against the section's text now. Once a pass has
+ * changed the section, or when the section is gone, each version shows as it
+ * reads instead.
  */
-function Changes({ state, atom, text }: ChangesProps) {
+function comparisonFor(state: GroupState, atom: string, passed: boolean): Comparison {
+  if (passed) return { title: messages.proposal.onBallot, current: null };
   const index = state.atoms.findIndex((candidate) => candidate.id === atom);
-  const current = state.atoms[index];
-  if (current === undefined) {
-    return (
-      <Block title={messages.proposal.proposed} className="text-block">
-        <AtomText text={text} className="atom-card" />
-      </Block>
-    );
-  }
-  return (
-    <Block title={messages.proposal.changes(index + 1)} className="text-block">
-      <WordDiff current={current.text} proposed={text} />
-      <p className="caption">{messages.diff.legend}</p>
-      <ReadsAs text={text} />
-    </Block>
-  );
+  const now = state.atoms[index];
+  if (now === undefined) return { title: messages.proposal.proposed, current: null };
+  return { title: messages.proposal.changes(index + 1), current: now.text };
+}
+
+/** The diff legend, under the heading, whenever the versions show as diffs. */
+function Legend({ comparison }: { readonly comparison: Comparison }) {
+  return comparison.current === null ? null : <p className="caption">{messages.diff.legend}</p>;
 }
 
 /** This member's latest ballot on the Proposal: one waiting in the outbox, else the folded one. */
@@ -145,7 +135,7 @@ function myBallot(props: ProposalViewProps, proposal: Proposal) {
   const folded = proposal.ballots.find((ballot) => ballot.voter === props.me);
   const ballot = waiting ?? folded;
   return {
-    score: ballot?.scores[proposal.id] ?? null,
+    scores: ballot?.scores ?? {},
     note: ballot?.note ?? '',
     hasVoted: ballot !== undefined,
     pending: waiting !== undefined,
@@ -182,16 +172,50 @@ function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: 
   );
 }
 
-function Vote({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+/** Whether this member can still add wording: the vote is open and they may propose. */
+function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
+  return !proposal.final && props.now < proposal.deadline && can(props.state, props.me, 'propose');
+}
+
+/** "Add your version", which opens the composer for this section, or why there's no room. */
+function AddVersion({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  if (!isOpenToVersions(props, proposal)) return null;
+  const option = composeOption(props.state, proposal.atom);
+  if (option === 'ballot-full') return <p className="caption">{messages.proposal.ballotFull}</p>;
+  const route = {
+    name: 'propose',
+    groupId: props.state.group ?? '',
+    atomId: proposal.atom,
+  } as const;
+  return option === 'add-version' ? (
+    <Link className="button button-quiet add-version" href={routeHref(route)}>
+      {messages.proposal.addVersion}
+    </Link>
+  ) : null;
+}
+
+interface VoteProps {
+  readonly props: ProposalViewProps;
+  readonly proposal: Proposal;
+  readonly versions: readonly VersionView[];
+}
+
+/** The versions, each with its own pills for someone who can vote on them, then "Add your version". */
+function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
+  const passed = proposal.final && proposal.outcome.kind === 'pass';
+  const comparison = comparisonFor(state, proposal.atom, passed);
   const reason = whyNoVote(props, proposal);
   const mine = myBallot(props, proposal);
   return (
-    <Block title={messages.ballot.heading} className="vote">
+    <Block title={comparison.title} className="vote">
+      <Legend comparison={comparison} />
       {reason === null ? (
         <Ballot
           key={proposal.id}
-          initialScore={mine.score}
+          versions={versions}
+          current={comparison.current}
+          initialScores={mine.scores}
           initialNote={mine.note}
           hasVoted={mine.hasVoted}
           isDisabled={proposal.final || now >= proposal.deadline}
@@ -200,8 +224,36 @@ function Vote({ props, proposal }: { props: ProposalViewProps; proposal: Proposa
           onVote={onVote}
         />
       ) : (
-        <NoVote state={state} me={me} reason={reason} />
+        <>
+          <VersionList versions={versions} current={comparison.current} />
+          <NoVote state={state} me={me} reason={reason} />
+        </>
       )}
+      <AddVersion props={props} proposal={proposal} />
+    </Block>
+  );
+}
+
+/** This member's versions of the Proposal still in the outbox, each as its change, with where it has got to. */
+function PendingVersions({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { state, me, pending, reachable } = props;
+  const mine = pending.flatMap(({ event, id }) =>
+    event.type === 'version' && event.author === me && event.body.proposal === proposal.id
+      ? [{ id, text: event.body.text }]
+      : [],
+  );
+  if (mine.length === 0) return null;
+  const { current } = comparisonFor(state, proposal.atom, false);
+  return (
+    <Block title={messages.proposal.yourVersion} className="text-block">
+      {mine.map(({ id, text }) =>
+        current === null ? (
+          <AtomText key={id} text={text} className="atom-card" />
+        ) : (
+          <WordDiff key={id} current={current} proposed={text} />
+        ),
+      )}
+      <SendStatus pending reachable={reachable} sent={false} />
     </Block>
   );
 }
@@ -224,12 +276,12 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
 /** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, now } = props;
-  const passed = proposal.final && proposal.outcome.kind === 'pass';
+  const versions = versionViews(state, proposal);
   const link =
     proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
   const { eyebrowOpen, eyebrowClosed, pageTitle } = messages.proposal;
   return (
-    <Screen state={state}>
+    <Screen state={state} wide={versions.length > 1}>
       <PageHeader
         eyebrow={proposal.final ? eyebrowClosed : eyebrowOpen}
         title={proposal.title}
@@ -243,21 +295,24 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         </p>
       </div>
       <ChatLink href={link} />
-      {passed ? null : <Changes state={state} atom={proposal.atom} text={proposal.text} />}
-      <Vote props={props} proposal={proposal} />
+      <Vote props={props} proposal={proposal} versions={versions} />
+      <PendingVersions props={props} proposal={proposal} />
     </Screen>
   );
 }
 
 interface WaitingProps {
   readonly state: GroupState;
+  readonly me: string;
   readonly body: ProposalBody;
   readonly pending: boolean;
   readonly reachable: boolean;
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
-function Waiting({ state, body, pending, reachable }: WaitingProps) {
+function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
+  const comparison = comparisonFor(state, body.atom, false);
+  const version = { id: '', number: 1, author: displayName(state, me) ?? '', text: body.text };
   return (
     <Screen state={state}>
       <PageHeader
@@ -268,7 +323,10 @@ function Waiting({ state, body, pending, reachable }: WaitingProps) {
       <p className="lede" dir="auto">
         {body.why}
       </p>
-      <Changes state={state} atom={body.atom} text={body.text} />
+      <Block title={comparison.title} className="vote">
+        <Legend comparison={comparison} />
+        <VersionList versions={[version]} current={comparison.current} />
+      </Block>
       <SendStatus pending={pending} reachable={reachable} sent />
     </Screen>
   );
@@ -286,10 +344,12 @@ function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
 
 /**
  * The Proposal and its ballot (`#/g/{groupId}/p/{proposalId}`; spec §8): the
- * title and why, a countdown, Join discussion, the change as a word diff of
- * the section's source, and the ballot. Who may vote, and whether voting is still open,
- * come from engine state and `can()`, never from level names. Once it closes,
- * the outcome sentence comes first.
+ * title and why, a countdown, Join discussion, then every version side by
+ * side, each a word diff of the section's source with its own score pills,
+ * and Add your version while the ballot has room. Who may vote, and whether
+ * voting is still open, come from engine state and `can()`, never from level
+ * names. Once it closes, the outcome sentence comes first, naming the winning
+ * version when there were several.
  */
 export function ProposalView(props: ProposalViewProps) {
   const { state, proposalId, pending, reachable } = props;
@@ -298,7 +358,13 @@ export function ProposalView(props: ProposalViewProps) {
   if (proposal !== undefined) return <Folded props={props} proposal={proposal} />;
   if (waiting.body !== null) {
     return (
-      <Waiting state={state} body={waiting.body} pending={waiting.pending} reachable={reachable} />
+      <Waiting
+        state={state}
+        me={props.me}
+        body={waiting.body}
+        pending={waiting.pending}
+        reachable={reachable}
+      />
     );
   }
   return (

@@ -52,6 +52,15 @@ export interface ProposalBody {
   readonly link?: string;
 }
 
+/**
+ * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
+ * its event id; the Proposal's own text is version 1, under the Proposal's id.
+ */
+export interface VersionBody {
+  readonly proposal: string;
+  readonly text: string;
+}
+
 /** Scores the versions of one Proposal, keyed by version id, with one optional note. */
 export interface VoteBody {
   readonly proposal: string;
@@ -64,6 +73,7 @@ export interface EventBodies {
   readonly genesis: GenesisBody;
   readonly join: JoinBody;
   readonly proposal: ProposalBody;
+  readonly version: VersionBody;
   readonly vote: VoteBody;
   readonly level: LevelBody;
 }
@@ -207,6 +217,11 @@ function parseProposal(body: Json): ProposalBody | null {
   return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
 }
 
+function parseVersion(body: Json): VersionBody | null {
+  const { proposal, text } = body;
+  return isString(proposal) && isString(text) ? { proposal, text } : null;
+}
+
 function parseScores(value: unknown): Record<string, Score> | null {
   if (!isObject(value)) return null;
   const entries = Object.entries(value);
@@ -244,6 +259,8 @@ function withBody(
       return attach(parseJoin(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'proposal':
       return attach(parseProposal(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'version':
+      return attach(parseVersion(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'vote':
       return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'level':

@@ -94,6 +94,7 @@
 }
 
 .reads-as-heading {
+  margin: 0;
   font: var(--type-ui);
 }
 
@@ -159,6 +160,85 @@
   gap: var(--space-4);
   padding-block-start: var(--space-5);
   border-top: 1px solid var(--hairline);
+}
+
+/* "Add your version" sits under the ballot at its own width. */
+.add-version {
+  justify-self: start;
+}
+
+/* Competing versions (DESIGN.md, Ballot; ADR-0004) -------------------------
+ * Each version is one card: its heading, its word diff, "How it will read"
+ * and its score pills. Phones stack the cards. Wide screens set them in equal
+ * columns: two from 40rem, three from 60rem, where each column still fits a
+ * pill's label on one line. */
+
+.versions {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.version {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.version-heading {
+  color: var(--ink);
+  font: var(--type-heading-3);
+  overflow-wrap: anywhere;
+}
+
+/* The card is the surface for its diff or text, so they drop their own box. */
+.version > :is(.word-diff, .atom-card) {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* The pills sit at the foot of each card, so side by side they line up. */
+.version .score-group {
+  margin-block-start: auto;
+  padding-block-start: var(--space-2);
+}
+
+@media (min-width: 40rem) {
+  .versions-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 60rem) {
+  .versions-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* A Proposal with several versions takes the app shell's width, so they fit
+ * side by side; everything else keeps the reading column. */
+.shell-wide {
+  max-width: calc(var(--shell) + 2 * var(--space-4));
+}
+
+.shell-wide > :not(.vote),
+.shell-wide :is(.vote, .ballot) > :not(.ballot, .versions) {
+  max-width: var(--reading);
+}
+
+/* "A new version was added": a highlight, not a warning. */
+.ballot-notice {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--ochre);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
 }
 
 .ballot {

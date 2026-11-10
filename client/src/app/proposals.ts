@@ -1,6 +1,6 @@
 /**
  * What the composer, the ballot and the level picker do (spec §4 and §8),
- * apart from any screen.
+ * apart from any screen: propose, add a version, vote, and choose a level.
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -33,10 +33,21 @@ export interface ProposalValues {
 export type ProposeResult =
   { readonly outcome: 'proposed'; readonly proposalId: string } | { readonly outcome: 'too-large' };
 
-/** One ballot: a score for the Proposal's text and one note, blank for none. */
+/** A version's entries: the Proposal it joins, and its text as typed. */
+export interface VersionValues {
+  readonly proposal: string;
+  /** The version's text, as typed; `addVersion` normalizes it. */
+  readonly text: string;
+}
+
+/** A queued version's id, or why it wasn't queued. */
+export type AddVersionResult =
+  { readonly outcome: 'added'; readonly versionId: string } | { readonly outcome: 'too-large' };
+
+/** One ballot: a score for each version, keyed by version id, and one note, blank for none. */
 export interface BallotValues {
   readonly proposal: string;
-  readonly score: Score;
+  readonly scores: Readonly<Record<string, Score>>;
   readonly note: string;
 }
 
@@ -87,18 +98,46 @@ export async function propose(
 }
 
 /**
- * Casts this device's ballot in `groupId` on one Proposal, scoring its text
- * (version 1, whose id is the Proposal's). A later ballot replaces this one in
- * full until the vote closes. The note is trimmed, and left out when blank.
+ * Adds a version to an open Proposal's ballot (ADR-0004), as this device's
+ * member of `groupId`. The text goes through `normalizeAtomText` before it is
+ * signed. Queuing it clears the private draft kept for that Proposal in the
+ * same change. A version too large for any blob is refused before anything is
+ * queued, and its draft kept. The fold decides whether it joins the ballot:
+ * it ignores one that arrives after the close or past the third.
+ */
+export async function addVersion(
+  services: ProposalServices,
+  groupId: string,
+  values: VersionValues,
+): Promise<AddVersionResult> {
+  const { proposal } = values;
+  const body = { proposal, text: normalizeAtomText(values.text) };
+  const event = await signFor(services, groupId, {
+    type: 'version',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record, proposal);
+  void services.sync.syncOnce();
+  return { outcome: 'added', versionId: event.id };
+}
+
+/**
+ * Casts this device's ballot in `groupId` on one Proposal, scoring each
+ * version it names by version id (version 1's id is the Proposal's). A later
+ * ballot replaces this one in full until the vote closes, so it carries every
+ * score the voter means to keep. The note is trimmed, and left out when blank.
  */
 export async function castBallot(
   services: ProposalServices,
   groupId: string,
   values: BallotValues,
 ): Promise<void> {
-  const { proposal, score } = values;
+  const { proposal, scores } = values;
   const note = nfc(values.note.trim());
-  const body = { proposal, scores: { [proposal]: score }, ...(note === '' ? {} : { note }) };
+  const body = { proposal, scores, ...(note === '' ? {} : { note }) };
   const event = await signFor(services, groupId, {
     type: 'vote',
     group: groupId,

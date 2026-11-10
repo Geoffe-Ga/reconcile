@@ -38,6 +38,15 @@ export interface LogBuilder {
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
+  /** Adds a version of `proposal` by `name`, returning its id. */
+  version(name: string, proposal: string, text: string): string;
+  /** Adds `name`'s ballot on `proposal`, scoring each version it names. */
+  ballot(
+    name: string,
+    proposal: string,
+    scores: Readonly<Record<string, Score>>,
+    note?: string,
+  ): void;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -101,11 +110,13 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },
     vote(name: string, proposal: string, score: Score, note?: string) {
-      const vote = {
-        proposal,
-        scores: { [proposal]: score },
-        ...(note === undefined ? {} : { note }),
-      };
+      log.ballot(name, proposal, { [proposal]: score }, note);
+    },
+    version(name: string, proposal: string, text: string) {
+      return add(name, { type: 'version', group, ts: 0, body: { proposal, text } });
+    },
+    ballot(name: string, proposal: string, scores: Readonly<Record<string, Score>>, note?: string) {
+      const vote = { proposal, scores, ...(note === undefined ? {} : { note }) };
       add(name, { type: 'vote', group, ts: 0, body: vote });
     },
     state(relayNow?: number) {
