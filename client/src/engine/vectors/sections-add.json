@@ -861,6 +861,103 @@
         ]
       },
       "unchangedWithout": [4]
+    },
+    {
+      "name": "an add runs the voting window its proposer chose, and one outside its class's bounds is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["A\n", "B\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "after": "@1.0"
+              },
+              "title": "Add X",
+              "why": "We need X.",
+              "text": "X\n",
+              "window": 2
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "after": "@1.0"
+              },
+              "title": "Add X",
+              "why": "We need X.",
+              "text": "X\n",
+              "window": 10
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "window": 10,
+            "deadline": 29389411,
+            "final": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          }
+        ]
+      },
+      "unchangedWithout": [3]
     }
   ]
 }

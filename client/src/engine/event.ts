@@ -56,8 +56,11 @@ export interface LevelBody {
 }
 
 /**
- * Proposes new text for one Atom, with a title, a justification and an
- * optional discussion link. Empty text proposes removing the Atom (#75).
+ * Proposes new text for one Atom, with a title, a justification, an optional
+ * discussion link and an optional voting window in whole days (#106). Empty
+ * text proposes removing the Atom (#75). The window is kept as written: the
+ * fold checks it against the bounds of the Proposal's class, and a Proposal
+ * without one runs the class default.
  */
 export interface ProposalBody {
   readonly atom: string;
@@ -65,6 +68,7 @@ export interface ProposalBody {
   readonly why: string;
   readonly text: string;
   readonly link?: string;
+  readonly window?: number;
 }
 
 /**
@@ -76,13 +80,17 @@ export interface AddTarget {
   readonly after: string | null;
 }
 
-/** Proposes a new section (#75): it carries `target` in place of an Atom, and its text. */
+/**
+ * Proposes a new section (#75): it carries `target` in place of an Atom, its
+ * text, and, like an edit, an optional voting window in whole days (#106).
+ */
 export interface AddProposalBody {
   readonly target: AddTarget;
   readonly title: string;
   readonly why: string;
   readonly text: string;
   readonly link?: string;
+  readonly window?: number;
 }
 
 /**
@@ -239,6 +247,10 @@ function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
 }
 
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || typeof value === 'number';
+}
+
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
@@ -295,13 +307,21 @@ function parseAddTarget(value: unknown): AddTarget | null {
   return after === null || isString(after) ? { kind: 'add', after } : null;
 }
 
-/** An add carries `target` in place of `atom`, never both, and its text (#75). */
+/** An add carries `target` in place of `atom`, never both, its text, and any window (#75, #106). */
 function parseAddProposal(body: Json): AddProposalBody | null {
-  const { atom, target, title, why, text, link } = body;
+  const { atom, target, title, why, text, link, window } = body;
   const parsed = parseAddTarget(target);
   if (parsed === null || atom !== undefined || !isString(text)) return null;
   if (!isString(title) || !isString(why) || !isOptionalString(link)) return null;
-  return { target: parsed, title, why, text, ...(link === undefined ? {} : { link }) };
+  if (!isOptionalNumber(window)) return null;
+  return {
+    target: parsed,
+    title,
+    why,
+    text,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+  };
 }
 
 /** A steward target's kind, seat and member, or null for any other shape (#102). */
@@ -312,7 +332,7 @@ function parseStewardTarget(value: unknown): StewardTarget | null {
   return { kind: 'steward', seat, member };
 }
 
-/** A steward Proposal carries `target` and no `atom`; any `text` is dropped (#102). */
+/** A steward Proposal carries `target` and no `atom`; any `text` or `window` is dropped (#102, #106). */
 function parseStewardProposal(body: Json): StewardProposalBody | null {
   const { atom, target, title, why, link } = body;
   const parsed = parseStewardTarget(target);
@@ -330,10 +350,17 @@ function parseTargeted(body: Json): ProposalEventBody | null {
 
 function parseProposal(body: Json): ProposalEventBody | null {
   if (body.target !== undefined) return parseTargeted(body);
-  const { atom, title, why, text, link } = body;
+  const { atom, title, why, text, link, window } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
-  if (!isOptionalString(link)) return null;
-  return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
+  return {
+    atom,
+    title,
+    why,
+    text,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+  };
 }
 
 function parseSuspend(body: Json): SuspendBody | null {

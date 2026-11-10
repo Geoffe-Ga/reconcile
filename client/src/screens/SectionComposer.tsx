@@ -29,6 +29,8 @@ export interface AddSectionProps {
   /** The Atom the new section would follow, from the route, or null for the start. */
   readonly after: string | null;
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
+  readonly now: number;
   readonly onPropose: ComposerProps['onPropose'];
   /** A lapsed add to propose again (#74), from the `again` route. */
   readonly again?: Proposal;
@@ -69,7 +71,15 @@ function AddIntro({ anchor }: { readonly anchor: { atom: Atom; number: number } 
  * after its anchor once it passes, or at the end if the anchor is gone by then.
  * Proposing a lapsed add again (#74) starts from it and carries its versions.
  */
-export function AddSection({ state, me, after, drafts, onPropose, ...props }: AddSectionProps) {
+export function AddSection({
+  state,
+  me,
+  after,
+  drafts,
+  now,
+  onPropose,
+  ...props
+}: AddSectionProps) {
   const index = after === null ? -1 : state.atoms.findIndex((atom) => atom.id === after);
   const atom = state.atoms[index];
   const { composer } = messages;
@@ -92,6 +102,7 @@ export function AddSection({ state, me, after, drafts, onPropose, ...props }: Ad
       draftKey={draftKey}
       start={start}
       drafts={drafts}
+      now={now}
       onPropose={onPropose}
       words={formWords(composer.addTitle, composer.addPageTitle, composer.addSubmit, again)}
       intro={
@@ -130,6 +141,8 @@ export interface RemoveSectionProps {
   /** The Atom to remove, from the route. */
   readonly atomId: string;
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
+  readonly now: number;
   readonly onPropose: ComposerProps['onPropose'];
   readonly onAddVersion: ComposerProps['onAddVersion'];
   /** A lapsed removal to propose again (#74), from the `again` route. */
@@ -239,6 +252,7 @@ export function RemoveSection(props: RemoveSectionProps) {
       draftKey={draftKey}
       start={start}
       drafts={drafts}
+      now={props.now}
       onPropose={props.onPropose}
       words={formWords(
         composer.removeTitle,

@@ -17,10 +17,12 @@ import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useDraft } from '../app/useDraft';
 import { versionDoes } from '../app/versionViews';
+import { WindowField } from '../app/WindowField';
 import { normalizeAtomText } from '../engine/atomText';
 import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
+import { type ProposalClass, targetClass } from '../engine/rules';
 import { nfcLength } from '../engine/text';
 import type { Draft, GroupDrafts } from '../store/drafts';
 
@@ -36,6 +38,8 @@ export interface ComposerProps {
   readonly atomId: string;
   /** This group's private drafts on this device. */
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from. */
+  readonly now: number;
   /** Queues the Proposal from valid entries, clearing its draft as it does. */
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
   /** Queues a version of the section's open Proposal, clearing its draft as it does. */
@@ -85,7 +89,7 @@ function preview(value: string): ReactNode {
 }
 
 /** The entries as the Proposal takes them: title, why and link trimmed, a blank link none. */
-function toValues(draft: Draft, place: ProposalPlace): ProposalValues {
+function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalValues {
   const link = draft.link.trim();
   return {
     ...place,
@@ -93,7 +97,18 @@ function toValues(draft: Draft, place: ProposalPlace): ProposalValues {
     why: draft.why.trim(),
     text: draft.text,
     link: link === '' ? null : link,
+    window,
   };
+}
+
+/** The class `targetClass` gives this Proposal as it stands, which bounds its voting time. */
+function classOf(state: GroupState, draft: Draft, place: ProposalPlace): ProposalClass {
+  return targetClass(state, { ...place, title: draft.title, why: draft.why, text: draft.text });
+}
+
+/** The voting time to show and send: the draft's, or else its class's default. */
+function windowOf(state: GroupState, draft: Draft, place: ProposalPlace): number {
+  return draft.window ?? state.rules.windows[classOf(state, draft, place)].default;
 }
 
 /** Where a new composer starts: a blank title and why, the section's text, the latest link. */
@@ -102,8 +117,13 @@ function startOf(state: GroupState, atom: Atom): Draft {
 }
 
 /** The entries as the Proposal takes them, and, proposing again, the other versions' texts too. */
-function valuesOf(draft: Draft, place: ProposalPlace, again: Proposal | undefined): ProposalValues {
-  const values = toValues(draft, place);
+function valuesOf(
+  draft: Draft,
+  place: ProposalPlace,
+  again: Proposal | undefined,
+  window: number,
+): ProposalValues {
+  const values = toValues(draft, place, window);
   if (again === undefined) return values;
   return { ...values, again: again.id, versions: again.versions.slice(1).map((v) => v.text) };
 }
@@ -151,15 +171,19 @@ export interface TextEntry {
 }
 
 interface FieldsProps {
+  readonly state: GroupState;
   readonly values: Draft;
   /** The text field, or null for a removal, whose text is `""` (#75). */
   readonly text: TextEntry | null;
+  /** Where the Proposal goes, whose class bounds its voting time (#106). */
+  readonly place: ProposalPlace;
+  readonly now: number;
   readonly onChange: (values: Draft) => void;
 }
 
-/** The four entries, or three for a removal, each kept in the draft as it changes. */
-function Fields({ values, text, onChange }: FieldsProps) {
-  const set = (key: keyof Draft) => (value: string) => {
+/** The four entries, or three for a removal, and the voting time, each kept in the draft as it changes. */
+function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
+  const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
   };
   return (
@@ -205,6 +229,15 @@ function Fields({ values, text, onChange }: FieldsProps) {
         validate={checkLink}
         value={values.link}
         onChange={set('link')}
+      />
+      <WindowField
+        rules={state.rules}
+        cls={classOf(state, values, place)}
+        value={windowOf(state, values, place)}
+        onChange={(window) => {
+          onChange({ ...values, window });
+        }}
+        now={now}
       />
     </>
   );
@@ -267,6 +300,8 @@ export interface ProposalFormProps {
   /** Where a new draft starts. */
   readonly start: Draft;
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
+  readonly now: number;
   readonly onPropose: ComposerProps['onPropose'];
   readonly words: FormWords;
   /** What sits between the heading and the form, such as the section as it reads now. */
@@ -278,10 +313,11 @@ export interface ProposalFormProps {
 }
 
 /**
- * A Proposal's form: a title, a why, the text (unless it removes a section)
- * and a discussion link, kept as a private draft until it is proposed, with
- * Discard draft once it has changed. Submitting queues one `proposal`, and
- * proposing again, one `version` for each of the lapsed Proposal's others.
+ * A Proposal's form: a title, a why, the text (unless it removes a section),
+ * a discussion link and the voting time (#106), kept as a private draft until
+ * it is proposed, with Discard draft once it has changed. Submitting queues
+ * one `proposal`, and proposing again, one `version` for each of the lapsed
+ * Proposal's others.
  */
 export function ProposalForm(props: ProposalFormProps) {
   const { state, place, drafts, onPropose, words } = props;
@@ -294,7 +330,7 @@ export function ProposalForm(props: ProposalFormProps) {
   if (values === null) return null;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void run(valuesOf(values, place, props.again));
+    void run(valuesOf(values, place, props.again, windowOf(state, values, place)));
   };
   const change = (next: Draft) => {
     setSaid('');
@@ -312,7 +348,14 @@ export function ProposalForm(props: ProposalFormProps) {
       {props.intro}
       {draft.restored ? <p className="draft-note">{messages.composer.draftRestored}</p> : null}
       <Form ref={form} className="form" onSubmit={submit} validationErrors={refused}>
-        <Fields values={values} text={props.text} onChange={change} />
+        <Fields
+          state={state}
+          values={values}
+          text={props.text}
+          place={place}
+          now={props.now}
+          onChange={change}
+        />
         <OtherVersions again={props.again} />
         <p className="caption">{messages.composer.visibility}</p>
         {failed ? (
@@ -499,6 +542,7 @@ interface ChangeFormProps {
   readonly state: GroupState;
   readonly section: Section;
   readonly drafts: GroupDrafts;
+  readonly now: number;
   readonly onPropose: ComposerProps['onPropose'];
   /** The lapsed Proposal this proposes again, or undefined for a new one. */
   readonly again: Proposal | undefined;
@@ -509,7 +553,7 @@ interface ChangeFormProps {
  * reads now. Proposing again (#74), it starts from the lapsed Proposal, and
  * its draft is kept under that Proposal, apart from the section's.
  */
-function ChangeForm({ state, section, drafts, onPropose, again }: ChangeFormProps) {
+function ChangeForm({ state, section, drafts, now, onPropose, again }: ChangeFormProps) {
   const { atom, number } = section;
   const { composer } = messages;
   const title = again === undefined ? composer.title : composer.againTitle;
@@ -520,6 +564,7 @@ function ChangeForm({ state, section, drafts, onPropose, again }: ChangeFormProp
       draftKey={again === undefined ? atom.id : againDraft(again.id)}
       start={again === undefined ? startOf(state, atom) : againStartOf(state, again)}
       drafts={drafts}
+      now={now}
       onPropose={onPropose}
       words={{ title, pageTitle: composer.pageTitle, submit: composer.submit }}
       intro={
@@ -537,14 +582,15 @@ function ChangeForm({ state, section, drafts, onPropose, again }: ChangeFormProp
 /**
  * The composer (`#/g/{groupId}/propose/{atomId}`; spec §8). On a section with
  * no open Proposal: a title, a why, the section's new text in Write and
- * Preview tabs (prefilled with the current text), and a discussion link
- * (prefilled with the group's latest one), and submitting queues one
+ * Preview tabs (prefilled with the current text), a discussion link
+ * (prefilled with the group's latest one), and the voting time in days
+ * (the class default, within its bounds; #106), and submitting queues one
  * `proposal`. On a section whose Proposal is open, or an add's open Proposal
  * (#75), "Add your version": the text alone, and submitting queues one
- * `version`. A full ballot takes no more. `composeOption` decides which, as it
- * does for the fold. What is typed is kept as a private draft on this device
- * until it is sent or discarded. Only someone who may propose sees a form
- * (`can()`).
+ * `version`, which runs in its Proposal's window. A full ballot takes no
+ * more. `composeOption` decides which, as it does for the fold. What is typed
+ * is kept as a private draft on this device until it is sent or discarded.
+ * Only someone who may propose sees a form (`can()`).
  *
  * Proposing a lapsed Proposal again (#74) is the same form, starting from its
  * title, why, text and link, with its other versions carried onto the new
@@ -570,6 +616,7 @@ export function Composer(props: ComposerProps) {
         state={state}
         section={what.section}
         drafts={drafts}
+        now={props.now}
         onPropose={props.onPropose}
         again={again}
       />

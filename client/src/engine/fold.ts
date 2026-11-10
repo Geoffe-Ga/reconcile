@@ -6,15 +6,15 @@
  * breaks one lands in `ignored` and changes nothing. Votes run on relay time
  * (`received`, in whole minutes); the author's `ts` plays no part. Genesis
  * founds the group with its rules, and each Proposal's class, set when it
- * opens, picks its window and its bar. A Document changes only when a
- * Proposal's pass is final: an edit sets an Atom's text or, with `""`, removes
- * it, and an add puts a new Atom after its anchor (#75). Final passes apply in
- * order of close time, then the Proposals' relay order. Steward seats change when a steward Proposal's
- * pass is final, and a suspension narrows `can()` until it ends (#102): the
- * fold keeps `at`, the relay minute it has reached, and brings the seats up
- * to it before each event. The fold is pure: no I/O, no clock, no
- * randomness, so every device that folds the same records builds the same
- * state.
+ * opens, picks its bar and bounds the window its proposer chose. A Document
+ * changes only when a Proposal's pass is final: an edit sets an Atom's text
+ * or, with `""`, removes it, and an add puts a new Atom after its anchor
+ * (#75). Final passes apply in order of close time, then the Proposals' relay
+ * order. Steward seats change when a steward Proposal's pass is final, and a
+ * suspension narrows `can()` until it ends (#102): the fold keeps `at`, the
+ * relay minute it has reached, and brings the seats up to it before each
+ * event. The fold is pure: no I/O, no clock, no randomness, so every device
+ * that folds the same records builds the same state.
  */
 import {
   can,
@@ -46,8 +46,9 @@ import {
 } from './event';
 import {
   type Bar,
+  chosenWindow,
+  DAY_MINUTES,
   DEFAULT_RULES,
-  defaultWindowMinutes,
   foundingRules,
   type ProposalClass,
   type Rules,
@@ -137,9 +138,11 @@ export interface Ballot {
  * eligible set leaves out the steward it would remove.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
- * opened, never from the proposer's own fields. It fixes `deadline`, the
- * relay's receipt plus the class's default window, and the bar the versions
- * are tallied at, which `outcome` carries. `eligible` is who could vote when
+ * opened, never from the proposer's own fields. It picks the bar the versions
+ * are tallied at, which `outcome` carries, and bounds `window`, the whole days
+ * the vote runs: the proposer's choice, or the class default when they named
+ * none (#106). `deadline` is the relay's receipt plus `window` × 1,440
+ * minutes, fixed when it opens. `eligible` is who could vote when
  * it opened (ADR-0015): the members for whom `wouldVote` held then. A later
  * join or level change never changes it, nor the quorum and early close that
  * count it. `closedAt` is the receipt minute of the ballot that closed it
@@ -159,6 +162,7 @@ export interface Proposal {
   readonly text: string;
   readonly link: string | null;
   readonly class: ProposalClass;
+  readonly window: number;
   readonly deadline: number;
   readonly eligible: readonly string[];
   readonly versions: readonly Version[];
@@ -361,9 +365,17 @@ function eligibleNow(draft: Draft, left: string | null): string[] {
     .map((m) => m.author);
 }
 
-/** What every Proposal opens with: its receipt, author, class and window, and no ballots yet. */
-function opening(draft: Draft, body: ProposalEventBody, author: string, at: Receipt) {
-  const cls = targetClass(draft, body);
+/** A Proposal's class and the whole days its vote runs, fixed when it opens. */
+interface Term {
+  readonly cls: ProposalClass;
+  readonly window: number;
+}
+
+/**
+ * What every Proposal opens with: its receipt, author, class, window and a
+ * deadline `window` days after its receipt (#106), and no ballots yet.
+ */
+function opening(body: ProposalEventBody, author: string, at: Receipt, { cls, window }: Term) {
   return {
     ...at,
     author,
@@ -371,16 +383,25 @@ function opening(draft: Draft, body: ProposalEventBody, author: string, at: Rece
     why: body.why,
     link: body.link ?? null,
     class: cls,
-    deadline: at.received + defaultWindowMinutes(draft.rules, cls),
+    window,
+    deadline: at.received + window * DAY_MINUTES,
     ballots: [],
     closedAt: null,
   };
 }
 
+/**
+ * Opens an edit at its class's bar, for the window its proposer chose within
+ * the class's bounds, or the class default (#106). A window outside those
+ * bounds, or not a whole number, makes the fold ignore the Proposal.
+ */
 function applyEdit(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   if (!proposalIsValid(draft, body, author, at)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
   draft.proposals.push({
-    ...opening(draft, body, author, at),
+    ...opening(body, author, at, { cls, window }),
     atom: body.atom,
     target: { kind: 'edit' },
     text: body.text,
@@ -390,11 +411,18 @@ function applyEdit(draft: Draft, body: ProposalBody, author: string, at: Receipt
   return true;
 }
 
-/** Opens an add (#75): its Atom, created on a pass, takes the Proposal's own id. */
+/**
+ * Opens an add (#75): its Atom, created on a pass, takes the Proposal's own
+ * id. Like an edit, it runs the window its proposer chose within its class's
+ * bounds, or the class default, and one outside them is ignored (#106).
+ */
 function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Receipt): boolean {
   if (!addIsValid(draft, body, author, at)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
   draft.proposals.push({
-    ...opening(draft, body, author, at),
+    ...opening(body, author, at, { cls, window }),
     atom: at.id,
     target: body.target,
     text: body.text,
@@ -408,7 +436,8 @@ function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Recei
  * Opens a steward election or recall (ADR-0049, #102), when its author may
  * propose and its target is valid now (stewards.ts). Its one version has no
  * text, and a recall's steward isn't in its eligible set, or their own 0
- * alone would block it in a group of 10 or fewer.
+ * alone would block it in a group of 10 or fewer. It runs its class's default
+ * window: a steward Proposal carries no `window` (#106).
  */
 function applySteward(
   draft: Draft,
@@ -420,8 +449,9 @@ function applySteward(
   if (!isSeatNumber(seat) || !fieldsAreValid(body)) return false;
   if (!mayProposeSteward(draft, author, body.target)) return false;
   const { holder } = seatAt(draft, seat);
+  const cls = targetClass(draft, body);
   draft.proposals.push({
-    ...opening(draft, body, author, at),
+    ...opening(body, author, at, { cls, window: draft.rules.windows[cls].default }),
     atom: '',
     target: { kind: 'steward', seat, member, holder },
     text: '',

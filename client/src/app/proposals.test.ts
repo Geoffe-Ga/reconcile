@@ -59,6 +59,13 @@ async function outbox(device: TestDevice, groupId: string) {
   return (group?.outbox ?? []).map((bytes) => parseRecord(bytes)?.event);
 }
 
+/** The body of the one `proposal` in a group's outbox. */
+async function queuedProposal(device: TestDevice, groupId: string) {
+  const [queued] = await outbox(device, groupId);
+  if (queued?.type !== 'proposal') throw new Error('Expected a queued proposal.');
+  return queued.body;
+}
+
 describe('propose', () => {
   it('queues one proposal, NFC-normalized, and returns its id', async () => {
     const fake = createFakeRelay();
@@ -158,6 +165,31 @@ describe('propose', () => {
     expect(base64url(publicKeyOf(group?.signingKey ?? new Uint8Array(32)))).toBe(group?.me.author);
   });
 
+  it('writes the window the proposer chose, which sets the folded deadline (#106)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const values = { atom, title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: null };
+    await propose(device.services, groupId, { ...values, window: 10 });
+    expect(await queuedProposal(device, groupId)).toMatchObject({ window: 10 });
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    if (group === undefined) throw new Error('Expected the group.');
+    const [folded] = fold(group.log, group.relayNow).proposals;
+    if (folded === undefined) throw new Error('Expected the Proposal to open.');
+    expect(folded.window).toBe(10);
+    expect(folded.deadline).toBe(folded.received + 10 * 1_440);
+  });
+
+  it('leaves the window out when none is given, so the class default applies', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const values = { atom, title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: null };
+    await propose(device.services, groupId, values);
+    expect(await queuedProposal(device, groupId)).not.toHaveProperty('window');
+  });
+
   it('refuses to propose in a group this device isn’t in', async () => {
     const fake = createFakeRelay();
     const { device, atom } = await founded(fake);
@@ -175,13 +207,15 @@ describe('propose', () => {
     await device.services.store.writeDraft(groupId, addDraft(null), draft);
     await device.services.store.writeDraft(groupId, atom, draft);
     const target = { kind: 'add', after: atom } as const;
-    const result = await propose(device.services, groupId, { ...draft, target, link: null });
+    const values = { ...draft, target, link: null, window: 10 };
+    const result = await propose(device.services, groupId, values);
     const [queued] = await outbox(device, groupId);
     expect(queued?.body).toEqual({
       target: { kind: 'add', after: atom },
       title: 'Guests',
       why: 'They visit.',
       text: 'Guests leave by 11.\n',
+      window: 10,
     });
     expect(result.outcome).toBe('proposed');
     expect(await device.services.store.readDraft(groupId, addDraft(atom))).toBeUndefined();

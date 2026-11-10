@@ -178,11 +178,13 @@ function DocumentScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
-/** What every composer is handed: the group, this member, its drafts, and its two actions. */
+/** What every composer is handed: the group, this member, its drafts, the device clock, and its two actions. */
 interface ComposeProps {
   readonly state: GroupState;
   readonly me: string;
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
+  readonly now: number;
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
 }
@@ -199,6 +201,7 @@ interface ComposeScreenProps extends GroupScreenProps {
 function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
+  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
@@ -216,7 +219,7 @@ function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
           replaceRoute({ name: 'proposal', groupId, proposalId: values.proposal });
           return result.outcome;
         };
-        return children({ state, me: me.author, drafts, onPropose, onAddVersion });
+        return children({ state, me: me.author, drafts, now: deviceNow, onPropose, onAddVersion });
       }}
     </GroupGate>
   );

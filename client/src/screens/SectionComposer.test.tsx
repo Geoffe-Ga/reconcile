@@ -23,6 +23,9 @@ type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
 type OnAddVersion = (values: VersionValues) => Promise<ComposeOutcome>;
 
 const [, VOTING] = LEVELS;
+
+/** The device clock the voting time's closing line counts from: Wed 11 Nov 2026, noon UTC. */
+const NOW = Date.UTC(2026, 10, 11, 12);
 const CHAT = 'https://chat.example.org/riverside';
 
 const HINT =
@@ -63,6 +66,7 @@ async function addSection(options: AddOptions = {}) {
       me={options.me ?? authorOf('ana')}
       after={afterId}
       drafts={memory.drafts}
+      now={NOW}
       onPropose={onPropose}
       {...(options.again === undefined ? {} : { again: options.again })}
     />,
@@ -95,6 +99,7 @@ async function removeSection(options: RemoveOptions = {}) {
       me={options.me ?? authorOf('ana')}
       atomId={atomId}
       drafts={memory.drafts}
+      now={NOW}
       onPropose={onPropose}
       onAddVersion={onAddVersion}
       {...(options.again === undefined ? {} : { again: options.again })}
@@ -155,7 +160,31 @@ describe('AddSection', () => {
       why: 'Guests come often.',
       text: 'Guests leave by 11pm.',
       link: null,
+      window: 7,
     });
+  });
+
+  it('sets the voting time, from the class default, and sends the days chosen (#106)', async () => {
+    const { user, onPropose } = await addSection({ after: 0 });
+    const days = screen.getByRole('textbox', { name: 'Voting time (days)' });
+    expect(days).toHaveValue('7');
+    await fill(user, { Title: 'Guests', Why: 'They visit.', 'Section text': 'Guests by 11.' });
+    await replace(user, 'Voting time (days)', '10');
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose.mock.calls[0]?.[0].window).toBe(10);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('refuses a voting time outside its class’s bounds, and sends nothing (#106)', async () => {
+    const { user, onPropose } = await addSection();
+    await fill(user, { Title: 'Guests', Why: 'They visit.', 'Section text': 'Guests by 11.' });
+    await replace(user, 'Voting time (days)', '2');
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Voting time (days)' })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
   });
 
   it('refuses blank text, with the reason tied to the field', async () => {
@@ -195,6 +224,7 @@ describe('AddSection', () => {
         me={authorOf('ana')}
         after="missing.0"
         drafts={memory.drafts}
+        now={NOW}
         onPropose={vi.fn()}
       />,
     );
@@ -252,7 +282,17 @@ describe('RemoveSection', () => {
       why: 'The council collects now.',
       text: '',
       link: CHAT,
+      window: 7,
     });
+  });
+
+  it('sets a removal’s voting time, and sends the days chosen (#106)', async () => {
+    const { user, onPropose } = await removeSection();
+    expect(screen.getByRole('textbox', { name: 'Voting time (days)' })).toHaveValue('7');
+    await fill(user, { Title: 'No bins rule', Why: 'The council collects now.' });
+    await replace(user, 'Voting time (days)', '14');
+    await user.click(screen.getByRole('button', { name: 'Propose removing it' }));
+    expect(onPropose.mock.calls[0]?.[0].window).toBe(14);
   });
 
   it('keeps its draft under the removal, apart from the section’s own draft', async () => {
@@ -287,6 +327,7 @@ describe('RemoveSection', () => {
     expect(
       screen.getByRole('region', { name: 'Section 2 now reads' }).querySelector('del'),
     ).toHaveTextContent('Bins go out on Tuesday.');
+    // A version runs in its Proposal's window, so it has no voting time of its own (#106).
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(
       screen.getByText('Everyone in your group sees this version and that you added it.'),
@@ -352,6 +393,7 @@ describe('RemoveSection', () => {
         me={authorOf('ana')}
         atomId="missing.0"
         drafts={memory.drafts}
+        now={NOW}
         onPropose={vi.fn()}
         onAddVersion={vi.fn()}
       />,
@@ -403,6 +445,7 @@ describe('Proposing an add or a removal again (#74)', () => {
       why: 'They visit.',
       text: 'Guests leave by 11pm.\n',
       link: CHAT,
+      window: 7,
       again: add.id,
       versions: ['Guests leave by midnight.\n'],
     });
