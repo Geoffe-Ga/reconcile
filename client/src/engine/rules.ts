@@ -6,7 +6,8 @@
  * founds every group with ADR-0067's Fellowship defaults and changes none of
  * them by vote (ADR-0074), so a genesis can only restate a default: it can't
  * lower a bar. Every Proposal gets its class from {@link targetClass} when it
- * opens, and its class picks the bar its vote must clear and its window.
+ * opens, and its class picks the bar its vote must clear and bounds the window
+ * its proposer chooses ({@link validWindow}, #106).
  * Integers only, like the tally: a bar is an average of at least
  * `avgAtLeast` with under `zerosUnderPercent`% zeros, compared as products.
  */
@@ -140,4 +141,29 @@ export const targetClass: TargetClassifier = () => 'ordinary';
 /** How long a vote of class `cls` runs when the proposer names no window, in relay minutes. */
 export function defaultWindowMinutes(rules: Rules, cls: ProposalClass): number {
   return rules.windows[cls].default * DAY_MINUTES;
+}
+
+/**
+ * True when a proposer may choose `days` for a vote of class `cls` (#106,
+ * ADR-0074): a whole number from `windows[cls].min` to `windows[cls].max`,
+ * both included. The composer checks it as the proposer types; the fold
+ * ignores a Proposal whose window fails it.
+ */
+export function validWindow(rules: Rules, cls: ProposalClass, days: number): boolean {
+  const { min, max } = rules.windows[cls];
+  return Number.isInteger(days) && days >= min && days <= max;
+}
+
+/**
+ * How many whole days a Proposal of class `cls` runs: the `window` its
+ * proposer chose, or the class default when it names none. Null when the
+ * window it names fails {@link validWindow}, so the fold ignores the Proposal.
+ */
+export function chosenWindow(
+  rules: Rules,
+  cls: ProposalClass,
+  window: number | undefined,
+): number | null {
+  if (window === undefined) return rules.windows[cls].default;
+  return validWindow(rules, cls, window) ? window : null;
 }

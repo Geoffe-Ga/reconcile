@@ -55,13 +55,19 @@ export interface LevelBody {
   readonly level: string;
 }
 
-/** Proposes new text for one Atom, with a title, a justification and an optional discussion link. */
+/**
+ * Proposes new text for one Atom, with a title, a justification, an optional
+ * discussion link and an optional voting window in whole days (#106). The
+ * window is kept as written: the fold checks it against the bounds of the
+ * Proposal's class, and a Proposal without one runs the class default.
+ */
 export interface ProposalBody {
   readonly atom: string;
   readonly title: string;
   readonly why: string;
   readonly text: string;
   readonly link?: string;
+  readonly window?: number;
 }
 
 /**
@@ -171,6 +177,10 @@ function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
 }
 
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || typeof value === 'number';
+}
+
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
@@ -221,10 +231,17 @@ function parseLevel(body: Json): LevelBody | null {
 }
 
 function parseProposal(body: Json): ProposalBody | null {
-  const { atom, title, why, text, link } = body;
+  const { atom, title, why, text, link, window } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
-  if (!isOptionalString(link)) return null;
-  return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
+  return {
+    atom,
+    title,
+    why,
+    text,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+  };
 }
 
 function parseVersion(body: Json): VersionBody | null {

@@ -309,6 +309,16 @@ describe('parseEvent', () => {
     ['proposal without a title', 'proposal', { atom: 'a', why: 'w', text: 'x' }],
     ['proposal without a why', 'proposal', { atom: 'a', title: 't', text: 'x' }],
     [
+      'proposal with a string window',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', window: '7' },
+    ],
+    [
+      'proposal with a null window',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', window: null },
+    ],
+    [
       'proposal with a numeric link',
       'proposal',
       { atom: 'a', title: 't', why: 'w', text: 'x', link: 1 },
@@ -381,6 +391,16 @@ describe('parseEvent', () => {
     });
     const vote = parseEvent(json(envelope('vote', { proposal: 'p', scores: {}, note: 'n' })));
     expect(vote?.event.body).toEqual({ proposal: 'p', scores: {}, note: 'n' });
+  });
+
+  it('keeps a proposal’s numeric window as written, even a fraction, for the fold to check (#106)', () => {
+    const body = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    for (const window of [10, 7.5, 0]) {
+      const parsed = parseEvent(json(envelope('proposal', { ...body, window })));
+      expect(parsed?.event.body).toEqual({ ...body, window });
+    }
+    const without = parseEvent(json(envelope('proposal', body)));
+    expect(without?.event.body).toEqual(body);
   });
 });
 

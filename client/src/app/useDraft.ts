@@ -13,9 +13,10 @@ import type { Draft, GroupDrafts } from '../store/drafts';
 /** How long after the last keystroke a draft is saved. */
 export const DRAFT_SAVE_DELAY_MS = 500;
 
-/** True when two drafts hold the same four values. */
+/** True when two drafts hold the same values. A blank window (NaN) equals another blank one. */
 function sameDraft(a: Draft, b: Draft): boolean {
-  return a.title === b.title && a.why === b.why && a.text === b.text && a.link === b.link;
+  const texts = a.title === b.title && a.why === b.why && a.text === b.text && a.link === b.link;
+  return texts && Object.is(a.window, b.window);
 }
 
 /** The composer's draft, as `useDraft` keeps it. */

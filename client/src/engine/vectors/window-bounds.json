@@ -1,0 +1,367 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "window-ordinary-min: a window of 3 days, the ordinary minimum, opens the Proposal and its deadline is received + 4,320",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n",
+              "window": 3
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "class": "ordinary",
+            "window": 3,
+            "deadline": 29004320,
+            "final": false
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "window-ordinary-max: a window of 14 days, the ordinary maximum, opens the Proposal and its deadline is received + 20,160",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n",
+              "window": 14
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "class": "ordinary",
+            "window": 14,
+            "deadline": 29020160,
+            "final": false
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "window-below-min: a window of 2 days, under the ordinary minimum, makes the fold ignore the Proposal",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n",
+              "window": 2
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 2,
+            "id": "@2"
+          }
+        ]
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "window-above-max: a window of 15 days, over the ordinary maximum, makes the fold ignore the Proposal",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n",
+              "window": 15
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 2,
+            "id": "@2"
+          }
+        ]
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "window-fraction: a window of 7.5 days makes the fold ignore the Proposal, as windows are whole days",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n",
+              "window": 7.5
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 2,
+            "id": "@2"
+          }
+        ]
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "window-string: a window of \"7\", a string, makes the Proposal a bad shape, so the fold ignores it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n",
+              "window": "7"
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 2,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "window-default: a Proposal with no window runs the ordinary default, so its deadline is received + 10,080",
+      "records": [
+        {
+          "seq": 1,
+          "received": 28999990,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1739999400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29000000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1740000000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "Neighbours asked.",
+              "text": "Quiet after 10pm.\n"
+            }
+          }
+        }
+      ],
+      "relayNow": 29000000,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "class": "ordinary",
+            "window": 7,
+            "deadline": 29010080,
+            "final": false
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

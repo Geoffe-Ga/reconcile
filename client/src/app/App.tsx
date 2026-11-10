@@ -158,6 +158,7 @@ interface ProposeScreenProps extends GroupScreenProps {
 function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
+  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
@@ -182,6 +183,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
             me={me.author}
             atomId={again?.atom ?? atomId ?? ''}
             drafts={drafts}
+            now={deviceNow}
             onPropose={onPropose}
             onAddVersion={onAddVersion}
             {...(again === undefined ? {} : { again })}

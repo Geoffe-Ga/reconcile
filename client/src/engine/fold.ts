@@ -6,10 +6,10 @@
  * breaks one lands in `ignored` and changes nothing. Votes run on relay time
  * (`received`, in whole minutes); the author's `ts` plays no part. Genesis
  * founds the group with its rules, and each Proposal's class, set when it
- * opens, picks its window and its bar. A Document's text changes only when a
- * Proposal's pass is final. The fold is pure: no I/O, no clock, no
- * randomness, so every device that folds the same records builds the same
- * state.
+ * opens, picks its bar and bounds the window its proposer chose. A
+ * Document's text changes only when a Proposal's pass is final. The fold is
+ * pure: no I/O, no clock, no randomness, so every device that folds the same
+ * records builds the same state.
  */
 import {
   can,
@@ -34,8 +34,9 @@ import {
 } from './event';
 import {
   type Bar,
+  chosenWindow,
+  DAY_MINUTES,
   DEFAULT_RULES,
-  defaultWindowMinutes,
   foundingRules,
   type ProposalClass,
   type Rules,
@@ -100,9 +101,11 @@ export interface Ballot {
  * A proposed change to one Atom, with its vote.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
- * opened, never from the proposer's own fields. It fixes `deadline`, the
- * relay's receipt plus the class's default window, and the bar the versions
- * are tallied at, which `outcome` carries. `eligible` is who could vote when
+ * opened, never from the proposer's own fields. It picks the bar the versions
+ * are tallied at, which `outcome` carries, and bounds `window`, the whole days
+ * the vote runs: the proposer's choice, or the class default when they named
+ * none (#106). `deadline` is the relay's receipt plus `window` × 1,440
+ * minutes, fixed when it opens. `eligible` is who could vote when
  * it opened (ADR-0015): the members for whom `wouldVote` held then. A later
  * join or level change never changes it, nor the quorum and early close that
  * count it. `closedAt` is the receipt minute of the ballot that closed it
@@ -121,6 +124,7 @@ export interface Proposal {
   readonly text: string;
   readonly link: string | null;
   readonly class: ProposalClass;
+  readonly window: number;
   readonly deadline: number;
   readonly eligible: readonly string[];
   readonly versions: readonly Version[];
@@ -251,9 +255,16 @@ function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: R
   );
 }
 
+/**
+ * Opens a Proposal at its class's bar, for the window its proposer chose
+ * within the class's bounds, or the class default. A window outside those
+ * bounds, or not a whole number, makes the fold ignore the Proposal.
+ */
 function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   if (!proposalIsValid(draft, body, author, at)) return false;
   const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
   draft.proposals.push({
     ...at,
     author,
@@ -263,7 +274,8 @@ function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Rec
     text: body.text,
     link: body.link ?? null,
     class: cls,
-    deadline: at.received + defaultWindowMinutes(draft.rules, cls),
+    window,
+    deadline: at.received + window * DAY_MINUTES,
     eligible: draft.members.filter((m) => wouldVote(draft, m.author)).map((m) => m.author),
     versions: [{ id: at.id, author, text: body.text }],
     ballots: [],

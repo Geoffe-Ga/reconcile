@@ -268,6 +268,32 @@ describe('ProposalView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('says how long voting runs, beside the countdown and its date: the window chosen (#106)', async () => {
+    const log = groupLog();
+    const proposalId = log.propose('ana', { ...PROPOSAL, window: 10 });
+    setup({ state: log.state(), proposalId });
+
+    const runs = screen.getByText('Voting runs 10 days');
+    expect(runs).toBeVisible();
+    const meta = runs.closest('.meta-lines');
+    expect(meta).toContainElement(screen.getByText('Closes in 10 days'));
+    const deadline = START_MINUTE + 10 * 1_440;
+    const time = screen.getByText(formatMinute(deadline));
+    expect(time.tagName).toBe('TIME');
+    expect(meta).toContainElement(time);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a default window too, and stops saying it once voting has closed', () => {
+    const { log, proposalId } = openVote();
+    const { rerender } = setup({ state: log.state(), proposalId });
+    expect(screen.getByText('Voting runs 7 days')).toBeVisible();
+    const deadline = deadlineOf(START_MINUTE);
+    rerender({ state: log.state(deadline), now: deadline });
+    expect(screen.getByText('Voting closed')).toBeVisible();
+    expect(screen.queryByText(/^Voting runs/)).not.toBeInTheDocument();
+  });
+
   it('shows a closed Proposal’s ballot, unchangeable, to someone in its eligible set who stepped down', () => {
     const { log, proposalId } = openVote();
     log.vote('ben', proposalId, 3);

@@ -27,6 +27,11 @@ export interface ProposalValues {
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
+  /**
+   * How many whole days voting runs, already checked against the bounds of
+   * the target's class (#106). Absent, the Proposal runs the class default.
+   */
+  readonly window?: number;
   /** Proposing a lapsed Proposal again (#74): that Proposal's id, whose draft this was written in. */
   readonly again?: string;
   /** The texts of the other versions to put on its ballot after it, as typed, in order. */
@@ -89,9 +94,10 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, as this device's member of `groupId`. Every
- * value is NFC-normalized before the event is signed, and the text goes
- * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
+ * Proposes new text for one Atom, as this device's member of `groupId`, for
+ * the voting window the proposer chose, if any. Every string is
+ * NFC-normalized before the event is signed, and the text goes through
+ * `normalizeAtomText` (spec §4). Queuing the Proposal clears the
  * private draft it was written in, keyed by its Atom, in the same change. A
  * Proposal whose record is over 64,000 bytes is refused before anything is
  * queued, and its draft kept.
@@ -105,13 +111,14 @@ export async function propose(
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link, again, versions = [] } = values;
+  const { atom, title, why, text, link, window, again, versions = [] } = values;
   const body = {
     atom,
     title: nfc(title),
     why: nfc(why),
     text: normalizeAtomText(text),
     ...(link === null ? {} : { link: nfc(link) }),
+    ...(window === undefined ? {} : { window }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',

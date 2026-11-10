@@ -27,6 +27,9 @@ freshIndexedDBPerTest();
 type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
 type OnAddVersion = (values: VersionValues) => Promise<ComposeOutcome>;
 
+/** The device clock the voting time's closing line counts from: Wed 11 Nov 2026, noon UTC. */
+const NOW = Date.UTC(2026, 10, 11, 12);
+
 const HINT =
   '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.';
 
@@ -55,6 +58,7 @@ async function setup(options: Setup = {}) {
       me={me}
       atomId={atomId}
       drafts={drafts ?? memory.drafts}
+      now={NOW}
       onPropose={propose}
       onAddVersion={add}
       {...(again === undefined ? {} : { again })}
@@ -163,6 +167,7 @@ describe('Composer', () => {
       why: 'Weekends run late.',
       text: 'Quiet after 11pm.\n',
       link: null,
+      window: 7,
     });
   });
 
@@ -311,6 +316,7 @@ describe('Composer', () => {
         me={authorOf('ana')}
         atomId="missing.0"
         drafts={drafts}
+        now={NOW}
         onPropose={vi.fn()}
         onAddVersion={vi.fn()}
       />,
@@ -513,9 +519,25 @@ describe('Composer, proposing again', () => {
       why: 'Weekends run late.',
       text: 'Quiet after 11pm.\n',
       link: 'https://chat.example.org/later',
+      window: 7,
       again: again.id,
       versions: ['Quiet after midnight.\n'],
     });
+  });
+
+  it('opens a lapsed 10-day Proposal with 10 days chosen, and proposes it again for 10 (#106)', async () => {
+    const log = groupLog();
+    const proposalId = log.propose('ana', { window: 10 });
+    const state = log.state(START_MINUTE + 10 * 1_440);
+    const again = state.proposals.find((proposal) => proposal.id === proposalId);
+    if (again?.outcome.kind !== 'lapse') throw new Error('Expected a lapsed Proposal.');
+    const { user, onPropose } = await setup({ state, again });
+    const days = screen.getByRole('textbox', { name: 'Voting time (days)' });
+    expect(days).toHaveValue('10');
+    expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
+    await user.click(submit());
+    expect(onPropose.mock.calls[0]?.[0].window).toBe(10);
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('keeps its draft under the Proposal it repeats, apart from the section’s own', async () => {
@@ -579,6 +601,7 @@ describe('Composer drafts, against fake IndexedDB', () => {
           me={me}
           atomId={atomId}
           drafts={drafts}
+          now={NOW}
           onPropose={onPropose}
           onAddVersion={vi.fn()}
         />,
@@ -685,6 +708,7 @@ describe('Composer drafts, against fake IndexedDB', () => {
           me={group.me.author}
           atomId={atomId}
           drafts={drafts}
+          now={NOW}
           onPropose={vi.fn()}
           onAddVersion={onAddVersion}
         />,
@@ -712,6 +736,30 @@ describe('Composer drafts, against fake IndexedDB', () => {
     });
     second.unmount();
     expect(await store.readDraft(groupId, proposed.proposalId)).toBeUndefined();
+  });
+
+  it('keeps a chosen voting time in the draft, and Discard sets it back to the default (#106)', async () => {
+    const { open, stored } = await device();
+    const user = userEvent.setup();
+    const days = () => screen.getByRole('textbox', { name: 'Voting time (days)' });
+    const first = await open();
+    expect(days()).toHaveValue('7');
+    await user.clear(days());
+    await user.type(days(), '10');
+    await user.tab();
+    await waitFor(async () => {
+      expect((await stored())?.window).toBe(10);
+    });
+    first.unmount();
+
+    await open();
+    expect(days()).toHaveValue('10');
+    expect(screen.getByText('Your draft is back. It’s saved on this device only.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Discard draft' }));
+    expect(days()).toHaveValue('7');
+    await waitFor(async () => {
+      expect(await stored()).toBeUndefined();
+    });
   });
 
   it('discards the draft: gone from the device, and the form starts over', async () => {
