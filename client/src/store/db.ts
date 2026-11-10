@@ -12,7 +12,7 @@
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
  * record, so Leave deletes the group with a single delete (#77), the chat
- * bot's claims (#119) included. A backup file's groups come back in one
+ * bot's claims (#119) and its push registration (#99) included. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
  * left open.
@@ -43,6 +43,21 @@ export interface ChatClaim {
   readonly id: string;
   readonly proposal: string;
   readonly moment: BotMoment;
+}
+
+/**
+ * Where the relay holds this device's push endpoint for a group (#99): kept
+ * only once the relay has taken it, so its presence is the group's switch.
+ */
+export interface PushRegistration {
+  /** The endpoint the relay holds: this device's push subscription when it was taken. */
+  readonly endpoint: string;
+  /** Every mailbox it is registered under, from `mailboxAt` (./mailbox.ts). */
+  readonly mailboxes: readonly string[];
+  /** The relay instance that took it. A fresh relay holds none of it. */
+  readonly instance: string | null;
+  /** The relay minute of the last registration the relay took. */
+  readonly at: number;
 }
 
 /** Everything the device keeps about one group. */
@@ -96,6 +111,17 @@ export interface Group {
    * first: each is posted once if it won, or dropped. Absent until the first.
    */
   chatClaims?: ChatClaim[];
+  /**
+   * This device's push registration for the group (#99): absent while push
+   * is off for it, as it is until the person turns it on. Never in a backup
+   * file: an endpoint belongs to one device.
+   */
+  push?: PushRegistration;
+  /**
+   * The nudges this device has posted for its own open Proposals (#99), by
+   * `nudgeKey`, so each goes to the relay once. Absent until the first.
+   */
+  nudged?: string[];
 }
 
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
@@ -226,6 +252,16 @@ export interface Store extends DraftStore {
   restoreGroups(groups: readonly BackedUpGroup[]): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
+  /**
+   * Keep the group's push registration once the relay has taken it, or with
+   * null turn push off for the group, in one change (#99).
+   */
+  setPush(groupId: string, push: PushRegistration | null): Promise<void>;
+  /**
+   * Replace the nudges this device has posted for the group (#99), in one
+   * change. No screen reads them, so no listener hears of it.
+   */
+  markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
@@ -395,6 +431,15 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
       for (const groupId of marked) notify(groupId);
     },
+    setPush: (groupId, push) =>
+      change(groupId, (group) => {
+        if (push === null) delete group.push;
+        else group.push = push;
+      }),
+    markNudged: (groupId, nudged) =>
+      changeQuietly(groupId, (group) => {
+        group.nudged = [...nudged];
+      }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -414,13 +459,21 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
  * The copy of a group to keep when a backup file holds `restored` and the
  * device holds `held` (#78): the file's, with no outbox, drafts or chat
  * claims, unless the device's synced at least as late or is leaving. Either
- * is marked `saved`.
+ * is marked `saved`. The device's push registration and posted nudges (#99)
+ * stay either way: they belong to this device, and a file never holds them.
  */
 function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
   if (held !== undefined && (held.leaving !== undefined || syncedSince(held, restored))) {
     return { ...held, backup: 'saved' };
   }
-  return { ...restored, outbox: [], backup: 'saved' };
+  const { push, nudged } = held ?? {};
+  return {
+    ...restored,
+    outbox: [],
+    backup: 'saved',
+    ...(push === undefined ? {} : { push }),
+    ...(nudged === undefined ? {} : { nudged }),
+  };
 }
 
 /** Whether `held` last synced no earlier than `restored`; a copy that never synced is the oldest. */

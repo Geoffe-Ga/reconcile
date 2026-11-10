@@ -646,9 +646,25 @@ export const messages = {
   settings: {
     pageTitle: 'Settings',
     title: 'Settings',
+    notifyHeading: 'Notifications',
     backupHeading: 'Back up your groups',
     restoreHeading: 'Restore a backup',
     eraseHeading: 'Erase this device',
+  },
+  /**
+   * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows
+   * `somethingNew`: no group, name, text, id or count. The disclosure comes
+   * before any switch, and says plainly what the relay and Apple or Google see.
+   */
+  push: {
+    somethingNew: 'Something new in Reconcile',
+    disclosure:
+      'Notifications only ever say “Something new in Reconcile.” To send them, the relay keeps this phone’s push address for each group you turn on, for up to 30 days. That lets whoever runs the relay see that the same phone is in each of those groups. Apple or Google can see when this phone is woken. Notifications may show on your lock screen and a paired watch.',
+    notify: (group: string) => `Notify me about ${group}`,
+    blocked: 'Notifications are blocked for Reconcile in this device’s settings.',
+    unavailable: 'This device can’t get notifications from Reconcile.',
+    failed: 'That didn’t reach the relay, so nothing changed. Try again when you’re online.',
+    none: 'Once you’re in a group, you can turn on its notifications here.',
   },
   backup: {
     lede: 'One file holds every group on this device, with the keys and the name you use in each. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',

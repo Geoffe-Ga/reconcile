@@ -1,4 +1,4 @@
-/** The groups on this device, as Start lists them. */
+/** The groups on this device, as Start lists them, and as Settings' push switches do (#99). */
 import { useEffect, useState } from 'react';
 
 import { fold } from '../engine/fold';
@@ -17,11 +17,15 @@ function summarize(group: Group): StartGroup {
     : { groupId: group.groupId, name: state.name, title: state.title, leaving };
 }
 
-/** Every group on the device, kept current as the store changes, or null until it answers. */
-export function useGroupList(
+/**
+ * Every group on the device as `describe` sees it, kept current as the store
+ * changes, or null until it answers. `describe` should be a stable function.
+ */
+export function useGroups<T>(
   store: Pick<Store, 'listGroups' | 'subscribe'>,
-): readonly StartGroup[] | null {
-  const [groups, setGroups] = useState<readonly StartGroup[] | null>(null);
+  describe: (group: Group) => T,
+): readonly T[] | null {
+  const [groups, setGroups] = useState<readonly T[] | null>(null);
   useEffect(() => {
     let live = true;
     let latest = 0;
@@ -31,7 +35,7 @@ export function useGroupList(
       store.listGroups().then(
         (list) => {
           // Only the newest read counts: an older one may answer last.
-          if (live && ticket === latest) setGroups(list.map(summarize));
+          if (live && ticket === latest) setGroups(list.map(describe));
         },
         // A failed read keeps the last list shown; the next change reads again.
         () => undefined,
@@ -43,6 +47,13 @@ export function useGroupList(
       live = false;
       unsubscribe();
     };
-  }, [store]);
+  }, [store, describe]);
   return groups;
+}
+
+/** Every group on the device, kept current as the store changes, or null until it answers. */
+export function useGroupList(
+  store: Pick<Store, 'listGroups' | 'subscribe'>,
+): readonly StartGroup[] | null {
+  return useGroups(store, summarize);
 }
