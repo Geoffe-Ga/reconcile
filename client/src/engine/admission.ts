@@ -17,9 +17,11 @@
  * the screens ask the same functions here, so a screen never offers a vouch
  * the fold would ignore. Vouches show who knows whom, so they live only in
  * the group's sealed log, where every member reads them, like ballots
- * (ADR-0010).
+ * (ADR-0010). A dissolved group takes no vouch (#108): the fold ignores
+ * every event after its `dissolve`, and {@link mayVouch} says so too.
  */
 import { can, holdsRights, type Roster } from './capabilities';
+import type { Dissolution } from './dissolve';
 import { DAY_MINUTES, type Rules } from './rules';
 
 /**
@@ -42,12 +44,16 @@ export interface Admitted {
   readonly rightsAt: number | null;
 }
 
-/** What admission reads of a group: its rules, its members and former members, and its vouches. */
+/**
+ * What admission reads of a group: its rules, its members and former
+ * members, its vouches, and whether it has dissolved (#108).
+ */
 export interface AdmissionState extends Roster {
   readonly rules: Rules;
   readonly members: readonly (Roster['members'][number] & Admitted)[];
   readonly former: readonly Admitted[];
   readonly vouches: readonly Vouch[];
+  readonly dissolved: Dissolution | null;
 }
 
 /** When the wait of someone whose join the relay received at `received` ends: `waitDays` × 1,440 later. */
@@ -81,12 +87,14 @@ export function vouchesFor(state: Pick<AdmissionState, 'vouches'>, person: strin
 }
 
 /**
- * Whether `author` may vouch for `person` now: they hold `vouch` (a voting
- * level, with rights, not suspended), `person` is another current member, and
- * `author` hasn't vouched for them before.
+ * Whether `author` may vouch for `person` now: the group hasn't dissolved
+ * (#108), they hold `vouch` (a voting level, with rights, not suspended),
+ * `person` is another current member, and `author` hasn't vouched for them
+ * before.
  */
 export function mayVouch(state: AdmissionState, author: string, person: string): boolean {
   return (
+    state.dissolved === null &&
     can(state, author, 'vouch') &&
     person !== author &&
     state.members.some((m) => m.author === person) &&

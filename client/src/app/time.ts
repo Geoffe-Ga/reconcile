@@ -63,6 +63,13 @@ export function formatDay(ms: number, timeZone?: string): string {
   return format(ms, DATE, timeZone);
 }
 
+const FULL_DATE: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+
+/** A relay minute as a date with its year, such as "16 November 2026": for what stays on a device (#108). */
+export function formatDate(minute: number, timeZone?: string): string {
+  return format(minute * MINUTE_MS, FULL_DATE, timeZone);
+}
+
 /** A relay minute as an ISO 8601 date, for a `<time>` element's `dateTime`. */
 export function minuteIso(minute: number): string {
   return new Date(minute * MINUTE_MS).toISOString();

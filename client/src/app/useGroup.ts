@@ -5,7 +5,8 @@
  * The state is `fold` over the relay records in the store's log, so it is the
  * same on every device that has synced the same records. Events still in the
  * outbox are listed as pending and never folded: the relay hasn't ordered or
- * timed them yet.
+ * timed them yet. A dissolved group whose ballots this device has cleared
+ * shows the state it kept instead (#108).
  */
 
 import {
@@ -19,9 +20,9 @@ import {
 
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
-import { fold } from '../engine/fold';
 import type { GroupState, LogRecord } from '../engine/fold';
-import type { Group, Me, Store } from '../store/db';
+import { shownState } from '../store/archive';
+import type { ClearedArchive, Group, Me, Store } from '../store/db';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -68,12 +69,14 @@ export interface GroupView {
   leaving: boolean;
   /**
    * Whether group home suggests a backup (#78): the group is on the device,
-   * no backup file it saved or restored from holds it, and nobody answered
-   * Not now.
+   * no backup file it saved or restored from holds it, nobody answered Not
+   * now, and it isn't a read-only archive, which no backup carries (#108).
    */
   suggestBackup: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
+  /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
+  cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
 }
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
@@ -84,10 +87,7 @@ export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
   const { group, loaded } = useStoredGroup(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
-  const state = useMemo(
-    () => (group === undefined ? null : fold(group.log, group.relayNow)),
-    [group],
-  );
+  const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   return {
     state,
@@ -97,7 +97,13 @@ export function useGroup(groupId: string): GroupView {
     reachable,
     me: group?.me ?? null,
     loaded,
+    cleared: clearedOf(group),
   };
+}
+
+/** A dissolved group's cleared archive (#108), or null for any other group, or none yet. */
+function clearedOf(group: Group | undefined): GroupView['cleared'] {
+  return group?.archived?.cleared ?? null;
 }
 
 /** What a stored group says of its syncs, its leave and its backup, or nothing yet before it loads. */
@@ -109,7 +115,8 @@ function syncStatusOf(
     relayNow: group?.relayNow ?? null,
     missingHistory: group?.missingHistory === true,
     leaving: group?.leaving !== undefined,
-    suggestBackup: group !== undefined && group.backup === undefined,
+    suggestBackup:
+      group !== undefined && group.backup === undefined && group.archived === undefined,
   };
 }
 

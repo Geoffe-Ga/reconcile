@@ -2,8 +2,9 @@
  * A Proposal's versions as the screens show them (spec §8; ADR-0004):
  * numbered in ballot order, which is relay order, each with its author's name.
  * A steward or rules Proposal's one version has no text: it carries what the
- * ballot decides instead (#102, #117).
+ * ballot decides instead (#102, #117), and so does a dissolve Proposal's (#108).
  */
+import { WIPE_DAYS } from '../engine/dissolve';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { rulesChangeOf } from '../engine/optIns';
@@ -32,6 +33,23 @@ export interface VersionView {
   readonly steward?: StewardView;
   /** For a rules Proposal, what its ballot decides, in place of any text (#117). */
   readonly rules?: RulesView;
+  /** For a dissolve Proposal, what its ballot decides, in place of any text (#108). */
+  readonly dissolve?: DissolveView;
+}
+
+/** What a dissolve ballot decides, and the line that says what passing does (#108). */
+export interface DissolveView {
+  readonly title: string;
+  readonly line: string;
+}
+
+/** What a dissolve ballot decides: the group ends, and every copy stays or is erased a week on. */
+export function dissolveView(wipe: boolean): DissolveView {
+  const { dissolve } = messages;
+  return {
+    title: dissolve.ballotTitle,
+    line: wipe ? dissolve.wipeLine(WIPE_DAYS) : dissolve.keepLine,
+  };
 }
 
 /** What a steward change's ballot decides: electing its nominee, or recalling its steward. */
@@ -50,6 +68,7 @@ export function stewardView(
 export function versionViews(state: GroupState, proposal: Proposal): VersionView[] {
   const change = stewardChangeOf(proposal);
   const rules = rulesChangeOf(proposal);
+  const { target } = proposal;
   return proposal.versions.map((version, index) => ({
     id: version.id,
     number: index + 1,
@@ -57,5 +76,6 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
     text: version.text,
     ...(change === null ? {} : { steward: stewardView(state, change) }),
     ...(rules === null ? {} : { rules: rulesView(rules) }),
+    ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
   }));
 }

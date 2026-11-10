@@ -11,10 +11,11 @@ import type { GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
+import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
-import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
@@ -47,7 +48,9 @@ import {
   addVersion,
   castBallot,
   chooseLevel,
+  type DissolveValues,
   propose,
+  proposeDissolve,
   proposeRules,
   proposeSteward,
   type RulesValues,
@@ -251,16 +254,20 @@ interface ReadyGroup extends GroupView {
 
 interface GroupGateProps {
   readonly groupId: string;
+  /** True for a screen that writes something new: a dissolved group shows it only reads (#108). */
+  readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
 }
 
 /** Renders `children` once the group is ready, or says why it isn't. */
-function GroupGate({ groupId, children }: GroupGateProps) {
+function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   const group = useGroup(groupId);
   const { loaded, state, me } = group;
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
+  if (writes && state.dissolved !== null)
+    return <GroupArchived groupId={groupId} name={state.name} />;
   return children({ ...group, state, me });
 }
 
@@ -301,6 +308,10 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
           onVouch={(member) => vouch(services, groupId, member)}
+          onRemove={async () => {
+            await services.store.purgeGroup(groupId);
+            replaceRoute({ name: 'start' });
+          }}
         />
       )}
     </GroupGate>
@@ -332,7 +343,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
   const deviceNow = useNow(services.now);
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me, leaving }) => {
         const again = state.proposals.find((proposal) => proposal.id === againId);
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
@@ -394,6 +405,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
+            {...(group.cleared === null ? {} : { cleared: group.cleared })}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
             onTell={onTell}
@@ -419,7 +431,7 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
     return result.outcome;
   };
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me }) => (
         <StewardComposer
           state={state}
@@ -435,7 +447,7 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
 
 function RulesScreen({ groupId }: { readonly groupId: string }) {
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me }) => <GroupRules state={state} me={me.author} />}
     </GroupGate>
   );
@@ -457,7 +469,7 @@ function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
     return result.outcome;
   };
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me }) => (
         <OptInComposer
           state={state}
@@ -465,6 +477,31 @@ function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
           optIn={optIn}
           narrow={narrow}
           now={deviceNow}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** The dissolve composer (#108); sending the Proposal replaces it with the Proposal's ballot. */
+function DissolveScreen({ services, groupId }: GroupScreenProps) {
+  const deviceNow = useNow(services.now);
+  const onPropose = async (values: DissolveValues) => {
+    const result = await proposeDissolve(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <DissolveComposer
+          state={state}
+          me={me.author}
+          now={deviceNow}
+          leaving={leaving}
           onPropose={onPropose}
         />
       )}
@@ -508,6 +545,8 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
           narrow={route.narrow}
         />
       );
+    case 'dissolve':
+      return <DissolveScreen services={services} groupId={groupId} />;
   }
 }
 

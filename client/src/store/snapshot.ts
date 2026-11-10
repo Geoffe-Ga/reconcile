@@ -10,7 +10,9 @@
  * history may be missing. It leaves out the outbox and drafts, so a restore
  * never sends stale intent, and it leaves out a group this device is
  * leaving, and one whose genesis the relay hasn't returned yet, since
- * neither has anything to come back to.
+ * neither has anything to come back to. It leaves out a dissolved group's
+ * read-only copy too (#108): its ballots are due to be cleared, or the group
+ * to be erased, and a file would keep them past that.
  *
  * Each personal Document goes in whole: its id, title, text, and when it
  * was made and last edited. The format number stays 1: a file from before
@@ -22,14 +24,16 @@
  * each personal Document is one the device could keep (`isPersonalDocument`).
  * Anything wrong fails as a wrong passphrase does, with `BackupUnreadable`,
  * and the store keeps every group and Document in one transaction
- * (`Store.restoreGroups`).
+ * (`Store.restoreGroups`). A group whose log folds to a `dissolve`, as an
+ * older app's file could hold, comes back as a read-only copy, so a restore
+ * never brings a dissolved group back to life (#108).
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { fold, type LogRecord } from '../engine/fold';
-import type { BackedUpGroup, Group, Store } from './db';
+import type { Archive, BackedUpGroup, Group, Store } from './db';
 import { eventIdOf } from './eventId';
 import { isPersonalDocument, type PersonalDocument } from './personal';
 
@@ -63,12 +67,14 @@ function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow'>): boolean 
 }
 
 /**
- * What a backup keeps of `groups`: each founded group that isn't leaving,
- * without its outbox, drafts, chat claims (#119) or marks.
+ * What a backup keeps of `groups`: each founded group that isn't leaving or
+ * a read-only archive (#108), without its outbox, drafts, chat claims (#119)
+ * or marks.
  */
 export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
   return groups
-    .filter((group) => group.leaving === undefined && isFounded(group))
+    .filter((group) => group.leaving === undefined && group.archived === undefined)
+    .filter(isFounded)
     .map((group) => ({
       groupId: group.groupId,
       secret: group.secret,
@@ -284,7 +290,8 @@ function groupIn(value: unknown): BackedUpGroup | null {
   const log = logIn(value.log);
   if (secret === null || signingKey === null || log === null || !hasSyncState(value)) return null;
   const me = meIn(value.me, signingKey);
-  const group = {
+  if (me === null) return null;
+  return restoredAs({
     groupId: value.groupId,
     secret,
     signingKey,
@@ -295,6 +302,18 @@ function groupIn(value: unknown): BackedUpGroup | null {
     instance: value.instance as string | null,
     lastSyncAt: value.lastSyncAt as number | null,
     missingHistory: value.missingHistory as boolean,
-  };
-  return me !== null && isFounded(group) ? { ...group, me } : null;
+  });
+}
+
+/** A dissolved group's read-only mark (#108). */
+const DISSOLVED: Archive = { reason: 'dissolved' };
+
+/**
+ * `group` as a restore keeps it, or null when its log doesn't fold to the
+ * group itself. A log holding a `dissolve` comes back read-only (#108).
+ */
+function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
+  const state = fold(group.log, group.relayNow);
+  if (state.group !== group.groupId) return null;
+  return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
 }

@@ -1,0 +1,497 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dissolve-proposal: a dissolve Proposal is entrenched, runs 14 days, has one version with no text and keeps its wipe; a version on it, and a second dissolve Proposal while it is open, are ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": true
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building.",
+              "text": "This text is dropped."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@4",
+              "text": "Let us stay."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "dissolved": null,
+        "proposals": [
+          {
+            "id": "@4",
+            "author": "%ana",
+            "atom": "",
+            "text": "",
+            "target": {
+              "kind": "dissolve",
+              "wipe": true
+            },
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395170,
+            "eligible": ["%ana", "%ben", "%cal"],
+            "versions": [
+              {
+                "id": "@4",
+                "author": "%ana",
+                "text": ""
+              }
+            ],
+            "ballots": [],
+            "closedAt": null,
+            "final": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [5, 6]
+    },
+    {
+      "name": "dissolve-proposal-again: once a dissolve Proposal has closed, another opens, even in the same minute",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": true
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 0
+              },
+              "note": "Not yet."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "dissolved": null,
+        "proposals": [
+          {
+            "id": "@4",
+            "closedAt": 29375013,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@8",
+            "author": "%ben",
+            "target": {
+              "kind": "dissolve",
+              "wipe": false
+            },
+            "class": "entrenched",
+            "final": false
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "dissolve-proposal-collaborator: a Collaborator's dissolve Proposal is ignored, as proposing needs propose",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500180000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dissolve-proposal-shape: a dissolve Proposal whose wipe is missing or not true or false, or that names an Atom, is a bad shape, so the fold ignores it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": "yes"
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "target": {
+                "kind": "dissolve"
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building.",
+              "atom": "@1.0"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          },
+          {
+            "seq": 4,
+            "id": null
+          },
+          {
+            "seq": 5,
+            "id": null
+          }
+        ]
+      }
+    }
+  ]
+}
