@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import { local, text, utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { openStore } from './db';
+import { HISTORY_GAP_MS, openStore } from './db';
 import type { NewGroup, Pull } from './db';
 
 freshIndexedDBPerTest();
@@ -306,6 +306,117 @@ describe('applyPull', () => {
   });
 });
 
+describe('the missing-history flag', () => {
+  const DAY = 86_400_000;
+  const T0 = 1_762_650_000_000;
+
+  /** A pull that read nothing, finishing at device time `at`. */
+  const empty = (at: number): Pull => ({ ...pull([], 0), lastSyncAt: at });
+
+  it('is 28 days: the relay keeps blobs 30, so a longer gap may have missed some', () => {
+    expect(HISTORY_GAP_MS).toBe(28 * DAY);
+  });
+
+  it('stays unset through a group’s first sync and syncs no more than 28 days apart', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, empty(T0), idOf);
+    await store.applyPull(group.groupId, empty(T0 + 28 * DAY), idOf);
+
+    expect((await store.getGroup(group.groupId))?.missingHistory).not.toBe(true);
+  });
+
+  it('is set by a sync more than 28 days after the one before, and stays through later syncs', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, empty(T0), idOf);
+    await store.applyPull(group.groupId, empty(T0 + 28 * DAY + 1), idOf);
+    expect((await store.getGroup(group.groupId))?.missingHistory).toBe(true);
+
+    await store.applyPull(group.groupId, empty(T0 + 28 * DAY + 2), idOf);
+    expect((await store.getGroup(group.groupId))?.missingHistory).toBe(true);
+  });
+
+  it('is cleared only by a merge', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, empty(T0), idOf);
+    await store.applyPull(group.groupId, empty(T0 + 29 * DAY), idOf);
+
+    await store.mergeLog(group.groupId, [], idOf);
+
+    expect((await store.getGroup(group.groupId))?.missingHistory).toBe(false);
+  });
+});
+
+describe('mergeLog', () => {
+  const record = (seq: number, body: string) => ({ seq, received: seq * 10, bytes: utf8(body) });
+
+  it('adds each entry the log lacks, in seq order among the ones it has', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(
+      group.groupId,
+      pull([record(2, '{"a":2}'), record(7, '{"a":7}')], 7),
+      idOf,
+    );
+
+    await store.mergeLog(
+      group.groupId,
+      [
+        record(1, '{"a":1}'),
+        record(2, '{"a":2}'),
+        record(5, '{"a":5}'),
+        record(6, 'unsigned'),
+        record(4, '{"a":4}'),
+        record(9, '{"a":9}'),
+      ],
+      idOf,
+    );
+
+    const saved = await store.getGroup(group.groupId);
+    expect(saved?.log.map((entry) => [entry.seq, entry.received, text(entry.bytes)])).toEqual([
+      [1, 10, '{"a":1}'],
+      [2, 20, '{"a":2}'],
+      [4, 40, '{"a":4}'],
+      [5, 50, '{"a":5}'],
+      [7, 70, '{"a":7}'],
+      [9, 90, '{"a":9}'],
+    ]);
+  });
+
+  it('keeps the cursor, relay time, instance and last sync as they were', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, pull([record(7, '{"a":7}')], 7), idOf);
+
+    await store.mergeLog(group.groupId, [record(1, '{"a":1}'), record(12, '{"a":12}')], idOf);
+
+    expect(await store.getGroup(group.groupId)).toMatchObject({
+      cursor: 7,
+      relayNow: 29_000_010,
+      instance: 'relay-1',
+      lastSyncAt: 1_762_650_000_000,
+    });
+  });
+
+  it('tells subscribers the group changed, so its screens fold again', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard = vi.fn();
+    store.subscribe(heard);
+
+    await store.mergeLog(group.groupId, [record(1, '{"a":1}')], idOf);
+
+    expect(heard).toHaveBeenCalledWith(group.groupId);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+    await expect(store.mergeLog('nope', [], idOf)).rejects.toThrow('No such group');
+  });
+});
+
 describe('resetCursor', () => {
   it('starts reading from seq 0 of the new instance', async () => {
     const store = await openStore();
@@ -315,6 +426,96 @@ describe('resetCursor', () => {
     await store.resetCursor(group.groupId, 'relay-2');
 
     expect(await store.getGroup(group.groupId)).toMatchObject({ cursor: 0, instance: 'relay-2' });
+  });
+});
+
+describe('markLeaving', () => {
+  it('queues the leave after the outbox and marks the group as leaving, in one change', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue(group.groupId, utf8('{"n":1}'));
+
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    const stored = await store.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"n":1}', '{"leave":1}']);
+    expect(text(stored?.leaving ?? new Uint8Array())).toBe('{"leave":1}');
+  });
+
+  it('keeps the first leave when asked again, queuing it once', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    await store.markLeaving(group.groupId, utf8('{"leave":2}'));
+
+    const stored = await store.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"leave":1}']);
+    expect(text(stored?.leaving ?? new Uint8Array())).toBe('{"leave":1}');
+  });
+
+  it('is still leaving after a reload, with the leave still queued', async () => {
+    const first = await openStore();
+    await first.addGroup(group);
+    await first.markLeaving(group.groupId, utf8('{"leave":1}'));
+    first.close();
+
+    const second = await openStore();
+    const stored = await second.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"leave":1}']);
+    expect(stored?.leaving).toBeDefined();
+  });
+
+  it('refuses anything queued after the leave, so nobody proposes or votes on the way out', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    await expect(store.enqueue(group.groupId, utf8('{"n":1}'))).rejects.toThrow(
+      'This group is leaving this device.',
+    );
+    await expect(store.enqueueAll(group.groupId, [utf8('{"n":2}')])).rejects.toThrow(
+      'This group is leaving this device.',
+    );
+    expect((await store.getGroup(group.groupId))?.outbox.map(text)).toEqual(['{"leave":1}']);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+    await expect(store.markLeaving('nope', utf8('{"leave":1}'))).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+});
+
+describe('purgeGroup', () => {
+  it('deletes the group and tells subscribers, leaving every other group as it was', async () => {
+    const store = await openStore();
+    const other = { ...group, groupId: 'group-2' };
+    await store.addGroup(group);
+    await store.addGroup(other);
+    await store.enqueue(other.groupId, utf8('{"n":1}'));
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.purgeGroup(group.groupId);
+
+    expect(await store.getGroup(group.groupId)).toBeUndefined();
+    expect((await store.listGroups()).map((kept) => kept.groupId)).toEqual(['group-2']);
+    expect((await store.getGroup(other.groupId))?.outbox.map(text)).toEqual(['{"n":1}']);
+    expect(heard).toEqual([group.groupId]);
+  });
+
+  it('changes nothing, and tells nobody, for a group that is already gone', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.purgeGroup('nope');
+
+    expect(await store.listGroups()).toHaveLength(1);
+    expect(heard).toEqual([]);
   });
 });
 
@@ -328,6 +529,8 @@ describe('every change', () => {
       () => store.markSent(group.groupId, utf8('{"n":1}')),
       () => store.applyPull(group.groupId, pull([], 1), idOf),
       () => store.resetCursor(group.groupId, 'relay-2'),
+      () => store.markLeaving(group.groupId, utf8('{"leave":1}')),
+      () => store.purgeGroup(group.groupId),
     ];
 
     for (const change of changes) {

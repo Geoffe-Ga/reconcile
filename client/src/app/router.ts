@@ -2,11 +2,14 @@
  * A small hash router (spec §8: hash routes, no router library).
  *
  * Every route lives after `#`, which browsers never send to a server, so an
- * invite's secret in `#/join/{payload}` stays on the device. The Join screen
- * replaces that entry with `#/join` once it has read the payload.
+ * invite's seed in `#join/{seed}` stays on the device. The Join screen
+ * replaces that entry with `#/join` once it has read the seed. The tracer's
+ * `#/join/{payload}` form still reads as Join, so an old link says plainly
+ * that it no longer works.
  */
 import { useSyncExternalStore } from 'react';
 
+import { isOptIn, type OptIn } from '../engine/optIns';
 import { SEATS, type SeatNumber } from '../engine/stewards';
 
 /** Where the app is. Unknown hashes read as Start. */
@@ -26,7 +29,18 @@ export type Route =
       readonly seat: SeatNumber;
       /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
       readonly recall: boolean;
+    }
+  | { readonly name: 'rules'; readonly groupId: string }
+  | {
+      readonly name: 'optIn';
+      readonly groupId: string;
+      readonly optIn: OptIn;
+      /** True for a steward's Turn off now, which also narrows it at once (#117). */
+      readonly narrow: boolean;
     };
+
+/** A route inside one group. */
+type GroupRoute = Extract<Route, { readonly groupId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -47,6 +61,18 @@ function stewardPage(groupId: string, recall: boolean, arg: string): Route {
   return seat === undefined ? START : { name: 'steward', groupId, seat, recall };
 }
 
+/** `rules/{optIn}` or, when `narrow`, `narrow/{optIn}`: the opt-in composer (#117). */
+function optInPage(groupId: string, narrow: boolean, arg: string): Route {
+  return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
+}
+
+/** A page with no argument: `doc`, `priority` (#107) or `rules` (#117). */
+function barePage(groupId: string, page: string): Route {
+  if (page === 'doc') return { name: 'document', groupId };
+  if (page === 'priority') return { name: 'priority', groupId };
+  return page === 'rules' ? { name: 'rules', groupId } : START;
+}
+
 /** `p/{proposalId}` or `again/{proposalId}`. */
 function proposalPage(groupId: string, page: string, arg: string): Route {
   if (!ID.test(arg)) return START;
@@ -54,20 +80,16 @@ function proposalPage(groupId: string, page: string, arg: string): Route {
   return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
 }
 
-/** `doc`, or `priority` (#107): the pages that take nothing after their name. */
-function barePage(groupId: string, page: string): Route {
-  if (page === 'doc') return { name: 'document', groupId };
-  return page === 'priority' ? { name: 'priority', groupId } : START;
-}
-
 /**
- * A page inside a group: `doc`, `priority` (#107), `propose/{atomId}`,
- * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}` or `recall/{seat}`.
+ * A page inside a group: `doc`, `rules`, `priority` (#107), `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
+ * `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return barePage(groupId, page);
   if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
   if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
+  if (page === 'rules' || page === 'narrow') return optInPage(groupId, page === 'narrow', arg);
   return proposalPage(groupId, page, arg);
 }
 
@@ -85,8 +107,15 @@ function joinRoute(rest: readonly string[]): Route {
     : START;
 }
 
+/** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
+const INVITE_PREFIX = '#join/';
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
+  if (hash.startsWith(INVITE_PREFIX)) {
+    const rest = hash.slice(INVITE_PREFIX.length).split('/');
+    return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
+  }
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
   switch (head) {
@@ -103,17 +132,19 @@ export function parseRoute(hash: string): Route {
 
 /** Join's `href`: with its invite payload, or bare once Join has read it. */
 function joinHref(payload: string | null): string {
-  return payload === null ? '#/join' : `#/join/${payload}`;
+  return payload === null ? '#/join' : `${INVITE_PREFIX}${payload}`;
 }
 
-/** A steward composer's path: `recall/{seat}` for a recall, else `steward/{seat}` (#102). */
+/** A steward composer's path: `/recall/{seat}` for a recall, else `/steward/{seat}` (#102). */
 function stewardPath(route: Extract<Route, { readonly name: 'steward' }>): string {
   const page = route.recall ? 'recall' : 'steward';
   return `/${page}/${String(route.seat)}`;
 }
 
-/** A route inside one group. */
-type GroupRoute = Exclude<Route, { readonly name: 'start' | 'create' | 'join' }>;
+/** An opt-in composer's path: `/narrow/{optIn}` for Turn off now, else `/rules/{optIn}` (#117). */
+function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
+  return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
+}
 
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
@@ -122,6 +153,8 @@ function groupPath(route: GroupRoute): string {
       return '';
     case 'document':
       return '/doc';
+    case 'rules':
+      return '/rules';
     case 'priority':
       return '/priority';
     case 'propose':
@@ -132,6 +165,8 @@ function groupPath(route: GroupRoute): string {
       return `/again/${route.proposalId}`;
     case 'steward':
       return stewardPath(route);
+    case 'optIn':
+      return optInPath(route);
   }
 }
 

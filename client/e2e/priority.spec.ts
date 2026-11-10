@@ -140,7 +140,7 @@ test('A asks what to focus on, both score seven options, and the top one becomes
   await test.step('on a phone the seven options stack, with no sideways scroll', async () => {
     const { page } = ben;
     await page
-      .getByRole('region', { name: 'Open Proposals' })
+      .getByRole('region', { name: 'Needs your vote' })
       .getByRole('link', { name: QUESTION })
       .click();
     await expect(scores(page, OPTIONS[6] ?? '')).toBeVisible();

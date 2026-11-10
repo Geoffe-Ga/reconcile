@@ -6,8 +6,9 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { createGroup, joinGroup, lookupInvite } from '../app/actions';
+import { createGroup, joinGroup, lookupInvite, makeInvite } from '../app/actions';
 import { App } from '../app/App';
+import { parseInviteLink } from '../app/invite';
 import type { AppServices } from '../app/services';
 import { type Level, LEVELS } from '../engine/capabilities';
 import { testDevice, type TestDevice } from './appServices';
@@ -56,7 +57,7 @@ export async function members(
   return { groupId, devices };
 }
 
-/** `device` joins `groupId` as `name`, at `level`, from `founder`'s invite, and syncs. */
+/** `device` joins `groupId` as `name`, at `level`, from a link `founder` makes, and syncs. */
 async function joinFrom(
   founder: TestDevice,
   groupId: string,
@@ -64,12 +65,12 @@ async function joinFrom(
   name: string,
   level: Level,
 ): Promise<void> {
-  const group = await founder.services.store.getGroup(groupId);
-  if (group === undefined) throw new Error('Expected the group.');
-  const invite = { secret: group.secret };
-  const found = await lookupInvite(device.services, invite);
+  const { services } = founder;
+  const seed = parseInviteLink(await makeInvite(services, groupId, services.origin));
+  if (seed === null) throw new Error('Expected an invite link.');
+  const found = await lookupInvite(device.services, seed);
   if (found.kind !== 'found') throw new Error('Expected the invite to open.');
-  await joinGroup(device.services, invite, found.group, name, level);
+  await joinGroup(device.services, found.group, name, level);
   await device.services.sync.syncOnce();
 }
 

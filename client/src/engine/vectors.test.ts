@@ -1,242 +1,87 @@
 /**
  * Golden vectors: the engine's contract (ADR-0073, docs/spec/phase-1-spec.md §3–§5).
  *
- * Each file in vectors/ is `{kind: "tally" | "fold" | "atom-text", vectors: [...]}`, except
- * keys.json. Every file is read as text and parsed with `JSON.parse`, as any reader would,
- * because Vite's own JSON loader refuses the lone-surrogate escapes atom-text.json needs.
- * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
- *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, bar?, versions, expect, rank?}`. `bar` names a class
- *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
- *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
- *   first (#107).
- * - A fold vector is `{name, records, relayNow, expect, unchangedWithout?}`.
- *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
- *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
- *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
- *     Atom, and `"%ana"` stands for ana's public key in base64url.
- *   - The relay record is `publicKey ‖ signature ‖ event bytes` (spec §3), signed by the key
- *     `by` names, or else by the key the event's `"%name"` author names. `key` (hex, or
- *     `"%name"`) and `sig` (hex) replace those fields, and `flip: {in, at}` flips the low bit of
- *     byte `at` of the `key`, `signature` or `event`. `unsigned: true` sends the bare event
- *     bytes, as the stub era did. `elsewhere: true` makes a record of another mailbox: `@seq`
- *     can name it, but it isn't folded.
- *   - `expect` is matched as a subset of the folded state.
- *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
- *     deep-equal.
- * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
+ * src/test/vectors.ts reads each file in vectors/ and builds its records; its
+ * header documents the format. This file runs every tally and fold vector.
  */
 import { describe, expect, it } from 'vitest';
 
-import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { concat, fromHex } from '../test/bytes';
-import { base64url, eventId } from './event';
-import { fold, type LogRecord } from './fold';
-import { DEFAULT_RULES, type ProposalClass } from './rules';
-import { rank, tally, type TallyInput, type TallyOutcome } from './tally';
-
-/** `Omit` applied to each member of a union, so each outcome kind keeps its own fields. */
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-interface TallyVector extends Omit<TallyInput, 'bar'> {
-  readonly name: string;
-  readonly bar?: ProposalClass;
-  /** The outcome without its bar, which the runner adds. */
-  readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
-  /** The passing versions' ids, best first, as `rank()` gives them (#107). */
-  readonly rank?: readonly string[];
-}
-
-/** How a vector record departs from a plain record signed by its author. */
-interface RecordOptions {
-  readonly by?: string;
-  readonly key?: string;
-  readonly sig?: string;
-  readonly flip?: { readonly in: 'key' | 'signature' | 'event'; readonly at: number };
-  readonly unsigned?: boolean;
-  readonly elsewhere?: boolean;
-}
-
-type VectorRecord = RecordOptions &
-  (
-    | { readonly seq: number; readonly received: number; readonly event: unknown }
-    | { readonly seq: number; readonly received: number; readonly raw: string }
-  );
-
-interface FoldVector {
-  readonly name: string;
-  readonly records: readonly VectorRecord[];
-  readonly relayNow: number | null;
-  readonly expect: object;
-  readonly unchangedWithout?: readonly number[];
-}
-
-type VectorFile =
-  | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
-  | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
-  | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
-  | { readonly kind: 'keys'; readonly seeds: Readonly<Record<string, string>> };
-
-const TEXTS = import.meta.glob<string>('./vectors/*.json', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-});
-const FILES: Readonly<Record<string, VectorFile>> = Object.fromEntries(
-  Object.entries(TEXTS).map(([path, text]) => [path, JSON.parse(text) as VectorFile]),
-);
-
-const encoder = new TextEncoder();
-
-const SEEDS = new Map(
-  Object.values(FILES).flatMap((file) =>
-    file.kind === 'keys'
-      ? Object.entries(file.seeds).map(([name, seed]) => [name, fromHex(seed)] as const)
-      : [],
-  ),
-);
-
-/** The seed of the key called `name`. */
-function seedOf(name: string): Uint8Array {
-  const seed = SEEDS.get(name);
-  if (seed === undefined) throw new Error(`a vector names the unknown key "${name}"`);
-  return seed;
-}
-
-/** The base64url public key of the key called `name`. */
-function publicKeyNamed(name: string): string {
-  return base64url(publicKeyOf(seedOf(name)));
-}
-
-/** Replaces `@n` (and `@n.i`) with the id of the record at seq n, and `%name` with name's key. */
-function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
-  const key = /^%(\w+)$/.exec(text);
-  if (key !== null) return publicKeyNamed(String(key[1]));
-  const match = /^@(\d+)(.*)$/.exec(text);
-  if (match === null) return text;
-  const id = ids.get(Number(match[1]));
-  if (id === undefined)
-    throw new Error(`a vector refers to seq ${String(match[1])} before it exists`);
-  return id + String(match[2]);
-}
-
-/** Resolves every `@n` and `%name` reference inside a JSON value, in keys as well as values. */
-function resolve(value: unknown, ids: ReadonlyMap<number, string>): unknown {
-  if (typeof value === 'string') return resolveRef(value, ids);
-  if (Array.isArray(value)) return value.map((item: unknown) => resolve(item, ids));
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [resolveRef(key, ids), resolve(item, ids)]),
-    );
-  }
-  return value;
-}
-
-/** The name of the key that signs `record`: `by`, or else the `%name` its event's author gives. */
-function signerOf(record: VectorRecord): string {
-  const author: unknown = 'event' in record ? (record.event as { author?: unknown }).author : null;
-  const named = typeof author === 'string' ? /^%(\w+)$/.exec(author)?.[1] : undefined;
-  const signer = record.by ?? named;
-  if (signer === undefined)
-    throw new Error(`the record at seq ${String(record.seq)} has no signer`);
-  return signer;
-}
-
-/** A copy of `bytes` with the low bit of byte `at` flipped. */
-function flipped(bytes: Uint8Array, at: number): Uint8Array {
-  const copy = Uint8Array.from(bytes);
-  copy[at] = (copy[at] ?? 0) ^ 0x01;
-  return copy;
-}
-
-/** The key field a record carries: its `key` override, or the signer's public key. */
-function keyField(record: VectorRecord): Uint8Array {
-  if (record.key === undefined) return publicKeyOf(seedOf(signerOf(record)));
-  return record.key.startsWith('%')
-    ? publicKeyOf(seedOf(record.key.slice(1)))
-    : fromHex(record.key);
-}
-
-/** The relay record for a vector record's event bytes (spec §3), with any override applied. */
-function relayBytes(record: VectorRecord, event: Uint8Array): Uint8Array {
-  if (record.unsigned === true) return event;
-  const parts = {
-    key: keyField(record),
-    signature:
-      record.sig === undefined
-        ? sign(EVENT_CONTEXT, seedOf(signerOf(record)), event)
-        : fromHex(record.sig),
-    event,
-  };
-  const { flip } = record;
-  const at = flip === undefined ? parts : { ...parts, [flip.in]: flipped(parts[flip.in], flip.at) };
-  return concat(at.key, at.signature, at.event);
-}
-
-/** Turns a vector's records into relay records, serializing each event once, in seq order. */
-function buildRecords(vector: FoldVector): { records: LogRecord[]; ids: Map<number, string> } {
-  const ids = new Map<number, string>();
-  const records = vector.records.flatMap((record) => {
-    const text = 'raw' in record ? record.raw : JSON.stringify(resolve(record.event, ids));
-    const event = encoder.encode(text);
-    ids.set(record.seq, eventId(event));
-    const bytes = relayBytes(record, event);
-    return record.elsewhere === true ? [] : [{ seq: record.seq, received: record.received, bytes }];
-  });
-  return { records, ids };
-}
-
-const tallyVectors = Object.values(FILES).flatMap((file) =>
-  file.kind === 'tally' ? file.vectors : [],
-);
-const foldVectors = Object.values(FILES).flatMap((file) =>
-  file.kind === 'fold' ? file.vectors : [],
-);
+import {
+  buildRecords,
+  FOLD_VECTORS,
+  publicKeyNamed,
+  resolve,
+  SEEDS,
+  TALLY_VECTORS,
+  VECTOR_FILES,
+} from '../test/vectors';
+import { fold } from './fold';
+import { DEFAULT_RULES } from './rules';
+import { rank, tally } from './tally';
 
 describe('vector files', () => {
   it('are the keys, then tally, fold or atom-text files', () => {
-    expect(Object.keys(FILES).sort()).toEqual([
-      './vectors/atom-text.json',
-      './vectors/bars-entrenched-edges.json',
-      './vectors/bars-ordinary-pairs.json',
-      './vectors/fold.json',
-      './vectors/keys.json',
-      './vectors/levels-capabilities.json',
-      './vectors/levels-eligible-count.json',
-      './vectors/levels-step-down.json',
-      './vectors/levels-step-up-after-open.json',
-      './vectors/priority-focus.json',
-      './vectors/priority-options.json',
-      './vectors/priority-rank.json',
-      './vectors/rules-class-forged.json',
-      './vectors/rules-genesis-defaults.json',
-      './vectors/rules-genesis-differs.json',
-      './vectors/rules-genesis-missing.json',
-      './vectors/signatures.json',
-      './vectors/steward-recall.json',
-      './vectors/steward-seats.json',
-      './vectors/steward-step-down.json',
-      './vectors/steward-terms.json',
-      './vectors/steward-validity.json',
-      './vectors/suspend-effects.json',
-      './vectors/suspend-ignored.json',
-      './vectors/suspend-lapse.json',
-      './vectors/tally.json',
-      './vectors/time.json',
-      './vectors/versions-ballot.json',
-      './vectors/versions-early-close.json',
-      './vectors/versions-late-low-quorum.json',
-      './vectors/versions-one-open.json',
-      './vectors/versions-tie.json',
-      './vectors/window-bounds.json',
-      './vectors/window-deadline.json',
+    expect(Object.keys(VECTOR_FILES).sort()).toEqual([
+      'atom-text.json',
+      'bars-entrenched-edges.json',
+      'bars-ordinary-pairs.json',
+      'fold.json',
+      'home-two-open-proposals.json',
+      'invite.json',
+      'keys.json',
+      'leave-ballots.json',
+      'leave-eligibility.json',
+      'leave-events.json',
+      'leave-stewards.json',
+      'levels-capabilities.json',
+      'levels-eligible-count.json',
+      'levels-step-down.json',
+      'levels-step-up-after-open.json',
+      'optin-class.json',
+      'optin-ignored.json',
+      'optin-narrow.json',
+      'priority-focus.json',
+      'priority-options.json',
+      'priority-rank.json',
+      'rules-class-forged.json',
+      'rules-genesis-defaults.json',
+      'rules-genesis-differs.json',
+      'rules-genesis-missing.json',
+      'signatures.json',
+      'steward-recall.json',
+      'steward-seats.json',
+      'steward-step-down.json',
+      'steward-terms.json',
+      'steward-validity.json',
+      'suspend-effects.json',
+      'suspend-ignored.json',
+      'suspend-lapse.json',
+      'tally.json',
+      'time.json',
+      'versions-ballot.json',
+      'versions-early-close.json',
+      'versions-late-low-quorum.json',
+      'versions-one-open.json',
+      'versions-tie.json',
+      'window-bounds.json',
+      'window-deadline.json',
     ]);
-    expect(Object.values(FILES).map((file) => file.kind)).toEqual([
+    expect(Object.values(VECTOR_FILES).map((file) => file.kind)).toEqual([
       'atom-text',
       'tally',
       'tally',
       'fold',
+      'fold',
+      'fold',
       'keys',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -291,7 +136,7 @@ describe('vector files', () => {
   });
 
   it('name every vector uniquely', () => {
-    const names = Object.values(FILES).flatMap((file) =>
+    const names = Object.values(VECTOR_FILES).flatMap((file) =>
       'vectors' in file ? file.vectors.map((vector) => vector.name) : [],
     );
     expect(new Set(names).size).toBe(names.length);
@@ -321,7 +166,7 @@ describe('vector files', () => {
     'priority-rank: options at quorum that all miss the floor rank nothing, and the vote fails',
     'priority-rank: options that all miss quorum rank nothing, and the vote lapses',
   ])('include the tally vector "%s"', (name) => {
-    expect(tallyVectors.map((vector) => vector.name)).toContain(name);
+    expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 
   it.each([
@@ -381,24 +226,6 @@ describe('vector files', () => {
     'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
     'a genesis whose entrenched avgAtLeast is 1 forms no group',
     'a Proposal that writes its own class, bar and deadline is still ordinary: 7 days, and a 2.5 average passes',
-    'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
-    'priority-options: a priority vote with 7 options opens',
-    'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
-    'priority-options: an option of 121 code points is ignored, and one of exactly 120 opens, though it takes 240 UTF-16 units',
-    'priority-options: a priority vote with two equal options is ignored, and so is one with a blank or empty option',
-    'priority-options: a second priority vote while one is open is ignored, and one opens once the first has closed early, even in the same minute',
-    'priority-options: an edit Proposal opens beside an open priority vote',
-    'priority-options: a priority vote\'s window of 3 days sets its deadline to received + 4,320; one of 15 days is ignored, and one of "7", a string, holds no event',
-    'priority-options: a version on a priority vote is ignored, so its options stay as proposed',
-    "priority-options: a Collaborator's priority vote is ignored, since asking needs propose",
-    'priority-options: a priority vote that also names an Atom or text, lacks options, has a non-string option or list, or names an unknown target holds no event, and one with an empty question is ignored',
-    'priority-focus: of four options, Fix the website and Plan the picnic pass and tie, so the earlier, Fix the website, becomes the focus, and every Atom stays byte-identical',
-    'priority-focus: a priority vote whose top option passes sets no focus until its pass is final',
-    'priority-focus: a later priority vote that lapses leaves the focus unchanged',
-    'priority-focus: a later priority vote in which no option passes leaves the focus unchanged',
-    'priority-focus: a later priority vote that passes replaces the focus with its top option',
-    'priority-focus: an edit that passes after a priority vote changes its Atom and leaves the focus',
-    'priority-focus: a group whose only priority vote fails has no focus',
     'window-ordinary-min: a window of 3 days, the ordinary minimum, opens the Proposal and its deadline is received + 4,320',
     'window-ordinary-max: a window of 14 days, the ordinary maximum, opens the Proposal and its deadline is received + 20,160',
     'window-below-min: a window of 2 days, under the ordinary minimum, makes the fold ignore the Proposal',
@@ -429,14 +256,79 @@ describe('vector files', () => {
     'a suspension 25 days after the previous one ended is ignored, and one 31 days after it is accepted',
     'suspend-lapse: a steward suspends Kim at minute 2,000,000; her ballot at 2,005,000 is ignored and her ballot from 1,999,000 still counts; her ballot on another Proposal at 2,010,080 counts',
     "a suspended member's proposal, level, version and vote are ignored, yet they stay eligible on a Proposal that opens meanwhile, which can't close early without them",
+    'two-open-proposals: P2 opens on a Monday and P1 on the Tuesday, so P2 closes first; Ben has scored P1 only, and Cal joins after both opened',
+    "leave-ballot-after: a ballot received after its author's leave is ignored, though its ts is earlier",
+    "leave-ballot-before: a ballot received before its author's leave still counts, so the others' ballots close the vote early",
+    "leave-open-unchanged: a leave never touches an open Proposal: its eligible set and quorum stay 3, so it doesn't close early and 2 ballots lapse at the deadline",
+    "leave-eligible-after: the leaver isn't eligible on a Proposal opened after the leave, so the 3 who stay close it early",
+    "leave-proposal-tallies: the leaver's open Proposal and their version on another stay on the ballot, tally and pass at the deadline",
+    'leave-after: once someone has left, their join, level, proposal, version and second leave are all ignored',
+    'leave-ignored: a leave from someone who never joined, or for another group, is ignored',
+    'leave-founder: the founder can leave too, and the group carries on: the others still propose and vote',
+    "leave-steward: a steward's leave empties their seat, and a suspend they send after it is ignored",
+    "leave-suspended: a suspended member's leave is honored though their level change is ignored, and the suspension stays on record",
     'window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days',
+    'turning the chat bot on is entrenched: its deadline is received plus 14 × 1,440 minutes, and an average of 2.5 with no zeros fails it',
+    'turning the chat bot on passes at the entrenched bar and sets its webhook, and turning it off again is ordinary: received plus 7 × 1,440 minutes',
+    'replacing one webhook with another is ordinary, so an average of 2.5 passes it and sets the new webhook',
+    'opening the front door is entrenched and closing it is ordinary, so an average of 2.5 closes it again',
+    'a rules Proposal that writes its own class, bar, deadline, text and from is still entrenched for 14 days, and an average of 2.5 fails it',
+    'turning the chat bot on with a voting window of 13 days is ignored, and 14 days opens it, running received plus 14 × 1,440 minutes',
+    'turning the chat bot off takes the ordinary bounds, so 15 days is ignored and 3 runs 3 × 1,440 minutes, and opening the front door may run 28 days',
+    'a rules Proposal is ignored for a webhook off Discord, over http:, with a query or with another field, for a bare URL, for an unknown opt-in, and for a front door that is neither true nor false',
+    'a rules Proposal for the value that stands is ignored: the chat bot off, or the front door closed, while each already is',
+    'once the chat bot is on, a rules Proposal for the same webhook is ignored',
+    'a second rules Proposal for an opt-in is ignored while the first is open, one for the other opt-in opens, and the second opens in the minute the first closes early',
+    "a Collaborator's rules Proposal is ignored, and so are a version of a rules Proposal and a ballot that scores it",
+    'a genesis that founds its group with the front door open, or the chat bot on, forms no group; one with both off does',
+    'a narrow from a Co-Creator who holds no steward seat is ignored, even beside their own open off-Proposal',
+    "a steward's narrow is ignored with no off-Proposal of their own open: beside a closed on-Proposal, or beside someone else's off-Proposal",
+    "a steward's narrow beside their own off-Proposal turns the chat bot off at once while the rules still hold it on, and a second narrow while it's in force is ignored",
+    "the chat bot stays off for good once the steward's off-Proposal passes",
+    "the chat bot comes back on in the minute the steward's off-Proposal closes when it fails",
+    "the chat bot comes back on at the steward's off-Proposal's deadline when nobody votes and it lapses",
+    'after the group turns an off-Proposal down, a narrow 30 × 1,440 minutes later is ignored and one a minute after that holds',
+    'a narrow from a steward facing an open recall is ignored',
+    "a steward closes the front door at once the same way, and the chat bot isn't touched",
+    'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
+    'priority-options: a priority vote with 7 options opens',
+    'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
+    'priority-options: an option of 121 code points is ignored, and one of exactly 120 opens, though it takes 240 UTF-16 units',
+    'priority-options: a priority vote with two equal options is ignored, and so is one with a blank or empty option',
+    'priority-options: a second priority vote while one is open is ignored, and one opens once the first has closed early, even in the same minute',
+    'priority-options: an edit Proposal opens beside an open priority vote',
+    'priority-options: a priority vote\'s window of 3 days sets its deadline to received + 4,320; one of 15 days is ignored, and one of "7", a string, holds no event',
+    'priority-options: a version on a priority vote is ignored, so its options stay as proposed',
+    "priority-options: a Collaborator's priority vote is ignored, since asking needs propose",
+    'priority-options: a priority vote that also names an Atom or text, lacks options, has a non-string option or list, or names an unknown target holds no event, and one with an empty question is ignored',
+    'priority-focus: of four options, Fix the website and Plan the picnic pass and tie, so the earlier, Fix the website, becomes the focus, and every Atom stays byte-identical',
+    'priority-focus: a priority vote whose top option passes sets no focus until its pass is final',
+    'priority-focus: a later priority vote that lapses leaves the focus unchanged',
+    'priority-focus: a later priority vote in which no option passes leaves the focus unchanged',
+    'priority-focus: a later priority vote that passes replaces the focus with its top option',
+    'priority-focus: an edit that passes after a priority vote changes its Atom and leaves the focus',
+    'priority-focus: a group whose only priority vote fails has no focus',
   ])('include the fold vector "%s"', (name) => {
-    expect(foldVectors.map((vector) => vector.name)).toContain(name);
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    "invite-token-member: a token a member signed over the group id names them as the joiner's inviter",
+    "invite-token-non-member: a token from someone who isn't a member gives a valid join with no inviter",
+    "invite-token-other-group: a member's token over another group's id gives a valid join with no inviter",
+    "invite-token-event-tag: a member's signature over the group id under the event tag gives a valid join with no inviter",
+    'invite-token-forged: a token naming a member but signed by someone else gives a valid join with no inviter',
+    'invite-token-joined-later: a token from someone who joins after the joiner names no one',
+    'invite-token-chain: a member who joined by invite names the next joiner',
+    'invite-token-malformed: a token of the wrong shape gives a valid join with no inviter',
+    'invite-token-none: a join with no token, as the tracer made, names no inviter',
+  ])('include the invite vector "%s"', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 });
 
 describe('tally vectors', () => {
-  it.each(tallyVectors.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
+  it.each(TALLY_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
     const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
     const { eligible, versions } = vector;
     expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
@@ -447,7 +339,7 @@ describe('tally vectors', () => {
 });
 
 describe('fold vectors', () => {
-  it.each(foldVectors.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
+  it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
     const { records, ids } = buildRecords(vector);
     const state = fold(records, vector.relayNow);
     expect(state).toMatchObject(resolve(vector.expect, ids) as object);

@@ -1,0 +1,441 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "leave-after: once someone has left, their join, level, proposal, version and second leave are all ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "It suits us better.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Ben again",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Bin day",
+              "why": "It suits us better.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 9pm."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {}
+          }
+        }
+      ],
+      "relayNow": 29375016,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          }
+        ],
+        "former": [
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "co-creator",
+            "seq": 2
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "eligible": ["%ana", "%ben"],
+            "versions": [
+              {
+                "id": "@3",
+                "author": "%ana",
+                "text": "Quiet after 10pm."
+              }
+            ]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          },
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      },
+      "unchangedWithout": [5, 6, 7, 8, 9]
+    },
+    {
+      "name": "leave-ignored: a leave from someone who never joined, or for another group, is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500180000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "another-group",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": {}
+          }
+        }
+      ],
+      "relayNow": 29375003,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "collaborator",
+            "seq": 2
+          }
+        ],
+        "former": [],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 4]
+    },
+    {
+      "name": "leave-founder: the founder can leave too, and the group carries on: the others still propose and vote",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500300000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Bin day",
+              "why": "It suits us better.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375012,
+      "expect": {
+        "name": "Riverside Tenants",
+        "members": [
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "co-creator",
+            "seq": 2
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "level": "collaborator",
+            "seq": 3
+          }
+        ],
+        "former": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@5",
+            "eligible": ["%ben", "%cal"],
+            "closedAt": 29375012,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@5"
+            }
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

@@ -386,8 +386,11 @@ describe('Ballot, in the app', () => {
     await b.findByText('Sent');
     await user.click(b.getByRole('radio', { name: '4 · Strongly supportive' }));
     await user.click(b.getByRole('button', { name: 'Update your vote' }));
+    // The ballot's own status line: Tell your group has one of its own on this page (#77).
     await waitFor(() => {
-      expect(b.getByRole('status')).toHaveTextContent(/^Sent$/);
+      expect(app.container.querySelector('.ballot-send [role="status"]')).toHaveTextContent(
+        /^Sent$/,
+      );
     });
 
     // Ana and Cy score 3. Were Ben's 0 still counted, a third of the scores would be zeros.

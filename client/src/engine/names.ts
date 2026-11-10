@@ -30,14 +30,19 @@ function keySuffix(author: string): string {
 }
 
 /**
- * The name to show for the member with key `author`: their name, plus
- * {@link NAME_SUFFIX_SEPARATOR} and a key suffix when another member's name
- * matches it. Null for a key that isn't a member.
+ * The name to show for the member with key `author`, or for someone who has
+ * left, whose Proposals and ballots still show (#77): their name, plus
+ * {@link NAME_SUFFIX_SEPARATOR} and a key suffix when the name of anyone else
+ * who is or was in the group matches it. Null for a key that never joined.
  */
-export function displayName(state: Pick<GroupState, 'members'>, author: string): string | null {
-  const member = state.members.find((m) => m.author === author);
+export function displayName(
+  state: Pick<GroupState, 'members' | 'former'>,
+  author: string,
+): string | null {
+  const everyone = [...state.members, ...state.former];
+  const member = everyone.find((m) => m.author === author);
   if (member === undefined) return null;
   const name = comparable(member.name);
-  const shared = state.members.some((m) => m.author !== author && comparable(m.name) === name);
+  const shared = everyone.some((m) => m.author !== author && comparable(m.name) === name);
   return shared ? `${member.name}${NAME_SUFFIX_SEPARATOR}${keySuffix(author)}` : member.name;
 }

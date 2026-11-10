@@ -3,27 +3,34 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
-import { type Invite, inviteLink } from '../app/invite';
+import { inviteLink } from '../app/invite';
 import { newGroupSecret } from '../crypto/groupKeys';
+import { newInviteSeed } from '../crypto/invite';
 import { axeViolations } from '../test/axe';
 import { type Arrival, InstallGuide } from './InstallGuide';
 
 const ORIGIN = 'https://reconcile.example';
 
-/** A new invite: a fresh group secret, as Copy invite link would send. */
-function newInvite(): Invite {
-  return { secret: newGroupSecret() };
+/** A new invite's seed, as Copy invite link makes one. */
+function newInvite(): Uint8Array {
+  return newInviteSeed();
 }
 const FOUND: FoundGroup = {
   groupId: 'group-1',
-  name: 'Riverside Tenants',
-  title: 'House rules',
+  preview: {
+    groupName: 'Riverside Tenants',
+    inviterName: 'Ana',
+    documentTitle: 'House rules',
+    excerpt: 'Quiet hours start at ten.',
+  },
+  secret: newGroupSecret(),
+  token: { by: 'a'.repeat(43), sig: 'b'.repeat(86) },
   page: { records: [], cursor: 3, relayNow: 29_000_000, instance: 'relay' },
 };
 
 interface Options {
   readonly arrival?: Arrival;
-  readonly lookup?: (invite: Invite) => Promise<InviteLookup>;
+  readonly lookup?: (seed: Uint8Array) => Promise<InviteLookup>;
   readonly copy?: (text: string) => Promise<void>;
 }
 
@@ -77,11 +84,13 @@ describe('InstallGuide', () => {
   it('shows an invite’s preview, with no name field, and the link to copy', async () => {
     const invite = newInvite();
     const link = inviteLink(ORIGIN, invite);
-    const { user, copyText, lookup } = setup({ arrival: { kind: 'invite', invite } });
+    const { user, copyText, lookup } = setup({ arrival: { kind: 'invite', seed: invite } });
 
     const preview = await screen.findByRole('region', { name: 'Riverside Tenants' });
     expect(within(preview).getByText('You’re invited')).toBeVisible();
     expect(within(preview).getByText('House rules')).toBeVisible();
+    expect(within(preview).getByText(/^From/)).toHaveTextContent('From Ana’s invite');
+    expect(within(preview).getByText('Quiet hours start at ten.')).toBeVisible();
     expect(lookup).toHaveBeenCalledWith(invite);
     expect(screen.queryByRole('textbox', { name: 'Your name' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Join group' })).not.toBeInTheDocument();
@@ -118,7 +127,10 @@ describe('InstallGuide', () => {
 
   it('still offers the invite link when the relay can’t be reached', async () => {
     const invite = newInvite();
-    setup({ arrival: { kind: 'invite', invite }, lookup: () => Promise.reject(new Error('down')) });
+    setup({
+      arrival: { kind: 'invite', seed: invite },
+      lookup: () => Promise.reject(new Error('down')),
+    });
     const section = await screen.findByRole('region', { name: 'Your invite' });
     expect(within(section).getByRole('textbox', { name: 'Your invite link' })).toHaveValue(
       inviteLink(ORIGIN, invite),
@@ -127,7 +139,7 @@ describe('InstallGuide', () => {
   });
 
   it.each([
-    ['an expired link', { kind: 'invite', invite: newInvite() } as const, 'missing' as const],
+    ['an expired link', { kind: 'invite', seed: newInvite() } as const, 'missing' as const],
     ['a damaged link', { kind: 'damaged' } as const, 'missing' as const],
   ])(
     'says %s has expired or is damaged, and offers only the app’s address',
@@ -152,7 +164,7 @@ describe('InstallGuide', () => {
 
   it('says it is opening the invite while it looks', () => {
     setup({
-      arrival: { kind: 'invite', invite: newInvite() },
+      arrival: { kind: 'invite', seed: newInvite() },
       lookup: () => new Promise(() => undefined),
     });
     expect(screen.getByText('Opening the invite…')).toBeVisible();

@@ -1,13 +1,15 @@
 /**
  * A Proposal's versions as the screens show them (spec §8; ADR-0004):
  * numbered in ballot order, which is relay order, each with its author's name.
- * A steward Proposal's one version has no text: it carries what the ballot
- * decides instead (#102).
+ * A steward or rules Proposal's one version has no text: it carries what the
+ * ballot decides instead (#102, #117).
  */
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
+import { rulesChangeOf } from '../engine/optIns';
 import { type StewardChange, stewardChangeOf } from '../engine/stewards';
 import { messages } from './messages';
+import { type RulesView, rulesView } from './optInLines';
 import { type Motion, motionFor } from './stewardLines';
 
 /** What a steward ballot decides, and the line that says what passing does. */
@@ -28,11 +30,13 @@ export interface VersionView {
   readonly text: string;
   /** For a steward Proposal, what its ballot decides, in place of any text (#102). */
   readonly steward?: StewardView;
+  /** For a rules Proposal, what its ballot decides, in place of any text (#117). */
+  readonly rules?: RulesView;
 }
 
 /** What a steward change's ballot decides: electing its nominee, or recalling its steward. */
 export function stewardView(
-  state: Pick<GroupState, 'members' | 'rules'>,
+  state: Pick<GroupState, 'members' | 'former' | 'rules'>,
   change: Omit<StewardChange, 'kind'>,
 ): StewardView {
   const motion = motionFor(state, change);
@@ -45,11 +49,13 @@ export function stewardView(
 /** A Proposal's versions in ballot order, each numbered and named. */
 export function versionViews(state: GroupState, proposal: Proposal): VersionView[] {
   const change = stewardChangeOf(proposal);
+  const rules = rulesChangeOf(proposal);
   return proposal.versions.map((version, index) => ({
     id: version.id,
     number: index + 1,
     author: displayName(state, version.author) ?? '',
     text: version.text,
     ...(change === null ? {} : { steward: stewardView(state, change) }),
+    ...(rules === null ? {} : { rules: rulesView(rules) }),
   }));
 }

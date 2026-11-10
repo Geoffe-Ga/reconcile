@@ -45,6 +45,8 @@ export interface PriorityComposerProps {
   readonly onAsk: (values: PriorityValues) => Promise<ComposeOutcome>;
   /** A lapsed priority vote to ask again (#74), from the `again` route. */
   readonly again?: Proposal;
+  /** True once this device has left the group and waits for the relay to have its `leave` (#77). */
+  readonly leaving?: boolean;
 }
 
 /** One option row: a key that stays with it as rows come and go, and its text as typed. */
@@ -268,25 +270,39 @@ function PriorityForm({ state, now, onAsk, again }: FormProps) {
   );
 }
 
-/** Shown in place of the form when this member can't ask, or a priority vote is open. */
-function Unavailable({ state, open }: { readonly state: GroupState; open: Proposal | undefined }) {
+/** Why there's no form to show: the title and line to show instead, and the open vote to link to. */
+interface NoForm {
+  readonly title: string;
+  readonly text: string;
+  readonly open?: Proposal;
+}
+
+/** Why this member can't ask now, or null when they can: leaving, no `propose`, or a vote open. */
+function noFormFor(state: GroupState, me: string, leaving: boolean): NoForm | null {
+  const { priority, composer, leave } = messages;
+  if (leaving) return { title: leave.noProposingTitle, text: leave.noProposing };
+  if (!can(state, me, 'propose'))
+    return { title: composer.notAllowedTitle, text: composer.notAllowed };
+  const open = openPriority(state);
+  return open === undefined ? null : { title: priority.openTitle, text: priority.open, open };
+}
+
+/** Shown in place of the form, with a link to the open vote when that's the reason. */
+function Unavailable({ state, reason }: { readonly state: GroupState; reason: NoForm }) {
   const groupId = state.group ?? '';
-  const { priority, composer } = messages;
+  const { open } = reason;
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId }} label={state.name} />
-      <PageHeader
-        title={open === undefined ? composer.notAllowedTitle : priority.openTitle}
-        pageTitle={priority.pageTitle}
-      />
-      <p className="lede">{open === undefined ? composer.notAllowed : priority.open}</p>
+      <PageHeader title={reason.title} pageTitle={messages.priority.pageTitle} />
+      <p className="lede">{reason.text}</p>
       {open === undefined ? null : (
         <div>
           <Link
             className="button button-secondary"
             href={routeHref({ name: 'proposal', groupId, proposalId: open.id })}
           >
-            {priority.seeOpen}
+            {messages.priority.seeOpen}
           </Link>
         </div>
       )}
@@ -295,15 +311,14 @@ function Unavailable({ state, open }: { readonly state: GroupState; open: Propos
 }
 
 /**
- * The priority composer: the form for someone who may propose while no other
- * priority vote is open, else why not. Asking again after a lapse starts from
- * the lapsed vote's question, why and options.
+ * The priority composer: the form for someone who may propose, isn't leaving
+ * (#77), and finds no other priority vote open, else why not. Asking again
+ * after a lapse starts from the lapsed vote's question, why, options and window.
  */
-export function PriorityComposer({ state, me, now, onAsk, again }: PriorityComposerProps) {
-  const open = openPriority(state);
-  if (!can(state, me, 'propose') || open !== undefined) {
-    return <Unavailable state={state} open={can(state, me, 'propose') ? open : undefined} />;
-  }
+export function PriorityComposer(props: PriorityComposerProps) {
+  const { state, me, now, onAsk, again } = props;
+  const reason = noFormFor(state, me, props.leaving === true);
+  if (reason !== null) return <Unavailable state={state} reason={reason} />;
   const lapsed = again?.final === true && again.outcome.kind === 'lapse' ? again : undefined;
   return (
     <PriorityForm key={lapsed?.id ?? 'new'} state={state} now={now} onAsk={onAsk} again={lapsed} />

@@ -173,12 +173,12 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
 }
 
 /**
- * "Score for version N", a steward ballot's own label (#102), or for a
- * priority option, "Score for <option>" with the option in `<bdi>` (#107).
+ * "Score for version N", a steward or rules ballot's own label (#102, #117),
+ * or for a priority option, "Score for <option>" with the option in `<bdi>` (#107).
  */
 function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
   if (layout !== 'options') {
-    return version.steward === undefined
+    return version.steward === undefined && version.rules === undefined
       ? messages.ballot.scoreFor(version.number)
       : messages.stewards.score;
   }

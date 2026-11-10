@@ -26,6 +26,7 @@ function show(state: GroupState, proposalId: string) {
         me={ANA}
         own="none"
         onProposeAgain={onProposeAgain}
+        onTell={() => Promise.resolve('shared')}
       />
     </main>,
   );

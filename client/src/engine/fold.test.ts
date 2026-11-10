@@ -87,15 +87,18 @@ describe('fold', () => {
     expect(fold([], null)).toEqual({
       group: null,
       rules: DEFAULT_RULES,
+      optIns: { chatBot: null, frontDoor: false },
       name: '',
       chat: null,
       title: '',
       members: [],
+      former: [],
       atoms: [],
       proposals: [],
       at: 0,
       stewards: EMPTY_SEATS,
       suspensions: [],
+      narrowings: [],
       focus: null,
       ignored: [],
     });
@@ -198,6 +201,7 @@ describe('fold', () => {
       name: 'ben',
       level,
       seq: 2,
+      invitedBy: null,
     });
   });
 
@@ -214,6 +218,7 @@ describe('fold', () => {
       name: 'ben',
       level: follow,
       seq: 2,
+      invitedBy: null,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);

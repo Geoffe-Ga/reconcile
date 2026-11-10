@@ -10,7 +10,8 @@
  * records (ADR-0009), so two groups on one device share no key or id. Nothing
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
- * or the new one.
+ * or the new one. Everything the device keeps about a group lives in that one
+ * record, so Leave deletes the group with a single delete (#77).
  */
 
 import { openDB } from 'idb';
@@ -55,7 +56,26 @@ export interface Group {
   lastSyncAt: number | null;
   /** Private drafts by target, never sent (./drafts.ts). Absent until the first one. */
   drafts?: DraftShelf;
+  /**
+   * Set when a sync succeeded more than {@link HISTORY_GAP_MS} after the one
+   * before, so the relay may have dropped events this device never read
+   * (#73). Only {@link Store.mergeLog} clears it. Absent until first set.
+   */
+  missingHistory?: boolean;
+  /**
+   * The signed `leave` this device queued (#77), while the group waits to be
+   * deleted: absent until Leave. Nothing more is queued after it, and the sync
+   * loop purges the group once the relay returns a seq for it.
+   */
+  leaving?: Uint8Array;
 }
+
+/**
+ * The longest gap between syncs that can't have missed an event: 28 days. The
+ * relay keeps blobs 30 days, rounded up by a day (ADR-0057), so a device away
+ * for longer may find some already gone.
+ */
+export const HISTORY_GAP_MS = 28 * 86_400_000;
 
 /** What a device knows about a group when it creates or joins it. */
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'>;
@@ -101,10 +121,34 @@ export interface Store extends DraftStore {
    * @throws {RecordTooLarge} when a record is over 64,000 bytes.
    */
   enqueueAll(groupId: string, records: readonly Uint8Array[], draft?: string): Promise<void>;
+  /**
+   * Queue this member's signed `leave` after everything already queued, and
+   * mark the group as leaving, in one change (#77). From then on nothing else
+   * is queued, and it stays this way across reloads until the relay has the
+   * leave. A group already leaving keeps its first leave.
+   */
+  markLeaving(groupId: string, leave: Uint8Array): Promise<void>;
+  /**
+   * Delete everything this device keeps about the group, in one transaction:
+   * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
+   * calls it once the relay has returned a seq for the group's leave. A group
+   * that is already gone is left alone.
+   */
+  purgeGroup(groupId: string): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
-  /** Append each record whose event id isn't in the log yet, and save the sync state. */
+  /**
+   * Append each record whose event id isn't in the log yet, and save the sync
+   * state. A pull more than {@link HISTORY_GAP_MS} after the last sync sets
+   * `missingHistory`.
+   */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
+  /**
+   * Add each of an invite's `records` whose event id the log lacks, each in
+   * seq order among the records already there, and clear `missingHistory`
+   * (#73). The cursor and sync state stay as they are.
+   */
+  mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
@@ -149,6 +193,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       if (length > MAX_RECORD_BYTES) throw new RecordTooLarge(length);
     }
     await change(groupId, (group) => {
+      if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
       group.outbox.push(...records);
       if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
     });
@@ -182,6 +227,19 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       changeQuietly(groupId, (group) => {
         group.drafts = withDraft(group.drafts, target, draft);
       }),
+    markLeaving: (groupId, leave) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined) return;
+        group.outbox.push(leave);
+        group.leaving = leave;
+      }),
+    async purgeGroup(groupId) {
+      const tx = db.transaction(GROUPS, 'readwrite');
+      const found = (await tx.store.getKey(groupId)) !== undefined;
+      if (found) await tx.store.delete(groupId);
+      await tx.done;
+      if (found) notify(groupId);
+    },
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
         // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
@@ -192,11 +250,19 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       }),
     applyPull: (groupId, pull, idOf) =>
       change(groupId, (group) => {
+        if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
+          group.missingHistory = true;
+        }
         group.log.push(...unseen(group.log, pull.records, idOf));
         group.cursor = pull.cursor;
         group.relayNow = pull.relayNow;
         group.instance = pull.instance;
         group.lastSyncAt = pull.lastSyncAt;
+      }),
+    mergeLog: (groupId, records, idOf) =>
+      change(groupId, (group) => {
+        group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
+        group.missingHistory = false;
       }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
@@ -213,7 +279,10 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
   };
 }
 
-/** A function that edits one group in one read-write transaction, then notifies. */
+/**
+ * A function that edits one group in one read-write transaction, then
+ * notifies. An edit that throws, like a missing group, changes nothing.
+ */
 function changer(
   db: IDBPDatabase<Schema>,
   notify: (groupId: string) => void,
@@ -221,12 +290,14 @@ function changer(
   return async (groupId, edit) => {
     const tx = db.transaction(GROUPS, 'readwrite');
     const group = await tx.store.get(groupId);
-    if (group === undefined) {
+    try {
+      if (group === undefined) throw new Error('No such group on this device.');
+      edit(group);
+    } catch (error) {
       tx.abort();
       await tx.done.catch(() => undefined);
-      throw new Error('No such group on this device.');
+      throw error;
     }
-    edit(group);
     await Promise.all([tx.store.put(group), tx.done]);
     notify(groupId);
   };
@@ -237,7 +308,11 @@ function changer(
  * `log` nor earlier in `incoming`. A record that doesn't verify has no id, so
  * it is dropped and can never shadow the real record of the same event.
  */
-function unseen(log: LogRecord[], incoming: LogRecord[], idOf: EventIdOf): LogRecord[] {
+function unseen(
+  log: readonly LogRecord[],
+  incoming: readonly LogRecord[],
+  idOf: EventIdOf,
+): LogRecord[] {
   if (incoming.length === 0) {
     return [];
   }
@@ -252,6 +327,20 @@ function unseen(log: LogRecord[], incoming: LogRecord[], idOf: EventIdOf): LogRe
   });
 }
 
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+/**
+ * `log` with each of `added` placed before the first record of a higher seq,
+ * so the relay's order holds and the log's own records keep theirs.
+ */
+function inSeqOrder(log: readonly LogRecord[], added: readonly LogRecord[]): LogRecord[] {
+  const merged = [...log];
+  for (const record of [...added].sort((a, b) => a.seq - b.seq)) {
+    const at = merged.findIndex((kept) => kept.seq > record.seq);
+    merged.splice(at === -1 ? merged.length : at, 0, record);
+  }
+  return merged;
+}
+
+/** True when `a` and `b` hold the same bytes. */
+export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }

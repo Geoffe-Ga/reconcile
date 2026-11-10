@@ -5,7 +5,8 @@
  * group's focus now, and thanks to whoever asked; then the options that
  * passed, best first, and those that didn't clear the floor, each by its text
  * alone, with no numbers. A fail says the focus stays as it was; a lapse says
- * ADR-0069's sentence and offers Propose again. Each option's totals and the
+ * ADR-0069's sentence and offers Propose again. Then Tell your group's result
+ * message (#113). Each option's totals and the
  * individual ballots sit under one disclosure, then when voting ran. Every
  * ranking and flag comes from the engine's tally (`rank`), so this holds no
  * threshold of its own.
@@ -13,6 +14,7 @@
 import { useId } from 'react';
 
 import { messages } from '../app/messages';
+import { TellYourGroup } from '../app/TellYourGroup';
 import { type VersionView, versionViews } from '../app/versionViews';
 import { proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
@@ -136,6 +138,9 @@ export function PriorityResult(props: ResultViewProps) {
       <Outcome props={props} detail={detail} options={options} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
       <Ranking detail={detail} options={options} />
+      {props.leaving === true ? null : (
+        <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
+      )}
       <Ballots
         props={props}
         versions={options}

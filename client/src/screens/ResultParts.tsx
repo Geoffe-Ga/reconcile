@@ -8,7 +8,9 @@ import { Fragment, type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
 import { formatAverage } from '../app/format';
+import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { messages } from '../app/messages';
+import type { ShareOutcome } from '../app/share';
 import { MotionTitle } from '../app/stewards';
 import { formatMinute, minuteIso } from '../app/time';
 import type { VersionView } from '../app/versionViews';
@@ -32,6 +34,10 @@ export interface ResultViewProps {
   readonly own: OwnBallot;
   /** Opens the composer to propose a lapsed Proposal again. */
   readonly onProposeAgain: () => void;
+  /** Shares the result message into the group's chat, or copies it (#113). */
+  readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
+  /** Whether this device's leave waits for the relay (#77): then nothing is proposed again. */
+  readonly leaving?: boolean;
 }
 
 /** "Thank you, Ben and Ana.", each name inside `<bdi>`. */
@@ -52,16 +58,19 @@ export function Thanks({ names }: { readonly names: readonly string[] }) {
 }
 
 /**
- * Propose again, for someone who can propose (ADR-0069, as ADR-0073 cuts it:
- * a fresh Proposal with a fresh window). It waits, and says why, while
- * another Proposal is open on the section.
+ * Propose again, for someone who can propose and isn't leaving (ADR-0069, as
+ * ADR-0073 cuts it: a fresh Proposal with a fresh window). It waits, and says
+ * why, while another Proposal is open on the section, or for a priority vote
+ * (#107), while another priority vote is open.
  */
 export function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
-  const { state, me, proposal, onProposeAgain } = props;
+  const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  // A steward vote isn't proposed again from here: Group home says when an election is due (#102).
-  if (proposal.target.kind === 'steward' || !can(state, me, 'propose')) return null;
   const priority = isPriority(proposal);
+  // A steward or rules vote isn't proposed again from here: Group home says when an election is
+  // due (#102), and the Rules page offers each opt-in (#117).
+  const again = priority || proposal.target.kind === 'edit';
+  if (leaving || !again || !can(state, me, 'propose')) return null;
   const busy = priority
     ? openPriority(state) !== undefined
     : composeOption(state, proposal.atom) !== 'propose';
@@ -99,6 +108,7 @@ export type Naming = 'versions' | 'options';
 function VersionName({ version, naming }: { readonly version: VersionView; naming: Naming }) {
   if (naming === 'options') return <bdi>{version.text}</bdi>;
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
+  if (version.rules !== undefined) return <>{version.rules.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}

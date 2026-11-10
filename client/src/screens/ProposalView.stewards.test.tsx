@@ -41,6 +41,7 @@ function setup(
       own="none"
       onVote={onVote}
       onProposeAgain={() => undefined}
+      onTell={() => Promise.resolve('copied')}
       {...extra}
     />,
   );

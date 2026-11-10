@@ -1,7 +1,7 @@
 import { type SyntheticEvent, useId } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
-import { type Invite, parseInviteLink } from '../app/invite';
+import { parseInviteLink } from '../app/invite';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
@@ -12,14 +12,16 @@ export interface StartGroup {
   readonly groupId: string;
   readonly name: string | null;
   readonly title: string | null;
+  /** Whether this device's leave waits for the relay (#77); the group goes once it's there. */
+  readonly leaving: boolean;
 }
 
 /** Props for {@link Start}. */
 export interface StartProps {
   /** The groups on this device. */
   readonly groups: readonly StartGroup[];
-  /** Opens a pasted invite. The invite travels in memory, never through the address bar. */
-  readonly onOpenInvite: (invite: Invite) => void;
+  /** Opens a pasted invite's seed. It travels in memory, never through the address bar. */
+  readonly onOpenInvite: (seed: Uint8Array) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
 }
@@ -39,6 +41,7 @@ function GroupItem({ group }: { readonly group: StartGroup }) {
         {group.title === null ? null : (
           <span className="caption">{messages.start.documentTitle(group.title)}</span>
         )}
+        {group.leaving ? <span className="leaving-tag">{messages.start.leaving}</span> : null}
       </Link>
     </li>
   );
@@ -50,10 +53,11 @@ function checkInvite(text: string): string | null {
 }
 
 /**
- * Start (`#/`): the groups on this device, Create group, and Join with an
- * invite link, a field to paste one into. The app reads the clipboard only
- * through that paste. When the browser may clear the app's data, one quiet
- * line says so (ADR-0029).
+ * Start (`#/`): every group on this device by name, each marked while its
+ * leave waits for the relay (#77), Create group, and Join with an invite
+ * link, a field to paste one into. The app reads the clipboard only through
+ * that paste. When the browser may clear the app's data, one quiet line says
+ * so (ADR-0029).
  */
 export function Start({ groups, onOpenInvite, persistence = null }: StartProps) {
   const inviteHeading = useId();
@@ -61,8 +65,8 @@ export function Start({ groups, onOpenInvite, persistence = null }: StartProps) 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = new FormData(event.currentTarget).get('invite');
-    const invite = typeof text === 'string' ? parseInviteLink(text) : null;
-    if (invite !== null) onOpenInvite(invite);
+    const seed = typeof text === 'string' ? parseInviteLink(text) : null;
+    if (seed !== null) onOpenInvite(seed);
   };
 
   return (

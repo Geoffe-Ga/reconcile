@@ -2,8 +2,11 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { type ChatDetails, type ChatMoment, chatMessage } from '../app/chatMessages';
+import type { ShareOutcome } from '../app/share';
 import { formatMinute } from '../app/time';
 import { LEVELS } from '../engine/capabilities';
+import { DAY_MINUTES } from '../engine/rules';
 import {
   createEvent,
   type EventInput,
@@ -19,6 +22,7 @@ import { authorOf } from '../test/keys';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
 
 type OnVote = (scores: Readonly<Record<string, Score>>, note: string) => Promise<void>;
+type OnTell = (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
 
 const [FOLLOWING, VOTING] = LEVELS;
 
@@ -30,6 +34,8 @@ interface Setup {
   readonly pending?: readonly ParsedEvent[];
   readonly reachable?: boolean;
   readonly own?: OwnBallot;
+  readonly leaving?: boolean;
+  readonly onTell?: OnTell;
 }
 
 function setup({
@@ -40,6 +46,8 @@ function setup({
   pending = [],
   reachable = true,
   own = 'none',
+  leaving = false,
+  onTell = vi.fn<OnTell>(() => Promise.resolve('copied')),
 }: Setup) {
   const onVote = vi.fn<OnVote>(() => Promise.resolve());
   const onProposeAgain = vi.fn();
@@ -51,14 +59,16 @@ function setup({
     reachable,
     now: now ?? START_MINUTE + 60,
     own,
+    leaving,
     onVote,
     onProposeAgain,
+    onTell,
   };
   const view = render(<ProposalView {...props} />);
   const rerender = (next: Partial<ProposalViewProps>) => {
     view.rerender(<ProposalView {...props} {...next} />);
   };
-  return { user: userEvent.setup(), onVote, onProposeAgain, rerender };
+  return { user: userEvent.setup(), onVote, onProposeAgain, onTell, rerender };
 }
 
 /** An event as `useGroup` lists it while it waits in the outbox. */
@@ -408,7 +418,9 @@ describe('ProposalView', () => {
     rerender({ proposalId, pending: [waiting], reachable: false });
     expect(screen.getByRole('radio', { name: '2 · Neutral' })).toBeChecked();
     expect(screen.getByRole('textbox')).toHaveValue('Fine on weekends.');
-    expect(screen.getByRole('status')).toHaveTextContent(
+    // The ballot's own status line: Tell your group, offered to everyone, has one too (#113).
+    const vote = screen.getByRole('region', { name: 'Changes to section 1' });
+    expect(within(vote).getByRole('status')).toHaveTextContent(
       'Saved on this device. It will send when you’re back online.',
     );
   });
@@ -636,6 +648,131 @@ describe('ProposalView, the consent meter and the result', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Propose again' }));
     expect(onProposeAgain).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProposalView, Tell your group', () => {
+  const tellButton = () => screen.queryByRole('button', { name: 'Tell your group' });
+  const DEADLINE = deadlineOf(START_MINUTE);
+
+  it.each(['ana', 'ben'])(
+    'offers everyone the open message while the vote is open (%s)',
+    async (me) => {
+      const { log, proposalId } = openVote();
+      const { user, onTell } = setup({ state: log.state(), proposalId, me: authorOf(me) });
+
+      expect(screen.getByText(chatMessage('open', { deadline: DEADLINE }))).toBeVisible();
+      await user.click(tellButton() as HTMLElement);
+
+      expect(onTell).toHaveBeenCalledExactlyOnceWith('open', { deadline: DEADLINE });
+      expect(await screen.findByText('Copied. Paste it into your group’s chat.')).toBeVisible();
+      expect(await axeViolations()).toEqual([]);
+    },
+  );
+
+  it('offers someone who added a version the version’s line', async () => {
+    const { log, proposalId } = openVote();
+    log.version('ben', proposalId, 'Quiet after midnight.');
+    const { user, onTell } = setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    await user.click(tellButton() as HTMLElement);
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('version', { deadline: DEADLINE });
+  });
+
+  it('shares the title only once someone ticks Include the title', async () => {
+    const { log, proposalId } = openVote();
+    const { user, onTell } = setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    await user.click(screen.getByRole('checkbox', { name: 'Include the title' }));
+    await user.click(tellButton() as HTMLElement);
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('open', {
+      deadline: DEADLINE,
+      title: 'Later quiet hours',
+    });
+  });
+
+  it.each([3, 14])(
+    'offers the closing message only from a day before the close until it (%i-day window)',
+    async (window) => {
+      const log = groupLog();
+      const proposalId = log.propose('ana', { ...PROPOSAL, window });
+      const deadline = START_MINUTE + window * DAY_MINUTES;
+      const closing = chatMessage('closing', { deadline });
+      const { rerender } = setup({ state: log.state(), proposalId, now: deadline - 1_441 });
+      expect(screen.getByText(chatMessage('open', { deadline }))).toBeVisible();
+      expect(screen.queryByText(closing)).not.toBeInTheDocument();
+
+      for (const now of [deadline - DAY_MINUTES, deadline - 1]) {
+        rerender({ now });
+        expect(screen.getByText(closing)).toBeVisible();
+        expect(tellButton()).toBeVisible();
+      }
+      expect(await axeViolations()).toEqual([]);
+
+      rerender({ now: deadline });
+      expect(screen.queryByText(closing)).not.toBeInTheDocument();
+      expect(tellButton()).not.toBeInTheDocument();
+    },
+  );
+
+  it('shares the closing message from the closing day, with a fresh, unticked box', async () => {
+    const { log, proposalId } = openVote();
+    const { user, onTell, rerender } = setup({ state: log.state(), proposalId });
+    await user.click(screen.getByRole('checkbox', { name: 'Include the title' }));
+    rerender({ now: DEADLINE - DAY_MINUTES });
+    expect(screen.getByRole('checkbox', { name: 'Include the title' })).not.toBeChecked();
+    await user.click(tellButton() as HTMLElement);
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('closing', { deadline: DEADLINE });
+  });
+
+  it('offers the result message, not the open one, once the vote has closed', async () => {
+    const { log, proposalId } = openVote();
+    const { user, onTell } = setup({
+      state: log.state(DEADLINE),
+      proposalId,
+      now: DEADLINE,
+    });
+    expect(screen.getAllByRole('button', { name: 'Tell your group' })).toHaveLength(1);
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText('A vote has finished in Reconcile.')).toBeVisible();
+    await user.click(within(result).getByRole('button', { name: 'Tell your group' }));
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('result', { deadline: DEADLINE });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers it only once the relay has the Proposal, since only then is its deadline known', () => {
+    const { log } = openVote();
+    const waiting = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 0,
+      body: { atom: `${log.group}.1`, title: 'Bins', why: 'W', text: 'Bins out on Monday.' },
+    });
+    setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
+    expect(screen.getByRole('heading', { level: 1, name: 'Bins' })).toBeVisible();
+    expect(tellButton()).not.toBeInTheDocument();
+  });
+});
+
+describe('ProposalView, while leaving', () => {
+  it('takes no vote, version or share, and says why', async () => {
+    const { log, proposalId } = openVote();
+    setup({ state: log.state(), proposalId, leaving: true });
+
+    expect(radios()).toHaveLength(0);
+    expect(screen.getByText('You’re leaving this group, so you can’t vote here.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /your vote/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tell your group' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Propose again on a lapsed Proposal', () => {
+    const { log, proposalId } = openVote();
+    const now = deadlineOf(START_MINUTE);
+    setup({ state: log.state(now), proposalId, now, leaving: true });
+    expect(screen.getByText('Not enough people weighed in. This isn’t a no.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Propose again' })).not.toBeInTheDocument();
   });
 });
 

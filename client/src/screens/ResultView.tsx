@@ -4,18 +4,21 @@
  * Top to bottom: the outcome sentence; on a pass, the new text full width and
  * thanks to the winning version's author by name, with no numbers and no
  * animation; on a fail, each version's unmet condition in words; on a lapse,
- * ADR-0069's sentence and Propose again. Then each version's totals, the
- * individual ballots and notes under a disclosure, and when voting ran, in
- * relay time. A ballot that reached the relay too late tells its author so.
- * No result offers a part-ways action (ADR-0068). Everything here is read
- * from the group's own log on this device; nothing is sent. A priority vote's
- * result is PriorityResult.tsx's (#107); the two share ResultParts.tsx.
+ * ADR-0069's sentence and Propose again. Then Tell your group's result
+ * message (#113), each version's totals, the individual ballots and notes
+ * under a disclosure, and when voting ran, in relay time. A ballot that
+ * reached the relay too late tells its author so. No result offers a
+ * part-ways action (ADR-0068). Everything here is read from the group's own
+ * log on this device; nothing is sent to the relay. A priority vote's result
+ * is PriorityResult.tsx's (#107); the two share ResultParts.tsx.
  */
 import { useId } from 'react';
 
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
+import type { RulesView } from '../app/optInLines';
 import { Named } from '../app/stewards';
+import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { proposalTally } from '../engine/fold';
@@ -52,6 +55,15 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
       <p className="outcome-sentence">
         <Named parts={parts} name={motion.name} />
       </p>
+    </div>
+  );
+}
+
+/** A rules Proposal's pass: what is now on or off (#117). */
+function RulesPassed({ rules }: { readonly rules: RulesView }) {
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{rules.passed}</p>
     </div>
   );
 }
@@ -125,8 +137,9 @@ function Lapsed({ props }: OutcomeProps) {
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const steward = props.versions[0]?.steward;
+  const { steward, rules } = props.versions[0] ?? {};
   if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
+  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
@@ -144,6 +157,9 @@ function EditResult(props: ResultViewProps) {
       </h2>
       <Outcome props={props} detail={detail} versions={versions} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
+      {props.leaving === true ? null : (
+        <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
+      )}
       <Totals detail={detail} versions={versions} naming="versions" />
       <Ballots props={props} versions={versions} naming="versions" />
       <Ran proposal={proposal} />

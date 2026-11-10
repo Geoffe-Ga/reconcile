@@ -37,6 +37,8 @@ export interface LogBuilder {
   join(name: string, level?: Level): void;
   /** Adds `name`'s move to `level`. */
   level(name: string, level: string): void;
+  /** Adds `name`'s leave. */
+  leave(name: string): void;
   /** Adds a Proposal by `name`, returning its id. */
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
@@ -60,6 +62,10 @@ export interface LogBuilder {
   steward(name: string, seat: number, nominee: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s suspension of the person named `who`, with an optional reason. */
   suspend(name: string, who: string, reason?: string): string;
+  /** Adds `name`'s rules Proposal setting `optIn` to `value` (#117), returning its id. */
+  rules(name: string, optIn: string, value: unknown, entry?: ProposalEntry): string;
+  /** Adds `name`'s narrowing of `optIn` beside the off-Proposal `proposal` (#117), returning its id. */
+  narrow(name: string, optIn: string, proposal: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -106,6 +112,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     level(name: string, level: string) {
       add(name, { type: 'level', group, ts: 0, body: { level } });
+    },
+    leave(name: string) {
+      add(name, { type: 'leave', group, ts: 0, body: {} });
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {
@@ -157,6 +166,20 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         ...(reason === undefined ? {} : { reason }),
       };
       return add(name, { type: 'suspend', group, ts: 0, body });
+    },
+    rules(name: string, optIn: string, value: unknown, entry: ProposalEntry = {}) {
+      const { title = 'Our chat bot', why = 'A nudge when votes open.' } = entry;
+      const target = { kind: 'rules' as const, optIn, value };
+      const body = {
+        target,
+        title,
+        why,
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
+    narrow(name: string, optIn: string, proposal: string) {
+      return add(name, { type: 'narrow', group, ts: 0, body: { optIn, proposal } });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

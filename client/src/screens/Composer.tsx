@@ -40,6 +40,8 @@ export interface ComposerProps {
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
   /** A lapsed Proposal to propose again on this section (#74), from the `again` route. */
   readonly again?: Proposal;
+  /** Whether this device's leave waits for the relay (#77): then it shows no form. */
+  readonly leaving?: boolean;
 }
 
 /** Limits count code points after NFC (spec §4), never UTF-16 units as `maxLength` does. */
@@ -467,6 +469,19 @@ function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: V
 }
 
 /**
+ * Why this member gets no form, or null when they get one: their leave waits
+ * for the relay (#77), or they may not propose, and a suspended member reads
+ * until when rather than that their level can't propose (#102).
+ */
+function whyNoForm(props: ComposerProps): { readonly title: string; readonly text: string } | null {
+  const { state, me } = props;
+  const { composer, leave } = messages;
+  if (props.leaving === true) return { title: leave.noProposingTitle, text: leave.noProposing };
+  if (can(state, me, 'propose')) return null;
+  return { title: composer.notAllowedTitle, text: suspendedLine(state, me) ?? composer.notAllowed };
+}
+
+/**
  * The composer (`#/g/{groupId}/propose/{atomId}`; spec §8). On a section with
  * no open Proposal: a title, a why, the section's new text in Write and
  * Preview tabs (prefilled with the current text), a discussion link
@@ -476,25 +491,22 @@ function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: V
  * text alone, and submitting queues one `version`. A full ballot takes no
  * more. `composeOption` decides which, as it does for the fold. What is typed
  * is kept as a private draft on this device until it is sent or discarded.
- * Only someone who may propose sees a form (`can()`).
+ * Only someone who may propose, and isn't leaving, sees a form (`can()`).
  *
  * Proposing a lapsed Proposal again (#74) is the same form, starting from its
  * title, why, text and link, with its other versions carried onto the new
  * ballot. Its draft is kept under that Proposal, apart from the section's.
  */
 export function Composer(props: ComposerProps) {
-  const { state, me, atomId, drafts } = props;
+  const { state, atomId, drafts } = props;
   const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
   const atom = state.atoms[index];
   const { composer } = messages;
   if (atom === undefined) {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
-  if (!can(state, me, 'propose')) {
-    // A suspended member reads until when, rather than that their level can't propose (#102).
-    const text = suspendedLine(state, me) ?? composer.notAllowed;
-    return <Unavailable state={state} title={composer.notAllowedTitle} text={text} />;
-  }
+  const refused = whyNoForm(props);
+  if (refused !== null) return <Unavailable state={state} {...refused} />;
   const open = openProposalOn(state, atom.id);
   const option = composeOption(state, atom.id);
   if (option === 'ballot-full') {
