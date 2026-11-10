@@ -71,6 +71,47 @@ export interface ProposalBody {
 }
 
 /**
+ * A steward seat a Proposal fills or empties (ADR-0049, #102): its member is the
+ * nominee, or null for a recall of whoever holds `seat`. The fold checks the
+ * seat and the member.
+ */
+export interface StewardTarget {
+  readonly kind: 'steward';
+  readonly seat: number;
+  readonly member: string | null;
+}
+
+/**
+ * Elects or recalls a steward (#102): an ordinary Proposal with a title, a
+ * justification and an optional discussion link, whose target is a seat. It
+ * carries no text, so its ballot has one version, under the Proposal's id.
+ */
+export interface StewardProposalBody {
+  readonly target: StewardTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+}
+
+/** What a `proposal` event carries: new text for an Atom, or a steward seat (#102). */
+export type ProposalEventBody = ProposalBody | StewardProposalBody;
+
+/** True when a Proposal's body targets a steward seat rather than an Atom. */
+export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
+  return 'target' in body;
+}
+
+/**
+ * Suspends a member at once, for the group's `suspensionDays` (ADR-0016,
+ * #102), with an optional reason everyone in the group reads. The fold checks
+ * that the author may suspend them.
+ */
+export interface SuspendBody {
+  readonly member: string;
+  readonly reason?: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -90,10 +131,11 @@ export interface VoteBody {
 export interface EventBodies {
   readonly genesis: GenesisBody;
   readonly join: JoinBody;
-  readonly proposal: ProposalBody;
+  readonly proposal: ProposalEventBody;
   readonly version: VersionBody;
   readonly vote: VoteBody;
   readonly level: LevelBody;
+  readonly suspend: SuspendBody;
 }
 
 /** The event types this engine understands. */
@@ -230,7 +272,25 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
-function parseProposal(body: Json): ProposalBody | null {
+/** A steward target's kind, seat and member, or null for any other shape (#102). */
+function parseStewardTarget(value: unknown): StewardTarget | null {
+  if (!isObject(value) || value.kind !== 'steward') return null;
+  const { seat, member } = value;
+  if (!isWholeNumber(seat) || (member !== null && !isString(member))) return null;
+  return { kind: 'steward', seat, member };
+}
+
+/** A steward Proposal carries `target` and no `atom`; any `text` or `window` is dropped (#102, #106). */
+function parseStewardProposal(body: Json): StewardProposalBody | null {
+  const { atom, target, title, why, link } = body;
+  const parsed = parseStewardTarget(target);
+  if (parsed === null || atom !== undefined || !isString(title) || !isString(why)) return null;
+  if (!isOptionalString(link)) return null;
+  return { target: parsed, title, why, ...(link === undefined ? {} : { link }) };
+}
+
+function parseProposal(body: Json): ProposalEventBody | null {
+  if (body.target !== undefined) return parseStewardProposal(body);
   const { atom, title, why, text, link, window } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
   if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
@@ -242,6 +302,12 @@ function parseProposal(body: Json): ProposalBody | null {
     ...(link === undefined ? {} : { link }),
     ...(window === undefined ? {} : { window }),
   };
+}
+
+function parseSuspend(body: Json): SuspendBody | null {
+  const { member, reason } = body;
+  if (!isString(member) || !isOptionalString(reason)) return null;
+  return { member, ...(reason === undefined ? {} : { reason }) };
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -292,6 +358,8 @@ function withBody(
       return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'level':
       return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'suspend':
+      return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

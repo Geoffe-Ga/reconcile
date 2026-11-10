@@ -6,13 +6,20 @@ import {
   DEFAULT_JOIN_LEVEL,
   FOUNDER_LEVEL,
   isLevel,
+  isSuspended,
   type Level,
   LEVEL_CAPABILITIES,
   LEVELS,
+  type Roster,
+  SUSPENDED_CAPABILITIES,
+  votingRightsCount,
   wouldVote,
 } from './capabilities';
 
 const ALL: readonly Capability[] = ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose'];
+
+/** No seats held, no suspensions, at relay minute 0. */
+const QUIET = { stewards: [], suspensions: [], at: 0 } as const;
 
 /** Every TypeScript and JSON file under src/, as text, keyed by its path from this file. */
 const SOURCES = import.meta.glob<string>('../**/*.{ts,tsx,json}', {
@@ -39,7 +46,18 @@ function filesNamingLevels(sources: Readonly<Record<string, string>>): string[] 
 }
 
 /** A roster of one member, ana, at `level`. */
-const at = (level: Level) => ({ members: [{ author: 'ana', level }] });
+const at = (level: Level): Roster => ({ ...QUIET, members: [{ author: 'ana', level }] });
+
+/** Ana at `level` holding a steward seat, at relay minute 100, maybe suspended until `until`. */
+function steward(level: Level, until?: number): Roster {
+  const suspensions = until === undefined ? [] : [{ member: 'ana', until }];
+  return {
+    members: [{ author: 'ana', level }],
+    stewards: [{ holder: 'ana' }, { holder: null }],
+    suspensions,
+    at: 100,
+  };
+}
 
 describe('LEVELS', () => {
   it('lists the three levels from following to creating', () => {
@@ -93,11 +111,12 @@ describe('can', () => {
   });
 
   it('refuses everyone before anyone is a member', () => {
-    expect(can({ members: [] }, 'ana', 'read')).toBe(false);
+    expect(can({ ...QUIET, members: [] }, 'ana', 'read')).toBe(false);
   });
 
   it('reads each member’s own level', () => {
     const state = {
+      ...QUIET,
       members: [
         { author: 'ana', level: 'co-creator' as const },
         { author: 'kim', level: 'member' as const },
@@ -106,6 +125,45 @@ describe('can', () => {
     expect(can(state, 'ana', 'propose')).toBe(true);
     expect(can(state, 'kim', 'propose')).toBe(false);
     expect(can(state, 'kim', 'read')).toBe(true);
+  });
+});
+
+describe('can: stewards and suspensions (#102)', () => {
+  it.each(LEVELS)('grants suspend to a %s holding a seat, on top of their level', (level) => {
+    const granted = [...ALL, 'suspend' as const].filter((c) => can(steward(level), 'ana', c));
+    expect(granted).toEqual([...LEVEL_CAPABILITIES[level], 'suspend']);
+  });
+
+  it('grants suspend to nobody who holds no seat, whatever their level', () => {
+    expect(can(at('co-creator'), 'ana', 'suspend')).toBe(false);
+    const other = { ...steward('co-creator'), stewards: [{ holder: 'ben' }, { holder: null }] };
+    expect(can(other, 'ana', 'suspend')).toBe(false);
+  });
+
+  it('leaves only read and see-roster to a suspended member, steward or not', () => {
+    expect(SUSPENDED_CAPABILITIES).toEqual(['read', 'see-roster']);
+    const granted = [...ALL, 'suspend' as const].filter((c) =>
+      can(steward('co-creator', 101), 'ana', c),
+    );
+    expect(granted).toEqual(['read', 'see-roster']);
+  });
+
+  it('gives everything back the minute the suspension ends', () => {
+    expect(isSuspended(steward('co-creator', 101), 'ana')).toBe(true);
+    expect(isSuspended(steward('co-creator', 100), 'ana')).toBe(false);
+    expect(can(steward('co-creator', 100), 'ana', 'suspend')).toBe(true);
+    expect(can(steward('co-creator', 100), 'ana', 'propose')).toBe(true);
+  });
+
+  it('reads only the member’s own suspensions', () => {
+    const state = { ...at('co-creator'), suspensions: [{ member: 'ben', until: 200 }] };
+    expect(isSuspended(state, 'ana')).toBe(false);
+    expect(can(state, 'ana', 'vote')).toBe(true);
+  });
+
+  it('still refuses a non-member who is named in a suspension', () => {
+    const state = { ...at('co-creator'), suspensions: [{ member: 'zed', until: 200 }] };
+    expect(can(state, 'zed', 'read')).toBe(false);
   });
 });
 
@@ -120,6 +178,31 @@ describe('wouldVote', () => {
 
   it('says a non-member wouldn’t vote', () => {
     expect(wouldVote(at('co-creator'), 'ben')).toBe(false);
+  });
+
+  it('ignores a suspension, so a suspension never shrinks the electorate (ADR-0075 §3)', () => {
+    expect(wouldVote(steward('collaborator', 200), 'ana')).toBe(true);
+  });
+});
+
+describe('votingRightsCount', () => {
+  it('counts the members whose level votes, ignoring Members and suspensions', () => {
+    const state = {
+      ...QUIET,
+      at: 5,
+      members: [
+        { author: 'ana', level: 'co-creator' as const },
+        { author: 'ben', level: 'collaborator' as const },
+        { author: 'kim', level: 'member' as const },
+        { author: 'cal', level: 'collaborator' as const },
+      ],
+      suspensions: [{ member: 'cal', until: 10 }],
+    };
+    expect(votingRightsCount(state)).toBe(3);
+  });
+
+  it('counts nobody before anyone is a member', () => {
+    expect(votingRightsCount({ ...QUIET, members: [] })).toBe(0);
   });
 });
 

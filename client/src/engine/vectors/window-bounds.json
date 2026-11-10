@@ -362,6 +362,97 @@
         ],
         "ignored": []
       }
+    },
+    {
+      "name": "window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "Ben for steward",
+              "why": "Our group needs someone to step in when things go wrong.",
+              "window": 10
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "target": {
+              "kind": "steward",
+              "seat": 1,
+              "member": "%ben",
+              "holder": "%ana"
+            },
+            "class": "ordinary",
+            "window": 7,
+            "deadline": 29385090,
+            "final": false
+          }
+        ],
+        "ignored": []
+      }
     }
   ]
 }

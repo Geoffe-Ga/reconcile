@@ -16,8 +16,10 @@ import { GroupHome } from '../screens/GroupHome';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import { ProposalView } from '../screens/ProposalView';
-import { Start } from '../screens/Start';
+import type { SeatNumber } from '../engine/stewards';
 import type { Persistence } from '../platform/persist';
+import { Start } from '../screens/Start';
+import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
 import {
@@ -34,6 +36,9 @@ import {
   castBallot,
   chooseLevel,
   propose,
+  proposeSteward,
+  type StewardValues,
+  suspend,
   type ProposalValues,
   type VersionValues,
 } from './proposals';
@@ -139,6 +144,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
           pending={group.pending}
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
+          onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
         />
       )}
     </GroupGate>
@@ -235,6 +241,35 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
   );
 }
 
+interface StewardScreenProps extends GroupScreenProps {
+  readonly seat: SeatNumber;
+  readonly recall: boolean;
+}
+
+/** The steward composer (#102); sending a Proposal replaces it with the Proposal's ballot. */
+function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) {
+  const onPropose = async (values: StewardValues): Promise<StewardOutcome> => {
+    const result = await proposeSteward(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => (
+        <StewardComposer
+          state={state}
+          me={me.author}
+          seat={seat}
+          recall={recall}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
 interface ScreenProps {
   readonly route: Route;
   readonly services: AppServices;
@@ -283,6 +318,15 @@ function Screen({ route, services, heldInvite, holdInvite, persistence }: Screen
     case 'again':
       return (
         <ProposeScreen services={services} groupId={route.groupId} againId={route.proposalId} />
+      );
+    case 'steward':
+      return (
+        <StewardScreen
+          services={services}
+          groupId={route.groupId}
+          seat={route.seat}
+          recall={route.recall}
+        />
       );
   }
 }

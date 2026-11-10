@@ -120,7 +120,7 @@ describe('choosing a level in the app', () => {
       within(people)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
-    ).toEqual(['Ana, Co-Creator', 'Ben, Collaborator']);
+    ).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator']);
 
     // Ben chooses Co-Creator, offline, so the change waits in the outbox.
     fake.offline = true;
@@ -146,7 +146,7 @@ describe('choosing a level in the app', () => {
         within(people)
           .getAllByRole('listitem')
           .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator', 'Ben, Co-Creator']);
+      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator']);
     });
     expect(within(people).getByRole('status')).toHaveTextContent('Sent');
 

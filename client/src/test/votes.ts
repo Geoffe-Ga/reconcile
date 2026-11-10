@@ -8,7 +8,7 @@ import { type Level, LEVELS } from '../engine/capabilities';
 import type { EventDraft, Score } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
-import { signedAs } from './keys';
+import { authorOf, signedAs } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
 const [, , CREATING] = LEVELS;
@@ -50,6 +50,10 @@ export interface LogBuilder {
     scores: Readonly<Record<string, Score>>,
     note?: string,
   ): void;
+  /** Adds `name`'s steward Proposal for `seat`: electing `nominee` by name, or a recall for null. */
+  steward(name: string, seat: number, nominee: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s suspension of the person named `who`, with an optional reason. */
+  suspend(name: string, who: string, reason?: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -122,6 +126,19 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     ballot(name: string, proposal: string, scores: Readonly<Record<string, Score>>, note?: string) {
       const vote = { proposal, scores, ...(note === undefined ? {} : { note }) };
       add(name, { type: 'vote', group, ts: 0, body: vote });
+    },
+    steward(name: string, seat: number, nominee: string | null, entry: ProposalEntry = {}) {
+      const member = nominee === null ? null : authorOf(nominee.toLowerCase());
+      const { title = 'A steward for our group', why = 'Someone to step in.' } = entry;
+      const body = { target: { kind: 'steward' as const, seat, member }, title, why };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
+    suspend(name: string, who: string, reason?: string) {
+      const body = {
+        member: authorOf(who.toLowerCase()),
+        ...(reason === undefined ? {} : { reason }),
+      };
+      return add(name, { type: 'suspend', group, ts: 0, body });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

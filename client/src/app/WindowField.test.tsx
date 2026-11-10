@@ -240,7 +240,7 @@ describe('WindowField in the composer', () => {
     const outbox = (await ana.services.store.getGroup(groupId))?.outbox ?? [];
     const queued = parseRecord(outbox[0] ?? new Uint8Array())?.event;
     expect(queued?.type).toBe('proposal');
-    expect(queued?.type === 'proposal' ? queued.body.window : null).toBe(10);
+    expect(queued?.body).toMatchObject({ window: 10 });
   });
 
   it('is not on Add your version: the window belongs to the Proposal', async () => {
