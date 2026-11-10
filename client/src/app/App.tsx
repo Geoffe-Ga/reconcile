@@ -16,6 +16,8 @@ import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import { LinkNewDevice } from '../screens/LinkNewDevice';
+import { LinkThisDevice } from '../screens/LinkThisDevice';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { ProposalView } from '../screens/ProposalView';
@@ -27,6 +29,8 @@ import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
+import type { LinkCode } from '../crypto/link';
+import { joinLink, offerLink } from '../link/session';
 import {
   createGroup,
   type CreateGroupValues,
@@ -106,6 +110,21 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       onErase={services.erase}
     />
   );
+}
+
+/** Link a new device (#96), on the existing device: a fresh code each time it opens. */
+function LinkNewScreen({ services }: { readonly services: AppServices }) {
+  const start = useCallback(() => offerLink(services), [services]);
+  return <LinkNewDevice start={start} copyText={services.copyText} />;
+}
+
+/** Link to my other device (#96), on the new device: syncs once the groups are in. */
+function LinkThisScreen({ services }: { readonly services: AppServices }) {
+  const join = useCallback((code: LinkCode) => joinLink(services, code), [services]);
+  const onLinked = useCallback(() => {
+    void services.sync.syncOnce();
+  }, [services]);
+  return <LinkThisDevice join={join} onLinked={onLinked} />;
 }
 
 interface CreateScreenProps {
@@ -511,6 +530,10 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       return <CreateScreen services={services} offerGuide={guide.offer} />;
     case 'settings':
       return <SettingsScreen services={services} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
     case 'join':
       return (
         <JoinScreen

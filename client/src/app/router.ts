@@ -17,6 +17,10 @@ export type Route =
   | { readonly name: 'start' }
   | { readonly name: 'create' }
   | { readonly name: 'settings' }
+  /** Link a new device, on the existing device (#96). */
+  | { readonly name: 'linkNew' }
+  /** Link to my other device, on the new device (#96). */
+  | { readonly name: 'linkThis' }
   | { readonly name: 'join'; readonly payload: string | null }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
@@ -109,10 +113,16 @@ function joinRoute(rest: readonly string[]): Route {
 /** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
 const INVITE_PREFIX = '#join/';
 
-/** The pages that take no argument after `#/`: Create group and Settings (#78). */
+/**
+ * The pages that take no argument after `#/`: Create group, Settings (#78),
+ * and the two sides of linking a device (#96). A linking code never travels
+ * in a route: it's shown, scanned or pasted, and held only in memory.
+ */
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
+  ['link-new', { name: 'linkNew' }],
+  ['link-this', { name: 'linkThis' }],
 ]);
 
 /** Reads a `location.hash` value as a route. */
@@ -180,6 +190,10 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'settings':
       return '#/settings';
+    case 'linkNew':
+      return '#/link-new';
+    case 'linkThis':
+      return '#/link-this';
     case 'join':
       return joinHref(route.payload);
     default:

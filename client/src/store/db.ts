@@ -101,6 +101,9 @@ export interface Group {
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
 export type BackupMark = 'saved' | 'not-now';
 
+/** Where restored groups came from: a backup file (#78), or another of the person's devices (#96). */
+export type RestoredFrom = 'backup' | 'link';
+
 /**
  * A group as a backup file carries it (#78): its keys, secret, your name, its
  * relay-ordered log and sync state, and whether some history may be missing.
@@ -215,15 +218,17 @@ export interface Store extends DraftStore {
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
-   * Keep a backup file's groups, in one transaction (#78). A group new to the
-   * device is kept as the file has it, with an empty outbox, no drafts and no
-   * chat claims (#119). For
-   * a group already here, whichever whole copy synced later stays: the file's
-   * replaces the device's only when its last sync is later, and a group this
-   * device is leaving stays as it is. Either way the group is marked `saved`,
-   * since a backup file holds it. Nothing is stamped with the time now.
+   * Keep a backup file's groups, or a link bundle's (#96), in one transaction
+   * (#78). A group new to the device is kept as the file has it, with an
+   * empty outbox, no drafts and no chat claims (#119). For a group already
+   * here, whichever whole copy synced later stays: the file's replaces the
+   * device's only when its last sync is later, and a group this device is
+   * leaving stays as it is. From a backup file, either way the group is
+   * marked `saved`, since the file holds it; from a link, no file holds it,
+   * so a new group has no mark and one already here keeps its own. Nothing
+   * is stamped with the time now.
    */
-  restoreGroups(groups: readonly BackedUpGroup[]): Promise<void>;
+  restoreGroups(groups: readonly BackedUpGroup[], from?: RestoredFrom): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
@@ -373,11 +378,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
-    async restoreGroups(groups) {
+    async restoreGroups(groups, from = 'backup') {
       const tx = db.transaction(GROUPS, 'readwrite');
       for (const restored of groups) {
         const held = await tx.store.get(restored.groupId);
-        await tx.store.put(keptCopy(held, restored));
+        await tx.store.put(keptCopy(held, restored, from));
       }
       await tx.done;
       for (const { groupId } of groups) notify(groupId);
@@ -411,16 +416,23 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 }
 
 /**
- * The copy of a group to keep when a backup file holds `restored` and the
- * device holds `held` (#78): the file's, with no outbox, drafts or chat
- * claims, unless the device's synced at least as late or is leaving. Either
- * is marked `saved`.
+ * The copy of a group to keep when a backup file or a link bundle holds
+ * `restored` and the device holds `held` (#78, #96): the restored one, with
+ * no outbox, drafts or chat claims, unless the device's synced at least as
+ * late or is leaving. From a backup file either is marked `saved`; from a
+ * link, it keeps the mark the device's copy had, if any.
  */
-function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
+function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: RestoredFrom): Group {
+  const mark: Pick<Group, 'backup'> =
+    from === 'backup'
+      ? { backup: 'saved' }
+      : held?.backup === undefined
+        ? {}
+        : { backup: held.backup };
   if (held !== undefined && (held.leaving !== undefined || syncedSince(held, restored))) {
-    return { ...held, backup: 'saved' };
+    return { ...held, ...mark };
   }
-  return { ...restored, outbox: [], backup: 'saved' };
+  return { ...restored, outbox: [], ...mark };
 }
 
 /** Whether `held` last synced no earlier than `restored`; a copy that never synced is the oldest. */

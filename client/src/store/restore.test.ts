@@ -133,6 +133,33 @@ describe('restoreGroups', () => {
     expect(comparable(await store.getGroup(ana.groupId))).toEqual({ ...before, backup: 'saved' });
   });
 
+  it('keeps a linked group new to the device with no backup mark, since no backup file holds it (#96)', async () => {
+    const store = await openStore();
+
+    await store.restoreGroups([copy(1_000)], 'link');
+
+    const kept = await store.getGroup(ana.groupId);
+    expect(kept?.backup).toBeUndefined();
+    expect(comparable(kept)).toEqual(comparable({ ...copy(1_000), outbox: [] }));
+  });
+
+  it.each([
+    ['the link’s copy replaces it', 1_000, 2_000],
+    ['the device’s copy stays', 3_000, 2_000],
+  ])(
+    'leaves a group’s own backup mark when a link brings it and %s (#96)',
+    async (_when, deviceSync, linkSync) => {
+      const store = await deviceWithGroup(deviceSync);
+      await store.markBackup([ana.groupId], 'not-now');
+
+      await store.restoreGroups([copy(linkSync)], 'link');
+
+      const kept = await store.getGroup(ana.groupId);
+      expect(kept?.backup).toBe('not-now');
+      expect(kept?.lastSyncAt).toBe(Math.max(deviceSync, linkSync));
+    },
+  );
+
   it('writes every group in one transaction, then tells subscribers which changed', async () => {
     const store = await openStore();
     const heard: string[] = [];

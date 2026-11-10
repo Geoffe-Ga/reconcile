@@ -1,10 +1,11 @@
 import { type ReactNode, useId, useState } from 'react';
-import { Button } from 'react-aria-components';
+import { Button, Link } from 'react-aria-components';
 
 import type { BackupToSave } from '../app/backup';
 import { HoldToConfirm } from '../app/HoldToConfirm';
 import { messages } from '../app/messages';
 import { RestoreBackup } from '../app/RestoreBackup';
+import { routeHref } from '../app/router';
 import { SaveBackup } from '../app/SaveBackup';
 import type { SaveOutcome } from '../app/share';
 import { BackLink, PageHeader } from '../app/ui';
@@ -85,13 +86,14 @@ function EraseCard({ onErase }: Pick<SettingsProps, 'onErase'>) {
 }
 
 /**
- * Settings (`#/settings`; spec §8.12, #78): Save a backup, Restore a backup,
- * and Erase Reconcile from this device behind a 3-second press and hold.
+ * Settings (`#/settings`; spec §8.12, #78, #96): Save a backup, Restore a
+ * backup, Link a new device, and Erase Reconcile from this device behind a
+ * 3-second press and hold.
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
  */
 export function Settings(props: SettingsProps) {
-  const { settings, backup, restore } = messages;
+  const { settings, backup, restore, link } = messages;
   return (
     <main className="shell">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
@@ -107,6 +109,20 @@ export function Settings(props: SettingsProps) {
           <div className="stack">
             <p className="lede">{restore.lede}</p>
             <RestoreBackup onRestore={props.onRestore} />
+          </div>
+        </Section>
+        <Section title={settings.linkHeading}>
+          <div className="stack">
+            <p className="lede">{link.lede}</p>
+            {props.hasGroups ? (
+              <div>
+                <Link className="button button-secondary" href={routeHref({ name: 'linkNew' })}>
+                  {link.open}
+                </Link>
+              </div>
+            ) : (
+              <p className="caption">{link.none}</p>
+            )}
           </div>
         </Section>
         <Section title={settings.eraseHeading}>
