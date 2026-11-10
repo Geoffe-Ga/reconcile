@@ -10,6 +10,7 @@ import { type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
 import { messages } from './messages';
+import { MotionTitle } from './stewards';
 import { AtomText } from './text/AtomText';
 import { WordDiff } from './text/WordDiff';
 import type { VersionView } from './versionViews';
@@ -36,22 +37,41 @@ interface VersionCardProps {
   readonly children: ReactNode;
 }
 
-/** One version: its heading, its change, and whatever goes under it. */
+/** A version's change: its text, or its word diff against the section's text now. */
+function Change({ version, current }: Omit<VersionCardProps, 'children'>) {
+  if (current === null) return <AtomText text={version.text} className="atom-card" />;
+  return (
+    <>
+      <WordDiff current={current} proposed={version.text} />
+      <ReadsAs text={version.text} level={4} />
+    </>
+  );
+}
+
+/**
+ * One version: its heading, its change, and whatever goes under it. A steward
+ * ballot's one version is headed by what it decides, "Make <name> steward
+ * (seat N)", with what passing does in place of a change (#102).
+ */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();
+  const { steward } = version;
   return (
     <section className="version" aria-labelledby={heading}>
       <h3 id={heading} className="version-heading">
-        {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
-        <bdi>{version.author}</bdi>
+        {steward === undefined ? (
+          <>
+            {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
+            <bdi>{version.author}</bdi>
+          </>
+        ) : (
+          <MotionTitle motion={steward.motion} />
+        )}
       </h3>
-      {current === null ? (
-        <AtomText text={version.text} className="atom-card" />
+      {steward === undefined ? (
+        <Change version={version} current={current} />
       ) : (
-        <>
-          <WordDiff current={current} proposed={version.text} />
-          <ReadsAs text={version.text} level={4} />
-        </>
+        <p className="caption">{steward.line}</p>
       )}
       {children}
     </section>
