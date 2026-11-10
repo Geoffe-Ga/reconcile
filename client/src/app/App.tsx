@@ -27,6 +27,7 @@ import {
   type CreateGroupValues,
   type FoundGroup,
   joinGroup,
+  leaveGroup,
   lookupInvite,
 } from './actions';
 import { type Invite, inviteLink } from './invite';
@@ -44,6 +45,7 @@ import {
 } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
+import { shareOrCopy, type TellKind, tellPayload } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
@@ -143,7 +145,13 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           now={relayMinuteNow(group, deviceNow)}
           sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
           pending={group.pending}
+          leaving={group.leaving}
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
+          onLeave={async () => {
+            await leaveGroup(services, groupId);
+            // Back to Your groups, where the group reads Leaving… until the relay has the leave.
+            replaceRoute({ name: 'start' });
+          }}
           onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
         />
       )}
@@ -157,7 +165,9 @@ function DocumentScreen({ groupId }: { readonly groupId: string }) {
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => <DocumentView state={state} me={me.author} onPropose={openComposer} />}
+      {({ state, me, leaving }) => (
+        <DocumentView state={state} me={me.author} onPropose={openComposer} leaving={leaving} />
+      )}
     </GroupGate>
   );
 }
@@ -175,7 +185,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
   const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => {
+      {({ state, me, leaving }) => {
         const again = state.proposals.find((proposal) => proposal.id === againId);
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
           const result = await propose(services, groupId, values);
@@ -200,6 +210,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
             now={deviceNow}
             onPropose={onPropose}
             onAddVersion={onAddVersion}
+            leaving={leaving}
             {...(again === undefined ? {} : { again })}
           />
         );
@@ -223,6 +234,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const onProposeAgain = () => {
           navigate({ name: 'again', groupId, proposalId });
         };
+        const onTell = (kind: TellKind, deadline: number) =>
+          shareOrCopy(tellPayload(kind, deadline, services.origin), services);
         return (
           <ProposalView
             state={group.state}
@@ -232,8 +245,10 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             reachable={group.reachable}
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
+            leaving={group.leaving}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
+            onTell={onTell}
           />
         );
       }}

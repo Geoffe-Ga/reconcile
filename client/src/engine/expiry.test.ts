@@ -8,7 +8,6 @@ import { parseRecord } from './event';
 import {
   ballotsExpireAt,
   ballotsExpired,
-  closeMinute,
   EXPIRES_WITH_BALLOTS,
   expiringProposal,
   expiryKeyOf,
@@ -16,7 +15,7 @@ import {
   recordedOutcome,
   resultFor,
 } from './expiry';
-import { fold, type Proposal } from './fold';
+import { closeTime, fold, type Proposal } from './fold';
 import { DEFAULT_RULES } from './rules';
 
 /** 30 days in relay minutes. */
@@ -88,7 +87,7 @@ describe('resultFor', () => {
     const deadline = deadlineOf(START_MINUTE);
     const proposal = only(log.state(deadline).proposals);
     expect(resultFor(proposal)).toMatchObject({ proposal: proposalId, closedAt: deadline });
-    expect(closeMinute(proposal)).toBe(deadline);
+    expect(closeTime(proposal)).toBe(deadline);
   });
 });
 

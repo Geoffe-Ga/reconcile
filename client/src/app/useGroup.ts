@@ -59,6 +59,11 @@ export interface GroupView {
   me: Me | null;
   /** STUB(invite): what this group's invite link carries, or `null` likewise. */
   invite: Invite | null;
+  /**
+   * Whether this device has queued its leave (#77): the group waits, read
+   * only, until the relay has the leave and the sync loop deletes it.
+   */
+  leaving: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
 }
@@ -83,6 +88,7 @@ export function useGroup(groupId: string): GroupView {
     reachable,
     me: group?.me ?? null,
     invite,
+    leaving: group?.leaving !== undefined,
     loaded,
   };
 }

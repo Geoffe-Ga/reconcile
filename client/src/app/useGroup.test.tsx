@@ -221,8 +221,27 @@ describe('useGroup', () => {
       reachable: true,
       me: null,
       invite: null,
+      leaving: false,
       loaded: true,
     });
+  });
+
+  it('says the group is leaving once its leave is queued, with the leave pending', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
+    expect(result.current.leaving).toBe(false);
+
+    const leave = signedAs('ana', { type: 'leave', group: GROUP, ts: TS, body: {} });
+    await act(() => store.markLeaving(GROUP, leave.record));
+
+    await waitFor(() => {
+      expect(result.current.leaving).toBe(true);
+    });
+    expect(result.current.pending.map(({ event }) => event.type)).toEqual(['leave']);
   });
 
   it('says who this device is in the group, and what its invite link carries', async () => {

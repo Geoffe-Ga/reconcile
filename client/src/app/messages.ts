@@ -36,6 +36,7 @@ export const messages = {
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
+    leaving: 'Leaving…',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -151,7 +152,10 @@ export const messages = {
     pageTitle: 'Your group',
     eyebrow: 'Your group',
     documentLabel: 'Document',
+    needsYourVote: 'Needs your vote',
     openProposals: 'Open Proposals',
+    /** The open Proposals after 'Needs your vote', when it lists any. */
+    otherOpen: 'Other open Proposals',
     noProposals: 'Nothing to vote on yet.',
     people: 'People',
     /** Read between a name and its level, as in "Ana, Co-Creator"; the screen shows a gap. */
@@ -333,6 +337,31 @@ export const messages = {
     /** "A record of this decision posted by <name> doesn’t match the ballots on this device." */
     mismatchBefore: 'A record of this decision posted by',
     mismatchAfter: 'doesn’t match the ballots on this device.',
+  },
+  leave: {
+    open: 'Leave this group',
+    title: 'Leave this group?',
+    body: 'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    confirm: 'Leave this group',
+    cancel: 'Cancel',
+    failed: 'Leaving couldn’t be saved on this device. Try again.',
+    leaving: 'Leaving…',
+    leavingNote:
+      'This group leaves this device as soon as the relay has your leave. Until then, you can read it but not propose or vote.',
+    noVoting: 'You’re leaving this group, so you can’t vote here.',
+    noProposingTitle: 'You’re leaving this group',
+    noProposing: 'You can’t propose changes in a group you’re leaving.',
+  },
+  tell: {
+    action: 'Tell your group',
+    hint: 'Shares one line saying a vote is open and when it ends, with Reconcile’s address. It doesn’t say what the vote is about.',
+    /** The line shared after proposing; the deadline is the only thing that changes. */
+    proposal: (day: string) => `I proposed a change in Reconcile. Voting ends ${day}.`,
+    /** The line shared after adding a version. */
+    version: (day: string) => `I added a version in Reconcile. Voting ends ${day}.`,
+    shared: 'Shared.',
+    copied: 'Copied. Paste it into your group’s chat.',
+    blocked: 'Sharing and copying are both blocked here. Tell your group in your chat instead.',
   },
   decided: {
     title: 'Decided',

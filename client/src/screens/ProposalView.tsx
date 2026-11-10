@@ -10,6 +10,8 @@ import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
+import { type ShareOutcome, type TellKind, tellKind } from '../app/share';
+import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
@@ -52,6 +54,10 @@ export interface ProposalViewProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** Opens the composer to propose this Proposal again, once it has lapsed. */
   readonly onProposeAgain: () => void;
+  /** Tells the group's chat that a vote is open, with the line for `kind` and its deadline (#77). */
+  readonly onTell: (kind: TellKind, deadline: number) => Promise<ShareOutcome>;
+  /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
+  readonly leaving?: boolean;
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -166,6 +172,7 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
  */
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
   const { state, me } = props;
+  if (props.leaving === true) return messages.leave.noVoting;
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
   const change = stewardChangeOf(proposal);
   if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
@@ -175,10 +182,17 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
     : messages.proposal.joinedAfter;
 }
 
+interface NoVoteProps {
+  readonly state: GroupState;
+  readonly me: string;
+  readonly reason: string;
+  readonly leaving: boolean;
+}
+
 /** Why they can't vote, and where they change their level when theirs doesn't vote now. */
-function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: string }) {
+function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   const levelDoesntVote =
-    can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
+    !leaving && can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
   return (
     <div className="stack">
       <p className="lede">{reason}</p>
@@ -187,9 +201,24 @@ function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: 
   );
 }
 
-/** Whether this member can still add wording: the vote is open and they may propose. */
+/** True while the vote takes ballots and versions, as far as this device can tell. */
+function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
+  return !proposal.final && props.now < proposal.deadline;
+}
+
+/** Whether this member can still add wording: the vote is open, they may propose, and they're staying. */
 function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
-  return !proposal.final && props.now < proposal.deadline && can(props.state, props.me, 'propose');
+  return isOpen(props, proposal) && props.leaving !== true && can(props.state, props.me, 'propose');
+}
+
+/**
+ * Tell your group, for whoever proposed it or added a version, while the vote
+ * is open and they're staying. Only a folded Proposal has a deadline to share.
+ */
+function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const kind = tellKind(proposal, props.me);
+  if (kind === null || !isOpen(props, proposal) || props.leaving === true) return null;
+  return <TellYourGroup onTell={() => props.onTell(kind, proposal.deadline)} />;
 }
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
@@ -268,7 +297,9 @@ function Vote({ props, proposal, versions }: VoteProps) {
           <VersionList versions={versions} current={comparison.current}>
             {meters}
           </VersionList>
-          {reason === null ? null : <NoVote state={state} me={me} reason={reason} />}
+          {reason === null ? null : (
+            <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
+          )}
         </>
       )}
       <AddVersion props={props} proposal={proposal} />
@@ -342,6 +373,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           me={props.me}
           own={props.own}
           onProposeAgain={props.onProposeAgain}
+          leaving={props.leaving === true}
         />
       ) : null}
       <div className="stack">
@@ -351,6 +383,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         </p>
       </div>
       <ChatLink href={link} />
+      <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} />
       <PendingVersions props={props} proposal={proposal} />
     </Screen>

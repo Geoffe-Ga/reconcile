@@ -5,12 +5,16 @@ import type { Group, Store } from '../store/db';
 import { foldGroup } from '../store/expiry';
 import type { StartGroup } from '../screens/Start';
 
-/** A group's name and Document title, folded from relay records; null until its genesis is back. */
+/**
+ * A group's name and Document title, folded from relay records (null until
+ * its genesis is back), and whether its leave waits for the relay.
+ */
 function summarize(group: Group): StartGroup {
   const state = foldGroup(group);
+  const leaving = group.leaving !== undefined;
   return state.group === null
-    ? { groupId: group.groupId, name: null, title: null }
-    : { groupId: group.groupId, name: state.name, title: state.title };
+    ? { groupId: group.groupId, name: null, title: null, leaving }
+    : { groupId: group.groupId, name: state.name, title: state.title, leaving };
 }
 
 /** Every group on the device, kept current as the store changes, or null until it answers. */

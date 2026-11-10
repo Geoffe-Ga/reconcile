@@ -37,6 +37,8 @@ export interface LogBuilder {
   join(name: string, level?: Level): void;
   /** Adds `name`'s move to `level`. */
   level(name: string, level: string): void;
+  /** Adds `name`'s leave. */
+  leave(name: string): void;
   /** Adds a Proposal by `name`, returning its id. */
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
@@ -106,6 +108,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     level(name: string, level: string) {
       add(name, { type: 'level', group, ts: 0, body: { level } });
+    },
+    leave(name: string) {
+      add(name, { type: 'leave', group, ts: 0, body: {} });
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {

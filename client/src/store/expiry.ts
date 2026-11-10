@@ -27,12 +27,16 @@ export function foldGroup(group: Pick<Group, 'log' | 'relayNow' | 'cleared'>): G
   return fold(group.log, group.relayNow, group.cleared ?? []);
 }
 
-/** The closed Proposals this device's member should post a result for now. */
+/**
+ * The closed Proposals this device's member should post a result for now:
+ * none once they've left or are leaving (#77), since nothing is queued after
+ * a leave.
+ */
 export function resultsDue(
   state: GroupState,
-  group: Pick<Group, 'me' | 'relayNow'>,
+  group: Pick<Group, 'me' | 'relayNow' | 'leaving'>,
 ): readonly Proposal[] {
-  if (!can(state, group.me.author, 'read')) return [];
+  if (group.leaving !== undefined || !can(state, group.me.author, 'read')) return [];
   return state.proposals.filter((proposal) => needsResult(proposal, group.relayNow));
 }
 

@@ -18,9 +18,7 @@ import {
   type RecordedOutcome,
   type ResultBody,
 } from './event';
-import { closeMinute, heldRecord, type Proposal } from './fold';
-
-export { closeMinute } from './fold';
+import { closeTime, heldRecord, type Proposal } from './fold';
 import { DAY_MINUTES, type Rules } from './rules';
 import type { TallyOutcome } from './tally';
 
@@ -73,7 +71,7 @@ export function ballotsExpireAt(
   rules: Pick<Rules, 'ballotExpiryDays'>,
   proposal: Pick<Proposal, 'closedAt' | 'deadline'>,
 ): number {
-  return closeMinute(proposal) + rules.ballotExpiryDays * DAY_MINUTES;
+  return closeTime(proposal) + rules.ballotExpiryDays * DAY_MINUTES;
 }
 
 /** A tally's outcome as a result names it: without the bar, which the Proposal's class sets. */
@@ -99,7 +97,7 @@ export function needsResult(proposal: Proposal, relayNow: number | null): boolea
     !proposal.cleared &&
     proposal.result === null &&
     relayNow !== null &&
-    relayNow > closeMinute(proposal)
+    relayNow > closeTime(proposal)
   );
 }
 

@@ -52,7 +52,7 @@ describe('useGroupList', () => {
     const { result } = renderHook(() => useGroupList(store));
 
     await waitFor(() => {
-      expect(result.current).toEqual([{ groupId, name: null, title: null }]);
+      expect(result.current).toEqual([{ groupId, name: null, title: null, leaving: false }]);
     });
 
     const relay = createRelay({ fetch: createFakeRelay().fetch });
@@ -61,8 +61,20 @@ describe('useGroupList', () => {
 
     await waitFor(() => {
       expect(result.current).toEqual([
-        { groupId, name: 'Riverside Tenants', title: 'House rules' },
+        { groupId, name: 'Riverside Tenants', title: 'House rules', leaving: false },
       ]);
+    });
+  });
+
+  it('marks a group whose leave waits for the relay as leaving', async () => {
+    const { store, groupId } = await storeWithGroup();
+    const { result } = renderHook(() => useGroupList(store));
+    const leave = signedAs('ana', { type: 'leave', group: groupId, ts: 0, body: {} });
+
+    await act(() => store.markLeaving(groupId, leave.record));
+
+    await waitFor(() => {
+      expect(result.current).toEqual([{ groupId, name: null, title: null, leaving: true }]);
     });
   });
 

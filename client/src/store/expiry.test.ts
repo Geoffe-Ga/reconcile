@@ -15,10 +15,11 @@ import { createRelay, type Relay } from '../net/relay';
 import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { signedAs, testKeys } from '../test/keys';
+import { authorOf, signedAs, testKeys } from '../test/keys';
+import { groupLog, START_MINUTE } from '../test/votes';
 import { openStore, type Group, type Store } from './db';
 import { eventIdOf } from './eventId';
-import { clearExpiredBallots, foldGroup } from './expiry';
+import { clearExpiredBallots, foldGroup, resultsDue } from './expiry';
 import { channelOf, createSync, openRecords, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -352,3 +353,32 @@ describe('Cache Storage', () => {
 function never(): never {
   throw new Error('Expected a Proposal.');
 }
+
+describe('resultsDue', () => {
+  /** A group of Ana and Ben whose one Proposal both scored, closing it at the start. */
+  function closed() {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana');
+    log.vote('ana', proposalId, 3);
+    log.vote('ben', proposalId, 4);
+    return { state: log.state(), proposalId };
+  }
+
+  it('names a closed Proposal with no result once the relay is past its close', () => {
+    const { state, proposalId } = closed();
+    const me = { author: authorOf('ana'), name: 'Ana' };
+    expect(resultsDue(state, { me, relayNow: START_MINUTE + 1 }).map((p) => p.id)).toEqual([
+      proposalId,
+    ]);
+    expect(resultsDue(state, { me, relayNow: START_MINUTE })).toEqual([]);
+  });
+
+  it('names none for a device that isn’t a member, or is leaving, since nothing is queued after a leave (#77)', () => {
+    const { state } = closed();
+    const relayNow = START_MINUTE + 1;
+    const kim = { author: authorOf('kim'), name: 'Kim' };
+    expect(resultsDue(state, { me: kim, relayNow })).toEqual([]);
+    const ana = { author: authorOf('ana'), name: 'Ana' };
+    expect(resultsDue(state, { me: ana, relayNow, leaving: utf8('leave') })).toEqual([]);
+  });
+});

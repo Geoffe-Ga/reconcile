@@ -1,7 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ShareOutcome, TellKind } from '../app/share';
 import { formatMinute } from '../app/time';
 import { LEVELS } from '../engine/capabilities';
 import {
@@ -20,6 +21,7 @@ import { authorOf } from '../test/keys';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
 
 type OnVote = (scores: Readonly<Record<string, Score>>, note: string) => Promise<void>;
+type OnTell = (kind: TellKind, deadline: number) => Promise<ShareOutcome>;
 
 const [FOLLOWING, VOTING] = LEVELS;
 
@@ -31,6 +33,8 @@ interface Setup {
   readonly pending?: readonly ParsedEvent[];
   readonly reachable?: boolean;
   readonly own?: OwnBallot;
+  readonly leaving?: boolean;
+  readonly onTell?: OnTell;
 }
 
 function setup({
@@ -41,6 +45,8 @@ function setup({
   pending = [],
   reachable = true,
   own = 'none',
+  leaving = false,
+  onTell = vi.fn<OnTell>(() => Promise.resolve('copied')),
 }: Setup) {
   const onVote = vi.fn<OnVote>(() => Promise.resolve());
   const onProposeAgain = vi.fn();
@@ -52,14 +58,16 @@ function setup({
     reachable,
     now: now ?? START_MINUTE + 60,
     own,
+    leaving,
     onVote,
     onProposeAgain,
+    onTell,
   };
   const view = render(<ProposalView {...props} />);
   const rerender = (next: Partial<ProposalViewProps>) => {
     view.rerender(<ProposalView {...props} {...next} />);
   };
-  return { user: userEvent.setup(), onVote, onProposeAgain, rerender };
+  return { user: userEvent.setup(), onVote, onProposeAgain, onTell, rerender };
 }
 
 /** An event as `useGroup` lists it while it waits in the outbox. */
@@ -657,6 +665,91 @@ describe('ProposalView, the consent meter and the result', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Propose again' }));
     expect(onProposeAgain).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProposalView, Tell your group', () => {
+  const tellButton = () => screen.queryByRole('button', { name: 'Tell your group' });
+
+  it('offers the proposer Tell your group once the relay has their Proposal, and shares their line', async () => {
+    const { log, proposalId } = openVote();
+    const { user, onTell } = setup({ state: log.state(), proposalId });
+
+    expect(
+      screen.getByText(
+        'Shares one line saying a vote is open and when it ends, with Reconcile’s address. It doesn’t say what the vote is about.',
+      ),
+    ).toBeVisible();
+    await user.click(tellButton() as HTMLElement);
+
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('proposal', deadlineOf(START_MINUTE));
+    expect(await screen.findByText('Copied. Paste it into your group’s chat.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers someone who added a version the version’s line', async () => {
+    const { log, proposalId } = openVote();
+    log.version('ben', proposalId, 'Quiet after midnight.');
+    const { user, onTell } = setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    await user.click(tellButton() as HTMLElement);
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('version', deadlineOf(START_MINUTE));
+  });
+
+  it.each([
+    ['shared', 'Shared.'],
+    ['blocked', 'Sharing and copying are both blocked here. Tell your group in your chat instead.'],
+  ] as const)('says when it was %s', async (outcome, line) => {
+    const { log, proposalId } = openVote();
+    const onTell = vi.fn<OnTell>(() => Promise.resolve(outcome));
+    const { user } = setup({ state: log.state(), proposalId, onTell });
+    await user.click(tellButton() as HTMLElement);
+    expect(await screen.findByText(line)).toBeVisible();
+  });
+
+  it('offers it to nobody who neither proposed nor added a version, and not once voting has closed', () => {
+    const { log, proposalId } = openVote();
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    expect(tellButton()).not.toBeInTheDocument();
+    cleanup();
+    setup({ state: log.state(), proposalId, now: deadlineOf(START_MINUTE) });
+    expect(tellButton()).not.toBeInTheDocument();
+  });
+
+  it('offers it only once the relay has the Proposal, since only then is its deadline known', () => {
+    const { log } = openVote();
+    const waiting = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 0,
+      body: { atom: `${log.group}.1`, title: 'Bins', why: 'W', text: 'Bins out on Monday.' },
+    });
+    setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
+    expect(screen.getByRole('heading', { level: 1, name: 'Bins' })).toBeVisible();
+    expect(tellButton()).not.toBeInTheDocument();
+  });
+});
+
+describe('ProposalView, while leaving', () => {
+  it('takes no vote, version or share, and says why', async () => {
+    const { log, proposalId } = openVote();
+    setup({ state: log.state(), proposalId, leaving: true });
+
+    expect(radios()).toHaveLength(0);
+    expect(screen.getByText('You’re leaving this group, so you can’t vote here.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /your vote/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tell your group' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Propose again on a lapsed Proposal', () => {
+    const { log, proposalId } = openVote();
+    const now = deadlineOf(START_MINUTE);
+    setup({ state: log.state(now), proposalId, now, leaving: true });
+    expect(screen.getByText('Not enough people weighed in. This isn’t a no.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Propose again' })).not.toBeInTheDocument();
   });
 });
 

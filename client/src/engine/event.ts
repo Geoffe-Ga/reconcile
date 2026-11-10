@@ -164,6 +164,12 @@ export interface ResultBody {
   readonly commit: string;
 }
 
+/**
+ * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
+ * the author is the one who leaves, and the fold reads any object as `{}`.
+ */
+export type LeaveBody = Readonly<Record<string, never>>;
+
 /** The body each event type carries. */
 export interface EventBodies {
   readonly genesis: GenesisBody;
@@ -172,6 +178,7 @@ export interface EventBodies {
   readonly version: VersionBody;
   readonly vote: VoteBody;
   readonly level: LevelBody;
+  readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly result: ResultBody;
 }
@@ -450,6 +457,8 @@ function withBody(
       return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'level':
       return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'leave':
+      return { ...head, type, body: {} };
     case 'suspend':
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'result':

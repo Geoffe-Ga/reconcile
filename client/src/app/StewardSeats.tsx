@@ -21,6 +21,8 @@ export interface StewardSeatsProps {
   readonly state: GroupState;
   /** This device's author id in the group. */
   readonly me: string;
+  /** Whether this device's leave waits for the relay (#77): then it offers no Proposal. */
+  readonly leaving?: boolean;
 }
 
 /** "A steward election is due for seat N.", with Propose a steward for someone who may propose. */
@@ -67,7 +69,7 @@ function emptyLine(state: GroupState, seat: SeatNumber): string {
 }
 
 /** One seat: who holds it and their term, with Propose recall when this member may propose one. */
-function SeatRow({ state, me, seat }: StewardSeatsProps & { readonly seat: Seat }) {
+function SeatRow({ state, me, seat, leaving }: StewardSeatsProps & { readonly seat: Seat }) {
   const { holder } = seat;
   const label = <span className="seat-label">{messages.stewards.seat(seat.seat)}</span>;
   if (holder === null) {
@@ -79,7 +81,8 @@ function SeatRow({ state, me, seat }: StewardSeatsProps & { readonly seat: Seat 
     );
   }
   const name = displayName(state, holder) ?? '';
-  const recall = mayProposeSteward(state, me, { seat: seat.seat, member: null });
+  const recall =
+    leaving !== true && mayProposeSteward(state, me, { seat: seat.seat, member: null });
   const route = {
     name: 'steward',
     groupId: state.group ?? '',
@@ -108,11 +111,11 @@ function SeatRow({ state, me, seat }: StewardSeatsProps & { readonly seat: Seat 
  * The Stewards section on Group home (ADR-0049, #102): the line for each seat
  * whose election is due, with Propose a steward; each seat with its holder
  * and term, with Propose recall; and what a steward can do. Every level sees
- * it; only someone who may propose gets the links, and only where the fold
- * would accept the Proposal.
+ * it; only someone who may propose, and isn't leaving, gets the links, and
+ * only where the fold would accept the Proposal.
  */
-export function StewardSeats({ state, me }: StewardSeatsProps) {
-  const proposes = can(state, me, 'propose');
+export function StewardSeats({ state, me, leaving = false }: StewardSeatsProps) {
+  const proposes = !leaving && can(state, me, 'propose');
   return (
     <div className="stack">
       {electionsDue(state).map((seat) => (
@@ -120,7 +123,7 @@ export function StewardSeats({ state, me }: StewardSeatsProps) {
       ))}
       <ul className="seats">
         {SEATS.map((seat) => (
-          <SeatRow key={seat} state={state} me={me} seat={seatAt(state, seat)} />
+          <SeatRow key={seat} state={state} me={me} seat={seatAt(state, seat)} leaving={leaving} />
         ))}
       </ul>
       <p className="caption">{messages.stewards.about(state.rules.suspensionDays)}</p>

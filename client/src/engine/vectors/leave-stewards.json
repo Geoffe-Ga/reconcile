@@ -1,0 +1,320 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "leave-steward: a steward's leave empties their seat, and a suspend they send after it is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "members": [
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "co-creator",
+            "seq": 2
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "level": "collaborator",
+            "seq": 3
+          },
+          {
+            "author": "%kim",
+            "name": "Kim",
+            "level": "co-creator",
+            "seq": 4
+          }
+        ],
+        "former": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          }
+        ],
+        "stewards": [
+          {
+            "seat": 1,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          },
+          {
+            "seat": 2,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          }
+        ],
+        "suspensions": [],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [6]
+    },
+    {
+      "name": "leave-suspended: a suspended member's leave is honored though their level change is ignored, and the suspension stays on record",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500360000,
+            "body": {
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500420000,
+            "body": {}
+          }
+        }
+      ],
+      "relayNow": 29375012,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "co-creator",
+            "seq": 2
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "level": "collaborator",
+            "seq": 3
+          }
+        ],
+        "former": [
+          {
+            "author": "%kim",
+            "name": "Kim",
+            "level": "co-creator",
+            "seq": 4
+          }
+        ],
+        "stewards": [
+          {
+            "seat": 1,
+            "holder": "%ana",
+            "termEnd": null,
+            "elected": false
+          },
+          {
+            "seat": 2,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          }
+        ],
+        "suspensions": [
+          {
+            "id": "@5",
+            "seq": 5,
+            "received": 29375010,
+            "by": "%ana",
+            "member": "%kim",
+            "reason": "Posting threats in the chat."
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [6]
+    }
+  ]
+}

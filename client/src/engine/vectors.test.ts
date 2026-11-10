@@ -1,258 +1,80 @@
 /**
  * Golden vectors: the engine's contract (ADR-0073, docs/spec/phase-1-spec.md §3–§5).
  *
- * Each file in vectors/ is `{kind: "tally" | "fold" | "atom-text", vectors: [...]}`, except
- * keys.json. Every file is read as text and parsed with `JSON.parse`, as any reader would,
- * because Vite's own JSON loader refuses the lone-surrogate escapes atom-text.json needs.
- * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
- *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, bar?, versions, expect}`. `bar` names a class whose
- *   bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
- *   `expect` with that bar added.
- * - A fold vector is `{name, cleared?, records, relayNow, expect, unchangedWithout?}`. `cleared` lists
- *   the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed to `fold`.
- *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
- *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
- *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
- *     Atom, and `"%ana"` stands for ana's public key in base64url. An object
- *     `{"base64url": [bytes]}` stands for those bytes in unpadded base64url, as a result's
- *     `commit` (#111), so a vector pins a hash as its bytes, as crypto/vectors/derive.json does.
- *   - The relay record is `publicKey ‖ signature ‖ event bytes` (spec §3), signed by the key
- *     `by` names, or else by the key the event's `"%name"` author names. `key` (hex, or
- *     `"%name"`) and `sig` (hex) replace those fields, and `flip: {in, at}` flips the low bit of
- *     byte `at` of the `key`, `signature` or `event`. `unsigned: true` sends the bare event
- *     bytes, as the stub era did. `elsewhere: true` makes a record of another mailbox: `@seq`
- *     can name it, but it isn't folded.
- *   - `expect` is matched as a subset of the folded state.
- *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
- *     deep-equal.
- * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
+ * src/test/vectors.ts reads each file in vectors/ and builds its records; its
+ * header documents the format. This file runs every tally and fold vector.
  */
 import { describe, expect, it } from 'vitest';
 
-import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { concat, fromHex } from '../test/bytes';
-import { base64url, eventId } from './event';
-import { fold, type LogRecord } from './fold';
-import { DEFAULT_RULES, type ProposalClass } from './rules';
-import { tally, type TallyInput, type TallyOutcome } from './tally';
-
-/** `Omit` applied to each member of a union, so each outcome kind keeps its own fields. */
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-interface TallyVector extends Omit<TallyInput, 'bar'> {
-  readonly name: string;
-  readonly bar?: ProposalClass;
-  /** The outcome without its bar, which the runner adds. */
-  readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
-}
-
-/** How a vector record departs from a plain record signed by its author. */
-interface RecordOptions {
-  readonly by?: string;
-  readonly key?: string;
-  readonly sig?: string;
-  readonly flip?: { readonly in: 'key' | 'signature' | 'event'; readonly at: number };
-  readonly unsigned?: boolean;
-  readonly elsewhere?: boolean;
-}
-
-type VectorRecord = RecordOptions &
-  (
-    | { readonly seq: number; readonly received: number; readonly event: unknown }
-    | { readonly seq: number; readonly received: number; readonly raw: string }
-  );
-
-interface FoldVector {
-  readonly name: string;
-  readonly cleared?: readonly string[];
-  readonly records: readonly VectorRecord[];
-  readonly relayNow: number | null;
-  readonly expect: object;
-  readonly unchangedWithout?: readonly number[];
-}
-
-type VectorFile =
-  | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
-  | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
-  | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
-  | { readonly kind: 'keys'; readonly seeds: Readonly<Record<string, string>> };
-
-const TEXTS = import.meta.glob<string>('./vectors/*.json', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-});
-const FILES: Readonly<Record<string, VectorFile>> = Object.fromEntries(
-  Object.entries(TEXTS).map(([path, text]) => [path, JSON.parse(text) as VectorFile]),
-);
-
-const encoder = new TextEncoder();
-
-const SEEDS = new Map(
-  Object.values(FILES).flatMap((file) =>
-    file.kind === 'keys'
-      ? Object.entries(file.seeds).map(([name, seed]) => [name, fromHex(seed)] as const)
-      : [],
-  ),
-);
-
-/** The seed of the key called `name`. */
-function seedOf(name: string): Uint8Array {
-  const seed = SEEDS.get(name);
-  if (seed === undefined) throw new Error(`a vector names the unknown key "${name}"`);
-  return seed;
-}
-
-/** The base64url public key of the key called `name`. */
-function publicKeyNamed(name: string): string {
-  return base64url(publicKeyOf(seedOf(name)));
-}
-
-/** Replaces `@n` (and `@n.i`) with the id of the record at seq n, and `%name` with name's key. */
-function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
-  const key = /^%(\w+)$/.exec(text);
-  if (key !== null) return publicKeyNamed(String(key[1]));
-  const match = /^@(\d+)(.*)$/.exec(text);
-  if (match === null) return text;
-  const id = ids.get(Number(match[1]));
-  if (id === undefined)
-    throw new Error(`a vector refers to seq ${String(match[1])} before it exists`);
-  return id + String(match[2]);
-}
-
-/** The bytes a `{"base64url": [bytes]}` object stands for, or null for any other value. */
-function bytesOf(value: object): Uint8Array | null {
-  const entries = Object.entries(value);
-  const [first] = entries;
-  if (entries.length !== 1 || first?.[0] !== 'base64url' || !Array.isArray(first[1])) return null;
-  const list: readonly unknown[] = first[1];
-  return Uint8Array.from(list.map(Number));
-}
-
-/**
- * Resolves every `@n` and `%name` reference inside a JSON value, in keys as well as values,
- * and every `{"base64url": [bytes]}` object.
- */
-function resolve(value: unknown, ids: ReadonlyMap<number, string>): unknown {
-  if (typeof value === 'string') return resolveRef(value, ids);
-  if (Array.isArray(value)) return value.map((item: unknown) => resolve(item, ids));
-  if (typeof value === 'object' && value !== null) {
-    const bytes = bytesOf(value);
-    if (bytes !== null) return base64url(bytes);
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [resolveRef(key, ids), resolve(item, ids)]),
-    );
-  }
-  return value;
-}
-
-/** The name of the key that signs `record`: `by`, or else the `%name` its event's author gives. */
-function signerOf(record: VectorRecord): string {
-  const author: unknown = 'event' in record ? (record.event as { author?: unknown }).author : null;
-  const named = typeof author === 'string' ? /^%(\w+)$/.exec(author)?.[1] : undefined;
-  const signer = record.by ?? named;
-  if (signer === undefined)
-    throw new Error(`the record at seq ${String(record.seq)} has no signer`);
-  return signer;
-}
-
-/** A copy of `bytes` with the low bit of byte `at` flipped. */
-function flipped(bytes: Uint8Array, at: number): Uint8Array {
-  const copy = Uint8Array.from(bytes);
-  copy[at] = (copy[at] ?? 0) ^ 0x01;
-  return copy;
-}
-
-/** The key field a record carries: its `key` override, or the signer's public key. */
-function keyField(record: VectorRecord): Uint8Array {
-  if (record.key === undefined) return publicKeyOf(seedOf(signerOf(record)));
-  return record.key.startsWith('%')
-    ? publicKeyOf(seedOf(record.key.slice(1)))
-    : fromHex(record.key);
-}
-
-/** The relay record for a vector record's event bytes (spec §3), with any override applied. */
-function relayBytes(record: VectorRecord, event: Uint8Array): Uint8Array {
-  if (record.unsigned === true) return event;
-  const parts = {
-    key: keyField(record),
-    signature:
-      record.sig === undefined
-        ? sign(EVENT_CONTEXT, seedOf(signerOf(record)), event)
-        : fromHex(record.sig),
-    event,
-  };
-  const { flip } = record;
-  const at = flip === undefined ? parts : { ...parts, [flip.in]: flipped(parts[flip.in], flip.at) };
-  return concat(at.key, at.signature, at.event);
-}
-
-/** Turns a vector's records into relay records, serializing each event once, in seq order. */
-function buildRecords(vector: FoldVector): { records: LogRecord[]; ids: Map<number, string> } {
-  const ids = new Map<number, string>();
-  const records = vector.records.flatMap((record) => {
-    const text = 'raw' in record ? record.raw : JSON.stringify(resolve(record.event, ids));
-    const event = encoder.encode(text);
-    ids.set(record.seq, eventId(event));
-    const bytes = relayBytes(record, event);
-    return record.elsewhere === true ? [] : [{ seq: record.seq, received: record.received, bytes }];
-  });
-  return { records, ids };
-}
-
-const tallyVectors = Object.values(FILES).flatMap((file) =>
-  file.kind === 'tally' ? file.vectors : [],
-);
-const foldVectors = Object.values(FILES).flatMap((file) =>
-  file.kind === 'fold' ? file.vectors : [],
-);
+import {
+  buildRecords,
+  FOLD_VECTORS,
+  publicKeyNamed,
+  resolve,
+  SEEDS,
+  TALLY_VECTORS,
+  VECTOR_FILES,
+} from '../test/vectors';
+import { fold } from './fold';
+import { DEFAULT_RULES } from './rules';
+import { tally } from './tally';
 
 describe('vector files', () => {
   it('are the keys, then tally, fold or atom-text files', () => {
-    expect(Object.keys(FILES).sort()).toEqual([
-      './vectors/atom-text.json',
-      './vectors/bars-entrenched-edges.json',
-      './vectors/bars-ordinary-pairs.json',
-      './vectors/fold.json',
-      './vectors/keys.json',
-      './vectors/levels-capabilities.json',
-      './vectors/levels-eligible-count.json',
-      './vectors/levels-step-down.json',
-      './vectors/levels-step-up-after-open.json',
-      './vectors/result-checks.json',
-      './vectors/result-cleared.json',
-      './vectors/result-mismatch.json',
-      './vectors/result-no-votes.json',
-      './vectors/rules-class-forged.json',
-      './vectors/rules-genesis-defaults.json',
-      './vectors/rules-genesis-differs.json',
-      './vectors/rules-genesis-missing.json',
-      './vectors/signatures.json',
-      './vectors/steward-recall.json',
-      './vectors/steward-seats.json',
-      './vectors/steward-step-down.json',
-      './vectors/steward-terms.json',
-      './vectors/steward-validity.json',
-      './vectors/suspend-effects.json',
-      './vectors/suspend-ignored.json',
-      './vectors/suspend-lapse.json',
-      './vectors/tally.json',
-      './vectors/time.json',
-      './vectors/versions-ballot.json',
-      './vectors/versions-early-close.json',
-      './vectors/versions-late-low-quorum.json',
-      './vectors/versions-one-open.json',
-      './vectors/versions-tie.json',
-      './vectors/window-bounds.json',
-      './vectors/window-deadline.json',
+    expect(Object.keys(VECTOR_FILES).sort()).toEqual([
+      'atom-text.json',
+      'bars-entrenched-edges.json',
+      'bars-ordinary-pairs.json',
+      'fold.json',
+      'home-two-open-proposals.json',
+      'keys.json',
+      'leave-ballots.json',
+      'leave-eligibility.json',
+      'leave-events.json',
+      'leave-stewards.json',
+      'levels-capabilities.json',
+      'levels-eligible-count.json',
+      'levels-step-down.json',
+      'levels-step-up-after-open.json',
+      'result-checks.json',
+      'result-cleared.json',
+      'result-mismatch.json',
+      'result-no-votes.json',
+      'rules-class-forged.json',
+      'rules-genesis-defaults.json',
+      'rules-genesis-differs.json',
+      'rules-genesis-missing.json',
+      'signatures.json',
+      'steward-recall.json',
+      'steward-seats.json',
+      'steward-step-down.json',
+      'steward-terms.json',
+      'steward-validity.json',
+      'suspend-effects.json',
+      'suspend-ignored.json',
+      'suspend-lapse.json',
+      'tally.json',
+      'time.json',
+      'versions-ballot.json',
+      'versions-early-close.json',
+      'versions-late-low-quorum.json',
+      'versions-one-open.json',
+      'versions-tie.json',
+      'window-bounds.json',
+      'window-deadline.json',
     ]);
-    expect(Object.values(FILES).map((file) => file.kind)).toEqual([
+    expect(Object.values(VECTOR_FILES).map((file) => file.kind)).toEqual([
       'atom-text',
       'tally',
       'tally',
       'fold',
+      'fold',
       'keys',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -308,7 +130,7 @@ describe('vector files', () => {
   });
 
   it('name every vector uniquely', () => {
-    const names = Object.values(FILES).flatMap((file) =>
+    const names = Object.values(VECTOR_FILES).flatMap((file) =>
       'vectors' in file ? file.vectors.map((vector) => vector.name) : [],
     );
     expect(new Set(names).size).toBe(names.length);
@@ -331,7 +153,7 @@ describe('vector files', () => {
     'an average of exactly 2.5 with no zeros passes the ordinary bar',
     'entrenched lapse below quorum',
   ])('include the tally vector "%s"', (name) => {
-    expect(tallyVectors.map((vector) => vector.name)).toContain(name);
+    expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 
   it.each([
@@ -391,31 +213,6 @@ describe('vector files', () => {
     'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
     'a genesis whose entrenched avgAtLeast is 1 forms no group',
     'a Proposal that writes its own class, bar and deadline is still ordinary: 7 days, and a 2.5 average passes',
-    "result-mismatch: with 2 eligible, Ana scores 4 and Ben 0 with a reason; Ben's result counting two 4s is ignored and flagged, and Ana's [1,0,0,0,1] is canonical",
-    "a result whose commit doesn't match this device's ballots is ignored and flagged",
-    "a result whose closedAt isn't the close this device's ballots give is ignored and flagged",
-    "a result whose outcome its own counts don't give is ignored and flagged, even when its counts match",
-    "a result whose eligible count isn't the Proposal's is ignored and flagged",
-    "a result naming versions the Proposal doesn't have is ignored and flagged",
-    "a result received before the close is ignored, and isn't flagged",
-    "a result received in the close's own minute, after the closing ballot, is ignored, and isn't flagged",
-    "a result from someone who isn't a member is ignored, and isn't flagged",
-    'the first valid result in relay order wins, and a later valid one is ignored',
-    'a mismatching result after the canonical one is ignored and still flagged',
-    'a Proposal that closes at its deadline takes a result whose closedAt is the deadline, received after it, not in it',
-    'a result claiming a pass on a Proposal nobody voted on is ignored and flagged, and the Proposal lapses',
-    'a result claiming a pass on a Proposal in cleared is taken as it stands, and the Atom changes',
-    'a zero-count lapse is the canonical result of a Proposal nobody voted on',
-    'a Proposal in cleared takes its outcome and early close from its result, and its pass applies',
-    "with the ballots held, a version in the early close's minute but after the closing ballot is ignored, as is one after",
-    "with the ballots cleared, a version in the early close's minute joins only if the result lists it, and one after is ignored",
-    "with the ballots held, a second Proposal on the same Atom opens in the minute of the first's early close, after the closing ballot",
-    "with the ballots cleared, a second Proposal on the same Atom opens in the minute of the first's early close, before the result arrives",
-    'for a Proposal in cleared, a ballot left in the log is ignored, and only the first result counts',
-    "for a Proposal in cleared, a result from someone who isn't a member is ignored, so it neither closes nor decides it",
-    "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
-    "for a Proposal in cleared, a result whose outcome its counts don't give is ignored",
-    'for a Proposal in cleared, an early close whose counts leave an eligible voter out is ignored',
     'window-ordinary-min: a window of 3 days, the ordinary minimum, opens the Proposal and its deadline is received + 4,320',
     'window-ordinary-max: a window of 14 days, the ordinary maximum, opens the Proposal and its deadline is received + 20,160',
     'window-below-min: a window of 2 days, under the ordinary minimum, makes the fold ignore the Proposal',
@@ -446,14 +243,50 @@ describe('vector files', () => {
     'a suspension 25 days after the previous one ended is ignored, and one 31 days after it is accepted',
     'suspend-lapse: a steward suspends Kim at minute 2,000,000; her ballot at 2,005,000 is ignored and her ballot from 1,999,000 still counts; her ballot on another Proposal at 2,010,080 counts',
     "a suspended member's proposal, level, version and vote are ignored, yet they stay eligible on a Proposal that opens meanwhile, which can't close early without them",
+    'two-open-proposals: P2 opens on a Monday and P1 on the Tuesday, so P2 closes first; Ben has scored P1 only, and Cal joins after both opened',
+    "leave-ballot-after: a ballot received after its author's leave is ignored, though its ts is earlier",
+    "leave-ballot-before: a ballot received before its author's leave still counts, so the others' ballots close the vote early",
+    "leave-open-unchanged: a leave never touches an open Proposal: its eligible set and quorum stay 3, so it doesn't close early and 2 ballots lapse at the deadline",
+    "leave-eligible-after: the leaver isn't eligible on a Proposal opened after the leave, so the 3 who stay close it early",
+    "leave-proposal-tallies: the leaver's open Proposal and their version on another stay on the ballot, tally and pass at the deadline",
+    'leave-after: once someone has left, their join, level, proposal, version and second leave are all ignored',
+    'leave-ignored: a leave from someone who never joined, or for another group, is ignored',
+    'leave-founder: the founder can leave too, and the group carries on: the others still propose and vote',
+    "leave-steward: a steward's leave empties their seat, and a suspend they send after it is ignored",
+    "leave-suspended: a suspended member's leave is honored though their level change is ignored, and the suspension stays on record",
     'window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days',
+    "result-mismatch: with 2 eligible, Ana scores 4 and Ben 0 with a reason; Ben's result counting two 4s is ignored and flagged, and Ana's [1,0,0,0,1] is canonical",
+    "a result whose commit doesn't match this device's ballots is ignored and flagged",
+    "a result whose closedAt isn't the close this device's ballots give is ignored and flagged",
+    "a result whose outcome its own counts don't give is ignored and flagged, even when its counts match",
+    "a result whose eligible count isn't the Proposal's is ignored and flagged",
+    "a result naming versions the Proposal doesn't have is ignored and flagged",
+    "a result received before the close is ignored, and isn't flagged",
+    "a result received in the close's own minute, after the closing ballot, is ignored, and isn't flagged",
+    "a result from someone who isn't a member is ignored, and isn't flagged",
+    'the first valid result in relay order wins, and a later valid one is ignored',
+    'a mismatching result after the canonical one is ignored and still flagged',
+    'a Proposal that closes at its deadline takes a result whose closedAt is the deadline, received after it, not in it',
+    'a result claiming a pass on a Proposal nobody voted on is ignored and flagged, and the Proposal lapses',
+    'a result claiming a pass on a Proposal in cleared is taken as it stands, and the Atom changes',
+    'a zero-count lapse is the canonical result of a Proposal nobody voted on',
+    'a Proposal in cleared takes its outcome and early close from its result, and its pass applies',
+    "with the ballots held, a version in the early close's minute but after the closing ballot is ignored, as is one after",
+    "with the ballots cleared, a version in the early close's minute joins only if the result lists it, and one after is ignored",
+    "with the ballots held, a second Proposal on the same Atom opens in the minute of the first's early close, after the closing ballot",
+    "with the ballots cleared, a second Proposal on the same Atom opens in the minute of the first's early close, before the result arrives",
+    'for a Proposal in cleared, a ballot left in the log is ignored, and only the first result counts',
+    "for a Proposal in cleared, a result from someone who isn't a member is ignored, so it neither closes nor decides it",
+    "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
+    "for a Proposal in cleared, a result whose outcome its counts don't give is ignored",
+    'for a Proposal in cleared, an early close whose counts leave an eligible voter out is ignored',
   ])('include the fold vector "%s"', (name) => {
-    expect(foldVectors.map((vector) => vector.name)).toContain(name);
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 });
 
 describe('tally vectors', () => {
-  it.each(tallyVectors.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
+  it.each(TALLY_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
     const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
     const { eligible, versions } = vector;
     expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
@@ -461,9 +294,8 @@ describe('tally vectors', () => {
 });
 
 describe('fold vectors', () => {
-  it.each(foldVectors.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    const { records, ids } = buildRecords(vector);
-    const cleared = (vector.cleared ?? []).map((ref) => resolveRef(ref, ids));
+  it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
+    const { records, ids, cleared } = buildRecords(vector);
     const state = fold(records, vector.relayNow, cleared);
     expect(state).toMatchObject(resolve(vector.expect, ids) as object);
     const without = vector.unchangedWithout ?? [];

@@ -426,6 +426,96 @@ describe('resetCursor', () => {
   });
 });
 
+describe('markLeaving', () => {
+  it('queues the leave after the outbox and marks the group as leaving, in one change', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue(group.groupId, utf8('{"n":1}'));
+
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    const stored = await store.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"n":1}', '{"leave":1}']);
+    expect(text(stored?.leaving ?? new Uint8Array())).toBe('{"leave":1}');
+  });
+
+  it('keeps the first leave when asked again, queuing it once', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    await store.markLeaving(group.groupId, utf8('{"leave":2}'));
+
+    const stored = await store.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"leave":1}']);
+    expect(text(stored?.leaving ?? new Uint8Array())).toBe('{"leave":1}');
+  });
+
+  it('is still leaving after a reload, with the leave still queued', async () => {
+    const first = await openStore();
+    await first.addGroup(group);
+    await first.markLeaving(group.groupId, utf8('{"leave":1}'));
+    first.close();
+
+    const second = await openStore();
+    const stored = await second.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"leave":1}']);
+    expect(stored?.leaving).toBeDefined();
+  });
+
+  it('refuses anything queued after the leave, so nobody proposes or votes on the way out', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    await expect(store.enqueue(group.groupId, utf8('{"n":1}'))).rejects.toThrow(
+      'This group is leaving this device.',
+    );
+    await expect(store.enqueueAll(group.groupId, [utf8('{"n":2}')])).rejects.toThrow(
+      'This group is leaving this device.',
+    );
+    expect((await store.getGroup(group.groupId))?.outbox.map(text)).toEqual(['{"leave":1}']);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+    await expect(store.markLeaving('nope', utf8('{"leave":1}'))).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+});
+
+describe('purgeGroup', () => {
+  it('deletes the group and tells subscribers, leaving every other group as it was', async () => {
+    const store = await openStore();
+    const other = { ...group, groupId: 'group-2' };
+    await store.addGroup(group);
+    await store.addGroup(other);
+    await store.enqueue(other.groupId, utf8('{"n":1}'));
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.purgeGroup(group.groupId);
+
+    expect(await store.getGroup(group.groupId)).toBeUndefined();
+    expect((await store.listGroups()).map((kept) => kept.groupId)).toEqual(['group-2']);
+    expect((await store.getGroup(other.groupId))?.outbox.map(text)).toEqual(['{"n":1}']);
+    expect(heard).toEqual([group.groupId]);
+  });
+
+  it('changes nothing, and tells nobody, for a group that is already gone', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.purgeGroup('nope');
+
+    expect(await store.listGroups()).toHaveLength(1);
+    expect(heard).toEqual([]);
+  });
+});
+
 describe('every change', () => {
   it('runs in exactly one transaction', async () => {
     const store = await openStore();
@@ -436,6 +526,8 @@ describe('every change', () => {
       () => store.markSent(group.groupId, utf8('{"n":1}')),
       () => store.applyPull(group.groupId, pull([], 1), idOf),
       () => store.resetCursor(group.groupId, 'relay-2'),
+      () => store.markLeaving(group.groupId, utf8('{"leave":1}')),
+      () => store.purgeGroup(group.groupId),
     ];
 
     for (const change of changes) {
