@@ -729,6 +729,47 @@ export const messages = {
     title: 'Settings',
     backupHeading: 'Back up your groups',
     restoreHeading: 'Restore a backup',
+    passkeyHeading: 'Lock with a passkey',
+    eraseHeading: 'Erase this device',
+  },
+  // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
+  // notice and always in Settings. iOS allows one passkey request per tap, so
+  // the first time asks twice. The no-PRF line is #95's own words.
+  passkey: {
+    pageTitle: 'Lock with a passkey',
+    title: 'Lock your keys with a passkey',
+    lede: 'Someone who picks up your unlocked phone could act as you in your groups. With a passkey, Reconcile asks for your face, fingerprint or screen lock each time it opens.',
+    twice:
+      'The first time, your phone asks twice: once to make the passkey, then once to check it can lock your keys.',
+    privacy:
+      'Your password manager keeps it as “Reconcile key”, with nothing about your groups, and nothing about it reaches the relay.',
+    create: 'Make a passkey',
+    creating: 'Waiting for your passkey…',
+    createFailed: 'No passkey was made. You can try again.',
+    confirmLede: 'Now confirm your passkey, and Reconcile locks your keys with it.',
+    confirm: 'Confirm your passkey',
+    confirming: 'Waiting for your passkey…',
+    confirmFailed: 'Your passkey didn’t answer. Try again.',
+    locked:
+      'Your keys on this device are locked with your passkey. Reconcile asks for it each time it opens.',
+    noPrf: 'This device’s passkey can’t protect your keys, so they stay on this device as before.',
+    saveBackup: 'Save a backup',
+    notNow: 'Not now',
+    continue: 'Continue',
+  },
+  // The unlock screen (#95): a device whose keys are locked opens here, and
+  // nothing syncs or signs until the passkey unlocks it.
+  unlock: {
+    pageTitle: 'Unlock Reconcile',
+    title: 'Unlock Reconcile',
+    lede: 'Your keys on this device are locked with your passkey.',
+    unlock: 'Unlock with your passkey',
+    unlocking: 'Waiting for your passkey…',
+    failed: 'Your passkey didn’t unlock Reconcile.',
+    tryAgain: 'Try again',
+    restoreHeading: 'Restore a backup file',
+    restoreLede:
+      'Restoring puts the groups in your backup file in place of the locked ones on this device. Their keys stay on this device unlocked, and you can lock them with a passkey again in Settings.',
     eraseHeading: 'Erase this device',
   },
   backup: {

@@ -1,6 +1,7 @@
 /**
- * The whole app as `main.tsx` renders it: first run (the install gate and
- * the pilot notice), then the app, on the services `main.tsx` builds.
+ * The whole app as `main.tsx` renders it: first run (the install gate, the
+ * pilot notice, the unlock screen and the passkey offer), then the app, on
+ * the services `main.tsx` builds.
  */
 import { useCallback } from 'react';
 
@@ -13,7 +14,7 @@ import type { AppServices } from './services';
 export interface RootProps {
   /** The store, sync loop, relay and the rest. */
   readonly services: AppServices;
-  /** The platform, the notice record and persistence, for first run. */
+  /** The platform, the notice record, persistence, the lock and the offer's record, for first run. */
   readonly firstRun: FirstRunServices;
 }
 
@@ -26,6 +27,8 @@ export function Root({ services, firstRun }: RootProps) {
       origin={services.origin}
       copyText={services.copyText}
       lookup={lookup}
+      passkey={services.passkey}
+      onErase={services.erase}
     >
       {({ heldSeed, persistence }) => (
         <App services={services} initialSeed={heldSeed} persistence={persistence} />

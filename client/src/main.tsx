@@ -13,6 +13,7 @@ import { createRoot } from 'react-dom/client';
 
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
 import { botNotice } from './app/chatMessages';
+import { openDeviceLock, passkeyOn, whenOpen } from './app/passkey';
 import { Root } from './app/Root';
 import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
@@ -22,8 +23,9 @@ import { createRelay } from './net/relay';
 import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
+import { passkeyOfferRecord } from './platform/passkeyOffer';
 import { requestPersistence } from './platform/persist';
-import { sweepArchives } from './store/archive';
+import { browserCredentials, webAuthn } from './platform/webauthn';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
@@ -40,17 +42,23 @@ if (root === null) {
  * opens empty on a new device, and nothing makes keys until first run is through.
  * Each launch first wipes, or clears the ballots of, any dissolved group
  * whose time has come by this device's clock (#108). The chat bot posts only
- * for a group that turned it on by Proposal and hasn't dissolved (#119).
+ * for a group that turned it on by Proposal and hasn't dissolved (#119). A
+ * device whose keys are locked with a passkey (#95) sweeps and syncs only
+ * once the passkey unlocks them (`openDeviceLock`); the relying party is this
+ * host.
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
-  // A sweep that fails tries again at the next launch; the app opens either way.
-  await sweepArchives(store).catch(() => undefined);
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
   const chatBot = createChatBot({ store, post: postWebhook, notice });
   const sync = createSync({ store, relay, seal: xchachaSeal, chatBot });
-  sync.start();
+  const platform = readPlatform();
+  const credentials = browserCredentials();
+  const webauthn = credentials === undefined ? undefined : webAuthn(credentials);
+  const keys = { store, webauthn, platform, rpId: window.location.hostname };
+  // The archive sweep, then the sync loop: at once, or once the passkey unlocks the keys.
+  const lock = await openDeviceLock({ ...keys, open: whenOpen(store, sync) });
   const services = {
     store,
     relay,
@@ -63,8 +71,15 @@ async function start(container: HTMLElement): Promise<void> {
     files: browserFileTargets(),
     erase: () => eraseDevice({ sync, store }),
     guide: guideRecord(),
+    passkey: passkeyOn(keys),
   };
-  const firstRun = { platform: readPlatform(), notice: noticeRecord(), requestPersistence };
+  const firstRun = {
+    platform,
+    notice: noticeRecord(),
+    requestPersistence,
+    lock,
+    passkeyOffer: passkeyOfferRecord(),
+  };
   createRoot(container).render(
     <StrictMode>
       <Root services={services} firstRun={firstRun} />

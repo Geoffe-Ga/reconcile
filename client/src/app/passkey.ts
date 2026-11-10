@@ -13,7 +13,8 @@
  * PRF output is zeroed.
  *
  * **Launch** ({@link openDeviceLock}): a device whose keys aren't locked
- * starts syncing at once. One whose keys are locked starts nothing until
+ * opens at once: the dissolved archives' sweep (#108), then the sync loop
+ * ({@link whenOpen}). One whose keys are locked starts nothing until
  * {@link DeviceLock.unlock} gets PRF output from the same passkey and the
  * store's vault opens under the key it derives; the key then stays in the
  * store's memory for the session. A failed unlock writes nothing and never
@@ -27,6 +28,7 @@ import { newPrfSalt, vaultKeyFromPrf } from '../crypto/keyVault';
 import type { PlatformEnv } from '../platform/installGate';
 import { prfTrusted } from '../platform/prfPolicy';
 import { PasskeyUnanswered, type WebAuthn } from '../platform/webauthn';
+import { sweepArchives } from '../store/archive';
 import type { Store } from '../store/db';
 import { replaceWithBackup } from '../store/snapshot';
 import type { Sync } from '../store/sync';
@@ -115,13 +117,14 @@ export interface DeviceLock {
   /** Whether the device's keys were locked with a passkey when the app started. */
   readonly lockedAtLaunch: boolean;
   /**
-   * Asks the passkey for its PRF output and opens the vault, then starts
-   * syncing. False, writing and starting nothing, when it didn't unlock.
+   * Asks the passkey for its PRF output and opens the vault, then opens the
+   * app's background work. False, writing and starting nothing, when it
+   * didn't unlock.
    */
   unlock(): Promise<boolean>;
   /**
-   * Puts a backup file's groups in place of the locked ones, then starts
-   * syncing. Returns how many groups came back.
+   * Puts a backup file's groups in place of the locked ones, then opens the
+   * app's background work. Returns how many groups came back.
    *
    * @throws {BackupUnreadable} when the file doesn't open; nothing is written then.
    */
@@ -145,25 +148,41 @@ async function unlockVault(deps: PasskeyDeps): Promise<boolean> {
 }
 
 /**
- * Reads whether the device's keys are locked, and starts `sync` at once
- * when they aren't. A locked device starts it only once unlocked or restored.
+ * What starts once this device's keys are open (#95): the dissolved
+ * archives' sweep (#108), whose reads need the keys, then the sync loop. A
+ * sweep that fails tries again at the next launch, and sync starts either way.
+ */
+export function whenOpen(
+  store: Store,
+  sync: Pick<Sync, 'start'>,
+  sweep: (store: Store) => Promise<void> = sweepArchives,
+): () => Promise<void> {
+  return async () => {
+    await sweep(store).catch(() => undefined);
+    sync.start();
+  };
+}
+
+/**
+ * Reads whether the device's keys are locked, and runs `open` at once when
+ * they aren't. A locked device runs it only once unlocked or restored.
  */
 export async function openDeviceLock(
-  deps: PasskeyDeps & { readonly sync: Pick<Sync, 'start'> },
+  deps: PasskeyDeps & { readonly open: () => Promise<void> },
 ): Promise<DeviceLock> {
-  const { store, sync } = deps;
+  const { store, open } = deps;
   const lockedAtLaunch = (await store.readVault()) !== null;
-  if (!lockedAtLaunch) sync.start();
+  if (!lockedAtLaunch) await open();
   return {
     lockedAtLaunch,
     async unlock() {
       const opened = await unlockVault(deps).catch(() => false);
-      if (opened) sync.start();
+      if (opened) await open();
       return opened;
     },
     async restore(file, passphrase) {
       const restored = await replaceWithBackup(store, file, passphrase);
-      sync.start();
+      await open();
       return restored;
     },
   };

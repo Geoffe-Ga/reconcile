@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { messages } from '../app/messages';
 import { axeViolations } from '../test/axe';
 import { Settings, type SettingsProps } from './Settings';
 
@@ -12,6 +13,11 @@ function setup(props: Partial<SettingsProps> = {}) {
     onSave: vi.fn(() => Promise.resolve('downloaded' as const)),
     onRestore: vi.fn(() => Promise.resolve(1)),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
+    passkey: {
+      state: 'offered',
+      onCreate: vi.fn(() => Promise.resolve(Uint8Array.of(1))),
+      onProtect: vi.fn(() => Promise.resolve('protected' as const)),
+    },
     ...props,
   };
   render(<Settings {...all} />);
@@ -36,6 +42,51 @@ describe('Settings', () => {
     expect(
       within(erase).getByRole('button', { name: 'Erase Reconcile from this device' }),
     ).toHaveAttribute('aria-expanded', 'false');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers a passkey, saying the phone asks twice, and keeps the result in place of the offer', async () => {
+    const { user } = setup();
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+    const regions = screen
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-labelledby'));
+    const names = regions.map((id) => document.getElementById(id ?? '')?.textContent);
+    expect(names).toEqual([
+      'Back up your groups',
+      'Restore a backup',
+      'Lock with a passkey',
+      'Erase this device',
+    ]);
+    for (const line of [messages.passkey.lede, messages.passkey.twice, messages.passkey.privacy]) {
+      expect(within(section).getByText(line)).toBeVisible();
+    }
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(within(section).getByRole('button', { name: 'Make a passkey' }));
+    await user.click(await within(section).findByRole('button', { name: 'Confirm your passkey' }));
+
+    expect(await within(section).findByText(messages.passkey.locked)).toBeVisible();
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('says the keys are locked with a passkey, offering nothing to turn it off', async () => {
+    setup({ passkey: { state: 'locked', onCreate: vi.fn(), onProtect: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(section).toHaveTextContent(messages.passkey.locked);
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says plainly where a passkey can’t protect the keys, offering no setup', async () => {
+    setup({ passkey: { state: 'unavailable', onCreate: vi.fn(), onProtect: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(section).toHaveTextContent(
+      'This device’s passkey can’t protect your keys, so they stay on this device as before.',
+    );
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
   });
 

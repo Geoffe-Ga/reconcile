@@ -12,7 +12,7 @@ import type { PlatformEnv } from '../platform/installGate';
 import { PasskeyUnanswered, type WebAuthn, webAuthn } from '../platform/webauthn';
 import { type NewGroup, openStore, type Store, VaultLocked } from '../store/db';
 import { exportGroups } from '../store/snapshot';
-import { openDeviceLock, passkeyOn, type PasskeyDeps } from './passkey';
+import { openDeviceLock, passkeyOn, type PasskeyDeps, whenOpen } from './passkey';
 
 freshIndexedDBPerTest();
 
@@ -137,25 +137,25 @@ describe('passkeyOn', () => {
 describe('openDeviceLock', () => {
   it('starts syncing at once on a device whose keys aren’t locked', async () => {
     const store = await openStore();
-    const sync = { start: vi.fn() };
+    const open = vi.fn(() => Promise.resolve());
 
-    const lock = await openDeviceLock({ ...deps(store), sync });
+    const lock = await openDeviceLock({ ...deps(store), open });
 
     expect(lock.lockedAtLaunch).toBe(false);
-    expect(sync.start).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledTimes(1);
   });
 
   it('starts nothing until the passkey unlocks the keys, then syncs', async () => {
     const { store, authenticator } = await lockedDevice();
-    const sync = { start: vi.fn() };
+    const open = vi.fn(() => Promise.resolve());
 
-    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), sync });
+    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), open });
 
     expect(lock.lockedAtLaunch).toBe(true);
-    expect(sync.start).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
     await expect(store.listGroups()).rejects.toThrow(VaultLocked);
     expect(await lock.unlock()).toBe(true);
-    expect(sync.start).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledTimes(1);
     expect((await store.listGroups()).map((group) => local(group.signingKey))).toEqual([
       local(ANA.signingKey),
     ]);
@@ -169,36 +169,36 @@ describe('openDeviceLock', () => {
   ])('stays locked, starting nothing, when %s', async (_name, settings) => {
     const { store, authenticator } = await lockedDevice();
     Object.assign(authenticator.settings, settings);
-    const sync = { start: vi.fn() };
-    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), sync });
+    const open = vi.fn(() => Promise.resolve());
+    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), open });
 
     expect(await lock.unlock()).toBe(false);
 
-    expect(sync.start).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
     await expect(store.listGroups()).rejects.toThrow(VaultLocked);
   });
 
   it('stays locked under another authenticator’s passkey, or with no WebAuthn at all', async () => {
     const { store } = await lockedDevice();
-    const sync = { start: vi.fn() };
+    const open = vi.fn(() => Promise.resolve());
 
-    const other = await openDeviceLock({ ...deps(store, fakeAuthenticator().calls), sync });
-    const none = await openDeviceLock({ ...deps(store), webauthn: undefined, sync });
+    const other = await openDeviceLock({ ...deps(store, fakeAuthenticator().calls), open });
+    const none = await openDeviceLock({ ...deps(store), webauthn: undefined, open });
 
     expect(await other.unlock()).toBe(false);
     expect(await none.unlock()).toBe(false);
-    expect(sync.start).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('opens at once when another tab already put a backup in place of the vault', async () => {
     const { store, authenticator } = await lockedDevice();
-    const sync = { start: vi.fn() };
-    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), sync });
+    const open = vi.fn(() => Promise.resolve());
+    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), open });
     await store.replaceGroups([]);
 
     expect(await lock.unlock()).toBe(true);
     expect(authenticator.asked).toHaveLength(1);
-    expect(sync.start).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledTimes(1);
   });
 
   it('restores a backup file in place of the locked keys, then syncs', async () => {
@@ -207,25 +207,70 @@ describe('openDeviceLock', () => {
     const passphrase = 'a long walk to the river';
     const { file } = await exportGroups(source, passphrase, 4);
     const { store, authenticator } = await lockedDevice();
-    const sync = { start: vi.fn() };
-    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), sync });
+    const open = vi.fn(() => Promise.resolve());
+    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), open });
 
     // A group whose genesis the relay never returned isn't in a backup, so this one holds none.
     expect(await lock.restore(file, passphrase)).toBe(0);
 
     expect(await store.readVault()).toBeNull();
     expect(await store.listGroups()).toEqual([]);
-    expect(sync.start).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledTimes(1);
   });
 
   it('writes nothing and starts nothing when the backup doesn’t open', async () => {
     const { store, authenticator } = await lockedDevice();
-    const sync = { start: vi.fn() };
-    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), sync });
+    const open = vi.fn(() => Promise.resolve());
+    const lock = await openDeviceLock({ ...deps(store, authenticator.calls), open });
 
     await expect(lock.restore(new Uint8Array(100), 'nope nope nope')).rejects.toThrow();
 
     expect(await store.readVault()).not.toBeNull();
-    expect(sync.start).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe('whenOpen', () => {
+  it('sweeps the dissolved archives, whose reads need the keys, before it starts syncing', async () => {
+    const order: string[] = [];
+    const store = await openStore();
+    const sweep = vi.fn(() => {
+      order.push('sweep');
+      return Promise.resolve();
+    });
+    const sync = { start: vi.fn(() => order.push('sync')) };
+
+    await whenOpen(store, sync, sweep)();
+
+    expect(sweep).toHaveBeenCalledWith(store);
+    expect(order).toEqual(['sweep', 'sync']);
+  });
+
+  it('starts syncing even when the sweep fails, so it tries again at the next launch', async () => {
+    const store = await openStore();
+    const sync = { start: vi.fn() };
+
+    await whenOpen(store, sync, () => Promise.reject(new Error('later')))();
+
+    expect(sync.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs on a locked device only once the passkey unlocks it, as the sweep can’t read before', async () => {
+    const { store, authenticator } = await lockedDevice();
+    const sweep = vi.fn((swept: Store) => swept.listGroups().then(() => undefined));
+    const sync = { start: vi.fn() };
+    const lock = await openDeviceLock({
+      ...deps(store, authenticator.calls),
+      open: whenOpen(store, sync, sweep),
+    });
+
+    expect(sweep).not.toHaveBeenCalled();
+    await expect(sweep(store)).rejects.toThrow(VaultLocked);
+    sweep.mockClear();
+    expect(await lock.unlock()).toBe(true);
+
+    expect(sweep).toHaveBeenCalledTimes(1);
+    await expect(sweep.mock.results[0]?.value).resolves.toBeUndefined();
+    expect(sync.start).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,12 +1,13 @@
 /**
  * Everything the app reaches outside React: the store, the sync loop, the
  * relay, the seal, the clock, the clipboard, Web Share, where a backup file
- * goes, Erase, and the guide's flag. `main.tsx` builds the real ones; tests
+ * goes, Erase, passkey setup, and the guide's flag. `main.tsx` builds the real ones; tests
  * hand in a fake relay and fake IndexedDB.
  */
 import type { GuideRecord } from '../platform/guide';
 import type { Sync } from '../store/sync';
 import type { Services } from './actions';
+import type { Passkey } from './passkey';
 import type { FileTargets, WebShare } from './share';
 
 /** What `App` runs on. */
@@ -27,6 +28,8 @@ export interface AppServices extends Services {
   readonly files: FileTargets;
   /** Erases all of Reconcile's data on this device, then reloads at `/` (#78, `eraseDevice`). */
   readonly erase: () => Promise<void>;
+  /** Passkey setup, for Settings and the offer after the notice (#95). */
+  readonly passkey: Passkey;
   /**
    * Whether this device has seen the first-run guide (#91). Without one, as in
    * most tests, the guide never shows.

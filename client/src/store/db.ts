@@ -666,12 +666,25 @@ async function vaultKeys<Mode extends IDBTransactionMode>(
   tx: IDBPTransaction<Schema, Stores, Mode>,
   session: Session,
 ): Promise<OpenedVault | null> {
-  const vault = await tx.objectStore(VAULT).get(VAULT_ID);
+  return opened(await tx.objectStore(VAULT).get(VAULT_ID), session);
+}
+
+/**
+ * `vault` opened under the session's key, or null when the device has none.
+ *
+ * @throws {VaultLocked} when it has one this session can't open.
+ */
+function opened(vault: VaultRecord | undefined, session: Session): OpenedVault | null {
   if (vault === undefined) return null;
   const { key } = session;
   const keys = key === null ? null : openKeys(vault, key);
   if (key === null || keys === null) throw new VaultLocked();
   return { vault, keys, key };
+}
+
+/** Whether `record` holds its own keys, as every record does on a device with no vault. */
+function hasKeys(record: StoredGroup): boolean {
+  return record.secret !== undefined && record.signingKey !== undefined;
 }
 
 /** `record` with its keys: its own without a vault, or the vault's. */
@@ -685,7 +698,8 @@ function wholeGroup(record: StoredGroup, opened: OpenedVault | null): Group {
 
 /**
  * The group `groupId`, or every group when it's null, each with its keys,
- * read with the vault in one transaction.
+ * read with the vault in one read-only transaction. As with `db.get`,
+ * nothing waits on the transaction's end once its reads are in.
  *
  * @throws {VaultLocked} when the device has a vault this session hasn't opened.
  */
@@ -697,9 +711,11 @@ async function readWhole(
   const tx = db.transaction([GROUPS, VAULT]);
   const records = tx.objectStore(GROUPS);
   const read = groupId === null ? await records.getAll() : [await records.get(groupId)];
-  const opened = await vaultKeys(tx, session);
-  await tx.done;
-  return read.flatMap((record) => (record === undefined ? [] : [wholeGroup(record, opened)]));
+  // A record holds its own keys exactly when the device has no vault, so a
+  // plain device reads as it always has, and the vault is read only when needed.
+  const plain = read.every((record) => record === undefined || hasKeys(record));
+  const keys = plain ? null : opened(await tx.objectStore(VAULT).get(VAULT_ID), session);
+  return read.flatMap((record) => (record === undefined ? [] : [wholeGroup(record, keys)]));
 }
 
 /** What one write of key material does: the groups to put, whole, and the ones to delete. */

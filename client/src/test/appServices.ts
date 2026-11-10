@@ -6,6 +6,7 @@
 import { vi } from 'vitest';
 
 import { botNotice } from '../app/chatMessages';
+import { passkeyOn } from '../app/passkey';
 import type { AppServices } from '../app/services';
 import { xchachaSeal } from '../crypto/seal';
 import { postWebhook } from '../net/discord';
@@ -13,6 +14,8 @@ import { createRelay } from '../net/relay';
 import { createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
 import { createSync } from '../store/sync';
+import { webAuthn } from '../platform/webauthn';
+import type { FakeAuthenticator } from './fakeAuthenticator';
 import type { FakeRelay } from './fakeRelay';
 
 /** The app's origin in tests. */
@@ -24,6 +27,13 @@ export interface TestDevice {
   readonly copied: string[];
   readonly downloaded: File[];
 }
+
+/** A desktop browser's user agent, which `prfTrusted` trusts. */
+const DESKTOP = {
+  userAgent:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+  maxTouchPoints: 0,
+};
 
 /** The device clock tests start at, in milliseconds. */
 export const TEST_NOW = 1_762_650_000_000;
@@ -57,7 +67,8 @@ export async function testDevice(
   const downloaded: File[] = [];
   // No Web Share, as in a desktop browser without it: Tell your group copies
   // instead, and a backup file downloads. Erase is a spy: `store/erase.test.ts`
-  // erases for real.
+  // erases for real. Without a fake authenticator the browser has no WebAuthn,
+  // so no passkey is offered: `withPasskey` gives a device one (#95).
   const services = {
     store,
     relay,
@@ -75,6 +86,15 @@ export async function testDevice(
       },
     },
     erase: vi.fn(() => Promise.resolve()),
+    passkey: passkeyOn({ store, webauthn: undefined, platform: DESKTOP, rpId: 'reconcile.test' }),
   };
   return { services, copied, downloaded };
+}
+
+/** `device` with a browser whose WebAuthn is `authenticator`, so a passkey is offered (#95). */
+export function withPasskey(device: TestDevice, authenticator: FakeAuthenticator): TestDevice {
+  const { store } = device.services;
+  const webauthn = webAuthn(authenticator.calls);
+  const passkey = passkeyOn({ store, webauthn, platform: DESKTOP, rpId: 'reconcile.test' });
+  return { ...device, services: { ...device.services, passkey } };
 }

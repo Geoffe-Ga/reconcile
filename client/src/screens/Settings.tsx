@@ -1,13 +1,24 @@
-import { type ReactNode, useId, useState } from 'react';
-import { Button } from 'react-aria-components';
-
 import type { BackupToSave } from '../app/backup';
-import { HoldToConfirm } from '../app/HoldToConfirm';
+import { EraseCard } from '../app/EraseCard';
 import { messages } from '../app/messages';
+import type { Protection } from '../app/passkey';
+import { PasskeySetup } from '../app/PasskeySetup';
 import { RestoreBackup } from '../app/RestoreBackup';
 import { SaveBackup } from '../app/SaveBackup';
 import type { SaveOutcome } from '../app/share';
-import { BackLink, PageHeader } from '../app/ui';
+import { BackLink, PageHeader, Section } from '../app/ui';
+
+/**
+ * Settings' passkey section (#95): the keys are locked with a passkey, a
+ * passkey can be set up, or this device can't protect them with one.
+ */
+export interface SettingsPasskey {
+  readonly state: 'locked' | 'offered' | 'unavailable';
+  /** Tap 1: makes the passkey. */
+  readonly onCreate: () => Promise<Uint8Array>;
+  /** Tap 2: locks the keys with it when it can. */
+  readonly onProtect: (credentialId: Uint8Array) => Promise<Protection>;
+}
 
 /** Props for {@link Settings}. */
 export interface SettingsProps {
@@ -21,72 +32,34 @@ export interface SettingsProps {
   readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<number>;
   /** Erases all of Reconcile's data on this device and reloads; rejects when it couldn't. */
   readonly onErase: () => Promise<void>;
-}
-
-function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  const heading = useId();
-  return (
-    <section className="section" aria-labelledby={heading}>
-      <h2 id={heading} className="eyebrow">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
+  /** The passkey section (#95). */
+  readonly passkey: SettingsPasskey;
 }
 
 /**
- * The Erase card (DESIGN.md): "Erase Reconcile from this device", in the same
- * calm style as any setting, which reveals what Erase does and the
- * press-and-hold confirm, with Cancel.
+ * Lock with a passkey (#95): what it does and the two-tap setup, or one line
+ * saying the keys are locked, or that this device can't protect them. The
+ * passkey can't be turned off yet (deferred past the MVP). Save a backup sits
+ * on this same screen, so the no-PRF line links nowhere.
  */
-function EraseCard({ onErase }: Pick<SettingsProps, 'onErase'>) {
-  const [open, setOpen] = useState(false);
-  const panel = useId();
-  const { erase } = messages;
+function PasskeySection({ passkey }: { readonly passkey: SettingsPasskey }) {
+  const words = messages.passkey;
+  if (passkey.state === 'locked') return <p className="lede">{words.locked}</p>;
+  if (passkey.state === 'unavailable') return <p className="lede">{words.noPrf}</p>;
   return (
-    <div className="card erase-card">
-      <div>
-        <Button
-          className="button button-secondary"
-          aria-expanded={open}
-          {...(open ? { 'aria-controls': panel } : {})}
-          onPress={() => {
-            setOpen((now) => !now);
-          }}
-        >
-          {erase.open}
-        </Button>
-      </div>
-      {open ? (
-        <div id={panel} className="stack erase-panel">
-          <p>{erase.body}</p>
-          <HoldToConfirm
-            label={erase.hold}
-            released={erase.released}
-            busy={erase.erasing}
-            failed={erase.failed}
-            onConfirm={onErase}
-          />
-          <div>
-            <Button
-              className="button button-quiet"
-              onPress={() => {
-                setOpen(false);
-              }}
-            >
-              {erase.cancel}
-            </Button>
-          </div>
-        </div>
-      ) : null}
+    <div className="stack">
+      <p className="lede">{words.lede}</p>
+      <p className="lede">{words.twice}</p>
+      <p className="lede">{words.privacy}</p>
+      <PasskeySetup onCreate={passkey.onCreate} onProtect={passkey.onProtect} linkBackup={false} />
     </div>
   );
 }
 
 /**
- * Settings (`#/settings`; spec §8.12, #78): Save a backup, Restore a backup,
- * and Erase Reconcile from this device behind a 3-second press and hold.
+ * Settings (`#/settings`; spec §8.12, #78, #95): Save a backup, Restore a
+ * backup, Lock with a passkey, and Erase Reconcile from this device behind a
+ * 3-second press and hold.
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
  */
@@ -108,6 +81,9 @@ export function Settings(props: SettingsProps) {
             <p className="lede">{restore.lede}</p>
             <RestoreBackup onRestore={props.onRestore} />
           </div>
+        </Section>
+        <Section title={settings.passkeyHeading}>
+          <PasskeySection passkey={props.passkey} />
         </Section>
         <Section title={settings.eraseHeading}>
           <EraseCard onErase={props.onErase} />

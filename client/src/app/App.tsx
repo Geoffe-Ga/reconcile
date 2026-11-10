@@ -4,7 +4,7 @@
  * Screens only show things and report what people did. This file turns those
  * reports into actions on the store and the relay, and moves between routes.
  */
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
@@ -20,7 +20,7 @@ import { Join } from '../screens/Join';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { ProposalView } from '../screens/ProposalView';
-import { Settings } from '../screens/Settings';
+import { Settings, type SettingsPasskey } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
@@ -41,6 +41,7 @@ import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { BackupCard } from './BackupCard';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
+import type { Passkey } from './passkey';
 import {
   addVersion,
   castBallot,
@@ -98,16 +99,40 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
   );
 }
 
-/** Settings (#78): Save a backup, Restore a backup, and Erase. */
+/** Whether this device's keys are locked with a passkey, or one can be set up (#95); null until read. */
+function usePasskeyState(passkey: Passkey): SettingsPasskey['state'] | null {
+  const [locked, setLocked] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void passkey.isProtected().then((protectedNow) => {
+      if (live) setLocked(protectedNow);
+    });
+    return () => {
+      live = false;
+    };
+  }, [passkey]);
+  if (locked === null) return null;
+  if (locked) return 'locked';
+  return passkey.available ? 'offered' : 'unavailable';
+}
+
+/** Settings (#78, #95): Save a backup, Restore a backup, Lock with a passkey, and Erase. */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
-  return groups === null ? null : (
+  const { passkey } = services;
+  const passkeyState = usePasskeyState(passkey);
+  return groups === null || passkeyState === null ? null : (
     <Settings
       hasGroups={groups.length > 0}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
+      passkey={{
+        state: passkeyState,
+        onCreate: () => passkey.create(),
+        onProtect: (id) => passkey.protect(id),
+      }}
     />
   );
 }
