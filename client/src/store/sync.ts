@@ -16,6 +16,10 @@
  *    (#78). Nothing the bot does, or fails to do, changes whether the pass
  *    succeeded.
  *
+ * After a pass in which every group synced, and unless the loop is halted,
+ * it runs `afterPass`: in the app, the relay backup's daily refresh (#97,
+ * ./relayBackup.ts). Nothing that does changes whether the pass succeeded.
+ *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
  * blob that won't open, so one bad blob never stalls a group.
@@ -179,6 +183,11 @@ export interface SyncOptions {
   timers?: Timers;
   /** The chat bot, run after each group syncs (#119); without one, nothing posts. */
   chatBot?: ChatBot;
+  /**
+   * Run after each pass in which every group synced, unless halted: the relay
+   * backup's daily refresh (#97). Its failures never fail the pass.
+   */
+  afterPass?: () => Promise<void>;
 }
 
 /** The running sync loop. */
@@ -200,7 +209,7 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
-  const { chatBot } = options;
+  const { chatBot, afterPass } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let halted = false;
@@ -257,6 +266,7 @@ export function createSync(options: SyncOptions): Sync {
     } catch {
       ok = false;
     }
+    if (ok && !halted) await afterPass?.().catch(() => undefined);
     if (ok !== reachable) {
       reachable = ok;
       for (const listener of listeners) {

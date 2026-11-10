@@ -22,6 +22,13 @@ on the declared length, before the body is read. The mailbox cap is checked
 again just before the insert, with no ``await`` between, so uploads that were
 in flight together can't carry a mailbox past it.
 
+Backups (#97, ADR-0043 §3). ``PUT /v1/backup/{id}`` keeps one padded blob of
+64 KiB, 256 KiB, 1 MiB, 4 MiB or 16 MiB under a 43-character id, replacing
+any earlier one, until 180 days after the UTC day of the write; ``GET``
+returns its bytes. The id follows the mailbox rule, the length is checked
+before the body is read, and the relay's storage cap applies. The mailbox cap
+counts blobs only.
+
 Push (#89, ``reconcile.relay.push``). With a VAPID key set, devices register
 push endpoints and schedule nudges under ``/v1/push/``, a blob PUT with
 ``wake=1`` asks for a wake now, and a lifespan task sends the due pushes.
@@ -67,7 +74,10 @@ Clock = Callable[[], float]
 
 MAILBOX_ID = re.compile(r"[A-Za-z0-9_-]{43}")
 BLOB_SIZES = frozenset({1024, 4096, 16384, 65536})
-MAX_BLOB_BYTES = max(BLOB_SIZES)
+# A backup's five sizes (#97): 64 KiB, 256 KiB, 1 MiB, 4 MiB and 16 MiB.
+BACKUP_SIZES = frozenset({1 << 16, 1 << 18, 1 << 20, 1 << 22, 1 << 24})
+# A backup is kept 180 whole days after the day of its last write (ADR-0057).
+BACKUP_KEEP_DAYS = 180
 OCTET_STREAM = "application/octet-stream"
 JSON_MEDIA_TYPE = "application/json"
 MAX_JSON_BYTES = 2048
@@ -149,6 +159,9 @@ def create_app(
     mailboxes = _Mailboxes(store, settings, clock, wakes=vapid is not None)
     api.add_api_route("/v1/mailbox/{mailbox}", mailboxes.put, methods=["PUT"])
     api.add_api_route("/v1/mailbox/{mailbox}", mailboxes.get, methods=["GET"])
+    backups = _Backups(store, settings, clock)
+    api.add_api_route("/v1/backup/{backup}", backups.put, methods=["PUT"])
+    api.add_api_route("/v1/backup/{backup}", backups.get, methods=["GET"])
     pushes = _Push(store, settings, clock, vapid)
     api.add_api_route("/v1/push/key", pushes.key, methods=["GET"])
     api.add_api_route("/v1/push/{mailbox}", pushes.subscribe, methods=["PUT"])
@@ -222,6 +235,39 @@ class _Mailboxes:
                 "instance": self.store.instance,
             }
         )
+
+
+class _Backups:
+    """The backup routes (#97), bound to one store, its settings and a clock."""
+
+    def __init__(self, store: BlobStore, settings: Settings, clock: Clock) -> None:
+        """Bind the routes."""
+        self.store = store
+        self.settings = settings
+        self.clock = clock
+
+    async def put(self, backup: str, request: Request) -> Response:
+        """Keep one padded blob as ``backup``, replacing any earlier one.
+
+        It expires on the UTC day of the write plus 181, so it is kept 180
+        whole days after its last refresh, and the row holds no receipt time.
+        """
+        _check_id(backup, "invalid_backup")
+        _check_media_type(request.headers, OCTET_STREAM)
+        length = _bucket_length(request.headers, BACKUP_SIZES)
+        _check_space(self.store, self.settings)
+        blob = await _read_body(request, length)
+        now = self.clock()
+        self.store.put_backup(backup, blob, expiry=day_of(now) + BACKUP_KEEP_DAYS + 1)
+        return Response(status_code=204)
+
+    async def get(self, backup: str) -> Response:
+        """Return the backup's bytes, or 404 ``not_found`` once it's gone."""
+        _check_id(backup, "invalid_backup")
+        blob = self.store.get_backup(backup, today=day_of(self.clock()))
+        if blob is None:
+            raise RelayError(404, "not_found")
+        return Response(content=blob, media_type=OCTET_STREAM)
 
 
 class _Push:
@@ -327,9 +373,14 @@ def _record_json(record: Record) -> dict[str, Any]:
 
 
 def _check_mailbox(mailbox: str) -> None:
-    """Refuse anything but 43 base64url characters."""
-    if MAILBOX_ID.fullmatch(mailbox) is None:
-        raise RelayError(400, "invalid_mailbox")
+    """Refuse a mailbox id that isn't 43 base64url characters."""
+    _check_id(mailbox, "invalid_mailbox")
+
+
+def _check_id(value: str, code: str) -> None:
+    """Refuse anything but 43 base64url characters, with the error ``code``."""
+    if MAILBOX_ID.fullmatch(value) is None:
+        raise RelayError(400, code)
 
 
 def _check_media_type(headers: Headers, expected: str) -> None:
@@ -372,8 +423,13 @@ def _declared_length(headers: Headers, limit: int) -> int:
 
 def _blob_length(headers: Headers) -> int:
     """A blob's declared length, which must be one of the four bucket sizes."""
-    length = _declared_length(headers, MAX_BLOB_BYTES)
-    if length not in BLOB_SIZES:
+    return _bucket_length(headers, BLOB_SIZES)
+
+
+def _bucket_length(headers: Headers, sizes: frozenset[int]) -> int:
+    """A declared length of at most ``max(sizes)``, which must be one of ``sizes``."""
+    length = _declared_length(headers, max(sizes))
+    if length not in sizes:
         raise RelayError(400, "invalid_size")
     return length
 

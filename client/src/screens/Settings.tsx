@@ -7,7 +7,9 @@ import { messages } from '../app/messages';
 import { RestoreBackup } from '../app/RestoreBackup';
 import { SaveBackup } from '../app/SaveBackup';
 import type { SaveOutcome } from '../app/share';
+import { formatDay } from '../app/time';
 import { BackLink, PageHeader } from '../app/ui';
+import type { RelayBackupStatus } from '../store/relayBackup';
 
 /** Props for {@link Settings}. */
 export interface SettingsProps {
@@ -21,6 +23,8 @@ export interface SettingsProps {
   readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<number>;
   /** Erases all of Reconcile's data on this device and reloads; rejects when it couldn't. */
   readonly onErase: () => Promise<void>;
+  /** Where the relay backup stands (#97); nothing shows while the device keeps none. */
+  readonly relayBackup: RelayBackupStatus;
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
@@ -32,6 +36,35 @@ function Section({ title, children }: { readonly title: string; readonly childre
       </h2>
       {children}
     </section>
+  );
+}
+
+/** The relay backup's words for `status`, or null while the device keeps none. */
+function relayBackupWords(status: RelayBackupStatus): string | null {
+  const { relayBackup } = messages;
+  switch (status.kind) {
+    case 'off':
+      return null;
+    case 'saved':
+      return relayBackup.saved(formatDay(status.at));
+    case 'too-large':
+      return relayBackup.tooLarge;
+    case 'waiting':
+      return relayBackup.waiting;
+  }
+}
+
+/**
+ * One quiet line on the relay backup (#97), a live region so a refresh that
+ * lands while Settings is open is heard. The relay backup starts with
+ * recovery contacts (#109), so there's no switch here.
+ */
+function RelayBackupLine({ status }: { readonly status: RelayBackupStatus }) {
+  const words = relayBackupWords(status);
+  return words === null ? null : (
+    <p className="relay-backup" role="status">
+      {words}
+    </p>
   );
 }
 
@@ -85,8 +118,9 @@ function EraseCard({ onErase }: Pick<SettingsProps, 'onErase'>) {
 }
 
 /**
- * Settings (`#/settings`; spec §8.12, #78): Save a backup, Restore a backup,
- * and Erase Reconcile from this device behind a 3-second press and hold.
+ * Settings (`#/settings`; spec §8.12, #78): Save a backup, with the relay
+ * backup's line once the device keeps one (#97), Restore a backup, and Erase
+ * Reconcile from this device behind a 3-second press and hold.
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
  */
@@ -100,6 +134,7 @@ export function Settings(props: SettingsProps) {
         <Section title={settings.backupHeading}>
           <div className="stack">
             <p className="lede">{backup.lede}</p>
+            <RelayBackupLine status={props.relayBackup} />
             <SaveBackup hasGroups={props.hasGroups} onMake={props.onMake} onSave={props.onSave} />
           </div>
         </Section>

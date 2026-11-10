@@ -12,6 +12,7 @@ import { postWebhook } from '../net/discord';
 import { createRelay } from '../net/relay';
 import { createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
+import { refreshRelayBackup } from '../store/relayBackup';
 import { createSync } from '../store/sync';
 import type { FakeRelay } from './fakeRelay';
 
@@ -49,7 +50,9 @@ export async function testDevice(
     notice: botNotice(TEST_ORIGIN, 'UTC'),
     clock: now,
   });
-  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot });
+  // As in main.tsx, the relay backup refreshes after each complete pass (#97).
+  const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot, afterPass });
   const copied: string[] = [];
   const copyText = vi.fn(async (text: string | Promise<string>) => {
     copied.push(await text);

@@ -519,6 +519,54 @@ describe('the chat bot in a pass (#119)', () => {
   });
 });
 
+describe('after a pass (#97)', () => {
+  it('runs once a pass in which every group synced, after the pulls are saved', async () => {
+    const fake = createFakeRelay();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
+    const seen: (number | null)[] = [];
+    const sync = createSync({
+      store: ana.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      afterPass: async () => {
+        seen.push((await ana.store.getGroup(GROUP))?.relayNow ?? null);
+      },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+    fake.minute += 1;
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect(seen).toEqual([29_000_000, 29_000_001]);
+  });
+
+  it('doesn’t run after a pass in which a group failed, and never fails a pass itself', async () => {
+    const afterPass = vi.fn(() => Promise.reject(new Error('the relay backup failed')));
+    const failing = vi.fn(() => Promise.resolve());
+    const { sync } = await (async () => {
+      const fake = createFakeRelay();
+      const store = await openStore('ana');
+      const me = { author: authorOf(ANA), name: 'Ana' };
+      const signingKey = testKeys(ANA).secretKey;
+      await store.addGroup({ groupId: GROUP, secret: newKeys().secret, signingKey, me });
+      const relay = createRelay({ fetch: fake.fetch });
+      const ok = createSync({ store, relay, seal: xchachaSeal, afterPass });
+      opened.push(ok);
+      expect(await ok.syncOnce()).toBe(true);
+      await store.addGroup({ groupId: 'broken', secret: new Uint8Array(31), signingKey, me });
+      const broken = createSync({ store, relay, seal: xchachaSeal, afterPass: failing });
+      opened.push(broken);
+      return { sync: broken };
+    })();
+
+    expect(await sync.syncOnce()).toBe(false);
+
+    expect(afterPass).toHaveBeenCalledTimes(1);
+    expect(failing).not.toHaveBeenCalled();
+  });
+});
+
 describe('a new relay instance', () => {
   it('resets the cursor, re-posts the outbox, and reads the fresh relay from the start', async () => {
     const fake = createFakeRelay();

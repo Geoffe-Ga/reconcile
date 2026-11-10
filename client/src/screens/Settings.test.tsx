@@ -12,6 +12,7 @@ function setup(props: Partial<SettingsProps> = {}) {
     onSave: vi.fn(() => Promise.resolve('downloaded' as const)),
     onRestore: vi.fn(() => Promise.resolve(1)),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
+    relayBackup: { kind: 'off' },
     ...props,
   };
   render(<Settings {...all} />);
@@ -68,5 +69,34 @@ describe('Settings', () => {
 
     expect(onErase).not.toHaveBeenCalled();
     expect(screen.getByText('You let go early, so nothing was erased.')).toBeVisible();
+  });
+});
+
+describe('Settings’ relay backup line (#97)', () => {
+  // Tue 10 Nov 2026, 15:00 UTC: the same day in every time zone from UTC−9 to UTC+8.
+  const AT = Date.UTC(2026, 10, 10, 15);
+
+  it('says nothing of a relay backup while the device keeps none', () => {
+    setup({ relayBackup: { kind: 'off' } });
+
+    expect(screen.queryByText(/relay/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ kind: 'saved', at: AT } as const, 'Backed up to the relay Tue 10 Nov.'],
+    [
+      { kind: 'too-large' } as const,
+      'Your groups are too large for the relay backup. Save a backup file instead.',
+    ],
+    [
+      { kind: 'waiting' } as const,
+      'Your groups will be backed up to the relay the next time Reconcile syncs.',
+    ],
+  ])('says where the relay backup stands: %o', async (relayBackup, words) => {
+    setup({ relayBackup });
+
+    const section = screen.getByRole('region', { name: 'Back up your groups' });
+    expect(within(section).getByText(words)).toHaveAttribute('role', 'status');
+    expect(await axeViolations()).toEqual([]);
   });
 });

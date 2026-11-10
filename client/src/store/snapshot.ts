@@ -11,11 +11,19 @@
  * leaving, and one whose genesis the relay hasn't returned yet, since
  * neither has anything to come back to.
  *
+ * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
+ * device keeps one, so a device restored from the file keeps the relay
+ * backup fresh. A restoring device that already keeps a key keeps its own. A
+ * file from before #97 has no `backupKey`, and brings no key. The plaintext
+ * the relay backup seals is this same snapshot without the key
+ * (`relayBackup.ts`), and `importSnapshot` reads it back.
+ *
  * Restoring opens the file, then checks everything before it writes
  * anything: the shape of every field, that each key makes its author, that
- * every log record verifies, and that each log folds to its own group.
- * Anything wrong fails as a wrong passphrase does, with `BackupUnreadable`,
- * and the store keeps every group in one transaction (`Store.restoreGroups`).
+ * every log record verifies, that each log folds to its own group, and that
+ * a backup key is 32 bytes. Anything wrong fails as a wrong passphrase does,
+ * with `BackupUnreadable`, and the store keeps every group in one
+ * transaction (`Store.restoreGroups`), then the key.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
@@ -36,6 +44,13 @@ const GROUP_ID = /^[A-Za-z0-9_-]{43}$/;
 
 /** A group's secret and signing key are 32 bytes each. */
 const KEY_BYTES = 32;
+
+/** Everything a backup holds: the groups it keeps, and the relay backup key, if any (#97). */
+export interface Snapshot {
+  readonly groups: readonly BackedUpGroup[];
+  /** The device's relay backup key; absent when it keeps none, and from the relay's own copy. */
+  readonly backupKey?: Uint8Array;
+}
 
 /** A saved backup: the sealed file, and the groups it holds. */
 export interface SavedBackup {
@@ -69,8 +84,19 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     }));
 }
 
-/** `groups` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
-export function encodeSnapshot(groups: readonly BackedUpGroup[]): Uint8Array<ArrayBuffer> {
+/** What a backup keeps of everything on `store`: its groups, and its relay backup key. */
+export async function deviceSnapshot(
+  store: Pick<Store, 'listGroups' | 'getRelayBackup'>,
+): Promise<Snapshot> {
+  const [groups, relayBackup] = await Promise.all([store.listGroups(), store.getRelayBackup()]);
+  const kept = backedUpGroups(groups);
+  return relayBackup === undefined
+    ? { groups: kept }
+    : { groups: kept, backupKey: relayBackup.key };
+}
+
+/** `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
+export function encodeSnapshot({ groups, backupKey }: Snapshot): Uint8Array<ArrayBuffer> {
   const json = {
     format: SNAPSHOT_FORMAT,
     groups: groups.map((group) => ({
@@ -89,21 +115,24 @@ export function encodeSnapshot(groups: readonly BackedUpGroup[]): Uint8Array<Arr
       lastSyncAt: group.lastSyncAt,
       missingHistory: group.missingHistory,
     })),
+    ...(backupKey === undefined ? {} : { backupKey: base64url(backupKey) }),
   };
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
 
 /**
- * Seals every group on the device that a backup keeps under `passphrase`, at
- * scrypt cost `log2N` (17 unless a test asks for less).
+ * Seals every group on the device that a backup keeps, and its relay backup
+ * key, under `passphrase`, at scrypt cost `log2N` (17 unless a test asks for
+ * less).
  */
 export async function exportGroups(
-  store: Pick<Store, 'listGroups'>,
+  store: Pick<Store, 'listGroups' | 'getRelayBackup'>,
   passphrase: string,
   log2N = BACKUP_LOG2_N,
 ): Promise<SavedBackup> {
-  const groups = backedUpGroups(await store.listGroups());
-  const plaintext = encodeSnapshot(groups);
+  const snapshot = await deviceSnapshot(store);
+  const { groups } = snapshot;
+  const plaintext = encodeSnapshot(snapshot);
   try {
     const file = await sealBackup(plaintext, passphrase, log2N);
     return { file, groupIds: groups.map((group) => group.groupId) };
@@ -120,21 +149,40 @@ export async function exportGroups(
  *   file, or contents that don't check out; nothing is written then.
  */
 export async function importGroups(
-  store: Pick<Store, 'restoreGroups'>,
+  store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
   file: Uint8Array,
   passphrase: string,
 ): Promise<number> {
   if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
   const plaintext = await openBackup(file, passphrase);
-  const groups = decodeSnapshot(plaintext);
-  plaintext.fill(0);
-  if (groups === null) throw new BackupUnreadable();
-  await store.restoreGroups(groups);
-  return groups.length;
+  try {
+    return await importSnapshot(store, plaintext);
+  } finally {
+    plaintext.fill(0);
+  }
 }
 
-/** The groups in a backup's plaintext, or null when anything in it doesn't check out. */
-export function decodeSnapshot(plaintext: Uint8Array): BackedUpGroup[] | null {
+/**
+ * Checks every group in a backup's `plaintext`, keeps them all in one
+ * transaction, then keeps its relay backup key if the device has none.
+ * Returns how many groups it held. `importGroups` calls it once a file is
+ * open, and the relay backup's restore (#118) once `fetchRelayBackup` has.
+ *
+ * @throws {BackupUnreadable} when anything in it doesn't check out; nothing is written then.
+ */
+export async function importSnapshot(
+  store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
+  plaintext: Uint8Array,
+): Promise<number> {
+  const snapshot = decodeSnapshot(plaintext);
+  if (snapshot === null) throw new BackupUnreadable();
+  await store.restoreGroups(snapshot.groups);
+  if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
+  return snapshot.groups.length;
+}
+
+/** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
+export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
   const json = parseJson(plaintext);
   if (!isObject(json) || json.format !== SNAPSHOT_FORMAT || !Array.isArray(json.groups)) {
     return null;
@@ -142,7 +190,11 @@ export function decodeSnapshot(plaintext: Uint8Array): BackedUpGroup[] | null {
   const groups = json.groups.map(groupIn);
   const ids = new Set(groups.map((group) => group?.groupId));
   if (groups.some((group) => group === null) || ids.size !== groups.length) return null;
-  return groups.filter((group) => group !== null);
+  const kept = groups.filter((group) => group !== null);
+  if (!('backupKey' in json)) return { groups: kept };
+  // A file from before #97 has no key; one that has a key holds a well-formed one.
+  const backupKey = keyIn(json.backupKey);
+  return backupKey === null ? null : { groups: kept, backupKey };
 }
 
 /** The JSON value `bytes` spell in UTF-8, or undefined when they don't. */

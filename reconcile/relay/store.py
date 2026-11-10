@@ -1,4 +1,4 @@
-"""The relay's SQLite store: blobs, one ``meta`` row, and push's two tables.
+"""The relay's SQLite store: blobs, one ``meta`` row, push's two tables, backups.
 
 Each blob row holds only the mailbox id, its seq, the opaque blob, the minute
 it was received and the UTC day it expires. Push (#89, ADR-0012) adds what
@@ -9,7 +9,12 @@ ADR-0019 allows it, endpoints and wake minutes, and nothing else:
   in one minute into one row.
 
 Neither holds a push key (no payload is sent), a timestamp or a counter.
-Adding a column needs an ADR.
+
+The relay backup (#97, ADR-0043 §3) adds ``backups``: one padded blob per
+43-character id, with the UTC day it expires and nothing else. A write
+replaces the row, so no earlier copy stays, and ``WITHOUT ROWID`` leaves no
+counter that would order backups by when each first arrived. Adding a column
+needs an ADR.
 
 Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
 blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
@@ -59,6 +64,12 @@ CREATE TABLE IF NOT EXISTS nudges (
     due INTEGER NOT NULL,
     PRIMARY KEY (mailbox, due)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS backups (
+    id TEXT NOT NULL PRIMARY KEY,
+    blob BLOB NOT NULL,
+    expiry INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS backups_by_expiry ON backups (expiry);
 """
 
 # A mailbox's unexpired bytes. SQLite reads each length from
@@ -139,12 +150,28 @@ class BlobStore:
         (used,) = self._db.execute(MAILBOX_BYTES_SQL, (mailbox, today)).fetchone()
         return int(used)
 
+    def put_backup(self, backup: str, blob: bytes, *, expiry: int) -> None:
+        """Store ``blob`` as the backup ``backup``, replacing any earlier one."""
+        self._db.execute(
+            "INSERT INTO backups (id, blob, expiry) VALUES (?, ?, ?)"
+            " ON CONFLICT (id) DO UPDATE SET blob = excluded.blob,"
+            " expiry = excluded.expiry",
+            (backup, blob, expiry),
+        )
+
+    def get_backup(self, backup: str, *, today: int) -> bytes | None:
+        """Return the backup ``backup``, or ``None`` once its expiry day has come."""
+        row = self._db.execute(
+            "SELECT blob FROM backups WHERE id = ? AND expiry > ?", (backup, today)
+        ).fetchone()
+        return None if row is None else bytes(row[0])
+
     def delete_expired(self, today: int) -> int:
         """Delete every expired row; return how many.
 
-        Blobs and push subscriptions go once their expiry day has come. A
-        nudge due before yesterday began was never taken by the tick (push
-        was off), so it goes too.
+        Blobs, push subscriptions and backups go once their expiry day has
+        come. A nudge due before yesterday began was never taken by the tick
+        (push was off), so it goes too.
         """
         return (
             self._db.execute("DELETE FROM blobs WHERE expiry <= ?", (today,)).rowcount
@@ -153,6 +180,9 @@ class BlobStore:
             ).rowcount
             + self._db.execute(
                 "DELETE FROM nudges WHERE due < ?", ((today - 1) * MINUTES_PER_DAY,)
+            ).rowcount
+            + self._db.execute(
+                "DELETE FROM backups WHERE expiry <= ?", (today,)
             ).rowcount
         )
 

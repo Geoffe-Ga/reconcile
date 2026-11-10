@@ -1,6 +1,6 @@
-# Deletes expired relay blobs (30-day retention, ADR-0057) and truncates the
-# WAL. It prints nothing, not even a count. reconcile-purge.timer starts it
-# daily.
+# Deletes expired relay blobs (30-day retention, ADR-0057) and backups (180
+# days after their last refresh, #97), and truncates the WAL. It prints
+# nothing, not even a count. reconcile-purge.timer starts it daily.
 
 [Unit]
 Description=Reconcile relay purge of expired blobs

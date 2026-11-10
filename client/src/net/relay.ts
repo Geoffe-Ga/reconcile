@@ -2,8 +2,9 @@
  * The relay client (spec §6 and §7): the app's only caller of `fetch`.
  *
  * Every request goes to `/v1` on the app's own origin, sends no cookies or
- * referrer, and skips the HTTP cache. The mailbox id is the only identifier
- * a request carries, and it never appears in an error.
+ * referrer, and skips the HTTP cache. The mailbox id, or a backup's id
+ * (#97), is the only identifier a request carries, and neither ever appears
+ * in an error.
  */
 
 /** The shape of `fetch`, so tests can hand in an in-memory relay. */
@@ -29,12 +30,16 @@ export interface RelayPage {
   instance: string;
 }
 
-/** The two calls the app makes to a mailbox. */
+/** The calls the app makes to a mailbox, and to the relay backup (#97). */
 export interface Relay {
   /** Store `blob` in `mailbox`, kept `ttlDays` (the relay's default is 30), and return its seq. */
   putBlob(mailbox: string, blob: Uint8Array<ArrayBuffer>, ttlDays?: number): Promise<number>;
   /** Every record in `mailbox` after seq `after`, paging until a page comes back short. */
   getBlobs(mailbox: string, after: number): Promise<RelayPage>;
+  /** Keep `blob` as the backup `backup`, replacing any earlier one; resolves on the relay's 204. */
+  putBackup(backup: string, blob: Uint8Array<ArrayBuffer>): Promise<void>;
+  /** The backup `backup`'s bytes, or null when the relay holds none (its 404). */
+  getBackup(backup: string): Promise<Uint8Array<ArrayBuffer> | null>;
 }
 
 /** Where the relay is, and how to reach it. */
@@ -80,6 +85,7 @@ export function createRelay({
   fetch: send = browserFetch,
 }: RelayOptions = {}): Relay {
   const mailboxUrl = (mailbox: string): string => `${baseUrl}/mailbox/${checkMailbox(mailbox)}`;
+  const backupUrl = (backup: string): string => `${baseUrl}/backup/${checkBackup(backup)}`;
 
   async function putBlob(
     mailbox: string,
@@ -124,7 +130,24 @@ export function createRelay({
     return { records, now: page.now, instance };
   }
 
-  return { putBlob, getBlobs };
+  async function putBackup(backup: string, blob: Uint8Array<ArrayBuffer>): Promise<void> {
+    const response = await send(backupUrl(backup), {
+      ...PRIVATE,
+      method: 'PUT',
+      headers: { 'Content-Type': OCTET_STREAM },
+      body: blob,
+    });
+    if (response.status !== 204) throw await refusal(response);
+  }
+
+  async function getBackup(backup: string): Promise<Uint8Array<ArrayBuffer> | null> {
+    const response = await send(backupUrl(backup), { ...PRIVATE, method: 'GET' });
+    if (response.status === 404) return null;
+    if (response.status !== 200) throw await refusal(response);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  return { putBlob, getBlobs, putBackup, getBackup };
 }
 
 /** `mailbox`, if it is 43 base64url characters; anything else could rewrite the URL. */
@@ -133,6 +156,23 @@ function checkMailbox(mailbox: string): string {
     throw new RangeError('A mailbox id is 43 base64url characters.');
   }
   return mailbox;
+}
+
+/** `backup`, if it is 43 base64url characters, as a mailbox id is. */
+function checkBackup(backup: string): string {
+  if (!MAILBOX_ID.test(backup)) {
+    throw new RangeError('A backup id is 43 base64url characters.');
+  }
+  return backup;
+}
+
+/** The RelayError for an answer the call doesn't take: its code, or `bad_response` for a 2xx. */
+async function refusal(response: Response): Promise<RelayError> {
+  const body: unknown = await response.json().catch(() => undefined);
+  return new RelayError(
+    response.status,
+    response.ok ? 'bad_response' : errorCode(body, response.status),
+  );
 }
 
 /** The JSON body of a 2xx answer; any other answer becomes a RelayError. */

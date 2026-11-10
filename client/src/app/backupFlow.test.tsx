@@ -9,7 +9,9 @@ import { act, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { backupIdFor } from '../crypto/relayBackup';
 import { fold } from '../engine/fold';
+import { startRelayBackup } from '../store/relayBackup';
 import type { TestDevice } from '../test/appServices';
 import { testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
@@ -201,5 +203,47 @@ describe('Erase from Settings', () => {
 
     expect(ana.services.erase).toHaveBeenCalledOnce();
     expect(app.getByText('Erasing…')).toBeVisible();
+  });
+});
+
+describe('the relay backup key in the file (#97, ADR-0075 §4)', () => {
+  it('lets a device restored from the file keep the relay backup fresh, and Settings says so', async () => {
+    const { fake, ana } = await anaAndBen();
+    await startRelayBackup(ana.services);
+    const key = (await ana.services.store.getRelayBackup())?.key ?? new Uint8Array();
+    const id = backupIdFor(key);
+    const first = fake.backup(id);
+    const file = await saveFrom(ana, 'a');
+    for (const done of mounted.splice(0)) done.unmount();
+    const phone = await testDevice(fake, 'phone');
+    opened.push(phone);
+
+    await restoreOn(phone, 'p', file);
+    // Restore syncs at once: the first complete pass of the relay day uploads the restored
+    // groups under the same id, sealed afresh.
+    await waitFor(async () => {
+      expect((await phone.services.store.getRelayBackup())?.uploadedAt).not.toBeNull();
+    });
+
+    expect(fake.backup(id)).toBeDefined();
+    expect(fake.backup(id)).not.toEqual(first);
+    for (const done of mounted.splice(0)) done.unmount();
+    go('#/settings');
+    const settings = mount(phone, 's');
+    const section = await settings.findByRole('region', { name: 'Back up your groups' });
+    expect(await within(section).findByText(/^Backed up to the relay /)).toHaveAttribute(
+      'role',
+      'status',
+    );
+  });
+
+  it('shows no relay backup line on a device that keeps no key', async () => {
+    const { ben } = await anaAndBen();
+    go('#/settings');
+    const app = mount(ben, 'b');
+
+    await app.findByRole('region', { name: 'Back up your groups' });
+
+    expect(app.queryByText(/relay/)).not.toBeInTheDocument();
   });
 });

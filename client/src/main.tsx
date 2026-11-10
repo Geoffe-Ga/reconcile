@@ -26,6 +26,7 @@ import { requestPersistence } from './platform/persist';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
+import { refreshRelayBackup } from './store/relayBackup';
 import { createSync } from './store/sync';
 
 const root = document.getElementById('root');
@@ -38,20 +39,24 @@ if (root === null) {
  * app behind first run: the install gate and the pilot notice (#76). The store
  * opens empty on a new device, and nothing makes keys until first run is through.
  * The chat bot posts only for a group that turned it on by Proposal (#119).
+ * After each complete sync pass, the relay backup refreshes once a relay day,
+ * once the device keeps a backup key (#97).
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
   const chatBot = createChatBot({ store, post: postWebhook, notice });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot });
+  const now = (): number => Date.now();
+  const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, afterPass });
   sync.start();
   const services = {
     store,
     relay,
     sync,
     seal: xchachaSeal,
-    now: () => Date.now(),
+    now,
     origin: window.location.origin,
     copyText: copyToClipboard,
     share: browserShare(),

@@ -61,6 +61,7 @@ import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
 import { useNow } from './useNow';
+import { useRelayBackupStatus } from './useRelayBackup';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -94,12 +95,14 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
   );
 }
 
-/** Settings (#78): Save a backup, Restore a backup, and Erase. */
+/** Settings (#78): Save a backup, with the relay backup's line (#97), Restore a backup, and Erase. */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
-  return groups === null ? null : (
+  const relayBackup = useRelayBackupStatus(services.store);
+  return groups === null || relayBackup === null ? null : (
     <Settings
       hasGroups={groups.length > 0}
+      relayBackup={relayBackup}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}

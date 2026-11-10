@@ -32,6 +32,7 @@ from tests.relay.helpers import (
     blob,
     mailbox_id,
     put,
+    put_backup,
     sqlite_files,
 )
 from tests.relay.subprocess_probe import PROBE_PATH, ROUTE_VIEW, SERVER_VIEW
@@ -178,11 +179,17 @@ def test_distinct_clients_leave_no_address_in_files_or_output(
     needles = [CANARY, *CLIENT_ADDRESSES]
     for address in CLIENT_ADDRESSES:
         client = TestClient(app, client=(address, 41000))
-        mailbox = mailbox_id()
+        mailbox, backup = mailbox_id(), mailbox_id()
         assert put(client, mailbox, blob(), headers=CANARY_HEADERS).status_code == 201
         page = client.get(f"/v1/mailbox/{mailbox}", headers=CANARY_HEADERS)
         assert page.status_code == 200
         assert not _leaks(page.content, needles)
+        stored = put_backup(client, backup, blob(65536), headers=CANARY_HEADERS)
+        assert stored.status_code == 204
+        fetched = client.get(f"/v1/backup/{backup}", headers=CANARY_HEADERS)
+        assert fetched.content == blob(65536)
+        missing = client.get(f"/v1/backup/{mailbox_id()}", headers=CANARY_HEADERS)
+        assert missing.content == b'{"error":"not_found"}'
     live = sqlite_files(db_path)
     out, err = capfd.readouterr()
     logged = "\n".join(record.getMessage() for record in caplog.records)
@@ -248,6 +255,8 @@ def test_fastapi_telemetry_stays_off_even_when_a_provider_is_configured(
         mailbox = mailbox_id()
         put(client, mailbox, blob())
         client.get(f"/v1/mailbox/{mailbox}")
+        put_backup(client, mailbox, blob(65536))
+        client.get(f"/v1/backup/{mailbox}")
         client.get("/v1/health")
 
     assert telemetry.asked == []
@@ -318,8 +327,13 @@ def _relay_env(tmp_path: Path, port: int, db_path: Path) -> dict[str, str]:
     }
 
 
-def _exchange(port: int, mailbox: str) -> list[tuple[int, dict[str, str], bytes]]:
-    """PUT, GET and probe the relay, each carrying every canary header."""
+def _exchange(
+    port: int, mailbox: str, backup: str
+) -> list[tuple[int, dict[str, str], bytes]]:
+    """PUT, GET and probe the relay, each carrying every canary header.
+
+    After the probe, a backup goes up and comes back (#97).
+    """
     upload = {**CANARY_HEADERS, **OCTET_STREAM}
     return [
         _request(
@@ -331,6 +345,8 @@ def _exchange(port: int, mailbox: str) -> list[tuple[int, dict[str, str], bytes]
         ),
         _request(port, "GET", f"/v1/mailbox/{mailbox}?after=0", headers=CANARY_HEADERS),
         _request(port, "GET", PROBE_PATH, headers=CANARY_HEADERS),
+        _request(port, "PUT", f"/v1/backup/{backup}", body=blob(65536), headers=upload),
+        _request(port, "GET", f"/v1/backup/{backup}", headers=CANARY_HEADERS),
     ]
 
 
@@ -345,6 +361,7 @@ class RelayRun:
     """What one run of scripts/relay.sh answered, wrote and printed."""
 
     mailbox: str
+    backup: str
     data_dir: Path
     responses: list[tuple[int, dict[str, str], bytes]]
     files: dict[str, bytes]
@@ -362,7 +379,7 @@ def relay_run(tmp_path_factory: pytest.TempPathFactory) -> RelayRun:
     tmp_path = tmp_path_factory.mktemp("relay-sh")
     port = _free_port()
     db_path = tmp_path / "data" / "relay.db"
-    mailbox = mailbox_id()
+    mailbox, backup = mailbox_id(), mailbox_id()
     process = subprocess.Popen(
         [BASH, str(RELAY_SH)],
         cwd=ROOT,
@@ -372,7 +389,7 @@ def relay_run(tmp_path_factory: pytest.TempPathFactory) -> RelayRun:
     )
     try:
         _wait_until_healthy(port, process)
-        responses = _exchange(port, mailbox)
+        responses = _exchange(port, mailbox, backup)
         live = sqlite_files(db_path)
     finally:
         process.terminate()
@@ -382,6 +399,7 @@ def relay_run(tmp_path_factory: pytest.TempPathFactory) -> RelayRun:
     }
     return RelayRun(
         mailbox=mailbox,
+        backup=backup,
         data_dir=db_path.parent,
         responses=responses,
         files={**live, **after},
@@ -392,11 +410,20 @@ def relay_run(tmp_path_factory: pytest.TempPathFactory) -> RelayRun:
 
 def test_relay_sh_serves_the_mailbox(relay_run: RelayRun) -> None:
     """The relay.sh run really stored and returned the blob, with no Server header."""
-    (put_status, _, _), (get_status, _, page), _ = relay_run.responses
+    (put_status, _, _), (get_status, _, page), *_ = relay_run.responses
 
     assert (put_status, get_status) == (201, 200)
     assert len(json.loads(page)["records"]) == 1
     assert all("server" not in headers for _, headers, _ in relay_run.responses)
+
+
+def test_relay_sh_serves_the_backup(relay_run: RelayRun) -> None:
+    """The relay.sh run stored the backup and gave its bytes back (#97)."""
+    *_, (put_status, _, _), (get_status, headers, data) = relay_run.responses
+
+    assert (put_status, get_status) == (204, 200)
+    assert headers["content-type"] == "application/octet-stream"
+    assert data == blob(65536)
 
 
 def test_relay_sh_route_sees_no_client(relay_run: RelayRun) -> None:
@@ -404,7 +431,7 @@ def test_relay_sh_route_sees_no_client(relay_run: RelayRun) -> None:
 
     Removing the privacy middleware fails this.
     """
-    _, _, (_, _, probed) = relay_run.responses
+    _, _, (_, _, probed), *_ = relay_run.responses
     (route_view,) = [v for v in relay_run.views if v["view"] == ROUTE_VIEW]
 
     assert json.loads(probed) == {"client": None}
@@ -413,14 +440,15 @@ def test_relay_sh_route_sees_no_client(relay_run: RelayRun) -> None:
 
 
 def test_relay_sh_output_has_no_address_and_no_request(relay_run: RelayRun) -> None:
-    """stdout and stderr carry no canary, no mailbox id and no request line.
+    """stdout and stderr carry no canary, no mailbox or backup id, no request line.
 
     The server view prints the client address Uvicorn resolved, so removing
     ``--no-proxy-headers`` fails this with the canary; removing
-    ``--no-access-log`` fails it with the mailbox id and path.
+    ``--no-access-log`` fails it with the ids and paths.
     """
     assert any(view["view"] == SERVER_VIEW for view in relay_run.views)
-    assert not _leaks(relay_run.output, [CANARY, relay_run.mailbox, "/v1/mailbox"])
+    needles = [CANARY, relay_run.mailbox, relay_run.backup, "/v1/mailbox", "/v1/backup"]
+    assert not _leaks(relay_run.output, needles)
 
 
 def test_relay_sh_files_hold_no_address(relay_run: RelayRun) -> None:
