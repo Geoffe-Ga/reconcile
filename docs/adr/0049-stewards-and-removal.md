@@ -1,6 +1,6 @@
 # ADR-0049: Two Staggered Stewards; Removal at the Entrenched Bar Without the Target Voting
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0075](0075-safeguards-for-the-revised-mvp.md) §3 (the removal bar, a fixed 14-day removal vote, and one count of voting members)
 - **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it; [ADR-0074](0074-mvp-scope-revised.md) restores part of it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-governance-edges`, decisions `stewards`, `removal`

@@ -19,7 +19,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0013](0013-covenant-on-reach.md) | A founding covenant limits reach (discovery, coalitions, broadcast), not existence. The license question is settled by 0024 | Accepted; amended by 0024, 0035 |
 | [0014](0014-invite-and-vouch-admission.md) | Admission by invitation, vouches, and a 14-day wait; groups set their own rules | Accepted |
 | [0015](0015-anti-capture.md) | Eligibility snapshots, entrenched and eternal Atoms, and parting ways only by petition in extreme cases | Accepted; amended by 0068 |
-| [0016](0016-suspend-then-vote.md) | Stewards can suspend for 7 days, longer while a removal vote is open (0059); only a vote removes | Accepted; amended by 0059 |
+| [0016](0016-suspend-then-vote.md) | Stewards can suspend for 7 days, longer while a removal vote is open (0059, at most 21 days); one suspension per steward, and a suspended member stays eligible; only a vote removes | Accepted; amended by 0059, 0075 |
 | [0017](0017-need-to-see-and-expiry.md) | Pseudonyms by default, no roster for followers (Members), ballots and their notes expire 30 days after the tally; checkpoints keep the totals | Accepted; amended 2026-11-07, and by 0065 |
 | [0018](0018-device-protection-and-duress.md) | App lock, panic wipe, and an opt-in duress login that hides chosen groups | Accepted |
 | [0019](0019-sealed-sender-relay.md) | The relay uses sealed sender, padding, and batching, and keeps no logs | Accepted |
@@ -52,7 +52,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0046](0046-padded-vault-and-panic-wipe.md) | A fixed-size padded vault from Phase 1, duress after external review; panic wipe by hold or opt-in wrong codes | Accepted |
 | [0047](0047-ballot-cap-quorum-reproposals.md) | Three versions per ballot; missed quorum lapses; a 14-day cooldown and a 3-in-180-days cap on re-proposing failed content (lapses don't count, 0069) | Accepted; amended by 0069 |
 | [0048](0048-feed-surfacing.md) | Proposals drawing early enthusiasm rise in the Rising tab; the default Quiet tab puts the least heard first (0064); nothing is hidden | Accepted; amended by 0064 |
-| [0049](0049-stewards-and-removal.md) | Two staggered 6-month stewards; removal at the entrenched bar without the target voting | Accepted; amended by 0066, 0067, 0072 |
+| [0049](0049-stewards-and-removal.md) | Two staggered 6-month stewards; removal by a fixed 14-day vote at average ≥ 3.0 with at most one 0 or under 5% zeros, without the target voting | Accepted; amended by 0066, 0067, 0072, 0075 |
 | [0050](0050-splitting.md) | Parting ways (named "split" here), not "fork": 20% of voters within 14 days of a trigger, signatures sealed | Accepted; amended by 0068 |
 | [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted; amended by 0072, and 2026-11-09 |
 | [0052](0052-newcomer-onboarding.md) | Preview first; join provisionally with the inviter as first recovery contact; recovery complete before voting | Accepted |
@@ -62,7 +62,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0056](0056-pilot-plan.md) | The pilot: two contrasting groups for 6 weeks, learned through interviews (relationships included) and Signal, with a plain notice | Accepted; amended by 0069 |
 | [0057](0057-environments-updates-retention.md) | Staging and production; protocol rules change only by version; blobs 30 days, backups 180 days | Accepted; amended by 0072 |
 | [0058](0058-security-review-on-demand.md) | A paid security review when an activist group calls for it, booked at the first serious conversation | Accepted |
-| [0059](0059-suspension-during-removal.md) | A suspension lasts until an open removal vote against the member ends | Accepted |
+| [0059](0059-suspension-during-removal.md) | A suspension lasts until an open removal vote against the member ends (at most 21 days, since removal votes run 14) | Accepted; amended by 0075 |
 | [0060](0060-how-phase-1-is-built.md) | Agents build in waves; green merges (no separate human sign-off); main protected; label scheme | Accepted; amended by 0075 |
 | [0061](0061-quality-gates.md) | Merge gates: TDD, check-all, pre-commit and CI on changes, review bot; mutation testing before a release | Accepted |
 | [0062](0062-entity-and-sponsor-timing.md) | Stay on the 501(c)(3) path (a nonprofit-owned operating company once there's revenue); choose the sponsor after the pilot | Accepted |

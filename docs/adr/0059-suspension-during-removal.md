@@ -1,6 +1,6 @@
 # ADR-0059: A Suspension Lasts Until an Open Removal Vote Ends
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0075](0075-safeguards-for-the-revised-mvp.md) §3 (removal votes run a fixed 14 days, so an extended suspension lasts at most 21 days)
 - **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it.
 - **Date:** 2026-11-08
 - **Decided via:** `/decide` sheet `2026-11-08-reconcile-dev-process`, decision `suspension-window`; resolves issue #32 (found by the review of PR #30)

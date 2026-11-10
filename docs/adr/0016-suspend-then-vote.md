@@ -1,6 +1,6 @@
 # ADR-0016: Stewards Suspend; Only a Vote Removes
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0075](0075-safeguards-for-the-revised-mvp.md) §3 (a suspension never shrinks the electorate, and each steward holds one at a time)
 - **MVP:** partly deferred by [ADR-0073](0073-mvp-scope.md) until pilot feedback asks for it; [ADR-0074](0074-mvp-scope-revised.md) restores part of it.
 - **Date:** 2026-11-07
 - **Decided via:** `/decide` sheet `2026-11-07-reconcile-trust-safety`, decision `removal`
