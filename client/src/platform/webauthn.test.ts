@@ -4,6 +4,12 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { openDeviceLock, passkeyOn } from '../app/passkey';
+import { openStore } from '../store/db';
+import { concat, local, utf8 } from '../test/bytes';
+import { fakeAuthenticator } from '../test/fakeAuthenticator';
+import { freshIndexedDBPerTest } from '../test/idb';
+import { scanDb } from '../test/scanDb';
 import {
   browserCredentials,
   type CredentialCalls,
@@ -51,6 +57,8 @@ function fakeCalls(
   );
   return { create, get };
 }
+
+freshIndexedDBPerTest();
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -199,6 +207,28 @@ describe('evaluatePrf: tap 2, and each unlock', () => {
     ).toBeNull();
   });
 
+  it('reads an answer whose bytes come as views into larger buffers', async () => {
+    const prf = new Uint8Array(40).fill(6);
+    const data = new Uint8Array(40);
+    data[3 + 32] = 0x05;
+    const id = Uint8Array.of(0, ...CREDENTIAL_ID, 0);
+    const answer = {
+      rawId: id.subarray(1, 1 + CREDENTIAL_ID.length),
+      response: { authenticatorData: data.subarray(3) },
+      getClientExtensionResults: () => ({ prf: { results: { first: prf.subarray(4, 36) } } }),
+    };
+
+    const output = await webAuthn(fakeCalls({ get: () => Promise.resolve(answer) })).evaluatePrf(
+      RP_ID,
+      CREDENTIAL_ID,
+      SALT,
+    );
+
+    expect(Array.from(output ?? [])).toEqual(new Array<number>(32).fill(6));
+    expect(Array.from(prf.subarray(4, 36))).toEqual(new Array<number>(32).fill(0));
+    expect(Array.from(prf.subarray(0, 4))).toEqual([6, 6, 6, 6]);
+  });
+
   it.each([
     ['the person cancels', () => Promise.reject(new DOMException('No', 'NotAllowedError'))],
     ['the browser returns nothing', () => Promise.resolve(null)],
@@ -237,5 +267,87 @@ describe('browserCredentials', () => {
     });
 
     expect(browserCredentials()).toBeUndefined();
+  });
+});
+
+describe('through passkey setup and unlock, on a real store (#95)', () => {
+  const ANDROID = {
+    userAgent: 'Mozilla/5.0 (Linux; Android 14) Chrome/138.0.0.0 Mobile Safari/537.36',
+    maxTouchPoints: 5,
+  };
+  const CANARY = { group: 'Canary Grove Collective', name: 'Canarysol Member' };
+
+  /** A device holding a canary-named group, with `authenticator` as its browser's. */
+  async function canaryDevice(authenticator = fakeAuthenticator()) {
+    const store = await openStore();
+    await store.addGroup({
+      groupId: CANARY.group,
+      secret: new Uint8Array(32).fill(1),
+      signingKey: new Uint8Array(32).fill(2),
+      me: { author: 'author-sol', name: CANARY.name },
+    });
+    const deps = { store, webauthn: webAuthn(authenticator.calls), platform: ANDROID, rpId: RP_ID };
+    return { store, deps, authenticator, passkey: passkeyOn(deps) };
+  }
+
+  /** Every key and value the database holds, as one run of bytes. */
+  async function stored(): Promise<Uint8Array> {
+    const { text: words, bytes } = await scanDb('reconcile');
+    return concat(utf8(words), ...bytes);
+  }
+
+  it('sends create() no group name or display name from the device', async () => {
+    const { passkey, authenticator } = await canaryDevice();
+
+    await passkey.protect(await passkey.create());
+
+    const sent = JSON.stringify(
+      [...authenticator.created, ...authenticator.asked],
+      (_key, value: unknown) =>
+        value instanceof Uint8Array || value instanceof ArrayBuffer
+          ? Array.from(new Uint8Array(value as ArrayBuffer))
+          : value,
+    );
+    expect(sent).not.toContain('Canary');
+    expect(sent).toContain('Reconcile key');
+  });
+
+  it('ignores PRF bytes from create(): a get() without PRF output seals nothing', async () => {
+    const { passkey, store } = await canaryDevice(
+      fakeAuthenticator({ prfOnCreate: true, prfBytes: null }),
+    );
+
+    expect(await passkey.protect(await passkey.create())).toBe('no-prf');
+    expect(await store.readVault()).toBeNull();
+  });
+
+  it.each([
+    ['31 bytes', { prfBytes: 31 }],
+    ['33 bytes', { prfBytes: 33 }],
+    ['an unset UV flag', { verified: false }],
+  ])('seals nothing when tap 2 gives %s', async (_name, settings) => {
+    const { passkey, store } = await canaryDevice(fakeAuthenticator(settings));
+    const before = await stored();
+
+    expect(await passkey.protect(await passkey.create())).toBe('no-prf');
+
+    expect(await store.readVault()).toBeNull();
+    expect(local(await stored())).toEqual(local(before));
+  });
+
+  it('changes no stored byte when a later unlock gets no PRF output', async () => {
+    const device = await canaryDevice();
+    expect(await device.passkey.protect(await device.passkey.create())).toBe('protected');
+    device.store.close();
+    const store = await openStore();
+    device.authenticator.settings.prfBytes = null;
+    const open = vi.fn(() => Promise.resolve());
+    const lock = await openDeviceLock({ ...device.deps, store, open });
+    const before = await stored();
+
+    expect(await lock.unlock()).toBe(false);
+
+    expect(local(await stored())).toEqual(local(before));
+    expect(open).not.toHaveBeenCalled();
   });
 });

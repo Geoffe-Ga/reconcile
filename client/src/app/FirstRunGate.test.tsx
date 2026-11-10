@@ -71,6 +71,8 @@ interface Options {
   readonly passkeyAvailable?: boolean;
   /** Whether this device answered the passkey offer. */
   readonly offerAnswered?: boolean;
+  /** What Restore on the unlock screen does. */
+  readonly restore?: DeviceLock['restore'];
 }
 
 /** An offer record in memory, recording each answer in `events`. */
@@ -100,7 +102,7 @@ function setup(options: Options = {}) {
   const lock: DeviceLock = {
     lockedAtLaunch: options.locked ?? false,
     unlock,
-    restore: vi.fn(() => Promise.resolve(2)),
+    restore: options.restore ?? vi.fn(() => Promise.resolve(2)),
   };
   const passkey: Passkey = {
     available: options.passkeyAvailable ?? false,
@@ -356,6 +358,24 @@ describe('FirstRunGate on a device whose keys are locked (#95)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(messages.unlock.failed);
     expect(unlockHeading()).toBeVisible();
     expect(app).not.toHaveBeenCalled();
+  });
+
+  it('opens the app once a backup file is restored in place of the locked keys', async () => {
+    const restore = vi.fn(() => Promise.resolve(2));
+    const { user, app } = setup({ accepted: true, locked: true, unlocks: false, restore });
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    const section = await screen.findByRole('region', { name: messages.unlock.restoreHeading });
+    const file = new File([Uint8Array.of(1, 2, 3)], 'reconcile-backup.bin');
+    const chooser = section.querySelector('input[type="file"]');
+    if (!(chooser instanceof HTMLInputElement)) throw new Error('Expected a file input.');
+
+    await user.upload(chooser, file);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(restore).toHaveBeenCalledWith(Uint8Array.of(1, 2, 3), 'a long walk to the river');
+    expect(app).toHaveBeenCalled();
   });
 
   it('shows the notice first when the device hasn’t accepted it, then the unlock screen', async () => {
