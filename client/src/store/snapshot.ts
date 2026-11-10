@@ -113,6 +113,21 @@ export async function exportGroups(
 }
 
 /**
+ * The groups in `file`, opened under `passphrase` and every one checked.
+ *
+ * @throws {BackupUnreadable} for a wrong passphrase, a damaged or oversized
+ *   file, or contents that don't check out.
+ */
+async function readBackup(file: Uint8Array, passphrase: string): Promise<BackedUpGroup[]> {
+  if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
+  const plaintext = await openBackup(file, passphrase);
+  const groups = decodeSnapshot(plaintext);
+  plaintext.fill(0);
+  if (groups === null) throw new BackupUnreadable();
+  return groups;
+}
+
+/**
  * Opens `file` under `passphrase`, checks every group in it, and keeps them
  * all in one transaction. Returns how many groups the file held.
  *
@@ -124,12 +139,27 @@ export async function importGroups(
   file: Uint8Array,
   passphrase: string,
 ): Promise<number> {
-  if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
-  const plaintext = await openBackup(file, passphrase);
-  const groups = decodeSnapshot(plaintext);
-  plaintext.fill(0);
-  if (groups === null) throw new BackupUnreadable();
+  const groups = await readBackup(file, passphrase);
   await store.restoreGroups(groups);
+  return groups.length;
+}
+
+/**
+ * Opens and checks `file` as {@link importGroups} does, then puts its groups
+ * in place of everything on the device, the vault included, in one
+ * transaction (#95): Restore on the unlock screen, once the passkey no longer
+ * opens the vault and so nothing in it can be read. Returns how many groups
+ * the file held.
+ *
+ * @throws {BackupUnreadable} as {@link importGroups} does; nothing is written then.
+ */
+export async function replaceWithBackup(
+  store: Pick<Store, 'replaceGroups'>,
+  file: Uint8Array,
+  passphrase: string,
+): Promise<number> {
+  const groups = await readBackup(file, passphrase);
+  await store.replaceGroups(groups);
   return groups.length;
 }
 

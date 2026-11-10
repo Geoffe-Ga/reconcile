@@ -16,15 +16,35 @@
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
  * left open.
+ *
+ * Once the device locks its keys with a passkey (#95), every secret leaves
+ * the group records for one sealed vault record (`./vault.ts`), and the
+ * records keep the rest. A store opened on such a device reads nothing until
+ * {@link Store.unlock} gets the vault key from the passkey; it keeps that key
+ * in memory for the session, opens the vault inside each read's transaction
+ * and hands back whole groups, so nothing else in the app changes. Every
+ * write of key material (Create group and Join, a backup's import, a group
+ * leaving) goes through one function, `keepKeys`, which seals the keys into
+ * the vault when there is one and refuses while it's locked, in the same
+ * transaction as the records it writes.
  */
 
 import { openDB } from 'idb';
-import type { DBSchema, IDBPDatabase } from 'idb';
+import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import type { LogRecord } from '../engine/fold';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
+import {
+  type GroupKeys,
+  newVault,
+  openKeys,
+  resealKeys,
+  VAULT_ID,
+  type VaultLock,
+  type VaultRecord,
+} from './vault';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -100,6 +120,21 @@ export interface Group {
 
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
 export type BackupMark = 'saved' | 'not-now';
+
+/**
+ * A group as its IndexedDB record holds it: everything but its secret and
+ * signing key once the device has a vault (#95), which holds those instead.
+ */
+type StoredGroup = Omit<Group, keyof GroupKeys> & Partial<GroupKeys>;
+
+/** Thrown when key material is read or written while the vault is locked (#95). */
+export class VaultLocked extends Error {
+  /** Say the keys are locked. */
+  constructor() {
+    super('This device’s keys are locked with a passkey.');
+    this.name = 'VaultLocked';
+  }
+}
 
 /**
  * A group as a backup file carries it (#78): its keys, secret, your name, its
@@ -228,6 +263,42 @@ export interface Store extends DraftStore {
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
+  /**
+   * The passkey that opens this device's vault and the salt it's asked with,
+   * or null when its keys aren't locked with a passkey (#95).
+   */
+  readVault(): Promise<VaultLock | null>;
+  /**
+   * Seal every secret on the device under the vault `key`, for the passkey
+   * `lock`, and delete the plain copies, in one transaction (#95). From then
+   * on this session holds the key, and every later secret goes into the vault.
+   *
+   * @throws {Error} when the device already has a vault; nothing changes.
+   */
+  sealKeys(lock: VaultLock, key: Uint8Array): Promise<void>;
+  /**
+   * Open the vault under `key` for this session, keeping a copy of it, and
+   * return true; false, keeping nothing, when the device has no vault or the
+   * key doesn't open it. It never writes.
+   */
+  unlock(key: Uint8Array): Promise<boolean>;
+  /**
+   * Resolve when this session may read and hand on key material: the device
+   * has no vault, or this session sealed or unlocked it (#95). Anything that
+   * hands keys anywhere calls it first: Save a backup today, and #96's Link
+   * a new device. Erase never does, so a device whose passkey is lost can
+   * still start over.
+   *
+   * @throws {VaultLocked} when the device has a vault this session hasn't opened.
+   */
+  requireUnlocked(): Promise<void>;
+  /**
+   * Replace everything on the device, every group and the vault, with a
+   * backup file's groups, in one transaction: Restore when the passkey no
+   * longer unlocks the vault (#95). Each is kept as a restore keeps a new
+   * group, its keys in its record, since no vault is left to seal them in.
+   */
+  replaceGroups(groups: readonly BackedUpGroup[]): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
   subscribe(listener: (groupId: string) => void): () => void;
   /** Close the database. */
@@ -235,17 +306,26 @@ export interface Store extends DraftStore {
 }
 
 interface Schema extends DBSchema {
-  groups: { key: string; value: Group };
+  groups: { key: string; value: StoredGroup };
+  vault: { key: string; value: VaultRecord };
 }
 
 /**
- * The schema version. Version 3 holds a real group secret, from which the
+ * The schema version. Version 4 adds the key vault (#95) and keeps version
+ * 3's groups as they are. Version 3 holds a real group secret, from which the
  * mailbox id and seal key derive (#71); version 2 held signed records (#69)
- * and version 1 the stub era's unsigned data. Older data, whose relay blobs
- * anyone could read, is deleted on upgrade, with no migration.
+ * and version 1 the stub era's unsigned data. Data older than version 3,
+ * whose relay blobs anyone could read, is deleted on upgrade, with no migration.
  */
-const VERSION = 3;
+const VERSION = 4;
 const GROUPS = 'groups';
+const VAULT = 'vault';
+
+/** Both object stores: the records and the vault. */
+type Stores = ('groups' | 'vault')[];
+
+/** A read-write transaction over both stores, the only kind that touches key material. */
+type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
 
 /** The IndexedDB database the app keeps its groups in. */
 export const DATABASE_NAME = 'reconcile';
@@ -257,11 +337,12 @@ export const DATABASE_NAME = 'reconcile';
  */
 export async function openStore(name = DATABASE_NAME): Promise<Store> {
   const db = await openDB<Schema>(name, VERSION, {
-    upgrade(database) {
-      if (database.objectStoreNames.contains(GROUPS)) {
-        database.deleteObjectStore(GROUPS);
+    upgrade(database, oldVersion) {
+      if (oldVersion < 3) {
+        if (database.objectStoreNames.contains(GROUPS)) database.deleteObjectStore(GROUPS);
+        database.createObjectStore(GROUPS, { keyPath: 'groupId' });
       }
-      database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+      if (oldVersion < 4) database.createObjectStore(VAULT, { keyPath: 'id' });
     },
     blocking() {
       db.close();
@@ -275,6 +356,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
   };
   const change = changer(db, notify);
   const changeQuietly = changer(db, () => undefined);
+  // The vault key, once this session has sealed or unlocked the vault (#95).
+  const session: Session = { key: null };
   const enqueueAll: Store['enqueueAll'] = async (groupId, records, draft) => {
     for (const { length } of records) {
       if (length > MAX_RECORD_BYTES) throw new RecordTooLarge(length);
@@ -287,8 +370,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
   };
 
   return {
-    listGroups: () => db.getAll(GROUPS),
-    getGroup: (groupId) => db.get(GROUPS, groupId),
+    listGroups: () => readWhole(db, session, null),
+    getGroup: async (groupId) => {
+      const [group] = await readWhole(db, session, groupId);
+      return group;
+    },
     async addGroup(group) {
       const stored: Group = {
         ...group,
@@ -299,7 +385,12 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         outbox: [],
         lastSyncAt: null,
       };
-      await db.add(GROUPS, stored);
+      await writeKeys(db, async (tx) => {
+        if ((await tx.objectStore(GROUPS).getKey(group.groupId)) !== undefined) {
+          throw new Error('This device already holds that group.');
+        }
+        await keepKeys(tx, session, { put: [stored] });
+      });
       notify(group.groupId);
       return stored;
     },
@@ -343,10 +434,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       return held;
     },
     async purgeGroup(groupId) {
-      const tx = db.transaction(GROUPS, 'readwrite');
-      const found = (await tx.store.getKey(groupId)) !== undefined;
-      if (found) await tx.store.delete(groupId);
-      await tx.done;
+      const found = await writeKeys(db, async (tx) => {
+        if ((await tx.objectStore(GROUPS).getKey(groupId)) === undefined) return false;
+        await keepKeys(tx, session, { drop: [groupId] });
+        return true;
+      });
       if (found) notify(groupId);
     },
     markSent: (groupId, bytes) =>
@@ -374,12 +466,16 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.missingHistory = false;
       }),
     async restoreGroups(groups) {
-      const tx = db.transaction(GROUPS, 'readwrite');
-      for (const restored of groups) {
-        const held = await tx.store.get(restored.groupId);
-        await tx.store.put(keptCopy(held, restored));
-      }
-      await tx.done;
+      await writeKeys(db, async (tx) => {
+        const opened = await vaultKeys(tx, session);
+        const kept: Group[] = [];
+        for (const restored of groups) {
+          const held = await tx.objectStore(GROUPS).get(restored.groupId);
+          const whole = held === undefined ? undefined : wholeGroup(held, opened);
+          kept.push(keptCopy(whole, restored));
+        }
+        await keepKeys(tx, session, { put: kept });
+      });
       for (const { groupId } of groups) notify(groupId);
     },
     async markBackup(groupIds, mark) {
@@ -400,6 +496,52 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.cursor = 0;
         group.instance = instance;
       }),
+    async readVault() {
+      const vault = await db.get(VAULT, VAULT_ID);
+      return vault === undefined
+        ? null
+        : { credentialId: vault.credentialId, prfSalt: vault.prfSalt };
+    },
+    async sealKeys(lock, key) {
+      const sealing: Session = { key: Uint8Array.from(key) };
+      try {
+        await writeKeys(db, async (tx) => {
+          const vaults = tx.objectStore(VAULT);
+          if ((await vaults.getKey(VAULT_ID)) !== undefined) {
+            throw new Error('This device’s keys are already locked with a passkey.');
+          }
+          await vaults.put(newVault(lock, key));
+          const records = await tx.objectStore(GROUPS).getAll();
+          await keepKeys(tx, sealing, { put: records.map((record) => wholeGroup(record, null)) });
+        });
+      } catch (error) {
+        sealing.key?.fill(0);
+        throw error;
+      }
+      session.key = sealing.key;
+    },
+    async unlock(key) {
+      const vault = await db.get(VAULT, VAULT_ID);
+      if (vault === undefined || openKeys(vault, key) === null) return false;
+      session.key = Uint8Array.from(key);
+      return true;
+    },
+    async requireUnlocked() {
+      const tx = db.transaction([GROUPS, VAULT]);
+      await vaultKeys(tx, session);
+      await tx.done;
+    },
+    async replaceGroups(groups) {
+      await writeKeys(db, async (tx) => {
+        await tx.objectStore(GROUPS).clear();
+        await tx.objectStore(VAULT).clear();
+        const kept = groups.map((group) => keptCopy(undefined, group));
+        await keepKeys(tx, session, { put: kept });
+      });
+      session.key?.fill(0);
+      session.key = null;
+      for (const { groupId } of groups) notify(groupId);
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -428,14 +570,134 @@ function syncedSince(held: Group, restored: BackedUpGroup): boolean {
   return (held.lastSyncAt ?? -Infinity) >= (restored.lastSyncAt ?? -Infinity);
 }
 
+/** This session's hold on the vault key: null until it seals or unlocks the vault. */
+interface Session {
+  key: Uint8Array | null;
+}
+
+/** The opened vault: its record, the keys it holds, and the key that opened it. */
+interface OpenedVault {
+  readonly vault: VaultRecord;
+  readonly keys: Map<string, GroupKeys>;
+  readonly key: Uint8Array;
+}
+
 /**
- * A function that edits one group in one read-write transaction, then
- * notifies. An edit that throws, like a missing group, changes nothing.
+ * The vault opened inside `tx`, or null when the device has none.
+ *
+ * @throws {VaultLocked} when it has one this session can't open.
+ */
+async function vaultKeys<Mode extends IDBTransactionMode>(
+  tx: IDBPTransaction<Schema, Stores, Mode>,
+  session: Session,
+): Promise<OpenedVault | null> {
+  const vault = await tx.objectStore(VAULT).get(VAULT_ID);
+  if (vault === undefined) return null;
+  const { key } = session;
+  const keys = key === null ? null : openKeys(vault, key);
+  if (key === null || keys === null) throw new VaultLocked();
+  return { vault, keys, key };
+}
+
+/** `record` with its keys: its own without a vault, or the vault's. */
+function wholeGroup(record: StoredGroup, opened: OpenedVault | null): Group {
+  const keys = opened === null ? record : opened.keys.get(record.groupId);
+  if (keys?.secret === undefined || keys.signingKey === undefined) {
+    throw new Error('A group’s keys are missing from this device.');
+  }
+  return { ...record, secret: keys.secret, signingKey: keys.signingKey };
+}
+
+/**
+ * The group `groupId`, or every group when it's null, each with its keys,
+ * read with the vault in one transaction.
+ *
+ * @throws {VaultLocked} when the device has a vault this session hasn't opened.
+ */
+async function readWhole(
+  db: IDBPDatabase<Schema>,
+  session: Session,
+  groupId: string | null,
+): Promise<Group[]> {
+  const tx = db.transaction([GROUPS, VAULT]);
+  const records = tx.objectStore(GROUPS);
+  const read = groupId === null ? await records.getAll() : [await records.get(groupId)];
+  const opened = await vaultKeys(tx, session);
+  await tx.done;
+  return read.flatMap((record) => (record === undefined ? [] : [wholeGroup(record, opened)]));
+}
+
+/** What one write of key material does: the groups to put, whole, and the ones to delete. */
+interface KeyChange {
+  readonly put?: readonly Group[];
+  readonly drop?: readonly string[];
+}
+
+/**
+ * The one write path for key material (#95). Inside `tx`, deletes each group
+ * in `drop` and puts each in `put`. Without a vault, each record holds its
+ * own keys, as before the vault. With one, every key goes into the vault,
+ * resealed under the session's key in the same transaction, and each record
+ * goes without them, so no secret is ever written outside it.
+ *
+ * @throws {VaultLocked} when the device has a vault this session hasn't opened.
+ */
+async function keepKeys(tx: KeyTransaction, session: Session, change: KeyChange): Promise<void> {
+  const records = tx.objectStore(GROUPS);
+  const opened = await vaultKeys(tx, session);
+  for (const groupId of change.drop ?? []) {
+    await records.delete(groupId);
+    opened?.keys.delete(groupId);
+  }
+  for (const group of change.put ?? []) {
+    const { secret, signingKey, ...rest } = group;
+    opened?.keys.set(group.groupId, { secret, signingKey });
+    await records.put(opened === null ? group : rest);
+  }
+  if (opened !== null) {
+    await tx.objectStore(VAULT).put(resealKeys(opened.vault, opened.key, opened.keys));
+  }
+}
+
+/**
+ * Runs `work` in one read-write transaction over the records and the vault,
+ * the only kind that writes key material. If it throws, the transaction
+ * aborts and nothing it wrote stays.
+ */
+async function writeKeys<T>(
+  db: IDBPDatabase<Schema>,
+  work: (tx: KeyTransaction) => Promise<T>,
+): Promise<T> {
+  const tx = db.transaction([GROUPS, VAULT], 'readwrite');
+  try {
+    const result = await work(tx);
+    await tx.done;
+    return result;
+  } catch (error) {
+    abortQuietly(tx);
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Aborts `tx`, unless a failed request has already aborted it. */
+function abortQuietly(tx: KeyTransaction): void {
+  try {
+    tx.abort();
+  } catch {
+    // The transaction is already over: a failed request aborts it on its own.
+  }
+}
+
+/**
+ * A function that edits one group's record in one read-write transaction,
+ * then notifies. An edit that throws, like a missing group, changes nothing.
+ * No edit touches key material, which only `keepKeys` writes.
  */
 function changer(
   db: IDBPDatabase<Schema>,
   notify: (groupId: string) => void,
-): (groupId: string, edit: (group: Group) => void) => Promise<void> {
+): (groupId: string, edit: (group: StoredGroup) => void) => Promise<void> {
   return async (groupId, edit) => {
     const tx = db.transaction(GROUPS, 'readwrite');
     const group = await tx.store.get(groupId);

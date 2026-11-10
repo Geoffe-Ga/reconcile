@@ -21,6 +21,7 @@ import {
   exportGroups,
   importGroups,
   MAX_BACKUP_BYTES,
+  replaceWithBackup,
   SNAPSHOT_FORMAT,
 } from './snapshot';
 
@@ -214,6 +215,46 @@ describe('exportGroups and importGroups', () => {
 
     expect(groupIds).toEqual([]);
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toBe(0);
+  });
+});
+
+describe('replaceWithBackup: Restore when the passkey no longer unlocks the vault (#95)', () => {
+  it('puts the file’s groups in place of everything the device held, its vault included', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const locked = await otherDevice('locked');
+    const prfSalt = new Uint8Array(32).fill(4);
+    await locked.sealKeys({ credentialId: Uint8Array.of(1), prfSalt }, new Uint8Array(32).fill(5));
+    locked.close();
+    const reopened = await openStore('locked');
+
+    expect(await replaceWithBackup(reopened, file, PASSPHRASE)).toBe(1);
+
+    expect(await reopened.readVault()).toBeNull();
+    const groups = await reopened.listGroups();
+    expect(groups.map((held) => held.groupId)).toEqual([group.groupId]);
+    expect(local(groups[0]?.signingKey ?? new Uint8Array())).toEqual(local(group.secretKey));
+    expect(await folded(reopened, group.groupId)).toEqual(await folded(device, group.groupId));
+  });
+
+  it('writes nothing under a wrong passphrase, so the locked vault stays', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const locked = await otherDevice('locked');
+    const lock = { credentialId: Uint8Array.of(1), prfSalt: new Uint8Array(32).fill(4) };
+    await locked.sealKeys(lock, new Uint8Array(32).fill(5));
+
+    await expect(replaceWithBackup(locked, file, 'not the passphrase')).rejects.toThrow(
+      BackupUnreadable,
+    );
+    await expect(
+      replaceWithBackup(locked, new Uint8Array(MAX_BACKUP_BYTES + 1), PASSPHRASE),
+    ).rejects.toThrow(BackupUnreadable);
+
+    expect(await locked.readVault()).not.toBeNull();
+    expect((await locked.listGroups()).map((held) => held.groupId)).toEqual(['unrelated-group']);
   });
 });
 

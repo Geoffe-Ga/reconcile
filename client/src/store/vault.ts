@@ -1,0 +1,139 @@
+/**
+ * The key vault (#95): every secret on the device in one record, sealed under
+ * the key a passkey's PRF output derives (`crypto/keyVault.ts`).
+ *
+ * In the clear the record names only which passkey opens it (its credential
+ * id) and the salt that passkey is asked with. Sealed inside is UTF-8 JSON,
+ * with bytes in unpadded base64url:
+ *
+ * ```json
+ * {"format": 1, "groups": [{"groupId": "…", "secret": "…", "signingKey": "…"}]}
+ * ```
+ *
+ * Today that is each group's secret and signing key, the only secrets on
+ * main. Later secrets (#97's relay backup key, #105's share seeds and keys,
+ * the recovery shares this device holds for others, #109) join them here
+ * under a new format number, so the vault keeps covering every secret.
+ * Each plaintext is zeroed once sealed or read.
+ */
+import { base64url, fromBase64url } from '../crypto/base64url';
+import { openVault, sealVault } from '../crypto/keyVault';
+
+/** The plaintext's format number, which a later layout would change. */
+export const VAULT_FORMAT = 1;
+
+/** The vault record's key in its object store: the device has at most one. */
+export const VAULT_ID = 'vault';
+
+/** A group's secrets: its 32-byte group secret and this membership's signing key. */
+export interface GroupKeys {
+  readonly secret: Uint8Array;
+  readonly signingKey: Uint8Array;
+}
+
+/** What the vault says in the clear: the passkey that opens it, and the salt it's asked with. */
+export interface VaultLock {
+  readonly credentialId: Uint8Array;
+  readonly prfSalt: Uint8Array;
+}
+
+/** The vault as IndexedDB keeps it. */
+export interface VaultRecord extends VaultLock {
+  readonly id: typeof VAULT_ID;
+  /** nonce ‖ ciphertext ‖ tag, as `sealVault` makes it. */
+  readonly sealed: Uint8Array;
+}
+
+/** A group's secret and signing key are 32 bytes each. */
+const KEY_BYTES = 32;
+
+/** `keys` as the vault's plaintext. */
+export function encodeVaultKeys(keys: ReadonlyMap<string, GroupKeys>): Uint8Array<ArrayBuffer> {
+  const groups = [...keys].map(([groupId, { secret, signingKey }]) => ({
+    groupId,
+    secret: base64url(secret),
+    signingKey: base64url(signingKey),
+  }));
+  return Uint8Array.from(
+    new TextEncoder().encode(JSON.stringify({ format: VAULT_FORMAT, groups })),
+  );
+}
+
+/** Whether `value` is a plain JSON object. */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The 32 bytes `value` spells in canonical unpadded base64url, or null. */
+function keyIn(value: unknown): Uint8Array<ArrayBuffer> | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const bytes = fromBase64url(value);
+    return bytes.length === KEY_BYTES && base64url(bytes) === value ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One group's entry in `value`, or null when any part of it doesn't check out. */
+function entryIn(value: unknown): readonly [string, GroupKeys] | null {
+  if (!isObject(value) || typeof value.groupId !== 'string') return null;
+  const secret = keyIn(value.secret);
+  const signingKey = keyIn(value.signingKey);
+  return secret === null || signingKey === null ? null : [value.groupId, { secret, signingKey }];
+}
+
+/** The JSON value `bytes` spell in UTF-8, or undefined when they don't. */
+function parseJson(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The keys in a vault's plaintext, or null when anything in it doesn't check out. */
+export function decodeVaultKeys(bytes: Uint8Array): Map<string, GroupKeys> | null {
+  const json = parseJson(bytes);
+  if (!isObject(json) || json.format !== VAULT_FORMAT || !Array.isArray(json.groups)) return null;
+  const entries = json.groups.map(entryIn);
+  if (entries.some((entry) => entry === null)) return null;
+  const keys = new Map(entries.filter((entry) => entry !== null));
+  return keys.size === entries.length ? keys : null;
+}
+
+/** `vault` with `keys` sealed in it under `key`, under a fresh nonce. */
+export function resealKeys(
+  vault: VaultRecord,
+  key: Uint8Array,
+  keys: ReadonlyMap<string, GroupKeys>,
+): VaultRecord {
+  const plaintext = encodeVaultKeys(keys);
+  try {
+    return { ...vault, sealed: sealVault(key, vault.credentialId, plaintext) };
+  } finally {
+    plaintext.fill(0);
+  }
+}
+
+/** A vault for the passkey `lock`, holding no keys yet, sealed under `key`. */
+export function newVault(lock: VaultLock, key: Uint8Array): VaultRecord {
+  const empty: VaultRecord = {
+    id: VAULT_ID,
+    credentialId: Uint8Array.from(lock.credentialId),
+    prfSalt: Uint8Array.from(lock.prfSalt),
+    sealed: new Uint8Array(0),
+  };
+  return resealKeys(empty, key, new Map());
+}
+
+/** The keys `vault` holds, opened under `key`, or null when it doesn't open or doesn't check out. */
+export function openKeys(vault: VaultRecord, key: Uint8Array): Map<string, GroupKeys> | null {
+  const plaintext = openVault(key, vault.credentialId, vault.sealed);
+  if (plaintext === null) return null;
+  try {
+    return decodeVaultKeys(plaintext);
+  } finally {
+    plaintext.fill(0);
+  }
+}
