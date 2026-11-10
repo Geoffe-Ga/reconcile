@@ -140,6 +140,19 @@ describe('eraseDevice', () => {
     reopened.close();
   });
 
+  it('takes a dissolved group’s read-only copy (#108) with the rest', async () => {
+    const app = await runningApp();
+    await app.store.markArchived('group-1', 'dissolved');
+    expect((await app.store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved' });
+
+    await eraseDevice(app, targets());
+
+    expect(await indexedDB.databases()).toEqual([]);
+    const reopened = await openStore();
+    expect(await reopened.listGroups()).toEqual([]);
+    reopened.close();
+  });
+
   it('halts sync and closes the store first, and reloads at / only once everything else is done', async () => {
     const app = await runningApp();
     const { serviceWorker } = fakeWorkers(2);

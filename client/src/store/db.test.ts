@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import { local, text, utf8 } from '../test/bytes';
+import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { HISTORY_GAP_MS, openStore } from './db';
 import type { NewGroup, Pull } from './db';
@@ -519,6 +520,97 @@ describe('purgeGroup', () => {
   });
 });
 
+describe('markArchived', () => {
+  it('drops the outbox, drafts and any leave, marks the group archived and tells subscribers (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue('group-1', utf8('{"queued":1}'));
+    await store.writeDraft('group-1', 'atom-1', { title: 't', why: '', text: 'x', link: '' });
+    await store.markLeaving('group-1', utf8('{"leave":1}'));
+    const heard = vi.fn();
+    store.subscribe(heard);
+
+    await store.markArchived('group-1', 'dissolved');
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.archived).toEqual({ reason: 'dissolved' });
+    expect(kept?.outbox).toEqual([]);
+    expect(kept?.drafts).toBeUndefined();
+    expect(kept?.leaving).toBeUndefined();
+    expect(heard).toHaveBeenCalledWith('group-1');
+  });
+
+  it('keeps an archive it already holds, cleared state included', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived('group-1', 'dissolved');
+    const cleared = { at: 5, state: testGroup().state, tallies: {} };
+    await store.clearArchive('group-1', cleared);
+
+    await store.markArchived('group-1', 'dissolved');
+
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved', cleared });
+  });
+
+  it('refuses anything queued once archived', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived('group-1', 'dissolved');
+
+    await expect(store.enqueue('group-1', utf8('{"late":1}'))).rejects.toThrow(
+      'This group is read-only on this device.',
+    );
+    expect((await store.getGroup('group-1'))?.outbox).toEqual([]);
+  });
+});
+
+describe('clearArchive', () => {
+  it('keeps the cleared state and drops the log, in one change (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(
+      'group-1',
+      pull([{ seq: 1, received: 1, bytes: utf8('{"a":1}') }], 1),
+      idOf,
+    );
+    await store.markArchived('group-1', 'dissolved');
+    const cleared = { at: 7, state: testGroup().state, tallies: {} };
+
+    await store.clearArchive('group-1', cleared);
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.log).toEqual([]);
+    expect(kept?.archived).toEqual({ reason: 'dissolved', cleared });
+  });
+
+  it('keeps a cleared archive free of anything an invite’s merge would bring back', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived('group-1', 'dissolved');
+    await store.clearArchive('group-1', { at: 7, state: testGroup().state, tallies: {} });
+    const before = await store.getGroup('group-1');
+
+    await store.mergeLog('group-1', [{ seq: 1, received: 1, bytes: utf8('{"vote":1}') }], idOf);
+
+    expect(await store.getGroup('group-1')).toEqual(before);
+  });
+
+  it('refuses a group that isn’t archived, and changes nothing', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(
+      'group-1',
+      pull([{ seq: 1, received: 1, bytes: utf8('{"a":1}') }], 1),
+      idOf,
+    );
+
+    await expect(
+      store.clearArchive('group-1', { at: 7, state: testGroup().state, tallies: {} }),
+    ).rejects.toThrow('This group isn’t archived.');
+    expect((await store.getGroup('group-1'))?.log).toHaveLength(1);
+  });
+});
+
 describe('the chat bot’s claims (#119)', () => {
   const claim = { id: 'claim-1', proposal: 'proposal-1', moment: 'open' } as const;
 
@@ -561,6 +653,31 @@ describe('the chat bot’s claims (#119)', () => {
     const kept = await store.getGroup(group.groupId);
     expect(kept?.outbox.map(text)).toEqual(['{"leave":1}']);
     expect(kept?.chatClaims).toBeUndefined();
+  });
+
+  it('queues nothing for a read-only archive (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived(group.groupId, 'dissolved');
+
+    expect(await store.claimChat(group.groupId, utf8('{"claim":1}'), claim)).toBe(false);
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox).toEqual([]);
+    expect(kept?.chatClaims).toBeUndefined();
+  });
+
+  it('drops every claim this device holds once the group is archived (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.claimChat(group.groupId, utf8('{"claim":1}'), claim);
+
+    await store.markArchived(group.groupId, 'dissolved');
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox).toEqual([]);
+    expect(kept?.chatClaims).toBeUndefined();
+    expect(await store.settleChatClaim(group.groupId, claim.id)).toBe(false);
   });
 
   it('refuses a claim over 64,000 bytes, keeping nothing', async () => {

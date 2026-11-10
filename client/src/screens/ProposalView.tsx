@@ -20,11 +20,13 @@ import { VersionList } from '../app/Versions';
 import { type VersionView, versionViews } from '../app/versionViews';
 import { rulesView } from '../app/optInLines';
 import { Named, SuspendedNote } from '../app/stewards';
-import { stewardView } from '../app/versionViews';
+import { dissolveView, stewardView } from '../app/versionViews';
 import { rightsAt } from '../engine/admission';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
+import { closedByDissolve } from '../engine/dissolve';
 import {
+  isDissolveProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -37,6 +39,7 @@ import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
+import type { TallyDetail } from '../engine/tally';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -64,6 +67,14 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /**
+   * Once a dissolved group's ballots are cleared on this device (#108): when,
+   * and each decided Proposal's tally as the device kept it, by id.
+   */
+  readonly cleared?: {
+    readonly at: number;
+    readonly tallies: Readonly<Record<string, TallyDetail>>;
+  };
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -392,9 +403,53 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
   );
 }
 
+/**
+ * A Proposal still open when its group dissolved (#108): closed, with no
+ * outcome and no ballot, its versions as they stood.
+ */
+function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { state } = props;
+  const versions = versionViews(state, proposal);
+  const comparison = comparisonOf(state, proposal, false);
+  return (
+    <Screen state={state} wide={versions.length > 1}>
+      <PageHeader
+        eyebrow={messages.proposal.eyebrowClosed}
+        title={proposal.title}
+        pageTitle={messages.proposal.pageTitle}
+      />
+      <div className="stack">
+        <div className="meta-lines">
+          <p className="meta">
+            {messages.proposal.proposedBy} <bdi>{displayName(state, proposal.author) ?? ''}</bdi>
+          </p>
+          <p className="meta">{messages.archive.closed}</p>
+        </div>
+        <p className="lede" dir="auto">
+          {proposal.why}
+        </p>
+      </div>
+      <Block title={comparison.title} className="vote">
+        <Legend comparison={comparison} />
+        <VersionList versions={versions} current={comparison.current} />
+      </Block>
+    </Screen>
+  );
+}
+
+/** The tally a cleared archive kept for `proposal`, if its ballots are cleared (#108). */
+function clearedOf(props: ProposalViewProps, proposal: Proposal) {
+  const tally = props.cleared?.tallies[proposal.id];
+  return props.cleared === undefined || tally === undefined
+    ? {}
+    : { cleared: { at: props.cleared.at, tally } };
+}
+
 /** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, now } = props;
+  if (closedByDissolve(state, proposal))
+    return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
   const link =
     proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
@@ -414,7 +469,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           own={props.own}
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
-          leaving={props.leaving === true}
+          leaving={props.leaving === true || state.dissolved !== null}
+          {...clearedOf(props, proposal)}
         />
       ) : null}
       <div className="stack">
@@ -463,7 +519,7 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
   return { optIn: change.optIn, versions: [{ id: '', number: 1, author, text: '', rules }] };
 }
 
-/** How a waiting Proposal's one version shows: its text against the section, or a steward or rules ballot. */
+/** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
 function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
   const author = displayName(state, me) ?? '';
   if (isStewardProposal(body)) {
@@ -475,6 +531,11 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   }
   if (isRulesProposal(body))
     return { comparison: STEWARD_BALLOT, ...waitingRules(state, author, body) };
+  if (isDissolveProposal(body)) {
+    const dissolve = dissolveView(body.target.wipe);
+    const versions = [{ id: '', number: 1, author, text: '', dissolve }];
+    return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
   const comparison = comparisonFor(state, body.atom, false);
   return { comparison, versions: [{ id: '', number: 1, author, text: body.text }], optIn: null };
 }
