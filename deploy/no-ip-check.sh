@@ -2,10 +2,15 @@
 # deploy/no-ip-check.sh - Try to make the relay or Caddy keep a client IP.
 #
 # Starts the relay with reconcile-relay.service's own Uvicorn flags on a temp
-# database, and Caddy with deploy/Caddyfile (only its ports, upstream and app
-# root moved to temp ones), and captures the stdout and stderr of both. Then,
-# from 127.0.0.2 (curl --interface), it sends:
+# database, with push on (a temp VAPID key made as deploy.sh makes it), and
+# Caddy with deploy/Caddyfile (only its ports, upstream and app root moved to
+# temp ones), and captures the stdout and stderr of both. Then, from
+# 127.0.0.2 (curl --interface), it sends:
 #   - a PUT and a GET carrying forwarding-header canaries;
+#   - the push routes, with the same canaries: the key, an endpoint put and
+#     then deleted, a refused endpoint naming a canary, a nudge an hour
+#     ahead and a wake=1 PUT. Nothing is due while it runs, so the relay
+#     sends no push (#89);
 #   - garbage where a TLS handshake belongs, and a handshake for a name with
 #     no certificate;
 #   - malformed HTTP, over TLS and on the plain HTTP port;
@@ -19,7 +24,7 @@
 # and its -wal and -shm, for 127.0.0.2 and the canaries. Any hit fails.
 #
 # Run it locally, from any directory, with .venv active (the relay's
-# dependencies) and caddy and curl on PATH. macOS first needs:
+# dependencies) and caddy, curl and openssl on PATH. macOS first needs:
 #   sudo ifconfig lo0 alias 127.0.0.2
 # Ports (all unprivileged): NO_IP_HTTP_PORT (default 18080),
 # NO_IP_HTTPS_PORT (18443) and NO_IP_RELAY_PORT (18787).
@@ -38,7 +43,7 @@ PYTHON="${PYTHON:-python3}"
 
 case "${1:-}" in
     "") ;;
-    --help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Error: Unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -47,7 +52,7 @@ die() {
     exit 1
 }
 
-for tool in caddy curl "$PYTHON"; do
+for tool in caddy curl openssl "$PYTHON"; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool isn't on PATH."
 done
 "$PYTHON" -c 'import uvicorn, reconcile.relay.app' 2>/dev/null ||
@@ -94,7 +99,11 @@ done
 $moved || die "reconcile-relay.service's ExecStart has no --port to move."
 
 mkdir -p "$work/state"
+(umask 077 && openssl ecparam -name prime256v1 -genkey -noout -out "$work/state/vapid.pem") ||
+    die "openssl couldn't make a VAPID key."
 (cd "$PROJECT_ROOT" && exec env RECONCILE_RELAY_DB="$work/state/relay.db" \
+    RECONCILE_RELAY_VAPID_KEY="$work/state/vapid.pem" \
+    RECONCILE_RELAY_VAPID_SUBJECT=https://no-ip-check.example \
     "$PYTHON" -m uvicorn "${relay_args[@]}" >"$work/relay.out" 2>"$work/relay.err") &
 relay_pid=$!
 pids+=("$relay_pid")
@@ -217,6 +226,27 @@ security_headers "$work/headers" > "$work/app.headers"
 expect 200 "GET an unknown app path: index.html" "${CANARY_HEADERS[@]}" "$site/$canary"
 expect 308 "plain HTTP: redirected to HTTPS" "${CANARY_HEADERS[@]}" \
     "http://localhost:$HTTP_PORT/$canary"
+
+# --- 1b. Push, with the same canaries --------------------------------------
+# The endpoint is put and deleted with nothing due in between, the nudge is an
+# hour ahead, and the wake finds no device, so nothing ever calls Apple.
+push_endpoint="https://web.push.apple.com/no-ip-check-$(hex 8)"
+json=(-H 'Content-Type: application/json')
+expect 200 "GET the push key (canary headers)" "${CANARY_HEADERS[@]}" "$site/v1/push/key"
+grep -qE '^\{"vapid_public_key":"[A-Za-z0-9_-]{87}"\}$' "$work/body" ||
+    die "the relay isn't running with push on."
+expect 204 "PUT a push endpoint (canary headers)" "${CANARY_HEADERS[@]}" "${json[@]}" \
+    -X PUT --data "{\"endpoint\":\"$push_endpoint\"}" "$site/v1/push/$mailbox"
+expect 204 "DELETE it (canary headers)" "${CANARY_HEADERS[@]}" "${json[@]}" \
+    -X DELETE --data "{\"endpoint\":\"$push_endpoint\"}" "$site/v1/push/$mailbox"
+expect 422 "PUT an endpoint off the push hosts (canary in it)" "${CANARY_HEADERS[@]}" \
+    "${json[@]}" -X PUT --data "{\"endpoint\":\"https://$canary.invalid/x\"}" \
+    "$site/v1/push/$mailbox"
+expect 204 "POST a nudge an hour ahead (canary headers)" "${CANARY_HEADERS[@]}" "${json[@]}" \
+    --data "{\"not_before\":$(( $(date +%s) / 60 + 60 ))}" "$site/v1/push/$mailbox/nudge"
+expect 201 "PUT a blob with wake=1 (canary headers)" "${CANARY_HEADERS[@]}" -X PUT \
+    -H 'Content-Type: application/octet-stream' --data-binary "@$work/blob" \
+    "$site/v1/mailbox/$mailbox?ttl_days=1&wake=1"
 
 # --- 2. Failed TLS handshakes ----------------------------------------------
 raw "garbage instead of a TLS handshake" "$HTTPS_PORT" "\\x16\\x03\\x09$canary\\r\\n\\r\\n"
