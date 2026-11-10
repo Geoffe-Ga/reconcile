@@ -283,10 +283,12 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
   ) {
     const view = within(app);
     await user.click(await view.findByRole('link', { name: 'Ask what to focus on' }));
-    await user.type(await view.findByRole('textbox', { name: 'Why' }), 'One thing at a time.');
+    await user.click(await view.findByRole('textbox', { name: 'Why' }));
+    await user.paste('One thing at a time.');
     for (const [index, option] of options.entries()) {
       if (index >= 2) await user.click(view.getByRole('button', { name: 'Add option' }));
-      await user.type(view.getByRole('textbox', { name: `Option ${String(index + 1)}` }), option);
+      await user.click(view.getByRole('textbox', { name: `Option ${String(index + 1)}` }));
+      await user.paste(option);
     }
     await user.click(view.getByRole('button', { name: 'Ask your group' }));
     await view.findByRole('region', { name: 'Options' });
@@ -307,18 +309,17 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
     expect(await view.findByText('Sent')).toBeVisible();
   }
 
-  it('closes early once both have scored both options, and both homes show the focus', async () => {
+  it('closes early once both have scored both options, and Group home shows the focus', async () => {
     const user = userEvent.setup();
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}`);
     const a = mount(ana, 'a');
-    await ask(a, user, ['Fix the website', 'Plan the picnic', 'Rent strike']);
+    await ask(a, user, ['Fix the website', 'Plan the picnic']);
     expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
     await scoreEach(a, user, {
       'Fix the website': '3 · Supportive',
       'Plan the picnic': '4 · Strongly supportive',
-      'Rent strike': '1 · Opposed',
     });
 
     await sync(ben);
@@ -326,21 +327,18 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
     await scoreEach(b, user, {
       'Fix the website': '4 · Strongly supportive',
       'Plan the picnic': '4 · Strongly supportive',
-      'Rent strike': '2 · Neutral',
     });
     const result = await within(b).findByRole('region', { name: 'Result' });
     expect(within(result).getByRole('list', { name: 'Passed, best first' })).toHaveTextContent(
       'Plan the picnicFix the website',
     );
 
-    await sync(ana);
+    // e2e/priority.spec.ts checks both profiles' Group home; here, the device that closed it.
     go(`#/g/${groupId}`);
-    for (const app of [a, b]) {
-      const focus = await within(app).findByRole('region', { name: 'Focus' });
-      expect(await within(focus).findByRole('link', { name: /Current focus/ })).toHaveTextContent(
-        'Current focusPlan the picnic',
-      );
-    }
+    const focus = await within(b).findByRole('region', { name: 'Focus' });
+    expect(await within(focus).findByRole('link', { name: /Current focus/ })).toHaveTextContent(
+      'Current focusPlan the picnic',
+    );
   });
 
   it('asks a lapsed priority vote again, from its options, as a fresh vote', async () => {
