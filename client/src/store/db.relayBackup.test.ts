@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { local } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { openStore, RELAY_BACKUP_CHANGED, type RelayBackupState } from './db';
+import { newPersonalId } from './personal';
 
 freshIndexedDBPerTest();
 
@@ -151,6 +152,33 @@ describe('the relay backup’s state', () => {
     const store = await openStore();
 
     expect((await store.listGroups()).map((group) => group.groupId)).toEqual(['kept']);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    await store.setRelayBackupKey(KEY);
+    expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(KEY)));
+  });
+
+  it('keeps a version 4 database’s groups and personal Documents (#93) when it upgrades', async () => {
+    const statement = {
+      id: newPersonalId(),
+      title: 'What I stand for',
+      text: 'Kept through the upgrade.',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const old = await openDB('reconcile', 4, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+      },
+    });
+    await old.put('groups', { groupId: 'kept', secret: new Uint8Array(32) });
+    await old.put('personal', statement);
+    old.close();
+
+    const store = await openStore();
+
+    expect((await store.listGroups()).map((group) => group.groupId)).toEqual(['kept']);
+    expect(await store.listPersonal()).toEqual([statement]);
     expect(await store.getRelayBackup()).toBeUndefined();
     await store.setRelayBackupKey(KEY);
     expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(KEY)));

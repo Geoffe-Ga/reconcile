@@ -154,7 +154,7 @@ test('a restored device keeps the relay backup fresh, and the relay learns nothi
     const snapshot = JSON.parse(new TextDecoder().decode(plaintext)) as {
       groups: { groupId: string }[];
     };
-    expect(Object.keys(snapshot)).toEqual(['format', 'groups']);
+    expect(Object.keys(snapshot)).toEqual(['format', 'groups', 'personal']);
     expect(snapshot.groups.map(({ groupId }) => groupId)).toEqual([group.groupId]);
     const unknown = await request.get(`/v1/backup/${randomBytes(32).toString('base64url')}`);
     expect([unknown.status(), await unknown.json()]).toEqual([404, { error: 'not_found' }]);

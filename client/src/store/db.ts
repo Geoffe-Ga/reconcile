@@ -15,7 +15,9 @@
  * bot's claims (#119) included. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
- * left open. A dissolved group stays as a read-only archive (#108): nothing
+ * left open. Personal Documents (#93) sit in a store of their own beside the
+ * groups (`./personal.ts`), and a backup file brings them back in that same
+ * transaction. A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
  * cleared while its outcomes stay. The relay backup's key and state (#97) are
  * one record in a store of their own, in no group, so no group's record ever
@@ -23,13 +25,20 @@
  */
 
 import { openDB } from 'idb';
-import type { DBSchema, IDBPDatabase } from 'idb';
+import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
+import {
+  byCreation,
+  isPersonalDocument,
+  keepsHeldCopy,
+  type PersonalDocument,
+  type PersonalStore,
+} from './personal';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -231,8 +240,8 @@ export interface RelayBackupStore {
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups, and its relay backup's state (#97). */
-export interface Store extends DraftStore, RelayBackupStore {
+/** The device's groups, its personal Documents (#93), and its relay backup's state (#97). */
+export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -316,16 +325,20 @@ export interface Store extends DraftStore, RelayBackupStore {
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
-   * Keep a backup file's groups, in one transaction (#78). A group new to the
-   * device is kept as the file has it, with an empty outbox, no drafts and no
-   * chat claims (#119). For
-   * a group already here, whichever whole copy synced later stays: the file's
-   * replaces the device's only when its last sync is later, and a group this
-   * device is leaving or keeps read-only (#108) stays as it is. Either way
-   * the group is marked `saved`, since a backup file holds it. Nothing is
-   * stamped with the time now.
+   * Keep a backup file's groups and personal Documents, in one transaction
+   * (#78, #93). A group new to the device is kept as the file has it, with an
+   * empty outbox, no drafts and no chat claims (#119). For a group already
+   * here, whichever whole copy synced later stays: the file's replaces the
+   * device's only when its last sync is later, and a group this device is
+   * leaving or keeps read-only (#108) stays as it is. Either way the group is
+   * marked `saved`, since a backup file holds it. A personal Document merges
+   * by id the same way: the file's replaces the device's only when it was
+   * edited later (`keepsHeldCopy`). Nothing is stamped with the time now.
    */
-  restoreGroups(groups: readonly BackedUpGroup[]): Promise<void>;
+  restoreGroups(
+    groups: readonly BackedUpGroup[],
+    personal?: readonly PersonalDocument[],
+  ): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
@@ -341,34 +354,40 @@ export interface Store extends DraftStore, RelayBackupStore {
 
 interface Schema extends DBSchema {
   groups: { key: string; value: Group };
+  personal: { key: string; value: PersonalDocument };
   device: { key: string; value: RelayBackupState };
 }
 
 /**
- * The schema version. Version 4 adds the device store, which holds the relay
- * backup's state (#97), and deletes nothing. Version 3 holds a real group
- * secret, from which the mailbox id and seal key derive (#71); version 2 held
- * signed records (#69) and version 1 the stub era's unsigned data. That older
- * data, whose relay blobs anyone could read, is deleted on upgrade, with no
- * migration.
+ * The schema version. Version 5 adds the device store, which holds the relay
+ * backup's state (#97), and version 4 the personal store (#93); neither
+ * deletes anything. Version 3 holds a real group secret, from which the
+ * mailbox id and seal key derive (#71); version 2 held signed records (#69)
+ * and version 1 the stub era's unsigned data. That older data, whose relay
+ * blobs anyone could read, is deleted on upgrade, with no migration. A
+ * dissolved group's `archived` mark (#108) is an optional field of its
+ * record, so it needed no version of its own: a version 3 group that holds
+ * one keeps it through the upgrade.
  */
-const VERSION = 4;
+const VERSION = 5;
 const GROUPS = 'groups';
+const PERSONAL = 'personal';
 const DEVICE = 'device';
 /** The device store's one key: the relay backup's record. */
 const RELAY_BACKUP = 'relay-backup';
 
 /**
  * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
- * version 3 are deleted, and the device store is added beside whatever groups
- * version 3 kept.
+ * version 3 are deleted, and the personal store, then the device store, are
+ * added beside whatever groups version 3 kept.
  */
 function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
   if (oldVersion < 3) {
     if (database.objectStoreNames.contains(GROUPS)) database.deleteObjectStore(GROUPS);
     database.createObjectStore(GROUPS, { keyPath: 'groupId' });
   }
-  if (oldVersion < 4) database.createObjectStore(DEVICE);
+  if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
+  if (oldVersion < 5) database.createObjectStore(DEVICE);
 }
 
 /** The IndexedDB database the app keeps its groups in. */
@@ -511,11 +530,14 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
-    async restoreGroups(groups) {
-      const tx = db.transaction(GROUPS, 'readwrite');
-      for (const restored of groups) {
-        const held = await tx.store.get(restored.groupId);
-        await tx.store.put(keptCopy(held, restored));
+    async restoreGroups(groups, personal = []) {
+      const tx = db.transaction([GROUPS, PERSONAL], 'readwrite');
+      try {
+        await restoreInto(tx, groups, personal);
+      } catch (error) {
+        // Anything that fails takes the whole restore with it, groups and Documents alike.
+        await abandon(tx);
+        throw error;
       }
       await tx.done;
       for (const { groupId } of groups) notify(groupId);
@@ -533,6 +555,17 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
       for (const groupId of marked) notify(groupId);
     },
+    async listPersonal() {
+      return (await db.getAll(PERSONAL)).sort(byCreation);
+    },
+    getPersonal: (id) => db.get(PERSONAL, id),
+    async savePersonal(document) {
+      if (!isPersonalDocument(document)) {
+        throw new Error('This isn’t a personal Document this device can keep.');
+      }
+      await db.put(PERSONAL, document);
+    },
+    deletePersonal: (id) => db.delete(PERSONAL, id),
     ...relayBackupStore(db, () => {
       notify(RELAY_BACKUP_CHANGED);
     }),
@@ -587,6 +620,43 @@ function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayB
       return result.wrote;
     },
   };
+}
+
+/**
+ * Aborts `tx` and waits for it to end. A transaction that a failed request
+ * has already aborted can't be aborted again, and that's fine: either way,
+ * nothing it wrote stays.
+ */
+async function abandon(tx: RestoreTransaction): Promise<void> {
+  try {
+    tx.abort();
+  } catch {
+    // Already aborted by the request that failed.
+  }
+  await tx.done.catch(() => undefined);
+}
+
+/** A transaction over both of the store's object stores, as a restore opens it. */
+type RestoreTransaction = IDBPTransaction<Schema, ['groups', 'personal'], 'readwrite'>;
+
+/**
+ * Puts each group and personal Document a backup holds into `tx`, keeping
+ * the device's copy wherever it's the one to keep (`keptCopy`,
+ * `keepsHeldCopy`).
+ */
+async function restoreInto(
+  tx: RestoreTransaction,
+  groups: readonly BackedUpGroup[],
+  personal: readonly PersonalDocument[],
+): Promise<void> {
+  const kept = tx.objectStore(GROUPS);
+  for (const restored of groups) {
+    await kept.put(keptCopy(await kept.get(restored.groupId), restored));
+  }
+  const documents = tx.objectStore(PERSONAL);
+  for (const restored of personal) {
+    if (!keepsHeldCopy(await documents.get(restored.id), restored)) await documents.put(restored);
+  }
 }
 
 /**

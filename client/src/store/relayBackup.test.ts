@@ -23,6 +23,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
 import { openStore, type Store } from './db';
+import { newPersonalId, type PersonalDocument } from './personal';
 import {
   fetchRelayBackup,
   refreshRelayBackup,
@@ -40,6 +41,8 @@ const CANARY = {
   founder: 'Canaryana Founder',
   atom: 'Canary atom: the garden opens at dawn.',
   title: 'Canary title: open the garden',
+  personalTitle: 'Canary personal: what I stand for',
+  personalText: 'Canary personal text: I keep the shelf open.',
 };
 const TS = 1_762_650_000_000;
 const DAY = 1440;
@@ -72,6 +75,17 @@ async function openDevice(fake: FakeRelay, name: string): Promise<Device> {
   });
   opened.push(sync);
   return { store, sync, services };
+}
+
+/** A personal Document (#93) with the canary title and text, which a backup carries too. */
+function statement(): PersonalDocument {
+  return {
+    id: newPersonalId(),
+    title: CANARY.personalTitle,
+    text: CANARY.personalText,
+    createdAt: TS,
+    updatedAt: TS,
+  };
 }
 
 /** A group's genesis by Ana, with `name` and the canary Atom. */
@@ -155,6 +169,7 @@ describe('what the relay holds', () => {
     const device = await openDevice(fake, 'ana');
     const founding = await found(device);
     await change(device, founding, CANARY.title);
+    await device.store.savePersonal(statement());
 
     await startRelayBackup(device.services);
 
@@ -175,6 +190,8 @@ describe('what the relay holds', () => {
       textCanary('founder’s name', CANARY.founder),
       textCanary('Atom text', CANARY.atom),
       textCanary('Proposal title', CANARY.title),
+      textCanary('personal title', CANARY.personalTitle),
+      textCanary('personal text', CANARY.personalText),
     ];
     expect([65536, 262144, 1048576, 4194304, 16777216]).toContain(blob.length);
     expect(findCanaries(blob, [...words, ...keys])).toEqual([]);
@@ -188,6 +205,8 @@ describe('what the relay holds', () => {
       [
         'Atom text',
         'Proposal title',
+        'personal text',
+        'personal title',
         'founder’s name',
         'group name',
         'group secret (base64url)',
@@ -196,13 +215,18 @@ describe('what the relay holds', () => {
         'signing key (raw)',
       ].sort(),
     );
-    expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual(['format', 'groups']);
+    expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual([
+      'format',
+      'groups',
+      'personal',
+    ]);
   });
 
   it('seals the device’s own snapshot without its key, so it carries whatever the snapshot does', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
+    await device.store.savePersonal(statement());
 
     await startRelayBackup(device.services);
 

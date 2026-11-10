@@ -39,7 +39,7 @@ export function passphraseProblem(passphrase: string): string | null {
 /** Seals every group a backup keeps under `passphrase`, as a file named for today on this device. */
 export async function makeBackup(
   services: {
-    readonly store: Pick<Store, 'listGroups' | 'getRelayBackup'>;
+    readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>;
     readonly now: () => number;
   },
   passphrase: string,

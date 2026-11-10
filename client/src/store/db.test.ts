@@ -7,7 +7,8 @@ import { local, text, utf8 } from '../test/bytes';
 import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { HISTORY_GAP_MS, openStore } from './db';
-import type { NewGroup, Pull } from './db';
+import type { Group, NewGroup, Pull } from './db';
+import type { PersonalDocument } from './personal';
 
 freshIndexedDBPerTest();
 
@@ -31,6 +32,55 @@ function pull(records: Pull['records'], cursor: number): Pull {
     relayNow: 29_000_010,
     instance: 'relay-1',
     lastSyncAt: 1_762_650_000_000,
+  };
+}
+
+/** A personal Document (#93), as the store keeps one. */
+const statement: PersonalDocument = {
+  id: 'AAAAAAAAAAAAAAAAAAAAAA',
+  title: 'My mission statement',
+  text: 'I show up for my neighbors.\n',
+  createdAt: 1_762_650_000_000,
+  updatedAt: 1_762_650_000_000,
+};
+
+/**
+ * The schema every upgrade path ends at: version 5, with the groups and
+ * personal stores (#93) and the device store, which holds the relay backup's
+ * state (#97).
+ */
+const CURRENT_SCHEMA = { version: 5, stores: ['device', 'groups', 'personal'] };
+
+/** The version and object stores of the IndexedDB database `name`, as it now stands. */
+async function schemaOf(name: string): Promise<{ version: number; stores: string[] }> {
+  const database = await openDB(name);
+  const schema = { version: database.version, stores: [...database.objectStoreNames].sort() };
+  database.close();
+  return schema;
+}
+
+/** A group record as a version 3 or 4 store keeps one: `group` after a sync, with `changes`. */
+function storedGroup(changes: Partial<Group> = {}): Group {
+  return {
+    ...group,
+    log: [{ seq: 1, received: 9, bytes: utf8('{"g":1}') }],
+    cursor: 1,
+    relayNow: 29_000_010,
+    instance: 'relay-1',
+    outbox: [],
+    lastSyncAt: 1_762_650_000_000,
+    ...changes,
+  };
+}
+
+/** `group` with its bytes as plain arrays, so a stored copy and the one put compare. */
+function comparable(stored: Group | undefined) {
+  if (stored === undefined) return undefined;
+  return {
+    ...stored,
+    secret: Array.from(stored.secret),
+    signingKey: Array.from(stored.signingKey),
+    log: stored.log.map((record) => ({ ...record, bytes: Array.from(record.bytes) })),
   };
 }
 
@@ -113,8 +163,13 @@ describe('a group in the store', () => {
     const store = await openStore();
 
     expect(await store.listGroups()).toEqual([]);
+    expect(await store.listPersonal()).toEqual([]);
     await store.addGroup(group);
+    await store.savePersonal(statement);
     expect((await store.listGroups()).map((stored) => stored.groupId)).toEqual(['group-1']);
+    expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 
   it('keeps the secret and nothing derived from it', async () => {
@@ -517,6 +572,71 @@ describe('purgeGroup', () => {
 
     expect(await store.listGroups()).toHaveLength(1);
     expect(heard).toEqual([]);
+  });
+});
+
+describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5)', () => {
+  it('starts a fresh install at version 5, with empty groups, personal and device stores', async () => {
+    const store = await openStore();
+
+    expect(await store.listGroups()).toEqual([]);
+    expect(await store.listPersonal()).toEqual([]);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('keeps version 3’s groups as #108 left them, archived and cleared ones read-only still, beside an empty personal store', async () => {
+    const live = storedGroup({ groupId: 'live', backup: 'saved' });
+    const archived = storedGroup({ groupId: 'archived', archived: { reason: 'dissolved' } });
+    const clearedArchive = { at: 7, state: testGroup().state, tallies: {} };
+    const cleared = storedGroup({
+      groupId: 'cleared',
+      log: [],
+      archived: { reason: 'dissolved', cleared: clearedArchive },
+    });
+    const old = await openDB('reconcile', 3, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+      },
+    });
+    for (const kept of [live, archived, cleared]) await old.put('groups', kept);
+    old.close();
+
+    const store = await openStore();
+
+    expect((await store.listGroups()).map(comparable)).toEqual(
+      [archived, cleared, live].map(comparable),
+    );
+    expect(await store.listPersonal()).toEqual([]);
+    await expect(store.enqueue('archived', utf8('{"late":1}'))).rejects.toThrow('read-only');
+    await expect(store.enqueue('cleared', utf8('{"late":1}'))).rejects.toThrow('read-only');
+    await store.savePersonal(statement);
+    expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('upgrades version 4 as #93 left it, adding only the device store (#97), and archives a group in it', async () => {
+    const old = await openDB('reconcile', 4, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+      },
+    });
+    await old.put('groups', storedGroup());
+    await old.put('personal', statement);
+    old.close();
+
+    const store = await openStore();
+
+    expect((await store.listGroups()).map(comparable)).toEqual([comparable(storedGroup())]);
+    expect(await store.listPersonal()).toEqual([statement]);
+    await store.markArchived('group-1', 'dissolved');
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved' });
+    expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 });
 
