@@ -23,6 +23,8 @@ export const messages = {
     back: '←',
     forward: '→',
     outward: '↗',
+    /** Ends a quotation that leaves words out, as in "Shared spaces are cleaned every…". */
+    ellipsis: '…',
   },
   start: {
     pageTitle: 'Your groups',
@@ -154,6 +156,28 @@ export const messages = {
     versionFailed: 'Your version couldn’t be saved on this device. Try again.',
     fullTitle: 'This ballot is full',
     full: 'This ballot already has three versions.',
+    addPageTitle: 'Add a section',
+    addTitle: 'Add a section',
+    addAtStart: 'If your group passes it, your section goes at the start of the Document.',
+    addAfter: (section: number) =>
+      `If your group passes it, your section goes right after section ${String(section)}.`,
+    addTextLabel: 'Section text',
+    addTextHint: 'If your group passes it, this becomes a new section.',
+    addTextMissing: 'Write the new section.',
+    addSubmit: 'Propose this section',
+    addVersionLede:
+      'This new section has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+    addVersionHint: 'If your group passes it, this becomes the new section.',
+    removePageTitle: 'Propose removing a section',
+    removeTitle: 'Propose removing this section',
+    removeLede: 'If your group passes it, this section leaves the Document.',
+    removeVersionLede:
+      'This section already has an open Proposal. Removing it goes on that ballot as another version, and everyone scores each version.',
+    removeSubmit: 'Propose removing it',
+    removeVersionSubmit: 'Add removal to the ballot',
+    removeVersionVisibility: 'Everyone in your group sees this version and that you added it.',
+    removalOnBallotTitle: 'Removing this section is already on the ballot',
+    removalOnBallot: 'Score it on the section’s open Proposal.',
   },
   proposal: {
     pageTitle: 'Proposal',
@@ -162,6 +186,11 @@ export const messages = {
     eyebrowNew: 'New Proposal',
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
+    newSection: 'New section',
+    removes: 'Removes this section',
+    addsAfter: (words: string) => `Adds a section after ‘${words}’`,
+    addsAtStart: 'Adds a section at the start',
+    addsAtEnd: 'Adds a section at the end',
     readsAs: 'How it will read',
     proposed: 'Proposed text',
     onBallot: 'On the ballot',
@@ -172,6 +201,9 @@ export const messages = {
     passed: 'This passed. The Document now reads:',
     passedVersion: (version: number) =>
       `Version ${String(version)} passed. The Document now reads:`,
+    passedRemoval: 'This passed. The Document no longer has this section.',
+    passedVersionRemoval: (version: number) =>
+      `Version ${String(version)} passed. The Document no longer has this section.`,
     failed: 'This didn’t pass.',
     lapsed: 'Not enough people weighed in. This isn’t a no.',
     joinedAfter: 'You joined after this opened, so you can’t vote on it.',
@@ -243,5 +275,18 @@ export const messages = {
     addVersionLabel: (section: number) => `Add your version to section ${String(section)}`,
     ballotFull: 'This section’s ballot already has three versions.',
     empty: 'This Document has no sections yet.',
+    addHere: 'Add a section here',
+    /** Each gap's name starts with its visible words, which name the spot too (WCAG 2.5.3). */
+    addAtStartLabel: 'Add a section here, at the start',
+    addAfterLabel: (section: number) => `Add a section here, after section ${String(section)}`,
+    remove: 'Propose removing this section',
+    removeLabel: (section: number) => `Propose removing this section, section ${String(section)}`,
+    copy: 'Copy as Markdown',
+    copyHint:
+      'To start a fresh group from this Document, copy it, then paste it into Create group.',
+    copied: 'Copied',
+    copyFailed:
+      'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
+    markdownLabel: 'The Document as Markdown',
   },
 } as const;

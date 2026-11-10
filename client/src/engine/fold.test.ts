@@ -170,6 +170,7 @@ describe('fold', () => {
         received: R + 10,
         author: authorOf('ana'),
         atom: `${log.group}.0`,
+        target: { kind: 'edit' },
         title: 'T',
         why: 'W',
         text: 'New',

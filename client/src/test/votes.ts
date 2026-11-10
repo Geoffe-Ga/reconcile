@@ -34,8 +34,10 @@ export interface LogBuilder {
   join(name: string, level?: Level): void;
   /** Adds `name`'s move to `level`. */
   level(name: string, level: string): void;
-  /** Adds a Proposal by `name`, returning its id. */
+  /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal of a new section after Atom `after`, or first for null (#75). */
+  addSection(name: string, after: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
@@ -102,6 +104,21 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       } = entry;
       const proposal = {
         atom: `${group}.${String(entry.atom ?? 0)}`,
+        title,
+        why,
+        text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    addSection(name: string, after: string | null, entry: ProposalEntry = {}) {
+      const {
+        title = 'Guests',
+        why = 'Guests come often.',
+        text = 'Guests leave by 11pm.\n',
+      } = entry;
+      const proposal = {
+        target: { kind: 'add', after } as const,
         title,
         why,
         text,

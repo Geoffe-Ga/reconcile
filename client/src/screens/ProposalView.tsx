@@ -14,10 +14,10 @@ import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
-import { type VersionView, versionViews } from '../app/versionViews';
+import { versionDoes, type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
-import type { ParsedEvent, ProposalBody } from '../engine/event';
+import { type ParsedEvent, type ProposalBody, targetOf } from '../engine/event';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 
@@ -76,17 +76,26 @@ function Screen({ state, wide = false, children }: ScreenProps) {
   );
 }
 
-/** The outcome sentence, first on a closed Proposal; a pass also names its version and shows the new text. */
+/** A pass's sentence: it names the winning version when there were several, and says when it removed the section. */
+function passSentence(versions: number, winner: number, removed: boolean): string {
+  const { proposal } = messages;
+  if (removed) return versions > 1 ? proposal.passedVersionRemoval(winner) : proposal.passedRemoval;
+  return versions > 1 ? proposal.passedVersion(winner) : proposal.passed;
+}
+
+/**
+ * The outcome sentence, first on a closed Proposal; a pass also names its
+ * version and shows the new text, or says the section is gone (#75).
+ */
 function Outcome({ proposal }: { readonly proposal: Proposal }) {
   const { outcome, versions } = proposal;
   if (outcome.kind === 'pass') {
     const index = versions.findIndex((version) => version.id === outcome.version);
-    const sentence =
-      versions.length > 1 ? messages.proposal.passedVersion(index + 1) : messages.proposal.passed;
+    const text = versions[index]?.text ?? '';
     return (
       <Block title={messages.proposal.result} className="outcome">
-        <p className="outcome-sentence">{sentence}</p>
-        <AtomText text={versions[index]?.text ?? ''} className="atom-card" />
+        <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+        {text === '' ? null : <AtomText text={text} className="atom-card" />}
       </Block>
     );
   }
@@ -106,12 +115,14 @@ interface Comparison {
 }
 
 /**
- * Each version is a word diff against the section's text now. Once a pass has
- * changed the section, or when the section is gone, each version shows as it
- * reads instead.
+ * Each version is a word diff against the section's text now, or for an add
+ * (`atom` null, #75), against nothing, so its whole text shows as added. Once
+ * a pass has changed the section, or when the section is gone, each version
+ * shows as it reads instead.
  */
-function comparisonFor(state: GroupState, atom: string, passed: boolean): Comparison {
+function comparisonFor(state: GroupState, atom: string | null, passed: boolean): Comparison {
   if (passed) return { title: messages.proposal.onBallot, current: null };
+  if (atom === null) return { title: messages.proposal.newSection, current: '' };
   const index = state.atoms.findIndex((candidate) => candidate.id === atom);
   const now = state.atoms[index];
   if (now === undefined) return { title: messages.proposal.proposed, current: null };
@@ -172,6 +183,11 @@ function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: 
   );
 }
 
+/** The section a Proposal changes, or null when it adds one (#75). */
+function changedAtom(proposal: Proposal): string | null {
+  return proposal.target.kind === 'add' ? null : proposal.atom;
+}
+
 /** Whether this member can still add wording: the vote is open and they may propose. */
 function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
   return !proposal.final && props.now < proposal.deadline && can(props.state, props.me, 'propose');
@@ -204,7 +220,7 @@ interface VoteProps {
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
-  const comparison = comparisonFor(state, proposal.atom, passed);
+  const comparison = comparisonFor(state, changedAtom(proposal), passed);
   const reason = whyNoVote(props, proposal);
   const mine = myBallot(props, proposal);
   return (
@@ -243,7 +259,7 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
       : [],
   );
   if (mine.length === 0) return null;
-  const { current } = comparisonFor(state, proposal.atom, false);
+  const { current } = comparisonFor(state, changedAtom(proposal), false);
   return (
     <Block title={messages.proposal.yourVersion} className="text-block">
       {mine.map(({ id, text }) =>
@@ -311,8 +327,15 @@ interface WaitingProps {
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
 function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
-  const comparison = comparisonFor(state, body.atom, false);
-  const version = { id: '', number: 1, author: displayName(state, me) ?? '', text: body.text };
+  const comparison = comparisonFor(state, 'atom' in body ? body.atom : null, false);
+  const does = versionDoes(state, targetOf(body), body.text);
+  const version = {
+    id: '',
+    number: 1,
+    author: displayName(state, me) ?? '',
+    text: body.text,
+    ...(does === null ? {} : { does }),
+  };
   return (
     <Screen state={state}>
       <PageHeader

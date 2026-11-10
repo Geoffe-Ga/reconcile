@@ -23,6 +23,11 @@ describe('parseRoute', () => {
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
+    [`#/g/${GROUP}/add`, { name: 'add', groupId: GROUP, after: null }],
+    [`#/g/${GROUP}/add/${ATOM}`, { name: 'add', groupId: GROUP, after: ATOM }],
+    [`#/g/${GROUP}/add/${PROPOSAL}`, { name: 'add', groupId: GROUP, after: PROPOSAL }],
+    [`#/g/${GROUP}/remove/${ATOM}`, { name: 'remove', groupId: GROUP, atomId: ATOM }],
+    [`#/g/${GROUP}/remove/${PROPOSAL}`, { name: 'remove', groupId: GROUP, atomId: PROPOSAL }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -43,6 +48,15 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/p/${ATOM}`,
     `#/g/${GROUP}/p/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
+    `#/g/${GROUP}/add/`,
+    `#/g/${GROUP}/add/has space`,
+    `#/g/${GROUP}/add/${ATOM}/extra`,
+    `#/g/${GROUP}/remove`,
+    `#/g/${GROUP}/remove/`,
+    `#/g/${GROUP}/remove/has space`,
+    `#/g/${GROUP}/constructor`,
+    `#/g/${GROUP}/constructor/${ATOM}`,
+    `#/g/${GROUP}/__proto__/${ATOM}`,
     '#/join/',
     'create',
   ])('sends the unknown %j to Start', (hash) => {
@@ -60,6 +74,9 @@ describe('routeHref', () => {
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
     [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
+    [{ name: 'add', groupId: GROUP, after: null }, `#/g/${GROUP}/add`],
+    [{ name: 'add', groupId: GROUP, after: ATOM }, `#/g/${GROUP}/add/${ATOM}`],
+    [{ name: 'remove', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/remove/${ATOM}`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

@@ -4,10 +4,12 @@
  *
  * Every rule is checked against the state before the event. An event that
  * breaks one lands in `ignored` and changes nothing. Votes run on relay time
- * (`received`, in whole minutes); the author's `ts` plays no part. A Document's
- * text changes only when a Proposal's pass is final. The fold is pure: no I/O,
- * no clock, no randomness, so every device that folds the same records builds
- * the same state.
+ * (`received`, in whole minutes); the author's `ts` plays no part. A Document
+ * changes only when a Proposal's pass is final: an edit sets an Atom's text or,
+ * with `""`, removes it, and an add puts a new Atom after its anchor (#75).
+ * Final passes apply in order of close time, then the Proposals' relay order.
+ * The fold is pure: no I/O, no clock, no randomness, so every device that folds
+ * the same records builds the same state.
  */
 import {
   can,
@@ -26,7 +28,9 @@ import {
   type LevelBody,
   parseRecord,
   type ProposalBody,
+  type ProposalTarget,
   type Score,
+  targetOf,
   type VersionBody,
   type VoteBody,
 } from './event';
@@ -63,7 +67,10 @@ export interface Member {
   readonly seq: number;
 }
 
-/** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
+/**
+ * A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`, and
+ * an added Atom has its add Proposal's id (#75). `documentId` is the genesis id.
+ */
 export interface Atom {
   readonly id: string;
   readonly documentId: string;
@@ -90,6 +97,10 @@ export interface Ballot {
 /**
  * A proposed change to one Atom, with its vote.
  *
+ * `atom` is the Atom it changes, or for an add, the Atom it would create: its
+ * own id (#75). `target` says which: an edit, or an add and its anchor. An
+ * edit whose winning version is `""` removes the Atom.
+ *
  * `eligible` is who could vote when it opened (ADR-0015): the members for whom
  * `wouldVote` held then. A later join or level change never changes it, nor the
  * quorum and early close that count it. `closedAt` is the
@@ -103,6 +114,7 @@ export interface Proposal {
   readonly received: number;
   readonly author: string;
   readonly atom: string;
+  readonly target: ProposalTarget;
   readonly title: string;
   readonly why: string;
   readonly text: string;
@@ -156,6 +168,13 @@ interface OpenProposal extends Omit<
   closedAt: number | null;
 }
 
+/** The Document at some relay minute, and the closed Proposals it was worked out from. */
+interface DocumentAt {
+  /** The closed Proposals' ids, in relay order, joined by spaces. */
+  readonly closed: string;
+  readonly atoms: readonly Atom[];
+}
+
 /** The state the fold builds up, one event at a time. */
 interface Draft {
   group: string | null;
@@ -163,8 +182,11 @@ interface Draft {
   chat: string | null;
   title: string;
   readonly members: Member[];
-  atoms: Atom[];
+  /** The Document as genesis founded it, before any pass. */
+  founded: readonly Atom[];
   readonly proposals: OpenProposal[];
+  /** The Document as the latest Proposal found it, kept until another Proposal closes. */
+  document: DocumentAt;
 }
 
 function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Receipt): boolean {
@@ -173,11 +195,12 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   draft.chat = body.chat ?? null;
   draft.title = body.title;
   draft.members.push({ author, name: body.founder, level: FOUNDER_LEVEL, seq: at.seq });
-  draft.atoms = body.atoms.map((text, i) => ({
+  draft.founded = body.atoms.map((text, i) => ({
     id: `${at.id}.${String(i)}`,
     documentId: at.id,
     text,
   }));
+  draft.document = { closed: '', atoms: draft.founded };
   return true;
 }
 
@@ -215,12 +238,43 @@ function openOn(draft: Draft, atom: string, received: number): OpenProposal | un
   return draft.proposals.find((p) => p.atom === atom && isOpenAt(p, received));
 }
 
+/**
+ * The Document as an event received at relay minute `received` finds it: the
+ * founded Atoms with every pass that is final by then applied, in pass order.
+ * It's worked out again only when the set of closed Proposals has changed.
+ */
+function documentAt(draft: Draft, received: number): readonly Atom[] {
+  const closed = draft.proposals.filter((p) => !isOpenAt(p, received));
+  const key = closed.map((p) => p.id).join(' ');
+  if (key !== draft.document.closed) {
+    const settled = closed.map((p) => settle(p, received));
+    draft.document = { closed: key, atoms: applyPasses(draft.founded, settled, draft.group) };
+  }
+  return draft.document.atoms;
+}
+
+/**
+ * An edit's Atom is in the Document and has no open Proposal. An add's anchor
+ * is in the Document, or null for the start, and its text isn't empty: only an
+ * edit can carry `""`, which removes its Atom (#75).
+ */
+function targetIsValid(draft: Draft, body: ProposalBody, received: number): boolean {
+  const atoms = documentAt(draft, received);
+  if ('atom' in body) {
+    const { atom } = body;
+    return (
+      atoms.some((a) => a.id === atom) && optionFor(openOn(draft, atom, received)) === 'propose'
+    );
+  }
+  const { after } = body.target;
+  return body.text !== '' && (after === null || atoms.some((a) => a.id === after));
+}
+
 function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   const titleLength = codePointLength(body.title);
   return (
     can(draft, author, 'propose') &&
-    draft.atoms.some((a) => a.id === body.atom) &&
-    optionFor(openOn(draft, body.atom, at.received)) === 'propose' &&
+    targetIsValid(draft, body, at.received) &&
     titleLength >= 1 &&
     titleLength <= TITLE_MAX &&
     codePointLength(body.why) <= WHY_MAX
@@ -232,7 +286,8 @@ function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Rec
   draft.proposals.push({
     ...at,
     author,
-    atom: body.atom,
+    atom: 'atom' in body ? body.atom : at.id,
+    target: targetOf(body),
     title: body.title,
     why: body.why,
     text: body.text,
@@ -246,6 +301,11 @@ function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Rec
   return true;
 }
 
+/** Only an edit's version may be `""`, a removal; an add's version needs text (#75). */
+function versionTextFits(proposal: OpenProposal, text: string): boolean {
+  return text !== '' || proposal.target.kind === 'edit';
+}
+
 /**
  * Adds a version to an open Proposal's ballot, in relay order, while it holds
  * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
@@ -254,6 +314,7 @@ function applyVersion(draft: Draft, body: VersionBody, author: string, at: Recei
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
+  if (!versionTextFits(proposal, body.text)) return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
   return true;
 }
@@ -355,11 +416,11 @@ function settle(proposal: OpenProposal, relayNow: number | null): Proposal {
   return { ...proposal, final, outcome };
 }
 
-/** The `[atom, text]` a Proposal sets: its winning version's text once its pass is final, else none. */
-function finalUpdate(proposal: Proposal): [string, string][] {
-  if (!proposal.final || proposal.outcome.kind !== 'pass') return [];
+/** The winning version's text once a Proposal's pass is final, else null. */
+function passedText(proposal: Proposal): string | null {
+  if (!proposal.final || proposal.outcome.kind !== 'pass') return null;
   const winner = proposal.outcome.version;
-  return proposal.versions.filter((v) => v.id === winner).map((v) => [proposal.atom, v.text]);
+  return proposal.versions.find((v) => v.id === winner)?.text ?? null;
 }
 
 /** When a closed Proposal closed: early, or at its deadline. */
@@ -367,16 +428,43 @@ function closeTime(proposal: Proposal): number {
   return proposal.closedAt ?? proposal.deadline;
 }
 
-/** Applies final passes to the Atoms in order of close time, then the Proposals' relay order. */
-function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): readonly Atom[] {
+/** `atoms` with `atom` right after the Atom `after`, first for null, or last when `after` is gone. */
+function insertAfter(atoms: readonly Atom[], after: string | null, atom: Atom): readonly Atom[] {
+  if (after === null) return [atom, ...atoms];
+  const index = atoms.findIndex((a) => a.id === after);
+  if (index === -1) return [...atoms, atom];
+  return [...atoms.slice(0, index + 1), atom, ...atoms.slice(index + 1)];
+}
+
+/** The Atoms after one Proposal's pass, or as they were when it hasn't passed. */
+function applyPass(
+  atoms: readonly Atom[],
+  proposal: Proposal,
+  documentId: string,
+): readonly Atom[] {
+  const text = passedText(proposal);
+  if (text === null) return atoms;
+  const { target } = proposal;
+  if (target.kind === 'add') {
+    return insertAfter(atoms, target.after, { id: proposal.id, documentId, text });
+  }
+  if (text === '') return atoms.filter((a) => a.id !== proposal.atom);
+  return atoms.map((a) => (a.id === proposal.atom ? { ...a, text } : a));
+}
+
+/**
+ * Applies final passes to the founded Atoms in order of close time, then the
+ * Proposals' relay order. When two adds share an anchor, the one applied later
+ * ends up directly after it. A new Atom joins the one Document, `documentId`.
+ */
+function applyPasses(
+  founded: readonly Atom[],
+  proposals: readonly Proposal[],
+  documentId: string | null,
+): readonly Atom[] {
   // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
   const byClose = [...proposals].sort((a, b) => closeTime(a) - closeTime(b));
-  // A later entry for the same Atom replaces an earlier one, so the last pass to close wins.
-  const texts = new Map(byClose.flatMap(finalUpdate));
-  return atoms.map((atom) => {
-    const text = texts.get(atom.id);
-    return text === undefined ? atom : { ...atom, text };
-  });
+  return byClose.reduce((atoms, p) => applyPass(atoms, p, documentId ?? ''), founded);
 }
 
 /**
@@ -398,8 +486,9 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     chat: null,
     title: '',
     members: [],
-    atoms: [],
+    founded: [],
     proposals: [],
+    document: { closed: '', atoms: [] },
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
@@ -415,7 +504,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     if (!applied) ignored.push({ seq, id });
   }
   const proposals = draft.proposals.map((p) => settle(p, relayNow));
-  const atoms = applyPasses(draft.atoms, proposals);
+  const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, name, chat, title, members } = draft;
   return { group, name, chat, title, members, atoms, proposals, ignored };
 }

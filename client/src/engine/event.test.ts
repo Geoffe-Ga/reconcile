@@ -304,6 +304,37 @@ describe('parseEvent', () => {
     ['version without text', 'version', { proposal: 'p' }],
     ['version with a numeric proposal', 'version', { proposal: 1, text: 'x' }],
     ['version with null text', 'version', { proposal: 'p', text: null }],
+    [
+      'proposal with both an atom and a target',
+      'proposal',
+      { atom: 'a', target: { kind: 'add', after: null }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'proposal with a target of an unknown kind',
+      'proposal',
+      { target: { kind: 'move', after: null }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'proposal with a target that is a string',
+      'proposal',
+      { target: 'add', title: 't', why: 'w', text: 'x' },
+    ],
+    ['proposal with a null target', 'proposal', { target: null, title: 't', why: 'w', text: 'x' }],
+    [
+      'add with no anchor',
+      'proposal',
+      { target: { kind: 'add' }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'add with a numeric anchor',
+      'proposal',
+      { target: { kind: 'add', after: 0 }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'add without text',
+      'proposal',
+      { target: { kind: 'add', after: null }, title: 't', why: 'w' },
+    ],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -345,6 +376,34 @@ describe('parseEvent', () => {
       ts: 1,
       body: { proposal: 'p1', text: 'Quiet after 11pm.\n' },
     });
+  });
+
+  it.each([
+    ['an anchor', 'a.1'],
+    ['no anchor, for the start', null],
+  ])('reads an add Proposal with %s, keeping only its kind and anchor', (_label, after) => {
+    const body = {
+      target: { kind: 'add', after, document: 'd' },
+      title: 't',
+      why: 'w',
+      text: 'New section.\n',
+      link: 'https://l',
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({
+      target: { kind: 'add', after },
+      title: 't',
+      why: 'w',
+      text: 'New section.\n',
+      link: 'https://l',
+    });
+  });
+
+  it('reads an edit whose text is empty, as a removal carries it', () => {
+    const parsed = parseEvent(
+      json(envelope('proposal', { atom: 'a', title: 't', why: 'w', text: '' })),
+    );
+    expect(parsed?.event.body).toEqual({ atom: 'a', title: 't', why: 'w', text: '' });
   });
 
   it('keeps optional proposal and vote fields', () => {

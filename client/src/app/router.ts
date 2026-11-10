@@ -15,7 +15,9 @@ export type Route =
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
-  | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string };
+  | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
+  | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
+  | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -25,13 +27,30 @@ const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
-/** A page inside a group: `doc`, `propose/{atomId}` or `p/{proposalId}`. */
+/** The pages inside a group that take nothing after their name. */
+const BARE_PAGES: ReadonlyMap<string, (groupId: string) => Route> = new Map([
+  ['doc', (groupId: string): Route => ({ name: 'document', groupId })],
+  ['add', (groupId: string): Route => ({ name: 'add', groupId, after: null })],
+]);
+
+/** The pages inside a group that take one id, the pattern it must match, and their route. */
+const ID_PAGES: ReadonlyMap<string, readonly [RegExp, (groupId: string, id: string) => Route]> =
+  new Map([
+    ['propose', [ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId })]],
+    ['p', [ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId })]],
+    ['add', [ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after })]],
+    ['remove', [ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId })]],
+  ]);
+
+/**
+ * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`, `add`
+ * (a new first section), `add/{atomId}` (one after that Atom) or
+ * `remove/{atomId}` (#75).
+ */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
-  if (arg === undefined) return START;
-  if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
-  if (page === 'p' && ID.test(arg)) return { name: 'proposal', groupId, proposalId: arg };
-  return START;
+  if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
+  const known = ID_PAGES.get(page);
+  return known?.[0].test(arg) === true ? known[1](groupId, arg) : START;
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -64,6 +83,11 @@ export function parseRoute(hash: string): Route {
   }
 }
 
+/** The path after a page's name: `/{id}`, or nothing when there's none. */
+function idPath(id: string | null): string {
+  return id === null ? '' : `/${id}`;
+}
+
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
   switch (route.name) {
@@ -72,7 +96,7 @@ export function routeHref(route: Route): string {
     case 'create':
       return '#/create';
     case 'join':
-      return route.payload === null ? '#/join' : `#/join/${route.payload}`;
+      return `#/join${idPath(route.payload)}`;
     case 'group':
       return `#/g/${route.groupId}`;
     case 'document':
@@ -81,6 +105,10 @@ export function routeHref(route: Route): string {
       return `#/g/${route.groupId}/propose/${route.atomId}`;
     case 'proposal':
       return `#/g/${route.groupId}/p/${route.proposalId}`;
+    case 'add':
+      return `#/g/${route.groupId}/add${idPath(route.after)}`;
+    case 'remove':
+      return `#/g/${route.groupId}/remove/${route.atomId}`;
   }
 }
 

@@ -1,0 +1,359 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+
+import type { ComposeOutcome } from '../app/compose';
+import { addDraft, type ProposalValues, removalDraft, type VersionValues } from '../app/proposals';
+import { LEVELS } from '../engine/capabilities';
+import type { GroupState } from '../engine/fold';
+import type { Draft } from '../store/drafts';
+import { axeViolations } from '../test/axe';
+import { memoryDrafts } from '../test/drafts';
+import { authorOf } from '../test/keys';
+import { groupLog } from '../test/votes';
+import { AddSection, RemoveSection } from './SectionComposer';
+
+type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
+type OnAddVersion = (values: VersionValues) => Promise<ComposeOutcome>;
+
+const [, VOTING] = LEVELS;
+const CHAT = 'https://chat.example.org/riverside';
+
+const HINT =
+  '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.';
+
+const box = (name: string) => screen.getByRole('textbox', { name });
+
+async function replace(user: UserEvent, label: string, value: string): Promise<void> {
+  await user.clear(box(label));
+  if (value === '') return;
+  await user.click(box(label));
+  await user.paste(value);
+}
+
+async function fill(user: UserEvent, entries: Readonly<Record<string, string>>): Promise<void> {
+  for (const [label, value] of Object.entries(entries)) await replace(user, label, value);
+}
+
+interface AddOptions {
+  readonly state?: GroupState;
+  readonly after?: number | null;
+  readonly me?: string;
+  readonly onPropose?: OnPropose;
+  readonly drafts?: Readonly<Record<string, Draft>>;
+}
+
+/** Renders Add a section after Atom `after` (default: at the start) and waits for its heading. */
+async function addSection(options: AddOptions = {}) {
+  const state = options.state ?? groupLog({ chat: CHAT }).state();
+  const after = options.after ?? null;
+  const afterId = after === null ? null : `${state.group ?? ''}.${String(after)}`;
+  const onPropose = vi.fn<OnPropose>(options.onPropose ?? (() => Promise.resolve('proposed')));
+  const memory = memoryDrafts(options.drafts);
+  render(
+    <AddSection
+      state={state}
+      me={options.me ?? authorOf('ana')}
+      after={afterId}
+      drafts={memory.drafts}
+      onPropose={onPropose}
+    />,
+  );
+  await screen.findByRole('heading', { level: 1 });
+  return { user: userEvent.setup(), state, afterId, onPropose, memory };
+}
+
+interface RemoveOptions {
+  readonly state?: GroupState;
+  readonly atom?: number;
+  readonly me?: string;
+  readonly onPropose?: OnPropose;
+  readonly onAddVersion?: OnAddVersion;
+}
+
+/** Renders Propose removing this section for Atom `atom` (default: the second). */
+async function removeSection(options: RemoveOptions = {}) {
+  const state = options.state ?? groupLog({ chat: CHAT }).state();
+  const atomId = `${state.group ?? ''}.${String(options.atom ?? 1)}`;
+  const onPropose = vi.fn<OnPropose>(options.onPropose ?? (() => Promise.resolve('proposed')));
+  const onAddVersion = vi.fn<OnAddVersion>(
+    options.onAddVersion ?? (() => Promise.resolve('added')),
+  );
+  const memory = memoryDrafts();
+  render(
+    <RemoveSection
+      state={state}
+      me={options.me ?? authorOf('ana')}
+      atomId={atomId}
+      drafts={memory.drafts}
+      onPropose={onPropose}
+      onAddVersion={onAddVersion}
+    />,
+  );
+  await screen.findByRole('heading', { level: 1 });
+  return { user: userEvent.setup(), state, atomId, onPropose, onAddVersion, memory };
+}
+
+describe('AddSection', () => {
+  it('says the new section goes first, and starts with an empty text', async () => {
+    const { state } = await addSection();
+    expect(screen.getByRole('heading', { level: 1, name: 'Add a section' })).toBeVisible();
+    expect(document.title).toBe('Add a section · Reconcile');
+    expect(
+      screen.getByText('If your group passes it, your section goes at the start of the Document.'),
+    ).toBeVisible();
+    expect(screen.queryByRole('region', { name: /now reads$/ })).not.toBeInTheDocument();
+    expect(box('Title')).toHaveValue('');
+    expect(box('Why')).toHaveValue('');
+    expect(box('Section text')).toHaveValue('');
+    expect(box('Section text')).toBeRequired();
+    expect(box('Section text')).toHaveAccessibleDescription(
+      `If your group passes it, this becomes a new section. ${HINT}`,
+    );
+    expect(box('Discussion link (optional)')).toHaveValue(CHAT);
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc`,
+    );
+    expect(screen.getByRole('button', { name: 'Propose this section' })).toBeEnabled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the section the new one follows, as it reads now', async () => {
+    await addSection({ after: 1 });
+    expect(
+      screen.getByText('If your group passes it, your section goes right after section 2.'),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Section 2 now reads' })).toHaveTextContent(
+      'Bins go out on Tuesday.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the add, with its spot as the target in place of an Atom', async () => {
+    const { user, afterId, onPropose } = await addSection({ after: 0 });
+    await fill(user, {
+      Title: ' Guests ',
+      Why: 'Guests come often.',
+      'Section text': 'Guests leave by 11pm.',
+      'Discussion link (optional)': '',
+    });
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      target: { kind: 'add', after: afterId },
+      title: 'Guests',
+      why: 'Guests come often.',
+      text: 'Guests leave by 11pm.',
+      link: null,
+    });
+  });
+
+  it('refuses blank text, with the reason tied to the field', async () => {
+    const { user, onPropose } = await addSection();
+    await fill(user, { Title: 'Guests', Why: 'Guests come often.', 'Section text': ' \n ' });
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(box('Section text')).toHaveAccessibleDescription(
+      `If your group passes it, this becomes a new section. Write the new section. ${HINT}`,
+    );
+  });
+
+  it('keeps a draft for each spot, apart from the drafts of the sections themselves', async () => {
+    const group = groupLog().state();
+    const atom = `${group.group ?? ''}.0`;
+    const atomDraft = { title: 'Mine', why: 'Mine.', text: 'Quiet after 9pm.', link: '' };
+    const { user, memory } = await addSection({
+      state: group,
+      after: 0,
+      drafts: { [atom]: atomDraft },
+    });
+    expect(box('Title')).toHaveValue('');
+    await replace(user, 'Section text', 'Guests leave by 11pm.');
+    await waitFor(() => {
+      expect(memory.shelf.get(addDraft(atom))).toMatchObject({ text: 'Guests leave by 11pm.' });
+    });
+    expect(memory.shelf.get(atom)).toEqual(atomDraft);
+    expect(memory.drafts.load).toHaveBeenCalledWith(addDraft(atom));
+  });
+
+  it('says when the section it would follow isn’t in the Document', async () => {
+    const state = groupLog().state();
+    const memory = memoryDrafts();
+    render(
+      <AddSection
+        state={state}
+        me={authorOf('ana')}
+        after="missing.0"
+        drafts={memory.drafts}
+        onPropose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section isn’t in the Document' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(memory.drafts.load).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no form to someone who may not propose', async () => {
+    const log = groupLog();
+    log.join('Kim', VOTING);
+    await addSection({ state: log.state(), me: authorOf('kim') });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('RemoveSection', () => {
+  it('asks for a title and why beside the section struck through, with no text to write', async () => {
+    const { state } = await removeSection();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Propose removing this section' }),
+    ).toBeVisible();
+    expect(document.title).toBe('Propose removing a section · Reconcile');
+    expect(
+      screen.getByText('If your group passes it, this section leaves the Document.'),
+    ).toBeVisible();
+    const struck = screen.getByRole('region', { name: 'Section 2 now reads' });
+    expect(struck.querySelector('del')).toHaveTextContent('Bins go out on Tuesday.');
+    expect(struck.querySelector('ins')).toBeNull();
+    expect(within(struck).getByText('removed')).toHaveClass('visually-hidden');
+    expect(box('Title')).toHaveValue('');
+    expect(box('Why')).toHaveValue('');
+    expect(box('Discussion link (optional)')).toHaveValue(CHAT);
+    expect(screen.queryByRole('textbox', { name: /text/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over an edit whose text is empty', async () => {
+    const { user, atomId, onPropose } = await removeSection();
+    await fill(user, { Title: 'No bins rule', Why: 'The council collects now.' });
+    await user.click(screen.getByRole('button', { name: 'Propose removing it' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      atom: atomId,
+      title: 'No bins rule',
+      why: 'The council collects now.',
+      text: '',
+      link: CHAT,
+    });
+  });
+
+  it('keeps its draft under the removal, apart from the section’s own draft', async () => {
+    const { user, atomId, memory } = await removeSection();
+    await replace(user, 'Title', 'No bins rule');
+    await waitFor(() => {
+      expect(memory.shelf.get(removalDraft(atomId))).toMatchObject({ title: 'No bins rule' });
+    });
+    expect(memory.shelf.has(atomId)).toBe(false);
+  });
+
+  it('names a missing title and why, and sends nothing', async () => {
+    const { user, onPropose } = await removeSection();
+    await user.click(screen.getByRole('button', { name: 'Propose removing it' }));
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(box('Title')).toHaveAttribute('aria-invalid', 'true');
+    expect(box('Why')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('on a section with an open Proposal, adds the removal to its ballot, with no title or why', async () => {
+    const log = groupLog({ chat: CHAT });
+    const proposal = log.propose('ben', { atom: 1, title: 'Bins on Monday' });
+    const { user, onAddVersion, onPropose, memory } = await removeSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Propose removing this section' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        'This section already has an open Proposal. Removing it goes on that ballot as another version, and everyone scores each version.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('region', { name: 'Section 2 now reads' }).querySelector('del'),
+    ).toHaveTextContent('Bins go out on Tuesday.');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Everyone in your group sees this version and that you added it.'),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Bins on Monday' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${proposal}`,
+    );
+    expect(await axeViolations()).toEqual([]);
+    const add = screen.getByRole('button', { name: 'Add removal to the ballot' });
+    await user.click(add);
+    expect(onAddVersion).toHaveBeenCalledWith({ proposal, text: '' });
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(add).toBeDisabled();
+    expect(memory.drafts.load).not.toHaveBeenCalled();
+  });
+
+  it('says so when adding the removal couldn’t be saved, and lets them try again', async () => {
+    const log = groupLog();
+    log.propose('ben', { atom: 1 });
+    const onAddVersion = vi.fn<OnAddVersion>(() => Promise.reject(new Error('quota')));
+    const { user } = await removeSection({ state: log.state(), onAddVersion });
+    await user.click(screen.getByRole('button', { name: 'Add removal to the ballot' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your version couldn’t be saved on this device. Try again.',
+    );
+    expect(screen.getByRole('button', { name: 'Add removal to the ballot' })).toBeEnabled();
+  });
+
+  it('says a removal is already on the section’s ballot, with no form', async () => {
+    const log = groupLog();
+    const proposal = log.propose('ben', { atom: 1 });
+    log.version('ana', proposal, '');
+    await removeSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Removing this section is already on the ballot',
+      }),
+    ).toBeVisible();
+    expect(screen.getByText('Score it on the section’s open Proposal.')).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('says the ballot is full once it holds three versions', async () => {
+    const log = groupLog();
+    const proposal = log.propose('ben', { atom: 1 });
+    log.version('ana', proposal, 'Bins on Monday.\n');
+    log.version('ana', proposal, 'Bins on Friday.\n');
+    await removeSection({ state: log.state() });
+    expect(screen.getByRole('heading', { level: 1, name: 'This ballot is full' })).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('says when the section isn’t in the Document, and offers nothing to someone who can’t propose', async () => {
+    const log = groupLog();
+    log.join('Kim', VOTING);
+    const state = log.state();
+    const memory = memoryDrafts();
+    const { unmount } = render(
+      <RemoveSection
+        state={state}
+        me={authorOf('ana')}
+        atomId="missing.0"
+        drafts={memory.drafts}
+        onPropose={vi.fn()}
+        onAddVersion={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section isn’t in the Document' }),
+    ).toBeVisible();
+    unmount();
+    await removeSection({ state, me: authorOf('kim') });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});

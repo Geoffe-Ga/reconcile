@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -12,9 +12,31 @@ import { DocumentView } from './DocumentView';
 
 const [FOLLOWING, VOTING] = LEVELS;
 
+/** What the Document view reports, and its clipboard. */
+interface Handlers {
+  readonly onPropose?: (atomId: string) => void;
+  readonly onAdd?: (after: string | null) => void;
+  readonly onRemove?: (atomId: string) => void;
+  readonly copyText?: (text: string) => Promise<void>;
+}
+
 /** The Document view as `me` (default: the founder, Ana, a Co-Creator) sees it. */
-function view(state: GroupState, me = authorOf('ana'), onPropose = vi.fn()) {
-  return render(<DocumentView state={state} me={me} onPropose={onPropose} />);
+function view(
+  state: GroupState,
+  me = authorOf('ana'),
+  onPropose = vi.fn(),
+  handlers: Handlers = {},
+) {
+  return render(
+    <DocumentView
+      state={state}
+      me={me}
+      onPropose={onPropose}
+      onAdd={handlers.onAdd ?? vi.fn()}
+      onRemove={handlers.onRemove ?? vi.fn()}
+      copyText={handlers.copyText ?? vi.fn(() => Promise.resolve())}
+    />,
+  );
 }
 
 describe('DocumentView', () => {
@@ -161,16 +183,148 @@ describe('DocumentView', () => {
     view(log.state());
     expect(screen.getByText('This section’s ballot already has three versions.')).toBeVisible();
     expect(
-      screen.getAllByRole('button').map((button) => button.getAttribute('aria-label')),
-    ).toEqual(['Propose a change to section 2']);
+      screen
+        .getAllByRole('button', { name: /section [12]$/ })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual([
+      'Add a section here, after section 1',
+      'Propose a change to section 2',
+      'Propose removing this section, section 2',
+      'Add a section here, after section 2',
+    ]);
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('says so when the Document has no sections', async () => {
+  it('says so when the Document has no sections, and offers a first one', async () => {
+    const user = userEvent.setup();
     const { state } = testGroup({ atoms: [] });
-    view(state);
+    const onAdd = vi.fn();
+    view(state, authorOf('ana'), vi.fn(), { onAdd });
     expect(screen.getByText('This Document has no sections yet.')).toBeVisible();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button').map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Add a section here, at the start']);
+    expect(screen.queryByRole('button', { name: 'Copy as Markdown' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add a section here, at the start' }));
+    expect(onAdd).toHaveBeenCalledWith(null);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers a quiet Add a section here at the start, between sections and at the end', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup();
+    const onAdd = vi.fn();
+    const { container } = view(state, authorOf('ana'), vi.fn(), { onAdd });
+    const gaps = screen.getAllByRole('button', { name: /^Add a section/ });
+    expect(gaps.map((gap) => gap.getAttribute('aria-label'))).toEqual([
+      'Add a section here, at the start',
+      'Add a section here, after section 1',
+      'Add a section here, after section 2',
+    ]);
+    for (const gap of gaps) expect(gap).toHaveTextContent('Add a section here');
+    const order = Array.from(container.querySelectorAll('.document > *')).map(
+      (node) => node.className,
+    );
+    expect(order).toEqual(['atom-gap', 'atom', 'atom-gap', 'atom', 'atom-gap']);
+    await user.click(gaps[0] ?? document.body);
+    await user.click(gaps[2] ?? document.body);
+    expect(onAdd.mock.calls).toEqual([[null], [`${state.group ?? ''}.1`]]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('names every button with its visible words first, so speaking them presses it (WCAG 2.5.3)', () => {
+    const log = groupLog();
+    log.propose('ana');
+    view(log.state());
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(8);
+    for (const button of buttons) {
+      const name = button.getAttribute('aria-label') ?? button.textContent;
+      expect(name.startsWith(button.textContent)).toBe(true);
+    }
+  });
+
+  it('offers Propose removing this section on each section, and opens it for the one pressed', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup();
+    const onRemove = vi.fn();
+    view(state, authorOf('ana'), vi.fn(), { onRemove });
+    const buttons = screen.getAllByRole('button', { name: /^Propose removing/ });
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Propose removing this section, section 1',
+      'Propose removing this section, section 2',
+    ]);
+    for (const button of buttons) expect(button).toHaveTextContent('Propose removing this section');
+    await user.click(
+      screen.getByRole('button', { name: 'Propose removing this section, section 2' }),
+    );
+    expect(onRemove).toHaveBeenCalledWith(`${state.group ?? ''}.1`);
+  });
+
+  it('still offers removal beside Add your version, until the ballot holds a removal', () => {
+    const log = groupLog();
+    log.propose('ana', { atom: 0 });
+    const second = log.propose('ana', { atom: 1, text: 'Bins go out on Monday.' });
+    log.version('ben', second, '');
+    view(log.state());
+    expect(screen.getByRole('button', { name: 'Add your version to section 1' })).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'Propose removing this section, section 1' }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Add your version to section 2' })).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Propose removing this section, section 2' }),
+    ).toBeNull();
+  });
+
+  it('offers no Add or removal to someone who may not propose, but still Copy as Markdown', () => {
+    const { state } = testGroup({ joiners: ['Ben'], levels: { Ben: VOTING } });
+    view(state, authorOf('ben'));
+    expect(screen.queryByRole('button', { name: /^Add a section/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Propose removing/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy as Markdown' })).toBeVisible();
+  });
+
+  it('copies the Document as Markdown, and politely says Copied', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup({ atoms: ['# Our aims\n', 'We meet monthly.\n'] });
+    const copyText = vi.fn(() => Promise.resolve());
+    view(state, authorOf('ana'), vi.fn(), { copyText });
+    expect(
+      screen.getByText(
+        'To start a fresh group from this Document, copy it, then paste it into Create group.',
+      ),
+    ).toBeVisible();
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('');
+    await user.click(screen.getByRole('button', { name: 'Copy as Markdown' }));
+    expect(copyText).toHaveBeenCalledWith('# Our aims\n\nWe meet monthly.\n');
+    await waitFor(() => {
+      expect(status).toHaveTextContent('Copied');
+    });
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the Markdown selected in a read-only text area when copying is blocked', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup({ atoms: ['# Our aims\n', 'We meet monthly.\n'] });
+    const copyText = vi.fn(() => Promise.reject(new Error('blocked')));
+    view(state, authorOf('ana'), vi.fn(), { copyText });
+    await user.click(screen.getByRole('button', { name: 'Copy as Markdown' }));
+    const field = await screen.findByRole('textbox', { name: 'The Document as Markdown' });
+    expect(field).toHaveValue('# Our aims\n\nWe meet monthly.\n');
+    expect(field).toHaveAttribute('readonly');
+    expect(field).toHaveFocus();
+    const area = field as HTMLTextAreaElement;
+    expect([area.selectionStart, area.selectionEnd]).toEqual([0, area.value.length]);
+    expect(
+      screen.getByText(
+        'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('status')).not.toHaveTextContent('Copied');
     expect(await axeViolations()).toEqual([]);
   });
 });

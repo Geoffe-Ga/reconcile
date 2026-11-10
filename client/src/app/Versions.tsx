@@ -1,10 +1,12 @@
 /**
  * A Proposal's versions, side by side (DESIGN.md, Ballot; spec §8; ADR-0004).
  *
- * Every version on the ballot shows the same way: "Version N · <name>", its
- * word diff against the section's text now, and "How it will read". Nobody
- * filters which versions voters see. Wide screens set them in equal columns
- * and phones stack them (src/styles/proposals.css).
+ * Every version on the ballot shows the same way: "Version N · <name>", what
+ * it does when it adds or removes a section (#75), its word diff against the
+ * section's text now, and "How it will read". A removal's diff strikes the
+ * whole section through and has nothing to read; an add's marks its whole text
+ * as added. Nobody filters which versions voters see. Wide screens set them in
+ * equal columns and phones stack them (src/styles/proposals.css).
  */
 import { type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
@@ -36,7 +38,22 @@ interface VersionCardProps {
   readonly children: ReactNode;
 }
 
-/** One version: its heading, its change, and whatever goes under it. */
+/**
+ * A version's change: a word diff against `current`, and how it will read
+ * unless it removes the section. With nothing to compare, its text as it
+ * reads, and nothing at all for a removal.
+ */
+function Change({ text, current }: { readonly text: string; readonly current: string | null }) {
+  if (current === null) return text === '' ? null : <AtomText text={text} className="atom-card" />;
+  return (
+    <>
+      <WordDiff current={current} proposed={text} />
+      {text === '' ? null : <ReadsAs text={text} level={4} />}
+    </>
+  );
+}
+
+/** One version: its heading, what it does, its change, and whatever goes under it. */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();
   return (
@@ -45,14 +62,8 @@ function VersionCard({ version, current, children }: VersionCardProps) {
         {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
         <bdi>{version.author}</bdi>
       </h3>
-      {current === null ? (
-        <AtomText text={version.text} className="atom-card" />
-      ) : (
-        <>
-          <WordDiff current={current} proposed={version.text} />
-          <ReadsAs text={version.text} level={4} />
-        </>
-      )}
+      {version.does === undefined ? null : <p className="version-does">{version.does}</p>}
+      <Change text={version.text} current={current} />
       {children}
     </section>
   );

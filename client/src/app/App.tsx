@@ -15,9 +15,10 @@ import { GroupHome } from '../screens/GroupHome';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import { ProposalView } from '../screens/ProposalView';
+import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { Start } from '../screens/Start';
 import type { Me } from '../store/db';
-import { groupDrafts } from '../store/drafts';
+import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import {
   createGroup,
   type CreateGroupValues,
@@ -136,22 +137,51 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
-function DocumentScreen({ groupId }: { readonly groupId: string }) {
+function DocumentScreen({ services, groupId }: GroupScreenProps) {
   const openComposer = (atomId: string) => {
     navigate({ name: 'propose', groupId, atomId });
   };
+  const openAdd = (after: string | null) => {
+    navigate({ name: 'add', groupId, after });
+  };
+  const openRemove = (atomId: string) => {
+    navigate({ name: 'remove', groupId, atomId });
+  };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => <DocumentView state={state} me={me.author} onPropose={openComposer} />}
+      {({ state, me }) => (
+        <DocumentView
+          state={state}
+          me={me.author}
+          onPropose={openComposer}
+          onAdd={openAdd}
+          onRemove={openRemove}
+          copyText={services.copyText}
+        />
+      )}
     </GroupGate>
   );
 }
 
-interface ProposeScreenProps extends GroupScreenProps {
-  readonly atomId: string;
+/** What every composer is handed: the group, this member, its drafts, and its two actions. */
+interface ComposeProps {
+  readonly state: GroupState;
+  readonly me: string;
+  readonly drafts: GroupDrafts;
+  readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
+  readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
 }
 
-function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
+interface ComposeScreenProps extends GroupScreenProps {
+  /** The composer for the route, given what every composer is handed. */
+  readonly children: (props: ComposeProps) => ReactNode;
+}
+
+/**
+ * A composer's screen: proposing, or adding a version, queues the event and
+ * replaces the composer with the Proposal, so Back returns to where it opened.
+ */
+function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
   return (
@@ -171,16 +201,7 @@ function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
           replaceRoute({ name: 'proposal', groupId, proposalId: values.proposal });
           return result.outcome;
         };
-        return (
-          <Composer
-            state={state}
-            me={me.author}
-            atomId={atomId}
-            drafts={drafts}
-            onPropose={onPropose}
-            onAddVersion={onAddVersion}
-          />
-        );
+        return children({ state, me: me.author, drafts, onPropose, onAddVersion });
       }}
     </GroupGate>
   );
@@ -249,9 +270,25 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
     case 'group':
       return <GroupScreen services={services} groupId={route.groupId} />;
     case 'document':
-      return <DocumentScreen groupId={route.groupId} />;
+      return <DocumentScreen services={services} groupId={route.groupId} />;
     case 'propose':
-      return <ProposeScreen services={services} groupId={route.groupId} atomId={route.atomId} />;
+      return (
+        <ComposeScreen services={services} groupId={route.groupId}>
+          {(props) => <Composer {...props} atomId={route.atomId} />}
+        </ComposeScreen>
+      );
+    case 'add':
+      return (
+        <ComposeScreen services={services} groupId={route.groupId}>
+          {(props) => <AddSection {...props} after={route.after} />}
+        </ComposeScreen>
+      );
+    case 'remove':
+      return (
+        <ComposeScreen services={services} groupId={route.groupId}>
+          {(props) => <RemoveSection {...props} atomId={route.atomId} />}
+        </ComposeScreen>
+      );
     case 'proposal':
       return (
         <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />

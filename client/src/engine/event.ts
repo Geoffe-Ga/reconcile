@@ -43,13 +43,42 @@ export interface LevelBody {
   readonly level: string;
 }
 
-/** Proposes new text for one Atom, with a title, a justification and an optional discussion link. */
-export interface ProposalBody {
-  readonly atom: string;
+/**
+ * Where an add puts its new section (#75): right after the Atom `after`, or
+ * first when it's null. The new Atom's id is the Proposal's own id.
+ */
+export interface AddTarget {
+  readonly kind: 'add';
+  readonly after: string | null;
+}
+
+/** What a Proposal changes: one Atom's text, where `""` removes the Atom, or a new section (#75). */
+export type ProposalTarget = { readonly kind: 'edit' } | AddTarget;
+
+/** What every Proposal says: a title, a justification, its text and an optional discussion link. */
+interface ProposalFields {
   readonly title: string;
   readonly why: string;
   readonly text: string;
   readonly link?: string;
+}
+
+/** Proposes new text for one Atom. An empty text proposes removing it (#75). */
+export interface EditProposalBody extends ProposalFields {
+  readonly atom: string;
+}
+
+/** Proposes a new section, which carries `target` in place of an Atom (#75). */
+export interface AddProposalBody extends ProposalFields {
+  readonly target: AddTarget;
+}
+
+/** A Proposal: an edit of one Atom, or an add. */
+export type ProposalBody = EditProposalBody | AddProposalBody;
+
+/** What a Proposal's body targets: the Atom it edits, or where its new section goes. */
+export function targetOf(body: ProposalBody): ProposalTarget {
+  return 'target' in body ? body.target : { kind: 'edit' };
 }
 
 /**
@@ -210,11 +239,22 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
+/** An add's target, keeping only its kind and anchor, or null for any other shape. */
+function parseAddTarget(value: unknown): AddTarget | null {
+  if (!isObject(value) || value.kind !== 'add') return null;
+  const { after } = value;
+  return after === null || isString(after) ? { kind: 'add', after } : null;
+}
+
+/** An edit names an `atom`; an add carries `target` instead, never both. */
 function parseProposal(body: Json): ProposalBody | null {
-  const { atom, title, why, text, link } = body;
-  if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
+  const { atom, target, title, why, text, link } = body;
+  if (!isString(title) || !isString(why) || !isString(text)) return null;
   if (!isOptionalString(link)) return null;
-  return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+  const fields = { title, why, text, ...(link === undefined ? {} : { link }) };
+  if (target === undefined) return isString(atom) ? { atom, ...fields } : null;
+  const add = parseAddTarget(target);
+  return add === null || atom !== undefined ? null : { target: add, ...fields };
 }
 
 function parseVersion(body: Json): VersionBody | null {

@@ -11,22 +11,51 @@
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
-import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
+import {
+  type AddTarget,
+  type EventDraft,
+  type Score,
+  type SignedEvent,
+  signEvent,
+} from '../engine/event';
 import type { Services } from './actions';
 
 /** What the actions here use. */
 export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
+/**
+ * Where a Proposal goes (#75): the Atom whose text it would replace, where
+ * blank text proposes removing the Atom, or where a new section goes.
+ */
+export type ProposalPlace = { readonly atom: string } | { readonly target: AddTarget };
+
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
-export interface ProposalValues {
-  /** The Atom whose text it would replace. */
-  readonly atom: string;
+export type ProposalValues = ProposalPlace & {
   readonly title: string;
   readonly why: string;
   /** The proposed text, as typed; `propose` normalizes it. */
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
+};
+
+/** The draft key of a removal of Atom `atom`, apart from any change drafted for it (#75). */
+export function removalDraft(atom: string): string {
+  return `remove:${atom}`;
+}
+
+/** The draft key of a new section after Atom `after`, or first for null (#75). */
+export function addDraft(after: string | null): string {
+  return `add:${after ?? ''}`;
+}
+
+/**
+ * The private draft a Proposal is written in (spec §8): its Atom's for a
+ * change, the removal's when its text is blank, or the add's for its spot.
+ */
+function draftOf(values: ProposalValues, text: string): string {
+  if ('target' in values) return addDraft(values.target.after);
+  return text === '' ? removalDraft(values.atom) : values.atom;
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -65,24 +94,26 @@ async function signFor(
 }
 
 /**
- * Proposes new text for one Atom, as this device's member of `groupId`. Every
- * value is NFC-normalized before the event is signed, and the text goes
- * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
- * private draft it was written in, keyed by its Atom, in the same change. A
- * Proposal whose record is too large for any blob is refused before anything
- * is queued, and its draft kept.
+ * Proposes new text for one Atom, its removal (blank text), or a new section
+ * (#75), as this device's member of `groupId`. Every value is NFC-normalized
+ * before the event is signed, and the text goes through `normalizeAtomText`
+ * (spec §4). Queuing the Proposal clears the private draft it was written in
+ * in the same change. A Proposal whose record is too large for any blob is
+ * refused before anything is queued, and its draft kept.
  */
 export async function propose(
   services: ProposalServices,
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link } = values;
+  const { title, why, link } = values;
+  const text = normalizeAtomText(values.text);
+  const place = 'target' in values ? { target: values.target } : { atom: values.atom };
   const body = {
-    atom,
+    ...place,
     title: nfc(title),
     why: nfc(why),
-    text: normalizeAtomText(text),
+    text,
     ...(link === null ? {} : { link: nfc(link) }),
   };
   const event = await signFor(services, groupId, {
@@ -92,7 +123,7 @@ export async function propose(
     body,
   });
   if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, atom);
+  await services.store.enqueue(groupId, event.record, draftOf(values, text));
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
 }
@@ -100,10 +131,12 @@ export async function propose(
 /**
  * Adds a version to an open Proposal's ballot (ADR-0004), as this device's
  * member of `groupId`. The text goes through `normalizeAtomText` before it is
- * signed. Queuing it clears the private draft kept for that Proposal in the
- * same change. A version too large for any blob is refused before anything is
- * queued, and its draft kept. The fold decides whether it joins the ballot:
- * it ignores one that arrives after the close or past the third.
+ * signed, and blank text adds removing the section (#75). Queuing a worded
+ * version clears the private draft kept for that Proposal in the same change;
+ * a removal has no draft, so it leaves that one alone. A version too large
+ * for any blob is refused before anything is queued, and its draft kept. The
+ * fold decides whether it joins the ballot: it ignores one that arrives after
+ * the close or past the third.
  */
 export async function addVersion(
   services: ProposalServices,
@@ -119,7 +152,7 @@ export async function addVersion(
     body,
   });
   if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, proposal);
+  await services.store.enqueue(groupId, event.record, body.text === '' ? undefined : proposal);
   void services.sync.syncOnce();
   return { outcome: 'added', versionId: event.id };
 }

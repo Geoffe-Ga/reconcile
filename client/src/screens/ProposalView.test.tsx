@@ -540,6 +540,112 @@ describe('ProposalView, with several versions', () => {
   });
 });
 
+describe('ProposalView, adding and removing sections', () => {
+  it('shows an add as a new section: each version says where it goes, all its text added', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const add = log.addSection('ana', `${log.group}.1`, { title: 'Guests' });
+    const second = log.version('ben', add, 'Guests leave by midnight.\n');
+    const { user, onVote } = setup({ state: log.state(), proposalId: add });
+    const block = screen.getByRole('region', { name: 'New section' });
+    expect(within(block).getByText(/^Added words are underlined/)).toBeVisible();
+    for (const [name, text] of [
+      ['Version 1 · Ana', 'Guests leave by 11pm.\n'],
+      ['Version 2 · Ben', 'Guests leave by midnight.\n'],
+    ] as const) {
+      const version = within(block).getByRole('region', { name });
+      const lines = Array.from(version.querySelectorAll('h3 ~ *')).map((node) => node.className);
+      expect(lines.slice(0, 2)).toEqual(['version-does', 'word-diff']);
+      expect(
+        within(version).getByText('Adds a section after ‘Bins go out on Tuesday.’'),
+      ).toBeVisible();
+      expect(side(version, 'ins')).toBe(text);
+      expect(side(version, 'del')).toBe('');
+      expect(within(version).getByRole('button', { name: 'How it will read' })).toBeVisible();
+    }
+    expect(screen.getByRole('link', { name: 'Add your version' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/propose/${add}`,
+    );
+    expect(await axeViolations()).toEqual([]);
+    for (const [index, group] of screen.getAllByRole('radiogroup').entries()) {
+      await user.click(within(group).getByText(index === 0 ? 'Supportive' : 'Strongly supportive'));
+    }
+    await user.click(screen.getByRole('button', { name: 'Send your vote' }));
+    expect(onVote).toHaveBeenCalledWith({ [add]: 3, [second]: 4 }, '');
+  });
+
+  it('says an add at the start goes there', () => {
+    const log = groupLog();
+    const add = log.addSection('ana', null);
+    setup({ state: log.state(), proposalId: add });
+    expect(screen.getByText('Adds a section at the start')).toBeVisible();
+  });
+
+  it('puts a removal on a rewording’s ballot: it says so, and strikes the whole section through', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana', {
+      atom: 1,
+      title: 'Bins on Monday',
+      text: 'Bins go out on Monday.\n',
+    });
+    log.version('ben', proposalId, '');
+    setup({ state: log.state(), proposalId });
+    const block = screen.getByRole('region', { name: 'Changes to section 2' });
+    const rewording = within(block).getByRole('region', { name: 'Version 1 · Ana' });
+    expect(rewording.querySelector('.version-does')).toBeNull();
+    const removing = within(block).getByRole('region', { name: 'Version 2 · Ben' });
+    expect(within(removing).getByText('Removes this section')).toBeVisible();
+    expect(side(removing, 'del')).toBe('Bins go out on Tuesday.');
+    expect(side(removing, 'ins')).toBe('');
+    expect(within(removing).queryByRole('button', { name: 'How it will read' })).toBeNull();
+    expect(within(removing).getByRole('radiogroup', { name: 'Score for version 2' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a passed removal took the section out, naming its version when there were several', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const alone = log.propose('ana', { atom: 0, text: '' });
+    log.vote('ana', alone, 4);
+    log.vote('ben', alone, 4);
+    const shared = log.propose('ana', { atom: 1, text: 'Bins go out on Monday.\n' });
+    const removal = log.version('ben', shared, '');
+    log.ballot('ana', shared, { [shared]: 2, [removal]: 4 });
+    log.ballot('ben', shared, { [shared]: 2, [removal]: 4 });
+    const state = log.state();
+    expect(state.atoms).toEqual([]);
+    const { rerender } = setup({ state, proposalId: alone });
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(
+      within(result)
+        .getAllByRole('paragraph')
+        .map((p) => p.textContent),
+    ).toEqual(['This passed. The Document no longer has this section.']);
+    const onBallot = screen.getByRole('region', { name: 'On the ballot' });
+    expect(within(onBallot).getByText('Removes this section')).toBeVisible();
+    expect(onBallot.querySelector('.atom-card')).toBeNull();
+    rerender({ proposalId: shared });
+    expect(screen.getByRole('region', { name: 'Result' })).toHaveTextContent(
+      /^ResultVersion 2 passed\. The Document no longer has this section\.$/,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a new add while it waits to send, saying where it goes', () => {
+    const log = groupLog();
+    const waiting = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 0,
+      body: { target: { kind: 'add', after: null }, ...PROPOSAL },
+    });
+    setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
+    const block = screen.getByRole('region', { name: 'New section' });
+    expect(within(block).getByText('Adds a section at the start')).toBeVisible();
+    expect(side(block, 'ins')).toBe('Quiet after 11pm.');
+  });
+});
+
 describe('ProposalView, missing', () => {
   it('says when the Proposal isn’t on this device', async () => {
     const log = groupLog();

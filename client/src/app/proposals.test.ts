@@ -8,7 +8,15 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { createGroup } from './actions';
-import { addVersion, castBallot, chooseLevel, propose, type ProposalValues } from './proposals';
+import {
+  addDraft,
+  addVersion,
+  castBallot,
+  chooseLevel,
+  propose,
+  type ProposalValues,
+  removalDraft,
+} from './proposals';
 
 freshIndexedDBPerTest();
 
@@ -154,6 +162,52 @@ describe('propose', () => {
     );
   });
 
+  it('queues an add with its target in place of an Atom, and clears only the add’s draft', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = { title: 'Guests', why: 'They visit.', text: 'Guests leave by 11.', link: '' };
+    await device.services.store.writeDraft(groupId, addDraft(atom), draft);
+    await device.services.store.writeDraft(groupId, addDraft(null), draft);
+    await device.services.store.writeDraft(groupId, atom, draft);
+    const target = { kind: 'add', after: atom } as const;
+    const result = await propose(device.services, groupId, { ...draft, target, link: null });
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.body).toEqual({
+      target: { kind: 'add', after: atom },
+      title: 'Guests',
+      why: 'They visit.',
+      text: 'Guests leave by 11.\n',
+    });
+    expect(result.outcome).toBe('proposed');
+    expect(await device.services.store.readDraft(groupId, addDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, addDraft(null))).toEqual(draft);
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('keeps each add’s draft apart: the start’s, each anchor’s, and no Atom’s own', () => {
+    expect(new Set([addDraft(null), addDraft('a.0'), addDraft('a.1'), 'a.0']).size).toBe(4);
+    expect(new Set([removalDraft('a.0'), addDraft('a.0'), 'a.0']).size).toBe(3);
+  });
+
+  it('queues a removal as an edit whose text is empty, clearing the removal’s draft, not the Atom’s', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const removing = { title: 'No quiet hours', why: 'Nobody keeps them.', text: '', link: '' };
+    const rewording = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, removalDraft(atom), removing);
+    await device.services.store.writeDraft(groupId, atom, rewording);
+    await propose(device.services, groupId, { ...removing, atom, link: null });
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.body).toEqual({
+      atom,
+      title: 'No quiet hours',
+      why: 'Nobody keeps them.',
+      text: '',
+    });
+    expect(await device.services.store.readDraft(groupId, removalDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
+  });
+
   it('refuses a Proposal too large for any blob, and queues nothing', async () => {
     const fake = createFakeRelay();
     const { device, groupId, atom } = await founded(fake);
@@ -223,6 +277,22 @@ describe('addVersion', () => {
     await addVersion(device.services, groupId, { proposal, text: draft.text });
     expect(await device.services.store.readDraft(groupId, proposal)).toBeUndefined();
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('adds a removal as an empty version, and keeps the version drafted for the Proposal', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, proposal } = await proposed(fake);
+    const draft = { title: '', why: '', text: 'Later.', link: '' };
+    await device.services.store.writeDraft(groupId, proposal, draft);
+    const result = await addVersion(device.services, groupId, { proposal, text: '' });
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(state.proposals[0]?.versions.map((v) => [v.id, v.text])).toEqual([
+      [proposal, 'Quiet.\n'],
+      [result.outcome === 'added' ? result.versionId : '', ''],
+    ]);
+    expect(await device.services.store.readDraft(groupId, proposal)).toEqual(draft);
   });
 
   it('refuses a version too large for any blob, queues nothing and keeps its draft', async () => {
