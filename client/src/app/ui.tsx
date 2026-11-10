@@ -82,10 +82,44 @@ export interface FieldProps extends Omit<TextFieldProps, 'children' | 'className
 }
 
 /**
+ * A text field's error, in a line kept open while the field is valid (#165).
+ * Use it inside a React Aria `TextField` whose error can come and go.
+ *
+ * React Aria shows or clears the error when the field loses focus, and
+ * pressing a submit button is what takes the focus. If the error's line
+ * opened or closed then, the button would move between mousedown and mouseup
+ * and the click would miss. The error itself still renders only while the
+ * field is invalid, so `aria-describedby` names it only then.
+ */
+export function FieldErrorLine() {
+  return (
+    <div className="field-error-line">
+      <FieldError className="field-error" />
+    </div>
+  );
+}
+
+/**
+ * Whether a field's error can appear or clear as it loses focus: it checks
+ * its value, and the person can change that value.
+ */
+function errorCanChange({
+  validate,
+  isRequired,
+  isReadOnly,
+  isDisabled,
+}: Pick<TextFieldProps, 'validate' | 'isRequired' | 'isReadOnly' | 'isDisabled'>): boolean {
+  const checks = validate !== undefined || isRequired === true;
+  return checks && isReadOnly !== true && isDisabled !== true;
+}
+
+/**
  * A labelled text field: label, hint, input, then its error.
  *
  * React Aria ties the hint and the error to the input with
- * `aria-describedby`, and marks the input invalid when validation fails.
+ * `aria-describedby`, and marks the input invalid when validation fails. A
+ * field whose error can come and go keeps a line open for it
+ * ({@link FieldErrorLine}); one that can't, such as a read-only link, doesn't.
  */
 export function Field({ label, hint, multiline = false, inputClassName, ...props }: FieldProps) {
   const inputClass = inputClassName === undefined ? 'input' : `input ${inputClassName}`;
@@ -98,7 +132,7 @@ export function Field({ label, hint, multiline = false, inputClassName, ...props
         </Text>
       )}
       {multiline ? <TextArea className={inputClass} /> : <Input className={inputClass} />}
-      <FieldError className="field-error" />
+      {errorCanChange(props) ? <FieldErrorLine /> : <FieldError className="field-error" />}
     </TextField>
   );
 }

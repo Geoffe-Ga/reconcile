@@ -123,6 +123,24 @@ describe('MarkdownField', () => {
     );
   });
 
+  it('keeps its error’s line, so an error shown or cleared on blur moves nothing (#165)', async () => {
+    const { user } = setup('Fine.\n');
+    // jsdom has no layout, so the line app.css holds open is found by its class.
+    const line = box().closest('.field')?.querySelector('.field-error-line');
+    expect(line).toBeEmptyDOMElement();
+
+    await user.clear(box());
+    await user.tab();
+    expect(line).toHaveTextContent('Write something.');
+    expect(box()).toHaveAttribute('aria-invalid', 'true');
+
+    await user.click(box());
+    await user.paste('Fine again.');
+    await user.tab();
+    expect(line).toBeEmptyDOMElement();
+    expect(box()).not.toHaveAttribute('aria-invalid');
+  });
+
   it('sends the form from Preview when the text is fine', async () => {
     const { user, onSubmit } = setup('Fine.\n');
     await user.click(tab('Preview'));

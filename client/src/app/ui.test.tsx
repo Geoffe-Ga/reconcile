@@ -55,6 +55,63 @@ describe('Field', () => {
     expect(input).toHaveFocus();
   });
 
+  it('keeps its error’s line, so an error shown or cleared on blur moves nothing (#165)', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Form>
+        <Field
+          name="link"
+          label="Chat link"
+          validate={(value) =>
+            value === '' || value.startsWith('https://') ? null : 'Use a link.'
+          }
+        />
+        <Button type="submit">Go</Button>
+      </Form>,
+    );
+    const input = screen.getByRole('textbox', { name: 'Chat link' });
+    // jsdom has no layout, so the line app.css holds open is found by its class.
+    const line = container.querySelector('.field-error-line');
+    expect(line).toBeEmptyDOMElement();
+    expect(input).not.toHaveAttribute('aria-invalid');
+
+    await user.type(input, 'chat.example.org');
+    await user.tab();
+    expect(line).toHaveTextContent('Use a link.');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription('Use a link.');
+
+    await user.clear(input);
+    await user.type(input, 'https://chat.example.org');
+    await user.tab();
+    expect(container.querySelector('.field-error-line')).toBe(line);
+    expect(line).toBeEmptyDOMElement();
+    expect(input).not.toHaveAttribute('aria-invalid');
+    expect(input).toHaveAccessibleDescription('');
+  });
+
+  it('keeps an error line only where an error can come and go on blur', () => {
+    const check = () => 'Never right.';
+    render(
+      <>
+        <Field label="Your name" isRequired />
+        <Field label="Invite link" value="https://example.org" isReadOnly validate={check} />
+        <Field label="Your note" isDisabled isRequired />
+        <Field label="Anything" />
+      </>,
+    );
+    const holdsLine = (name: string) => {
+      const field = screen.getByRole('textbox', { name }).closest('.field');
+      return Boolean(field?.querySelector('.field-error-line'));
+    };
+    expect(['Your name', 'Invite link', 'Your note', 'Anything'].map(holdsLine)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+  });
+
   it('renders a text area when multiline', () => {
     render(<Field name="text" label="Document text" multiline inputClassName="input-document" />);
     const area = screen.getByRole('textbox', { name: 'Document text' });
