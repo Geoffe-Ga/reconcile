@@ -18,10 +18,10 @@
  * joiners, else after vouches and a wait (admission.ts, #101). The chat bot's
  * claims keep the first per Proposal moment (#119). A Co-Creator's `dispatch`
  * joins the group's Dispatches at its receipt, and a Proposal carrying one
- * sends it when its pass is final, at its close (dispatches.ts, #112). A `dissolve` ends the
- * group (#108): relay time stops at its receipt, and the fold ignores every
- * event after it, so no vouch lands, no wait ends and no key change becomes
- * due or lands from then on (#98). The fold
+ * sends it when its pass is final, at its close (dispatches.ts, #112). A
+ * `dissolve` ends the group (#108): relay time stops at its receipt, and the
+ * fold ignores every event after it, so no vouch lands, no wait ends and no
+ * key change becomes due or lands from then on (#98). The fold
  * is pure: no I/O, no clock, no randomness, so every device that folds the
  * same records builds the same state.
  */
