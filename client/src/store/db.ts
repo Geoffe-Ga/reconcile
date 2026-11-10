@@ -15,7 +15,9 @@
  * bot's claims (#119) included. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
- * left open. A dissolved group stays as a read-only archive (#108): nothing
+ * left open. Personal Documents (#93) sit in a store of their own beside the
+ * groups (`./personal.ts`), and a backup file brings them back in that same
+ * transaction. A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
  * cleared while its outcomes stay.
  *
@@ -48,6 +50,13 @@ import {
   type VaultLock,
   type VaultRecord,
 } from './vault';
+import {
+  byCreation,
+  isPersonalDocument,
+  keepsHeldCopy,
+  type PersonalDocument,
+  type PersonalStore,
+} from './personal';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -216,8 +225,8 @@ export interface Pull {
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups. */
-export interface Store extends DraftStore {
+/** The device's groups, and its personal Documents (#93). */
+export interface Store extends DraftStore, PersonalStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -301,16 +310,20 @@ export interface Store extends DraftStore {
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
-   * Keep a backup file's groups, in one transaction (#78). A group new to the
-   * device is kept as the file has it, with an empty outbox, no drafts and no
-   * chat claims (#119). For
-   * a group already here, whichever whole copy synced later stays: the file's
-   * replaces the device's only when its last sync is later, and a group this
-   * device is leaving or keeps read-only (#108) stays as it is. Either way
-   * the group is marked `saved`, since a backup file holds it. Nothing is
-   * stamped with the time now.
+   * Keep a backup file's groups and personal Documents, in one transaction
+   * (#78, #93). A group new to the device is kept as the file has it, with an
+   * empty outbox, no drafts and no chat claims (#119). For a group already
+   * here, whichever whole copy synced later stays: the file's replaces the
+   * device's only when its last sync is later, and a group this device is
+   * leaving or keeps read-only (#108) stays as it is. Either way the group is
+   * marked `saved`, since a backup file holds it. A personal Document merges
+   * by id the same way: the file's replaces the device's only when it was
+   * edited later (`keepsHeldCopy`). Nothing is stamped with the time now.
    */
-  restoreGroups(groups: readonly BackedUpGroup[]): Promise<void>;
+  restoreGroups(
+    groups: readonly BackedUpGroup[],
+    personal?: readonly PersonalDocument[],
+  ): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
@@ -345,12 +358,17 @@ export interface Store extends DraftStore {
    */
   requireUnlocked(): Promise<void>;
   /**
-   * Replace everything on the device, every group and the vault, with a
-   * backup file's groups, in one transaction: Restore when the passkey no
-   * longer unlocks the vault (#95). Each is kept as a restore keeps a new
-   * group, its keys in its record, since no vault is left to seal them in.
+   * Replace every group on the device and the vault with a backup file's
+   * groups, in one transaction: Restore when the passkey no longer unlocks
+   * the vault (#95). Each is kept as a restore keeps a new group, its keys in
+   * its record, since no vault is left to seal them in. The file's personal
+   * Documents, which hold no key, merge as {@link Store.restoreGroups} merges
+   * them.
    */
-  replaceGroups(groups: readonly BackedUpGroup[]): Promise<void>;
+  replaceGroups(
+    groups: readonly BackedUpGroup[],
+    personal?: readonly PersonalDocument[],
+  ): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
   subscribe(listener: (groupId: string) => void): () => void;
   /** Close the database. */
@@ -359,25 +377,44 @@ export interface Store extends DraftStore {
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
+  personal: { key: string; value: PersonalDocument };
   vault: { key: string; value: VaultRecord };
 }
 
 /**
- * The schema version. Version 4 adds the key vault (#95) and keeps version
- * 3's groups as they are. Version 3 holds a real group secret, from which the
- * mailbox id and seal key derive (#71); version 2 held signed records (#69)
- * and version 1 the stub era's unsigned data. Data older than version 3,
- * whose relay blobs anyone could read, is deleted on upgrade, with no migration.
+ * The schema version. Version 5 adds the key vault (#95), and version 4 the
+ * personal store (#93); neither deletes anything. Version 3 holds a real
+ * group secret, from which the mailbox id and seal key derive (#71); version
+ * 2 held signed records (#69) and version 1 the stub era's unsigned data.
+ * That older data, whose relay blobs anyone could read, is deleted on
+ * upgrade, with no migration. A dissolved group's `archived` mark (#108) is
+ * an optional field of its record, so it needed no version of its own: a
+ * version 3 group that holds one keeps it through the upgrade.
  */
-const VERSION = 4;
+const VERSION = 5;
 const GROUPS = 'groups';
+const PERSONAL = 'personal';
 const VAULT = 'vault';
 
-/** Both object stores: the records and the vault. */
-type Stores = ('groups' | 'vault')[];
+/** Every object store: the records, the personal Documents and the vault. */
+type Stores = ('groups' | 'personal' | 'vault')[];
 
-/** A read-write transaction over both stores, the only kind that touches key material. */
+/** A read-write transaction over every store, the only kind that writes key material. */
 type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
+
+/**
+ * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
+ * version 3 are deleted, then the personal store and the vault are added
+ * beside whatever groups version 3 kept.
+ */
+function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
+  if (oldVersion < 3) {
+    if (database.objectStoreNames.contains(GROUPS)) database.deleteObjectStore(GROUPS);
+    database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+  }
+  if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
+  if (oldVersion < 5) database.createObjectStore(VAULT, { keyPath: 'id' });
+}
 
 /** The IndexedDB database the app keeps its groups in. */
 export const DATABASE_NAME = 'reconcile';
@@ -390,11 +427,7 @@ export const DATABASE_NAME = 'reconcile';
 export async function openStore(name = DATABASE_NAME): Promise<Store> {
   const db = await openDB<Schema>(name, VERSION, {
     upgrade(database, oldVersion) {
-      if (oldVersion < 3) {
-        if (database.objectStoreNames.contains(GROUPS)) database.deleteObjectStore(GROUPS);
-        database.createObjectStore(GROUPS, { keyPath: 'groupId' });
-      }
-      if (oldVersion < 4) database.createObjectStore(VAULT, { keyPath: 'id' });
+      upgradeFrom(database, oldVersion);
     },
     blocking() {
       db.close();
@@ -534,17 +567,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
-    async restoreGroups(groups) {
-      await writeKeys(db, async (tx) => {
-        const opened = await vaultKeys(tx, session);
-        const kept: Group[] = [];
-        for (const restored of groups) {
-          const held = await tx.objectStore(GROUPS).get(restored.groupId);
-          const whole = held === undefined ? undefined : wholeGroup(held, opened);
-          kept.push(keptCopy(whole, restored));
-        }
-        await keepKeys(tx, session, { put: kept });
-      });
+    async restoreGroups(groups, personal = []) {
+      // Anything that fails takes the whole restore with it, groups and Documents alike.
+      await writeKeys(db, (tx) => restoreInto(tx, session, groups, personal));
       for (const { groupId } of groups) notify(groupId);
     },
     async markBackup(groupIds, mark) {
@@ -560,6 +585,17 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
       for (const groupId of marked) notify(groupId);
     },
+    async listPersonal() {
+      return (await db.getAll(PERSONAL)).sort(byCreation);
+    },
+    getPersonal: (id) => db.get(PERSONAL, id),
+    async savePersonal(document) {
+      if (!isPersonalDocument(document)) {
+        throw new Error('This isn’t a personal Document this device can keep.');
+      }
+      await db.put(PERSONAL, document);
+    },
+    deletePersonal: (id) => db.delete(PERSONAL, id),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -600,12 +636,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await vaultKeys(tx, session);
       await tx.done;
     },
-    async replaceGroups(groups) {
+    async replaceGroups(groups, personal = []) {
       await writeKeys(db, async (tx) => {
         await tx.objectStore(GROUPS).clear();
         await tx.objectStore(VAULT).clear();
-        const kept = groups.map((group) => keptCopy(undefined, group));
-        await keepKeys(tx, session, { put: kept });
+        await restoreInto(tx, session, groups, personal);
       });
       session.key?.fill(0);
       session.key = null;
@@ -619,6 +654,48 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       db.close();
     },
   };
+}
+
+/**
+ * Aborts `tx` and waits for it to end. A transaction that a failed request
+ * has already aborted can't be aborted again, and that's fine: either way,
+ * nothing it wrote stays.
+ */
+async function abandon(tx: KeyTransaction): Promise<void> {
+  try {
+    tx.abort();
+  } catch {
+    // Already aborted by the request that failed.
+  }
+  await tx.done.catch(() => undefined);
+}
+
+/**
+ * Puts each group and personal Document a backup holds into `tx`, keeping
+ * the device's copy wherever it's the one to keep (`keptCopy`,
+ * `keepsHeldCopy`). The groups' keys go through `keepKeys`, so with a vault
+ * they're resealed under the session's key.
+ *
+ * @throws {VaultLocked} when the device has a vault this session hasn't opened.
+ */
+async function restoreInto(
+  tx: KeyTransaction,
+  session: Session,
+  groups: readonly BackedUpGroup[],
+  personal: readonly PersonalDocument[],
+): Promise<void> {
+  const opened = await vaultKeys(tx, session);
+  const records = tx.objectStore(GROUPS);
+  const kept: Group[] = [];
+  for (const restored of groups) {
+    const held = await records.get(restored.groupId);
+    kept.push(keptCopy(held === undefined ? undefined : wholeGroup(held, opened), restored));
+  }
+  await keepKeys(tx, session, { put: kept });
+  const documents = tx.objectStore(PERSONAL);
+  for (const restored of personal) {
+    if (!keepsHeldCopy(await documents.get(restored.id), restored)) await documents.put(restored);
+  }
 }
 
 /**
@@ -751,32 +828,22 @@ async function keepKeys(tx: KeyTransaction, session: Session, change: KeyChange)
 }
 
 /**
- * Runs `work` in one read-write transaction over the records and the vault,
- * the only kind that writes key material. If it throws, the transaction
+ * Runs `work` in one read-write transaction over every store, the only kind
+ * that writes key material. If it throws, the transaction
  * aborts and nothing it wrote stays.
  */
 async function writeKeys<T>(
   db: IDBPDatabase<Schema>,
   work: (tx: KeyTransaction) => Promise<T>,
 ): Promise<T> {
-  const tx = db.transaction([GROUPS, VAULT], 'readwrite');
+  const tx = db.transaction([GROUPS, PERSONAL, VAULT], 'readwrite');
   try {
     const result = await work(tx);
     await tx.done;
     return result;
   } catch (error) {
-    abortQuietly(tx);
-    await tx.done.catch(() => undefined);
+    await abandon(tx);
     throw error;
-  }
-}
-
-/** Aborts `tx`, unless a failed request has already aborted it. */
-function abortQuietly(tx: KeyTransaction): void {
-  try {
-    tx.abort();
-  } catch {
-    // The transaction is already over: a failed request aborts it on its own.
   }
 }
 

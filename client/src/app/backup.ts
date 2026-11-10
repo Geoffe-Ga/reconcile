@@ -42,7 +42,7 @@ export function passphraseProblem(passphrase: string): string | null {
  */
 export async function makeBackup(
   services: {
-    readonly store: Pick<Store, 'listGroups' | 'requireUnlocked'>;
+    readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'requireUnlocked'>;
     readonly now: () => number;
   },
   passphrase: string,

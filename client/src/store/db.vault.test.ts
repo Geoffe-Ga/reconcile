@@ -396,6 +396,40 @@ describe('replaceGroups: a backup file in place of a vault that won’t open', (
 });
 
 describe('the database upgrade that adds the vault', () => {
+  it('keeps version 4’s groups and personal Documents', async () => {
+    const old = await openDB(DATABASE_NAME, 4, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+      },
+    });
+    const stored: Group = {
+      ...ANA,
+      log: [],
+      cursor: 2,
+      relayNow: null,
+      instance: null,
+      outbox: [],
+      lastSyncAt: null,
+    };
+    const statement = {
+      id: 'personal-1',
+      title: 'Mine',
+      text: 'Kind.',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    await old.put('groups', stored);
+    await old.put('personal', statement);
+    old.close();
+
+    const store = await openStore();
+
+    expect(await store.readVault()).toBeNull();
+    expect(keysOf(await store.getGroup(ANA.groupId))).toEqual(keysOf(ANA));
+    expect(await store.listPersonal()).toEqual([statement]);
+  });
+
   it('keeps version 3’s groups, keys and all', async () => {
     const old = await openDB(DATABASE_NAME, 3, {
       upgrade(database) {

@@ -205,7 +205,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     ];
     for (const person of [ana, ben]) {
       const raw = await rawDatabase(person.page);
-      expect(raw.stores).toEqual(['groups', 'vault']);
+      expect(raw.stores).toEqual(['groups', 'personal', 'vault']);
       expect(
         findIn(raw.bytes, `${person.name}’s IndexedDB`, canaries).map(describeFinding),
       ).toEqual([]);
@@ -326,7 +326,7 @@ test('without PRF, the keys stay as they were, and the app says so plainly', asy
           };
         }),
     );
-    expect(raw.stores).toEqual(['groups', 'vault']);
+    expect(raw.stores).toEqual(['groups', 'personal', 'vault']);
     expect(vault).toBe(0);
   });
 

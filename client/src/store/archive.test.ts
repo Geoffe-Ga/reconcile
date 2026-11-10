@@ -26,6 +26,7 @@ import { authorOf, signedAs, testKeys } from '../test/keys';
 import { containsBytes, scanDb } from '../test/scanDb';
 import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
+import type { PersonalDocument } from './personal';
 import { encodeSnapshot, exportGroups, importGroups } from './snapshot';
 import { createSync, type Sync } from './sync';
 
@@ -306,6 +307,37 @@ describe('a dissolve that keeps read-only copies', () => {
   });
 });
 
+describe('a dissolve beside personal Documents (#93)', () => {
+  /** A personal Document on Ana's device, which no group holds. */
+  const statement: PersonalDocument = {
+    id: 'AAAAAAAAAAAAAAAAAAAAAA',
+    title: 'My mission statement',
+    text: 'I show up for my neighbors.\n',
+    createdAt: TS,
+    updatedAt: TS,
+  };
+
+  it('leaves every personal Document on the device when it wipes the group a week on', async () => {
+    const { store, groupId } = await dissolvedDevice(true);
+    await store.savePersonal(statement);
+
+    await sweepArchives(store, clockAt(DISSOLVED + 7 * DAY_MINUTES));
+
+    expect(await store.getGroup(groupId)).toBeUndefined();
+    expect(await store.listPersonal()).toEqual([statement]);
+  });
+
+  it('leaves every personal Document on the device when it clears the archive at 30 days', async () => {
+    const { store, groupId } = await dissolvedDevice(false);
+    await store.savePersonal(statement);
+
+    await sweepArchives(store, clockAt(DISSOLVED + 30 * DAY_MINUTES));
+
+    expect((await store.getGroup(groupId))?.archived?.cleared).toBeDefined();
+    expect(await store.listPersonal()).toEqual([statement]);
+  });
+});
+
 describe('sweepArchives', () => {
   it('leaves alone a group that goes on, and an archive whose log holds no dissolve', async () => {
     const fake = createFakeRelay({ minute: START });
@@ -369,9 +401,9 @@ function copyOf(group: Group, changes: Partial<BackedUpGroup> = {}): BackedUpGro
   return { ...copy, missingHistory: group.missingHistory === true, ...changes };
 }
 
-/** A file sealing `groups` under the test passphrase. */
-const fileOf = (groups: readonly BackedUpGroup[]) =>
-  sealBackup(encodeSnapshot(groups), PASSPHRASE, CHEAP);
+/** A file sealing `groups`, and any `personal` Documents (#93), under the test passphrase. */
+const fileOf = (groups: readonly BackedUpGroup[], personal: readonly PersonalDocument[] = []) =>
+  sealBackup(encodeSnapshot({ groups, personal }), PASSPHRASE, CHEAP);
 
 describe('a dissolved group and backup files (#78)', () => {
   it('leaves the read-only copy out of a backup file, which held the group while it went on', async () => {
