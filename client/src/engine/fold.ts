@@ -9,12 +9,20 @@
  * no clock, no randomness, so every device that folds the same records builds
  * the same state.
  */
-import { can, type Level, MVP_LEVEL } from './capabilities';
+import {
+  can,
+  DEFAULT_JOIN_LEVEL,
+  FOUNDER_LEVEL,
+  isLevel,
+  type Level,
+  wouldVote,
+} from './capabilities';
 import {
   EVENT_VERSION,
   type GenesisBody,
   type GroupEvent,
   type JoinBody,
+  type LevelBody,
   parseRecord,
   type ProposalBody,
   type Score,
@@ -42,7 +50,10 @@ export interface LogRecord {
   readonly bytes: Uint8Array;
 }
 
-/** A member, with the name fixed at join and the seq of the event that admitted them. */
+/**
+ * A member: the name fixed at join, the involvement level they chose most
+ * recently, and the seq of the event that admitted them.
+ */
 export interface Member {
   readonly author: string;
   readonly name: string;
@@ -77,7 +88,9 @@ export interface Ballot {
 /**
  * A proposed change to one Atom, with its vote.
  *
- * `eligible` is who could vote when it opened (ADR-0015). `closedAt` is the
+ * `eligible` is who could vote when it opened (ADR-0015): the members for whom
+ * `wouldVote` held then. A later join or level change never changes it, nor the
+ * quorum and early close that count it. `closedAt` is the
  * receipt minute of the ballot that closed it early, or null. `final` is true
  * once it has closed, early or because relay time reached `deadline`. `outcome`
  * is the tally of the ballots so far, and is settled only when `final`.
@@ -153,7 +166,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   draft.name = body.name;
   draft.chat = body.chat ?? null;
   draft.title = body.title;
-  draft.members.push({ author, name: body.founder, level: MVP_LEVEL, seq: at.seq });
+  draft.members.push({ author, name: body.founder, level: FOUNDER_LEVEL, seq: at.seq });
   draft.atoms = body.atoms.map((text, i) => ({
     id: `${at.id}.${String(i)}`,
     documentId: at.id,
@@ -162,9 +175,24 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   return true;
 }
 
+/** A join names a level it knows, or none (a Collaborator), and comes from someone not yet in. */
 function applyJoin(draft: Draft, body: JoinBody, author: string, at: Receipt): boolean {
-  if (draft.members.some((m) => m.author === author)) return false;
-  draft.members.push({ author, name: body.name, level: MVP_LEVEL, seq: at.seq });
+  const level = body.level ?? DEFAULT_JOIN_LEVEL;
+  if (!isLevel(level) || draft.members.some((m) => m.author === author)) return false;
+  draft.members.push({ author, name: body.name, level, seq: at.seq });
+  return true;
+}
+
+/**
+ * A member moves to a level they don't hold yet, at once (ADR-0021: self-selected).
+ * It never touches an open Proposal's eligible set.
+ */
+function applyLevel(draft: Draft, body: LevelBody, author: string): boolean {
+  const index = draft.members.findIndex((m) => m.author === author);
+  const member = draft.members[index];
+  const { level } = body;
+  if (member === undefined || !isLevel(level) || member.level === level) return false;
+  draft.members[index] = { ...member, level };
   return true;
 }
 
@@ -190,7 +218,7 @@ function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Rec
     text: body.text,
     link: body.link ?? null,
     deadline: at.received + VOTE_WINDOW_MINUTES,
-    eligible: draft.members.filter((m) => can(draft, m.author, 'vote')).map((m) => m.author),
+    eligible: draft.members.filter((m) => wouldVote(draft, m.author)).map((m) => m.author),
     versions: [{ id: at.id, author, text: body.text }],
     ballots: [],
     closedAt: null,
@@ -267,6 +295,8 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyProposal(draft, event.body, event.author, at);
     case 'vote':
       return applyVote(draft, event.body, event.author, at);
+    case 'level':
+      return applyLevel(draft, event.body, event.author);
   }
 }
 
