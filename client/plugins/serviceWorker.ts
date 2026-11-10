@@ -19,12 +19,17 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { Plugin, ResolvedConfig } from 'vite';
 
-/** The worker's entry in the client, and the file the build writes it to. */
-const ENTRY = 'src/net/sw.ts';
+/**
+ * The worker's entry, found from this file rather than from the build's
+ * root, so a build of another page with this config (such as
+ * e2e/ios-scroll-lock.spec.ts's) still finds it. And the file it becomes.
+ */
+const ENTRY = fileURLToPath(new URL('../src/net/sw.ts', import.meta.url));
 const OUTPUT = 'sw.js';
 /** The name `src/net/sw.ts` declares, which the build replaces with the precache list. */
 const PLACEHOLDER = '__RECONCILE_PRECACHE__';
@@ -73,8 +78,7 @@ export function serviceWorker(): Plugin {
       config = resolved;
     },
     buildStart() {
-      const root = config?.root ?? process.cwd();
-      this.emitFile({ type: 'chunk', id: resolve(root, ENTRY), fileName: OUTPUT });
+      this.emitFile({ type: 'chunk', id: ENTRY, fileName: OUTPUT });
     },
     generateBundle(_options, bundle) {
       const worker = Object.values(bundle).find((file) => file.fileName === OUTPUT);
