@@ -168,6 +168,17 @@ def test_a_route_sees_no_client_address(app: ASGIApp) -> None:
     assert CANARY not in json.dumps(seen)
 
 
+def _exchange_backup(client: TestClient) -> None:
+    """PUT a backup, GET it and GET an unknown one, each with every canary (#97)."""
+    backup = mailbox_id()
+    stored = put_backup(client, backup, blob(65536), headers=CANARY_HEADERS)
+    fetched = client.get(f"/v1/backup/{backup}", headers=CANARY_HEADERS)
+    missing = client.get(f"/v1/backup/{mailbox_id()}", headers=CANARY_HEADERS)
+
+    assert (stored.status_code, fetched.content) == (204, blob(65536))
+    assert missing.content == b'{"error":"not_found"}'
+
+
 def test_distinct_clients_leave_no_address_in_files_or_output(
     app: ASGIApp,
     db_path: Path,
@@ -179,17 +190,12 @@ def test_distinct_clients_leave_no_address_in_files_or_output(
     needles = [CANARY, *CLIENT_ADDRESSES]
     for address in CLIENT_ADDRESSES:
         client = TestClient(app, client=(address, 41000))
-        mailbox, backup = mailbox_id(), mailbox_id()
+        mailbox = mailbox_id()
         assert put(client, mailbox, blob(), headers=CANARY_HEADERS).status_code == 201
         page = client.get(f"/v1/mailbox/{mailbox}", headers=CANARY_HEADERS)
         assert page.status_code == 200
         assert not _leaks(page.content, needles)
-        stored = put_backup(client, backup, blob(65536), headers=CANARY_HEADERS)
-        assert stored.status_code == 204
-        fetched = client.get(f"/v1/backup/{backup}", headers=CANARY_HEADERS)
-        assert fetched.content == blob(65536)
-        missing = client.get(f"/v1/backup/{mailbox_id()}", headers=CANARY_HEADERS)
-        assert missing.content == b'{"error":"not_found"}'
+        _exchange_backup(client)
     live = sqlite_files(db_path)
     out, err = capfd.readouterr()
     logged = "\n".join(record.getMessage() for record in caplog.records)
