@@ -15,9 +15,10 @@ import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-compone
 
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
+import { MotionTitle, Named } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
 import { formatMinute, minuteIso } from '../app/time';
-import { type VersionView, versionViews } from '../app/versionViews';
+import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import type { Ballot, GroupState, Proposal } from '../engine/fold';
@@ -62,6 +63,20 @@ function Thanks({ names }: { readonly names: readonly string[] }) {
       ))}
       {result.end}
     </p>
+  );
+}
+
+/** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
+function StewardPassed({ steward }: { readonly steward: StewardView }) {
+  const { motion } = steward;
+  const { stewards } = messages;
+  const parts = motion.kind === 'elect' ? stewards.elected(motion.seat) : stewards.recalled;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">
+        <Named parts={parts} name={motion.name} />
+      </p>
+    </div>
   );
 }
 
@@ -128,7 +143,8 @@ function Failed({ detail, versions }: OutcomeProps) {
 function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
   const { state, me, proposal, onProposeAgain } = props;
   const reason = useId();
-  if (!can(state, me, 'propose')) return null;
+  // A steward vote isn't proposed again from here: Group home says when an election is due (#102).
+  if (proposal.target.kind !== 'edit' || !can(state, me, 'propose')) return null;
   const busy = composeOption(state, proposal.atom) !== 'propose';
   return (
     <div className="row result-again">
@@ -168,12 +184,15 @@ function Lapsed({ props }: OutcomeProps) {
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
+  const steward = props.versions[0]?.steward;
+  if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** "Version 1 · Ana", the version's heading wherever the result names it. */
+/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward ballot decided. */
 function VersionName({ version }: { readonly version: VersionView }) {
+  if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}

@@ -1,6 +1,7 @@
 /**
  * What the composer, the ballot and the level picker do (spec §4 and §8),
- * apart from any screen: propose, add a version, vote, and choose a level.
+ * apart from any screen: propose, add a version, vote, and choose a level;
+ * and for stewards (#102), propose a steward or a recall, and suspend.
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -195,6 +196,73 @@ export async function chooseLevel(
     group: groupId,
     ts: services.now(),
     body: { level },
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+}
+
+/** A steward Proposal's entries: the seat, the nominee (null for a recall), and title and why, trimmed. */
+export interface StewardValues {
+  readonly seat: number;
+  readonly member: string | null;
+  readonly title: string;
+  readonly why: string;
+}
+
+/**
+ * Proposes electing the nominee to `seat`, or recalling its steward when
+ * there is none (ADR-0049, #102), as this device's member of `groupId`.
+ * The title and why are NFC-normalized before signing. One too large for any
+ * blob is refused before anything is queued. The fold decides whether it
+ * opens: it ignores one the seat or the group's size doesn't allow.
+ */
+export async function proposeSteward(
+  services: ProposalServices,
+  groupId: string,
+  values: StewardValues,
+): Promise<ProposeResult> {
+  const { seat, member } = values;
+  const body = {
+    target: { kind: 'steward', seat, member } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
+/** A suspension's entries: the member it suspends, and the reason as typed, blank for none. */
+export interface SuspendValues {
+  readonly member: string;
+  readonly reason: string;
+}
+
+/**
+ * Suspends the member named (ADR-0016, #102), as this device's steward in `groupId`.
+ * The reason is trimmed and NFC-normalized, and left out when blank. The
+ * suspension starts when the relay receives it, and the fold decides whether
+ * it holds.
+ */
+export async function suspend(
+  services: ProposalServices,
+  groupId: string,
+  values: SuspendValues,
+): Promise<void> {
+  const reason = nfc(values.reason.trim());
+  const body = { member: values.member, ...(reason === '' ? {} : { reason }) };
+  const event = await signFor(services, groupId, {
+    type: 'suspend',
+    group: groupId,
+    ts: services.now(),
+    body,
   });
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();
