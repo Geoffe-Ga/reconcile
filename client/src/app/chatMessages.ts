@@ -85,9 +85,14 @@ export function openMoment(
   return addedVersion && proposal.author !== me ? 'version' : 'open';
 }
 
-/** The title Include the title may add, or null for a steward Proposal, whose title names a member. */
+/**
+ * The title Include the title may add: a change to the Document's, an add's
+ * included (#75), or null for any other target, such as a steward Proposal,
+ * whose title names a member.
+ */
 export function shareableTitle(proposal: ChatSource): string | null {
-  return proposal.target.kind === 'edit' ? proposal.title : null;
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add' ? proposal.title : null;
 }
 
 /** What a share of `proposal` says: its deadline, and its title only when `includeTitle`. */
