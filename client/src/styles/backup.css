@@ -1,0 +1,113 @@
+/*
+ * Settings, the backup card and Erase (#78), from tokens.css (DESIGN.md).
+ * Safety stays quiet: the backup card is an inline card, never a modal, and
+ * `negative` appears only on Erase's final press-and-hold confirm.
+ */
+
+/* Group home's suggestion, quiet and inline, between the open Proposals and the Document.
+ * Its row lines the card up with the sections' content column, as .section does. */
+.backup-slot {
+  display: grid;
+  padding-block-end: var(--space-5);
+}
+
+@media (min-width: 40rem) {
+  .backup-slot {
+    grid-template-columns: 10rem minmax(0, 1fr);
+    column-gap: var(--space-5);
+  }
+
+  .backup-slot > .backup-card {
+    grid-column: 2;
+  }
+}
+
+.backup-card {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.backup-card .button-quiet {
+  margin-inline-start: 0;
+}
+
+/* The chosen backup file's name, which may be anything the person's device called it. */
+.restore-file {
+  color: var(--body);
+  overflow-wrap: anywhere;
+}
+
+/* The Erase card: as calm as any setting until it's opened. */
+.erase-card {
+  gap: var(--space-4);
+}
+
+.erase-panel {
+  max-width: 34em;
+  color: var(--body);
+}
+
+/* Press and hold: the button, a bar that fills while it's held, and the live region. */
+.hold {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/* Paper-colored words on negative: 5.9:1 in light, 5.4:1 in dark (checked 2026-11-10). */
+.button-negative {
+  background: var(--negative);
+  color: var(--surface);
+  /* A long press selects nothing and opens no callout, so the hold is all it does. */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.button-negative[data-pressed] {
+  filter: brightness(0.92);
+}
+
+.button-negative[data-disabled] {
+  opacity: 0.7;
+}
+
+.hold-track {
+  display: block;
+  width: min(100%, 16rem);
+  height: var(--space-1);
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--sunken);
+}
+
+.hold-fill {
+  display: block;
+  height: 100%;
+  background: var(--negative);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* Fills over the hold's 3 seconds (HOLD_SECONDS); letting go empties it at once. */
+.hold-fill[data-holding] {
+  transform: scaleX(1);
+  transition: transform 3s linear;
+}
+
+:dir(rtl) .hold-fill {
+  transform-origin: right center;
+}
+
+/* Without motion, the bar steps once a second, in time with the live region. */
+@media (prefers-reduced-motion: reduce) {
+  .hold-fill[data-holding] {
+    transition-timing-function: steps(3, end);
+  }
+}

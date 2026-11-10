@@ -52,6 +52,8 @@ export interface GroupHomeProps {
   readonly onLeave: () => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): the group reads, but takes no votes. */
   readonly leaving?: boolean;
+  /** The quiet card that suggests a backup (#78), after the open Proposals; none when absent. */
+  readonly backupCard?: ReactNode;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -559,6 +561,7 @@ export function GroupHome(props: GroupHomeProps) {
           otherOpen={leaving ? lists.open : lists.otherOpen}
           now={now}
         />
+        {props.backupCard}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
             <span className="card-link-title">

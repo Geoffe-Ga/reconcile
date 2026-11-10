@@ -20,6 +20,10 @@
  * its leave: the pass purges it from the store and reads nothing more for it.
  * Until then it stays, leaving, through failures and reloads.
  *
+ * Erase halts the loop for good before it closes the store (#78): no new pass
+ * starts, a pass already running stops before its next group, and `halt`
+ * resolves once it has, so no request starts after that.
+ *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
  * event id keeps any event from folding twice. Folded state comes from the
@@ -178,6 +182,11 @@ export interface Sync extends Poller {
   isReachable(): boolean;
   /** Hear when {@link Sync.isReachable} changes; returns the way to stop. */
   subscribe(listener: () => void): () => void;
+  /**
+   * Stop for good (#78): no pass starts again, even on `start`, and a pass
+   * already running stops before its next group. Resolves once it has.
+   */
+  halt(): Promise<void>;
 }
 
 /** A sync loop over `options.store`; call `start()` to begin polling. */
@@ -185,6 +194,7 @@ export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
+  let halted = false;
   let inFlight: Promise<boolean> | null = null;
 
   /**
@@ -230,6 +240,7 @@ export function createSync(options: SyncOptions): Sync {
     let ok = true;
     try {
       for (const group of await store.listGroups()) {
+        if (halted) break;
         ok = (await syncGroup(group).then(succeeded, failed)) && ok;
       }
     } catch {
@@ -245,6 +256,7 @@ export function createSync(options: SyncOptions): Sync {
   }
 
   function syncOnce(): Promise<boolean> {
+    if (halted) return Promise.resolve(false);
     inFlight ??= pass().finally(() => {
       inFlight = null;
     });
@@ -253,7 +265,17 @@ export function createSync(options: SyncOptions): Sync {
 
   const poller = createPoller(syncOnce, options.timers);
   return {
-    ...poller,
+    start() {
+      if (!halted) poller.start();
+    },
+    stop() {
+      poller.stop();
+    },
+    async halt() {
+      halted = true;
+      poller.stop();
+      await inFlight;
+    },
     syncOnce,
     isReachable: () => reachable,
     subscribe(listener) {

@@ -6,6 +6,7 @@ import './styles/pressable.css';
 import './styles/app.css';
 import './styles/proposals.css';
 import './styles/firstRun.css';
+import './styles/backup.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -13,13 +14,14 @@ import { createRoot } from 'react-dom/client';
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
 import { Root } from './app/Root';
 import { copyToClipboard } from './app/services';
-import { browserShare } from './app/share';
+import { browserFileTargets, browserShare } from './app/share';
 import { xchachaSeal } from './crypto/seal';
 import { createRelay } from './net/relay';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
 import { requestPersistence } from './platform/persist';
 import { openStore } from './store/db';
+import { eraseDevice } from './store/erase';
 import { createSync } from './store/sync';
 
 const root = document.getElementById('root');
@@ -46,6 +48,8 @@ async function start(container: HTMLElement): Promise<void> {
     origin: window.location.origin,
     copyText: copyToClipboard,
     share: browserShare(),
+    files: browserFileTargets(),
+    erase: () => eraseDevice({ sync, store }),
   };
   const firstRun = { platform: readPlatform(), notice: noticeRecord(), requestPersistence };
   createRoot(container).render(

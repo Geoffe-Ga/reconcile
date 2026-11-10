@@ -2,15 +2,14 @@
  * The scan behind relay-learns-nothing.spec.ts (#71): looks for canaries in
  * raw bytes, in every spelling a leak could take.
  *
- * A canary is checked as its own bytes (UTF-8 for text, raw for a key), as
- * hex in either case, and as standard and URL-safe base64 at all three byte
- * alignments. Base64 of bytes that start at an offset that isn't a multiple
- * of 3 within a longer run spells them differently, so each alignment drops
- * the canary's first bytes up to the next group of 3, and its tail past the
- * last whole group: what's left is spelled the same wherever it sits.
+ * A canary is checked in every spelling `src/test/scan.ts` lists, the one
+ * list the unit tests scan with too: its own bytes, hex in either case, and
+ * standard and URL-safe base64 at all three byte alignments.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+
+import { spellings as spellingsOf } from '../../src/test/scan';
 
 /** Something the relay must never hold, under a name for the report. */
 export interface Canary {
@@ -31,9 +30,6 @@ export interface Finding {
   readonly file: string;
 }
 
-/** The shortest canary whose every spelling still has a few bytes left to look for. */
-const MIN_CANARY_BYTES = 8;
-
 /** A canary for `text`: its UTF-8 bytes. */
 export function textCanary(label: string, text: string): Canary {
   return { label, bytes: Buffer.from(text, 'utf8') };
@@ -49,25 +45,10 @@ export function keyCanaries(label: string, bytes: Uint8Array): Canary[] {
 
 /** Every spelling of `bytes` the scan looks for. */
 export function spellings(bytes: Uint8Array): Spelling[] {
-  if (bytes.length < MIN_CANARY_BYTES) {
-    throw new RangeError(`A canary needs at least ${String(MIN_CANARY_BYTES)} bytes.`);
-  }
-  const raw = Buffer.from(bytes);
-  const hex = raw.toString('hex');
-  const found: Spelling[] = [
-    { encoding: 'bytes', needle: raw },
-    { encoding: 'hex', needle: Buffer.from(hex) },
-    { encoding: 'HEX', needle: Buffer.from(hex.toUpperCase()) },
-  ];
-  for (let offset = 0; offset < 3; offset += 1) {
-    const start = (3 - offset) % 3;
-    const whole = raw.subarray(start, start + 3 * Math.floor((raw.length - start) / 3));
-    for (const encoding of ['base64', 'base64url'] as const) {
-      const needle = Buffer.from(whole.toString(encoding));
-      found.push({ encoding: `${encoding} at offset ${String(offset)}`, needle });
-    }
-  }
-  return found;
+  return spellingsOf(bytes).map(({ encoding, needle }) => ({
+    encoding,
+    needle: Buffer.from(needle),
+  }));
 }
 
 /** Every spelling of every canary in `haystack`, which came from `file`. */

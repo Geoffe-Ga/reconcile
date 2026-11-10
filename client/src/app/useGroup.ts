@@ -66,6 +66,12 @@ export interface GroupView {
    * only, until the relay has the leave and the sync loop deletes it.
    */
   leaving: boolean;
+  /**
+   * Whether group home suggests a backup (#78): the group is on the device,
+   * no backup file it saved or restored from holds it, and nobody answered
+   * Not now.
+   */
+  suggestBackup: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
 }
@@ -94,15 +100,16 @@ export function useGroup(groupId: string): GroupView {
   };
 }
 
-/** What a stored group says of its syncs and its leave, or nothing yet before it loads. */
+/** What a stored group says of its syncs, its leave and its backup, or nothing yet before it loads. */
 function syncStatusOf(
   group: Group | undefined,
-): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving'> {
+): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'suggestBackup'> {
   return {
     lastSyncAt: group?.lastSyncAt ?? null,
     relayNow: group?.relayNow ?? null,
     missingHistory: group?.missingHistory === true,
     leaving: group?.leaving !== undefined,
+    suggestBackup: group !== undefined && group.backup === undefined,
   };
 }
 

@@ -1,11 +1,12 @@
 /**
  * Everything the app reaches outside React: the store, the sync loop, the
- * relay, the seal, the clock, the clipboard and Web Share. `main.tsx` builds
- * the real ones; tests hand in a fake relay and fake IndexedDB.
+ * relay, the seal, the clock, the clipboard, Web Share, where a backup file
+ * goes, and Erase. `main.tsx` builds the real ones; tests hand in a fake
+ * relay and fake IndexedDB.
  */
 import type { Sync } from '../store/sync';
 import type { Services } from './actions';
-import type { WebShare } from './share';
+import type { FileTargets, WebShare } from './share';
 
 /** What `App` runs on. */
 export interface AppServices extends Services {
@@ -21,6 +22,10 @@ export interface AppServices extends Services {
   readonly copyText: (text: string | Promise<string>) => Promise<void>;
   /** The browser's Web Share (`navigator.share`), or undefined where it has none (#77). */
   readonly share: WebShare | undefined;
+  /** Where a saved backup file goes: the share sheet where it takes files, or a download (#78). */
+  readonly files: FileTargets;
+  /** Erases all of Reconcile's data on this device, then reloads at `/` (#78, `eraseDevice`). */
+  readonly erase: () => Promise<void>;
 }
 
 /**

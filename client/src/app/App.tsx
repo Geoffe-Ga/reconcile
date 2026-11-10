@@ -19,6 +19,7 @@ import { Join } from '../screens/Join';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { ProposalView } from '../screens/ProposalView';
+import { Settings } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
 import type { Persistence } from '../platform/persist';
 import { Start } from '../screens/Start';
@@ -34,6 +35,8 @@ import {
   lookupInvite,
   makeInvite,
 } from './actions';
+import { makeBackup, restoreBackup, saveBackup } from './backup';
+import { BackupCard } from './BackupCard';
 import type { Scores } from './Ballot';
 import {
   addVersion,
@@ -48,7 +51,7 @@ import {
   type ProposalValues,
   type VersionValues,
 } from './proposals';
-import { navigate, replaceRoute, type Route, useRoute } from './router';
+import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
@@ -75,8 +78,31 @@ interface StartScreenProps {
 
 function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
   const groups = useGroupList(services.store);
+  const onRestore = useCallback(
+    (bytes: Uint8Array, passphrase: string) => restoreBackup(services, bytes, passphrase),
+    [services],
+  );
   return groups === null ? null : (
-    <Start groups={groups} onOpenInvite={onOpenInvite} persistence={persistence} />
+    <Start
+      groups={groups}
+      onOpenInvite={onOpenInvite}
+      persistence={persistence}
+      onRestore={onRestore}
+    />
+  );
+}
+
+/** Settings (#78): Save a backup, Restore a backup, and Erase. */
+function SettingsScreen({ services }: { readonly services: AppServices }) {
+  const groups = useGroupList(services.store);
+  return groups === null ? null : (
+    <Settings
+      hasGroups={groups.length > 0}
+      onMake={(passphrase) => makeBackup(services, passphrase)}
+      onSave={(backup) => saveBackup(services, backup)}
+      onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
+      onErase={services.erase}
+    />
   );
 }
 
@@ -156,6 +182,11 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           pending={group.pending}
           leaving={group.leaving}
+          backupCard={
+            group.suggestBackup && !group.leaving ? (
+              <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
+            ) : null
+          }
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
           onLeave={async () => {
             await leaveGroup(services, groupId);
@@ -335,7 +366,6 @@ function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
 }
 
 /** A route inside one group. */
-type GroupRoute = Extract<Route, { readonly groupId: string }>;
 
 /** The screen for a route inside one group. */
 function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
@@ -400,6 +430,8 @@ function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProp
       );
     case 'create':
       return <CreateScreen services={services} />;
+    case 'settings':
+      return <SettingsScreen services={services} />;
     case 'join':
       return (
         <JoinScreen

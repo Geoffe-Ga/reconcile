@@ -14,10 +14,11 @@ import type { FakeRelay } from './fakeRelay';
 /** The app's origin in tests. */
 export const TEST_ORIGIN = 'https://reconcile.test';
 
-/** A test device: its services, and every text it copied. */
+/** A test device: its services, every text it copied, and every file it downloaded. */
 export interface TestDevice {
   readonly services: AppServices;
   readonly copied: string[];
+  readonly downloaded: File[];
 }
 
 /** The device clock tests start at, in milliseconds. */
@@ -42,7 +43,10 @@ export async function testDevice(
   const copyText = vi.fn(async (text: string | Promise<string>) => {
     copied.push(await text);
   });
-  // No Web Share, as in a desktop browser without it: Tell your group copies instead.
+  const downloaded: File[] = [];
+  // No Web Share, as in a desktop browser without it: Tell your group copies
+  // instead, and a backup file downloads. Erase is a spy: `store/erase.test.ts`
+  // erases for real.
   const services = {
     store,
     relay,
@@ -52,6 +56,14 @@ export async function testDevice(
     origin: TEST_ORIGIN,
     copyText,
     share: undefined,
+    files: {
+      canShare: undefined,
+      share: undefined,
+      download: (file: File) => {
+        downloaded.push(file);
+      },
+    },
+    erase: vi.fn(() => Promise.resolve()),
   };
-  return { services, copied };
+  return { services, copied, downloaded };
 }
