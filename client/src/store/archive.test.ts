@@ -307,6 +307,37 @@ describe('a dissolve that keeps read-only copies', () => {
   });
 });
 
+describe('a dissolve beside personal Documents (#93)', () => {
+  /** A personal Document on Ana's device, which no group holds. */
+  const statement: PersonalDocument = {
+    id: 'AAAAAAAAAAAAAAAAAAAAAA',
+    title: 'My mission statement',
+    text: 'I show up for my neighbors.\n',
+    createdAt: TS,
+    updatedAt: TS,
+  };
+
+  it('leaves every personal Document on the device when it wipes the group a week on', async () => {
+    const { store, groupId } = await dissolvedDevice(true);
+    await store.savePersonal(statement);
+
+    await sweepArchives(store, clockAt(DISSOLVED + 7 * DAY_MINUTES));
+
+    expect(await store.getGroup(groupId)).toBeUndefined();
+    expect(await store.listPersonal()).toEqual([statement]);
+  });
+
+  it('leaves every personal Document on the device when it clears the archive at 30 days', async () => {
+    const { store, groupId } = await dissolvedDevice(false);
+    await store.savePersonal(statement);
+
+    await sweepArchives(store, clockAt(DISSOLVED + 30 * DAY_MINUTES));
+
+    expect((await store.getGroup(groupId))?.archived?.cleared).toBeDefined();
+    expect(await store.listPersonal()).toEqual([statement]);
+  });
+});
+
 describe('sweepArchives', () => {
   it('leaves alone a group that goes on, and an archive whose log holds no dissolve', async () => {
     const fake = createFakeRelay({ minute: START });

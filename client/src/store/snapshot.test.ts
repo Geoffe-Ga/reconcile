@@ -13,7 +13,9 @@ import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { testKeys } from '../test/keys';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
-import { type Group, openStore, type Store } from './db';
+import { groupLog } from '../test/votes';
+import { clearedArchive } from './archive';
+import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import { eventIdOf } from './eventId';
 import type { PersonalDocument } from './personal';
 import {
@@ -308,6 +310,102 @@ describe('personal Documents in a backup (#93)', () => {
     const json = JSON.parse(text(await snapshotOf(device))) as { personal: unknown };
 
     expect(json.personal).toEqual([canaryStatement()]);
+  });
+});
+
+/**
+ * A group whose dissolve passed with three 4s and folded a minute later
+ * (#108), as Ana's device held it before it marked the group read-only: what
+ * an older app's backup file could hold. `live` is the copy from before the
+ * dissolve folded, synced a day later by a device that never fetched it.
+ */
+function dissolvedGroup() {
+  const log = groupLog({ members: ['Ben', 'Cal'] });
+  const motion = log.proposeDissolve('ana', false);
+  for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+  log.minute += 1;
+  log.dissolve('ana', motion);
+  const { secretKey, author } = testKeys('ana');
+  const records = [...log.records];
+  const dissolved: BackedUpGroup = {
+    groupId: log.group,
+    secret: new Uint8Array(32).fill(5),
+    signingKey: secretKey,
+    me: { author, name: 'Ana' },
+    log: records,
+    cursor: records.length,
+    relayNow: log.minute + 5,
+    instance: 'relay-1',
+    lastSyncAt: 1_762_000_000_000,
+    missingHistory: false,
+  };
+  const live: BackedUpGroup = {
+    ...dissolved,
+    log: records.slice(0, -1),
+    cursor: records.length - 1,
+    lastSyncAt: 1_762_086_400_000,
+  };
+  return { groupId: log.group, dissolved, live };
+}
+
+/** A file sealing `groups` and `personal` under the test passphrase. */
+function fileOf(groups: readonly BackedUpGroup[], personal: readonly PersonalDocument[]) {
+  return sealBackup(encodeSnapshot({ groups, personal }), PASSPHRASE, CHEAP);
+}
+
+describe('a dissolved group and personal Documents in one backup (#108, #93)', () => {
+  it('bring back both from one file: the group as a read-only copy, and every Document', async () => {
+    const { groupId, dissolved } = dissolvedGroup();
+    const file = await fileOf([dissolved], [canaryStatement(), READING]);
+    const fresh = await openStore('fresh');
+
+    expect(await importGroups(fresh, file, PASSPHRASE)).toBe(1);
+
+    const held = await fresh.getGroup(groupId);
+    expect(held?.archived).toEqual({ reason: 'dissolved' });
+    expect([held?.outbox, held?.backup]).toEqual([[], 'saved']);
+    expect(held?.log.map((record) => text(record.bytes))).toEqual(
+      dissolved.log.map((record) => text(record.bytes)),
+    );
+    expect(await folded(fresh, groupId)).toMatchObject({ dissolved: { wipe: false } });
+    await expect(fresh.enqueue(groupId, utf8('{"late":1}'))).rejects.toThrow('read-only');
+    expect(await fresh.listPersonal()).toEqual([canaryStatement(), READING]);
+  });
+
+  it('leave the read-only copy out of the next backup, which still carries every Document', async () => {
+    const { groupId, dissolved } = dissolvedGroup();
+    const device = await openStore('ana');
+    await importGroups(device, await fileOf([dissolved], [canaryStatement()]), PASSPHRASE);
+    await device.savePersonal(READING);
+
+    const plaintext = await snapshotOf(device);
+    const { file, groupIds } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+
+    expect(groupIds).toEqual([]);
+    expect(text(plaintext)).not.toContain(groupId);
+    expect(await importGroups(second, file, PASSPHRASE)).toBe(0);
+    expect(await second.listGroups()).toEqual([]);
+    expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
+  });
+
+  it('keep a cleared archive as it is against a file’s later live copy, and still merge the file’s Documents', async () => {
+    const { groupId, dissolved, live } = dissolvedGroup();
+    const device = await openStore('ana');
+    await importGroups(device, await fileOf([dissolved], []), PASSPHRASE);
+    const state = await folded(device, groupId);
+    await device.clearArchive(groupId, clearedArchive(state, 1_764_000_000_000));
+    await device.savePersonal({ ...canaryStatement(1_762_000_450_000), text: 'Older.' });
+    const before = await dump(device);
+
+    const file = await fileOf([live], [canaryStatement(1_762_000_500_000), READING]);
+    expect(await importGroups(device, file, PASSPHRASE)).toBe(1);
+
+    expect(await dump(device)).toEqual(before);
+    const kept = await device.getGroup(groupId);
+    expect(kept?.log).toEqual([]);
+    expect(kept?.archived?.cleared?.state.dissolved).toEqual(state.dissolved);
+    expect(await device.listPersonal()).toEqual([canaryStatement(1_762_000_500_000), READING]);
   });
 });
 
