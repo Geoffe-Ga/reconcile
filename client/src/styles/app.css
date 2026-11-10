@@ -930,7 +930,8 @@ a[data-focus-visible] {
   font: var(--type-ui);
 }
 
-/* Tell your group: the button, what it shares, and how it went. */
+/* Tell your group (#77, #113): what it shares, as it will read, Include the
+ * title, the button, and how it went. */
 .tell {
   display: grid;
   gap: var(--space-2);
@@ -941,10 +942,73 @@ a[data-focus-visible] {
   max-width: 34em;
 }
 
+/* The message itself, set apart as a quote of what lands in the chat. */
+.tell-message {
+  max-width: 34em;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--hairline);
+  color: var(--body);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+/* A checkbox: a box that fills and shows a tick once chosen, so the choice
+ * never rests on color alone, beside its label, the whole row one target. */
+.checkbox {
+  display: inline-flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: var(--touch);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.checkbox-box {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--muted);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.checkbox[data-hovered] .checkbox-box {
+  border-color: var(--ink);
+}
+
+.checkbox[data-selected] .checkbox-box {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+/* The tick: two borders of a box turned 45°, in the color that reads on primary. */
+.checkbox[data-selected] .checkbox-box::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 1px;
+  inset-inline-start: 5px;
+  width: 6px;
+  height: 11px;
+  border: solid var(--on-primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.checkbox[data-focus-visible] .checkbox-box {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.checkbox[data-disabled] {
+  cursor: default;
+}
+
 /* Dissolving a group (#108) ----------------------------------------------- */
 
-/* "Also erase it from every device": a card like a level's, with a square box
- * that takes a check once chosen, so the choice never rests on color alone. */
+/* "Also erase it from every device": a card like a level's, around the
+ * checkbox above, with what wiping means under its label. */
 .check-option {
   position: relative;
   display: grid;
@@ -965,56 +1029,16 @@ a[data-focus-visible] {
   background: var(--primary-soft);
 }
 
-.check-button {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  min-height: var(--touch);
-  color: var(--ink);
-  font: var(--type-ui);
+.check-option .checkbox {
   font-weight: 650;
-  cursor: pointer;
 }
 
-.check-box {
-  position: relative;
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--muted);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
-.check-option[data-selected] .check-box {
-  border-color: var(--primary);
-  background: var(--primary);
-}
-
-/* The check: an L of two borders, turned. */
-.check-option[data-selected] .check-box::after {
-  content: '';
-  position: absolute;
-  inset-block-start: 1px;
-  inset-inline-start: 5px;
-  width: 6px;
-  height: 11px;
-  border: solid var(--on-primary);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-/* The whole card takes the press, and shows keyboard focus around it. */
-.check-button::after {
+/* The whole card takes the press. */
+.check-option .checkbox::after {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: var(--radius-md);
-}
-
-.check-button[data-focus-visible]::after {
-  outline: 3px solid var(--ochre);
-  outline-offset: 2px;
 }
 
 /* What wiping means, and what no app can stop, under the box's label. */

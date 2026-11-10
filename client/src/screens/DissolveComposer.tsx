@@ -74,8 +74,8 @@ function WipeChoice({
   const { dissolve } = messages;
   return (
     <CheckboxField className="check-option" name="wipe" isSelected={value} onChange={onChange}>
-      <CheckboxButton className="check-button">
-        <span className="check-box" aria-hidden="true" />
+      <CheckboxButton className="checkbox">
+        <span className="checkbox-box" aria-hidden="true" />
         {dissolve.wipeLabel}
       </CheckboxButton>
       <Text slot="description" className="check-description">

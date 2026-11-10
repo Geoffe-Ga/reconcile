@@ -4,20 +4,24 @@
  * Top to bottom: the outcome sentence; on a pass, the new text full width and
  * thanks to the winning version's author by name, with no numbers and no
  * animation; on a fail, each version's unmet condition in words; on a lapse,
- * ADR-0069's sentence and Propose again. Then each version's totals, the
- * individual ballots and notes under a disclosure, and when voting ran, in
- * relay time. A ballot that reached the relay too late tells its author so.
- * No result offers a part-ways action (ADR-0068). Everything here is read
- * from the group's own log on this device; nothing is sent. Once a dissolved
- * group's archive has cleared its ballots (#108), the totals come from the
- * tally this device kept, and the ballots give way to when they were cleared.
+ * ADR-0069's sentence and Propose again. Then Tell your group's result
+ * message (#113), each version's totals, the individual ballots and notes
+ * under a disclosure, and when voting ran, in relay time. A ballot that
+ * reached the relay too late tells its author so. No result offers a
+ * part-ways action (ADR-0068). Everything here is read from the group's own
+ * log on this device; nothing is sent to the relay. Once a dissolved group's
+ * archive has cleared its ballots (#108), the totals come from the tally this
+ * device kept, and the ballots give way to when they were cleared.
  */
 import { Fragment, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
+import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
+import type { ShareOutcome } from '../app/share';
 import { MotionTitle, Named } from '../app/stewards';
+import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
@@ -42,9 +46,12 @@ export interface ResultViewProps {
   readonly own: OwnBallot;
   /** Opens the composer to propose a lapsed Proposal again. */
   readonly onProposeAgain: () => void;
+  /** Shares the result message into the group's chat, or copies it (#113). */
+  readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /**
    * Whether this device's leave waits for the relay (#77), or the group has
-   * dissolved (#108): then nothing is proposed again.
+   * dissolved (#108): then nothing is proposed again, and the result offers
+   * no message to tell the group.
    */
   readonly leaving?: boolean;
   /** Once a dissolved group's ballots are cleared (#108): when, and the tally kept for this Proposal. */
@@ -360,6 +367,9 @@ export function ResultView(props: ResultViewProps) {
       </h2>
       <Outcome props={props} detail={detail} versions={versions} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
+      {props.leaving === true ? null : (
+        <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
+      )}
       <Totals detail={detail} versions={versions} />
       {cleared === undefined ? (
         <Ballots props={props} versions={versions} />

@@ -16,7 +16,8 @@ import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
 import type { AppServices } from './services';
-import { tellText, type WebShare } from './share';
+import { chatMessage } from './chatMessages';
+import type { WebShare } from './share';
 
 freshIndexedDBPerTest();
 
@@ -96,15 +97,48 @@ describe('Tell your group', () => {
     expect(share).toHaveBeenCalledTimes(1);
     const [data] = share.mock.calls[0] ?? [];
     expect(data).toEqual({
-      text: tellText('proposal', (proposal?.received ?? 0) + 7 * 1_440),
+      text: chatMessage('open', { deadline: (proposal?.received ?? 0) + 7 * 1_440 }),
       url: `${TEST_ORIGIN}/`,
     });
     expect(data !== undefined && 'title' in data).toBe(false);
     expect(window.location.hash).toContain(groupId);
-    for (const word of [groupId, 'Riverside', 'Quiet', 'House rules', '#']) {
+    for (const word of [groupId, 'Riverside', 'Quiet', 'House rules', 'Ana', 'Ben', '#']) {
       expect(JSON.stringify(data)).not.toContain(word);
     }
     expect(await within(a).findByText('Shared.')).toBeVisible();
+  });
+
+  it('lets anyone add the title for one share, and sharing sends the relay nothing', async () => {
+    const user = userEvent.setup();
+    const { fake, groupId, devices } = await group(['Ana', 'Ben']);
+    const [ana, ben] = devices;
+    if (ben === undefined) throw new Error('Expected a device.');
+    go(`#/g/${groupId}/doc`);
+    const a = mount(ana?.services, 'a');
+    await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+    await within(a).findByRole('button', { name: 'Tell your group' });
+    await sync(ben);
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    go(`#/g/${groupId}`);
+    const b = mount({ ...ben.services, share }, 'b');
+    const needs = await within(b).findByRole('region', { name: 'Needs your vote' });
+    await user.click(within(needs).getByRole('link', { name: /Quiet hours/ }));
+    const requests = fake.requests.length;
+
+    await user.click(await within(b).findByRole('checkbox', { name: 'Include the title' }));
+    await user.click(within(b).getByRole('button', { name: 'Tell your group' }));
+
+    const [data] = share.mock.calls[0] ?? [];
+    expect(data?.text).toMatch(
+      /^A new Proposal is open in Reconcile: "Quiet hours"\. Voting ends \w{3} \d{1,2} \w{3}\.$/,
+    );
+    for (const word of [groupId, 'Riverside', 'House rules', 'Ana', 'Ben', '#']) {
+      expect(JSON.stringify(data)).not.toContain(word);
+    }
+    expect(await within(b).findByText('Shared.')).toBeVisible();
+    expect(within(b).getByRole('checkbox', { name: 'Include the title' })).not.toBeChecked();
+    expect((await ben.services.store.getGroup(groupId))?.outbox).toEqual([]);
+    expect(fake.requests).toHaveLength(requests);
   });
 
   it('copies the same words where the browser has no Web Share, and says so', async () => {
@@ -120,7 +154,7 @@ describe('Tell your group', () => {
     expect(await within(a).findByText('Copied. Paste it into your group’s chat.')).toBeVisible();
     expect(ana?.copied).toHaveLength(1);
     expect(ana?.copied[0]).toMatch(
-      /^I proposed a change in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\. https:\/\/reconcile\.test\/$/,
+      /^A new Proposal is open in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\. https:\/\/reconcile\.test\/$/,
     );
   });
 });
