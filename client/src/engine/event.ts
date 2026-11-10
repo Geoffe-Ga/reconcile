@@ -166,6 +166,15 @@ export interface NarrowBody {
 }
 
 /**
+ * Vouches for a newcomer (ADR-0014, #101): the author says they've met or
+ * talked with the member it names. Everyone in the group sees it. The fold checks that
+ * the author may vouch, and for whom.
+ */
+export interface VouchBody {
+  readonly member: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -198,6 +207,7 @@ export interface EventBodies {
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
+  readonly vouch: VouchBody;
 }
 
 /** The event types this engine understands. */
@@ -420,6 +430,10 @@ function parseNarrow(body: Json): NarrowBody | null {
   return isString(optIn) && isString(proposal) ? { optIn, proposal } : null;
 }
 
+function parseVouch(body: Json): VouchBody | null {
+  return isString(body.member) ? { member: body.member } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -470,10 +484,28 @@ function withBody(
       return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'leave':
       return { ...head, type, body: {} };
+    default:
+      return withStandingBody(head, type, body);
+  }
+}
+
+/**
+ * Attaches the body of an event that changes someone's standing: a
+ * suspension or a narrowing by a steward (#102, #117), or a vouch (#101). Null
+ * for an unknown type or a bad body.
+ */
+function withStandingBody(
+  head: Omit<GroupEvent, 'type' | 'body'>,
+  type: unknown,
+  body: Json,
+): GroupEvent | null {
+  switch (type) {
     case 'suspend':
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'narrow':
       return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'vouch':
+      return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

@@ -1058,3 +1058,38 @@ a[data-focus-visible] {
 .opt-in-actions {
   gap: var(--space-3);
 }
+
+/* Earning a vote (#101) --------------------------------------------------- */
+
+/* A newcomer's progress, who vouched for them and Vouch, across their row in People. */
+.person-newcomer,
+.person-vouch {
+  flex-basis: 100%;
+}
+
+.person-newcomer {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-1);
+  color: var(--body);
+  font: var(--type-caption);
+}
+
+.person-vouched {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.person-vouch {
+  margin-block-start: var(--space-1);
+}
+
+/* The newcomer's own line: when their vote arrives, in words. */
+.waiting-note {
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}

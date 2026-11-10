@@ -13,10 +13,14 @@
  * reached, and brings the seats up to it before each event. An opt-in's
  * standing value changes the same way, when a rules Proposal's pass is final,
  * and a steward's narrowing turns it off until its off-Proposal closes
- * (#117). The fold is pure: no I/O, no clock, no randomness, so every device
- * that folds the same records builds the same state.
+ * (#117). Each member's voting rights arrive at a relay minute the fold
+ * records as their `rightsAt`: at once for the founder and the bootstrap's
+ * joiners, else after vouches and a wait (admission.ts, #101). The fold is
+ * pure: no I/O, no clock, no randomness, so every device that folds the same
+ * records builds the same state.
  */
 import { verifyInviteToken } from '../crypto/invite';
+import { bootstrapOpen, earnedAt, mayVouch, type Vouch, vouchesFor } from './admission';
 import {
   can,
   DEFAULT_JOIN_LEVEL,
@@ -46,6 +50,7 @@ import {
   type SuspendBody,
   type VersionBody,
   type VoteBody,
+  type VouchBody,
 } from './event';
 import {
   effectiveOptIns,
@@ -106,15 +111,22 @@ export interface LogRecord {
 
 /**
  * A member: the name fixed at join, the involvement level they chose most
- * recently, the seq of the event that admitted them, and who invited them:
- * the author of a verified invite token (#73), or null.
+ * recently, the seq and relay receipt minute of the event that admitted
+ * them, who invited them (the author of a verified invite token, #73, or
+ * null), and `rightsAt`, the relay minute their voting rights arrive (#101):
+ * their genesis or join's receipt for the founder and the bootstrap's
+ * joiners, the later of their wait's end and their second vouch for anyone
+ * else, or null until they have the vouches. Once set it never changes, so
+ * rights once earned stay.
  */
 export interface Member {
   readonly author: string;
   readonly name: string;
   readonly level: Level;
   readonly seq: number;
+  readonly received: number;
   readonly invitedBy: string | null;
+  readonly rightsAt: number | null;
 }
 
 /** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
@@ -209,7 +221,8 @@ export interface IgnoredRecord {
  * the last passed rules Proposal set. `optIns` is what is in effect at `at`:
  * off while a steward's narrowing is in force, else the standing value
  * (`effectiveOptIn`). `narrowings` keeps every steward narrowing in relay
- * order, in force or ended (#117).
+ * order, in force or ended (#117). `vouches` holds every valid vouch in relay
+ * order (#101), visible to members like ballots (ADR-0010).
  */
 export interface GroupState {
   readonly group: string | null;
@@ -226,6 +239,7 @@ export interface GroupState {
   readonly stewards: readonly Seat[];
   readonly suspensions: readonly Suspension[];
   readonly narrowings: readonly Narrowing[];
+  readonly vouches: readonly Vouch[];
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -268,6 +282,7 @@ interface Draft {
   stewards: readonly Seat[];
   readonly suspensions: Suspension[];
   readonly narrowings: Narrowing[];
+  readonly vouches: Vouch[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
 }
@@ -281,12 +296,15 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   draft.name = body.name;
   draft.chat = body.chat ?? null;
   draft.title = body.title;
+  // The founder holds voting rights from genesis (ADR-0014's bootstrap, #101).
   draft.members.push({
     author,
     name: body.founder,
     level: FOUNDER_LEVEL,
     seq: at.seq,
+    received: at.received,
     invitedBy: null,
+    rightsAt: at.received,
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
@@ -318,14 +336,37 @@ function hasJoined(draft: Draft, author: string): boolean {
 /**
  * A join names a level it knows, or none (a Collaborator), and comes from
  * someone not yet in. A key that has left never joins again: rejoining takes
- * a new membership, with its own key (ADR-0009).
+ * a new membership, with its own key (ADR-0009). The joiner holds voting
+ * rights at once while the bootstrap is open, and otherwise earns them
+ * (admission.ts, #101); either way they may choose any level.
  */
 function applyJoin(draft: Draft, event: JoinEvent, at: Receipt): boolean {
   const { author, body } = event;
   const level = body.level ?? DEFAULT_JOIN_LEVEL;
   if (!isLevel(level) || hasJoined(draft, author)) return false;
   const invitedBy = inviterOf(draft, body.token, event.group);
-  draft.members.push({ author, name: body.name, level, seq: at.seq, invitedBy });
+  const { seq, received } = at;
+  const rightsAt = bootstrapOpen(draft) ? received : null;
+  draft.members.push({ author, name: body.name, level, seq, received, invitedBy, rightsAt });
+  return true;
+}
+
+/**
+ * A vouch for a newcomer (ADR-0014, #101), when its author may vouch for them
+ * (admission.ts). It's kept in relay order, and the vouch that gives a
+ * newcomer the vouches they need fixes when their rights arrive: the later of
+ * their wait's end and this vouch's receipt. Rights already set never move.
+ */
+function applyVouch(draft: Draft, body: VouchBody, author: string, at: Receipt): boolean {
+  const { member } = body;
+  if (!mayVouch(draft, author, member)) return false;
+  draft.vouches.push({ id: at.id, seq: at.seq, received: at.received, by: author, member });
+  const index = draft.members.findIndex((m) => m.author === member);
+  const target = draft.members[index];
+  if (target !== undefined && target.rightsAt === null) {
+    const rightsAt = earnedAt(draft.rules, target.received, vouchesFor(draft, member));
+    draft.members[index] = { ...target, rightsAt };
+  }
   return true;
 }
 
@@ -643,10 +684,23 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyLevel(draft, event.body, event.author);
     case 'leave':
       return applyLeave(draft, event.author);
+    default:
+      return applyStanding(draft, event, at);
+  }
+}
+
+/** An event that changes someone's standing: a steward's suspension or narrowing, or a vouch. */
+type StandingEvent = Extract<GroupEvent, { readonly type: 'suspend' | 'narrow' | 'vouch' }>;
+
+/** Applies a suspension or a narrowing by a steward (#102, #117), or a vouch (#101). */
+function applyStanding(draft: Draft, event: StandingEvent, at: Receipt): boolean {
+  switch (event.type) {
     case 'suspend':
       return applySuspend(draft, event.body, event.author, at);
     case 'narrow':
       return applyNarrow(draft, event.body, event.author, at);
+    case 'vouch':
+      return applyVouch(draft, event.body, event.author, at);
   }
 }
 
@@ -799,6 +853,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     stewards: EMPTY_SEATS,
     suspensions: [],
     narrowings: [],
+    vouches: [],
     seated: new Set(),
     ruled: new Set(),
   };
@@ -825,7 +880,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings } = draft;
+  const { narrowings, vouches } = draft;
   return {
     group,
     rules,
@@ -841,6 +896,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     stewards,
     suspensions,
     narrowings,
+    vouches,
     ignored,
   };
 }

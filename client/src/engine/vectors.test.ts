@@ -26,6 +26,8 @@ describe('vector files', () => {
       'atom-text.json',
       'bars-entrenched-edges.json',
       'bars-ordinary-pairs.json',
+      'bootstrap-joins.json',
+      'bootstrap-member-churn.json',
       'fold.json',
       'home-two-open-proposals.json',
       'invite.json',
@@ -61,6 +63,10 @@ describe('vector files', () => {
       'versions-late-low-quorum.json',
       'versions-one-open.json',
       'versions-tie.json',
+      'vouch-ignored.json',
+      'vouch-levels.json',
+      'vouch-second-after-wait.json',
+      'vouch-wait-boundary.json',
       'window-bounds.json',
       'window-deadline.json',
     ]);
@@ -68,6 +74,8 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -97,6 +105,10 @@ describe('vector files', () => {
       'fold',
       'fold',
       'tally',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -225,7 +237,8 @@ describe('vector files', () => {
     'a 10-day Proposal whose author ts is 10 days old closes when relay time reaches its deadline, 10 full days after receipt',
     'a 14-day vote still closes early once every eligible member has scored, and its deadline stays received + 20,160',
     'steward-founder-seat: the founder holds seat 1 at genesis with no term end, and seat 2 starts empty',
-    'a steward Proposal is ignored at 2 voting members, even with a Member following too',
+    'a steward Proposal is ignored at 2 people holding voting rights, even with a newcomer following too',
+    'a steward Proposal is accepted at 3 people holding voting rights, even when one of them chose Member (ADR-0075 §3)',
     'a steward Proposal is accepted at 3 voting members: ordinary, 7 days, one version with no text',
     'a Proposal for seat 2 is ignored at 5 voting members',
     'a Proposal for seat 2 is accepted at 6 voting members',
@@ -293,6 +306,21 @@ describe('vector files', () => {
     'invite-token-none: a join with no token, as the tracer made, names no inviter',
   ])('include the invite vector "%s"', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    'vouch-wait-boundary',
+    'vouch-second-after-wait',
+    'vouch-ignored',
+    'vouch-for-former',
+    'vouch-co-creator-waiting',
+    'vouch-rights-stay',
+    'vouch-voucher-leaves',
+    'bootstrap-first-three',
+    'bootstrap-after-leave',
+    'bootstrap-member-churn',
+  ])('include the admission vector "%s" (#101)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 });
 

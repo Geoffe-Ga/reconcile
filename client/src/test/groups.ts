@@ -7,6 +7,7 @@ import { type Level, LEVELS } from '../engine/capabilities';
 import { base64url, type EventDraft } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { authorOf, signedAs, testKeys } from './keys';
+import { SETTLED_MINUTES, settlingVouches } from './votes';
 
 /** What a test group holds. Each member signs with the test key of their name in lower case. */
 export interface TestGroupOptions {
@@ -44,31 +45,47 @@ const DEFAULTS = {
   proposals: [],
 } as const satisfies TestGroupOptions;
 
-/** Folds a group founded by `founder`, joined by `joiners`, with one Proposal per title. */
+/** The joiner's join: at their level in `options`, a Co-Creator by default, with any inviter's token. */
+function joinDraft(group: string, joiner: string, options: TestGroupOptions): EventDraft {
+  const level = options.levels?.[joiner] ?? CREATING;
+  const token = tokenFrom(options.invitedBy?.[joiner]?.toLowerCase(), group);
+  return { type: 'join', group, ts: 0, body: { name: joiner, level, ...token } };
+}
+
+/** A vouch for the joiner named, in `group`. */
+function vouchDraft(group: string, joiner: string): EventDraft {
+  return { type: 'vouch', group, ts: 0, body: { member: authorOf(joiner.toLowerCase()) } };
+}
+
+/** The token a join carries when `inviter` (lower case) invited the joiner, else nothing (#73). */
+function tokenFrom(inviter: string | undefined, group: string) {
+  if (inviter === undefined) return {};
+  const sig = base64url(signInviteToken(testKeys(inviter).secretKey, group));
+  return { token: { by: authorOf(inviter), sig } };
+}
+
+/**
+ * Folds a group founded by `founder`, joined by `joiners`, with one Proposal
+ * per title. The joiners hold voting rights by the first Proposal: they join
+ * SETTLED_MINUTES before it, and the founder and the first voting joiner
+ * vouch for each one after the bootstrap's first two (#101).
+ */
 export function testGroup(options: TestGroupOptions = {}): TestGroup {
   const { name, founder, title, atoms, chat, joiners, proposals } = { ...DEFAULTS, ...options };
   const records: LogRecord[] = [];
+  let start = MINUTE - SETTLED_MINUTES;
   const add = (name: string, draft: EventDraft): string => {
     const { record, id } = signedAs(name.toLowerCase(), draft);
-    records.push({ seq: records.length + 1, received: MINUTE + records.length, bytes: record });
+    records.push({ seq: records.length + 1, received: start + records.length, bytes: record });
     return id;
   };
   const body = { name, founder, title, atoms, ...(chat === undefined ? {} : { chat }) };
   const group = add(founder, { type: 'genesis', group: '', ts: 0, body });
-  for (const joiner of joiners) {
-    const level = options.levels?.[joiner] ?? CREATING;
-    const inviter = options.invitedBy?.[joiner]?.toLowerCase();
-    const token =
-      inviter === undefined
-        ? {}
-        : {
-            token: {
-              by: authorOf(inviter),
-              sig: base64url(signInviteToken(testKeys(inviter).secretKey, group)),
-            },
-          };
-    add(joiner, { type: 'join', group, ts: 0, body: { name: joiner, level, ...token } });
+  for (const joiner of joiners) add(joiner, joinDraft(group, joiner, options));
+  for (const [voucher, joiner] of settlingVouches(founder, joiners, options.levels ?? {})) {
+    add(voucher, vouchDraft(group, joiner));
   }
+  start = MINUTE;
   for (const proposal of proposals) {
     const proposalBody = {
       atom: `${group}.0`,

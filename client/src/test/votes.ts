@@ -4,17 +4,24 @@
  * hand-written state. Each member signs with the test key of their name in
  * lower case, so `authorOf('ana')` names Ana.
  */
-import { type Level, LEVELS } from '../engine/capabilities';
+import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
 import type { EventDraft, Score } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
-import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
+import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { authorOf, signedAs } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
 const [, , CREATING] = LEVELS;
 
-/** The relay minute the log starts at. */
+/** The relay minute the log stands at once its starting members hold voting rights. */
 export const START_MINUTE = 29_000_000;
+
+/**
+ * How long before {@link START_MINUTE} the group is founded and its starting
+ * members join: past the wait before voting, so each of them, vouched for,
+ * holds voting rights from START_MINUTE on (#101).
+ */
+export const SETTLED_MINUTES = DEFAULT_RULES.waitDays * DAY_MINUTES + 60;
 
 /** What a new Proposal says; it targets the first Atom unless told otherwise. */
 export interface ProposalEntry {
@@ -60,16 +67,25 @@ export interface LogBuilder {
   rules(name: string, optIn: string, value: unknown, entry?: ProposalEntry): string;
   /** Adds `name`'s narrowing of `optIn` beside the off-Proposal `proposal` (#117), returning its id. */
   narrow(name: string, optIn: string, proposal: string): string;
+  /** Adds `name`'s vouch for the person named `who` (#101), returning its id. */
+  vouch(name: string, who: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
   state(relayNow?: number): GroupState;
 }
 
-/** What a test group starts with. */
+/**
+ * What a test group starts with. The founder and `members` hold voting rights
+ * by START_MINUTE: they join SETTLED_MINUTES earlier, and the founder and the
+ * first voting member vouch for each one after the bootstrap's first two
+ * (#101). `newcomers` join at START_MINUTE after them, with no vouches, so
+ * they read and follow until they earn a vote.
+ */
 export interface GroupStart {
   readonly founder?: string;
   readonly members?: readonly string[];
+  readonly newcomers?: readonly string[];
   /** Each member's level at join, by name; a member not named joins as a Co-Creator. */
   readonly levels?: Readonly<Record<string, Level>>;
   readonly atoms?: readonly string[];
@@ -83,7 +99,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
   const records: LogRecord[] = [];
   const builder = {
     group: '',
-    minute: START_MINUTE,
+    minute: START_MINUTE - SETTLED_MINUTES,
     records,
   };
   const add = (name: string, draft: EventDraft): string => {
@@ -163,12 +179,51 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     narrow(name: string, optIn: string, proposal: string) {
       return add(name, { type: 'narrow', group, ts: 0, body: { optIn, proposal } });
     },
+    vouch(name: string, who: string) {
+      const body = { member: authorOf(who.toLowerCase()) };
+      return add(name, { type: 'vouch', group, ts: 0, body });
+    },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);
     },
   });
   for (const member of members) log.join(member, start.levels?.[member]);
+  settle(log, start, founder, members);
   return log;
+}
+
+/**
+ * Gives the starting members their vouches, moves the log on to
+ * START_MINUTE, past their wait, and joins the newcomers there (#101).
+ */
+function settle(log: LogBuilder, start: GroupStart, founder: string, members: readonly string[]) {
+  const levels = start.levels ?? {};
+  for (const [voucher, member] of settlingVouches(founder, members, levels)) {
+    log.vouch(voucher, member);
+  }
+  log.minute = START_MINUTE;
+  for (const newcomer of start.newcomers ?? []) log.join(newcomer, levels[newcomer]);
+}
+
+/**
+ * The vouches a test group's starting members need to hold voting rights
+ * (#101), as `[voucher, member]` names: the founder and the first starting
+ * member at a voting level vouch for each starting member after the
+ * bootstrap's first two. A member not in `levels` is a Co-Creator.
+ */
+export function settlingVouches(
+  founder: string,
+  members: readonly string[],
+  levels: Readonly<Record<string, Level>>,
+): [string, string][] {
+  const votes = (name: string) => {
+    const granted: readonly Capability[] = LEVEL_CAPABILITIES[levels[name] ?? CREATING];
+    return granted.includes('vote');
+  };
+  const vouchers = [founder, ...members.slice(0, 2)].filter(votes).slice(0, 2);
+  return members
+    .slice(2)
+    .flatMap((member) => vouchers.map((voucher): [string, string] => [voucher, member]));
 }
 
 /** The relay minute an ordinary Proposal received at `received` closes at. */

@@ -449,6 +449,9 @@ describe('parseEvent', () => {
     ['narrow without a Proposal', 'narrow', { optIn: 'chatBot' }],
     ['narrow without an opt-in', 'narrow', { proposal: 'p' }],
     ['narrow with a numeric Proposal', 'narrow', { optIn: 'chatBot', proposal: 1 }],
+    ['vouch without a member', 'vouch', {}],
+    ['vouch with a numeric member', 'vouch', { member: 7 }],
+    ['vouch with a null member', 'vouch', { member: null }],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -568,6 +571,18 @@ describe('parseEvent', () => {
     });
     const reasoned = parseEvent(json(envelope('suspend', { member: BEN, reason: 'Threats.' })));
     expect(reasoned?.event.body).toEqual({ member: BEN, reason: 'Threats.' });
+  });
+
+  it('reads a vouch as the member it names, dropping unknown keys (#101)', () => {
+    const vouch = parseEvent(json(envelope('vouch', { member: BEN, weight: 9 })));
+    expect(vouch?.event).toEqual({
+      v: 1,
+      type: 'vouch',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { member: BEN },
+    });
   });
 
   it('keeps optional proposal and vote fields', () => {
