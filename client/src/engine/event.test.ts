@@ -13,6 +13,7 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  isDissolveProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -438,6 +439,38 @@ describe('parseEvent', () => {
       'proposal',
       { target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w', link: 1 },
     ],
+    [
+      'a dissolve target whose wipe is text',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: 'true' }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve target that leaves out its wipe',
+      'proposal',
+      { target: { kind: 'dissolve' }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve Proposal that also names an Atom',
+      'proposal',
+      { atom: 'a', target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve Proposal without a title',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, why: 'w' },
+    ],
+    [
+      'a dissolve Proposal with a numeric link',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', link: 1 },
+    ],
+    [
+      'a dissolve Proposal with a string window',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', window: '14' },
+    ],
+    ['dissolve without a proposal', 'dissolve', {}],
+    ['dissolve with a numeric proposal', 'dissolve', { proposal: 7 }],
     ['suspend without a member', 'suspend', { reason: 'r' }],
     ['suspend with a numeric member', 'suspend', { member: 1 }],
     ['suspend with a null reason', 'suspend', { member: 'm', reason: null }],
@@ -480,6 +513,17 @@ describe('parseEvent', () => {
     ['narrow without a Proposal', 'narrow', { optIn: 'chatBot' }],
     ['narrow without an opt-in', 'narrow', { proposal: 'p' }],
     ['narrow with a numeric Proposal', 'narrow', { optIn: 'chatBot', proposal: 1 }],
+    ['vouch without a member', 'vouch', {}],
+    ['vouch with a numeric member', 'vouch', { member: 7 }],
+    ['vouch with a null member', 'vouch', { member: null }],
+    ['chat-posted without a Proposal', 'chat-posted', { moment: 'open' }],
+    ['chat-posted without a moment', 'chat-posted', { proposal: 'p' }],
+    ['chat-posted with a numeric moment', 'chat-posted', { proposal: 'p', moment: 1 }],
+    [
+      'chat-posted with a numeric nonce',
+      'chat-posted',
+      { proposal: 'p', moment: 'open', nonce: 7 },
+    ],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -566,6 +610,43 @@ describe('parseEvent', () => {
     expect(linked?.event.body).toEqual({ target: recall, title: 't', why: 'w', link: 'https://l' });
   });
 
+  it('reads a dissolve Proposal, keeping its wipe and window and dropping text and unknown keys (#108)', () => {
+    const target = { kind: 'dissolve', wipe: true };
+    const parsed = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', text: 'x', window: 21, extra: 1 })),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w', window: 21 });
+    const kept = { kind: 'dissolve', wipe: false };
+    const linked = parseEvent(
+      json(envelope('proposal', { target: kept, title: 't', why: 'w', link: 'https://l' })),
+    );
+    expect(linked?.event.body).toEqual({ target: kept, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('tells a dissolve Proposal from a steward one and from an edit (#108)', () => {
+    const dissolve = { target: { kind: 'dissolve', wipe: false } as const, title: 't', why: 'w' };
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null } as const,
+      title: 't',
+      why: 'w',
+    };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    expect([dissolve, steward, edit].map(isDissolveProposal)).toEqual([true, false, false]);
+    expect([dissolve, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
+  });
+
+  it('reads a dissolve as the Proposal it names, dropping unknown keys (#108)', () => {
+    const parsed = parseEvent(json(envelope('dissolve', { proposal: 'p1', wipe: true })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'dissolve',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1' },
+    });
+  });
+
   it('reads a rules Proposal, keeping its value as written for the fold to check (#117)', () => {
     const target = { kind: 'rules', optIn: 'chatBot', value: { webhook: 'https://x', extra: 1 } };
     const parsed = parseEvent(
@@ -617,6 +698,21 @@ describe('parseEvent', () => {
     });
   });
 
+  it('reads a chat-posted as its Proposal, moment and nonce, kept as written, dropping unknown keys (#119)', () => {
+    const body = { proposal: 'p1', moment: 'version', nonce: 'n1', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-posted', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-posted',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', moment: 'version', nonce: 'n1' },
+    });
+    const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
+    expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
+  });
+
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {
     const plain = parseEvent(json(envelope('suspend', { member: BEN, until: 9 })));
     expect(plain?.event).toEqual({
@@ -629,6 +725,18 @@ describe('parseEvent', () => {
     });
     const reasoned = parseEvent(json(envelope('suspend', { member: BEN, reason: 'Threats.' })));
     expect(reasoned?.event.body).toEqual({ member: BEN, reason: 'Threats.' });
+  });
+
+  it('reads a vouch as the member it names, dropping unknown keys (#101)', () => {
+    const vouch = parseEvent(json(envelope('vouch', { member: BEN, weight: 9 })));
+    expect(vouch?.event).toEqual({
+      v: 1,
+      type: 'vouch',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { member: BEN },
+    });
   });
 
   it('keeps optional proposal and vote fields', () => {
@@ -723,5 +831,94 @@ describe('parseRecord', () => {
 
   it('refuses bare event bytes, with no key or signature', () => {
     expect(parseRecord(bytes)).toBeNull();
+  });
+});
+
+describe('encryption keys and key changes (#98)', () => {
+  /** A 32-byte key in base64url, as `kx` and the wraps' keys are spelled. */
+  const KX = base64url(new Uint8Array(32).fill(9));
+  const COMMIT = base64url(new Uint8Array(32).fill(7));
+  const WRAP = base64url(new Uint8Array(104).fill(5));
+
+  it('keeps a genesis’s or join’s well-shaped kx, and drops any other, keeping the event', () => {
+    const genesis = { name: 'G', founder: 'A', title: 'T', atoms: [], kx: KX };
+    expect(parseEvent(json(envelope('genesis', genesis)))?.event.body).toEqual(genesis);
+    expect(parseEvent(json(envelope('join', { name: 'Ben', kx: KX })))?.event.body).toEqual({
+      name: 'Ben',
+      kx: KX,
+    });
+    for (const bad of [KX.slice(1), `${KX.slice(1)}+`, `${KX.slice(0, 42)}B`, 7, null, [KX]]) {
+      const join = parseEvent(json(envelope('join', { name: 'Ben', kx: bad })));
+      expect(join?.event.body, JSON.stringify(bad)).toEqual({ name: 'Ben' });
+      const founded = parseEvent(json(envelope('genesis', { ...genesis, kx: bad })));
+      expect(founded?.event.body, JSON.stringify(bad)).toEqual({ ...genesis, kx: undefined });
+    }
+  });
+
+  it('reads a kx as its key, dropping unknown keys', () => {
+    const parsed = parseEvent(json(envelope('kx', { kx: KX, note: 'mine' })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'kx',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { kx: KX },
+    });
+  });
+
+  it('reads a key-rotate as its epoch, commit and wraps, dropping unknown keys', () => {
+    const body = { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP }, secret: 'no' };
+    const parsed = parseEvent(json(envelope('key-rotate', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'key-rotate',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP } },
+    });
+    const top = parseEvent(json(envelope('key-rotate', { ...body, epoch: 2 ** 32 - 1 })));
+    expect(top?.event.body).toMatchObject({ epoch: 2 ** 32 - 1 });
+  });
+
+  it('refuses a wrap under any key that isn’t a member key, "__proto__" included', () => {
+    const bytes = utf8(
+      `{"v":1,"type":"key-rotate","group":"g1","author":"${ANA}","ts":1,"body":{"epoch":1,"commit":"${COMMIT}","wraps":{"__proto__":"${WRAP}"}}}`,
+    );
+    expect(parseEvent(bytes)).toBeNull();
+  });
+
+  it.each([
+    ['a kx without its key', 'kx', {}],
+    ['a kx of the wrong length', 'kx', { kx: KX.slice(1) }],
+    ['a kx with a bad last character', 'kx', { kx: `${KX.slice(0, 42)}B` }],
+    ['a numeric kx', 'kx', { kx: 7 }],
+    ['a key-rotate without an epoch', 'key-rotate', { commit: COMMIT, wraps: {} }],
+    ['a key-rotate to epoch 0', 'key-rotate', { epoch: 0, commit: COMMIT, wraps: {} }],
+    ['a key-rotate to a fractional epoch', 'key-rotate', { epoch: 1.5, commit: COMMIT, wraps: {} }],
+    ['a key-rotate past u32', 'key-rotate', { epoch: 2 ** 32, commit: COMMIT, wraps: {} }],
+    ['a key-rotate without a commit', 'key-rotate', { epoch: 1, wraps: {} }],
+    ['a key-rotate with a short commit', 'key-rotate', { epoch: 1, commit: 'abc', wraps: {} }],
+    ['a key-rotate without wraps', 'key-rotate', { epoch: 1, commit: COMMIT }],
+    [
+      'a key-rotate whose wraps are a list',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: [WRAP] },
+    ],
+    [
+      'a wrap for a malformed key',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: { ana: WRAP } },
+    ],
+    ['a numeric wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: 7 } }],
+    [
+      'a wrap that isn’t base64url',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: { [ANA]: 'a+b' } },
+    ],
+    ['an empty wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: '' } }],
+  ])('returns null for %s', (_label, type, body) => {
+    expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
 });

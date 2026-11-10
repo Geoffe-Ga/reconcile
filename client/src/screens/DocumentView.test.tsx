@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -7,7 +7,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup } from '../test/groups';
 import { authorOf } from '../test/keys';
-import { groupLog } from '../test/votes';
+import { groupLog, SETTLED_MINUTES } from '../test/votes';
 import { DocumentView } from './DocumentView';
 
 const [FOLLOWING, VOTING] = LEVELS;
@@ -125,6 +125,42 @@ describe('DocumentView', () => {
     view(state, authorOf('ana'), onPropose);
     await user.click(screen.getByRole('button', { name: 'Propose a change to section 2' }));
     expect(onPropose).toHaveBeenCalledWith(`${state.group ?? ''}.1`);
+  });
+
+  it('tells a newcomer at the creating level when their vote arrives, with no Propose or level link (#101)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'], newcomers: ['Kim'] });
+    view(log.state(), authorOf('kim'));
+    expect(screen.queryByRole('button', { name: /^Propose a change/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^You can vote on Proposals that open after .+, once 2 people vouch for you\.$/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/^You’re following this group/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers a newcomer no section to add or remove until their vote arrives, though they copy it (#75, #101)', async () => {
+    const user = userEvent.setup();
+    const log = groupLog({ members: ['Ben', 'Cal'], newcomers: ['Kim'] });
+    const copyText = vi.fn(() => Promise.resolve());
+    view(log.state(), authorOf('kim'), vi.fn(), { copyText });
+    expect(screen.queryByRole('button', { name: /^Add a section here/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Propose removing this section/ }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Copy as Markdown' }));
+    expect(copyText).toHaveBeenCalledWith('Quiet hours start at ten.\nBins go out on Tuesday.');
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+    log.vouch('ana', 'kim');
+    log.vouch('ben', 'kim');
+    view(log.state(log.minute + SETTLED_MINUTES), authorOf('kim'));
+    expect(screen.getAllByRole('button', { name: /^Add a section here/ })).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: /^Propose removing this section/ })).toHaveLength(
+      2,
+    );
   });
 
   it('tells a Member they follow, offers no Propose, and points to where they choose', async () => {

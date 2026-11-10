@@ -68,9 +68,25 @@ function ok(request: Request): Response {
 
 type Listener = (event: never) => void;
 
+/** The worker's registration, as far as a push uses it: what it shows, and a badge spy. */
+function fakeRegistration() {
+  const shown: { title: string; options: unknown }[] = [];
+  return {
+    shown,
+    setAppBadge: vi.fn(),
+    getNotifications: () => Promise.resolve([]),
+    showNotification: (title: string, options: unknown) => {
+      shown.push({ title, options });
+      return Promise.resolve();
+    },
+  };
+}
+
 /** A worker scope that records its listeners, with spies on the calls that hurry an update. */
 function fakeScope(caches = new FakeCaches()) {
   const listeners = new Map<string, Listener>();
+  const registration = fakeRegistration();
+  const windows: { focus: () => Promise<void> }[] = [];
   const network = vi.fn((request: Request) =>
     Promise.resolve(new Response(`network ${request.url}`)),
   );
@@ -82,10 +98,15 @@ function fakeScope(caches = new FakeCaches()) {
       listeners.set(type, listener);
     },
     skipWaiting: vi.fn(),
-    clients: { claim: vi.fn() },
+    registration,
+    clients: {
+      claim: vi.fn(),
+      matchAll: vi.fn(() => Promise.resolve(windows)),
+      openWindow: vi.fn(() => Promise.resolve(null)),
+    },
   };
   startServiceWorker(scope, PRECACHE);
-  return { scope, caches, listeners, network };
+  return { scope, caches, listeners, network, registration, windows };
 }
 
 /** Fires a lifecycle event and returns the promise it was told to wait for. */
@@ -260,5 +281,54 @@ describe('answerFor', () => {
     expect(answerFor({ url: `${ORIGIN}/v1x`, method: 'GET', mode: 'cors' }, ORIGIN, urls)).toBe(
       'network',
     );
+  });
+});
+
+describe('push (#99)', () => {
+  it('shows only the fixed notification, whatever the push carries', async () => {
+    const { listeners, registration } = fakeScope();
+    let waited: Promise<unknown> = Promise.resolve();
+    const event = {
+      data: { text: () => 'Ana proposed Later quiet hours in Riverside Tenants' },
+      waitUntil: (promise: Promise<unknown>) => {
+        waited = promise;
+      },
+    };
+
+    listeners.get('push')?.(event as never);
+    await waited;
+
+    expect(registration.shown).toEqual([
+      { title: 'Something new in Reconcile', options: { tag: 'reconcile' } },
+    ]);
+    expect(registration.setAppBadge).not.toHaveBeenCalled();
+  });
+
+  it('opens the app on a tap, focusing a window that is open', async () => {
+    const { listeners, scope, windows } = fakeScope();
+    const focus = vi.fn(() => Promise.resolve());
+    const tap = () => {
+      let waited: Promise<unknown> = Promise.resolve();
+      const close = vi.fn();
+      const event = {
+        notification: { close },
+        waitUntil: (promise: Promise<unknown>) => {
+          waited = promise;
+        },
+      };
+      listeners.get('notificationclick')?.(event as never);
+      return { waited, close };
+    };
+
+    const first = tap();
+    await first.waited;
+    windows.push({ focus });
+    const second = tap();
+    await second.waited;
+
+    expect(scope.clients.openWindow).toHaveBeenCalledExactlyOnceWith('/');
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(first.close).toHaveBeenCalled();
+    expect(second.close).toHaveBeenCalled();
   });
 });

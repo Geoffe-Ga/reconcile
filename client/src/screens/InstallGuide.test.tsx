@@ -24,6 +24,7 @@ const FOUND: FoundGroup = {
     excerpt: 'Quiet hours start at ten.',
   },
   secret: newGroupSecret(),
+  epoch: 0,
   token: { by: 'a'.repeat(43), sig: 'b'.repeat(86) },
   page: { records: [], cursor: 3, relayNow: 29_000_000, instance: 'relay' },
 };

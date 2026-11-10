@@ -159,6 +159,9 @@ describe('propose, vote, and see the Update', () => {
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
     const lapsed = window.location.hash;
+    // Let the pass that sent the Proposal finish, its nudges (#99) included, so the next starts
+    // after the window: a pass still running when time moves would be joined, not run afresh.
+    await sync(ana);
     fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
 

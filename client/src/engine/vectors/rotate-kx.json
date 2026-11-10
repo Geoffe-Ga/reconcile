@@ -1,0 +1,268 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a member without a kx needs no wrap: the key-rotate wraps only to the members who have one",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": { "name": "Ben", "level": "co-creator" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": { "name": "Cal", "level": "co-creator", "kx": "&cal" }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": { "%ana": "AA" }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375005,
+      "expect": {
+        "epoch": 1,
+        "members": [
+          { "author": "%ana", "seq": 1, "kx": "&ana" },
+          { "author": "%ben", "seq": 2, "kx": null }
+        ],
+        "rotations": [
+          {
+            "id": "@5",
+            "seq": 5,
+            "received": 29375005,
+            "by": "%ana",
+            "epoch": 1,
+            "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+            "wraps": { "%ana": "AA" }
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "a member's first kx counts and a second is ignored, as is a kx from a member whose genesis carried one, or from someone who isn't a member",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": { "name": "Ben", "level": "co-creator" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "kx",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500180000,
+            "body": { "kx": "&ben" }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "kx",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": { "kx": "&cal" }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "kx",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": { "kx": "&dee" }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "kx",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500360000,
+            "body": { "kx": "&cal" }
+          }
+        }
+      ],
+      "relayNow": 29375006,
+      "expect": {
+        "members": [
+          { "author": "%ana", "seq": 1, "kx": "&ana" },
+          { "author": "%ben", "seq": 2, "kx": "&ben" }
+        ],
+        "ignored": [
+          { "seq": 4, "id": "@4" },
+          { "seq": 5, "id": "@5" },
+          { "seq": 6, "id": "@6" }
+        ]
+      },
+      "unchangedWithout": [4, 5, 6]
+    },
+    {
+      "name": "a kx of low order counts as none, at join or later, so it never blocks a key change",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "kx",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500180000,
+            "body": { "kx": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "kx",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": { "kx": "&ben" }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "members": [
+          { "author": "%ana", "seq": 1, "kx": "&ana" },
+          { "author": "%ben", "seq": 2, "kx": "&ben" }
+        ],
+        "ignored": [{ "seq": 3, "id": "@3" }]
+      },
+      "unchangedWithout": [3]
+    }
+  ]
+}

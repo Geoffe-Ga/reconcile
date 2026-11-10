@@ -3,6 +3,7 @@ import { Button, Form, Link } from 'react-aria-components';
 
 import { parseInviteLink } from '../app/invite';
 import { messages } from '../app/messages';
+import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
 import type { Persistence } from '../platform/persist';
@@ -24,6 +25,8 @@ export interface StartProps {
   readonly onOpenInvite: (seed: Uint8Array) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
+  /** Restores a backup file (#78); without it, Start offers no Restore. */
+  readonly onRestore?: RestoreBackupProps['onRestore'];
 }
 
 function GroupItem({ group }: { readonly group: StartGroup }) {
@@ -47,19 +50,49 @@ function GroupItem({ group }: { readonly group: StartGroup }) {
   );
 }
 
+/** One card that opens Personal (#93): the person's own Documents, on this device only. */
+function PersonalCard() {
+  return (
+    <div>
+      <Link className="card-link" href={routeHref({ name: 'personal' })}>
+        <span className="card-link-title">
+          <span className="heading-3">{messages.start.personal}</span>
+          <span className="card-link-arrow" aria-hidden="true">
+            {messages.app.forward}
+          </span>
+        </span>
+        <span className="caption">{messages.start.personalHint}</span>
+      </Link>
+    </div>
+  );
+}
+
 /** M2-03's expired-or-damaged line for anything that isn't an invite link. It never repeats the text. */
 function checkInvite(text: string): string | null {
   return parseInviteLink(text) === null ? messages.join.badLink : null;
 }
 
+/** "Have a backup file?", and Restore a backup under it (#78). */
+function RestoreSection({ onRestore }: Pick<RestoreBackupProps, 'onRestore'>) {
+  const heading = useId();
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <h2 id={heading} className="heading-3">
+        {messages.start.restoreHeading}
+      </h2>
+      <RestoreBackup onRestore={onRestore} />
+    </section>
+  );
+}
+
 /**
  * Start (`#/`): every group on this device by name, each marked while its
- * leave waits for the relay (#77), Create group, and Join with an invite
- * link, a field to paste one into. The app reads the clipboard only through
- * that paste. When the browser may clear the app's data, one quiet line says
- * so (ADR-0029).
+ * leave waits for the relay (#77), Create group, a card that opens Personal
+ * (#93), Join with an invite link, a field to paste one into, Restore a
+ * backup (#78), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
+ * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
-export function Start({ groups, onOpenInvite, persistence = null }: StartProps) {
+export function Start({ groups, onOpenInvite, persistence = null, onRestore }: StartProps) {
   const inviteHeading = useId();
 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -90,6 +123,7 @@ export function Start({ groups, onOpenInvite, persistence = null }: StartProps) 
           {messages.start.create}
         </Link>
       </div>
+      <PersonalCard />
       <section className="stack" aria-labelledby={inviteHeading}>
         <h2 id={inviteHeading} className="heading-3">
           {messages.start.inviteHeading}
@@ -108,9 +142,15 @@ export function Start({ groups, onOpenInvite, persistence = null }: StartProps) 
           </Button>
         </Form>
       </section>
+      {onRestore === undefined ? null : <RestoreSection onRestore={onRestore} />}
       {persistence === null || persistence === 'granted' ? null : (
         <p className="caption">{messages.start.mayClear}</p>
       )}
+      <div>
+        <Link className="forward-link" href={routeHref({ name: 'settings' })}>
+          {messages.start.settings}
+        </Link>
+      </div>
     </main>
   );
 }

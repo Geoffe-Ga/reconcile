@@ -99,6 +99,12 @@ describe('fold', () => {
       stewards: EMPTY_SEATS,
       suspensions: [],
       narrowings: [],
+      vouches: [],
+      chatPosts: [],
+      epoch: 0,
+      rotations: [],
+      rotationDue: false,
+      dissolved: null,
       ignored: [],
     });
   });
@@ -200,7 +206,10 @@ describe('fold', () => {
       name: 'ben',
       level,
       seq: 2,
+      received: R + 1,
       invitedBy: null,
+      rightsAt: R + 1,
+      kx: null,
     });
   });
 
@@ -217,7 +226,10 @@ describe('fold', () => {
       name: 'ben',
       level: follow,
       seq: 2,
+      received: R + 1,
       invitedBy: null,
+      rightsAt: R + 1,
+      kx: null,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);

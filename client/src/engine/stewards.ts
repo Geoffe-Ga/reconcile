@@ -20,7 +20,7 @@
  * this file reads only the few fields it names.
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
-import type { AddTarget } from './event';
+import type { AddTarget, DissolveTarget } from './event';
 import {
   effectiveOptIn,
   isOff,
@@ -97,10 +97,11 @@ export interface StewardChange {
 
 /**
  * What a Proposal changes: an Atom's text, where `""` removes it (#63, #72,
- * #75), a new section after an anchor (#75), a steward seat (#102), or an
- * opt-in (#117).
+ * #75), a new section after an anchor (#75), a steward seat (#102), an opt-in
+ * (#117), or whether the group goes on (#108).
  */
-export type ProposalTarget = { readonly kind: 'edit' } | AddTarget | StewardChange | RulesChange;
+export type ProposalTarget =
+  { readonly kind: 'edit' } | AddTarget | StewardChange | RulesChange | DissolveTarget;
 
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that

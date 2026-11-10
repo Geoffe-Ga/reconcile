@@ -12,6 +12,10 @@ export interface StoredGroup {
   readonly secret: number[];
   readonly signingKey: number[];
   readonly author: string;
+  /** Its X25519 secret key (#98), or none for a group kept before #98. */
+  readonly kxKey: number[] | null;
+  /** The epoch of `secret` (#98): 0 until the group's key first changes. */
+  readonly epoch: number;
 }
 
 /** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's derivations. */
@@ -37,6 +41,8 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         groupId: string;
         secret: Uint8Array;
         signingKey: Uint8Array;
+        kxKey?: Uint8Array;
+        epoch?: number;
         me: { author: string };
       }[];
       return groups.map((group) => ({
@@ -44,6 +50,47 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         secret: Array.from(group.secret),
         signingKey: Array.from(group.signingKey),
         author: group.me.author,
+        kxKey: group.kxKey === undefined ? null : Array.from(group.kxKey),
+        epoch: group.epoch ?? 0,
+      }));
+    } finally {
+      db.close();
+    }
+  });
+}
+
+/** One group's relay-ordered log on a device: each record's seq, receipt time and bytes in hex. */
+export interface StoredLog {
+  readonly groupId: string;
+  readonly author: string;
+  readonly log: readonly (readonly [number, number, string])[];
+}
+
+/** Every group's log in the app's IndexedDB on `page`, so two devices' folds can be compared (#78). */
+export function storedLogs(page: Page): Promise<StoredLog[]> {
+  return page.evaluate(async () => {
+    const request = <T>(asking: IDBRequest<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        asking.onsuccess = () => {
+          resolve(asking.result);
+        };
+        asking.onerror = () => {
+          reject(asking.error ?? new Error('IndexedDB refused the request.'));
+        };
+      });
+    const hex = (bytes: Uint8Array): string =>
+      Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const db = await request(indexedDB.open('reconcile'));
+    try {
+      const groups = (await request(db.transaction('groups').objectStore('groups').getAll())) as {
+        groupId: string;
+        me: { author: string };
+        log: { seq: number; received: number; bytes: Uint8Array }[];
+      }[];
+      return groups.map((group) => ({
+        groupId: group.groupId,
+        author: group.me.author,
+        log: group.log.map(({ seq, received, bytes }) => [seq, received, hex(bytes)] as const),
       }));
     } finally {
       db.close();

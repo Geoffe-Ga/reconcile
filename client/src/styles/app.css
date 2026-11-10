@@ -210,6 +210,14 @@ a[data-focus-visible] {
   text-decoration: none;
 }
 
+/* Unavailable, as a step button at its bound reads: sunken, with muted words. */
+.button-secondary[data-disabled],
+.button-secondary[data-disabled]:hover {
+  border-color: var(--hairline);
+  background: var(--sunken);
+  color: var(--muted);
+}
+
 /* Forms ------------------------------------------------------------------- */
 
 .form {
@@ -625,6 +633,24 @@ a[data-focus-visible] {
   overflow-wrap: anywhere;
 }
 
+/* Join (#91): the whole Document reads like print under the card's title, in
+ * the excerpt's place, a hairline under the title so a section's own heading
+ * never reads as the title, and another sets the question to join apart. */
+.invite-document > .document {
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.join-decide {
+  padding-block-start: var(--space-6);
+  border-top: 1px solid var(--hairline);
+}
+
+.join-decide > h2 {
+  text-wrap: balance;
+}
+
 /* Write and Preview (MarkdownField) ------------------------------------- */
 
 .markdown-tabs {
@@ -961,6 +987,11 @@ a[data-focus-visible] {
   overflow-wrap: anywhere;
 }
 
+/* A title the app moves focus to, as the guide does with each card's (#91), as h1 is. */
+.dialog-title:focus {
+  outline: none;
+}
+
 /* Coming back and leaving (#77) ------------------------------------------- */
 
 /* "Leaving…" on Start, under the group's name, while its leave waits for the relay. */
@@ -1111,4 +1142,109 @@ a[data-focus-visible] {
 
 .opt-in-actions {
   gap: var(--space-3);
+}
+
+/* Dissolving a group (#108) ----------------------------------------------- */
+
+/* "Also erase it from every device": a card like a level's, around the
+ * checkbox above, with what wiping means under its label. */
+.check-option {
+  position: relative;
+  display: grid;
+  gap: var(--space-1);
+  max-width: 34rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.check-option:hover {
+  border-color: var(--muted);
+}
+
+.check-option[data-selected] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.check-option .checkbox {
+  font-weight: 650;
+}
+
+/* The whole card takes the press. */
+.check-option .checkbox::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+}
+
+/* What wiping means, and what no app can stop, under the box's label. */
+.check-description {
+  padding-inline-start: calc(20px + var(--space-3));
+  color: var(--body);
+  font: var(--type-caption);
+}
+
+/* The bar a dissolve needs, in words, kept to the lede's reading measure. */
+.dissolve-about .caption {
+  max-width: 34em;
+}
+
+/* A dissolved group's note under its heading: read only, in words, then Remove
+ * from this device. It sits in .page-top as the leaving note does. */
+.archive-note {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  margin-block-start: var(--space-4);
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* "Propose dissolving the group", quietly, at the very bottom of Group home. */
+.dissolve-link {
+  margin-block-start: var(--space-6);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+/* Earning a vote (#101) --------------------------------------------------- */
+
+/* A newcomer's progress, who vouched for them and Vouch, across their row in People. */
+.person-newcomer,
+.person-vouch {
+  flex-basis: 100%;
+}
+
+.person-newcomer {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-1);
+  color: var(--body);
+  font: var(--type-caption);
+}
+
+.person-vouched {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.person-vouch {
+  margin-block-start: var(--space-1);
+}
+
+/* The newcomer's own line: when their vote arrives, in words. */
+.waiting-note {
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
 }

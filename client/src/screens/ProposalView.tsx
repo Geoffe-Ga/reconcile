@@ -19,11 +19,20 @@ import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
 import { rulesView } from '../app/optInLines';
 import { Named, SuspendedNote } from '../app/stewards';
-import { stewardView, versionDoes, type VersionView, versionViews } from '../app/versionViews';
-import { can, isSuspended } from '../engine/capabilities';
+import {
+  dissolveView,
+  stewardView,
+  versionDoes,
+  type VersionView,
+  versionViews,
+} from '../app/versionViews';
+import { rightsAt } from '../engine/admission';
+import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
+import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
+  isDissolveProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -36,6 +45,7 @@ import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
+import type { TallyDetail } from '../engine/tally';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -63,6 +73,14 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /**
+   * Once a dissolved group's ballots are cleared on this device (#108): when,
+   * and each decided Proposal's tally as the device kept it, by id.
+   */
+  readonly cleared?: {
+    readonly at: number;
+    readonly tallies: Readonly<Record<string, TallyDetail>>;
+  };
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -209,8 +227,9 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 
 /**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they joined after it opened, weren't at a voting
- * level then, or are the steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
+ * Outside its eligible set, they joined after it opened, hadn't earned a vote
+ * yet when it opened (#101), weren't at a voting level then, or are the
+ * steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
  */
@@ -221,9 +240,16 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
   const change = stewardChangeOf(proposal);
   if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
-  return member !== undefined && member.seq < proposal.seq
-    ? messages.proposal.notVotingLevel
-    : messages.proposal.joinedAfter;
+  if (member === undefined || member.seq > proposal.seq) return messages.proposal.joinedAfter;
+  return hadNoVote(state, me, proposal)
+    ? messages.admission.noVoteYet
+    : messages.proposal.notVotingLevel;
+}
+
+/** True when `me`'s voting rights hadn't arrived yet when `proposal` opened (#101). */
+function hadNoVote(state: GroupState, me: string, proposal: Proposal): boolean {
+  const arrived = rightsAt(state, me);
+  return arrived === null || arrived > proposal.received;
 }
 
 interface NoVoteProps {
@@ -233,10 +259,14 @@ interface NoVoteProps {
   readonly leaving: boolean;
 }
 
-/** Why they can't vote, and where they change their level when theirs doesn't vote now. */
+/**
+ * Why they can't vote, and where they change their level when theirs doesn't
+ * vote now. A newcomer gets their own line instead: no level votes until
+ * their rights arrive (#101).
+ */
 function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   const levelDoesntVote =
-    !leaving && can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
+    !leaving && holdsRights(state, me) && !can(state, me, 'vote') && !isSuspended(state, me);
   return (
     <div className="stack">
       <p className="lede">{reason}</p>
@@ -395,9 +425,53 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
   );
 }
 
+/**
+ * A Proposal still open when its group dissolved (#108): closed, with no
+ * outcome and no ballot, its versions as they stood.
+ */
+function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { state } = props;
+  const versions = versionViews(state, proposal);
+  const comparison = comparisonOf(state, proposal, false);
+  return (
+    <Screen state={state} wide={versions.length > 1}>
+      <PageHeader
+        eyebrow={messages.proposal.eyebrowClosed}
+        title={proposal.title}
+        pageTitle={messages.proposal.pageTitle}
+      />
+      <div className="stack">
+        <div className="meta-lines">
+          <p className="meta">
+            {messages.proposal.proposedBy} <bdi>{displayName(state, proposal.author) ?? ''}</bdi>
+          </p>
+          <p className="meta">{messages.archive.closed}</p>
+        </div>
+        <p className="lede" dir="auto">
+          {proposal.why}
+        </p>
+      </div>
+      <Block title={comparison.title} className="vote">
+        <Legend comparison={comparison} />
+        <VersionList versions={versions} current={comparison.current} />
+      </Block>
+    </Screen>
+  );
+}
+
+/** The tally a cleared archive kept for `proposal`, if its ballots are cleared (#108). */
+function clearedOf(props: ProposalViewProps, proposal: Proposal) {
+  const tally = props.cleared?.tallies[proposal.id];
+  return props.cleared === undefined || tally === undefined
+    ? {}
+    : { cleared: { at: props.cleared.at, tally } };
+}
+
 /** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, now } = props;
+  if (closedByDissolve(state, proposal))
+    return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
   const link =
     proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
@@ -417,7 +491,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           own={props.own}
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
-          leaving={props.leaving === true}
+          leaving={props.leaving === true || state.dissolved !== null}
+          {...clearedOf(props, proposal)}
         />
       ) : null}
       <div className="stack">
@@ -466,7 +541,7 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
   return { optIn: change.optIn, versions: [{ id: '', number: 1, author, text: '', rules }] };
 }
 
-/** How a waiting Proposal's one version shows: its text against the section, or a steward or rules ballot. */
+/** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
 function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
   const author = displayName(state, me) ?? '';
   if (isStewardProposal(body)) {
@@ -478,6 +553,11 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   }
   if (isRulesProposal(body))
     return { comparison: STEWARD_BALLOT, ...waitingRules(state, author, body) };
+  if (isDissolveProposal(body)) {
+    const dissolve = dissolveView(body.target.wipe);
+    const versions = [{ id: '', number: 1, author, text: '', dissolve }];
+    return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
   // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
   const add = isAddProposal(body);
   const comparison = comparisonFor(state, add ? null : body.atom, false);

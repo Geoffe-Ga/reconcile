@@ -35,9 +35,9 @@ function entry(seq: number, size: number, fill = seq % 256): LogRecord {
   return { seq, received: 29_000_000 + seq, bytes: new Uint8Array(size).fill(fill) };
 }
 
-/** An envelope holding `entries`, under a fresh group secret. */
+/** An envelope holding `entries`, under a fresh group secret of epoch 0. */
 function envelope(entries: readonly LogRecord[]): Envelope {
-  return { groupSecret: newGroupSecret(), preview: PREVIEW, token: TOKEN, entries };
+  return { groupSecret: newGroupSecret(), epoch: 0, preview: PREVIEW, token: TOKEN, entries };
 }
 
 /** JSON text as the header's bytes. */
@@ -52,23 +52,34 @@ function headerJson(): Record<string, unknown> {
 }
 
 const entries = fc.array(
-  fc.record({
-    seq: fc.integer({ min: 1, max: Number.MAX_SAFE_INTEGER }),
-    received: fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
-    bytes: fc.uint8Array({ minLength: 1, maxLength: 3000 }),
-  }),
+  fc.record(
+    {
+      seq: fc.integer({ min: 1, max: Number.MAX_SAFE_INTEGER }),
+      received: fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+      bytes: fc.uint8Array({ minLength: 1, maxLength: 3000 }),
+      epoch: fc.integer({ min: 1, max: 0xffff_ffff }),
+    },
+    { requiredKeys: ['seq', 'received', 'bytes'] },
+  ),
   { minLength: 1, maxLength: 40 },
 );
 
 describe('packEntries and unpackChunk', () => {
-  it('write each entry as seq (8 bytes) ‖ received (8) ‖ length (4) ‖ record, big-endian', () => {
+  it('write each entry as seq (8 bytes) ‖ received (8) ‖ epoch (4) ‖ length (4) ‖ record, big-endian (#98)', () => {
     const [chunk] = packEntries([
-      { seq: 0x0102, received: 0x0304, bytes: Uint8Array.of(0xaa, 0xbb) },
+      { seq: 0x0102, received: 0x0304, bytes: Uint8Array.of(0xaa, 0xbb), epoch: 0x0506 },
+      { seq: 9, received: 8, bytes: Uint8Array.of(0xcc) },
     ]);
     expect(Array.from(chunk ?? [])).toEqual([
-      0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 3, 4, 0, 0, 0, 2, 0xaa, 0xbb,
+      0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 3, 4, 0, 0, 5, 6, 0, 0, 0, 2, 0xaa, 0xbb, 0, 0, 0,
+      0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0xcc,
     ]);
-    expect(ENTRY_HEADER_BYTES).toBe(20);
+    expect(ENTRY_HEADER_BYTES).toBe(24);
+  });
+
+  it('read an entry of epoch 0 back without an epoch, as the log keeps it', () => {
+    const [chunk = new Uint8Array()] = packEntries([entry(1, 3), { ...entry(2, 3), epoch: 2 }]);
+    expect(unpackChunk(chunk)).toEqual([entry(1, 3), { ...entry(2, 3), epoch: 2 }]);
   });
 
   it('read back every entry, in order, from chunks that each fit one blob', () => {
@@ -107,19 +118,19 @@ describe('packEntries and unpackChunk', () => {
     expect(chunks.flatMap((chunk) => unpackChunk(chunk) ?? []).map((e) => e.seq)).toEqual([1, 3]);
   });
 
-  /** One entry's header: seq 1, received 1, then `length`, followed by `body` bytes of record. */
+  /** One entry's header: seq 1, received 1, epoch 0, then `length`, followed by `body` bytes of record. */
   const raw = (length: number, body: number): Uint8Array => {
     const bytes = new Uint8Array(ENTRY_HEADER_BYTES + body);
     const view = new DataView(bytes.buffer);
     view.setBigUint64(0, 1n);
     view.setBigUint64(8, 1n);
-    view.setUint32(16, length);
+    view.setUint32(20, length);
     return bytes;
   };
 
   it.each([
     ['an empty chunk', new Uint8Array(0)],
-    ['an entry cut inside its header', raw(1, 1).subarray(0, 19)],
+    ['an entry cut inside its header', raw(1, 1).subarray(0, 23)],
     ['a length that runs past the chunk', raw(9, 1)],
     ['an empty record', raw(0, 0)],
     ['a whole entry, then a stray byte', Uint8Array.of(...raw(1, 1), 0)],
@@ -155,11 +166,12 @@ describe('clip', () => {
 });
 
 describe('encodeHeader and decodeHeader', () => {
-  it('write the header as JSON {groupSecret, preview, token, chunkCount}', () => {
+  it('write the header as JSON {groupSecret, epoch, preview, token, chunkCount}', () => {
     const secret = newGroupSecret();
-    const header = encodeHeader({ ...envelope([]), groupSecret: secret, chunkCount: 3 });
+    const header = encodeHeader({ ...envelope([]), groupSecret: secret, epoch: 2, chunkCount: 3 });
     expect(JSON.parse(new TextDecoder().decode(header))).toEqual({
       groupSecret: base64url(secret),
+      epoch: 2,
       preview: PREVIEW,
       token: TOKEN,
       chunkCount: 3,
@@ -167,10 +179,11 @@ describe('encodeHeader and decodeHeader', () => {
   });
 
   it('read back what they wrote', () => {
-    const written = { ...envelope([]), chunkCount: 2 };
+    const written = { ...envelope([]), epoch: 1, chunkCount: 2 };
     const read = decodeHeader(encodeHeader(written));
     expect(read).toEqual({
       groupSecret: Uint8Array.from(written.groupSecret),
+      epoch: 1,
       preview: PREVIEW,
       token: TOKEN,
       chunkCount: 2,
@@ -234,6 +247,10 @@ describe('encodeHeader and decodeHeader', () => {
     ['no chunks', { chunkCount: 0 }],
     ['a chunk count that isn’t whole', { chunkCount: 1.5 }],
     ['a chunk count that isn’t a number', { chunkCount: '1' }],
+    ['no epoch, as an invite made before #98 has', { epoch: undefined }],
+    ['an epoch that isn’t whole', { epoch: 0.5 }],
+    ['a negative epoch', { epoch: -1 }],
+    ['an epoch past u32', { epoch: 2 ** 32 }],
   ])('refuse a header with %s', (_label, change) => {
     expect(decodeHeader(bytes(JSON.stringify({ ...headerJson(), ...change })))).toBeNull();
   });

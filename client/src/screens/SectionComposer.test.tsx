@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -17,7 +17,7 @@ import type { Draft } from '../store/drafts';
 import { axeViolations } from '../test/axe';
 import { memoryDrafts } from '../test/drafts';
 import { authorOf } from '../test/keys';
-import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
+import { deadlineOf, groupLog, SETTLED_MINUTES, START_MINUTE } from '../test/votes';
 import { AddSection, RemoveSection } from './SectionComposer';
 
 type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
@@ -447,6 +447,31 @@ describe('Adding or removing while a leave waits for the relay (#77)', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(memory.drafts.load).not.toHaveBeenCalled();
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('Adding or removing as a newcomer still earning a vote (#101)', () => {
+  it('offers no add or removal form until their vote arrives, though they chose Co-Creator', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'], newcomers: ['Kim'] });
+    const kim = authorOf('kim');
+    const title = messages.composer.notAllowedTitle;
+    await addSection({ state: log.state(), me: kim });
+    expect(screen.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    cleanup();
+    await removeSection({ state: log.state(), me: kim });
+    expect(screen.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+    log.vouch('ana', 'kim');
+    log.vouch('ben', 'kim');
+    const settled = log.state(log.minute + SETTLED_MINUTES);
+    await addSection({ state: settled, me: kim });
+    expect(box('Section text')).toBeVisible();
+    cleanup();
+    await removeSection({ state: settled, me: kim });
+    expect(box('Title')).toBeVisible();
   });
 });
 

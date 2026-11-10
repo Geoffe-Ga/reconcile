@@ -3,11 +3,12 @@ import { Button, Label, Text, TextArea, TextField } from 'react-aria-components'
 
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { messages } from '../app/messages';
+import { WaitingNote } from '../app/Newcomer';
 import { SuspendedNote } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
-import { can, isSuspended } from '../engine/capabilities';
+import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { documentToMarkdown } from '../engine/documentMarkdown';
 import type { Atom, GroupState } from '../engine/fold';
@@ -39,6 +40,8 @@ function LevelNote({ state, me }: { readonly state: GroupState; readonly me: str
   if (!can(state, me, 'read')) return null;
   // A suspended member reads until when instead: no level change gives posting back (#102).
   if (isSuspended(state, me)) return <SuspendedNote state={state} me={me} />;
+  // A newcomer reads when their vote arrives: no level proposes or votes before it (#101).
+  if (!holdsRights(state, me)) return <WaitingNote state={state} me={me} />;
   const note = can(state, me, 'vote') ? messages.levels.notProposing : messages.levels.following;
   return (
     <div className="level-note">
@@ -231,12 +234,14 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
  * removing this section, and Add a section here in each gap (#75). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
- * this member is leaving, the Document only reads. Copy as Markdown is for
- * everyone who can read it.
+ * this member is leaving, or once the group has dissolved (#108), the
+ * Document only reads. Copy as Markdown is for everyone who can read it, an
+ * archive's readers included.
  */
 export function DocumentView(props: DocumentViewProps) {
   const { state, me, copyText, leaving = false } = props;
-  const proposes = !leaving && can(state, me, 'propose');
+  const readOnly = leaving || state.dissolved !== null;
+  const proposes = !readOnly && can(state, me, 'propose');
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
@@ -245,7 +250,7 @@ export function DocumentView(props: DocumentViewProps) {
         title={state.title}
         pageTitle={messages.document.pageTitle}
       />
-      {proposes || leaving ? null : <LevelNote state={state} me={me} />}
+      {proposes || readOnly ? null : <LevelNote state={state} me={me} />}
       <Sections state={state} proposes={proposes} handlers={props} />
       {state.atoms.length === 0 ? null : <CopyMarkdown atoms={state.atoms} copyText={copyText} />}
     </main>

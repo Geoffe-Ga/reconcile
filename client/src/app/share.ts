@@ -1,7 +1,9 @@
 /**
  * Sharing out of the app (#77, #113; docs/spec/phase-1-spec.md §9, "Shares
  * carry no content"): Tell your group's message, and the one way it leaves
- * the device.
+ * the device. Also saving the backup file (#78): through the share sheet
+ * where it takes files, and as a download otherwise. The file goes only
+ * where the person puts it; nothing is uploaded.
  *
  * What's shared goes into third-party chats, so it is one of the fixed
  * messages in ./chatMessages.ts, whose only variables are a deadline,
@@ -68,4 +70,79 @@ export async function shareOrCopy(
 export function browserShare(): WebShare | undefined {
   const { share } = navigator as Partial<Navigator>;
   return typeof share === 'function' ? (data) => share.call(navigator, data) : undefined;
+}
+
+/** How saving a file went: through the share sheet, as a download, or not at all. */
+export type SaveOutcome = 'shared' | 'downloaded' | 'cancelled';
+
+/** Where a file can go: the share sheet, where it takes files, or a download. */
+export interface FileTargets {
+  /** `navigator.canShare`, or undefined where the browser has none. */
+  readonly canShare: ((data: ShareData) => boolean) | undefined;
+  /** `navigator.share`, or undefined where the browser has none. */
+  readonly share: WebShare | undefined;
+  /** Downloads the file ({@link downloadFile} in the app). */
+  readonly download: (file: File) => void;
+}
+
+/** How long a download's blob URL lives after its click, so a slow browser still reads it. */
+const REVOKE_AFTER_MS = 40_000;
+
+/**
+ * Saves `file`: hands it, alone, to the share sheet when `canShare` says it
+ * takes files (the reliable path in an installed iPhone app), and downloads
+ * it otherwise (Android Chrome won't share this file type) or when sharing
+ * fails. Closing the sheet saves nothing.
+ */
+export async function saveFile(file: File, targets: FileTargets): Promise<SaveOutcome> {
+  const { canShare, share, download } = targets;
+  if (share !== undefined && canShare?.({ files: [file] }) === true) {
+    const outcome = await share({ files: [file] }).then(
+      () => 'shared' as const,
+      (error: unknown) =>
+        error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : null,
+    );
+    if (outcome !== null) return outcome;
+  }
+  download(file);
+  return 'downloaded';
+}
+
+/** Downloads `file` under its own name, through an `<a download>` on a blob URL. */
+export function downloadFile(file: File): void {
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.name;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, REVOKE_AFTER_MS);
+}
+
+/** The browser's `canShare` and `share`, bound to `navigator`, and {@link downloadFile}. */
+export function browserFileTargets(): FileTargets {
+  const { canShare } = navigator as Partial<Navigator>;
+  return {
+    canShare: typeof canShare === 'function' ? (data) => canShare.call(navigator, data) : undefined,
+    share: browserShare(),
+    download: downloadFile,
+  };
+}
+
+/** Two digits, as a date writes a month or day. */
+const twoDigits = (n: number): string => String(n).padStart(2, '0');
+
+/** The backup file's generic name, with the day it was made on the device: reconcile-backup-2026-11-08.bin. */
+export function backupFileName(day: Date): string {
+  const date = `${String(day.getFullYear())}-${twoDigits(day.getMonth() + 1)}-${twoDigits(day.getDate())}`;
+  return `reconcile-backup-${date}.bin`;
+}
+
+/** A backup's sealed bytes as a file of plain bytes, named for `day`. */
+export function backupFile(bytes: Uint8Array<ArrayBuffer>, day: Date): File {
+  return new File([bytes], backupFileName(day), { type: 'application/octet-stream' });
 }

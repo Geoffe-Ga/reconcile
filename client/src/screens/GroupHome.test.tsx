@@ -47,6 +47,7 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
     onChooseLevel,
     onLeave,
     onSuspend: vi.fn(() => Promise.resolve()),
+    onVouch: vi.fn(() => Promise.resolve()),
     ...props,
   };
   const view = render(<GroupHome {...all} />);
@@ -209,6 +210,29 @@ describe('GroupHome', () => {
     rerender({ sync: SYNCED });
     expect(screen.queryByText(messages.home.missingHistory)).not.toBeInTheDocument();
   });
+
+  it.each([
+    ['left', 'You left this group on another device.'],
+    [
+      'missed',
+      'This group’s key changed and this device didn’t get the new one. Ask someone in the group for a new invite link.',
+    ],
+  ] as const)(
+    'says why this device can’t read on once the key changed (%s), and offers no invite link (#98)',
+    async (keyChange, line) => {
+      const group = testGroup();
+      const { rerender } = renderHome(group.state, { sync: { ...SYNCED, keyChange } });
+      const said = keyChange === 'left' ? messages.home.keyLeft : messages.home.keyMissed;
+      expect(said).toBe(line);
+      expect(screen.getByText(line)).toHaveClass('notice');
+      expect(screen.getByText(line).closest('[role="status"]')).not.toBeNull();
+      expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+      expect(await axeViolations()).toEqual([]);
+      rerender({ sync: { ...SYNCED, keyChange: null } });
+      expect(screen.queryByText(line)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
+    },
+  );
 
   it('says who invited each person, once a verified token names them', async () => {
     const group = testGroup({
@@ -568,8 +592,9 @@ describe('Leave this group', () => {
     await user.click(open);
 
     expect(dialog()).toHaveTextContent(
-      'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+      'Leaving removes this group from this device. Others keep what they already have. When you leave, the group gets a new key, so this device and any backup can’t read what comes next.',
     );
+    expect(dialog()).toHaveTextContent(messages.leave.body);
     expect(dialog()).toContainElement(document.activeElement as HTMLElement);
     // Everything behind the dialog is hidden from assistive technology while it's open.
     expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();

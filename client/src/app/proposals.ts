@@ -1,8 +1,9 @@
 /**
  * What the composer, the ballot and the level picker do (spec §4 and §8),
  * apart from any screen: propose, add a version, vote, and choose a level;
- * for stewards (#102), propose a steward or a recall, and suspend; and for
- * the opt-ins (#117), propose a rules change, with a steward's narrowing.
+ * for stewards (#102), propose a steward or a recall, and suspend; for the
+ * opt-ins (#117), propose a rules change, with a steward's narrowing; and
+ * propose dissolving the group (#108).
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -284,6 +285,46 @@ export async function proposeSteward(
   return { outcome: 'proposed', proposalId: event.id };
 }
 
+/** A dissolve Proposal's entries (#108): title and why, trimmed, the window chosen, and whether to wipe. */
+export interface DissolveValues {
+  readonly title: string;
+  readonly why: string;
+  /** How many whole days voting runs, already checked against the entrenched bounds. */
+  readonly window: number;
+  /** Whether every device also erases the group, a week after it dissolves. */
+  readonly wipe: boolean;
+}
+
+/**
+ * Proposes dissolving `groupId` (ADR-0051, #108), as this device's member,
+ * for the window chosen and with or without a wipe. The title and why are
+ * NFC-normalized before signing. One too large for any blob is refused before
+ * anything is queued. The fold decides whether it opens: it ignores one while
+ * another is open.
+ */
+export async function proposeDissolve(
+  services: ProposalServices,
+  groupId: string,
+  values: DissolveValues,
+): Promise<ProposeResult> {
+  const body = {
+    target: { kind: 'dissolve', wipe: values.wipe } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+    window: values.window,
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
 /** A suspension's entries: the member it suspends, and the reason as typed, blank for none. */
 export interface SuspendValues {
   readonly member: string;
@@ -370,4 +411,24 @@ export async function proposeRules(
   );
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
+}
+
+/**
+ * Vouches for the newcomer named (ADR-0014, #101), as this device's member of
+ * `groupId`. The vouch counts from the relay's receipt, and the fold decides
+ * whether it holds.
+ */
+export async function vouch(
+  services: ProposalServices,
+  groupId: string,
+  member: string,
+): Promise<void> {
+  const event = await signFor(services, groupId, {
+    type: 'vouch',
+    group: groupId,
+    ts: services.now(),
+    body: { member },
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
 }

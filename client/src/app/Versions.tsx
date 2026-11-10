@@ -70,11 +70,12 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A version's heading: "Version N · <name>", or what a steward or rules ballot decides. */
+/** A version's heading: "Version N · <name>", or what a steward, rules or dissolve ballot decides. */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules } = version;
+  const { steward, rules, dissolve } = version;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
+  if (dissolve !== undefined) return <>{dissolve.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -83,11 +84,12 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
   );
 }
 
-/** Under the heading: the version's change, or what passing a steward or rules ballot does. */
+/** Under the heading: the version's change, or what passing a steward, rules or dissolve ballot does. */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules } = version;
+  const { steward, rules, dissolve } = version;
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;
+  if (dissolve !== undefined) return <p className="caption">{dissolve.line}</p>;
   return <Change version={version} current={current} />;
 }
 
@@ -96,7 +98,8 @@ function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
  * (#75), its change, and whatever goes under it. A steward ballot's one
  * version is headed by what it decides, "Make <name> steward (seat N)", with
  * what passing does in place of a change (#102), and so is a rules ballot's,
- * "Turn on the Discord chat bot" (#117).
+ * "Turn on the Discord chat bot" (#117), and a dissolve ballot's, "Dissolve
+ * the group" (#108).
  */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();

@@ -11,15 +11,32 @@
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
- * record, so Leave deletes the group with a single delete (#77).
+ * record, so Leave deletes the group with a single delete (#77), the chat
+ * bot's claims (#119) and its push registration (#99) included. A backup file's groups come back in one
+ * transaction too (#78), and the store closes itself when another tab
+ * deletes or upgrades its database, so Erase never waits on a connection
+ * left open. Personal Documents (#93) sit in a store of their own beside the
+ * groups (`./personal.ts`), and a backup file brings them back in that same
+ * transaction. A dissolved group stays as a read-only archive (#108): nothing
+ * more is queued, claimed or sent for it, and its ballots and notes can be
+ * cleared while its outcomes stay.
  */
 
 import { openDB } from 'idb';
-import type { DBSchema, IDBPDatabase } from 'idb';
+import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
-import type { LogRecord } from '../engine/fold';
+import type { BotMoment } from '../engine/chatPosts';
+import type { GroupState, LogRecord } from '../engine/fold';
+import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
+import {
+  byCreation,
+  isPersonalDocument,
+  keepsHeldCopy,
+  type PersonalDocument,
+  type PersonalStore,
+} from './personal';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -27,6 +44,32 @@ export interface Me {
   author: string;
   /** The name this device joined with. */
   name: string;
+}
+
+/**
+ * A chat bot claim this device made (#119): its `chat-posted` event's id, and
+ * the Proposal and moment it claims. Only the device that made the winning
+ * claim posts it, and it knows the claim by this id.
+ */
+export interface ChatClaim {
+  readonly id: string;
+  readonly proposal: string;
+  readonly moment: BotMoment;
+}
+
+/**
+ * Where the relay holds this device's push endpoint for a group (#99): kept
+ * only once the relay has taken it, so its presence is the group's switch.
+ */
+export interface PushRegistration {
+  /** The endpoint the relay holds: this device's push subscription when it was taken. */
+  readonly endpoint: string;
+  /** Every mailbox it is registered under, from `mailboxAt` (./mailbox.ts). */
+  readonly mailboxes: readonly string[];
+  /** The relay instance that took it. A fresh relay holds none of it. */
+  readonly instance: string | null;
+  /** The relay minute of the last registration the relay took. */
+  readonly at: number;
 }
 
 /** Everything the device keeps about one group. */
@@ -40,6 +83,19 @@ export interface Group {
   secret: Uint8Array;
   /** This membership's 32-byte Ed25519 secret key. It never leaves the device or this group. */
   signingKey: Uint8Array;
+  /**
+   * This membership's 32-byte X25519 secret key (#98), which opens the group's
+   * new secrets when its key changes (`crypto/epoch.ts`). Like the signing
+   * key, it is made for this group alone and never leaves the device but in a
+   * backup file. Absent in a group kept before #98, until the sync loop makes one.
+   */
+  kxKey?: Uint8Array;
+  /**
+   * The epoch of `secret` (#98): 0 from genesis, then one more for each key
+   * change this device took up. Absent reads as 0, so a group kept before #98
+   * needs no migration.
+   */
+  epoch?: number;
   /** This device's membership. */
   me: Me;
   /** Relay records in relay order, each event once: the input to `fold`. */
@@ -68,7 +124,85 @@ export interface Group {
    * loop purges the group once the relay returns a seq for it.
    */
   leaving?: Uint8Array;
+  /**
+   * How the group stands with backups on this device (#78): `saved` once it
+   * is in a backup file this device saved or restored from, `not-now` once
+   * the person answered Not now on group home's backup card. Absent until
+   * either, and group home suggests a backup while it is.
+   */
+  backup?: BackupMark;
+  /**
+   * The chat bot claims this device made and hasn't settled yet (#119), oldest
+   * first: each is posted once if it won, or dropped. Absent until the first.
+   */
+  chatClaims?: ChatClaim[];
+  /**
+   * This device's push registration for the group (#99): absent while push
+   * is off for it, as it is until the person turns it on. Never in a backup
+   * file: an endpoint belongs to one device.
+   */
+  push?: PushRegistration;
+  /**
+   * The nudges this device has posted for its own open Proposals (#99), by
+   * `nudgeKey`, so each goes to the relay once. Absent until the first.
+   */
+  nudged?: string[];
+  /**
+   * Set once the group is read-only on this device (#108): absent while it
+   * goes on. Nothing is queued, claimed or synced for it from then on.
+   */
+  archived?: Archive;
 }
+
+/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
+export type ArchiveReason = 'dissolved';
+
+/**
+ * A dissolved archive once this device has cleared its ballots and notes
+ * (#108; ADR-0075 §5): the group as the device last folded it, every ballot
+ * and note taken out, with each decided Proposal's totals and outcome from
+ * the device's own tally. The log that held the ballots is gone.
+ */
+export interface ClearedArchive {
+  /** When this device cleared them, in device milliseconds. */
+  readonly at: number;
+  /** The group's folded state then, with no ballot on any Proposal. */
+  readonly state: GroupState;
+  /** Each decided Proposal's totals and outcome, by its id. */
+  readonly tallies: Readonly<Record<string, TallyDetail>>;
+}
+
+/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+export interface Archive {
+  readonly reason: ArchiveReason;
+  readonly cleared?: ClearedArchive;
+}
+
+/** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
+export type BackupMark = 'saved' | 'not-now';
+
+/**
+ * A group as a backup file carries it (#78): its keys, secret, your name, its
+ * relay-ordered log and sync state, and whether some history may be missing.
+ * Never the outbox or drafts, so a restore never sends stale intent. A file
+ * never holds `archived`: a restore sets it when the log folds to a
+ * `dissolve` (#108), so the group comes back read-only.
+ */
+export type BackedUpGroup = Pick<
+  Group,
+  | 'groupId'
+  | 'secret'
+  | 'signingKey'
+  | 'kxKey'
+  | 'epoch'
+  | 'me'
+  | 'log'
+  | 'cursor'
+  | 'relayNow'
+  | 'instance'
+  | 'lastSyncAt'
+  | 'archived'
+> & { readonly missingHistory: boolean };
 
 /**
  * The longest gap between syncs that can't have missed an event: 28 days. The
@@ -77,8 +211,25 @@ export interface Group {
  */
 export const HISTORY_GAP_MS = 28 * 86_400_000;
 
-/** What a device knows about a group when it creates or joins it. */
-export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'>;
+/**
+ * What a device knows about a group when it creates or joins it: Create group
+ * and Join hand over its encryption key too, and a joiner the epoch of the
+ * secret its invite carried (#98).
+ */
+export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
+  Partial<Pick<Group, 'kxKey' | 'epoch'>>;
+
+/**
+ * A move to the group's next epoch (#98): its secret, the cursor to read its
+ * mailbox from, and this device's own records to post again there first,
+ * oldest first, since they reached the old mailbox after the key changed.
+ */
+export interface EpochAdvance {
+  readonly epoch: number;
+  readonly secret: Uint8Array;
+  readonly cursor: number;
+  readonly repost: readonly Uint8Array[];
+}
 
 /** What one sync pass read from the relay. */
 export interface Pull {
@@ -92,13 +243,15 @@ export interface Pull {
   instance: string;
   /** When the pass finished, in device milliseconds. */
   lastSyncAt: number;
+  /** The move to the next epoch this pull found the group's key change for, if any (#98). */
+  advance?: EpochAdvance;
 }
 
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups. */
-export interface Store extends DraftStore {
+/** The device's groups, and its personal Documents (#93). */
+export interface Store extends DraftStore, PersonalStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -129,26 +282,100 @@ export interface Store extends DraftStore {
    */
   markLeaving(groupId: string, leave: Uint8Array): Promise<void>;
   /**
+   * Queue a signed `chat-posted` claim and keep it as one of this device's
+   * claims, in one change (#119). Returns false, changing nothing, when this
+   * device already holds a claim of that moment, as a second tab might, or the
+   * group is leaving or archived (#108).
+   *
+   * @throws {RecordTooLarge} when the record is over 64,000 bytes.
+   */
+  claimChat(groupId: string, record: Uint8Array, claim: ChatClaim): Promise<boolean>;
+  /**
+   * Drop the claim `id` from this device's claims, in one change, and return
+   * whether it was there. Two tabs settling one claim can't both hear true,
+   * so a claim is posted at most once. No screen reads claims, so no listener
+   * hears of it.
+   */
+  settleChatClaim(groupId: string, id: string): Promise<boolean>;
+  /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
-   * calls it once the relay has returned a seq for the group's leave. A group
-   * that is already gone is left alone.
+   * calls it once the relay has returned a seq for the group's leave, a
+   * dissolved group's wipe calls it, and so does Remove from this device
+   * (#108). A group that is already gone is left alone.
    */
   purgeGroup(groupId: string): Promise<void>;
+  /**
+   * Keep the group read-only on this device, in one change (#108; #115
+   * reuses it): drop its outbox, its drafts, any leave and the chat bot's
+   * claims (#119), and mark it archived for `reason`. From then on nothing is
+   * queued or claimed for it, and the sync loop sends, reads and posts
+   * nothing for it. A group already archived keeps its archive.
+   */
+  markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
+  /**
+   * Clear an archived group's ballots and notes, in one change (#108): keep
+   * `cleared`, the state to show from now on, and drop the log that held
+   * them. Refuses a group that isn't archived.
+   */
+  clearArchive(groupId: string, cleared: ClearedArchive): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
-   * Append each record whose event id isn't in the log yet, and save the sync
-   * state. A pull more than {@link HISTORY_GAP_MS} after the last sync sets
-   * `missingHistory`.
+   * Append each record whose event id isn't in the log yet for its epoch, and
+   * save the sync state. A pull more than {@link HISTORY_GAP_MS} after the
+   * last sync sets `missingHistory`. A pull that carries an `advance` moves
+   * the group to its next epoch in the same change (#98): the new secret and
+   * cursor, and the records to post again ahead of the outbox, each once.
    */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
   /**
+   * Keep `fresh` as the group's encryption key unless it has one (#98), in one
+   * change, and return the key it keeps: two tabs that race keep the first.
+   * No screen reads it, so no listener hears of it.
+   */
+  ensureKx(groupId: string, fresh: Uint8Array): Promise<Uint8Array>;
+  /**
+   * Take up a later epoch's secret that an invite carried (#98), reading its
+   * mailbox from `cursor` and posting `repost` again first, when it is later
+   * than the group's own. The caller checks the secret against the key
+   * change's commit first (`epochs.ts`).
+   */
+  adoptEpoch(groupId: string, next: EpochAdvance): Promise<void>;
+  /**
    * Add each of an invite's `records` whose event id the log lacks, each in
    * seq order among the records already there, and clear `missingHistory`
-   * (#73). The cursor and sync state stay as they are.
+   * (#73). The cursor and sync state stay as they are. A read-only archive
+   * takes nothing (#108), so a cleared one never gets its ballots back.
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
+  /**
+   * Keep a backup file's groups and personal Documents, in one transaction
+   * (#78, #93). A group new to the device is kept as the file has it, with an
+   * empty outbox, no drafts and no chat claims (#119). For a group already
+   * here, whichever whole copy synced later stays: the file's replaces the
+   * device's only when its last sync is later, and a group this device is
+   * leaving or keeps read-only (#108) stays as it is. Either way the group is
+   * marked `saved`, since a backup file holds it. A personal Document merges
+   * by id the same way: the file's replaces the device's only when it was
+   * edited later (`keepsHeldCopy`). Nothing is stamped with the time now.
+   */
+  restoreGroups(
+    groups: readonly BackedUpGroup[],
+    personal?: readonly PersonalDocument[],
+  ): Promise<void>;
+  /** Mark each of these groups still on the device, in one transaction (#78). */
+  markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
+  /**
+   * Keep the group's push registration once the relay has taken it, or with
+   * null turn push off for the group, in one change (#99).
+   */
+  setPush(groupId: string, push: PushRegistration | null): Promise<void>;
+  /**
+   * Replace the nudges this device has posted for the group (#99), in one
+   * change. No screen reads them, so no listener hears of it.
+   */
+  markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
@@ -159,25 +386,52 @@ export interface Store extends DraftStore {
 
 interface Schema extends DBSchema {
   groups: { key: string; value: Group };
+  personal: { key: string; value: PersonalDocument };
 }
 
 /**
- * The schema version. Version 3 holds a real group secret, from which the
- * mailbox id and seal key derive (#71); version 2 held signed records (#69)
- * and version 1 the stub era's unsigned data. Older data, whose relay blobs
- * anyone could read, is deleted on upgrade, with no migration.
+ * The schema version. Version 4 adds the personal store (#93) and deletes
+ * nothing. Version 3 holds a real group secret, from which the mailbox id and
+ * seal key derive (#71); version 2 held signed records (#69) and version 1
+ * the stub era's unsigned data. That older data, whose relay blobs anyone
+ * could read, is deleted on upgrade, with no migration. A dissolved group's
+ * `archived` mark (#108) is an optional field of its record, so it needed no
+ * version of its own: a version 3 group that holds one keeps it through the
+ * upgrade. So are a group's encryption key and epoch and each record's epoch
+ * (#98): a group or record without one reads as epoch 0.
  */
-const VERSION = 3;
+const VERSION = 4;
 const GROUPS = 'groups';
+const PERSONAL = 'personal';
 
-/** Open the store in the IndexedDB database `name`. */
-export async function openStore(name = 'reconcile'): Promise<Store> {
+/**
+ * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
+ * version 3 are deleted, and the personal store is added beside whatever
+ * groups version 3 kept.
+ */
+function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
+  if (oldVersion < 3) {
+    if (database.objectStoreNames.contains(GROUPS)) database.deleteObjectStore(GROUPS);
+    database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+  }
+  if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
+}
+
+/** The IndexedDB database the app keeps its groups in. */
+export const DATABASE_NAME = 'reconcile';
+
+/**
+ * Open the store in the IndexedDB database `name`. When another tab deletes
+ * the database (Erase, #78) or opens a newer version of it, this connection
+ * closes, so that tab never waits on this one.
+ */
+export async function openStore(name = DATABASE_NAME): Promise<Store> {
   const db = await openDB<Schema>(name, VERSION, {
-    upgrade(database) {
-      if (database.objectStoreNames.contains(GROUPS)) {
-        database.deleteObjectStore(GROUPS);
-      }
-      database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+    upgrade(database, oldVersion) {
+      upgradeFrom(database, oldVersion);
+    },
+    blocking() {
+      db.close();
     },
   });
   const listeners = new Set<(groupId: string) => void>();
@@ -194,6 +448,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
     }
     await change(groupId, (group) => {
       if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
+      if (group.archived !== undefined) throw new Error('This group is read-only on this device.');
       group.outbox.push(...records);
       if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
     });
@@ -233,6 +488,28 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.outbox.push(leave);
         group.leaving = leave;
       }),
+    async claimChat(groupId, record, claim) {
+      if (record.length > MAX_RECORD_BYTES) throw new RecordTooLarge(record.length);
+      let queued = false;
+      await change(groupId, (group) => {
+        const held = group.chatClaims ?? [];
+        const same = held.some((c) => c.proposal === claim.proposal && c.moment === claim.moment);
+        if (group.leaving !== undefined || group.archived !== undefined || same) return;
+        group.outbox.push(record);
+        group.chatClaims = [...held, claim];
+        queued = true;
+      });
+      return queued;
+    },
+    async settleChatClaim(groupId, id) {
+      let held = false;
+      await changeQuietly(groupId, (group) => {
+        const claims = group.chatClaims ?? [];
+        held = claims.some((claim) => claim.id === id);
+        group.chatClaims = claims.filter((claim) => claim.id !== id);
+      });
+      return held;
+    },
     async purgeGroup(groupId) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const found = (await tx.store.getKey(groupId)) !== undefined;
@@ -240,6 +517,24 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       await tx.done;
       if (found) notify(groupId);
     },
+    markArchived: (groupId, reason) =>
+      change(groupId, (group) => {
+        if (group.archived !== undefined) return;
+        group.archived = { reason };
+        group.outbox = [];
+        delete group.drafts;
+        delete group.leaving;
+        delete group.chatClaims;
+        // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
+        delete group.push;
+        delete group.nudged;
+      }),
+    clearArchive: (groupId, cleared) =>
+      change(groupId, (group) => {
+        if (group.archived === undefined) throw new Error('This group isn’t archived.');
+        group.archived = { ...group.archived, cleared };
+        group.log = [];
+      }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
         // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
@@ -258,12 +553,71 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.relayNow = pull.relayNow;
         group.instance = pull.instance;
         group.lastSyncAt = pull.lastSyncAt;
+        if (pull.advance !== undefined) advanceTo(group, pull.advance);
+      }),
+    async ensureKx(groupId, fresh) {
+      let kept = fresh;
+      await changeQuietly(groupId, (group) => {
+        group.kxKey ??= fresh;
+        kept = group.kxKey;
+      });
+      return kept;
+    },
+    adoptEpoch: (groupId, next) =>
+      change(groupId, (group) => {
+        if (next.epoch > (group.epoch ?? 0)) advanceTo(group, next);
       }),
     mergeLog: (groupId, records, idOf) =>
       change(groupId, (group) => {
+        if (group.archived !== undefined) return;
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
+    async restoreGroups(groups, personal = []) {
+      const tx = db.transaction([GROUPS, PERSONAL], 'readwrite');
+      try {
+        await restoreInto(tx, groups, personal);
+      } catch (error) {
+        // Anything that fails takes the whole restore with it, groups and Documents alike.
+        await abandon(tx);
+        throw error;
+      }
+      await tx.done;
+      for (const { groupId } of groups) notify(groupId);
+    },
+    async markBackup(groupIds, mark) {
+      const tx = db.transaction(GROUPS, 'readwrite');
+      const marked: string[] = [];
+      for (const groupId of groupIds) {
+        const group = await tx.store.get(groupId);
+        if (group === undefined) continue;
+        group.backup = mark;
+        await tx.store.put(group);
+        marked.push(groupId);
+      }
+      await tx.done;
+      for (const groupId of marked) notify(groupId);
+    },
+    setPush: (groupId, push) =>
+      change(groupId, (group) => {
+        if (push === null) delete group.push;
+        else group.push = push;
+      }),
+    markNudged: (groupId, nudged) =>
+      changeQuietly(groupId, (group) => {
+        group.nudged = [...nudged];
+      }),
+    async listPersonal() {
+      return (await db.getAll(PERSONAL)).sort(byCreation);
+    },
+    getPersonal: (id) => db.get(PERSONAL, id),
+    async savePersonal(document) {
+      if (!isPersonalDocument(document)) {
+        throw new Error('This isn’t a personal Document this device can keep.');
+      }
+      await db.put(PERSONAL, document);
+    },
+    deletePersonal: (id) => db.delete(PERSONAL, id),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -277,6 +631,89 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       db.close();
     },
   };
+}
+
+/**
+ * Moves `group` to the epoch `advance` names: its secret and cursor, and its
+ * records to post again ahead of the outbox, skipping any already queued.
+ */
+function advanceTo(group: Group, { epoch, secret, cursor, repost }: EpochAdvance): void {
+  group.epoch = epoch;
+  group.secret = secret;
+  group.cursor = cursor;
+  const fresh = repost.filter((bytes) => !group.outbox.some((queued) => sameBytes(queued, bytes)));
+  group.outbox = [...fresh, ...group.outbox];
+}
+
+/**
+ * Aborts `tx` and waits for it to end. A transaction that a failed request
+ * has already aborted can't be aborted again, and that's fine: either way,
+ * nothing it wrote stays.
+ */
+async function abandon(tx: RestoreTransaction): Promise<void> {
+  try {
+    tx.abort();
+  } catch {
+    // Already aborted by the request that failed.
+  }
+  await tx.done.catch(() => undefined);
+}
+
+/** A transaction over both of the store's object stores, as a restore opens it. */
+type RestoreTransaction = IDBPTransaction<Schema, ['groups', 'personal'], 'readwrite'>;
+
+/**
+ * Puts each group and personal Document a backup holds into `tx`, keeping
+ * the device's copy wherever it's the one to keep (`keptCopy`,
+ * `keepsHeldCopy`).
+ */
+async function restoreInto(
+  tx: RestoreTransaction,
+  groups: readonly BackedUpGroup[],
+  personal: readonly PersonalDocument[],
+): Promise<void> {
+  const kept = tx.objectStore(GROUPS);
+  for (const restored of groups) {
+    await kept.put(keptCopy(await kept.get(restored.groupId), restored));
+  }
+  const documents = tx.objectStore(PERSONAL);
+  for (const restored of personal) {
+    if (!keepsHeldCopy(await documents.get(restored.id), restored)) await documents.put(restored);
+  }
+}
+
+/**
+ * The copy of a group to keep when a backup file holds `restored` and the
+ * device holds `held` (#78): the file's, with no outbox, drafts or chat
+ * claims, unless the device's synced at least as late, is leaving, or is a
+ * read-only archive, which a restore never brings back to life (#108).
+ * Either is marked `saved`. The device's push registration and posted nudges
+ * (#99) stay either way: they belong to this device, and a file never holds
+ * them.
+ */
+function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
+  if (held !== undefined && (stays(held) || syncedSince(held, restored))) {
+    return { ...held, backup: 'saved' };
+  }
+  // A copy that comes back read-only takes no push (#108), as `markArchived` keeps none.
+  const { push, nudged } = restored.archived === undefined ? (held ?? {}) : {};
+  return {
+    ...restored,
+    outbox: [],
+    backup: 'saved',
+    ...(push === undefined ? {} : { push }),
+    ...(nudged === undefined ? {} : { nudged }),
+  };
+}
+
+/** Whether a restore leaves `held` as it is: the device is leaving it, or keeps it read-only. */
+function stays(held: Group): boolean {
+  return held.leaving !== undefined || held.archived !== undefined;
+}
+
+/** Whether `held` last synced no earlier than `restored`; a copy that never synced is the oldest. */
+function syncedSince(held: Group, restored: BackedUpGroup): boolean {
+  return (held.lastSyncAt ?? -Infinity) >= (restored.lastSyncAt ?? -Infinity);
 }
 
 /**
@@ -304,9 +741,20 @@ function changer(
 }
 
 /**
- * The records of `incoming` that hold a signed event whose id is neither in
- * `log` nor earlier in `incoming`. A record that doesn't verify has no id, so
- * it is dropped and can never shadow the real record of the same event.
+ * A record's key for dedupe: its event id within the epoch of the mailbox it
+ * was read from (#98), or null when it holds no signed event. A copy its
+ * author posted again to a new epoch's mailbox is a record of its own.
+ */
+function keyOf(record: LogRecord, idOf: EventIdOf): string | null {
+  const id = idOf(record.bytes);
+  return id === null ? null : `${String(record.epoch ?? 0)}:${id}`;
+}
+
+/**
+ * The records of `incoming` that hold a signed event whose id, in its epoch,
+ * is neither in `log` nor earlier in `incoming`. A record that doesn't verify
+ * has no id, so it is dropped and can never shadow the real record of the
+ * same event.
  */
 function unseen(
   log: readonly LogRecord[],
@@ -316,13 +764,13 @@ function unseen(
   if (incoming.length === 0) {
     return [];
   }
-  const seen = new Set(log.map((record) => idOf(record.bytes)));
+  const seen = new Set(log.map((record) => keyOf(record, idOf)));
   return incoming.filter((record) => {
-    const id = idOf(record.bytes);
-    if (id === null || seen.has(id)) {
+    const key = keyOf(record, idOf);
+    if (key === null || seen.has(key)) {
       return false;
     }
-    seen.add(id);
+    seen.add(key);
     return true;
   });
 }

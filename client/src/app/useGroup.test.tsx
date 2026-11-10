@@ -6,13 +6,14 @@ import { xchachaSeal } from '../crypto/seal';
 import type { SignedEvent } from '../engine/event';
 import { createRelay } from '../net/relay';
 import { openStore } from '../store/db';
+import { eventIdOf } from '../store/eventId';
 import type { Group, NewGroup, Store } from '../store/db';
 import { createSync } from '../store/sync';
 import type { Sync } from '../store/sync';
 import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { authorOf, signedAs, testKeys } from '../test/keys';
+import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { GroupServicesContext, useGroup } from './useGroup';
 import type { GroupServices } from './useGroup';
 
@@ -33,7 +34,13 @@ function genesis(title = 'House rules'): SignedEvent {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name: 'Riverside Tenants', founder: 'Ana', title, atoms: ['Quiet after 10pm.'] },
+    body: {
+      name: 'Riverside Tenants',
+      founder: 'Ana',
+      title,
+      atoms: ['Quiet after 10pm.'],
+      kx: testKx('ana').kx,
+    },
   });
 }
 
@@ -42,7 +49,7 @@ function join(founding: SignedEvent, name: string): SignedEvent {
     type: 'join',
     group: founding.id,
     ts: TS,
-    body: { name },
+    body: { name, kx: testKx(name.toLowerCase()).kx },
   });
 }
 
@@ -182,13 +189,16 @@ describe('useGroup', () => {
       state: null,
       log: [],
       pending: [],
+      keyChange: null,
       lastSyncAt: null,
       relayNow: null,
       reachable: true,
       me: null,
       missingHistory: false,
       leaving: false,
+      suggestBackup: false,
       loaded: true,
+      cleared: null,
     });
   });
 
@@ -208,6 +218,60 @@ describe('useGroup', () => {
       expect(result.current.leaving).toBe(true);
     });
     expect(result.current.pending.map(({ event }) => event.type)).toEqual(['leave']);
+  });
+
+  it('suggests a backup for a group no backup holds, and none once it is a read-only archive (#108)', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    await store.enqueue(GROUP, genesis().record);
+    await sync.syncOnce();
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    await waitFor(() => {
+      expect(result.current.suggestBackup).toBe(true);
+    });
+
+    await act(() => store.markArchived(GROUP, 'dissolved'));
+
+    await waitFor(() => {
+      expect(result.current.suggestBackup).toBe(false);
+    });
+    expect(result.current.state?.title).toBe('House rules');
+  });
+
+  it('says this device missed the group’s new key, and nothing of it once the group is a read-only archive (#98, #108)', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    const founding = genesis();
+    const group = founding.id;
+    const leave = signedAs('cal', { type: 'leave', group, ts: TS, body: {} });
+    const wraps = { [authorOf('ana')]: 'AA', [authorOf('ben')]: 'AA' };
+    const rotate = signedAs('ben', {
+      type: 'key-rotate',
+      group,
+      ts: TS,
+      body: { epoch: 1, commit: 'rotation-commit-of-this-testAAAAAAAAAAAAAAA', wraps },
+    });
+    const events = [founding, join(founding, 'Ben'), join(founding, 'Cal'), leave, rotate];
+    const records = events.map(({ record }, i) => ({
+      seq: i + 1,
+      received: 100 + i,
+      bytes: record,
+    }));
+    const pull = { records, cursor: records.length, relayNow: 200, instance: 'i', lastSyncAt: TS };
+    await store.applyPull(GROUP, pull, eventIdOf);
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    await waitFor(() => {
+      expect(result.current.keyChange).toBe('missed');
+    });
+    expect(result.current.state?.epoch).toBe(1);
+
+    // #115 archives a removed member's copy so; a dissolved group's home shows its archive instead.
+    await act(() => store.markArchived(GROUP, 'dissolved'));
+
+    await waitFor(() => {
+      expect(result.current.keyChange).toBeNull();
+    });
+    expect(result.current.state?.epoch).toBe(1);
   });
 
   it('says who this device is in the group, and hands the screens no secret', async () => {
@@ -362,6 +426,7 @@ function newGroup(groupId: string): NewGroup {
     groupId,
     secret: new Uint8Array(32),
     signingKey: testKeys('ana').secretKey,
+    kxKey: testKx('ana').kxKey,
     me: { author: authorOf('ana'), name: 'Ana' },
   };
 }
