@@ -11,6 +11,7 @@ import {
   type ProposalValues,
   type VersionValues,
 } from '../app/proposals';
+import { suspendedLine } from '../app/stewardLines';
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
@@ -557,9 +558,9 @@ export function Composer(props: ComposerProps) {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
   if (!can(state, me, 'propose')) {
-    return (
-      <Unavailable state={state} title={composer.notAllowedTitle} text={composer.notAllowed} />
-    );
+    // A suspended member reads until when, rather than that their level can't propose (#102).
+    const text = suspendedLine(state, me) ?? composer.notAllowed;
+    return <Unavailable state={state} title={composer.notAllowedTitle} text={text} />;
   }
   if (what.kind === 'change') {
     const again = lapsed(props.again);

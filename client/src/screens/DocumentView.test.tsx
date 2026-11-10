@@ -328,3 +328,19 @@ describe('DocumentView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 });
+
+describe('DocumentView: a suspended member (#102)', () => {
+  it('tells them until when in place of the Propose buttons, with no level change to offer', async () => {
+    const log = groupLog({ members: ['Kim'] });
+    log.suspend('Ana', 'Kim', 'Threats.');
+    view(log.state(), authorOf('kim'));
+    expect(
+      screen.getByText(
+        /^A steward suspended you until .+\. You can read, but not post, propose or vote\.$/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Propose a change/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Change your involvement/ })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+});

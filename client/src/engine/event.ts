@@ -56,6 +56,18 @@ export interface LevelBody {
 }
 
 /**
+ * Proposes new text for one Atom, with a title, a justification and an
+ * optional discussion link. Empty text proposes removing the Atom (#75).
+ */
+export interface ProposalBody {
+  readonly atom: string;
+  readonly title: string;
+  readonly why: string;
+  readonly text: string;
+  readonly link?: string;
+}
+
+/**
  * Where an add puts its new section (#75): right after the Atom `after`, or
  * first when it's null. The new Atom's id is the Proposal's own id.
  */
@@ -64,33 +76,59 @@ export interface AddTarget {
   readonly after: string | null;
 }
 
-/** What a Proposal changes: one Atom's text, where `""` removes the Atom, or a new section (#75). */
-export type ProposalTarget = { readonly kind: 'edit' } | AddTarget;
-
-/** What every Proposal says: a title, a justification, its text and an optional discussion link. */
-interface ProposalFields {
+/** Proposes a new section (#75): it carries `target` in place of an Atom, and its text. */
+export interface AddProposalBody {
+  readonly target: AddTarget;
   readonly title: string;
   readonly why: string;
   readonly text: string;
   readonly link?: string;
 }
 
-/** Proposes new text for one Atom. An empty text proposes removing it (#75). */
-export interface EditProposalBody extends ProposalFields {
-  readonly atom: string;
+/**
+ * A steward seat a Proposal fills or empties (ADR-0049, #102): its member is the
+ * nominee, or null for a recall of whoever holds `seat`. The fold checks the
+ * seat and the member.
+ */
+export interface StewardTarget {
+  readonly kind: 'steward';
+  readonly seat: number;
+  readonly member: string | null;
 }
 
-/** Proposes a new section, which carries `target` in place of an Atom (#75). */
-export interface AddProposalBody extends ProposalFields {
-  readonly target: AddTarget;
+/**
+ * Elects or recalls a steward (#102): an ordinary Proposal with a title, a
+ * justification and an optional discussion link, whose target is a seat. It
+ * carries no text, so its ballot has one version, under the Proposal's id.
+ */
+export interface StewardProposalBody {
+  readonly target: StewardTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
 }
 
-/** A Proposal: an edit of one Atom, or an add. */
-export type ProposalBody = EditProposalBody | AddProposalBody;
+/** What a `proposal` event carries: new text for an Atom, a new section (#75), or a steward seat (#102). */
+export type ProposalEventBody = ProposalBody | AddProposalBody | StewardProposalBody;
 
-/** What a Proposal's body targets: the Atom it edits, or where its new section goes. */
-export function targetOf(body: ProposalBody): ProposalTarget {
-  return 'target' in body ? body.target : { kind: 'edit' };
+/** True when a Proposal's body targets a steward seat rather than an Atom. */
+export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
+  return 'target' in body && body.target.kind === 'steward';
+}
+
+/** True when a Proposal's body adds a new section (#75). */
+export function isAddProposal(body: ProposalEventBody): body is AddProposalBody {
+  return 'target' in body && body.target.kind === 'add';
+}
+
+/**
+ * Suspends a member at once, for the group's `suspensionDays` (ADR-0016,
+ * #102), with an optional reason everyone in the group reads. The fold checks
+ * that the author may suspend them.
+ */
+export interface SuspendBody {
+  readonly member: string;
+  readonly reason?: string;
 }
 
 /**
@@ -113,10 +151,11 @@ export interface VoteBody {
 export interface EventBodies {
   readonly genesis: GenesisBody;
   readonly join: JoinBody;
-  readonly proposal: ProposalBody;
+  readonly proposal: ProposalEventBody;
   readonly version: VersionBody;
   readonly vote: VoteBody;
   readonly level: LevelBody;
+  readonly suspend: SuspendBody;
 }
 
 /** The event types this engine understands. */
@@ -249,22 +288,58 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
-/** An add's target, keeping only its kind and anchor, or null for any other shape. */
+/** An add's target, keeping only its kind and anchor, or null for any other shape (#75). */
 function parseAddTarget(value: unknown): AddTarget | null {
   if (!isObject(value) || value.kind !== 'add') return null;
   const { after } = value;
   return after === null || isString(after) ? { kind: 'add', after } : null;
 }
 
-/** An edit names an `atom`; an add carries `target` instead, never both. */
-function parseProposal(body: Json): ProposalBody | null {
+/** An add carries `target` in place of `atom`, never both, and its text (#75). */
+function parseAddProposal(body: Json): AddProposalBody | null {
   const { atom, target, title, why, text, link } = body;
-  if (!isString(title) || !isString(why) || !isString(text)) return null;
+  const parsed = parseAddTarget(target);
+  if (parsed === null || atom !== undefined || !isString(text)) return null;
+  if (!isString(title) || !isString(why) || !isOptionalString(link)) return null;
+  return { target: parsed, title, why, text, ...(link === undefined ? {} : { link }) };
+}
+
+/** A steward target's kind, seat and member, or null for any other shape (#102). */
+function parseStewardTarget(value: unknown): StewardTarget | null {
+  if (!isObject(value) || value.kind !== 'steward') return null;
+  const { seat, member } = value;
+  if (!isWholeNumber(seat) || (member !== null && !isString(member))) return null;
+  return { kind: 'steward', seat, member };
+}
+
+/** A steward Proposal carries `target` and no `atom`; any `text` is dropped (#102). */
+function parseStewardProposal(body: Json): StewardProposalBody | null {
+  const { atom, target, title, why, link } = body;
+  const parsed = parseStewardTarget(target);
+  if (parsed === null || atom !== undefined || !isString(title) || !isString(why)) return null;
   if (!isOptionalString(link)) return null;
-  const fields = { title, why, text, ...(link === undefined ? {} : { link }) };
-  if (target === undefined) return isString(atom) ? { atom, ...fields } : null;
-  const add = parseAddTarget(target);
-  return add === null || atom !== undefined ? null : { target: add, ...fields };
+  return { target: parsed, title, why, ...(link === undefined ? {} : { link }) };
+}
+
+/** A Proposal with a `target` in place of an Atom: an add (#75) or a steward seat (#102). */
+function parseTargeted(body: Json): ProposalEventBody | null {
+  return isObject(body.target) && body.target.kind === 'add'
+    ? parseAddProposal(body)
+    : parseStewardProposal(body);
+}
+
+function parseProposal(body: Json): ProposalEventBody | null {
+  if (body.target !== undefined) return parseTargeted(body);
+  const { atom, title, why, text, link } = body;
+  if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
+  if (!isOptionalString(link)) return null;
+  return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+}
+
+function parseSuspend(body: Json): SuspendBody | null {
+  const { member, reason } = body;
+  if (!isString(member) || !isOptionalString(reason)) return null;
+  return { member, ...(reason === undefined ? {} : { reason }) };
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -315,6 +390,8 @@ function withBody(
       return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'level':
       return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'suspend':
+      return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

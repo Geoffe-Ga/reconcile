@@ -7,6 +7,8 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import { SEATS, type SeatNumber } from '../engine/stewards';
+
 /** Where the app is. Unknown hashes read as Start. */
 export type Route =
   | { readonly name: 'start' }
@@ -18,7 +20,14 @@ export type Route =
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
   | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
-  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string };
+  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
+  | {
+      readonly name: 'steward';
+      readonly groupId: string;
+      readonly seat: SeatNumber;
+      /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
+      readonly recall: boolean;
+    };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -28,31 +37,50 @@ const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
+/** A steward seat's number as a route writes it, or undefined for anything else. */
+function seatIn(arg: string): SeatNumber | undefined {
+  return SEATS.find((seat) => String(seat) === arg);
+}
+
+/** `steward/{seat}` or, when `recall`, `recall/{seat}`: the steward composer for one seat (#102). */
+function stewardPage(groupId: string, recall: boolean, arg: string): Route {
+  const seat = seatIn(arg);
+  return seat === undefined ? START : { name: 'steward', groupId, seat, recall };
+}
+
 /** The pages inside a group that take nothing after their name. */
 const BARE_PAGES: ReadonlyMap<string, (groupId: string) => Route> = new Map([
   ['doc', (groupId: string): Route => ({ name: 'document', groupId })],
   ['add', (groupId: string): Route => ({ name: 'add', groupId, after: null })],
 ]);
 
-/** The pages inside a group that take one id, the pattern it must match, and their route. */
-const ID_PAGES: ReadonlyMap<string, readonly [RegExp, (groupId: string, id: string) => Route]> =
-  new Map([
-    ['propose', [ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId })]],
-    ['p', [ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId })]],
-    ['again', [ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId })]],
-    ['add', [ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after })]],
-    ['remove', [ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId })]],
-  ]);
+/** A page inside a group that takes one argument: its route, or Start when the argument doesn't fit. */
+type ArgPage = (groupId: string, arg: string) => Route;
+
+/** A page whose argument must match `pattern`. */
+function idPage(pattern: RegExp, make: (groupId: string, id: string) => Route): ArgPage {
+  return (groupId, arg) => (pattern.test(arg) ? make(groupId, arg) : START);
+}
+
+/** The pages inside a group that take one argument. */
+const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  ['propose', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId }))],
+  ['p', idPage(ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId }))],
+  ['again', idPage(ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId }))],
+  ['add', idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after }))],
+  ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
+  ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
+  ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
+]);
 
 /**
  * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`,
  * `again/{proposalId}`, `add` (a new first section), `add/{atomId}` (one after
- * that Atom) or `remove/{atomId}` (#75).
+ * that Atom), `remove/{atomId}` (#75), `steward/{seat}` or `recall/{seat}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
-  const known = ID_PAGES.get(page);
-  return known?.[0].test(arg) === true ? known[1](groupId, arg) : START;
+  return ARG_PAGES.get(page)?.(groupId, arg) ?? START;
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -110,6 +138,8 @@ function groupPath(route: GroupRoute): string {
       return `/add${idPath(route.after)}`;
     case 'remove':
       return `/remove/${route.atomId}`;
+    case 'steward':
+      return `/${route.recall ? 'recall' : 'steward'}/${String(route.seat)}`;
   }
 }
 

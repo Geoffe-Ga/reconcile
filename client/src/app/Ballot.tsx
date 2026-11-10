@@ -45,6 +45,8 @@ export interface BallotProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** What goes under each version's pills, such as its consent meter. */
   readonly below?: (version: VersionView) => ReactNode;
+  /** Why a disabled ballot can't change, in place of "Voting has closed", such as a suspension (#102). */
+  readonly disabledNote?: ReactNode;
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
@@ -107,7 +109,11 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       isDisabled={isDisabled}
       aria-describedby={hint}
     >
-      <Label className="field-label">{messages.ballot.scoreFor(version.number)}</Label>
+      <Label className="field-label">
+        {version.steward === undefined
+          ? messages.ballot.scoreFor(version.number)
+          : messages.stewards.score}
+      </Label>
       <div className="score-pills">
         {SCORES.map((option) => (
           <ScorePill key={option} score={option} />
@@ -205,7 +211,9 @@ export function Ballot(props: BallotProps) {
 
   return (
     <Form className="ballot" onSubmit={submit}>
-      {isDisabled ? <p className="caption">{messages.ballot.closed}</p> : null}
+      {isDisabled
+        ? (props.disabledNote ?? <p className="caption">{messages.ballot.closed}</p>)
+        : null}
       {hasVoted && missing && !isDisabled ? (
         <p className="ballot-notice">{messages.ballot.newVersion}</p>
       ) : null}

@@ -11,7 +11,15 @@
  */
 import { type Locator, type Page } from '@playwright/test';
 
-import { expect, expectAccessible, heading, type Person, pick, test } from './support/fixtures';
+import {
+  acceptNotice,
+  expect,
+  expectAccessible,
+  heading,
+  type Person,
+  pick,
+  test,
+} from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const CHAT = 'https://chat.example.org/riverside';
@@ -19,8 +27,11 @@ const TITLE = 'House rules';
 const FIRST_ATOM = 'Quiet hours start at 10pm.';
 const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
 const ATOMS = [FIRST_ATOM, SECOND_ATOM];
-/** Everyone on the People list, with the level each chose: Cal picks Co-Creator at Join. */
-const PEOPLE = ['Ana, Co-Creator', 'Ben, Collaborator', 'Cal, Co-Creator'];
+/**
+ * Everyone on the People list, with the level each chose: Cal picks Co-Creator
+ * at Join. Ana founded the group, so she holds steward seat 1 (#102).
+ */
+const PEOPLE = ['Ana, Co-Creator, Steward', 'Ben, Collaborator', 'Cal, Co-Creator'];
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
@@ -42,7 +53,9 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   const { page } = person;
   await expect(heading(page, GROUP)).toBeVisible();
   const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-  await expect(people).toHaveText(PEOPLE);
+  // Each row in order; the steward's own rows also hold Suspend (#102).
+  await expect(people).toHaveCount(PEOPLE.length);
+  await expect(people).toContainText(PEOPLE);
   await expectAccessible(person, 'Group home');
   await page.getByRole('link', { name: TITLE }).click();
   await expect(heading(page, TITLE)).toBeVisible();
@@ -118,6 +131,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
   await test.step('A creates a group', async () => {
     const { page } = ana;
     await page.goto('/');
+    await acceptNotice(ana);
     await expect(heading(page, 'Your groups')).toBeVisible();
     await expectAccessible(ana, 'Start');
     await page.getByRole('link', { name: 'Create group' }).click();
@@ -133,7 +147,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     // Group home appears once the genesis is back from the relay.
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByRole('region', { name: 'People' }).getByRole('listitem')).toHaveText([
-      'Ana, Co-Creator',
+      'Ana, Co-Creator, Steward',
     ]);
     await expectAccessible(ana, 'Group home');
     const field = page.getByRole('textbox', { name: 'Invite link' });
@@ -146,14 +160,16 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
   await test.step('B joins from the link in A’s invite field, and C as a Co-Creator', async () => {
     // B opens the link itself.
     await ben.page.goto(inviteLink);
+    await acceptNotice(ben);
     await join(ben);
 
     // C pastes it on Start, in the dark theme.
     await cal.page.goto('/');
+    await acceptNotice(cal);
     await expect(heading(cal.page, 'Your groups')).toBeVisible();
     await expectAccessible(cal, 'Start');
     await cal.page.getByRole('textbox', { name: 'Invite link' }).fill(inviteLink);
-    await cal.page.getByRole('button', { name: 'Open invite' }).click();
+    await cal.page.getByRole('button', { name: 'Join with an invite link' }).click();
     // C will open the composer, which only the creating level holds.
     await join(cal, 'Co-Creator');
   });

@@ -34,10 +34,71 @@ export const messages = {
     inviteHeading: 'Have an invite link?',
     inviteLabel: 'Invite link',
     inviteHint: 'Paste the link someone in your group sent you.',
-    inviteInvalid: 'This isn’t a whole invite link. Copy all of it and paste it again.',
-    openInvite: 'Open invite',
+    openInvite: 'Join with an invite link',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
+    mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
+  },
+  install: {
+    pageTitle: 'Add to Home Screen',
+    title: 'Add Reconcile to your Home Screen',
+    otherApp: 'If you opened this inside another app, open it in Safari first.',
+    steps: ['Tap Share, or tap ••• and then Share.', 'Choose Add to Home Screen, then tap Add.'],
+    open: 'Open Reconcile from your Home Screen.',
+    openToJoin: 'Open Reconcile from your Home Screen and tap Join with an invite link.',
+    why: 'Safari can clear a website’s data after a week without a visit, so on iPhone and iPad Reconcile runs from your Home Screen.',
+    inviteHeading: 'Your invite',
+    inviteLabel: 'Your invite link',
+    inviteHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
+    copyInvite: 'Copy invite link',
+    appLabel: 'Reconcile’s address',
+    appHint: 'To open Reconcile in Safari, copy this and paste it into Safari’s address bar.',
+    copyApp: 'Copy link',
+    copied: 'Copied.',
+  },
+  // The pilot notice (ADR-0056). "Sealed" and "can’t read" hold because every
+  // blob is sealed before it leaves the device (#71, spec §3).
+  notice: {
+    pageTitle: 'Before you start',
+    eyebrow: 'Reconcile pilot',
+    title: 'Before you start',
+    lede: 'You’re helping a few groups try out Reconcile. Here’s what that means for you.',
+    accept: 'I understand',
+    topics: [
+      {
+        heading: 'What’s stored',
+        lines: [
+          'Your groups live on this device: their Documents, Proposals and votes, the name you use in each group, and the keys that let you take part. There are no accounts.',
+          'Messages between your group’s devices pass through Reconcile’s relay, which keeps them for 30 days. Each one is sealed on your device before it’s sent.',
+        ],
+        list: [],
+      },
+      {
+        heading: 'What the relay can see',
+        lines: ['Whoever runs the relay can’t read what your group writes. They can see:'],
+        list: [
+          'your device’s IP address while it’s connected, though the relay doesn’t log it',
+          'when messages arrive',
+          'each message’s size class, one of four sizes',
+          'which mailboxes your device checks',
+        ],
+      },
+      {
+        heading: 'Data can be lost',
+        lines: [
+          'A lost or reset phone, cleared browser data or a bug can lose your groups on this device. Your group keeps its own copies, and a new invite link brings you back in.',
+        ],
+        list: [],
+      },
+      {
+        heading: 'This is a test',
+        lines: [
+          'Reconcile is new and will change as we learn. It hasn’t had an outside security review yet, so keep anything sensitive out of it for now.',
+          'If something goes wrong, tell the person who invited you.',
+        ],
+        list: [],
+      },
+    ],
   },
   create: {
     pageTitle: 'Create a group',
@@ -360,5 +421,78 @@ export const messages = {
     copyFailed:
       'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
     markdownLabel: 'The Document as Markdown',
+  },
+  /**
+   * Stewards and suspensions (#102). Where a person's name sits inside a
+   * sentence, the words before and after it are kept apart, so the screen
+   * sets the name in `<bdi>` (see `Named` in src/app/stewards.tsx).
+   */
+  stewards: {
+    heading: 'Stewards',
+    badge: 'Steward',
+    /** Read between a level and the badge, as in "Ana, Co-Creator, Steward". */
+    badgeSeparator: ',',
+    seat: (seat: number) => `Seat ${String(seat)}`,
+    empty: 'Empty',
+    founderHold: 'Holds this seat until your group elects a steward.',
+    termEnds: (date: string) => `Term ends ${date}.`,
+    termEnded: (date: string) =>
+      `Term ended ${date}. They stay steward until your group elects someone.`,
+    secondSeat: (members: number) =>
+      `A second seat opens once ${count(members)} people in your group vote.`,
+    due: (seat: number) => `A steward election is due for seat ${String(seat)}.`,
+    about: (days: number) =>
+      `A steward can suspend someone at once, for ${count(days)} days. Everyone in the group sees each suspension, and your group can recall a steward by a vote at any time.`,
+    propose: 'Propose a steward',
+    proposeFor: (seat: number) => `Propose a steward for seat ${String(seat)}`,
+    recall: 'Propose recall',
+    recallLabel: (name: string) => `Propose recall of ${name}`,
+    suspend: 'Suspend',
+    suspendLabel: (name: string) => `Suspend ${name}`,
+    suspendedUntil: (date: string) => `Suspended until ${date}.`,
+    reasonPrefix: 'Reason:',
+    youAreSuspended: (date: string) =>
+      `A steward suspended you until ${date}. You can read, but not post, propose or vote.`,
+    dialogTitle: { before: 'Suspend', after: '?' },
+    dialogLine: (days: number) =>
+      `Everyone in the group will see this. It ends after ${count(days)} days.`,
+    reasonLabel: 'Reason (optional)',
+    reasonHint: 'Say what happened, in a sentence. Everyone in the group reads it.',
+    reasonTooLong: (max: number) => `Keep the reason to ${count(max)} characters or fewer.`,
+    confirm: 'Suspend',
+    cancel: 'Cancel',
+    suspendFailed: 'The suspension couldn’t be saved on this device. Try again.',
+    makeSteward: (seat: number) => ({ before: 'Make', after: `steward (seat ${String(seat)})` }),
+    recallSteward: { before: 'Recall', after: 'as steward' },
+    makeStewardTitle: (name: string, seat: number) => `Make ${name} steward (seat ${String(seat)})`,
+    recallStewardTitle: (name: string) => `Recall ${name} as steward`,
+    electLine: (days: number) =>
+      `If this passes, they can suspend someone at once, for ${count(days)} days, until your group recalls them or their term ends.`,
+    recallLine: 'If this passes, their seat is empty until your group elects a steward.',
+    score: 'Your score',
+    ownRecall: 'This Proposal would recall you as steward, so you don’t vote on it.',
+    elected: (seat: number) => ({
+      before: 'This passed.',
+      after: `is now steward for seat ${String(seat)}.`,
+    }),
+    recalled: { before: 'This passed.', after: 'is no longer a steward.' },
+    composerPageTitle: 'Propose a steward',
+    composerTitle: (seat: number) => `Propose a steward for seat ${String(seat)}`,
+    recallPageTitle: 'Propose a recall',
+    recallTitle: (seat: number) => `Propose a recall for seat ${String(seat)}`,
+    nomineeLabel: 'Who should hold this seat?',
+    nomineeHint: 'Anyone who votes here and isn’t suspended can stand.',
+    nomineeMissing: 'Choose who you’re proposing.',
+    titleHint: 'It starts as what the ballot will say. Change it if you like.',
+    whyHint: 'Tell your group why. They’ll talk it over before voting.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose this steward',
+    recallSubmit: 'Propose this recall',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'This seat can’t take a Proposal now',
+    unavailable:
+      'Another steward Proposal for this seat may be open, or your group isn’t large enough for it yet. Go back to your group to see its stewards.',
+    notAllowed: 'Your place in this group doesn’t include proposing.',
+    noNominees: 'Nobody in your group can stand for this seat right now.',
   },
 } as const;

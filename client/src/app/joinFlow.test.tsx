@@ -101,7 +101,7 @@ describe('create, invite by link, join, and read the Document', () => {
         within(people)
           .getAllByRole('listitem')
           .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator', 'Ben, Collaborator']);
+      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator']);
     });
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',

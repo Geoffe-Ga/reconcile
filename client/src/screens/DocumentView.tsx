@@ -3,10 +3,11 @@ import { Button, Label, Text, TextArea, TextField } from 'react-aria-components'
 
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { messages } from '../app/messages';
+import { SuspendedNote } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
-import { can } from '../engine/capabilities';
+import { can, isSuspended } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { documentToMarkdown } from '../engine/documentMarkdown';
 import type { Atom, GroupState } from '../engine/fold';
@@ -34,6 +35,8 @@ export interface DocumentViewProps {
  */
 function LevelNote({ state, me }: { readonly state: GroupState; readonly me: string }) {
   if (!can(state, me, 'read')) return null;
+  // A suspended member reads until when instead: no level change gives posting back (#102).
+  if (isSuspended(state, me)) return <SuspendedNote state={state} me={me} />;
   const note = can(state, me, 'vote') ? messages.levels.notProposing : messages.levels.following;
   return (
     <div className="level-note">

@@ -69,6 +69,18 @@ describe('versionViews', () => {
     ]);
   });
 
+  it('says nothing of sections on a steward ballot, whose one version has no text (#102)', () => {
+    const log = groupLog({ members: ['Ben', 'Cy'] });
+    const election = log.steward('Ana', 1, 'Ben');
+    const state = log.state();
+    const proposal = state.proposals.find((candidate) => candidate.id === election);
+    if (proposal === undefined) throw new Error('Expected the steward Proposal.');
+    const [view] = versionViews(state, proposal);
+    expect(view?.text).toBe('');
+    expect(view?.does).toBeUndefined();
+    expect(view?.steward).toBeDefined();
+  });
+
   it('says an add whose anchor has been removed goes at the end', () => {
     const log = groupLog({ members: ['Ben'] });
     const add = log.addSection('Ana', `${log.group}.0`);

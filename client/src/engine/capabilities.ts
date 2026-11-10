@@ -8,10 +8,15 @@
  * allow, so a group could later supply its own map without touching a caller.
  * This file is the only place in src/ that spells out a level name, apart from
  * the golden vectors, which pin events' exact bytes.
+ *
+ * Stewards are an elected capability, not a level (ADR-0016, #102): holding a
+ * seat adds `suspend` to a level's capabilities, and a suspension leaves only
+ * {@link SUSPENDED_CAPABILITIES} until it ends, in relay time.
  */
 
-/** Something a member may do in a group. */
-export type Capability = 'read' | 'see-roster' | 'vote' | 'vouch' | 'invite' | 'propose';
+/** Something a member may do in a group. `suspend` comes with a steward seat, never a level. */
+export type Capability =
+  'read' | 'see-roster' | 'vote' | 'vouch' | 'invite' | 'propose' | 'suspend';
 
 /** The involvement levels, from following to creating. Screens list them in this order. */
 export const LEVELS = ['member', 'collaborator', 'co-creator'] as const;
@@ -40,9 +45,23 @@ export function isLevel(value: unknown): value is Level {
   return LEVELS.some((level) => level === value);
 }
 
-/** The part of a group's state that permissions read: who is a member, at which level. */
+/** What a suspended member keeps until the suspension ends (ADR-0016): reading, and the roster. */
+export const SUSPENDED_CAPABILITIES = [
+  'read',
+  'see-roster',
+] as const satisfies readonly Capability[];
+
+/**
+ * The part of a group's state that permissions read: who is a member, at
+ * which level; who holds a steward seat; the suspensions; and `at`, the relay
+ * minute the state stands at (the fold's place in relay order, or the relay's
+ * latest `now` once it has folded everything).
+ */
 export interface Roster {
   readonly members: readonly { readonly author: string; readonly level: Level }[];
+  readonly stewards: readonly { readonly holder: string | null }[];
+  readonly suspensions: readonly { readonly member: string; readonly until: number }[];
+  readonly at: number;
 }
 
 /** What `member`'s level grants, or nothing for someone who isn't a member. */
@@ -51,18 +70,48 @@ function granted(state: Roster, member: string): readonly Capability[] {
   return found === undefined ? [] : LEVEL_CAPABILITIES[found.level];
 }
 
-/** The only permission check: true when `member` belongs to the group and their level holds `capability`. */
+/** True while one of `member`'s suspensions runs: until its `until`, in relay minutes. */
+export function isSuspended(state: Roster, member: string): boolean {
+  return state.suspensions.some((s) => s.member === member && state.at < s.until);
+}
+
+/** What `member` may do now: their level's capabilities, `suspend` with a seat, or a suspension's two. */
+function current(state: Roster, member: string): readonly Capability[] {
+  const level = granted(state, member);
+  if (level.length === 0) return level;
+  if (isSuspended(state, member)) return SUSPENDED_CAPABILITIES;
+  const seated = state.stewards.some((seat) => seat.holder === member);
+  return seated ? [...level, 'suspend'] : level;
+}
+
+/**
+ * The only permission check: true when `member` belongs to the group and may
+ * do `capability` now, by their level and any steward seat, unless a
+ * suspension narrows them to reading (#102).
+ */
 export function can(state: Roster, member: string, capability: Capability): boolean {
-  return granted(state, member).includes(capability);
+  return current(state, member).includes(capability);
 }
 
 /**
  * Whether `member` belongs in the eligible set of a Proposal that opens now
  * (ADR-0015 §1): their level, and from #101 their voting rights, would grant
  * `vote`. It ignores suspensions, so a suspension never shrinks the
- * electorate (ADR-0075 §3): #102 narrows `can()` for a suspended member and
- * leaves this alone.
+ * electorate (ADR-0075 §3): `can()` narrows a suspended member, and this
+ * leaves them in.
  */
 export function wouldVote(state: Roster, member: string): boolean {
   return granted(state, member).includes('vote');
+}
+
+/**
+ * How many people hold voting rights (ADR-0075 §3): the one count the steward
+ * thresholds read (#102), and from #101 the bootstrap too. Until #101 adds
+ * the vouches and the wait, everyone admitted holds rights at once, so this
+ * counts the members whose level votes ({@link wouldVote}). A suspension
+ * doesn't lower it. #101 replaces only this body, counting rights holders
+ * whatever level they chose.
+ */
+export function votingRightsCount(state: Roster): number {
+  return state.members.filter((m) => wouldVote(state, m.author)).length;
 }

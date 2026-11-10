@@ -1,0 +1,374 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "suspend-lapse: a steward suspends Kim at minute 2,000,000; her ballot at 2,005,000 is ignored and her ballot from 1,999,000 still counts; her ballot on another Proposal at 2,010,080 counts",
+      "records": [
+        {
+          "seq": 1,
+          "received": 1990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 119400000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 1990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 119400060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 1990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 119400120000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 1998000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 119880000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 1999000,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 119940000000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 2000000,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 120000000000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 2005000,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 120300000000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 1
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 2009000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 120540000000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 2010080,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 120604800000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 2010080,
+      "expect": {
+        "suspensions": [
+          {
+            "id": "@6",
+            "seq": 6,
+            "received": 2000000,
+            "by": "%ana",
+            "member": "%kim",
+            "reason": "Posting threats in the chat.",
+            "until": 2010080
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@4",
+            "ballots": [
+              {
+                "id": "@5",
+                "voter": "%kim",
+                "scores": {
+                  "@4": 3
+                }
+              }
+            ],
+            "final": true
+          },
+          {
+            "id": "@8",
+            "eligible": ["%ana", "%ben", "%kim"],
+            "ballots": [
+              {
+                "id": "@9",
+                "voter": "%kim",
+                "received": 2010080
+              }
+            ]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "a suspended member's ballot a minute before the suspension ends is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 1990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 119400000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 1990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 119400060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 1990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 119400120000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 1998000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 119880000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 1999000,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 119940000000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 2000000,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 120000000000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 2005000,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 120300000000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 1
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 2009000,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 120540000000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 2010079,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 120604740000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 2010079,
+      "expect": {
+        "proposals": [
+          {},
+          {
+            "id": "@8",
+            "eligible": ["%ana", "%ben", "%kim"],
+            "ballots": []
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      },
+      "unchangedWithout": [7, 9]
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import { type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
 import { messages } from './messages';
+import { MotionTitle } from './stewards';
 import { AtomText } from './text/AtomText';
 import { WordDiff } from './text/WordDiff';
 import type { VersionView } from './versionViews';
@@ -43,7 +44,8 @@ interface VersionCardProps {
  * unless it removes the section. With nothing to compare, its text as it
  * reads, and nothing at all for a removal.
  */
-function Change({ text, current }: { readonly text: string; readonly current: string | null }) {
+function Change({ version, current }: Omit<VersionCardProps, 'children'>) {
+  const { text } = version;
   if (current === null) return text === '' ? null : <AtomText text={text} className="atom-card" />;
   return (
     <>
@@ -53,17 +55,33 @@ function Change({ text, current }: { readonly text: string; readonly current: st
   );
 }
 
-/** One version: its heading, what it does, its change, and whatever goes under it. */
+/**
+ * One version: its heading, what it does when it adds or removes a section
+ * (#75), its change, and whatever goes under it. A steward ballot's one
+ * version is headed by what it decides, "Make <name> steward (seat N)", with
+ * what passing does in place of a change (#102).
+ */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();
+  const { steward } = version;
   return (
     <section className="version" aria-labelledby={heading}>
       <h3 id={heading} className="version-heading">
-        {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
-        <bdi>{version.author}</bdi>
+        {steward === undefined ? (
+          <>
+            {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
+            <bdi>{version.author}</bdi>
+          </>
+        ) : (
+          <MotionTitle motion={steward.motion} />
+        )}
       </h3>
       {version.does === undefined ? null : <p className="version-does">{version.does}</p>}
-      <Change text={version.text} current={current} />
+      {steward === undefined ? (
+        <Change version={version} current={current} />
+      ) : (
+        <p className="caption">{steward.line}</p>
+      )}
       {children}
     </section>
   );

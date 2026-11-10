@@ -14,13 +14,21 @@ import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
-import { versionDoes, type VersionView, versionViews } from '../app/versionViews';
-import { can } from '../engine/capabilities';
+import { SuspendedNote } from '../app/stewards';
+import { stewardView, versionDoes, type VersionView, versionViews } from '../app/versionViews';
+import { can, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
-import { type ParsedEvent, type ProposalBody, targetOf } from '../engine/event';
+import {
+  isAddProposal,
+  isStewardProposal,
+  type ParsedEvent,
+  type ProposalEventBody,
+  type StewardProposalBody,
+} from '../engine/event';
 import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
 import type { OwnBallot } from '../engine/ownBallot';
+import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -105,6 +113,24 @@ function comparisonFor(state: GroupState, atom: string | null, passed: boolean):
   return { title: messages.proposal.changes(index + 1), current: now.text };
 }
 
+/** A steward ballot shows what it decides, never a diff: it changes no section (#102). */
+const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
+
+/** The section a Proposal changes, or null when it adds one (#75). */
+function changedAtom(proposal: Proposal): string | null {
+  return proposal.target.kind === 'add' ? null : proposal.atom;
+}
+
+/**
+ * What a folded Proposal's versions are shown against: a section, nothing for
+ * an add, whose whole text shows as added (#75), or nothing for a steward one.
+ */
+function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
+  return proposal.target.kind === 'steward'
+    ? STEWARD_BALLOT
+    : comparisonFor(state, changedAtom(proposal), passed);
+}
+
 /** The diff legend, under the heading, whenever the versions show as diffs. */
 function Legend({ comparison }: { readonly comparison: Comparison }) {
   return comparison.current === null ? null : <p className="caption">{messages.diff.legend}</p>;
@@ -130,18 +156,29 @@ function myBallot(props: ProposalViewProps, proposal: Proposal) {
 }
 
 /**
+ * Why someone in the eligible set gets no ballot now, or null: they get one
+ * once voting has closed (unchangeable), or while their level votes, or while
+ * a suspension runs (disabled, until it ends, #102).
+ */
+function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): string | null {
+  const { state, me, now } = props;
+  const closed = proposal.final || now >= proposal.deadline;
+  const votes = can(state, me, 'vote') || isSuspended(state, me);
+  return closed || votes ? null : messages.levels.following;
+}
+
+/**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they either joined after it opened or weren't at a
- * voting level then. Inside it, they get the ballot, unchangeable once voting
+ * Outside its eligible set, they joined after it opened, weren't at a voting
+ * level then, or are the steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
  */
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
-  const { state, me, now } = props;
-  if (proposal.eligible.includes(me)) {
-    const closed = proposal.final || now >= proposal.deadline;
-    return closed || can(state, me, 'vote') ? null : messages.levels.following;
-  }
+  const { state, me } = props;
+  if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
+  const change = stewardChangeOf(proposal);
+  if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
   return member !== undefined && member.seq < proposal.seq
     ? messages.proposal.notVotingLevel
@@ -150,18 +187,14 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
 
 /** Why they can't vote, and where they change their level when theirs doesn't vote now. */
 function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: string }) {
-  const levelDoesntVote = can(state, me, 'read') && !can(state, me, 'vote');
+  const levelDoesntVote =
+    can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
   return (
     <div className="stack">
       <p className="lede">{reason}</p>
       {levelDoesntVote ? <ChangeInvolvement groupId={state.group ?? ''} /> : null}
     </div>
   );
-}
-
-/** The section a Proposal changes, or null when it adds one (#75). */
-function changedAtom(proposal: Proposal): string | null {
-  return proposal.target.kind === 'add' ? null : proposal.atom;
 }
 
 /** Whether this member can still add wording: the vote is open and they may propose. */
@@ -171,7 +204,8 @@ function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
 function AddVersion({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  if (!isOpenToVersions(props, proposal)) return null;
+  // A steward Proposal has no text, so it takes no versions (#102); an edit or an add does.
+  if (proposal.target.kind === 'steward' || !isOpenToVersions(props, proposal)) return null;
   const option = composeOption(props.state, proposal.atom);
   if (option === 'ballot-full') return <p className="caption">{messages.proposal.ballotFull}</p>;
   const route = {
@@ -211,8 +245,10 @@ function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
-  const comparison = comparisonFor(state, changedAtom(proposal), passed);
+  const comparison = comparisonOf(state, proposal, passed);
   const reason = whyNoVote(props, proposal);
+  const closed = proposal.final || now >= proposal.deadline;
+  const suspended = isSuspended(state, me);
   const mine = myBallot(props, proposal);
   const meters = metersFor(proposal);
   return (
@@ -226,11 +262,12 @@ function Vote({ props, proposal, versions }: VoteProps) {
           initialScores={mine.scores}
           initialNote={mine.note}
           hasVoted={mine.hasVoted}
-          isDisabled={proposal.final || now >= proposal.deadline}
+          isDisabled={closed || suspended}
           pending={mine.pending}
           reachable={reachable}
           onVote={onVote}
           below={meters}
+          disabledNote={closed || !suspended ? undefined : <SuspendedNote state={state} me={me} />}
         />
       ) : (
         <>
@@ -323,22 +360,40 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
 interface WaitingProps {
   readonly state: GroupState;
   readonly me: string;
-  readonly body: ProposalBody;
+  readonly body: ProposalEventBody;
   readonly pending: boolean;
   readonly reachable: boolean;
 }
 
+/** A waiting steward Proposal's one version: what its ballot will decide, by the seat's holder now. */
+function waitingSteward(
+  state: GroupState,
+  author: string,
+  body: StewardProposalBody,
+): VersionView[] {
+  const { seat, member } = body.target;
+  if (!isSeatNumber(seat)) return [];
+  const steward = stewardView(state, { seat, member, holder: seatAt(state, seat).holder });
+  return [{ id: '', number: 1, author, text: '', steward }];
+}
+
+/** How a waiting Proposal's one version shows: its text against the section, or a steward ballot. */
+function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
+  const author = displayName(state, me) ?? '';
+  if (isStewardProposal(body)) {
+    return { comparison: STEWARD_BALLOT, versions: waitingSteward(state, author, body) };
+  }
+  // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
+  const add = isAddProposal(body);
+  const comparison = comparisonFor(state, add ? null : body.atom, false);
+  const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
+  const version = { id: '', number: 1, author, text: body.text };
+  return { comparison, versions: [does === null ? version : { ...version, does }] };
+}
+
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
 function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
-  const comparison = comparisonFor(state, 'atom' in body ? body.atom : null, false);
-  const does = versionDoes(state, targetOf(body), body.text);
-  const version = {
-    id: '',
-    number: 1,
-    author: displayName(state, me) ?? '',
-    text: body.text,
-    ...(does === null ? {} : { does }),
-  };
+  const { comparison, versions } = waitingVersions(state, me, body);
   return (
     <Screen state={state}>
       <PageHeader
@@ -351,7 +406,7 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
       </p>
       <Block title={comparison.title} className="vote">
         <Legend comparison={comparison} />
-        <VersionList versions={[version]} current={comparison.current} />
+        <VersionList versions={versions} current={comparison.current} />
       </Block>
       <SendStatus pending={pending} reachable={reachable} sent />
     </Screen>
@@ -362,7 +417,7 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
 function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
   const event = pending.find((candidate) => candidate.id === id)?.event;
   const body = event?.type === 'proposal' ? event.body : null;
-  const [last, setLast] = useState<{ id: string; body: ProposalBody } | null>(null);
+  const [last, setLast] = useState<{ id: string; body: ProposalEventBody } | null>(null);
   if (body !== null && last?.body !== body) setLast({ id, body });
   const remembered = last?.id === id ? last.body : null;
   return { body: body ?? remembered, pending: body !== null };

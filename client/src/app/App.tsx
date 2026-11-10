@@ -17,7 +17,10 @@ import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import { ProposalView } from '../screens/ProposalView';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
+import type { SeatNumber } from '../engine/stewards';
+import type { Persistence } from '../platform/persist';
 import { Start } from '../screens/Start';
+import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import {
@@ -34,6 +37,9 @@ import {
   castBallot,
   chooseLevel,
   propose,
+  proposeSteward,
+  type StewardValues,
+  suspend,
   type ProposalValues,
   type VersionValues,
 } from './proposals';
@@ -48,16 +54,23 @@ import { useNow } from './useNow';
 export interface AppProps {
   /** The store, sync loop, relay and the rest, built once by `main.tsx`. */
   readonly services: AppServices;
+  /** An invite link first run took out of the address bar, which Join opens. */
+  readonly initialInvite?: Invite | null;
+  /** What the browser said about keeping this site's data, for Start. */
+  readonly persistence?: Persistence | null;
 }
 
 interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (invite: Invite) => void;
+  readonly persistence: Persistence | null;
 }
 
-function StartScreen({ services, onOpenInvite }: StartScreenProps) {
+function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
   const groups = useGroupList(services.store);
-  return groups === null ? null : <Start groups={groups} onOpenInvite={onOpenInvite} />;
+  return groups === null ? null : (
+    <Start groups={groups} onOpenInvite={onOpenInvite} persistence={persistence} />
+  );
 }
 
 function CreateScreen({ services }: { readonly services: AppServices }) {
@@ -132,6 +145,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
           pending={group.pending}
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
+          onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
         />
       )}
     </GroupGate>
@@ -272,14 +286,44 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
   }
 }
 
+interface StewardScreenProps extends GroupScreenProps {
+  readonly seat: SeatNumber;
+  readonly recall: boolean;
+}
+
+/** The steward composer (#102); sending a Proposal replaces it with the Proposal's ballot. */
+function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) {
+  const onPropose = async (values: StewardValues): Promise<StewardOutcome> => {
+    const result = await proposeSteward(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => (
+        <StewardComposer
+          state={state}
+          me={me.author}
+          seat={seat}
+          recall={recall}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
 interface ScreenProps {
   readonly route: Route;
   readonly services: AppServices;
   readonly heldInvite: Invite | null;
   readonly holdInvite: (invite: Invite | null) => void;
+  readonly persistence: Persistence | null;
 }
 
-function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
+function Screen({ route, services, heldInvite, holdInvite, persistence }: ScreenProps) {
   const releaseInvite = useCallback(() => {
     holdInvite(null);
   }, [holdInvite]);
@@ -292,7 +336,9 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
   );
   switch (route.name) {
     case 'start':
-      return <StartScreen services={services} onOpenInvite={openInvite} />;
+      return (
+        <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
+      );
     case 'create':
       return <CreateScreen services={services} />;
     case 'join':
@@ -312,6 +358,15 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
       return (
         <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />
       );
+    case 'steward':
+      return (
+        <StewardScreen
+          services={services}
+          groupId={route.groupId}
+          seat={route.seat}
+          recall={route.recall}
+        />
+      );
     default:
       return (
         <ComposeScreen services={services} groupId={route.groupId}>
@@ -322,17 +377,23 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
 }
 
 /** The current route's screen, with the store and sync loop provided to `useGroup`. */
-export function App({ services }: AppProps) {
+export function App({ services, initialInvite = null, persistence = null }: AppProps) {
   const route = useRoute();
-  // A pasted invite travels here, in memory, rather than through the address bar.
-  const [heldInvite, holdInvite] = useState<Invite | null>(null);
+  // A pasted invite, or one first run held, travels here in memory rather than in the address bar.
+  const [heldInvite, holdInvite] = useState<Invite | null>(initialInvite);
   const groupServices = useMemo(
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
   );
   return (
     <GroupServicesContext value={groupServices}>
-      <Screen route={route} services={services} heldInvite={heldInvite} holdInvite={holdInvite} />
+      <Screen
+        route={route}
+        services={services}
+        heldInvite={heldInvite}
+        holdInvite={holdInvite}
+        persistence={persistence}
+      />
     </GroupServicesContext>
   );
 }

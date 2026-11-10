@@ -14,6 +14,7 @@ import { messages } from '../app/messages';
 import { addDraft, againDraft, removalDraft, type VersionValues } from '../app/proposals';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
+import { suspendedLine } from '../app/stewardLines';
 import { holdsRemoval } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
@@ -76,9 +77,9 @@ export function AddSection({ state, me, after, drafts, onPropose, ...props }: Ad
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
   if (!can(state, me, 'propose')) {
-    return (
-      <Unavailable state={state} title={composer.notAllowedTitle} text={composer.notAllowed} />
-    );
+    // A suspended member reads until when, rather than that their level can't propose (#102).
+    const text = suspendedLine(state, me) ?? composer.notAllowed;
+    return <Unavailable state={state} title={composer.notAllowedTitle} text={text} />;
   }
   const anchor = atom === undefined ? null : { atom, number: index + 1 };
   const again = lapsed(props.again);
@@ -185,8 +186,12 @@ function RemovalVersion({ state, atom, section, proposal, onAddVersion }: Remova
 function unavailable(state: GroupState, me: string, atomId: string) {
   const { composer } = messages;
   const open = openProposalOn(state, atomId);
-  if (!can(state, me, 'propose'))
-    return { title: composer.notAllowedTitle, text: composer.notAllowed };
+  if (!can(state, me, 'propose')) {
+    return {
+      title: composer.notAllowedTitle,
+      text: suspendedLine(state, me) ?? composer.notAllowed,
+    };
+  }
   if (composeOption(state, atomId) === 'ballot-full') {
     return { title: composer.fullTitle, text: composer.full };
   }

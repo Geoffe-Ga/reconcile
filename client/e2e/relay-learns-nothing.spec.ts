@@ -4,7 +4,8 @@
  * members' names or keys, or the testers' IP address.
  *
  * Two people found a group, join it, propose, vote with a note and see the
- * Update, every field carrying a canary, and every request carrying a
+ * Update, and the founder, a steward, suspends the other with a reason (#102),
+ * every field carrying a canary, and every request carrying a
  * documentation IP address in each forwarding header. The test reads the
  * group secret and each member's keys from IndexedDB, then stops the relay,
  * so its database is checkpointed and its log complete, and scans the raw
@@ -21,7 +22,7 @@ import { statSync } from 'node:fs';
 
 import type { Page } from '@playwright/test';
 
-import { expect, heading, type Person, pick, test } from './support/fixtures';
+import { acceptNotice, expect, heading, type Person, pick, test } from './support/fixtures';
 import {
   type Canary,
   describeFinding,
@@ -135,6 +136,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     why: `CANARY-WHY-${run}`,
     newText: `CANARY-NEW-TEXT-${run}`,
     note: `CANARY-NOTE-${run}`,
+    reason: `CANARY-SUSPEND-REASON-${run}`,
   };
   const control = `CONTROL-${tag()}`;
   const ana = await openProfile(words.ana, { extraHTTPHeaders: FORWARDING });
@@ -156,6 +158,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     const { page } = ana;
     const toRelay = page.waitForRequest((sent) => sent.url().includes('/v1/mailbox/'));
     await page.goto('/#/create');
+    await acceptNotice(ana);
     await page.getByRole('textbox', { name: 'Group name' }).fill(words.group);
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ana);
     await page.getByRole('textbox', { name: 'Document title' }).fill(words.title);
@@ -176,11 +179,15 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
   await test.step('B joins from the link', async () => {
     const { page } = ben;
     await page.goto(inviteLink);
+    await acceptNotice(ben);
     await expect(heading(page, words.group)).toBeVisible();
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ben);
     await page.getByRole('button', { name: 'Join group' }).click();
     const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-    await expect(people).toHaveText([`${words.ana}, Co-Creator`, `${words.ben}, Collaborator`]);
+    await expect(people).toHaveText([
+      `${words.ana}, Co-Creator, Steward`,
+      `${words.ben}, Collaborator`,
+    ]);
   });
 
   await test.step('A proposes, and both vote, B with a note', async () => {
@@ -209,6 +216,19 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
         `Thank you, ${words.ana}.`,
       ]);
     }
+  });
+
+  await test.step('A, the steward, suspends B with a reason, and B reads it (#102)', async () => {
+    const { page } = ana;
+    await page.getByRole('link', { name: words.group }).click();
+    await page.getByRole('button', { name: `Suspend ${words.ben}` }).click();
+    const dialog = page.getByRole('dialog', { name: `Suspend ${words.ben}?` });
+    await dialog.getByRole('textbox', { name: 'Reason (optional)' }).fill(words.reason);
+    await dialog.getByRole('button', { name: 'Suspend' }).click();
+    await ben.page.getByRole('link', { name: words.group }).click();
+    await expect(ben.page.getByRole('region', { name: 'People', exact: true })).toContainText(
+      `Reason: ${words.reason}`,
+    );
   });
 
   const [anaGroups, benGroups] = [await storedGroups(ana.page), await storedGroups(ben.page)];

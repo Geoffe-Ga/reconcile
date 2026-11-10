@@ -1,0 +1,221 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a step down to Member empties the seat, and the former steward can no longer suspend",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "level": "member"
+          },
+          {},
+          {}
+        ],
+        "stewards": [
+          {
+            "seat": 1,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          },
+          {
+            "seat": 2,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          }
+        ],
+        "suspensions": [],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [5]
+    },
+    {
+      "name": "a steward who steps down to Collaborator keeps the seat and can still suspend, without a reason",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "stewards": [
+          {
+            "seat": 1,
+            "holder": "%ana",
+            "termEnd": null,
+            "elected": false
+          },
+          {
+            "seat": 2,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          }
+        ],
+        "suspensions": [
+          {
+            "id": "@5",
+            "by": "%ana",
+            "member": "%kim",
+            "reason": null
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

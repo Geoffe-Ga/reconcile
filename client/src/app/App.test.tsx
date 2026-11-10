@@ -148,7 +148,7 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
     await user.paste(link);
-    await user.click(screen.getByRole('button', { name: 'Open invite' }));
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),
