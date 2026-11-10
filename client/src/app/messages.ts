@@ -39,6 +39,8 @@ export const messages = {
     leaving: 'Leaving…',
     restoreHeading: 'Have a backup file?',
     settings: 'Settings',
+    personal: 'Personal',
+    personalHint: 'Your mission statement and other Documents of your own, on this device only.',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -642,6 +644,39 @@ export const messages = {
     nowUnavailable:
       'You can’t turn this off at once right now. You can still propose turning it off.',
   },
+  // Personal (#93): a person's own Documents, kept on this device only (ADR-0001).
+  personal: {
+    pageTitle: 'Personal',
+    title: 'Personal',
+    lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
+    privacy:
+      'They stay on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes them.',
+    documentPrivacy:
+      'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+    missionTitle: 'My mission statement',
+    missionPrompt: 'What do you stand for, and what are you working toward?',
+    newDocument: 'New document',
+    documentPageTitle: 'Personal Document',
+    eyebrow: 'Personal',
+    untitled: 'Untitled',
+    titleLabel: 'Title',
+    titleMissing: 'Give this Document a title.',
+    titleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    textLabel: 'Text',
+    textHint: 'Nobody votes on this. It saves on this device as you type.',
+    saved: 'Saved on this device.',
+    notSaved: 'Not saved yet. Fix the title to save your changes.',
+    failed: 'Your changes couldn’t be saved on this device. Keep typing to try again.',
+    unreadable: 'This Document couldn’t be read on this device. Reload Reconcile, then try again.',
+    delete: 'Delete',
+    /** Around the Document's title, which renders in its own `<bdi>`: "Delete ‘Mine’ from this device?" */
+    deleteBefore: 'Delete ‘',
+    deleteAfter: '’ from this device?',
+    deleteBody: 'A backup you saved earlier still has it.',
+    deleteConfirm: 'Delete',
+    deleteCancel: 'Cancel',
+    deleteFailed: 'It couldn’t be deleted from this device. Try again.',
+  },
   // Settings (#78): save and restore a backup, and Erase (ADR-0046 as cut by ADR-0073).
   settings: {
     pageTitle: 'Settings',
@@ -651,7 +686,7 @@ export const messages = {
     eraseHeading: 'Erase this device',
   },
   backup: {
-    lede: 'One file holds every group on this device, with the keys and the name you use in each. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
+    lede: 'One file holds every group on this device, with the keys and the name you use in each, and your personal Documents. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
     passphrase: 'Passphrase',
     passphraseHint: 'At least 8 characters. Nobody can recover this passphrase for you.',
     passphraseShort: 'Use at least 8 characters.',

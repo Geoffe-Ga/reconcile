@@ -35,7 +35,10 @@ export function passphraseProblem(passphrase: string): string | null {
 
 /** Seals every group a backup keeps under `passphrase`, as a file named for today on this device. */
 export async function makeBackup(
-  services: { readonly store: Pick<Store, 'listGroups'>; readonly now: () => number },
+  services: {
+    readonly store: Pick<Store, 'listGroups' | 'listPersonal'>;
+    readonly now: () => number;
+  },
   passphrase: string,
 ): Promise<BackupToSave> {
   const { file, groupIds } = await exportGroups(services.store, passphrase);

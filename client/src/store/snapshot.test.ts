@@ -1,7 +1,7 @@
 /**
- * The backup file's contents (#78): what a backup holds of each group, what
- * it leaves out, and how a restore validates everything before it writes
- * anything, in one transaction.
+ * The backup file's contents (#78): what a backup holds of each group and of
+ * each personal Document (#93), what it leaves out, and how a restore
+ * validates everything before it writes anything, in one transaction.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -15,8 +15,10 @@ import { testKeys } from '../test/keys';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
 import { type Group, openStore, type Store } from './db';
 import { eventIdOf } from './eventId';
+import type { PersonalDocument } from './personal';
 import {
   backedUpGroups,
+  deviceSnapshot,
   encodeSnapshot,
   exportGroups,
   importGroups,
@@ -36,6 +38,28 @@ const CANARY = {
   joiner: 'Canarybenedict Joiner',
   atom: 'Canary atom: the garden opens at dawn.',
   title: 'Canary title: open the garden',
+  personalTitle: 'Canary personal title: what I stand for',
+  personalText: 'Canary personal text: I show up for my neighbors.',
+};
+
+/** The canary personal Document (#93), edited at `updatedAt`. */
+function canaryStatement(updatedAt = 1_762_000_500_000): PersonalDocument {
+  return {
+    id: 'Q2FuYXJ5IHN0YXRlbWVudA',
+    title: CANARY.personalTitle,
+    text: `# ${CANARY.personalText}\n`,
+    createdAt: 1_762_000_400_000,
+    updatedAt,
+  };
+}
+
+/** A second personal Document, beside the canary. */
+const READING: PersonalDocument = {
+  id: 'UmVhZGluZyBsaXN0IGlkIQ',
+  title: 'Reading list',
+  text: '- Braiding Sweetgrass\n',
+  createdAt: 1_762_000_450_000,
+  updatedAt: 1_762_000_460_000,
 };
 
 /** The canary group, folded through the engine, as the founder's device would hold it. */
@@ -163,12 +187,16 @@ describe('exportGroups and importGroups', () => {
     const [group] = await device.listGroups();
     if (group === undefined) throw new Error('Expected the group.');
 
-    const plaintext = encodeSnapshot(backedUpGroups([group]));
+    const plaintext = encodeSnapshot({ groups: backedUpGroups([group]), personal: [] });
 
     expect(text(plaintext)).not.toContain('Canary outbox');
     expect(text(plaintext)).not.toContain('Canary draft');
     expect(text(plaintext)).not.toContain('Canary claim');
-    expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual(['format', 'groups']);
+    expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual([
+      'format',
+      'groups',
+      'personal',
+    ]);
     expect(SNAPSHOT_FORMAT).toBe(1);
   });
 
@@ -216,6 +244,77 @@ describe('exportGroups and importGroups', () => {
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toBe(0);
   });
 });
+
+describe('personal Documents in a backup (#93)', () => {
+  it('bring back a group and two personal Documents, all three, on a fresh device', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    await device.savePersonal(canaryStatement());
+    await device.savePersonal(READING);
+
+    const { file, groupIds } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const fresh = await openStore('fresh');
+    const restored = await importGroups(fresh, file, PASSPHRASE);
+
+    expect([restored, groupIds]).toEqual([1, [group.groupId]]);
+    expect((await fresh.listGroups()).map((held) => held.groupId)).toEqual([group.groupId]);
+    expect(await fresh.listPersonal()).toEqual([canaryStatement(), READING]);
+  });
+
+  it('keep the device’s copy of a Document edited there after the backup', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.savePersonal(canaryStatement(1_762_000_500_000));
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const later = { ...canaryStatement(1_762_000_900_000), text: 'Edited after the backup.' };
+    await device.savePersonal(later);
+
+    await importGroups(device, file, PASSPHRASE);
+
+    expect(await device.listPersonal()).toEqual([later]);
+  });
+
+  it('bring back the file’s copy over an older one on the device', async () => {
+    const device = await openStore('ana');
+    await device.savePersonal(canaryStatement(1_762_000_500_000));
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+    await second.savePersonal({ ...canaryStatement(1_762_000_450_000), text: 'Older.' });
+
+    expect(await importGroups(second, file, PASSPHRASE)).toBe(0);
+
+    expect(await second.listPersonal()).toEqual([canaryStatement(1_762_000_500_000)]);
+  });
+
+  it('restore an older backup, with no personal field, as its groups and no Documents', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    const snapshot = JSON.parse(text(await snapshotOf(device))) as Record<string, unknown>;
+    const older = { format: snapshot.format, groups: snapshot.groups };
+    const file = await sealBackup(utf8(JSON.stringify(older)), PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+    await second.savePersonal(READING);
+
+    expect(Object.keys(older)).toEqual(['format', 'groups']);
+    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect((await second.listGroups()).map((held) => held.groupId)).toEqual([group.groupId]);
+    expect(await second.listPersonal()).toEqual([READING]);
+  });
+
+  it('carry each Document as the device keeps it, and nothing else of it', async () => {
+    const device = await openStore('ana');
+    await device.savePersonal(canaryStatement());
+
+    const json = JSON.parse(text(await snapshotOf(device))) as { personal: unknown };
+
+    expect(json.personal).toEqual([canaryStatement()]);
+  });
+});
+
+/** The backup plaintext of everything on `store`, as `exportGroups` seals it. */
+async function snapshotOf(store: Store): Promise<Uint8Array> {
+  return encodeSnapshot(await deviceSnapshot(store));
+}
 
 describe('a backup that doesn’t open', () => {
   it('fails with the plain error for a wrong passphrase, and changes nothing', async () => {
@@ -268,12 +367,19 @@ describe('a backup that doesn’t open', () => {
 
 describe('a backup that opens but doesn’t hold valid groups', () => {
   /** The canary group's snapshot as plain JSON, for a test to break. */
-  async function validSnapshot(): Promise<{ format: number; groups: Record<string, unknown>[] }> {
+  async function validSnapshot(): Promise<{
+    format: number;
+    groups: Record<string, unknown>[];
+    personal: Record<string, unknown>[];
+  }> {
     const device = await openStore('ana');
     await keepCanary(device);
-    return JSON.parse(text(encodeSnapshot(backedUpGroups(await device.listGroups())))) as {
+    await device.savePersonal(canaryStatement());
+    await device.savePersonal(READING);
+    return JSON.parse(text(await snapshotOf(device))) as {
       format: number;
       groups: Record<string, unknown>[];
+      personal: Record<string, unknown>[];
     };
   }
 
@@ -283,6 +389,10 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
   const withGroup =
     (change: (group: Record<string, unknown>) => Record<string, unknown>): Breaking =>
     (snapshot) => ({ ...snapshot, groups: snapshot.groups.map(change) });
+
+  const withDocument =
+    (change: (document: Record<string, unknown>) => unknown): Breaking =>
+    (snapshot) => ({ ...snapshot, personal: snapshot.personal.map(change) });
 
   const firstRecord = (group: Record<string, unknown>) =>
     (group.log as Record<string, unknown>[])[0] ?? {};
@@ -361,6 +471,36 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
       'a missing-history flag that isn’t true or false',
       withGroup((group) => ({ ...group, missingHistory: 'no' })),
     ],
+    ['a personal field that isn’t a list', (snapshot) => ({ ...snapshot, personal: {} })],
+    ['a personal field of null', (snapshot) => ({ ...snapshot, personal: null })],
+    ['a personal Document that isn’t an object', withDocument(() => 'statement')],
+    [
+      'the same personal Document twice',
+      (snapshot) => ({ ...snapshot, personal: [...snapshot.personal, ...snapshot.personal] }),
+    ],
+    [
+      'a personal id of 15 bytes',
+      withDocument((document) => ({ ...document, id: base64url(new Uint8Array(15)) })),
+    ],
+    ['a blank personal title', withDocument((document) => ({ ...document, title: '' }))],
+    [
+      'a personal title of 121 code points',
+      withDocument((document) => ({ ...document, title: 'x'.repeat(121) })),
+    ],
+    [
+      'personal text that isn’t text',
+      withDocument((document) => ({ ...document, text: ['Canary'] })),
+    ],
+    [
+      'a personal edit time that isn’t a whole number',
+      withDocument((document) => ({ ...document, updatedAt: 1.5 })),
+    ],
+    [
+      'a personal Document missing its creation time',
+      withDocument((document) =>
+        Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'createdAt')),
+      ),
+    ],
   ];
 
   it.each(breakings)('refuses %s, and writes nothing', async (_name, breaking) => {
@@ -387,9 +527,13 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
   });
 
   it('accepts the valid snapshot these tests break, so each refusal is the change’s', async () => {
-    const file = await sealBackup(utf8(JSON.stringify(await validSnapshot())), PASSPHRASE, CHEAP);
+    const snapshot = await validSnapshot();
+    const file = await sealBackup(utf8(JSON.stringify(snapshot)), PASSPHRASE, CHEAP);
+    const second = await otherDevice();
 
-    expect(await importGroups(await otherDevice(), file, PASSPHRASE)).toBe(1);
+    expect(snapshot.personal).toHaveLength(2);
+    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
   });
 
   it('accepts a group that never synced, with no relay time or instance yet', async () => {
@@ -416,25 +560,26 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
 });
 
 describe('the backup file’s bytes', () => {
-  it('hold no group name, display name, Atom text, title, key or secret in any spelling', async () => {
+  it('hold no group name, display name, Atom text, title, personal Document, key or secret in any spelling', async () => {
     const device = await openStore('ana');
     const group = await keepCanary(device);
+    await device.savePersonal(canaryStatement());
     const canaries = [
       textCanary('group name', CANARY.group),
       textCanary('founder’s name', CANARY.founder),
       textCanary('joiner’s name', CANARY.joiner),
       textCanary('Atom text', CANARY.atom),
       textCanary('Proposal title', CANARY.title),
+      textCanary('personal title', CANARY.personalTitle),
+      textCanary('personal text', CANARY.personalText),
       ...keyCanaries('signing key', group.secretKey),
       ...keyCanaries('group secret', group.secret),
     ];
-    const [stored] = await device.listGroups();
-    if (stored === undefined) throw new Error('Expected the group.');
 
     const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
 
     // The plaintext holds every canary, so the scan can’t pass by looking at nothing.
-    const plaintext = encodeSnapshot(backedUpGroups([stored]));
+    const plaintext = await snapshotOf(device);
     const inPlaintext = new Set(
       findCanaries(plaintext, canaries).map((line) => line.split(', as')[0]),
     );
