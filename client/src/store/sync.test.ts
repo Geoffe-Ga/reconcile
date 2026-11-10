@@ -23,6 +23,7 @@ import { openStore } from './db';
 import type { Group, Store } from './db';
 import { eventIdOf } from './eventId';
 import { keyChangeOf } from './epochs';
+import type { PushUpkeep } from './push';
 import { createSync, openRecords } from './sync';
 import type { Sync, SyncOptions } from './sync';
 
@@ -528,6 +529,54 @@ describe('the chat bot in a pass (#119)', () => {
   });
 });
 
+describe('after a pass (#97)', () => {
+  it('runs once a pass in which every group synced, after the pulls are saved', async () => {
+    const fake = createFakeRelay();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
+    const seen: (number | null)[] = [];
+    const sync = createSync({
+      store: ana.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      afterPass: async () => {
+        seen.push((await ana.store.getGroup(GROUP))?.relayNow ?? null);
+      },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+    fake.minute += 1;
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect(seen).toEqual([29_000_000, 29_000_001]);
+  });
+
+  it('doesn’t run after a pass in which a group failed, and never fails a pass itself', async () => {
+    const afterPass = vi.fn(() => Promise.reject(new Error('the relay backup failed')));
+    const failing = vi.fn(() => Promise.resolve());
+    const { sync } = await (async () => {
+      const fake = createFakeRelay();
+      const store = await openStore('ana');
+      const me = { author: authorOf(ANA), name: 'Ana' };
+      const signingKey = testKeys(ANA).secretKey;
+      await store.addGroup({ groupId: GROUP, secret: newKeys().secret, signingKey, me });
+      const relay = createRelay({ fetch: fake.fetch });
+      const ok = createSync({ store, relay, seal: xchachaSeal, afterPass });
+      opened.push(ok);
+      expect(await ok.syncOnce()).toBe(true);
+      await store.addGroup({ groupId: 'broken', secret: new Uint8Array(31), signingKey, me });
+      const broken = createSync({ store, relay, seal: xchachaSeal, afterPass: failing });
+      opened.push(broken);
+      return { sync: broken };
+    })();
+
+    expect(await sync.syncOnce()).toBe(false);
+
+    expect(afterPass).toHaveBeenCalledTimes(1);
+    expect(failing).not.toHaveBeenCalled();
+  });
+});
+
 describe('a new relay instance', () => {
   it('resets the cursor, re-posts the outbox, and reads the fresh relay from the start', async () => {
     const fake = createFakeRelay();
@@ -819,6 +868,59 @@ describe('a new group key when someone leaves (#98)', () => {
     expect(reads).toEqual([
       `/v1/mailbox/${deriveMailboxId(onAna.secret)}?after=${String(onAna.cursor)}&limit=100`,
     ]);
+  });
+
+  it('runs push upkeep and then the relay backup’s refresh after the pass’s key change has landed (#97, #99)', async () => {
+    const { relay, founding, ana, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+    const order: string[] = [];
+    /** What the store holds for Ana's group as `step` runs: its epoch, and whether a key change is due. */
+    const seen = async (step: string): Promise<void> => {
+      const group = await ana.group();
+      const { rotationDue } = fold(group.log, group.relayNow);
+      order.push(`${step} at epoch ${String(group.epoch ?? 0)}${rotationDue ? ', due' : ''}`);
+    };
+    const push: PushUpkeep = {
+      nudge: () => Promise.resolve(),
+      upkeep: () => seen('upkeep'),
+      forget: () => undefined,
+    };
+    const sync = createSync({
+      store: ana.store,
+      relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+      push,
+      afterPass: () => seen('afterPass'),
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect(order).toEqual(['upkeep at epoch 1', 'afterPass at epoch 1']);
+  });
+
+  it('runs neither push upkeep nor the relay backup’s refresh once halted mid-pass (#78, #97, #99)', async () => {
+    const { relay, founding, ana, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+    const upkeep = vi.fn(() => Promise.resolve());
+    const afterPass = vi.fn(() => Promise.resolve());
+    let sync: Sync | null = null;
+    const push: PushUpkeep = {
+      // Erase halts the loop while the pass is still on its groups; halt resolves once the pass ends.
+      nudge: () => {
+        void sync?.halt();
+        return Promise.resolve();
+      },
+      upkeep,
+      forget: () => undefined,
+    };
+    sync = createSync({ store: ana.store, relay, seal: xchachaSeal, push, afterPass });
+    opened.push(sync);
+
+    await sync.syncOnce();
+
+    expect([upkeep.mock.calls.length, afterPass.mock.calls.length]).toEqual([0, 0]);
   });
 
   it('never wraps the new secret to the member who left, nor to anyone else', async () => {

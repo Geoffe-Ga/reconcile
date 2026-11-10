@@ -147,6 +147,90 @@ describe('the fake relay keeps #62’s contract', () => {
   });
 });
 
+describe('the fake relay keeps #97’s backup contract', () => {
+  const backup = 'test-backup-'.padEnd(43, '2');
+  const at = `/v1/backup/${backup}`;
+
+  it.each([
+    ['a short backup id', '/v1/backup/abc', { method: 'GET' }, 400, 'invalid_backup'],
+    ['another method', at, { method: 'DELETE' }, 405, 'method_not_allowed'],
+    [
+      'no content type',
+      at,
+      { method: 'PUT', body: new Uint8Array(65536) },
+      415,
+      'unsupported_media_type',
+    ],
+    [
+      'a backup over 16 MiB',
+      at,
+      { method: 'PUT', headers: octets, body: new Uint8Array(16777217) },
+      413,
+      'too_large',
+    ],
+    [
+      'a mailbox blob’s size',
+      at,
+      { method: 'PUT', headers: octets, body: new Uint8Array(1024) },
+      400,
+      'invalid_size',
+    ],
+    ['an unknown backup', at, { method: 'GET' }, 404, 'not_found'],
+  ])('refuses %s', async (_name, url, init, status, code) => {
+    const fake = createFakeRelay();
+
+    const response = await fake.fetch(url, init);
+
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error: code });
+    expect(fake.backup(backup)).toBeUndefined();
+  });
+
+  it.each([65536, 262144, 1048576, 4194304, 16777216])(
+    'keeps a %i-byte backup, replaces it, and serves it as octets',
+    async (size) => {
+      const fake = createFakeRelay();
+      const first = new Uint8Array(size).fill(1);
+      const second = new Uint8Array(65536).fill(2);
+
+      const put = await fake.fetch(at, { method: 'PUT', headers: octets, body: first });
+      await fake.fetch(at, { method: 'PUT', headers: octets, body: second });
+      const got = await fake.fetch(at, { method: 'GET' });
+
+      expect(put.status).toBe(204);
+      expect(got.headers.get('content-type')).toBe('application/octet-stream');
+      expect(new Uint8Array(await got.arrayBuffer())).toEqual(second);
+      expect(fake.backup(backup)).toEqual(second);
+    },
+  );
+
+  it('keeps a backup 180 days after the UTC day of its last write, and not a day more', async () => {
+    const fake = createFakeRelay({ minute: 1440 * 20_000 + 1439 });
+    await fake.fetch(at, { method: 'PUT', headers: octets, body: new Uint8Array(65536) });
+
+    fake.minute = 1440 * 20_181 - 1;
+    const kept = await fake.fetch(at, { method: 'GET' });
+    fake.minute = 1440 * 20_181;
+    const gone = await fake.fetch(at, { method: 'GET' });
+
+    expect(kept.status).toBe(200);
+    expect(gone.status).toBe(404);
+    expect(fake.backup(backup)).toBeUndefined();
+  });
+
+  it('keeps backups out of every mailbox', async () => {
+    const fake = createFakeRelay();
+
+    await fake.fetch(`/v1/backup/${mailbox}`, {
+      method: 'PUT',
+      headers: octets,
+      body: new Uint8Array(65536),
+    });
+
+    expect(fake.blobs(mailbox)).toEqual([]);
+  });
+});
+
 describe('the fake relay keeps #89’s push routes (#99)', () => {
   const json = { 'Content-Type': 'application/json' };
   const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/device-1';

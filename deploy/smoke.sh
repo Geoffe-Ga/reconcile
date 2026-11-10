@@ -6,9 +6,12 @@
 #   2. PUT a random 1,024-byte blob, ttl_days=1, to a random 43-character
 #      mailbox: 201 and a seq.
 #   3. GET that mailbox after seq-1: the same bytes come back.
-#   4. GET /v1/push/key answers the VAPID public key: 87 base64url
+#   4. PUT a random 65,536-byte backup to a random 43-character id: 204.
+#      GET it: the same bytes come back as application/octet-stream (#97).
+#   5. GET /v1/push/key answers the VAPID public key: 87 base64url
 #      characters, so push is on (#89).
-# The blob expires within two days and nobody else knows the mailbox id.
+# The blob expires within two days and the backup within 181, and nobody
+# else knows either id.
 # On failure it names the step and the HTTP status (000: no response), and
 # exits 1.
 #
@@ -18,7 +21,7 @@
 
 set -euo pipefail
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 case "${1:-}" in
     --help) usage; exit 0 ;;
@@ -44,22 +47,28 @@ fail() {
     exit 1
 }
 
-# request STEP METHOD PATH [curl args...]: the body lands in $work/body and
-# the status in $status.
+# request STEP METHOD PATH [curl args...]: the body lands in $work/body, the
+# status in $status and the Content-Type in $kind.
 request() {
-    local step=$1 method=$2 path=$3
+    local step=$1 method=$2 path=$3 out
     shift 3
-    status="$(curl -sS --max-time 15 -o "$work/body" -w '%{http_code}' \
+    out="$(curl -sS --max-time 15 -o "$work/body" -w '%{http_code} %{content_type}' \
         -X "$method" "$@" "$base$path" 2>"$work/curl.err")" || {
-        fail "$step" "${status:-000}" "$(tr -d '\n' < "$work/curl.err")"
+        out="${out%% *}"
+        fail "$step" "${out:-000}" "$(tr -d '\n' < "$work/curl.err")"
     }
+    status="${out%% *}"
+    kind="${out#* }"
 }
 
 body() { cat "$work/body"; }
 
 # 43 base64url characters: 32 random bytes, unpadded, as the client makes them.
-mailbox="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
+random_id() { head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
+mailbox="$(random_id)"
+backup="$(random_id)"
 head -c 1024 /dev/urandom > "$work/blob"
+head -c 65536 /dev/urandom > "$work/backup"
 expected="$(base64 < "$work/blob" | tr -d '\n')"
 
 request health GET /v1/health
@@ -79,6 +88,17 @@ request get GET "/v1/mailbox/$mailbox?after=$((seq - 1))&limit=1"
 [[ "$(body)" == *"{\"seq\":$seq,"*"\"data\":\"$expected\"}"* ]] ||
     fail get "$status" "the blob that came back differs from the one sent"
 printf ' · get matches'
+
+request backup-put PUT "/v1/backup/$backup" \
+    -H 'Content-Type: application/octet-stream' --data-binary "@$work/backup"
+[[ "$status" == 204 ]] || fail backup-put "$status" "$(body)"
+
+request backup-get GET "/v1/backup/$backup"
+[[ "$status" == 200 && "$kind" == application/octet-stream ]] ||
+    fail backup-get "$status" "$kind"
+cmp -s "$work/body" "$work/backup" ||
+    fail backup-get "$status" "the backup that came back differs from the one sent"
+printf ' · backup matches'
 
 request push GET /v1/push/key
 [[ "$status" == 200 && "$(body)" =~ ^\{\"vapid_public_key\":\"[A-Za-z0-9_-]{87}\"\}$ ]] ||
