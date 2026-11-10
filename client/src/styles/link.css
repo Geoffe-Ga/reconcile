@@ -1,0 +1,107 @@
+/*
+ * Linking a second device (#96), from tokens.css (DESIGN.md "Linking code").
+ * The QR code keeps its fixed dark-on-light colors in both themes, so a
+ * camera can read it; everything around it follows the theme.
+ */
+
+/* The code: the symbol, then the same code as text, side by side on wide screens. */
+.qr {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  margin: 0;
+}
+
+@media (min-width: 40rem) {
+  .qr {
+    grid-template-columns: 18rem minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--space-5);
+  }
+}
+
+.qr-symbol {
+  display: block;
+  width: min(100%, 18rem);
+  height: auto;
+  aspect-ratio: 1;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+}
+
+.qr-light {
+  fill: var(--qr-light);
+}
+
+.qr-dark {
+  fill: var(--qr-dark);
+}
+
+.qr-caption {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34em;
+}
+
+/*
+ * Selects as a whole, so a person with no camera can copy all of it in one go.
+ * It breaks between any two characters, never at a hyphen first, so no line
+ * end reads as a hyphenation.
+ */
+.qr-text {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--ink);
+  font: var(--type-mono);
+  word-break: break-all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+/* The camera while it scans: square, so the code sits in the middle of the view. */
+.scanner {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.scanner-video {
+  display: block;
+  width: min(100%, 22rem);
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  object-fit: cover;
+}
+
+/* The six digits both devices show: large, in two groups of three. */
+.link-number-card {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34em;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.link-number-card > p {
+  margin: 0;
+}
+
+.link-number {
+  color: var(--ink);
+  font: var(--type-display);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* Match and Don't match: side by side, wrapping on a narrow phone. */
+.link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}

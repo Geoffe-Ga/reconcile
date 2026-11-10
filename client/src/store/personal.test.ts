@@ -238,8 +238,8 @@ describe('personal Documents in the store', () => {
     expect(await store.listPersonal()).toEqual([]);
     store.close();
     const upgraded = await openDB(DATABASE_NAME);
-    expect([...upgraded.objectStoreNames].sort()).toEqual(['groups', 'personal']);
-    expect(upgraded.version).toBe(4);
+    expect([...upgraded.objectStoreNames].sort()).toEqual(['device', 'groups', 'personal']);
+    expect(upgraded.version).toBe(5);
     upgraded.close();
   });
 });

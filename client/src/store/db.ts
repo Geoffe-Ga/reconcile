@@ -20,7 +20,9 @@
  * transaction; a shared one keeps its share state on its own record (#105).
  * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay.
+ * cleared while its outcomes stay. The relay backup's key and state (#97) are
+ * one record in a store of their own, in no group, so no group's record ever
+ * holds the key.
  */
 
 import { openDB } from 'idb';
@@ -187,6 +189,9 @@ export interface Archive {
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
 export type BackupMark = 'saved' | 'not-now';
 
+/** Where restored groups came from: a backup file (#78), or another of the person's devices (#96). */
+export type RestoredFrom = 'backup' | 'link';
+
 /**
  * A group as a backup file carries it (#78): its keys, secret, your name, its
  * relay-ordered log and sync state, and whether some history may be missing.
@@ -253,11 +258,59 @@ export interface Pull {
   advance?: EpochAdvance;
 }
 
+/**
+ * The relay backup on this device (#97): the random backup key, and what the
+ * last upload held. It belongs to the device, not to any group.
+ */
+export interface RelayBackupState {
+  /** The 32-byte backup key. The relay's id and seal key derive from it (`crypto/relayBackup.ts`). */
+  readonly key: Uint8Array;
+  /** The SHA-256, in hex, of what the last upload held, or null before one. */
+  readonly digest: string | null;
+  /** The relay's UTC day of the last daily check, or null before one. */
+  readonly checkedDay: number | null;
+  /** When the last upload succeeded, in device milliseconds, or null before one. */
+  readonly uploadedAt: number | null;
+  /** Whether the last try found the groups too large for the largest backup. */
+  readonly tooLarge: boolean;
+}
+
+/** What a relay backup update may change: everything but the key. */
+export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
+
+/**
+ * What {@link Store.subscribe}'s listeners hear when the relay backup's state
+ * changes: never a group id, which is 43 base64url characters.
+ */
+export const RELAY_BACKUP_CHANGED = 'relay-backup';
+
+/** The relay backup's one device-wide record (#97). */
+export interface RelayBackupStore {
+  /** The relay backup's state, or undefined while the device keeps none. */
+  getRelayBackup(): Promise<RelayBackupState | undefined>;
+  /**
+   * Keep `key` as the backup key, with nothing uploaded or checked yet, in
+   * place of any earlier one. Returns the state it replaced, if any.
+   */
+  setRelayBackupKey(key: Uint8Array): Promise<RelayBackupState | undefined>;
+  /**
+   * Keep `key` as the backup key only when the device holds none, as a
+   * restored backup file's key is (#97, ADR-0075 §4). Returns whether it did.
+   */
+  adoptRelayBackupKey(key: Uint8Array): Promise<boolean>;
+  /**
+   * Apply `update` in one transaction, only while the backup key is still
+   * `key`, so an upload that finishes after a new key was made can't record
+   * itself against it. Returns whether it applied.
+   */
+  updateRelayBackup(key: Uint8Array, update: RelayBackupUpdate): Promise<boolean>;
+}
+
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups, and its personal Documents (#93). */
-export interface Store extends DraftStore, PersonalStore {
+/** The device's groups, its personal Documents (#93), and its relay backup's state (#97). */
+export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -356,21 +409,24 @@ export interface Store extends DraftStore, PersonalStore {
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
-   * Keep a backup file's groups and personal Documents, in one transaction
-   * (#78, #93). A group new to the device is kept as the file has it, with an
-   * empty outbox, no drafts and no chat claims (#119). For a group already
-   * here, whichever whole copy synced later stays: the file's replaces the
-   * device's only when its last sync is later, and a group this device is
-   * leaving or keeps read-only (#108) stays as it is. Either way the group is
-   * marked `saved`, since a backup file holds it. A personal Document merges
-   * by id the same way: the file's replaces the device's only when it was
+   * Keep a backup file's groups and personal Documents, or a link bundle's
+   * (#96), in one transaction (#78, #93). A group new to the device is kept
+   * as the file has it, with an empty outbox, no drafts and no chat claims
+   * (#119). For a group already here, whichever whole copy synced later
+   * stays: the file's replaces the device's only when its last sync is later,
+   * and a group this device is leaving or keeps read-only (#108) stays as it
+   * is. From a backup file, either way the group is marked `saved`, since
+   * the file holds it; from a link, no file holds it, so a new group has no
+   * mark and one already here keeps its own. A personal Document merges by
+   * id the same way: the file's replaces the device's only when it was
    * edited later (`keepsHeldCopy`), keeping the device's share when the
-   * file's copy holds none (`restoredCopy`, #105). Nothing is stamped with
-   * the time now.
+   * file's copy holds none (`restoredCopy`, #105), as a link bundle's never
+   * does. Nothing is stamped with the time now.
    */
   restoreGroups(
     groups: readonly BackedUpGroup[],
     personal?: readonly PersonalDocument[],
+    from?: RestoredFrom,
   ): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
@@ -386,7 +442,10 @@ export interface Store extends DraftStore, PersonalStore {
   markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
-  /** Hear which group changed after each change; returns the way to stop. */
+  /**
+   * Hear which group changed after each change, or {@link RELAY_BACKUP_CHANGED}
+   * when the relay backup's state did; returns the way to stop.
+   */
   subscribe(listener: (groupId: string) => void): () => void;
   /** Close the database. */
   close(): void;
@@ -395,27 +454,34 @@ export interface Store extends DraftStore, PersonalStore {
 interface Schema extends DBSchema {
   groups: { key: string; value: Group };
   personal: { key: string; value: PersonalDocument };
+  device: { key: string; value: RelayBackupState };
 }
 
 /**
- * The schema version. Version 4 adds the personal store (#93) and deletes
- * nothing. Version 3 holds a real group secret, from which the mailbox id and
- * seal key derive (#71); version 2 held signed records (#69) and version 1
- * the stub era's unsigned data. That older data, whose relay blobs anyone
- * could read, is deleted on upgrade, with no migration. A dissolved group's
- * `archived` mark (#108) is an optional field of its record, so it needed no
- * version of its own: a version 3 group that holds one keeps it through the
- * upgrade. So are a group's encryption key and epoch and each record's epoch
- * (#98): a group or record without one reads as epoch 0.
+ * The schema version. Version 5 adds the device store, which holds the relay
+ * backup's state (#97), and version 4 the personal store (#93); neither
+ * deletes anything. Version 3 holds a real group secret, from which the
+ * mailbox id and seal key derive (#71); version 2 held signed records (#69)
+ * and version 1 the stub era's unsigned data. That older data, whose relay
+ * blobs anyone could read, is deleted on upgrade, with no migration. A
+ * dissolved group's `archived` mark (#108) is an optional field of its
+ * record, so it needed no version of its own: a version 3 group that holds
+ * one keeps it through the upgrade. So are a group's encryption key and
+ * epoch and each record's epoch (#98): a group or record without one reads
+ * as epoch 0. So is a personal Document's share by link (#105): a version 4
+ * Document that holds one keeps it whole through the upgrade to 5.
  */
-const VERSION = 4;
+const VERSION = 5;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
+const DEVICE = 'device';
+/** The device store's one key: the relay backup's record. */
+const RELAY_BACKUP = 'relay-backup';
 
 /**
  * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
- * version 3 are deleted, and the personal store is added beside whatever
- * groups version 3 kept.
+ * version 3 are deleted, and the personal store, then the device store, are
+ * added beside whatever groups version 3 kept.
  */
 function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
   if (oldVersion < 3) {
@@ -423,6 +489,7 @@ function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
     database.createObjectStore(GROUPS, { keyPath: 'groupId' });
   }
   if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
+  if (oldVersion < 5) database.createObjectStore(DEVICE);
 }
 
 /** The IndexedDB database the app keeps its groups in. */
@@ -581,10 +648,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
-    async restoreGroups(groups, personal = []) {
+    async restoreGroups(groups, personal = [], from = 'backup') {
       const tx = db.transaction([GROUPS, PERSONAL], 'readwrite');
       try {
-        await restoreInto(tx, groups, personal);
+        await restoreInto(tx, { groups, personal, from });
       } catch (error) {
         // Anything that fails takes the whole restore with it, groups and Documents alike.
         await abandon(tx);
@@ -647,6 +714,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       return kept;
     },
     deletePersonal: (id) => db.delete(PERSONAL, id),
+    ...relayBackupStore(db, () => {
+      notify(RELAY_BACKUP_CHANGED);
+    }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -658,6 +728,44 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     },
     close: () => {
       db.close();
+    },
+  };
+}
+
+/** The relay backup's record in `db`'s device store (#97), telling `changed` after each write. */
+function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayBackupStore {
+  /** Writes `next(held)` in one transaction, unless it's undefined; returns the state held before. */
+  const write = async (
+    next: (held: RelayBackupState | undefined) => RelayBackupState | undefined,
+  ): Promise<{ held: RelayBackupState | undefined; wrote: boolean }> => {
+    const tx = db.transaction(DEVICE, 'readwrite');
+    const held = await tx.store.get(RELAY_BACKUP);
+    const state = next(held);
+    if (state !== undefined) await tx.store.put(state, RELAY_BACKUP);
+    await tx.done;
+    if (state !== undefined) changed();
+    return { held, wrote: state !== undefined };
+  };
+  const fresh = (key: Uint8Array): RelayBackupState => ({
+    key: Uint8Array.from(key),
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+  });
+  return {
+    getRelayBackup: () => db.get(DEVICE, RELAY_BACKUP),
+    async setRelayBackupKey(key) {
+      return (await write(() => fresh(key))).held;
+    },
+    async adoptRelayBackupKey(key) {
+      return (await write((held) => (held === undefined ? fresh(key) : undefined))).wrote;
+    },
+    async updateRelayBackup(key, update) {
+      const result = await write((held) =>
+        held !== undefined && sameBytes(held.key, key) ? { ...held, ...update } : undefined,
+      );
+      return result.wrote;
     },
   };
 }
@@ -711,19 +819,25 @@ async function abandonPersonal(
 /** A transaction over both of the store's object stores, as a restore opens it. */
 type RestoreTransaction = IDBPTransaction<Schema, ['groups', 'personal'], 'readwrite'>;
 
+/** What one restore keeps: a backup file's or a link bundle's groups and Documents (#96). */
+interface Restored {
+  readonly groups: readonly BackedUpGroup[];
+  readonly personal: readonly PersonalDocument[];
+  readonly from: RestoredFrom;
+}
+
 /**
- * Puts each group and personal Document a backup holds into `tx`, keeping
- * the device's copy wherever it's the one to keep (`keptCopy`,
- * `keepsHeldCopy`).
+ * Puts each group and personal Document a backup file or a link bundle
+ * holds into `tx`, keeping the device's copy wherever it's the one to keep
+ * (`keptCopy`, `keepsHeldCopy`).
  */
 async function restoreInto(
   tx: RestoreTransaction,
-  groups: readonly BackedUpGroup[],
-  personal: readonly PersonalDocument[],
+  { groups, personal, from }: Restored,
 ): Promise<void> {
   const kept = tx.objectStore(GROUPS);
   for (const restored of groups) {
-    await kept.put(keptCopy(await kept.get(restored.groupId), restored));
+    await kept.put(keptCopy(await kept.get(restored.groupId), restored, from));
   }
   const documents = tx.objectStore(PERSONAL);
   for (const restored of personal) {
@@ -733,24 +847,36 @@ async function restoreInto(
 }
 
 /**
- * The copy of a group to keep when a backup file holds `restored` and the
- * device holds `held` (#78): the file's, with no outbox, drafts or chat
- * claims, unless the device's synced at least as late, is leaving, or is a
- * read-only archive, which a restore never brings back to life (#108).
- * Either is marked `saved`. The device's push registration and posted nudges
- * (#99) stay either way: they belong to this device, and a file never holds
- * them.
+ * The backup mark a restored group gets (#78, #96): `saved` from a backup
+ * file, which holds it; from a link, which no file holds, the mark the
+ * device's own copy had, if any.
  */
-function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
+function markFor(held: Group | undefined, from: RestoredFrom): Pick<Group, 'backup'> {
+  if (from === 'backup') return { backup: 'saved' };
+  return held?.backup === undefined ? {} : { backup: held.backup };
+}
+
+/**
+ * The copy of a group to keep when a backup file or a link bundle holds
+ * `restored` and the device holds `held` (#78, #96): the restored one, with
+ * no outbox, drafts or chat claims, unless the device's synced at least as
+ * late, is leaving, or is a read-only archive, which a restore never brings
+ * back to life (#108). Either is marked as `markFor` says. The device's push
+ * registration and posted nudges (#99) stay either way: they belong to this
+ * device, and neither a file nor a link bundle holds them, so a linked
+ * device starts with push off.
+ */
+function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: RestoredFrom): Group {
+  const mark = markFor(held, from);
   if (held !== undefined && (stays(held) || syncedSince(held, restored))) {
-    return { ...held, backup: 'saved' };
+    return { ...held, ...mark };
   }
   // A copy that comes back read-only takes no push (#108), as `markArchived` keeps none.
   const { push, nudged } = restored.archived === undefined ? (held ?? {}) : {};
   return {
     ...restored,
     outbox: [],
-    backup: 'saved',
+    ...mark,
     ...(push === undefined ? {} : { push }),
     ...(nudged === undefined ? {} : { nudged }),
   };

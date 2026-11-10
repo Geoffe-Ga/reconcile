@@ -23,6 +23,10 @@ export type Route =
   | { readonly name: 'personal' }
   /** One personal Document, by its id, to read and edit (#93). */
   | { readonly name: 'personalDocument'; readonly id: string }
+  /** Link a new device, on the existing device (#96). */
+  | { readonly name: 'linkNew' }
+  /** Link to my other device, on the new device (#96). */
+  | { readonly name: 'linkThis' }
   | { readonly name: 'join'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
@@ -130,10 +134,16 @@ function joinRoute(rest: readonly string[]): Route {
 /** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
 const INVITE_PREFIX = '#join/';
 
-/** The pages that take no argument after `#/`: Create group and Settings (#78). */
+/**
+ * The pages that take no argument after `#/`: Create group, Settings (#78),
+ * and the two sides of linking a device (#96). A linking code never travels
+ * in a route: it's shown, scanned or pasted, and held only in memory.
+ */
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
+  ['link-new', { name: 'linkNew' }],
+  ['link-this', { name: 'linkThis' }],
 ]);
 
 /** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
@@ -214,6 +224,10 @@ export function routeHref(route: Route): string {
       return '#/me';
     case 'personalDocument':
       return `#/me/${route.id}`;
+    case 'linkNew':
+      return '#/link-new';
+    case 'linkThis':
+      return '#/link-this';
     case 'join':
       return joinHref(route.payload);
     case 'shared':

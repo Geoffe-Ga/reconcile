@@ -25,6 +25,17 @@ describe('Start', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers Link to my other device, for a device that joins by another one’s code (#96)', async () => {
+    render(<Start groups={[]} onOpenInvite={vi.fn()} />);
+
+    const section = screen.getByRole('region', { name: 'Have Reconcile on another device?' });
+    expect(within(section).getByRole('link', { name: 'Link to my other device' })).toHaveAttribute(
+      'href',
+      '#/link-this',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('lists every group on the device by name, however many there are', () => {
     const names = ['Riverside Tenants', 'Book club', 'Allotment society', 'Choir'];
     const groups = names.map((name, i) => ({

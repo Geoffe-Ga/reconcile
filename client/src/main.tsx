@@ -7,6 +7,7 @@ import './styles/app.css';
 import './styles/proposals.css';
 import './styles/firstRun.css';
 import './styles/backup.css';
+import './styles/link.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -32,6 +33,7 @@ import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
 import { createPush } from './store/push';
+import { refreshRelayBackup } from './store/relayBackup';
 import { createSync } from './store/sync';
 import { keepSharesAlive } from './share/shareLink';
 
@@ -48,9 +50,13 @@ if (root === null) {
  * whose time has come by this device's clock (#108). The chat bot posts only
  * for a group that turned it on by Proposal and hasn't dissolved (#119).
  * Push stays off until the person turns a group on in Settings (#99), and the
- * app closes its notifications whenever it comes to the front.
- * Each launch also posts again any shared personal Document whose link is
- * due a fresh copy or has an edit waiting (#105).
+ * app closes its notifications whenever it comes to the front. After each
+ * complete sync pass, once its key changes and push upkeep are done, the
+ * relay backup refreshes once a relay day, once the device keeps a backup
+ * key (#97). Each launch also posts again any shared personal Document whose
+ * link is due a fresh copy or has an edit waiting (#105). That runs beside the
+ * sync loop, not in its pass: a share has its own mailbox and keys, so no
+ * group's key change or freeze touches it.
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
@@ -61,10 +67,11 @@ async function start(container: HTMLElement): Promise<void> {
   const chatBot = createChatBot({ store, post: postWebhook, notice });
   const port = browserPushPort();
   const push = createPush({ store, relay: createPushRelay(), port });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push });
+  const now = (): number => Date.now();
+  const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, afterPass });
   closeWhenVisible(port, document);
   sync.start();
-  const now = () => Date.now();
   // A share whose post fails stays pending, and the next launch tries again.
   void keepSharesAlive({ store, relay, seal: xchachaSeal, now }).catch(() => undefined);
   const services = {

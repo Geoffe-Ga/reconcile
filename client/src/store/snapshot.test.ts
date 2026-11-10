@@ -27,8 +27,10 @@ import {
   encodeSnapshot,
   exportGroups,
   importGroups,
+  importSnapshot,
   MAX_BACKUP_BYTES,
   SNAPSHOT_FORMAT,
+  takeSnapshot,
   withoutShares,
 } from './snapshot';
 
@@ -67,6 +69,9 @@ const READING: PersonalDocument = {
   createdAt: 1_762_000_450_000,
   updatedAt: 1_762_000_460_000,
 };
+
+/** A relay backup key (#97), with a byte pattern nothing else in these tests holds. */
+const BACKUP_KEY = Uint8Array.from({ length: 32 }, (_, i) => (i * 37 + 11) % 256);
 
 /** The canary group, folded through the engine, as the founder's device would hold it. */
 function canaryGroup() {
@@ -248,6 +253,45 @@ describe('exportGroups and importGroups', () => {
 
     expect(groupIds).toEqual([]);
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toBe(0);
+  });
+});
+
+describe('takeSnapshot and importSnapshot, without the passphrase (#96)', () => {
+  it('carry exactly what a backup file’s plaintext holds, and bring it back unmarked', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+
+    const { plaintext, groupIds } = await takeSnapshot(device);
+    expect(groupIds).toEqual([group.groupId]);
+    expect(text(plaintext)).toBe(text(await snapshotOf(device)));
+
+    const second = await openStore('ana-laptop');
+    expect(await importSnapshot(second, plaintext, 'link')).toBe(1);
+    const [held] = await second.listGroups();
+    expect(held?.backup).toBeUndefined();
+    expect(held?.me).toEqual({ author: group.author, name: CANARY.founder });
+    expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
+  });
+
+  it('refuse a plaintext that doesn’t check out, and write nothing', async () => {
+    const second = await otherDevice();
+    const before = await dump(second);
+
+    await expect(
+      importSnapshot(second, utf8('{"format":1,"groups":[{}]}'), 'link'),
+    ).rejects.toThrow(BackupUnreadable);
+    expect(await dump(second)).toEqual(before);
+  });
+
+  it('mark a backup file’s groups as saved, as importGroups does', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const { plaintext } = await takeSnapshot(device);
+    const second = await openStore('second');
+
+    await importSnapshot(second, plaintext, 'backup');
+
+    expect((await second.listGroups()).map((held) => held.backup)).toEqual(['saved']);
   });
 });
 
@@ -542,11 +586,13 @@ describe('a shared Document in a backup (#105)', () => {
 });
 
 describe('withoutShares (#105, for #96’s second-device link)', () => {
-  it('drops every Document’s share and keeps everything else', async () => {
+  it('drops every Document’s share and keeps everything else, the relay backup key (#97) included', async () => {
     const device = await openStore('ana');
     const group = await keepCanary(device);
     await keepShared(device);
     await device.savePersonal(READING);
+    const backupKey = new Uint8Array(32).fill(8);
+    await device.setRelayBackupKey(backupKey);
     const snapshot = await deviceSnapshot(device);
 
     const linked = withoutShares(snapshot);
@@ -554,7 +600,62 @@ describe('withoutShares (#105, for #96’s second-device link)', () => {
     expect(linked.groups.map((kept) => kept.groupId)).toEqual([group.groupId]);
     expect(linked.groups).toBe(snapshot.groups);
     expect(linked.personal).toEqual([canaryStatement(), READING]);
+    expect(local(linked.backupKey ?? new Uint8Array())).toEqual(local(backupKey));
     expect(snapshot.personal[0]?.share).toBeDefined();
+  });
+});
+
+describe('a shared Document in a link bundle (#96, #105)', () => {
+  it('leaves the share out of a link’s plaintext, and only there', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await keepShared(device);
+    await device.setRelayBackupKey(new Uint8Array(32).fill(8));
+
+    const link = await takeSnapshot(device, 'link');
+    const backup = await takeSnapshot(device);
+
+    expect(text(link.plaintext)).toBe(
+      text(encodeSnapshot(withoutShares(await deviceSnapshot(device)))),
+    );
+    expect(text(link.plaintext)).not.toContain('"share"');
+    const canaries = keyCanaries('share seed', SHARE.seed).concat(
+      keyCanaries('share secret key', SHARE.secretKey),
+    );
+    expect(findCanaries(link.plaintext, canaries)).toEqual([]);
+    expect(decodeSnapshot(link.plaintext)?.backupKey).toBeDefined();
+    expect(text(backup.plaintext)).toBe(text(await snapshotOf(device)));
+    expect(decodeSnapshot(backup.plaintext)?.personal[0]?.share).toBeDefined();
+  });
+
+  it('keeps no share from a link, even one a bundle holds, and keeps the device’s own', async () => {
+    const phone = await openStore('ana');
+    await keepShared(phone);
+    await phone.savePersonal(READING);
+    const plaintext = await snapshotOf(phone);
+    const laptop = await openStore('ana-laptop');
+    const ownShare: ShareState = { ...SHARE, seed: new Uint8Array(32).fill(3), pending: false };
+    await laptop.savePersonal({ ...READING, updatedAt: READING.updatedAt - 1 });
+    await laptop.updateShare(READING.id, () => ownShare);
+
+    await importSnapshot(laptop, plaintext, 'link');
+
+    // The phone's share never lands; the laptop's own, on an older copy the bundle replaced, stays.
+    expect(plain(await laptop.listPersonal())).toEqual(
+      plain([canaryStatement(), { ...READING, share: { ...ownShare, pending: true } }]),
+    );
+  });
+
+  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97)', async () => {
+    const device = await openStore('ana');
+    await keepShared(device);
+    const fresh = await openStore('fresh');
+
+    await importSnapshot(fresh, await snapshotOf(device));
+
+    expect(plain(await fresh.listPersonal())).toEqual(
+      plain([{ ...canaryStatement(), share: SHARE }]),
+    );
   });
 });
 
@@ -1074,8 +1175,10 @@ describe('the backup file’s bytes', () => {
   it('hold no group name, display name, Atom text, title, personal Document, key or secret in any spelling', async () => {
     const device = await openStore('ana');
     const group = await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
     await device.savePersonal(canaryStatement());
     const canaries = [
+      ...keyCanaries('relay backup key', BACKUP_KEY),
       textCanary('group name', CANARY.group),
       textCanary('founder’s name', CANARY.founder),
       textCanary('joiner’s name', CANARY.joiner),
@@ -1096,5 +1199,140 @@ describe('the backup file’s bytes', () => {
     );
     expect([...inPlaintext].sort()).toEqual(canaries.map(({ label }) => label).sort());
     expect(findCanaries(file, canaries)).toEqual([]);
+  });
+});
+
+describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
+  const OTHER_KEY = new Uint8Array(32).fill(0x42);
+
+  /** The key a device keeps for its relay backup, in the test's realm, or undefined. */
+  async function keyOn(store: Store): Promise<Uint8Array | undefined> {
+    const state = await store.getRelayBackup();
+    return state === undefined ? undefined : local(state.key);
+  }
+
+  it('travels in the file, and a fresh device restoring it keeps it, with nothing uploaded yet', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    await device.updateRelayBackup(BACKUP_KEY, { digest: 'd', checkedDay: 9, uploadedAt: 9 });
+
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+    await importGroups(second, file, PASSPHRASE);
+
+    const state = await second.getRelayBackup();
+    expect({ ...state, key: await keyOn(second) }).toEqual({
+      key: BACKUP_KEY,
+      digest: null,
+      checkedDay: null,
+      uploadedAt: null,
+      tooLarge: false,
+    });
+  });
+
+  it('is written as backupKey, in unpadded base64url, after the groups and personal Documents', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const [group] = await device.listGroups();
+    if (group === undefined) throw new Error('Expected the group.');
+
+    const json = JSON.parse(
+      text(
+        encodeSnapshot({ groups: backedUpGroups([group]), personal: [], backupKey: BACKUP_KEY }),
+      ),
+    ) as Record<string, unknown>;
+
+    expect(Object.keys(json)).toEqual(['format', 'groups', 'personal', 'backupKey']);
+    expect(json.backupKey).toBe(base64url(BACKUP_KEY));
+  });
+
+  it('doesn’t replace a key the restoring device already keeps', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+    await second.setRelayBackupKey(OTHER_KEY);
+
+    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+
+    expect(await keyOn(second)).toEqual(local(OTHER_KEY));
+  });
+
+  it('is absent from a file saved on a device with none, which gives the restoring device none', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+    await importGroups(second, file, PASSPHRASE);
+
+    expect(await second.getRelayBackup()).toBeUndefined();
+  });
+
+  it.each([
+    ['a key of 31 bytes', base64url(new Uint8Array(31))],
+    ['a key of 33 bytes', base64url(new Uint8Array(33))],
+    ['a key in non-canonical base64url', `${base64url(new Uint8Array(32))}=`],
+    ['a key that isn’t text', 7],
+    ['a null key', null],
+  ])('refuses a file holding %s, and writes nothing', async (_name, backupKey) => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const json = JSON.parse(
+      text(encodeSnapshot({ groups: backedUpGroups(await device.listGroups()), personal: [] })),
+    ) as Record<string, unknown>;
+    const file = await sealBackup(utf8(JSON.stringify({ ...json, backupKey })), PASSPHRASE, CHEAP);
+    const second = await otherDevice('second');
+    const before = await dump(second);
+
+    await expect(importGroups(second, file, PASSPHRASE)).rejects.toThrow(new BackupUnreadable());
+
+    expect(await dump(second)).toEqual(before);
+    expect(await second.getRelayBackup()).toBeUndefined();
+  });
+});
+
+describe('importSnapshot', () => {
+  it('keeps a plaintext’s groups and key, as importGroups does once a file is open', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    const plaintext = encodeSnapshot({
+      groups: backedUpGroups(await device.listGroups()),
+      personal: [],
+      backupKey: BACKUP_KEY,
+    });
+    const second = await openStore('second');
+
+    expect(await importSnapshot(second, plaintext)).toBe(1);
+
+    expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
+    expect(local((await second.getRelayBackup())?.key ?? new Uint8Array())).toEqual(BACKUP_KEY);
+  });
+
+  it('carries the key in the device’s own snapshot, so a second-device link (#96) brings it too', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    // A link sends the snapshot's plaintext with no passphrase layer: this one.
+    const plaintext = encodeSnapshot(await deviceSnapshot(device));
+    const linked = await openStore('linked');
+
+    expect(await importSnapshot(linked, plaintext)).toBe(1);
+
+    expect(await folded(linked, group.groupId)).toEqual(await folded(device, group.groupId));
+    expect(local((await linked.getRelayBackup())?.key ?? new Uint8Array())).toEqual(BACKUP_KEY);
+  });
+
+  it('refuses a plaintext that doesn’t check out, and writes nothing', async () => {
+    const second = await otherDevice();
+    const before = await dump(second);
+
+    await expect(importSnapshot(second, utf8('{"format":1}'))).rejects.toThrow(
+      new BackupUnreadable(),
+    );
+
+    expect(await dump(second)).toEqual(before);
   });
 });
