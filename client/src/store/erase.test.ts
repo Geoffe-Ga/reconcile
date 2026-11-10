@@ -6,6 +6,8 @@
 import { openDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { guideRecord } from '../platform/guide';
+import { utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { DATABASE_NAME, openStore, type Store } from './db';
 import { browserTargets, EraseIncomplete, eraseDevice, type EraseTargets } from './erase';
@@ -120,6 +122,21 @@ describe('eraseDevice', () => {
       expect(registration.unregister).toHaveBeenCalledOnce();
     const reopened = await openStore();
     expect(await reopened.listGroups()).toEqual([]);
+    reopened.close();
+  });
+
+  it('takes the first-run guide’s flag (#91) and the chat bot’s claims (#119) with the rest', async () => {
+    const app = await runningApp();
+    const guide = guideRecord();
+    guide.see();
+    const claim = { id: 'claim-1', proposal: 'proposal-1', moment: 'open' } as const;
+    await app.store.claimChat('group-1', utf8('{"claim":1}'), claim);
+
+    await eraseDevice(app, targets());
+
+    expect(guide.seen()).toBe(false);
+    const reopened = await openStore();
+    expect(await reopened.getGroup('group-1')).toBeUndefined();
     reopened.close();
   });
 

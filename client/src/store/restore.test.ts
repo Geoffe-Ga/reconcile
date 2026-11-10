@@ -48,7 +48,10 @@ function comparable(group: Group | undefined) {
   };
 }
 
-/** A device holding `ana`'s group, last synced at `lastSyncAt`, with an unsent event and a draft. */
+/**
+ * A device holding `ana`'s group, last synced at `lastSyncAt`, with an unsent
+ * event, a chat bot claim (#119) and a draft.
+ */
 async function deviceWithGroup(lastSyncAt: number) {
   const store = await openStore();
   await store.addGroup(ana);
@@ -61,6 +64,8 @@ async function deviceWithGroup(lastSyncAt: number) {
   };
   await store.applyPull(ana.groupId, pull, idOf);
   await store.enqueue(ana.groupId, utf8('{"unsent":1}'));
+  const claim = { id: 'claim-1', proposal: 'proposal-1', moment: 'open' } as const;
+  await store.claimChat(ana.groupId, utf8('{"claim":1}'), claim);
   await store.writeDraft(ana.groupId, 'atom-1', { title: 'T', why: 'W', text: 'X', link: '' });
   return store;
 }
@@ -87,7 +92,7 @@ describe('restoreGroups', () => {
     expect((await store.getGroup('group-2'))?.lastSyncAt).toBe(5);
   });
 
-  it('replaces a group already here with the file’s whole copy when the file’s synced later', async () => {
+  it('replaces a group already here with the file’s whole copy when the file’s synced later, its outbox, drafts and chat claims gone', async () => {
     const store = await deviceWithGroup(1_000);
 
     await store.restoreGroups([copy(2_000)]);

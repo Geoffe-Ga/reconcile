@@ -1,9 +1,9 @@
 /**
  * Halting the sync loop (#78): Erase halts it before it closes the store, so
  * no request starts once the halt resolves, and a pass already running stops
- * before its next group.
+ * before its next group, with no chat bot run (#119) for the group it finishes.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { newGroupSecret } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
@@ -87,6 +87,28 @@ describe('halt', () => {
     expect(await sync.syncOnce()).toBe(false);
     expect(urls).toHaveLength(1);
     expect(manual.waits()).toEqual([]);
+  });
+
+  it('runs no chat bot for the group a halted pass finishes, so Erase starts no post', async () => {
+    const store = await twoGroups();
+    const { fetch, urls, release } = heldFetch();
+    const chatBot = { run: vi.fn(() => Promise.resolve()) };
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch }),
+      seal: xchachaSeal,
+      timers: manualTimers().timers,
+      chatBot,
+    });
+    const passing = sync.syncOnce();
+    await expect.poll(() => urls.length).toBe(1);
+
+    const halting = sync.halt();
+    release();
+    await halting;
+
+    expect(await passing).toBe(true);
+    expect(chatBot.run).not.toHaveBeenCalled();
   });
 
   it('stops polling, so neither focus nor coming back online starts a pass', async () => {

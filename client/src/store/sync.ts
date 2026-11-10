@@ -12,8 +12,9 @@
  *    won't open), and appends each event the log doesn't hold yet;
  * 3. saves the cursor, the relay's time and instance, and when it synced;
  * 4. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
- *    only while the group has its bot on. Nothing the bot does, or fails to
- *    do, changes whether the pass succeeded.
+ *    only while the group has its bot on, and never once the loop is halted
+ *    (#78). Nothing the bot does, or fails to do, changes whether the pass
+ *    succeeded.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -190,7 +191,8 @@ export interface Sync extends Poller {
   subscribe(listener: () => void): () => void;
   /**
    * Stop for good (#78): no pass starts again, even on `start`, and a pass
-   * already running stops before its next group. Resolves once it has.
+   * already running stops before its next group, running no chat bot for the
+   * group it finishes. Resolves once it has.
    */
   halt(): Promise<void>;
 }
@@ -241,7 +243,8 @@ export function createSync(options: SyncOptions): Sync {
       lastSyncAt: clock(),
     };
     await store.applyPull(group.groupId, pull, idOf);
-    await chatBot?.run(group.groupId).catch(() => undefined);
+    // Once halted (Erase, #78), the bot neither claims nor posts.
+    if (!halted) await chatBot?.run(group.groupId).catch(() => undefined);
   }
 
   async function pass(): Promise<boolean> {

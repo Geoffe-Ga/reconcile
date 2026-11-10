@@ -216,7 +216,8 @@ export interface Store extends DraftStore {
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
    * Keep a backup file's groups, in one transaction (#78). A group new to the
-   * device is kept as the file has it, with an empty outbox and no drafts. For
+   * device is kept as the file has it, with an empty outbox, no drafts and no
+   * chat claims (#119). For
    * a group already here, whichever whole copy synced later stays: the file's
    * replaces the device's only when its last sync is later, and a group this
    * device is leaving stays as it is. Either way the group is marked `saved`,
@@ -411,8 +412,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 
 /**
  * The copy of a group to keep when a backup file holds `restored` and the
- * device holds `held` (#78): the file's, with no outbox or drafts, unless the
- * device's synced at least as late or is leaving. Either is marked `saved`.
+ * device holds `held` (#78): the file's, with no outbox, drafts or chat
+ * claims, unless the device's synced at least as late or is leaving. Either
+ * is marked `saved`.
  */
 function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
   if (held !== undefined && (held.leaving !== undefined || syncedSince(held, restored))) {

@@ -151,9 +151,15 @@ describe('exportGroups and importGroups', () => {
     expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
   });
 
-  it('leave out the outbox and drafts, so a restore never sends stale intent', async () => {
+  it('leave out the outbox, drafts and chat claims, so a restore never sends stale intent', async () => {
     const device = await openStore('ana');
-    await keepCanary(device);
+    const kept = await keepCanary(device);
+    const claim = {
+      id: 'Canary claim id',
+      proposal: 'Canary claim proposal',
+      moment: 'open',
+    } as const;
+    await device.claimChat(kept.groupId, utf8('{"claim":"Canary claim record"}'), claim);
     const [group] = await device.listGroups();
     if (group === undefined) throw new Error('Expected the group.');
 
@@ -161,6 +167,7 @@ describe('exportGroups and importGroups', () => {
 
     expect(text(plaintext)).not.toContain('Canary outbox');
     expect(text(plaintext)).not.toContain('Canary draft');
+    expect(text(plaintext)).not.toContain('Canary claim');
     expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual(['format', 'groups']);
     expect(SNAPSHOT_FORMAT).toBe(1);
   });
