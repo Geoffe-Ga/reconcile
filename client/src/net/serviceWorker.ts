@@ -17,7 +17,7 @@
  *
  * This lives in src/net/ because it handles the app's requests (spec §2).
  * `./sw.ts` starts it on the worker's global scope; the build writes the
- * precache list into that file (`client/build/serviceWorkerPlugin.ts`).
+ * precache list into that file (`client/plugins/serviceWorker.ts`).
  */
 
 /** What the build hands the worker: the files to keep, and a version naming them. */
