@@ -10,11 +10,12 @@
  * 3. **Discuss in your chat**, for anyone who reads the group.
  *
  * A Member sees only the last, and so does a newcomer still earning a vote
- * (#101); nobody sees any until the relay has returned their join. It's a
- * React Aria modal Dialog: focus moves in and stays, each card's heading takes
- * focus as it appears, and Back, Next (Done on the last card) and Skip sit on
- * every card. Skip, Done and Escape all close it, and the caller records it as
- * seen (`src/platform/guide.ts`).
+ * (#101); nobody sees any until the relay has returned their join, nor on a
+ * dissolved group's read-only copy (#108), where nothing is proposed, voted
+ * on or discussed any more. It's a React Aria modal Dialog: focus moves in
+ * and stays, each card's heading takes focus as it appears, and Back, Next
+ * (Done on the last card) and Skip sit on every card. Skip, Done and Escape
+ * all close it, and the caller records it as seen (`src/platform/guide.ts`).
  */
 import { useEffect, useRef, useState } from 'react';
 import { Button, Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
@@ -42,8 +43,12 @@ interface Card {
   readonly body: string;
 }
 
-/** The cards `me` sees in this group, in order: each only where `can()` allows its action. */
+/**
+ * The cards `me` sees in this group, in order: each only where `can()` allows
+ * its action, and none once the group has dissolved (#108).
+ */
 function cardsFor(state: GroupState, me: string): readonly Card[] {
+  if (state.dissolved !== null) return [];
   const { guide } = messages;
   const bar = state.rules.bars.ordinary;
   const low = String(SCORE_MIN);

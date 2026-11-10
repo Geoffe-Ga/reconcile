@@ -7,9 +7,11 @@ import { openDB } from 'idb';
 import { describe, expect, it } from 'vitest';
 
 import { vaultKeyFromPrf } from '../crypto/keyVault';
-import { local, text, utf8 } from '../test/bytes';
+import { fold } from '../engine/fold';
+import { concat, local, text, utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { findCanaries, keyCanaries } from '../test/scan';
+import { scanDb } from '../test/scanDb';
 import { type BackedUpGroup, DATABASE_NAME, type Group, type NewGroup, openStore } from './db';
 import { openKeys, type VaultLock, type VaultRecord } from './vault';
 import { VaultLocked } from './db';
@@ -42,32 +44,10 @@ function secretsOf(...groups: readonly NewGroup[]) {
   ]);
 }
 
-/** Every byte and string in `value`, concatenated, so a scan sees all of it. */
-function bytesIn(value: unknown, into: number[] = []): number[] {
-  if (value instanceof Uint8Array || ArrayBuffer.isView(value)) {
-    const view = value as Uint8Array;
-    into.push(...new Uint8Array(view.buffer, view.byteOffset, view.byteLength), 0);
-  } else if (typeof value === 'string') {
-    into.push(...new TextEncoder().encode(value), 0);
-  } else if (typeof value === 'object' && value !== null) {
-    for (const [field, inner] of Object.entries(value)) {
-      bytesIn(field, into);
-      bytesIn(inner, into);
-    }
-  }
-  return into;
-}
-
-/** Every record in every object store of the app's database, as raw bytes. */
+/** Every key and value in every object store of the app's database, as raw bytes (`test/scanDb.ts`). */
 async function rawDatabase(): Promise<Uint8Array> {
-  const db = await openDB(DATABASE_NAME);
-  try {
-    const all: number[] = [];
-    for (const name of db.objectStoreNames) bytesIn(await db.getAll(name), all);
-    return Uint8Array.from(all);
-  } finally {
-    db.close();
-  }
+  const { text: words, bytes } = await scanDb(DATABASE_NAME);
+  return concat(utf8(words), ...bytes.flatMap((held) => [Uint8Array.of(0), held]));
 }
 
 /** The vault record as IndexedDB holds it, read with no store in between. */
@@ -365,6 +345,8 @@ describe('every later write of key material, with a vault', () => {
     await store.writeDraft(ANA.groupId, 'atom-1', { title: 'T', why: 'W', text: 'X', link: '' });
     await store.resetCursor(BEN.groupId, 'relay-2');
     await store.markLeaving(BEN.groupId, utf8('{"leave":1}'));
+    await store.markArchived(ANA.groupId, 'dissolved');
+    await store.clearArchive(ANA.groupId, { at: 5, state: fold([], null), tallies: {} });
 
     expect(findCanaries(await rawDatabase(), secretsOf(ANA, BEN))).toEqual([]);
     expect((await store.listGroups()).map(keysOf)).toEqual([keysOf(ANA), keysOf(BEN)]);

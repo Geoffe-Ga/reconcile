@@ -1,7 +1,7 @@
 /**
  * The first-run guide (#91): up to three cards, each shown only when `can()`
  * allows its action, after the first Create group or Join on a device, and
- * never again once skipped or done.
+ * never again once skipped or done. A dissolved group's copy shows none (#108).
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
@@ -154,6 +154,19 @@ describe('FirstRunGuide', () => {
 
   it('waits until the relay has returned the person’s join', () => {
     showGuide(bensGroup(CREATING), authorOf('cal'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('offers nothing on a dissolved group’s read-only copy (#108)', () => {
+    const log = groupLog({ members: ['Ben'], levels: { Ben: CREATING } });
+    const motion = log.proposeDissolve('ana', false);
+    for (const name of ['ana', 'ben']) log.vote(name, motion, 4);
+    log.dissolve('ben', motion);
+    const state = log.state();
+    expect(state.dissolved).not.toBeNull();
+
+    showGuide(state, authorOf('ben'));
+
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 

@@ -17,7 +17,8 @@
  * `notice` makes from the moment and the deadline, which are all it is given:
  * never a title, a name or anything else of the group. A slow or failing
  * Discord never holds up sync. A group this device is leaving (#77) claims
- * and posts nothing.
+ * and posts nothing, and nor does one that has dissolved (#108): once a
+ * `dissolve` folds, not even the dissolve's own result goes out.
  */
 import { newEventNonce } from '../crypto/nonce';
 import { can } from '../engine/capabilities';
@@ -75,9 +76,13 @@ function settlementOf(state: GroupState, claim: ChatClaim, webhook: string | nul
   return webhook === null ? WAIT : { kind: 'post', webhook, deadline: proposal.deadline };
 }
 
-/** The webhook the bot posts through now: the effective one, while `me` is a member, or null. */
+/**
+ * The webhook the bot posts through now: the effective one, while `me` is a
+ * member and the group hasn't dissolved (#108), or null.
+ */
 function webhookFor(state: GroupState, me: string): string | null {
-  return can(state, me, 'read') ? (effectiveOptIn(state, 'chatBot')?.webhook ?? null) : null;
+  const live = state.dissolved === null && can(state, me, 'read');
+  return live ? (effectiveOptIn(state, 'chatBot')?.webhook ?? null) : null;
 }
 
 /** True when this device already holds a claim of `moment` on `proposal`. */

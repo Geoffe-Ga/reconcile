@@ -5,8 +5,10 @@
  * 'Needs your vote' brings people back without push: the open Proposals they
  * can vote on now and haven't fully scored, closing soonest first. The other
  * open Proposals follow by closing date, and Decided keeps the group's
- * history, newest first. Pure: it reads folded state and a relay minute, and
- * nothing else.
+ * history, newest first. In a dissolved group nothing waits on anyone, and
+ * a Proposal still open at the dissolve stays with the open ones, which the
+ * screen marks closed (#108). Pure: it reads folded state and a relay minute,
+ * and nothing else.
  */
 import { can } from './capabilities';
 import { closeTime, type GroupState, type Proposal } from './fold';
@@ -35,9 +37,10 @@ function hasScoredEvery(proposal: Proposal, me: string): boolean {
   );
 }
 
-/** True when `proposal` waits on `me`: still taking ballots at `now`, and theirs isn't whole. */
+/** True when `proposal` waits on `me`: the group goes on, it still takes ballots at `now`, and theirs isn't whole. */
 function waitsOn(state: GroupState, proposal: Proposal, me: string, now: number): boolean {
   return (
+    state.dissolved === null &&
     now < proposal.deadline &&
     proposal.eligible.includes(me) &&
     can(state, me, 'vote') &&

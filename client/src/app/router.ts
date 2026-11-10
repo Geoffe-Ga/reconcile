@@ -37,7 +37,8 @@ export type Route =
       readonly optIn: OptIn;
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
-    };
+    }
+  | { readonly name: 'dissolve'; readonly groupId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -66,9 +67,10 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
   return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
 }
 
-/** A page with no argument: `doc` or `rules` (#117). */
+/** A page with no argument: `doc`, `rules` (#117) or `dissolve` (#108). */
 function barePage(groupId: string, page: string): Route {
   if (page === 'doc') return { name: 'document', groupId };
+  if (page === 'dissolve') return { name: 'dissolve', groupId };
   return page === 'rules' ? { name: 'rules', groupId } : START;
 }
 
@@ -80,9 +82,9 @@ function proposalPage(groupId: string, page: string, arg: string): Route {
 }
 
 /**
- * A page inside a group: `doc`, `rules`, `propose/{atomId}`, `p/{proposalId}`,
- * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
- * `narrow/{optIn}`.
+ * A page inside a group: `doc`, `rules`, `dissolve`, `propose/{atomId}`,
+ * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`,
+ * `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return barePage(groupId, page);
@@ -168,6 +170,8 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'dissolve':
+      return '/dissolve';
   }
 }
 

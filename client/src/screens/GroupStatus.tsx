@@ -13,6 +13,26 @@ export function GroupMissing() {
 }
 
 /**
+ * Shown in place of a composer once the group has dissolved (#108): its copy
+ * on this device only reads.
+ */
+export function GroupArchived({
+  groupId,
+  name,
+}: {
+  readonly groupId: string;
+  readonly name: string;
+}) {
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'group', groupId }} label={name} />
+      <PageHeader title={messages.archive.readOnlyTitle} pageTitle={messages.home.pageTitle} />
+      <p className="lede">{messages.archive.readOnly}</p>
+    </main>
+  );
+}
+
+/**
  * Shown while a group's genesis waits in the outbox: folded state comes from
  * relay records only (spec §7), so the group appears once the relay has it.
  */
