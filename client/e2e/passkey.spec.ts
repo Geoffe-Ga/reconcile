@@ -242,7 +242,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     await expectAccessible(ana, 'Unlock');
     await page.getByRole('button', { name: 'Unlock with your passkey' }).click();
     await expect(page.getByRole('alert')).toHaveText('Your passkey didn’t unlock Reconcile.');
-    await expect(page.getByRole('region', { name: 'Restore a backup file' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Restore a backup' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Erase this device' })).toBeVisible();
     await expectAccessible(ana, 'Unlock, failed');
   });

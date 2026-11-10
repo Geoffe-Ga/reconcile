@@ -63,7 +63,10 @@ describe('Settings', () => {
     }
     expect(await axeViolations()).toEqual([]);
 
-    await user.click(within(section).getByRole('button', { name: 'Make a passkey' }));
+    const make = within(section).getByRole('button', { name: 'Make a passkey' });
+    // Settings' one primary action is Make a backup file (DESIGN.md).
+    expect(make).toHaveClass('button-secondary');
+    await user.click(make);
     await user.click(await within(section).findByRole('button', { name: 'Confirm your passkey' }));
 
     expect(await within(section).findByText(messages.passkey.locked)).toBeVisible();

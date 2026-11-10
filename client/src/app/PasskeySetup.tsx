@@ -9,7 +9,7 @@
  * how, and takes focus. Where the passkey can't protect the keys, the line
  * links to Save a backup, unless the screen already holds it (Settings).
  */
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Button, Link } from 'react-aria-components';
 
 import { messages } from './messages';
@@ -28,6 +28,10 @@ export interface PasskeySetupProps {
   readonly linkBackup: boolean;
   /** Hears a press of that link, before Settings opens. */
   readonly onBackup?: () => void;
+  /** A quiet action on the primary button's line until setup ends, such as the offer's Not now. */
+  readonly aside?: ReactNode;
+  /** True on a screen whose one primary action is another's (Settings): the button is secondary. */
+  readonly secondary?: boolean;
 }
 
 /** Where setup has got to. */
@@ -76,6 +80,7 @@ function Ended({ protection, linkBackup, onBackup }: EndedProps) {
             {...(onBackup === undefined ? {} : { onPress: onBackup })}
           >
             {messages.passkey.saveBackup}
+            <span aria-hidden="true">{messages.app.forward}</span>
           </Link>
         </p>
       ) : null}
@@ -84,13 +89,8 @@ function Ended({ protection, linkBackup, onBackup }: EndedProps) {
 }
 
 /** Make a passkey, Confirm your passkey, then how it ended. */
-export function PasskeySetup({
-  onCreate,
-  onProtect,
-  onEnd,
-  linkBackup,
-  onBackup,
-}: PasskeySetupProps) {
+export function PasskeySetup(props: PasskeySetupProps) {
+  const { onCreate, onProtect, onEnd, linkBackup, onBackup, aside, secondary = false } = props;
   const [step, setStep] = useState<Step>({ kind: 'create' });
   // A ref, not state, so a second tap in the same moment sees the first.
   const busy = useRef(false);
@@ -138,15 +138,16 @@ export function PasskeySetup({
   return (
     <div className="stack">
       {confirming ? <p className="lede">{messages.passkey.confirmLede}</p> : null}
-      <div>
+      <div className="row passkey-actions">
         <Button
           ref={button}
-          className="button button-primary"
+          className={secondary ? 'button button-secondary' : 'button button-primary'}
           isDisabled={step.kind === 'creating' || step.kind === 'confirming'}
           onPress={press}
         >
           {confirming ? messages.passkey.confirm : messages.passkey.create}
         </Button>
+        {aside}
       </div>
       <p role="status" className="status">
         {statusOf(step)}

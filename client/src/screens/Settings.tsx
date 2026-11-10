@@ -51,7 +51,12 @@ function PasskeySection({ passkey }: { readonly passkey: SettingsPasskey }) {
       <p className="lede">{words.lede}</p>
       <p className="lede">{words.twice}</p>
       <p className="lede">{words.privacy}</p>
-      <PasskeySetup onCreate={passkey.onCreate} onProtect={passkey.onProtect} linkBackup={false} />
+      <PasskeySetup
+        onCreate={passkey.onCreate}
+        onProtect={passkey.onProtect}
+        linkBackup={false}
+        secondary
+      />
     </div>
   );
 }

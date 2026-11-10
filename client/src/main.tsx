@@ -7,6 +7,7 @@ import './styles/app.css';
 import './styles/proposals.css';
 import './styles/firstRun.css';
 import './styles/backup.css';
+import './styles/passkey.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

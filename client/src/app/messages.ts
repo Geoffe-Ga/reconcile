@@ -767,7 +767,7 @@ export const messages = {
     unlocking: 'Waiting for your passkey…',
     failed: 'Your passkey didn’t unlock Reconcile.',
     tryAgain: 'Try again',
-    restoreHeading: 'Restore a backup file',
+    restoreHeading: 'Restore a backup',
     restoreLede:
       'Restoring puts the groups in your backup file in place of the locked ones on this device. Their keys stay on this device unlocked, and you can lock them with a passkey again in Settings.',
     eraseHeading: 'Erase this device',

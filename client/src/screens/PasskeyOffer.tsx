@@ -3,9 +3,9 @@
  * where a passkey can lock the keys, and always in Settings after that.
  *
  * It says what a passkey protects against, that the phone asks twice the
- * first time, and what the password manager learns. Not now closes it, and
- * so does Continue once setup has ended; either way this device doesn't ask
- * again (`platform/passkeyOffer.ts`).
+ * first time, and what the password manager learns. Not now, quiet beside
+ * the primary button, closes it, and so does Continue once setup has ended;
+ * either way this device doesn't ask again (`platform/passkeyOffer.ts`).
  */
 import { useState } from 'react';
 import { Button } from 'react-aria-components';
@@ -43,15 +43,19 @@ export function PasskeyOffer({ passkey, onDone }: PasskeyOfferProps) {
         }}
         linkBackup
         onBackup={onDone}
+        aside={
+          <Button className="button button-quiet" onPress={onDone}>
+            {words.notNow}
+          </Button>
+        }
       />
-      <div>
-        <Button
-          className={ended ? 'button button-primary' : 'button button-quiet'}
-          onPress={onDone}
-        >
-          {ended ? words.continue : words.notNow}
-        </Button>
-      </div>
+      {ended ? (
+        <div>
+          <Button className="button button-primary" onPress={onDone}>
+            {words.continue}
+          </Button>
+        </div>
+      ) : null}
     </main>
   );
 }
