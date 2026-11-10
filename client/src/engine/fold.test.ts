@@ -101,6 +101,7 @@ describe('fold', () => {
       narrowings: [],
       vouches: [],
       chatPosts: [],
+      dissolved: null,
       ignored: [],
     });
   });
