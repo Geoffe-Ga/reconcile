@@ -105,6 +105,8 @@ describe('fold', () => {
       rotations: [],
       rotationDue: false,
       dissolved: null,
+      coalitions: [],
+      coalition: null,
       ignored: [],
     });
   });

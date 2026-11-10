@@ -7,8 +7,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { concat, fromHex } from '../test/bytes';
+import { type FoldedLog, folded, foldLogs, seatOf } from '../test/coalitions';
 import {
+  buildLogs,
   buildRecords,
+  COALITION_VECTORS,
   FOLD_VECTORS,
   publicKeyNamed,
   resolve,
@@ -16,12 +19,24 @@ import {
   TALLY_VECTORS,
   VECTOR_FILES,
 } from '../test/vectors';
+import { resultMismatches, resultsToReport } from './crossing';
 import { fold } from './fold';
 import { DEFAULT_RULES } from './rules';
 import { tally } from './tally';
 
+/** What a member group owes and what it would flag, each for the seat it holds (#100). */
+function crossings(logs: Record<string, FoldedLog>, log: string) {
+  const { state } = folded(logs, log);
+  const seat = seatOf(logs, log);
+  const coalition = folded(logs, 'coalition').state;
+  return {
+    report: resultsToReport(state, coalition, seat),
+    mismatches: resultMismatches(state, coalition, seat),
+  };
+}
+
 describe('vector files', () => {
-  it('are the keys, then tally, fold or atom-text files', () => {
+  it('are the keys, then tally, fold, coalition or atom-text files', () => {
     expect(Object.keys(VECTOR_FILES).sort()).toEqual([
       'atom-text.json',
       'bars-entrenched-edges.json',
@@ -30,6 +45,11 @@ describe('vector files', () => {
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'coalition-contest.json',
+      'coalition-forgery.json',
+      'coalition-formation.json',
+      'coalition-group.json',
+      'coalition-thresholds.json',
       'dissolve-bar.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
@@ -92,6 +112,11 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -365,12 +390,78 @@ describe('vector files', () => {
   });
 });
 
+describe('coalition vector files (#100)', () => {
+  it.each([
+    'formation-formed',
+    'formation-declined',
+    'formation-forming-motion',
+    'formation-atoms-differ',
+    'threshold-4',
+    'threshold-5-pass',
+    'threshold-5-fail',
+    'threshold-6',
+    'forgery-other-seat',
+    'forgery-join-no-proof',
+    'forgery-join-other-coalition',
+    'forgery-join-other-joiner',
+    'forgery-repeat',
+    'forgery-extra-key',
+    'forgery-vote',
+    'contest-pass-then-fail',
+    'contest-fail-then-pass',
+    'group-join-after',
+    'group-lapse',
+    'group-deadline-final',
+    'group-mismatch',
+  ])('include "%s"', (name) => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('pin every forgery and ignored event as a removal that changes nothing', () => {
+    const forgeries = COALITION_VECTORS.filter((vector) => vector.name.startsWith('forgery-'));
+    expect(forgeries.length).toBeGreaterThan(10);
+    for (const vector of forgeries) {
+      expect(Object.values(vector.unchangedWithout ?? {}).flat(), vector.name).not.toEqual([]);
+    }
+  });
+});
+
 describe('tally vectors', () => {
   it.each(TALLY_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
     const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
     const { eligible, versions } = vector;
     expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
   });
+});
+
+describe('coalition vectors (#100)', () => {
+  it.each(COALITION_VECTORS.map((vector) => [vector.name, vector] as const))(
+    '%s',
+    (_name, vector) => {
+      const { logs, ids } = buildLogs(vector);
+      const states = foldLogs(logs, vector.relayNow);
+      for (const [log, expected] of Object.entries(vector.expect)) {
+        expect(folded(states, log).state, log).toMatchObject(resolve(expected, ids) as object);
+      }
+      for (const [log, expected] of Object.entries(vector.report ?? {})) {
+        expect(crossings(states, log).report, log).toEqual(resolve(expected, ids));
+      }
+      for (const [log, expected] of Object.entries(vector.mismatches ?? {})) {
+        expect(crossings(states, log).mismatches, log).toMatchObject(resolve(expected, ids) as []);
+      }
+      for (const [log, seqs] of Object.entries(vector.unchangedWithout ?? {})) {
+        const kept = (logs[log] ?? []).filter((record) => !seqs.includes(record.seq));
+        const without = foldLogs({ ...logs, [log]: kept }, vector.relayNow);
+        for (const name of Object.keys(states)) {
+          const left = folded(without, name).state;
+          expect({ ...left, ignored: [] }, name).toEqual({
+            ...folded(states, name).state,
+            ignored: [],
+          });
+        }
+      }
+    },
+  );
 });
 
 describe('fold vectors', () => {

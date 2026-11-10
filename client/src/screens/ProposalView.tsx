@@ -536,6 +536,14 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
+  // A reconcile Proposal (#100) changes no section; #114 gives it its card.
+  if ('target' in body) {
+    return {
+      comparison: STEWARD_BALLOT,
+      versions: [{ id: '', number: 1, author, text: '' }],
+      optIn: null,
+    };
+  }
   const comparison = comparisonFor(state, body.atom, false);
   return { comparison, versions: [{ id: '', number: 1, author, text: body.text }], optIn: null };
 }
