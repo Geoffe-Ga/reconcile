@@ -296,9 +296,14 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
   );
 }
 
-/** Who proposed it, then the countdown, each on its own line so neither breaks mid-phrase. */
+/**
+ * Who proposed it, then the countdown, then, while voting is open, how many
+ * days its proposer set it to run (#106), each on its own line so none breaks
+ * mid-phrase.
+ */
 function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposal; now: number }) {
   const name = displayName(state, proposal.author) ?? '';
+  const open = !proposal.final && now < proposal.deadline;
   return (
     <div className="meta-lines">
       <p className="meta">
@@ -307,6 +312,7 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
       <p className="meta">
         <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
       </p>
+      {open ? <p className="meta">{messages.window.runs(proposal.window)}</p> : null}
     </div>
   );
 }

@@ -222,6 +222,8 @@ describe('vector files', () => {
       './vectors/versions-late-low-quorum.json',
       './vectors/versions-one-open.json',
       './vectors/versions-tie.json',
+      './vectors/window-bounds.json',
+      './vectors/window-deadline.json',
     ]);
     expect(Object.values(FILES).map((file) => file.kind)).toEqual([
       'atom-text',
@@ -247,6 +249,8 @@ describe('vector files', () => {
       'fold',
       'fold',
       'tally',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -361,6 +365,17 @@ describe('vector files', () => {
     'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
     'a genesis whose entrenched avgAtLeast is 1 forms no group',
     'a Proposal that writes its own class, bar and deadline is still ordinary: 7 days, and a 2.5 average passes',
+    'window-ordinary-min: a window of 3 days, the ordinary minimum, opens the Proposal and its deadline is received + 4,320',
+    'window-ordinary-max: a window of 14 days, the ordinary maximum, opens the Proposal and its deadline is received + 20,160',
+    'window-below-min: a window of 2 days, under the ordinary minimum, makes the fold ignore the Proposal',
+    'window-above-max: a window of 15 days, over the ordinary maximum, makes the fold ignore the Proposal',
+    'window-fraction: a window of 7.5 days makes the fold ignore the Proposal, as windows are whole days',
+    'window-string: a window of "7", a string, makes the Proposal a bad shape, so the fold ignores it',
+    'window-default: a Proposal with no window runs the ordinary default, so its deadline is received + 10,080',
+    'window sets the deadline: a window of 10 days gives a deadline of received + 14,400',
+    'a 10-day Proposal whose author ts is 10 days old is still open, and takes a ballot, a minute before its relay deadline',
+    'a 10-day Proposal whose author ts is 10 days old closes when relay time reaches its deadline, 10 full days after receipt',
+    'a 14-day vote still closes early once every eligible member has scored, and its deadline stays received + 20,160',
     'steward-founder-seat: the founder holds seat 1 at genesis with no term end, and seat 2 starts empty',
     'a steward Proposal is ignored at 2 voting members, even with a Member following too',
     'a steward Proposal is accepted at 3 voting members: ordinary, 7 days, one version with no text',
@@ -380,6 +395,7 @@ describe('vector files', () => {
     'a suspension 25 days after the previous one ended is ignored, and one 31 days after it is accepted',
     'suspend-lapse: a steward suspends Kim at minute 2,000,000; her ballot at 2,005,000 is ignored and her ballot from 1,999,000 still counts; her ballot on another Proposal at 2,010,080 counts',
     "a suspended member's proposal, level, version and vote are ignored, yet they stay eligible on a Proposal that opens meanwhile, which can't close early without them",
+    'window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days',
   ])('include the fold vector "%s"', (name) => {
     expect(foldVectors.map((vector) => vector.name)).toContain(name);
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatDay,
   formatMinute,
   formatSyncedAt,
   MINUTE_MS,
@@ -60,6 +61,14 @@ describe('formatMinute', () => {
   it('shows the weekday, date and time on a 12-hour clock', () => {
     expect(formatMinute(MON_1405, 'UTC')).toBe('Mon 16 Nov, 2:05 pm');
     expect(formatMinute(MON_1405, 'America/New_York')).toBe('Mon 16 Nov, 9:05 am');
+  });
+});
+
+describe('formatDay', () => {
+  it('shows a device time as its weekday and date, with no time of day', () => {
+    const ms = MON_1405 * MINUTE_MS;
+    expect(formatDay(ms, 'UTC')).toBe('Mon 16 Nov');
+    expect(formatDay(ms, 'Pacific/Kiritimati')).toBe('Tue 17 Nov');
   });
 });
 

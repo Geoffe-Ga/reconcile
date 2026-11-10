@@ -10,10 +10,12 @@ import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { type DraftState, useDraft } from '../app/useDraft';
+import { WindowField } from '../app/WindowField';
 import { normalizeAtomText } from '../engine/atomText';
 import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
+import { type ProposalClass, targetClass } from '../engine/rules';
 import { nfcLength } from '../engine/text';
 import type { Draft, GroupDrafts } from '../store/drafts';
 
@@ -30,6 +32,8 @@ export interface ComposerProps {
   readonly atomId: string;
   /** This group's private drafts on this device. */
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from. */
+  readonly now: number;
   /** Queues the Proposal from valid entries, clearing its draft as it does. */
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
   /** Queues a version of the section's open Proposal, clearing its draft as it does. */
@@ -89,7 +93,7 @@ function preview(value: string): ReactNode {
 }
 
 /** The entries as the Proposal takes them: title, why and link trimmed, a blank link none. */
-function toValues(draft: Draft, atom: string): ProposalValues {
+function toValues(draft: Draft, atom: string, window: number): ProposalValues {
   const link = draft.link.trim();
   return {
     atom,
@@ -97,7 +101,18 @@ function toValues(draft: Draft, atom: string): ProposalValues {
     why: draft.why.trim(),
     text: draft.text,
     link: link === '' ? null : link,
+    window,
   };
+}
+
+/** The class `targetClass` gives this Proposal as it stands, which bounds its voting time. */
+function classOf(state: GroupState, draft: Draft, atom: string): ProposalClass {
+  return targetClass(state, { atom, title: draft.title, why: draft.why, text: draft.text });
+}
+
+/** The voting time to show and send: the draft's, or else its class's default. */
+function windowOf(state: GroupState, draft: Draft, atom: string): number {
+  return draft.window ?? state.rules.windows[classOf(state, draft, atom)].default;
 }
 
 /** Where a new composer starts: a blank title and why, the section's text, the latest link. */
@@ -105,19 +120,25 @@ function startOf(state: GroupState, atom: Atom): Draft {
   return { title: '', why: '', text: atom.text, link: latestLink(state) ?? '' };
 }
 
-/** Where proposing again starts: the lapsed Proposal's title, why, text and link. */
+/** Where proposing again starts: the lapsed Proposal's title, why, text, link and voting time. */
 function againStartOf(state: GroupState, again: Proposal): Draft {
   return {
     title: again.title,
     why: again.why,
     text: again.text,
     link: again.link ?? latestLink(state) ?? '',
+    window: again.window,
   };
 }
 
 /** The entries as the Proposal takes them, and, proposing again, the other versions' texts too. */
-function valuesOf(draft: Draft, atom: string, again: Proposal | undefined): ProposalValues {
-  const values = toValues(draft, atom);
+function valuesOf(
+  draft: Draft,
+  atom: string,
+  again: Proposal | undefined,
+  window: number,
+): ProposalValues {
+  const values = toValues(draft, atom, window);
   if (again === undefined) return values;
   return { ...values, again: again.id, versions: again.versions.slice(1).map((v) => v.text) };
 }
@@ -193,14 +214,16 @@ function useSend<V>(send: (values: V) => Promise<ComposeOutcome>, draft: DraftSt
 }
 
 interface FieldsProps {
+  readonly state: GroupState;
   readonly values: Draft;
   readonly atom: Atom;
+  readonly now: number;
   readonly onChange: (values: Draft) => void;
 }
 
-/** The four entries, each kept in the draft as it changes. */
-function Fields({ values, atom, onChange }: FieldsProps) {
-  const set = (key: keyof Draft) => (value: string) => {
+/** The four entries and the voting time, each kept in the draft as it changes. */
+function Fields({ state, values, atom, now, onChange }: FieldsProps) {
+  const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
   };
   return (
@@ -245,6 +268,15 @@ function Fields({ values, atom, onChange }: FieldsProps) {
         value={values.link}
         onChange={set('link')}
       />
+      <WindowField
+        rules={state.rules}
+        cls={classOf(state, values, atom.id)}
+        value={windowOf(state, values, atom.id)}
+        onChange={(window) => {
+          onChange({ ...values, window });
+        }}
+        now={now}
+      />
     </>
   );
 }
@@ -285,12 +317,13 @@ interface ComposerFormProps {
   readonly atom: Atom;
   readonly section: number;
   readonly drafts: GroupDrafts;
+  readonly now: number;
   readonly onPropose: ComposerProps['onPropose'];
   /** The lapsed Proposal this proposes again, or undefined for a new one. */
   readonly again: Proposal | undefined;
 }
 
-function ComposerForm({ state, atom, section, drafts, onPropose, again }: ComposerFormProps) {
+function ComposerForm({ state, atom, section, drafts, now, onPropose, again }: ComposerFormProps) {
   const target = again === undefined ? atom.id : againDraft(again.id);
   const start = again === undefined ? startOf(state, atom) : againStartOf(state, again);
   const draft = useDraft(drafts, target, start);
@@ -302,7 +335,7 @@ function ComposerForm({ state, atom, section, drafts, onPropose, again }: Compos
   if (values === null) return null;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void run(valuesOf(values, atom.id, again));
+    void run(valuesOf(values, atom.id, again, windowOf(state, values, atom.id)));
   };
   const change = (next: Draft) => {
     setSaid('');
@@ -324,7 +357,7 @@ function ComposerForm({ state, atom, section, drafts, onPropose, again }: Compos
       <CurrentText atom={atom} section={section} />
       {draft.restored ? <p className="draft-note">{messages.composer.draftRestored}</p> : null}
       <Form ref={form} className="form" onSubmit={submit} validationErrors={refused}>
-        <Fields values={values} atom={atom} onChange={change} />
+        <Fields state={state} values={values} atom={atom} now={now} onChange={change} />
         <OtherVersions again={again} />
         <p className="caption">{messages.composer.visibility}</p>
         {failed ? (
@@ -436,8 +469,9 @@ function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: V
 /**
  * The composer (`#/g/{groupId}/propose/{atomId}`; spec §8). On a section with
  * no open Proposal: a title, a why, the section's new text in Write and
- * Preview tabs (prefilled with the current text), and a discussion link
- * (prefilled with the group's latest one), and submitting queues one
+ * Preview tabs (prefilled with the current text), a discussion link
+ * (prefilled with the group's latest one), and the voting time in days
+ * (the class default, within its bounds; #106), and submitting queues one
  * `proposal`. On a section whose Proposal is open, "Add your version": the
  * text alone, and submitting queues one `version`. A full ballot takes no
  * more. `composeOption` decides which, as it does for the fold. What is typed
@@ -487,6 +521,7 @@ export function Composer(props: ComposerProps) {
       atom={atom}
       section={index + 1}
       drafts={drafts}
+      now={props.now}
       onPropose={props.onPropose}
       again={again}
     />
