@@ -102,6 +102,20 @@ describe('DocumentView', () => {
     expect(onPropose).toHaveBeenCalledWith(`${state.group ?? ''}.1`);
   });
 
+  it('tells a newcomer at the creating level when their vote arrives, with no Propose or level link (#101)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'], newcomers: ['Kim'] });
+    view(log.state(), authorOf('kim'));
+    expect(screen.queryByRole('button', { name: /^Propose a change/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^You can vote on Proposals that open after .+, once 2 people vouch for you\.$/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/^You’re following this group/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('tells a Member they follow, offers no Propose, and points to where they choose', async () => {
     const { state } = testGroup({ joiners: ['Kim'], levels: { Kim: FOLLOWING } });
     view(state, authorOf('kim'));

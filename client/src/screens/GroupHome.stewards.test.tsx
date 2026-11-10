@@ -42,6 +42,7 @@ function renderHome(state: GroupState, me: string, props: Partial<GroupHomeProps
       pending={[]}
       onChooseLevel={() => Promise.resolve()}
       onSuspend={onSuspend}
+      onVouch={() => Promise.resolve()}
       onLeave={() => Promise.resolve()}
       {...props}
     />,
