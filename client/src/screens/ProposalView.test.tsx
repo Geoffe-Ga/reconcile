@@ -75,12 +75,25 @@ function openVote() {
 
 const radios = () => screen.queryAllByRole('radio');
 
+/** The text one side of a word diff reads: its shared runs and that side's changes. */
+function side(region: HTMLElement, keep: 'ins' | 'del'): string {
+  const diff = region.querySelector('.word-diff');
+  if (diff === null) throw new Error('Expected a word diff.');
+  const copy = diff.cloneNode(true) as HTMLElement;
+  for (const node of Array.from(
+    copy.querySelectorAll(`${keep === 'ins' ? 'del' : 'ins'}, .diff-label`),
+  )) {
+    node.remove();
+  }
+  return copy.textContent;
+}
+
 function precedes(first: Element, second: Element): boolean {
   return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 }
 
 describe('ProposalView', () => {
-  it('shows the title, why, both texts one above the other, a countdown and the ballot', async () => {
+  it('shows the title, why, the change as a word diff, a countdown and the ballot', async () => {
     const { log, proposalId } = openVote();
     setup({ state: log.state(), proposalId });
 
@@ -93,21 +106,65 @@ describe('ProposalView', () => {
     expect(screen.getByText('Closes in 7 days')).toBeVisible();
     const deadline = deadlineOf(START_MINUTE);
     expect(screen.getByText(formatMinute(deadline)).tagName).toBe('TIME');
-    const now = screen.getByRole('region', { name: 'Section 1 now reads' });
-    const proposed = screen.getByRole('region', { name: 'Proposed text' });
-    expect(now).toHaveTextContent('Quiet hours start at ten.');
-    expect(proposed).toHaveTextContent('Quiet after 11pm.');
-    expect(precedes(now, proposed)).toBe(true);
+    const changes = screen.getByRole('region', { name: 'Changes to section 1' });
+    expect(side(changes, 'del')).toBe('Quiet hours start at ten.');
+    expect(side(changes, 'ins')).toBe('Quiet after 11pm.');
+    expect(changes.querySelectorAll('ins').length).toBeGreaterThan(0);
+    expect(changes.querySelectorAll('del').length).toBeGreaterThan(0);
+    expect(
+      within(changes).getByText(
+        'Added words are underlined and highlighted. Removed words are struck through.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Section 1 now reads' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Proposed text' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',
       'https://chat.example.org/later',
     );
     const vote = screen.getByRole('region', { name: 'Your vote' });
+    expect(precedes(changes, vote)).toBe(true);
     expect(within(vote).getAllByRole('radio')).toHaveLength(5);
     expect(within(vote).getByRole('button', { name: 'Send your vote' })).toBeEnabled();
     expect(screen.queryByRole('region', { name: 'Result' })).not.toBeInTheDocument();
     expect(document.title).toBe('Proposal · Reconcile');
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows how the proposed text will read, formatted, behind a disclosure', async () => {
+    const log = groupLog();
+    const proposalId = log.propose('ana', {
+      text: '# Quiet\n\nAfter **11pm**, see [the notice](https://example.org/n).\n',
+    });
+    const { user } = setup({ state: log.state(), proposalId });
+    const toggle = screen.getByRole('button', { name: 'How it will read' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // The diff shows the source, so the link's target is in plain view.
+    const changes = screen.getByRole('region', { name: 'Changes to section 1' });
+    expect(side(changes, 'ins')).toContain('[the notice](https://example.org/n)');
+    expect(within(changes).queryByRole('heading', { name: 'Quiet' })).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(changes).getByRole('heading', { level: 2, name: 'Quiet' })).toBeVisible();
+    expect(within(changes).getByText('11pm', { selector: 'strong' })).toBeVisible();
+    expect(within(changes).getByRole('link', { name: /the notice/ })).toHaveAttribute(
+      'href',
+      'https://example.org/n',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows hostile proposed text as inert source in the diff and as inert text when formatted', async () => {
+    const log = groupLog();
+    const proposalId = log.propose('ana', {
+      text: '<img src=x onerror=alert(1)> [x](javascript:alert(1)) <script>alert(2)</script>\n',
+    });
+    const { user } = setup({ state: log.state(), proposalId });
+    await user.click(screen.getByRole('button', { name: 'How it will read' }));
+    const changes = screen.getByRole('region', { name: 'Changes to section 1' });
+    expect(changes.querySelector('img, script, a')).toBeNull();
+    expect(side(changes, 'ins')).toContain('<img src=x onerror=alert(1)>');
   });
 
   it('points Join discussion at the group’s latest link when the Proposal has none', () => {
@@ -169,7 +226,7 @@ describe('ProposalView', () => {
     expect(result).toHaveTextContent('This passed. The Document now reads:Quiet after 11pm.');
     expect(screen.getByText('Closed Proposal', { selector: 'p' })).toBeVisible();
     expect(precedes(result, screen.getByText('Weekends run late.'))).toBe(true);
-    expect(screen.queryByRole('region', { name: 'Section 1 now reads' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Changes to section 1' })).not.toBeInTheDocument();
     expect(screen.getByText('Voting closed')).toBeVisible();
     expect(screen.getByText(formatMinute(START_MINUTE + 30)).tagName).toBe('TIME');
     expect(screen.getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
@@ -177,7 +234,18 @@ describe('ProposalView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('leads a failed Proposal with the outcome, then both texts', () => {
+  it('sets a passed Proposal’s new text as the Document will read it', () => {
+    const log = groupLog();
+    const proposalId = log.propose('ana', { text: 'Quiet after **11pm**.\n' });
+    log.vote('ana', proposalId, 3);
+    log.vote('ben', proposalId, 4);
+    setup({ state: log.state(), proposalId });
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText('11pm', { selector: 'strong' })).toBeVisible();
+    expect(result.querySelector('.atom-text')).not.toBeNull();
+  });
+
+  it('leads a failed Proposal with the outcome, then the change', () => {
     const { log, proposalId } = openVote();
     log.vote('ana', proposalId, 1);
     log.vote('ben', proposalId, 0, 'It ends band practice.');
@@ -185,9 +253,9 @@ describe('ProposalView', () => {
 
     const result = screen.getByRole('region', { name: 'Result' });
     expect(result).toHaveTextContent('This didn’t pass.');
-    expect(screen.getByRole('region', { name: 'Section 1 now reads' })).toHaveTextContent(
-      'Quiet hours start at ten.',
-    );
+    const changes = screen.getByRole('region', { name: 'Changes to section 1' });
+    expect(side(changes, 'del')).toBe('Quiet hours start at ten.');
+    expect(precedes(result, changes)).toBe(true);
     expect(screen.getByRole('textbox')).toHaveValue('It ends band practice.');
   });
 
@@ -199,7 +267,7 @@ describe('ProposalView', () => {
 
     const result = screen.getByRole('region', { name: 'Result' });
     expect(result).toHaveTextContent('Not enough people weighed in. This isn’t a no.');
-    expect(screen.getByRole('region', { name: 'Section 1 now reads' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Changes to section 1' })).toBeVisible();
     for (const radio of radios()) expect(radio).toBeDisabled();
     expect(screen.getByRole('radio', { name: '4 · Strongly supportive' })).toBeChecked();
     expect(screen.queryByRole('button', { name: /your vote/ })).not.toBeInTheDocument();
@@ -247,7 +315,7 @@ describe('ProposalView', () => {
     });
     expect(screen.getByRole('heading', { level: 1, name: 'Later quiet hours' })).toBeVisible();
     expect(screen.getByText('Weekends run late.')).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Proposed text' })).toHaveTextContent(
+    expect(side(screen.getByRole('region', { name: 'Changes to section 1' }), 'ins')).toBe(
       'Quiet after 11pm.',
     );
     expect(screen.getByRole('status')).toHaveTextContent('Saved on this device.');

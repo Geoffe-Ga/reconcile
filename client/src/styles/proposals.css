@@ -30,11 +30,6 @@
 
 /* The section's text, now and as proposed ------------------------------- */
 
-.texts {
-  display: grid;
-  gap: var(--space-5);
-}
-
 .text-block {
   display: grid;
   gap: var(--space-2);
@@ -52,6 +47,86 @@
   border-color: transparent;
   background: var(--sunken);
   color: var(--body);
+}
+
+/* The word diff (DESIGN.md, Ballot) ---------------------------------------
+ * The Markdown source with its line breaks kept, never rendered Markdown.
+ * Additions are underlined on --primary-soft and deletions struck through on
+ * --negative-soft; hidden "added" and "removed" labels say the same in words,
+ * so color is never the only signal. */
+
+.word-diff {
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-document);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.word-diff ins {
+  background: var(--primary-soft);
+  color: var(--ink);
+  text-decoration-line: underline;
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.word-diff del {
+  background: var(--negative-soft);
+  color: var(--ink);
+  text-decoration-line: line-through;
+  text-decoration-color: var(--negative);
+  text-decoration-thickness: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* "How it will read": the proposed text set as the Document will show it. */
+.reads-as {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.reads-as-heading {
+  font: var(--type-ui);
+}
+
+.reads-as-toggle {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.reads-as-toggle[data-hovered] {
+  text-decoration: underline;
+}
+
+.reads-as-toggle[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* The marker points down while the panel is open; the button's aria-expanded says the same. */
+.reads-as-toggle::before {
+  content: '▸' / '';
+}
+
+.reads-as[data-expanded] .reads-as-toggle::before {
+  content: '▾' / '';
 }
 
 /* The outcome: its sentence first, then a pass's new text --------------- */

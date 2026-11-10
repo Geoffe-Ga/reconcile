@@ -11,3 +11,7 @@ reports
 .stryker-tmp
 plans/architecture/*.cjs
 package-lock.json
+# Golden vectors that pin Unicode handling keep every non-ASCII code point as a
+# \u escape, so a combining mark, an NBSP or a lone surrogate stays visible and no
+# editor can normalize it away. Prettier would rewrite the escapes as literals.
+src/engine/vectors/atom-text.json

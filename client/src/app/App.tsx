@@ -18,6 +18,7 @@ import { Join } from '../screens/Join';
 import { ProposalView } from '../screens/ProposalView';
 import { Start } from '../screens/Start';
 import type { Me } from '../store/db';
+import { groupDrafts } from '../store/drafts';
 import {
   createGroup,
   type CreateGroupValues,
@@ -147,6 +148,8 @@ interface ProposeScreenProps extends GroupScreenProps {
 }
 
 function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
+  // One stable handle per group, so the composer reads its draft once, not on every sync.
+  const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
   return (
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
@@ -157,7 +160,15 @@ function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
           replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
           return result.outcome;
         };
-        return <Composer state={state} me={me.author} atomId={atomId} onPropose={onPropose} />;
+        return (
+          <Composer
+            state={state}
+            me={me.author}
+            atomId={atomId}
+            drafts={drafts}
+            onPropose={onPropose}
+          />
+        );
       }}
     </GroupGate>
   );

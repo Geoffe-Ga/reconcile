@@ -1,7 +1,9 @@
 /**
  * Golden vectors: the engine's contract (ADR-0073, docs/spec/phase-1-spec.md §3–§5).
  *
- * Each file in vectors/ is `{kind: "tally" | "fold", vectors: [...]}`, except keys.json.
+ * Each file in vectors/ is `{kind: "tally" | "fold" | "atom-text", vectors: [...]}`, except
+ * keys.json. Every file is read as text and parsed with `JSON.parse`, as any reader would,
+ * because Vite's own JSON loader refuses the lone-surrogate escapes atom-text.json needs.
  * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
  *   use, each from a fixed 32-byte seed in hex.
  * - A tally vector is `{name, eligible, versions, expect}`.
@@ -19,6 +21,7 @@
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
  *     deep-equal.
+ * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -60,9 +63,17 @@ interface FoldVector {
 type VectorFile =
   | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
   | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
+  | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'keys'; readonly seeds: Readonly<Record<string, string>> };
 
-const FILES = import.meta.glob<VectorFile>('./vectors/*.json', { import: 'default', eager: true });
+const TEXTS = import.meta.glob<string>('./vectors/*.json', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+const FILES: Readonly<Record<string, VectorFile>> = Object.fromEntries(
+  Object.entries(TEXTS).map(([path, text]) => [path, JSON.parse(text) as VectorFile]),
+);
 
 const encoder = new TextEncoder();
 
@@ -172,8 +183,9 @@ const foldVectors = Object.values(FILES).flatMap((file) =>
 );
 
 describe('vector files', () => {
-  it('are the keys, then tally or fold files', () => {
+  it('are the keys, then tally, fold or atom-text files', () => {
     expect(Object.keys(FILES).sort()).toEqual([
+      './vectors/atom-text.json',
       './vectors/fold.json',
       './vectors/keys.json',
       './vectors/signatures.json',
@@ -181,6 +193,7 @@ describe('vector files', () => {
       './vectors/time.json',
     ]);
     expect(Object.values(FILES).map((file) => file.kind)).toEqual([
+      'atom-text',
       'fold',
       'keys',
       'fold',
@@ -200,7 +213,9 @@ describe('vector files', () => {
   });
 
   it('name every vector uniquely', () => {
-    const names = [...tallyVectors, ...foldVectors].map((vector) => vector.name);
+    const names = Object.values(FILES).flatMap((file) =>
+      'vectors' in file ? file.vectors.map((vector) => vector.name) : [],
+    );
     expect(new Set(names).size).toBe(names.length);
   });
 

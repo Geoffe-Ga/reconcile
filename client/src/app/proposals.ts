@@ -8,6 +8,7 @@
  * counts, once the relay has ordered and timed it.
  */
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
+import { normalizeAtomText } from '../engine/atomText';
 import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
 import type { Services } from './actions';
 
@@ -20,7 +21,7 @@ export interface ProposalValues {
   readonly atom: string;
   readonly title: string;
   readonly why: string;
-  /** The proposed text, as typed. */
+  /** The proposed text, as typed; `propose` normalizes it. */
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
@@ -52,8 +53,11 @@ async function signFor(
 
 /**
  * Proposes new text for one Atom, as this device's member of `groupId`. Every
- * value is NFC-normalized before the event is signed. A Proposal whose record
- * is too large for any blob is refused before anything is queued.
+ * value is NFC-normalized before the event is signed, and the text goes
+ * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
+ * private draft it was written in, keyed by its Atom, in the same change. A
+ * Proposal whose record is too large for any blob is refused before anything
+ * is queued, and its draft kept.
  */
 export async function propose(
   services: ProposalServices,
@@ -65,7 +69,7 @@ export async function propose(
     atom,
     title: nfc(title),
     why: nfc(why),
-    text: nfc(text),
+    text: normalizeAtomText(text),
     ...(link === null ? {} : { link: nfc(link) }),
   };
   const event = await signFor(services, groupId, {
@@ -75,7 +79,7 @@ export async function propose(
     body,
   });
   if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record);
+  await services.store.enqueue(groupId, event.record, atom);
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
 }

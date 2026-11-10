@@ -224,16 +224,33 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     for (const person of [ana, ben, cal]) await expectGroupAndDocument(person);
   });
 
+  await test.step('C checks the composer in the dark theme, typing nothing', async () => {
+    const { page } = cal;
+    await page.getByRole('button', { name: 'Propose a change to section 2' }).click();
+    await expect(heading(page, 'Propose a change')).toBeVisible();
+    await expectAccessible(cal, 'Composer');
+    await page.getByRole('tab', { name: 'Preview' }).click();
+    await expect(page.getByRole('tabpanel', { name: 'Preview' })).toHaveText(SECOND_ATOM);
+    await expectAccessible(cal, 'Composer preview');
+    await page.goBack();
+    await expect(heading(page, TITLE)).toBeVisible();
+  });
+
   await test.step('A proposes a change to the first section', async () => {
     const { page } = ana;
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await expect(heading(page, 'Propose a change')).toBeVisible();
-    await expect(page.getByRole('textbox', { name: 'New text' })).toHaveValue(FIRST_ATOM);
+    // Each founding section was normalized as Atom text before signing, so it ends in one LF.
+    await expect(page.getByRole('textbox', { name: 'New text' })).toHaveValue(`${FIRST_ATOM}\n`);
     // With no Proposal yet, the discussion link starts as the group's chat link.
     await expect(page.getByRole('textbox', { name: 'Discussion link (optional)' })).toHaveValue(
       CHAT,
     );
     await expectAccessible(ana, 'Composer');
+    await page.getByRole('tab', { name: 'Preview' }).click();
+    await expect(page.getByRole('tabpanel', { name: 'Preview' })).toHaveText(FIRST_ATOM);
+    await expectAccessible(ana, 'Composer preview');
+    await page.getByRole('tab', { name: 'Write' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page
       .getByRole('textbox', { name: 'Why' })

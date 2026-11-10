@@ -1,4 +1,5 @@
 import { type ReactNode, useId, useState } from 'react';
+import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
 import { Ballot } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
@@ -7,6 +8,8 @@ import { latestLink } from '../app/latestLink';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { SendStatus } from '../app/SendStatus';
+import { AtomText } from '../app/text/AtomText';
+import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { can } from '../engine/capabilities';
 import type { ParsedEvent, ProposalBody, Score } from '../engine/event';
@@ -52,22 +55,6 @@ function Block({
   );
 }
 
-/** One wording of a section, set in the document style. */
-function AtomCard({
-  text,
-  current = false,
-}: {
-  readonly text: string;
-  readonly current?: boolean;
-}) {
-  const className = current ? 'atom-text atom-card atom-card-current' : 'atom-text atom-card';
-  return (
-    <p className={className} dir="auto">
-      {text}
-    </p>
-  );
-}
-
 function Screen({ state, children }: { readonly state: GroupState; readonly children: ReactNode }) {
   return (
     <main className="shell">
@@ -85,7 +72,7 @@ function Outcome({ proposal }: { readonly proposal: Proposal }) {
     return (
       <Block title={messages.proposal.result} className="outcome">
         <p className="outcome-sentence">{messages.proposal.passed}</p>
-        <AtomCard text={text} />
+        <AtomText text={text} className="atom-card" />
       </Block>
     );
   }
@@ -97,21 +84,51 @@ function Outcome({ proposal }: { readonly proposal: Proposal }) {
   );
 }
 
-/** The section as it reads now, above the proposed text. */
-function Texts({ state, proposal }: { readonly state: GroupState; readonly proposal: Proposal }) {
-  const index = state.atoms.findIndex((atom) => atom.id === proposal.atom);
-  const atom = state.atoms[index];
+/** The proposed text as the Document will show it, one tap away from the diff. */
+function ReadsAs({ text }: { readonly text: string }) {
   return (
-    <div className="texts">
-      {atom === undefined ? null : (
-        <Block title={messages.proposal.current(index + 1)} className="text-block">
-          <AtomCard text={atom.text} current />
-        </Block>
-      )}
+    <Disclosure className="reads-as">
+      <Heading level={3} className="reads-as-heading">
+        <Button slot="trigger" className="reads-as-toggle">
+          {messages.proposal.readsAs}
+        </Button>
+      </Heading>
+      <DisclosurePanel>
+        <AtomText text={text} className="atom-card" />
+      </DisclosurePanel>
+    </Disclosure>
+  );
+}
+
+interface ChangesProps {
+  readonly state: GroupState;
+  /** The Atom the Proposal would change. */
+  readonly atom: string;
+  /** The proposed text. */
+  readonly text: string;
+}
+
+/**
+ * What a Proposal changes: a word diff of the section's source against the
+ * proposed text, then the proposed text as it will read. A Proposal whose
+ * section is gone shows its text alone.
+ */
+function Changes({ state, atom, text }: ChangesProps) {
+  const index = state.atoms.findIndex((candidate) => candidate.id === atom);
+  const current = state.atoms[index];
+  if (current === undefined) {
+    return (
       <Block title={messages.proposal.proposed} className="text-block">
-        <AtomCard text={proposal.text} />
+        <AtomText text={text} className="atom-card" />
       </Block>
-    </div>
+    );
+  }
+  return (
+    <Block title={messages.proposal.changes(index + 1)} className="text-block">
+      <WordDiff current={current.text} proposed={text} />
+      <p className="caption">{messages.diff.legend}</p>
+      <ReadsAs text={text} />
+    </Block>
   );
 }
 
@@ -195,7 +212,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         </p>
       </div>
       <ChatLink href={link} />
-      {passed ? null : <Texts state={state} proposal={proposal} />}
+      {passed ? null : <Changes state={state} atom={proposal.atom} text={proposal.text} />}
       <Vote props={props} proposal={proposal} />
     </Screen>
   );
@@ -220,9 +237,7 @@ function Waiting({ state, body, pending, reachable }: WaitingProps) {
       <p className="lede" dir="auto">
         {body.why}
       </p>
-      <Block title={messages.proposal.proposed} className="text-block">
-        <AtomCard text={body.text} />
-      </Block>
+      <Changes state={state} atom={body.atom} text={body.text} />
       <SendStatus pending={pending} reachable={reachable} sent />
     </Screen>
   );
@@ -240,8 +255,8 @@ function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
 
 /**
  * The Proposal and its ballot (`#/g/{groupId}/p/{proposalId}`; spec §8): the
- * title and why, the section's text now and as proposed, a countdown, Join
- * discussion, and the ballot. Who may vote, and whether voting is still open,
+ * title and why, a countdown, Join discussion, the change as a word diff of
+ * the section's source, and the ballot. Who may vote, and whether voting is still open,
  * come from engine state and `can()`, never from level names. Once it closes,
  * the outcome sentence comes first.
  */

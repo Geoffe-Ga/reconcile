@@ -18,6 +18,7 @@
   --positive: #2f6b45;
   --warning: #85560f;
   --negative: #b3362a;
+  --negative-soft: #f5ddd5;
   --score-0: #b3362a;
   --score-1: #a85a35;
   --score-2: #76705f;
@@ -82,6 +83,7 @@
     --positive: #7fbf8e;
     --warning: #e0b25c;
     --negative: #e0705f;
+    --negative-soft: #402a22;
     --score-0: #e0705f;
     --score-1: #d9946a;
     --score-2: #a39d8f;

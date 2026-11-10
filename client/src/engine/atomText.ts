@@ -1,0 +1,56 @@
+/**
+ * Atom text (ADR-0023, docs/spec/phase-1-spec.md §4): the one normalizer every
+ * author runs before signing, and the genesis split that uses it.
+ *
+ * Every device that signs an Atom's text signs the same bytes for the same
+ * words, however they were typed or pasted. The fold never runs this on text it
+ * receives: browsers ship different Unicode tables, so re-normalizing there
+ * could make two devices fold different Documents.
+ */
+import { splitAtoms } from './text';
+
+/** A surrogate pair, or a lone surrogate of either half. */
+const SURROGATES = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g;
+
+/** The Unicode replacement character, which stands in for a lone surrogate. */
+const REPLACEMENT = '�';
+
+/** Spaces (U+0020) and tabs (U+0009) at the end of a line. Never `\s`, which also takes NBSP. */
+const TRAILING_SPACES = /[ \t]+$/gm;
+
+/** Every line feed at the very end. */
+const FINAL_NEWLINES = /\n+$/;
+
+/** Replaces each lone surrogate with U+FFFD, keeping whole pairs, so the text encodes as UTF-8. */
+function wellFormed(text: string): string {
+  return text.replace(SURROGATES, (match) => (match.length === 2 ? match : REPLACEMENT));
+}
+
+/**
+ * Normalizes an Atom's text before it is signed, in this order:
+ *
+ * 1. each lone surrogate becomes U+FFFD;
+ * 2. CRLF, then any lone CR, becomes LF;
+ * 3. NFC;
+ * 4. trailing U+0020 and U+0009 leave each line (a trailing NBSP stays);
+ * 5. the text ends in exactly one LF.
+ *
+ * Blank text becomes `""`, which a removal Proposal carries (#75). The result
+ * is idempotent: normalizing it again changes nothing.
+ */
+export function normalizeAtomText(text: string): string {
+  const body = wellFormed(text)
+    .replace(/\r\n?/g, '\n')
+    .normalize('NFC')
+    .replace(TRAILING_SPACES, '')
+    .replace(FINAL_NEWLINES, '');
+  return body === '' ? '' : `${body}\n`;
+}
+
+/**
+ * Splits a founding Document into its Atoms at blank lines (`splitAtoms`),
+ * then normalizes each one, so every genesis Atom ends in one LF.
+ */
+export function genesisAtoms(document: string): string[] {
+  return splitAtoms(document).map(normalizeAtomText);
+}

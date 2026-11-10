@@ -15,6 +15,7 @@ import type { DBSchema, IDBPDatabase } from 'idb';
 
 import { bucketFor } from '../crypto/seal';
 import type { LogRecord } from '../engine/fold';
+import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -48,6 +49,8 @@ export interface Group {
   outbox: Uint8Array[];
   /** When the last sync succeeded, in device milliseconds, or `null` before one. */
   lastSyncAt: number | null;
+  /** Private drafts by target, never sent (./drafts.ts). Absent until the first one. */
+  drafts?: DraftShelf;
 }
 
 /** What a device knows about a group when it creates or joins it. */
@@ -71,7 +74,7 @@ export interface Pull {
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
 /** The device's groups. */
-export interface Store {
+export interface Store extends DraftStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -79,11 +82,13 @@ export interface Store {
   /** Keep a new group; refuses an id the device already has. */
   addGroup(group: NewGroup): Promise<Group>;
   /**
-   * Queue a signed record for the relay, after the ones already queued.
+   * Queue a signed record for the relay, after the ones already queued. A
+   * Proposal names the `draft` target it came from, and that draft goes in the
+   * same change, so a queued Proposal never leaves its draft behind.
    *
    * @throws {PayloadTooLarge} when the record can't fit in any blob.
    */
-  enqueue(groupId: string, bytes: Uint8Array): Promise<void>;
+  enqueue(groupId: string, bytes: Uint8Array, draft?: string): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /** Append each record whose event id isn't in the log yet, and save the sync state. */
@@ -124,6 +129,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
     }
   };
   const change = changer(db, notify);
+  const changeQuietly = changer(db, () => undefined);
 
   return {
     listGroups: () => db.getAll(GROUPS),
@@ -142,12 +148,22 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       notify(group.groupId);
       return stored;
     },
-    async enqueue(groupId, bytes) {
+    async enqueue(groupId, bytes, draft) {
       bucketFor(bytes.length);
       await change(groupId, (group) => {
         group.outbox.push(bytes);
+        if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
       });
     },
+    async readDraft(groupId, target) {
+      const group = await db.get(GROUPS, groupId);
+      return group === undefined ? undefined : draftIn(group, target);
+    },
+    // A draft changes nothing any screen reads from the store, so no listener hears of it.
+    writeDraft: (groupId, target, draft: Draft | null) =>
+      changeQuietly(groupId, (group) => {
+        group.drafts = withDraft(group.drafts, target, draft);
+      }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
         const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));

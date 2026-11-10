@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -7,7 +7,7 @@ import { testGroup } from '../test/groups';
 import { DocumentView } from './DocumentView';
 
 describe('DocumentView', () => {
-  it('sets each section as plain text in the document style, under the title', async () => {
+  it('sets each section in the document style, under the title', async () => {
     const { state } = testGroup({
       atoms: ['Quiet hours start at ten.', 'Bins go out\non Tuesday.'],
     });
@@ -26,6 +26,36 @@ describe('DocumentView', () => {
     );
     expect(document.title).toBe('Document · Reconcile');
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('formats each section’s Markdown through AtomText, an Atom’s # under the page’s h1', async () => {
+    const { state } = testGroup({
+      atoms: [
+        '# Our rules\n',
+        'Be *kind*, and **ask first**. See [our site](https://example.org).\n',
+        '- Quiet after ten\n- Bins on Tuesday\n',
+      ],
+    });
+    const { container } = render(<DocumentView state={state} />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Our rules' })).toBeVisible();
+    expect(screen.getByText('kind', { selector: 'em' })).toBeVisible();
+    expect(screen.getByText('ask first', { selector: 'strong' })).toBeVisible();
+    expect(screen.getByRole('link', { name: /our site/ })).toHaveAttribute(
+      'href',
+      'https://example.org/',
+    );
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(2);
+    expect(container.querySelectorAll('.atom > .atom-text')).toHaveLength(3);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('never follows a javascript: link in a section', () => {
+    const { state } = testGroup({
+      atoms: ['[click](javascript:alert(1)) <javascript:alert(2)>\n'],
+    });
+    const { container } = render(<DocumentView state={state} />);
+    expect(container.querySelector('.atom-text a')).toBeNull();
+    expect(container.querySelector('.atom-text')).toHaveTextContent('click');
   });
 
   it('never renders a section’s text as HTML', () => {
