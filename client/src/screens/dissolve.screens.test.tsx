@@ -209,6 +209,27 @@ describe('a dissolved group on Group home', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('offers no Vouch, and no newcomer’s line on when they can vote (#101)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'], levels: { Cal: VOTING }, newcomers: ['Kim'] });
+    const motion = log.proposeDissolve('ana', false);
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    renderHome(log.state(), 'ana');
+    expect(screen.getByRole('button', { name: 'Vouch for Kim' })).toBeVisible();
+    cleanup();
+    renderHome(log.state(), 'kim');
+    expect(screen.getByText(/^You can vote on Proposals that open after/)).toBeVisible();
+    cleanup();
+    log.minute += 1;
+    log.dissolve('kim', motion);
+    renderHome(log.state(), 'ana', { onRemove: () => Promise.resolve() });
+    expect(screen.queryByRole('button', { name: /^Vouch for/ })).toBeNull();
+    cleanup();
+    renderHome(log.state(), 'kim', { onRemove: () => Promise.resolve() });
+    expect(screen.getByText(/This is a read-only copy\./)).toBeVisible();
+    expect(screen.queryByText(/^You can vote on Proposals/)).toBeNull();
+    expect(screen.queryByText(/^Voting and proposing start/)).toBeNull();
+  });
+
   it('leaves out Not decided when nothing was open', () => {
     const log = group();
     const motion = log.proposeDissolve('ana', false);

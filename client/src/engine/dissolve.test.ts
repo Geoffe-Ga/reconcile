@@ -6,8 +6,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { authorOf } from '../test/keys';
-import { groupLog } from '../test/votes';
-import { LEVELS } from './capabilities';
+import { groupLog, START_MINUTE } from '../test/votes';
+import { admissionOf, rightsAt, vouchWanted } from './admission';
+import { can, holdsRights, LEVELS } from './capabilities';
 import {
   clearMinute,
   closedByDissolve,
@@ -102,6 +103,79 @@ describe('closedByDissolve', () => {
     expect(after.dissolved).toEqual({ received: log.minute, wipe: true });
     expect(closedByDissolve(after, decided)).toBe(false);
     expect(closedByDissolve(after, cut)).toBe(true);
+  });
+});
+
+describe('a dissolved group and earned voting rights (#101)', () => {
+  const KIM = authorOf('kim');
+  const WAIT_END = START_MINUTE + DEFAULT_RULES.waitDays * DAY_MINUTES;
+
+  /** Ana, Ben and Cal hold rights; Kim joins at START_MINUTE as a newcomer Co-Creator. */
+  function withNewcomer() {
+    const log = groupLog({ members: ['Ben', 'Cal'], levels: { Cal: VOTING }, newcomers: ['Kim'] });
+    const motion = log.proposeDissolve('ana', false);
+    return { log, motion };
+  }
+
+  it('leaves a newcomer out of the dissolve vote, and takes neither their ballot nor their own motion', () => {
+    const { log, motion } = withNewcomer();
+    expect(mayProposeDissolve(log.state(), KIM)).toBe(false);
+    log.minute += 1;
+    const theirs = log.proposeDissolve('kim', true);
+    log.vote('kim', motion, 0, 'Not yet.');
+    const kimsBallot = log.records.length;
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    const state = log.state();
+    const [only] = state.proposals;
+    expect(state.proposals).toHaveLength(1);
+    expect(only?.eligible).toEqual([ANA, BEN, authorOf('cal')]);
+    expect(only?.ballots.map((b) => b.voter)).toEqual([ANA, BEN, authorOf('cal')]);
+    expect(only?.outcome.kind).toBe('pass');
+    expect(state.ignored).toEqual([
+      { seq: kimsBallot - 1, id: theirs },
+      { seq: kimsBallot, id: expect.any(String) as unknown },
+    ]);
+  });
+
+  it('takes the dissolve from a newcomer, who reads the group', () => {
+    const { log, motion } = withNewcomer();
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('kim', motion);
+    expect(log.state().dissolved).toEqual({ received: log.minute, wipe: false });
+  });
+
+  it('takes no vouch after the dissolve, so a newcomer short of one stays so', () => {
+    const { log, motion } = withNewcomer();
+    log.vouch('ana', 'Kim');
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('ben', motion);
+    const before = log.state();
+    expect(vouchWanted(before, BEN, KIM)).toBe(false);
+    log.minute += 1;
+    const late = log.vouch('ben', 'Kim');
+    const after = log.state(WAIT_END + 1);
+    expect(after.vouches.map((v) => v.by)).toEqual([ANA]);
+    expect(rightsAt(after, KIM)).toBeNull();
+    expect(after.ignored.map((record) => record.id)).toContain(late);
+    expect(admissionOf(after, KIM)?.vouchedBy).toEqual([ANA]);
+  });
+
+  it('stops a wait still running at the dissolve, so rights fixed for later never arrive', () => {
+    const { log, motion } = withNewcomer();
+    log.vouch('ana', 'Kim');
+    log.vouch('ben', 'Kim');
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('ana', motion);
+    const dissolvedAt = log.minute;
+    const state = log.state(WAIT_END + 100_000);
+    expect(rightsAt(state, KIM)).toBe(WAIT_END);
+    expect(state.at).toBe(dissolvedAt);
+    expect(holdsRights(state, KIM)).toBe(false);
+    expect(can(state, KIM, 'vote')).toBe(false);
+    expect(can(state, KIM, 'read')).toBe(true);
   });
 });
 
