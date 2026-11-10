@@ -11,7 +11,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { authorOf, signedAs } from '../test/keys';
+import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
@@ -106,6 +106,43 @@ class Log {
     return this.add(received, member(author), { type: 'version', body: { proposal, text } });
   }
 }
+
+/** What a late event in the dissolve property acts on: the group's size, an open edit and the dissolve Proposal. */
+interface LateContext {
+  readonly count: number;
+  readonly edit: string;
+  readonly motion: string;
+}
+
+/**
+ * A key change into epoch 1, wrapped to nobody: the property's members hold
+ * no kx, so after a leave it would be valid in a group that goes on (#98).
+ */
+const LATE_ROTATE = { epoch: 1, commit: 'rotation-commit-of-this-propertyAAAAAAAAAAA', wraps: {} };
+
+/** Each kind of event the dissolve property sends late, by member `who` (mod the group's size). */
+const LATE = {
+  vote: (log, at, who, value, { count, edit }) => log.vote(at, who % count, edit, value),
+  version: (log, at, who, _value, { count, edit }) =>
+    log.version(at, who % count, edit, 'Late wording'),
+  level: (log, at, who, _value, { count }) => log.level(at, who % count, FOLLOWING),
+  join: (log, at, who, _value, { count }) =>
+    log.add(at, member(count + who), { type: 'join', body: { name: 'Late' } }),
+  proposal: (log, at) => log.propose(at, `${log.group}.1`, 'Late text'),
+  dissolve: (log, at, who, _value, { count, motion }) =>
+    log.add(at, member(who % count), { type: 'dissolve', body: { proposal: motion } }),
+  leave: (log, at, who, _value, { count }) => log.leave(at, who % count),
+  kx: (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'kx', body: { kx: testKx(member(who % count)).kx } }),
+  'key-rotate': (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'key-rotate', body: LATE_ROTATE }),
+} satisfies Record<
+  string,
+  (log: Log, at: number, who: number, value: Score, context: LateContext) => string
+>;
+
+/** The kinds of late event, for fast-check to pick from. */
+const LATE_KINDS = Object.keys(LATE) as (keyof typeof LATE)[];
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
@@ -390,12 +427,55 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('ignores every event anyone sends after the group dissolves, whatever it is (#108)', () => {
+    const late = fc.array(
+      fc.record({
+        who: fc.nat({ max: 5 }),
+        kind: fc.constantFrom(...LATE_KINDS),
+        value: score,
+        gap: fc.integer({ min: 0, max: 2 * WINDOW }),
+      }),
+      { minLength: 1, maxLength: 6 },
+    );
+    const args = [fc.integer({ min: 3, max: 5 }), fc.boolean(), fc.boolean(), late] as const;
+    fc.assert(
+      fc.property(...args, (count, wipe, leaveFirst, events) => {
+        const log = Log.founded(count);
+        const edit = log.propose(R + 10, `${log.group}.0`, 'New text');
+        const target = { kind: 'dissolve' as const, wipe };
+        const body = { target, title: 'Dissolve', why: 'Done.' };
+        const motion = log.add(R + 11, member(0), { type: 'proposal', body });
+        for (let i = 0; i < count; i += 1) log.vote(R + 12 + i, i, motion, 4);
+        // A leave just before the dissolve makes a key change due, until the dissolve ends it (#98).
+        if (leaveFirst) log.leave(R + 19, count - 1);
+        log.add(R + 20, member(1), { type: 'dissolve', body: { proposal: motion } });
+        const before = fold(log.records, R + 30);
+        let at = R + 20;
+        for (const { who, kind, value, gap } of events) {
+          at += gap;
+          LATE[kind](log, at, who, value, { count, edit, motion });
+        }
+        const after = fold(log.records, at + 3 * WINDOW);
+        expect(before.dissolved).toEqual({ received: R + 20, wipe });
+        expect([before.epoch, before.rotationDue, before.former.length]).toEqual([
+          0,
+          false,
+          leaveFirst ? 1 : 0,
+        ]);
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        expect(after.ignored.map((record) => record.seq)).toEqual(
+          log.records.slice(-events.length).map((record) => record.seq),
+        );
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const { proposals, rules } = fold(records, relayNow);
         for (const p of proposals) {
-          // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
+          // The log proposes only edits, which are ordinary; dissolving is entrenched (#108).
           expect(p.class).toBe('ordinary');
           expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));

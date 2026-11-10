@@ -13,6 +13,7 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  isDissolveProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -407,6 +408,38 @@ describe('parseEvent', () => {
       'proposal',
       { target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w', link: 1 },
     ],
+    [
+      'a dissolve target whose wipe is text',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: 'true' }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve target that leaves out its wipe',
+      'proposal',
+      { target: { kind: 'dissolve' }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve Proposal that also names an Atom',
+      'proposal',
+      { atom: 'a', target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve Proposal without a title',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, why: 'w' },
+    ],
+    [
+      'a dissolve Proposal with a numeric link',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', link: 1 },
+    ],
+    [
+      'a dissolve Proposal with a string window',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', window: '14' },
+    ],
+    ['dissolve without a proposal', 'dissolve', {}],
+    ['dissolve with a numeric proposal', 'dissolve', { proposal: 7 }],
     ['suspend without a member', 'suspend', { reason: 'r' }],
     ['suspend with a numeric member', 'suspend', { member: 1 }],
     ['suspend with a null reason', 'suspend', { member: 'm', reason: null }],
@@ -514,6 +547,43 @@ describe('parseEvent', () => {
       json(envelope('proposal', { target: recall, title: 't', why: 'w', link: 'https://l' })),
     );
     expect(linked?.event.body).toEqual({ target: recall, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('reads a dissolve Proposal, keeping its wipe and window and dropping text and unknown keys (#108)', () => {
+    const target = { kind: 'dissolve', wipe: true };
+    const parsed = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', text: 'x', window: 21, extra: 1 })),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w', window: 21 });
+    const kept = { kind: 'dissolve', wipe: false };
+    const linked = parseEvent(
+      json(envelope('proposal', { target: kept, title: 't', why: 'w', link: 'https://l' })),
+    );
+    expect(linked?.event.body).toEqual({ target: kept, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('tells a dissolve Proposal from a steward one and from an edit (#108)', () => {
+    const dissolve = { target: { kind: 'dissolve', wipe: false } as const, title: 't', why: 'w' };
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null } as const,
+      title: 't',
+      why: 'w',
+    };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    expect([dissolve, steward, edit].map(isDissolveProposal)).toEqual([true, false, false]);
+    expect([dissolve, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
+  });
+
+  it('reads a dissolve as the Proposal it names, dropping unknown keys (#108)', () => {
+    const parsed = parseEvent(json(envelope('dissolve', { proposal: 'p1', wipe: true })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'dissolve',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1' },
+    });
   });
 
   it('reads a rules Proposal, keeping its value as written for the fold to check (#117)', () => {

@@ -1,0 +1,256 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dissolve-bar: a dissolve Proposal averaging exactly 2.5 with no zeros fails, because it is entrenched, so a dissolve naming it is ignored and the group goes on",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290640000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290760000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve Riverside Tenants",
+              "why": "We have all moved out of the building."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "dissolve",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "proposal": "@7"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500660000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "dissolved": null,
+        "at": 29375100,
+        "proposals": [
+          {
+            "id": "@7",
+            "class": "entrenched",
+            "closedAt": 29375014,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "members": [
+          {
+            "name": "Ana"
+          },
+          {
+            "name": "Ben"
+          },
+          {
+            "name": "Cal"
+          },
+          {
+            "name": "Dee"
+          },
+          {
+            "name": "Kim"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          }
+        ]
+      },
+      "unchangedWithout": [12]
+    }
+  ]
+}

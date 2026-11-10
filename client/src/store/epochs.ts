@@ -9,7 +9,9 @@
  * - **Duty.** A current member whose device holds the group's current key,
  *   and isn't leaving, may write the key change: a fresh secret, its commit,
  *   and a wrap to each current member with an encryption key. The first valid
- *   one in relay order wins, so devices that race lose nothing.
+ *   one in relay order wins, so devices that race lose nothing. A read-only
+ *   archive (#108) never does: a dissolve ends key changes, and the loop sends
+ *   nothing for it.
  * - **Switch.** Once the fold has a canonical key change past this device's
  *   epoch, and this member's wrap opens to the secret its commit names, the
  *   device moves to the new epoch: its secret, a cursor at the key change's
@@ -19,7 +21,8 @@
  *   why: this membership left on another device, or this device missed the
  *   new key.
  * - **kx.** A current member with no encryption key in the fold, as a device
- *   that joined before #98 has, posts one once.
+ *   that joined before #98 has, posts one once, unless the group is leaving
+ *   or a read-only archive.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { kxPublicKeyOf } from '../crypto/box';
@@ -55,13 +58,17 @@ export function passesFreeze(bytes: Uint8Array): boolean {
   return type === 'key-rotate' || type === 'leave';
 }
 
-/** Whether this device should write the key change `state` has due now. */
+/**
+ * Whether this device should write the key change `state` has due now: not
+ * while it is leaving, nor for a read-only archive, which sends nothing (#108).
+ */
 export function hasDuty(group: Group, state: GroupState): boolean {
   return (
     state.rotationDue &&
     state.group !== null &&
     state.epoch === epochOf(group) &&
     group.leaving === undefined &&
+    group.archived === undefined &&
     isMember(state, group.me.author)
   );
 }
@@ -206,11 +213,14 @@ export function keyChangeOf(
 
 /**
  * Whether this device should post its member's encryption key: they are a
- * current member with none in the fold, and no `kx` waits in the outbox.
+ * current member with none in the fold, no `kx` waits in the outbox, and the
+ * group is neither leaving nor a read-only archive, which takes nothing new
+ * (#108).
  */
 export function needsKx(group: Group, state: GroupState): boolean {
   const mine = state.members.find((member) => member.author === group.me.author);
-  if (mine === undefined || mine.kx !== null || group.leaving !== undefined) return false;
+  if (mine === undefined || mine.kx !== null) return false;
+  if (group.leaving !== undefined || group.archived !== undefined) return false;
   return !group.outbox.some((bytes) => parseRecord(bytes)?.event.type === 'kx');
 }
 

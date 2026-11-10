@@ -17,6 +17,10 @@ export type Route =
   | { readonly name: 'start' }
   | { readonly name: 'create' }
   | { readonly name: 'settings' }
+  /** Personal (#93): this device's personal Documents. */
+  | { readonly name: 'personal' }
+  /** One personal Document, by its id, to read and edit (#93). */
+  | { readonly name: 'personalDocument'; readonly id: string }
   | { readonly name: 'join'; readonly payload: string | null }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
@@ -37,7 +41,8 @@ export type Route =
       readonly optIn: OptIn;
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
-    };
+    }
+  | { readonly name: 'dissolve'; readonly groupId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -47,6 +52,8 @@ const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
 /** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
 const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
+/** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
+const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
 const START: Route = { name: 'start' };
 
@@ -66,9 +73,10 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
   return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
 }
 
-/** A page with no argument: `doc` or `rules` (#117). */
+/** A page with no argument: `doc`, `rules` (#117) or `dissolve` (#108). */
 function barePage(groupId: string, page: string): Route {
   if (page === 'doc') return { name: 'document', groupId };
+  if (page === 'dissolve') return { name: 'dissolve', groupId };
   return page === 'rules' ? { name: 'rules', groupId } : START;
 }
 
@@ -80,9 +88,9 @@ function proposalPage(groupId: string, page: string, arg: string): Route {
 }
 
 /**
- * A page inside a group: `doc`, `rules`, `propose/{atomId}`, `p/{proposalId}`,
- * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
- * `narrow/{optIn}`.
+ * A page inside a group: `doc`, `rules`, `dissolve`, `propose/{atomId}`,
+ * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`,
+ * `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return barePage(groupId, page);
@@ -96,6 +104,15 @@ function groupRoute(rest: readonly string[]): Route {
   const [groupId, page, arg, ...extra] = rest;
   if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
+}
+
+/** `#/me` (Personal), or `#/me/{id}`, one personal Document (#93). */
+function personalRoute(rest: readonly string[]): Route {
+  if (rest.length === 0) return { name: 'personal' };
+  const [id] = rest;
+  return rest.length === 1 && id !== undefined && PERSONAL_ID.test(id)
+    ? { name: 'personalDocument', id }
+    : START;
 }
 
 function joinRoute(rest: readonly string[]): Route {
@@ -115,6 +132,13 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['settings', { name: 'settings' }],
 ]);
 
+/** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
+const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
+  ['join', joinRoute],
+  ['g', groupRoute],
+  ['me', personalRoute],
+]);
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
   if (hash.startsWith(INVITE_PREFIX)) {
@@ -123,14 +147,9 @@ export function parseRoute(hash: string): Route {
   }
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
-  switch (head) {
-    case 'join':
-      return joinRoute(rest);
-    case 'g':
-      return groupRoute(rest);
-    default:
-      return rest.length === 0 ? (PAGES.get(head) ?? START) : START;
-  }
+  const nested = NESTED.get(head);
+  if (nested !== undefined) return nested(rest);
+  return rest.length === 0 ? (PAGES.get(head) ?? START) : START;
 }
 
 /** Join's `href`: with its invite payload, or bare once Join has read it. */
@@ -168,6 +187,8 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'dissolve':
+      return '/dissolve';
   }
 }
 
@@ -180,6 +201,10 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'settings':
       return '#/settings';
+    case 'personal':
+      return '#/me';
+    case 'personalDocument':
+      return `#/me/${route.id}`;
     case 'join':
       return joinHref(route.payload);
     default:

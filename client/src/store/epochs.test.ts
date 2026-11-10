@@ -139,6 +139,14 @@ describe('the duty', () => {
     expect(hasDuty(device('ben', rotated), rotated.state())).toBe(false);
   });
 
+  it('never falls to a read-only archive, even with a key change due (#108)', () => {
+    // #115 archives a removed member's copy with no dissolve in its log, so the fold can still hold one due.
+    const log = afterLeave();
+    const archived = device('ben', log, { archived: { reason: 'dissolved' } });
+    expect(log.state().rotationDue).toBe(true);
+    expect(hasDuty(archived, log.state())).toBe(false);
+  });
+
   it('writes a key-rotate the fold takes: the next epoch, wrapped to the current key holders', () => {
     const state = afterRotation().state();
     expect(state.epoch).toBe(1);
@@ -205,6 +213,14 @@ describe('kx from a store kept before #98', () => {
     expect(needsKx({ ...ben, outbox: [kx.record] }, state)).toBe(false);
     expect(needsKx(device('ana', log), state)).toBe(false);
     expect(needsKx(device('cal', log), state)).toBe(false);
+  });
+
+  it('is never needed for a read-only archive, which takes nothing new (#108)', () => {
+    const log = Log.founded();
+    log.add('ben', { type: 'join', body: { name: 'ben' } });
+    const ben = withoutKx(device('ben', log));
+    expect(needsKx(ben, log.state())).toBe(true);
+    expect(needsKx({ ...ben, archived: { reason: 'dissolved' } }, log.state())).toBe(false);
   });
 });
 

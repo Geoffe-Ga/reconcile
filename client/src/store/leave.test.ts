@@ -5,7 +5,6 @@
  * go, every record of it, from every object store, leaving other groups as
  * they were.
  */
-import { openDB } from 'idb';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
@@ -15,6 +14,7 @@ import { createRelay, type Relay } from '../net/relay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys, testKx } from '../test/keys';
+import { containsBytes, scanDb as scan } from '../test/scanDb';
 import { openStore, type Store } from './db';
 import { createSync, type Sync } from './sync';
 
@@ -85,42 +85,6 @@ async function keep(store: Store, sync: Sync, group: Founded): Promise<void> {
   });
   await store.enqueue(group.genesis.id, group.genesis.record);
   await sync.syncOnce();
-}
-
-/** Every key and value in every object store of the database, as text, with its bytes alongside. */
-async function scan(name: string): Promise<{ text: string; bytes: Uint8Array[] }> {
-  const db = await openDB(name);
-  const parts: string[] = [];
-  const bytes: Uint8Array[] = [];
-  const walk = (value: unknown): void => {
-    if (ArrayBuffer.isView(value)) {
-      const view = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-      bytes.push(Uint8Array.from(view));
-      parts.push(new TextDecoder().decode(view));
-    } else if (Object.prototype.toString.call(value) === '[object Map]') {
-      for (const entry of (value as Map<unknown, unknown>).entries()) walk(entry);
-    } else if (typeof value === 'object' && value !== null) {
-      for (const [key, item] of Object.entries(value)) {
-        parts.push(key);
-        walk(item);
-      }
-    } else {
-      parts.push(String(value));
-    }
-  };
-  for (const storeName of db.objectStoreNames) {
-    walk(await db.getAllKeys(storeName));
-    walk(await db.getAll(storeName));
-  }
-  db.close();
-  return { text: parts.join('\n'), bytes };
-}
-
-/** True when `needle` appears, byte for byte, inside any of `haystack`. */
-function containsBytes(haystack: readonly Uint8Array[], needle: Uint8Array): boolean {
-  return haystack.some((bytes) =>
-    bytes.some((_, start) => needle.every((byte, i) => bytes[start + i] === byte)),
-  );
 }
 
 /** The type of each event the relay holds for `group`, opened from its blobs. */
