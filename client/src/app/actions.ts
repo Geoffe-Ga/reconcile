@@ -11,6 +11,7 @@ import type { Seal } from '../crypto/seal';
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
+import type { Level } from '../engine/capabilities';
 import { base64url, signEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
 import type { Relay } from '../net/relay';
@@ -135,15 +136,16 @@ export async function lookupInvite(services: Services, invite: Invite): Promise<
 }
 
 /**
- * Joins under `name` with a fresh keypair for this group: keeps the group with
- * the records the invite read, so its Document shows at once, then queues the
- * signed `join` and sends it.
+ * Joins under `name`, at the involvement level the person chose, with a fresh
+ * keypair for this group: keeps the group with the records the invite read, so
+ * its Document shows at once, then queues the signed `join` and sends it.
  */
 export async function joinGroup(
   services: Services,
   invite: Invite,
   found: FoundGroup,
   name: string,
+  level: Level,
 ): Promise<string> {
   const { groupId, page } = found;
   const keys = newSigningKeys();
@@ -151,7 +153,7 @@ export async function joinGroup(
     type: 'join',
     group: groupId,
     ts: services.now(),
-    body: { name },
+    body: { name, level },
   });
   const { mailbox, secret } = invite;
   const me = { author: base64url(keys.publicKey), name };

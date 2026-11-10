@@ -2,6 +2,7 @@
  * Real group state for screen tests, built through the engine: events signed
  * with `signEvent` and folded with `fold`, never hand-written state.
  */
+import { type Level, LEVELS } from '../engine/capabilities';
 import type { EventDraft } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { authorOf, signedAs } from './keys';
@@ -14,6 +15,8 @@ export interface TestGroupOptions {
   readonly atoms?: readonly string[];
   readonly chat?: string;
   readonly joiners?: readonly string[];
+  /** Each joiner's level, by name; a joiner not named joins as a Co-Creator. */
+  readonly levels?: Readonly<Record<string, Level>>;
   readonly proposals?: readonly string[];
 }
 
@@ -25,6 +28,9 @@ export interface TestGroup {
 }
 
 const MINUTE = 29_000_000;
+
+/** The level a joiner joins at unless a test names one: the creating level. */
+const [, , CREATING] = LEVELS;
 
 const DEFAULTS = {
   name: 'Riverside Tenants',
@@ -47,7 +53,8 @@ export function testGroup(options: TestGroupOptions = {}): TestGroup {
   const body = { name, founder, title, atoms, ...(chat === undefined ? {} : { chat }) };
   const group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   for (const joiner of joiners) {
-    add(joiner, { type: 'join', group, ts: 0, body: { name: joiner } });
+    const level = options.levels?.[joiner] ?? CREATING;
+    add(joiner, { type: 'join', group, ts: 0, body: { name: joiner, level } });
   }
   for (const proposal of proposals) {
     const proposalBody = {

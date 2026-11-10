@@ -1,5 +1,6 @@
 /**
- * What the composer and the ballot do (spec §4 and §8), apart from any screen.
+ * What the composer, the ballot and the level picker do (spec §4 and §8),
+ * apart from any screen.
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -9,6 +10,7 @@
  */
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
 import { normalizeAtomText } from '../engine/atomText';
+import type { Level } from '../engine/capabilities';
 import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
 import type { Services } from './actions';
 
@@ -102,6 +104,26 @@ export async function castBallot(
     group: groupId,
     ts: services.now(),
     body,
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+}
+
+/**
+ * Moves this device's member of `groupId` to `level` (ADR-0021: self-selected).
+ * The new level holds from the relay's receipt of the event on, and never
+ * changes a Proposal that's already open.
+ */
+export async function chooseLevel(
+  services: ProposalServices,
+  groupId: string,
+  level: Level,
+): Promise<void> {
+  const event = await signFor(services, groupId, {
+    type: 'level',
+    group: groupId,
+    ts: services.now(),
+    body: { level },
   });
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();

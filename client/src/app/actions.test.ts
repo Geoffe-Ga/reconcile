@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
 import { publicKeyOf } from '../crypto/sign';
 import { stubSeal } from '../crypto/stubSeal';
+import { DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from '../engine/capabilities';
 import { base64url, type ParsedEvent, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { createRelay } from '../net/relay';
@@ -207,7 +208,7 @@ describe('a device in two groups', () => {
     const invite = { mailbox: benGroup.mailbox, secret: benGroup.secret };
     const lookup = await lookupInvite(ana, invite);
     if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
-    await joinGroup(ana, invite, lookup.group, 'Ana');
+    await joinGroup(ana, invite, lookup.group, 'Ana', DEFAULT_JOIN_LEVEL);
     await ana.sync.syncOnce();
 
     const [one, two] = [await stored(ana, own), await stored(ana, theirs)];
@@ -306,7 +307,8 @@ describe('joinGroup', () => {
     const lookup = await lookupInvite(ben, invite);
     if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
 
-    expect(await joinGroup(ben, invite, lookup.group, 'Ben')).toBe(groupId);
+    const [follow] = LEVELS;
+    expect(await joinGroup(ben, invite, lookup.group, 'Ben', follow)).toBe(groupId);
 
     const before = await stored(ben, groupId);
     expect(before.me.name).toBe('Ben');
@@ -322,13 +324,15 @@ describe('joinGroup', () => {
       group: groupId,
       author: before.me.author,
       ts: NOW,
-      body: { name: 'Ben' },
+      body: { name: 'Ben', level: follow },
     });
 
     await ben.sync.syncOnce();
     await ana.sync.syncOnce();
     expect(await folded(ben, groupId)).toEqual(['Ana', 'Ben']);
     expect(await folded(ana, groupId)).toEqual(['Ana', 'Ben']);
+    const benState = fold((await stored(ana, groupId)).log, null);
+    expect(benState.members.map((member) => member.level)).toEqual([FOUNDER_LEVEL, follow]);
   });
 
   it('never adds a second join for the same group', async () => {
@@ -341,7 +345,7 @@ describe('joinGroup', () => {
     const found = { groupId, name: 'n', title: 't', page };
     const invite = { mailbox: group.mailbox, secret: group.secret };
 
-    await expect(joinGroup(ana, invite, found, 'Ana again')).rejects.toThrow();
+    await expect(joinGroup(ana, invite, found, 'Ana again', FOUNDER_LEVEL)).rejects.toThrow();
     expect((await stored(ana, groupId)).outbox).toEqual([]);
   });
 });

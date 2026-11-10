@@ -1,6 +1,7 @@
 /**
  * The tracer loop (#67), end to end: three people, each in a browser profile
- * of their own, found a group, join it, propose a change, vote (one of them
+ * of their own, found a group, join it (Ben at Join's preselected
+ * Collaborator, Cal as a Co-Creator), propose a change, vote (one of them
  * offline) and see the Update, through the real relay, with the build served
  * under the deploy CSP.
  *
@@ -98,17 +99,27 @@ const TITLE = 'House rules';
 const FIRST_ATOM = 'Quiet hours start at 10pm.';
 const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
 const ATOMS = [FIRST_ATOM, SECOND_ATOM];
-const PEOPLE = ['Ana', 'Ben', 'Cal'];
+/** Everyone on the People list, with the level each chose: Cal picks Co-Creator at Join. */
+const PEOPLE = ['Ana, Co-Creator', 'Ben, Collaborator', 'Cal, Co-Creator'];
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
-/** Joins from Join's form, then waits for Group home. */
-async function join(person: Person): Promise<void> {
+/** Presses a React Aria radio: it hides the native input under its label, so press the label. */
+async function pick(page: Page, name: string): Promise<void> {
+  const radio = page.getByRole('radio', { name });
+  await page.locator('label', { has: radio }).click();
+  await expect(radio).toBeChecked();
+}
+
+/** Joins from Join's form, at Join's preselected level unless `level` names another, then waits for Group home. */
+async function join(person: Person, level?: string): Promise<void> {
   await expect(heading(person.page, GROUP)).toBeVisible();
   // The invite's secret has left the address bar.
   await expect(person.page).toHaveURL(/#\/join$/);
+  await expect(person.page.getByRole('radio', { name: 'Collaborator' })).toBeChecked();
   await expectAccessible(person, 'Join');
   await person.page.getByRole('textbox', { name: 'Your name' }).fill(person.name);
+  if (level !== undefined) await pick(person.page, level);
   await person.page.getByRole('button', { name: 'Join group' }).click();
   await expect(person.page).toHaveURL(/#\/g\/[A-Za-z0-9_-]+$/);
 }
@@ -145,10 +156,7 @@ function sendStatus(page: Page): Locator {
 /** Picks a score pill and sends the ballot. */
 async function score(person: Person, pill: string): Promise<void> {
   const { page } = person;
-  const radio = page.getByRole('radio', { name: pill });
-  // React Aria hides the native radio under its pill, so press the pill's label.
-  await page.locator('label', { has: radio }).click();
-  await expect(radio).toBeChecked();
+  await pick(page, pill);
   await page.getByRole('button', { name: 'Send your vote' }).click();
 }
 
@@ -197,7 +205,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     // Group home appears once the genesis is back from the relay.
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByRole('region', { name: 'People' }).getByRole('listitem')).toHaveText([
-      'Ana',
+      'Ana, Co-Creator',
     ]);
     await expectAccessible(ana, 'Group home');
     const field = page.getByRole('textbox', { name: 'Invite link' });
@@ -206,7 +214,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/join\/[\w-]{43}\.[\w-]{43}$/);
   });
 
-  await test.step('B and C join from the link in A’s invite field', async () => {
+  await test.step('B joins from the link in A’s invite field, and C as a Co-Creator', async () => {
     // B opens the link itself.
     await ben.page.goto(inviteLink);
     await join(ben);
@@ -217,7 +225,8 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await expectAccessible(cal, 'Start');
     await cal.page.getByRole('textbox', { name: 'Invite link' }).fill(inviteLink);
     await cal.page.getByRole('button', { name: 'Open invite' }).click();
-    await join(cal);
+    // C will open the composer, which only the creating level holds.
+    await join(cal, 'Co-Creator');
   });
 
   await test.step('all three see the Document and everyone in the group', async () => {

@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
 import { type Invite, invitePayload, newInvite } from '../app/invite';
+import { DEFAULT_JOIN_LEVEL, LEVELS } from '../engine/capabilities';
 import { axeViolations } from '../test/axe';
 import { Join } from './Join';
 
@@ -68,15 +69,43 @@ describe('Join', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('joins under the name given, trimmed', async () => {
+  it('joins under the name given, trimmed, as a Collaborator unless they choose otherwise', async () => {
     const { user, invite, onJoin } = setup();
     await user.type(await screen.findByRole('textbox', { name: 'Your name' }), '  Ben ');
+    expect(screen.getByRole('radio', { name: 'Collaborator' })).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Join group' }));
     expect(onJoin).toHaveBeenCalledWith(
       expect.objectContaining({ mailbox: invite.mailbox }),
       FOUND,
       'Ben',
+      DEFAULT_JOIN_LEVEL,
     );
+  });
+
+  it.each([
+    ['Member', 0],
+    ['Co-Creator', 2],
+  ] as const)('joins as a %s when they choose it', async (name, index) => {
+    const { user, onJoin } = setup();
+    await user.type(await screen.findByRole('textbox', { name: 'Your name' }), 'Ben');
+    await user.click(screen.getByRole('radio', { name }));
+    await user.click(screen.getByRole('button', { name: 'Join group' }));
+    expect(onJoin).toHaveBeenCalledExactlyOnceWith(expect.anything(), FOUND, 'Ben', LEVELS[index]);
+  });
+
+  it('asks how involved they want to be, after their name and before who sees it', async () => {
+    setup();
+    const name = await screen.findByRole('textbox', { name: 'Your name' });
+    const picker = screen.getByRole('radiogroup', { name: 'Your involvement' });
+    const visibility = screen.getByText(
+      'People in this group will see the name you choose and how you vote.',
+    );
+    expect(name.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      picker.compareDocumentPosition(visibility) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(picker).getAllByRole('radio')).toHaveLength(3);
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('joins once, however often the button is pressed while it works', async () => {
