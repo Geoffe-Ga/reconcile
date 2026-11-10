@@ -17,6 +17,10 @@ export type Route =
   | { readonly name: 'start' }
   | { readonly name: 'create' }
   | { readonly name: 'settings' }
+  /** Personal (#93): this device's personal Documents. */
+  | { readonly name: 'personal' }
+  /** One personal Document, by its id, to read and edit (#93). */
+  | { readonly name: 'personalDocument'; readonly id: string }
   | { readonly name: 'join'; readonly payload: string | null }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
@@ -48,6 +52,8 @@ const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
 /** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
 const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
+/** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
+const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
 const START: Route = { name: 'start' };
 
@@ -100,6 +106,15 @@ function groupRoute(rest: readonly string[]): Route {
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
 }
 
+/** `#/me` (Personal), or `#/me/{id}`, one personal Document (#93). */
+function personalRoute(rest: readonly string[]): Route {
+  if (rest.length === 0) return { name: 'personal' };
+  const [id] = rest;
+  return rest.length === 1 && id !== undefined && PERSONAL_ID.test(id)
+    ? { name: 'personalDocument', id }
+    : START;
+}
+
 function joinRoute(rest: readonly string[]): Route {
   if (rest.length === 0) return { name: 'join', payload: null };
   const [payload] = rest;
@@ -117,6 +132,13 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['settings', { name: 'settings' }],
 ]);
 
+/** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
+const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
+  ['join', joinRoute],
+  ['g', groupRoute],
+  ['me', personalRoute],
+]);
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
   if (hash.startsWith(INVITE_PREFIX)) {
@@ -125,14 +147,9 @@ export function parseRoute(hash: string): Route {
   }
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
-  switch (head) {
-    case 'join':
-      return joinRoute(rest);
-    case 'g':
-      return groupRoute(rest);
-    default:
-      return rest.length === 0 ? (PAGES.get(head) ?? START) : START;
-  }
+  const nested = NESTED.get(head);
+  if (nested !== undefined) return nested(rest);
+  return rest.length === 0 ? (PAGES.get(head) ?? START) : START;
 }
 
 /** Join's `href`: with its invite payload, or bare once Join has read it. */
@@ -184,6 +201,10 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'settings':
       return '#/settings';
+    case 'personal':
+      return '#/me';
+    case 'personalDocument':
+      return `#/me/${route.id}`;
     case 'join':
       return joinHref(route.payload);
     default:

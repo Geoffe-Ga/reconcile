@@ -19,6 +19,8 @@ import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupSta
 import { Join } from '../screens/Join';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
+import { Personal } from '../screens/Personal';
+import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
 import { Settings } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
@@ -28,6 +30,7 @@ import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
+import { newPersonalId } from '../store/personal';
 import {
   createGroup,
   type CreateGroupValues,
@@ -65,6 +68,7 @@ import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
 import { useNow } from './useNow';
+import { usePersonalList } from './usePersonalList';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -109,6 +113,29 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
     />
+  );
+}
+
+/** Personal (#93): this device's personal Documents, and the id a new one opens at. */
+function PersonalScreen({ services }: { readonly services: AppServices }) {
+  const documents = usePersonalList(services.store);
+  // One id per visit: nothing is stored under it until that Document's first save.
+  const [newId] = useState(newPersonalId);
+  return documents === null ? null : <Personal documents={documents} newId={newId} />;
+}
+
+interface PersonalDocumentScreenProps {
+  readonly services: AppServices;
+  readonly id: string;
+}
+
+/** One personal Document (#93); deleting it goes back to Personal in its place. */
+function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
+  const onDeleted = useCallback(() => {
+    replaceRoute({ name: 'personal' });
+  }, []);
+  return (
+    <PersonalDocument id={id} documents={services.store} now={services.now} onDeleted={onDeleted} />
   );
 }
 
@@ -552,6 +579,11 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       return <CreateScreen services={services} offerGuide={guide.offer} />;
     case 'settings':
       return <SettingsScreen services={services} />;
+    case 'personal':
+      return <PersonalScreen services={services} />;
+    case 'personalDocument':
+      // Keyed by id, so another Document starts its editor afresh.
+      return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
     case 'join':
       return (
         <JoinScreen
