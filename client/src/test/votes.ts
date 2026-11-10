@@ -23,6 +23,8 @@ export interface ProposalEntry {
   readonly text?: string;
   readonly link?: string;
   readonly atom?: number;
+  /** The voting window in days; the class default when left out. */
+  readonly window?: number;
 }
 
 /** A group's log under construction, one relay record at a time. */
@@ -117,6 +119,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         why,
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },

@@ -58,6 +58,11 @@ export function formatMinute(minute: number, timeZone?: string): string {
   return format(minute * MINUTE_MS, { ...DATE, ...TIME }, timeZone);
 }
 
+/** A device time in ms as a day, with no time of day, such as "Fri 21 Nov". */
+export function formatDay(ms: number, timeZone?: string): string {
+  return format(ms, DATE, timeZone);
+}
+
 /** A relay minute as an ISO 8601 date, for a `<time>` element's `dateTime`. */
 export function minuteIso(minute: number): string {
   return new Date(minute * MINUTE_MS).toISOString();

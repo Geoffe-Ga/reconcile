@@ -351,6 +351,17 @@ export const messages = {
     closes: (left: string) => `Closes ${left}`,
     closed: 'Voting closed',
   },
+  window: {
+    label: 'Voting time (days)',
+    closes: (day: string) =>
+      `Closes about ${day}. The exact time is set when the relay receives it.`,
+    range: (min: number, max: number) =>
+      `Voting can run ${count(min)} to ${count(max)} days, from when the relay receives your Proposal.`,
+    outside: (min: number, max: number) => `Choose from ${count(min)} to ${count(max)} days.`,
+    fewer: '−',
+    more: '+',
+    runs: (days: number) => `Voting runs ${count(days)} days`,
+  },
   markdown: {
     hint: '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.',
     modes: 'Write or preview',

@@ -6,16 +6,16 @@
  * breaks one lands in `ignored` and changes nothing. Votes run on relay time
  * (`received`, in whole minutes); the author's `ts` plays no part. Genesis
  * founds the group with its rules, and each Proposal's class, set when it
- * opens, picks its window and its bar. A Document's text changes only when a
- * Proposal's pass is final. Steward seats change when a steward Proposal's
- * pass is final, and a suspension narrows `can()` until it ends (#102): the
- * fold keeps `at`, the relay minute it has reached, and brings the seats up
- * to it before each event. A `result` records a decided Proposal's counts
- * and a commitment to its ballots (#111): with the ballots held, the fold
- * checks it against them, and once a device has cleared them, the Proposal
- * closes, counts and decides by the result it reads ahead. The fold is pure:
- * no I/O, no clock, no randomness, so every device that folds the same
- * records builds the same state.
+ * opens, picks its bar and bounds the window its proposer chose. A
+ * Document's text changes only when a Proposal's pass is final. Steward seats
+ * change when a steward Proposal's pass is final, and a suspension narrows
+ * `can()` until it ends (#102): the fold keeps `at`, the relay minute it has
+ * reached, and brings the seats up to it before each event. A `result`
+ * records a decided Proposal's counts and a commitment to its ballots
+ * (#111): with the ballots held, the fold checks it against them, and once a
+ * device has cleared them, the Proposal closes, counts and decides by the
+ * result it reads ahead. The fold is pure: no I/O, no clock, no randomness,
+ * so every device that folds the same records builds the same state.
  */
 import {
   can,
@@ -50,8 +50,9 @@ import {
 } from './event';
 import {
   type Bar,
+  chosenWindow,
+  DAY_MINUTES,
   DEFAULT_RULES,
-  defaultWindowMinutes,
   foundingRules,
   type ProposalClass,
   type Rules,
@@ -154,9 +155,11 @@ export interface DecisionRecord {
  * text. A recall's eligible set leaves out the steward it would remove.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
- * opened, never from the proposer's own fields. It fixes `deadline`, the
- * relay's receipt plus the class's default window, and the bar the versions
- * are tallied at, which `outcome` carries. `eligible` is who could vote when
+ * opened, never from the proposer's own fields. It picks the bar the versions
+ * are tallied at, which `outcome` carries, and bounds `window`, the whole days
+ * the vote runs: the proposer's choice, or the class default when they named
+ * none (#106). `deadline` is the relay's receipt plus `window` × 1,440
+ * minutes, fixed when it opens. `eligible` is who could vote when
  * it opened (ADR-0015): the members for whom `wouldVote` held then. A later
  * join or level change never changes it, nor the quorum and early close that
  * count it. `closedAt` is the receipt minute of the ballot that closed it
@@ -182,6 +185,7 @@ export interface Proposal {
   readonly text: string;
   readonly link: string | null;
   readonly class: ProposalClass;
+  readonly window: number;
   readonly deadline: number;
   readonly eligible: readonly string[];
   readonly versions: readonly Version[];
@@ -366,9 +370,17 @@ function eligibleNow(draft: Draft, left: string | null): string[] {
     .map((m) => m.author);
 }
 
-/** What every Proposal opens with: its receipt, author, class and window, and no ballots yet. */
-function opening(draft: Draft, body: ProposalEventBody, author: string, at: Receipt) {
-  const cls = targetClass(draft, body);
+/** A Proposal's class and the whole days its vote runs, fixed when it opens. */
+interface Term {
+  readonly cls: ProposalClass;
+  readonly window: number;
+}
+
+/**
+ * What every Proposal opens with: its receipt, author, class, window and a
+ * deadline `window` days after its receipt (#106), and no ballots yet.
+ */
+function opening(body: ProposalEventBody, author: string, at: Receipt, { cls, window }: Term) {
   return {
     ...at,
     author,
@@ -376,7 +388,8 @@ function opening(draft: Draft, body: ProposalEventBody, author: string, at: Rece
     why: body.why,
     link: body.link ?? null,
     class: cls,
-    deadline: at.received + defaultWindowMinutes(draft.rules, cls),
+    window,
+    deadline: at.received + window * DAY_MINUTES,
     ballots: [],
     closedAt: null,
   };
@@ -474,9 +487,20 @@ function clearing(draft: Draft, opened: Opened) {
   };
 }
 
+/**
+ * Opens an edit at its class's bar, for the window its proposer chose within
+ * the class's bounds, or the class default (#106). A window outside those
+ * bounds, or not a whole number, makes the fold ignore the Proposal.
+ */
 function applyEdit(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   if (!proposalIsValid(draft, body, author, at)) return false;
-  const opened = { ...opening(draft, body, author, at), eligible: eligibleNow(draft, null) };
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  const opened = {
+    ...opening(body, author, at, { cls, window }),
+    eligible: eligibleNow(draft, null),
+  };
   draft.proposals.push({
     ...opened,
     ...clearing(draft, { ...opened, at }),
@@ -492,7 +516,8 @@ function applyEdit(draft: Draft, body: ProposalBody, author: string, at: Receipt
  * Opens a steward election or recall (ADR-0049, #102), when its author may
  * propose and its target is valid now (stewards.ts). Its one version has no
  * text, and a recall's steward isn't in its eligible set, or their own 0
- * alone would block it in a group of 10 or fewer.
+ * alone would block it in a group of 10 or fewer. It runs its class's default
+ * window: a steward Proposal carries no `window` (#106).
  */
 function applySteward(
   draft: Draft,
@@ -504,8 +529,9 @@ function applySteward(
   if (!isSeatNumber(seat) || !fieldsAreValid(body)) return false;
   if (!mayProposeSteward(draft, author, body.target)) return false;
   const { holder } = seatAt(draft, seat);
+  const cls = targetClass(draft, body);
   const opened = {
-    ...opening(draft, body, author, at),
+    ...opening(body, author, at, { cls, window: draft.rules.windows[cls].default }),
     eligible: eligibleNow(draft, member === null ? holder : null),
   };
   draft.proposals.push({

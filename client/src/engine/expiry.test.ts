@@ -141,6 +141,19 @@ describe('ballotsExpireAt and ballotsExpired', () => {
     expect(ballotsExpired(DEFAULT_RULES, proposal, null)).toBe(false);
   });
 
+  it('counts the 30 days from the decision, whatever window the proposer chose (#106)', () => {
+    const log = groupLog({ members: ['Ben'] });
+    log.propose('ana', { window: 10 });
+    const deadline = START_MINUTE + 10 * 1_440;
+    log.minute = deadline + 1;
+    log.result('ben', resultFor(only(log.state(deadline).proposals)));
+    const proposal = only(log.state().proposals);
+    expect(proposal.result?.closedAt).toBe(deadline);
+    expect(ballotsExpireAt(DEFAULT_RULES, proposal)).toBe(deadline + THIRTY_DAYS);
+    expect(ballotsExpired(DEFAULT_RULES, proposal, deadline + THIRTY_DAYS - 1)).toBe(false);
+    expect(ballotsExpired(DEFAULT_RULES, proposal, deadline + THIRTY_DAYS)).toBe(true);
+  });
+
   it('never clears without a valid result, nor clears twice', () => {
     const { log, closedAt, proposalId } = decidedLog();
     expect(ballotsExpired(DEFAULT_RULES, only(log.state().proposals), closedAt + THIRTY_DAYS)).toBe(
