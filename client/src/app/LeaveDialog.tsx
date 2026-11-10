@@ -30,8 +30,8 @@ function LeaveBody({ onLeave, close }: LeaveDialogProps & { readonly close: () =
   };
   const { leave } = messages;
   return (
-    <>
-      <Heading slot="title" className="heading-2">
+    <div className="stack">
+      <Heading slot="title" className="dialog-title">
         {leave.title}
       </Heading>
       <p className="lede">{leave.body}</p>
@@ -40,7 +40,7 @@ function LeaveBody({ onLeave, close }: LeaveDialogProps & { readonly close: () =
           {leave.failed}
         </p>
       ) : null}
-      <div className="row dialog-actions">
+      <div className="row form-actions">
         <Button className="button button-primary" onPress={confirm} isDisabled={running}>
           {leave.confirm}
         </Button>
@@ -48,7 +48,7 @@ function LeaveBody({ onLeave, close }: LeaveDialogProps & { readonly close: () =
           {leave.cancel}
         </Button>
       </div>
-    </>
+    </div>
   );
 }
 

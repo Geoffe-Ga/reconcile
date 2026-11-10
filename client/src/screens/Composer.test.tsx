@@ -753,3 +753,17 @@ describe('Composer drafts, against fake IndexedDB', () => {
     expect(box('Title')).toHaveValue('');
   });
 });
+
+describe('Composer: a suspended member (#102)', () => {
+  it('shows the suspended line in place of the form', async () => {
+    const log = groupLog({ members: ['Kim'] });
+    log.suspend('Ana', 'Kim', 'Threats.');
+    await setup({ state: log.state(), me: authorOf('kim') });
+    expect(
+      screen.getByText(
+        /^A steward suspended you until .+\. You can read, but not post, propose or vote\.$/,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Propose this change' })).toBeNull();
+  });
+});

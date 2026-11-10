@@ -157,7 +157,7 @@ describe('Leave this group', () => {
       within(rows)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
-    ).toEqual(['Ana, Co-Creator']);
+    ).toEqual(['Ana, Co-Creator, Steward']);
   });
 
   it('waits offline as Leaving…, through a reload, with proposing and voting off, then goes', async () => {

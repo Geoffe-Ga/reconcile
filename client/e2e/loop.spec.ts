@@ -27,8 +27,11 @@ const TITLE = 'House rules';
 const FIRST_ATOM = 'Quiet hours start at 10pm.';
 const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
 const ATOMS = [FIRST_ATOM, SECOND_ATOM];
-/** Everyone on the People list, with the level each chose: Cal picks Co-Creator at Join. */
-const PEOPLE = ['Ana, Co-Creator', 'Ben, Collaborator', 'Cal, Co-Creator'];
+/**
+ * Everyone on the People list, with the level each chose: Cal picks Co-Creator
+ * at Join. Ana founded the group, so she holds steward seat 1 (#102).
+ */
+const PEOPLE = ['Ana, Co-Creator, Steward', 'Ben, Collaborator', 'Cal, Co-Creator'];
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
@@ -50,7 +53,9 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   const { page } = person;
   await expect(heading(page, GROUP)).toBeVisible();
   const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-  await expect(people).toHaveText(PEOPLE);
+  // Each row in order; the steward's own rows also hold Suspend (#102).
+  await expect(people).toHaveCount(PEOPLE.length);
+  await expect(people).toContainText(PEOPLE);
   await expectAccessible(person, 'Group home');
   await page.getByRole('link', { name: TITLE }).click();
   await expect(heading(page, TITLE)).toBeVisible();
@@ -142,7 +147,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     // Group home appears once the genesis is back from the relay.
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByRole('region', { name: 'People' }).getByRole('listitem')).toHaveText([
-      'Ana, Co-Creator',
+      'Ana, Co-Creator, Steward',
     ]);
     await expectAccessible(ana, 'Group home');
     const field = page.getByRole('textbox', { name: 'Invite link' });

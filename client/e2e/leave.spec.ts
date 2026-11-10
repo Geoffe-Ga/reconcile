@@ -160,6 +160,6 @@ test('A tells the group a vote is open; B finds it under Needs your vote, then l
     await page.getByRole('link', { name: GROUP }).click();
     await expect(
       page.getByRole('region', { name: 'People', exact: true }).getByRole('listitem'),
-    ).toHaveText(['Ana, Co-Creator']);
+    ).toHaveText(['Ana, Co-Creator, Steward']);
   });
 });

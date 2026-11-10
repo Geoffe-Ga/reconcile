@@ -35,6 +35,7 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
     pending: [],
     onChooseLevel,
     onLeave,
+    onSuspend: vi.fn(() => Promise.resolve()),
     ...props,
   };
   const view = render(<GroupHome {...all} />);
@@ -58,11 +59,15 @@ function pendingLevel(author: string, level: string): ParsedEvent {
   return parsed;
 }
 
-/** The text of each row of the People list. */
+/** The text of each row of the People list, leaving out its buttons (Suspend, #102). */
 const rows = () =>
   within(section('People'))
     .getAllByRole('listitem')
-    .map((item) => item.textContent);
+    .map((item) => {
+      const copy = item.cloneNode(true) as HTMLElement;
+      for (const button of copy.querySelectorAll('button')) button.remove();
+      return copy.textContent;
+    });
 
 function setup(options: TestGroupOptions = {}, me?: string) {
   const group = testGroup({ joiners: ['Ben'], ...options });
@@ -83,7 +88,7 @@ describe('GroupHome', () => {
     const documentLink = screen.getByRole('link', { name: /House rules/ });
     expect(documentLink).toHaveAttribute('href', `#/g/${state.group ?? ''}/doc`);
     expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Co-Creator']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator']);
     const field = within(section('Invite people')).getByRole('textbox', { name: 'Invite link' });
     expect(field).toHaveValue(LINK);
     expect(field).toHaveAttribute('readonly');
@@ -327,13 +332,13 @@ describe('GroupHome', () => {
 
   it('shows each person’s level beside their name', async () => {
     setup({ joiners: ['Ben', 'Kim'], levels: { Ben: VOTING, Kim: FOLLOWING } });
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Collaborator', 'Kim, Member']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator', 'Kim, Member']);
     expect(await axeViolations()).toEqual([]);
   });
 
   it('shows a Member the People list and their involvement, but no invite', async () => {
     setup({ joiners: ['Kim'], levels: { Kim: FOLLOWING } }, authorOf('kim'));
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Kim, Member']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Kim, Member']);
     expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
     expect(screen.queryByRole('region', { name: 'Invite people' })).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
@@ -372,7 +377,7 @@ describe('GroupHome', () => {
     expect(screen.queryByRole('button', { name: 'Save your choice' })).not.toBeInTheDocument();
     expect(within(section('People')).getByRole('status')).toHaveTextContent('Sending…');
     // The People list changes only once the relay returns the event.
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Collaborator']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator']);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -437,7 +442,7 @@ describe('GroupHome', () => {
     const log = testGroup({ joiners: ['Ben'], levels: { Ben: FOLLOWING } });
     rerender({ state: log.state, pending: [] });
     expect(within(section('People')).getByRole('status')).toHaveTextContent('Sent');
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Member']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Member']);
   });
 
   it('offers no involvement choice before this device’s join is back from the relay', () => {
@@ -549,14 +554,28 @@ describe('Leave this group', () => {
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Invite people' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Leave this group' })).not.toBeInTheDocument();
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Co-Creator', 'Cal, Co-Creator']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator', 'Cal, Co-Creator']);
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers a steward no Suspend and no steward Proposal while the leave waits (#102)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const { rerender } = renderHome(log.state(), { now: log.minute });
+    // Staying, Ana, the founding steward, may suspend Ben and propose an election.
+    expect(screen.getByRole('button', { name: 'Suspend Ben' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Propose a steward for seat 1' })).toBeVisible();
+
+    rerender({ leaving: true });
+
+    expect(screen.queryByRole('button', { name: /^Suspend/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Propose a steward|^Propose recall/ })).toBeNull();
+    expect(within(section('Stewards')).getByText('Ana')).toBeVisible();
   });
 
   it('lists current members only: someone who left is gone from People', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     log.leave('Ben');
     renderHome(log.state());
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Cal, Co-Creator']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Cal, Co-Creator']);
   });
 });
