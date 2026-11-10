@@ -16,10 +16,14 @@
  * (#117). Each member's voting rights arrive at a relay minute the fold
  * records as their `rightsAt`: at once for the founder and the bootstrap's
  * joiners, else after vouches and a wait (admission.ts, #101). The chat bot's
- * claims keep the first per Proposal moment (#119). The fold is pure: no I/O,
- * no clock, no randomness, so every device that folds the same records builds
- * the same state.
+ * claims keep the first per Proposal moment (#119). A `dissolve` ends the
+ * group (#108): relay time stops at its receipt, and the fold ignores every
+ * event after it, so no vouch lands, no wait ends and no key change becomes
+ * due or lands from then on (#98). The fold
+ * is pure: no I/O, no clock, no randomness, so every device that folds the
+ * same records builds the same state.
  */
+import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
 import { bootstrapOpen, earnedAt, mayVouch, type Vouch, vouchesFor } from './admission';
 import {
@@ -33,14 +37,20 @@ import {
 } from './capabilities';
 import { type ChatPost, isBotMoment, mayClaim } from './chatPosts';
 import { optionFor } from './composeOption';
+import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
   type ChatPostedBody,
+  type DissolveBody,
+  type DissolveProposalBody,
   EVENT_VERSION,
   fromBase64url,
   type GenesisBody,
   type GroupEvent,
   type InviteToken,
+  isDissolveProposal,
   isRulesProposal,
+  type KeyRotateBody,
+  type KxBody,
   isStewardProposal,
   type LevelBody,
   type NarrowBody,
@@ -105,11 +115,14 @@ export const NOTE_MAX = 280;
 /**
  * One record as the relay returned it: its seq, its receipt minute and the
  * signed record's bytes, `publicKey ‖ signature ‖ event bytes` (spec §3).
+ * `epoch` is the epoch of the mailbox it was read from (#98): absent for
+ * epoch 0, so logs kept before #98 read as they always did.
  */
 export interface LogRecord {
   readonly seq: number;
   readonly received: number;
   readonly bytes: Uint8Array;
+  readonly epoch?: number;
 }
 
 /**
@@ -120,7 +133,9 @@ export interface LogRecord {
  * their genesis or join's receipt for the founder and the bootstrap's
  * joiners, the later of their wait's end and their second vouch for anyone
  * else, or null until they have the vouches. Once set it never changes, so
- * rights once earned stay.
+ * rights once earned stay. `kx` is their encryption key (#98): the X25519
+ * public key their genesis, join or first `kx` carried, in base64url, or
+ * null before one.
  */
 export interface Member {
   readonly author: string;
@@ -130,6 +145,23 @@ export interface Member {
   readonly received: number;
   readonly invitedBy: string | null;
   readonly rightsAt: number | null;
+  readonly kx: string | null;
+}
+
+/**
+ * A canonical key change (#98): the first valid `key-rotate` of its epoch,
+ * where it sits in relay order, who wrote it, its commit, and its wraps by
+ * member key. Records read from the epoch before it, from its seq on, are
+ * ignored.
+ */
+export interface Rotation {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly by: string;
+  readonly epoch: number;
+  readonly commit: string;
+  readonly wraps: Readonly<Record<string, string>>;
 }
 
 /** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
@@ -157,12 +189,14 @@ export interface Ballot {
 }
 
 /**
- * A proposed change to one Atom, a steward seat or an opt-in, with its vote.
+ * A proposed change to one Atom, a steward seat, an opt-in, or whether the
+ * group goes on, with its vote.
  *
- * `target` says which: an edit of `atom`, a steward change (#102), or a rules
- * change to an opt-in (#117). A steward or rules Proposal's `atom` and `text`
- * are `""`, and its one version, under its own id, has no text. A recall's
- * eligible set leaves out the steward it would remove.
+ * `target` says which: an edit of `atom`, a steward change (#102), a rules
+ * change to an opt-in (#117), or dissolving the group (#108). A steward,
+ * rules or dissolve Proposal's `atom` and `text` are `""`, and its one
+ * version, under its own id, has no text. A recall's eligible set leaves out
+ * the steward it would remove.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
  * opened, never from the proposer's own fields. It picks the bar the versions
@@ -175,7 +209,8 @@ export interface Ballot {
  * count it. `closedAt` is the receipt minute of the ballot that closed it
  * early, or null. `final` is true once it has closed, early or because relay
  * time reached `deadline`. `outcome` is the tally of the ballots so far, and
- * is settled only when `final`.
+ * is settled only when `final`. A Proposal still open when its group
+ * dissolved (#108) is never final, so it has no outcome.
  */
 export interface Proposal {
   readonly id: string;
@@ -227,7 +262,14 @@ export interface IgnoredRecord {
  * order, in force or ended (#117). `vouches` holds every valid vouch in relay
  * order (#101), visible to members like ballots (ADR-0010). `chatPosts` holds
  * the chat bot's winning claims, the first valid `chat-posted` per (Proposal,
- * moment), in relay order (#119).
+ * moment), in relay order (#119). `epoch` is the group key's epoch: 0 at
+ * genesis, then one more for each canonical key change, which `rotations`
+ * keeps in order (#98). `rotationDue` is true once a membership has ended
+ * since the last canonical key change, or genesis, until the next, or until
+ * the group dissolves, after which no key change can land. `dissolved` is
+ * when the group dissolved, and whether its vote chose to wipe every copy, or
+ * null while it goes on (#108). Once it has dissolved, `at` stays at that
+ * receipt whatever the relay's `now`.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -246,6 +288,10 @@ export interface GroupState {
   readonly narrowings: readonly Narrowing[];
   readonly vouches: readonly Vouch[];
   readonly chatPosts: readonly ChatPost[];
+  readonly epoch: number;
+  readonly rotations: readonly Rotation[];
+  readonly rotationDue: boolean;
+  readonly dissolved: Dissolution | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -290,8 +336,17 @@ interface Draft {
   readonly narrowings: Narrowing[];
   readonly vouches: Vouch[];
   readonly chatPosts: ChatPost[];
+  epoch: number;
+  readonly rotations: Rotation[];
+  rotationDue: boolean;
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
+  dissolved: Dissolution | null;
+}
+
+/** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
+function usableKx(kx: string | undefined): string | null {
+  return kx !== undefined && isUsableKxKey(fromBase64url(kx)) ? kx : null;
 }
 
 /** Founds the group, unless its rules differ from the defaults (rules.ts). */
@@ -312,6 +367,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
     received: at.received,
     invitedBy: null,
     rightsAt: at.received,
+    kx: usableKx(body.kx),
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
@@ -354,7 +410,8 @@ function applyJoin(draft: Draft, event: JoinEvent, at: Receipt): boolean {
   const invitedBy = inviterOf(draft, body.token, event.group);
   const { seq, received } = at;
   const rightsAt = bootstrapOpen(draft) ? received : null;
-  draft.members.push({ author, name: body.name, level, seq, received, invitedBy, rightsAt });
+  const kx = usableKx(body.kx);
+  draft.members.push({ author, name: body.name, level, seq, received, invitedBy, rightsAt, kx });
   return true;
 }
 
@@ -547,6 +604,34 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
   return true;
 }
 
+/**
+ * Opens a dissolve Proposal (ADR-0051, #108) when its author may propose, no
+ * other is open and the group hasn't dissolved (dissolve.ts). It is
+ * entrenched, so it runs the window its proposer chose within the entrenched
+ * bounds (#106), or their default. Its one version has no text, and everyone
+ * whose level votes is eligible.
+ */
+function applyDissolveProposal(
+  draft: Draft,
+  body: DissolveProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!fieldsAreValid(body) || !mayProposeDissolve(draft, author)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  draft.proposals.push({
+    ...opening(body, author, at, { cls, window }),
+    atom: '',
+    target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
@@ -555,7 +640,25 @@ function applyProposal(
 ): boolean {
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
+  if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
   return applyEdit(draft, body, author, at);
+}
+
+/**
+ * Ends the group (#108): the first `dissolve` from a member that names a
+ * dissolve Proposal whose pass is final at the relay's receipt of it. From
+ * here on the fold ignores every event ({@link admits}), and relay time
+ * stops at this receipt. No key change can land after it either, so none is
+ * due (#98), even for a leave that came just before it.
+ */
+function applyDissolve(draft: Draft, body: DissolveBody, author: string, at: Receipt): boolean {
+  const proposal = draft.proposals.find((p) => p.id === body.proposal);
+  if (proposal?.target.kind !== 'dissolve' || !can(draft, author, 'read')) return false;
+  if (isOpenAt(proposal, at.received)) return false;
+  if (settle(proposal, draft.rules, at.received).outcome.kind !== 'pass') return false;
+  draft.dissolved = { received: at.received, wipe: proposal.target.wipe };
+  draft.rotationDue = false;
+  return true;
 }
 
 /**
@@ -608,7 +711,7 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
-  // A steward Proposal has no text, so it takes no versions (#102).
+  // A steward, rules or dissolve Proposal has no text, so it takes no versions (#102, #117, #108).
   if (proposal.target.kind !== 'edit') return false;
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
@@ -682,14 +785,32 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
 }
 
 /**
- * A version-1 event for this group, from someone who isn't suspended: the
- * fold ignores a suspended member's events until the suspension ends
- * (ADR-0016), except their `leave`, since exit is always possible (ADR-0010,
- * #77).
+ * The one event guard: a version-1 event for a group that hasn't dissolved,
+ * from someone who isn't suspended. After a `dissolve` the fold ignores every
+ * event, a second `dissolve` included (#108). It ignores a suspended member's
+ * events until the suspension ends (ADR-0016), except their `leave`, since
+ * exit is always possible (ADR-0010, #77).
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
   const free = event.type === 'leave' || !isSuspended(draft, event.author);
-  return event.v === EVENT_VERSION && inGroup(draft, event) && free;
+  return draft.dissolved === null && event.v === EVENT_VERSION && inGroup(draft, event) && free;
+}
+
+/** The events that act on a Proposal: proposing, wording, voting, and dissolving on a pass (#108). */
+type ProposalEvent = Extract<GroupEvent, { type: 'proposal' | 'version' | 'vote' | 'dissolve' }>;
+
+/** Applies one admitted event that acts on a Proposal, or returns false to ignore it. */
+function applyProposalEvent(draft: Draft, event: ProposalEvent, at: Receipt): boolean {
+  switch (event.type) {
+    case 'proposal':
+      return applyProposal(draft, event.body, event.author, at);
+    case 'version':
+      return applyVersion(draft, event.body, event.author, at);
+    case 'vote':
+      return applyVote(draft, event.body, event.author, at);
+    case 'dissolve':
+      return applyDissolve(draft, event.body, event.author, at);
+  }
 }
 
 /** Applies one verified event to the draft, or returns false to ignore it. */
@@ -704,12 +825,6 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyGenesis(draft, event.body, event.author, at);
     case 'join':
       return applyJoin(draft, event, at);
-    case 'proposal':
-      return applyProposal(draft, event.body, event.author, at);
-    case 'version':
-      return applyVersion(draft, event.body, event.author, at);
-    case 'vote':
-      return applyVote(draft, event.body, event.author, at);
     case 'level':
       return applyLevel(draft, event.body, event.author);
     case 'leave':
@@ -720,14 +835,19 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 }
 
 /**
- * {@link applyAdmitted} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `vouch` (#101) and `chat-posted` (#119).
+ * The events the restored features added: `suspend` (#102), `narrow` (#117),
+ * `vouch` (#101), `chat-posted` (#119), and `kx` and `key-rotate` (#98).
  */
-function applyLater(
-  draft: Draft,
-  event: Extract<GroupEvent, { readonly type: 'suspend' | 'narrow' | 'vouch' | 'chat-posted' }>,
-  at: Receipt,
-): boolean {
+type LaterEvent = Extract<
+  GroupEvent,
+  { readonly type: 'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'kx' | 'key-rotate' }
+>;
+
+/**
+ * {@link applyAdmitted} for the types the restored features added, and the
+ * events that act on a Proposal ({@link applyProposalEvent}).
+ */
+function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt): boolean {
   switch (event.type) {
     case 'suspend':
       return applySuspend(draft, event.body, event.author, at);
@@ -737,7 +857,75 @@ function applyLater(
       return applyVouch(draft, event.body, event.author, at);
     case 'chat-posted':
       return applyChatPosted(draft, event.body, event.author, at);
+    case 'kx':
+      return applyKx(draft, event.body, event.author);
+    case 'key-rotate':
+      return applyKeyRotate(draft, event.body, event.author, at);
+    default:
+      return applyProposalEvent(draft, event, at);
   }
+}
+
+/**
+ * Whether `event` ends a membership, and so calls for a new group key (#98;
+ * ADR-0072 item 11): a `leave` now, and #115's `remove` once it lands. The
+ * fold asks only of events it applied. This is the one trigger.
+ */
+export function endsMembership(event: Pick<GroupEvent, 'type'>): boolean {
+  return event.type === 'leave';
+}
+
+/**
+ * Records a member's encryption key (#98) when they have none yet and it is
+ * one a box can be sealed to: the first per member counts, and a key carried
+ * at genesis or join came first.
+ */
+function applyKx(draft: Draft, body: KxBody, author: string): boolean {
+  const index = draft.members.findIndex((m) => m.author === author);
+  const member = draft.members[index];
+  const kx = usableKx(body.kx);
+  if (member === undefined || member.kx !== null || kx === null) return false;
+  draft.members[index] = { ...member, kx };
+  return true;
+}
+
+/** A member who has an encryption key (#98). */
+export type KeyHolder = Member & { readonly kx: string };
+
+/** The members a key change must wrap to: every current member with an encryption key (#98). */
+export function keyHolders(state: Pick<GroupState, 'members'>): KeyHolder[] {
+  return state.members.filter((m): m is KeyHolder => m.kx !== null);
+}
+
+/** Whether `wraps` names exactly `recipients`, no one more and no one less. */
+function wrapsExactly(wraps: Readonly<Record<string, string>>, recipients: readonly string[]) {
+  const named = Object.keys(wraps);
+  return named.length === recipients.length && recipients.every((key) => Object.hasOwn(wraps, key));
+}
+
+/**
+ * Changes the group key (#98; ADR-0072 item 11), when a current member wrote
+ * it, a membership has ended since the last canonical change, it names the
+ * next epoch, and its wraps name exactly the current members with an
+ * encryption key. The first valid one per epoch is canonical (relay order
+ * decides, ADR-0073); from it on, records read from the old epoch's mailbox
+ * change nothing.
+ */
+function applyKeyRotate(draft: Draft, body: KeyRotateBody, author: string, at: Receipt): boolean {
+  const valid =
+    draft.rotationDue &&
+    draft.members.some((m) => m.author === author) &&
+    body.epoch === draft.epoch + 1 &&
+    wrapsExactly(
+      body.wraps,
+      keyHolders(draft).map((m) => m.author),
+    );
+  if (!valid) return false;
+  const { epoch, commit, wraps } = body;
+  draft.rotations.push({ ...at, by: author, epoch, commit, wraps });
+  draft.epoch = epoch;
+  draft.rotationDue = false;
+  return true;
 }
 
 /** Every score the ballots gave version `id`, one per ballot that scored it. */
@@ -866,7 +1054,10 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
  * Folds a group's records, in relay order, into its state.
  *
  * `relayNow` is the relay's latest `now`, in minutes, or null before the first
- * sync; it decides only which Proposals have reached their deadline. A record
+ * sync; it decides only which Proposals have reached their deadline. Once the
+ * group has dissolved, relay time stops at the dissolve's receipt (#108), so a
+ * Proposal open then stays open, with no outcome, and no opt-in changes,
+ * whatever `relayNow` says. A record
  * that doesn't verify, or whose event's `author` isn't the key that signed it,
  * is ignored before it is parsed or claims an event id, so a forged copy of a
  * real event can never shadow it. A repeated event id is ignored (the first
@@ -891,33 +1082,26 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings: [],
     vouches: [],
     chatPosts: [],
+    epoch: 0,
+    rotations: [],
+    rotationDue: false,
     seated: new Set(),
     ruled: new Set(),
+    dissolved: null,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
-  for (const { seq, received, bytes } of records) {
-    // Relay time only moves on, whatever the record holds.
-    draft.at = Math.max(draft.at, received);
-    advanceSeats(draft);
-    advanceOptIns(draft);
-    const parsed = parseRecord(bytes);
-    if (parsed === null) {
-      ignored.push({ seq, id: null });
-      continue;
-    }
-    const { event, id } = parsed;
-    const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
-    seen.add(id);
-    if (!applied) ignored.push({ seq, id });
+  for (const record of records) {
+    if (!foldRecord(draft, record, seen)) ignored.push({ seq: record.seq, id: idOf(record) });
   }
-  draft.at = relayNow ?? draft.at;
+  const now = draft.dissolved?.received ?? relayNow;
+  draft.at = now ?? draft.at;
   advanceSeats(draft);
   advanceOptIns(draft);
-  const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
+  const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings, vouches, chatPosts } = draft;
+  const { narrowings, vouches, chatPosts, epoch, rotations, rotationDue } = draft;
   return {
     group,
     rules,
@@ -935,6 +1119,43 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings,
     vouches,
     chatPosts,
+    epoch,
+    rotations,
+    rotationDue,
+    dissolved: draft.dissolved,
     ignored,
   };
+}
+
+/** The id of the event a record holds, or null when it doesn't verify or hold one. */
+function idOf(record: LogRecord): string | null {
+  return parseRecord(record.bytes)?.id ?? null;
+}
+
+/**
+ * Folds one record into the draft, returning whether it was applied.
+ *
+ * A record read from a mailbox of another epoch than the group's now, such as
+ * a stale invite's join or a late writer's Proposal after a key change (#98),
+ * changes nothing at all: not relay time, and not the event ids seen, so the
+ * copy its author posts again to the new mailbox folds once. Otherwise relay
+ * time moves on, whatever the record holds, until the group dissolves (#108),
+ * and the seats and opt-ins catch up to it before the event is checked. A
+ * repeated event id is ignored.
+ */
+function foldRecord(draft: Draft, record: LogRecord, seen: Set<string>): boolean {
+  const { seq, received, bytes, epoch = 0 } = record;
+  if (epoch !== draft.epoch) return false;
+  if (draft.dissolved === null) {
+    draft.at = Math.max(draft.at, received);
+    advanceSeats(draft);
+    advanceOptIns(draft);
+  }
+  const parsed = parseRecord(bytes);
+  if (parsed === null) return false;
+  const { event, id } = parsed;
+  const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
+  seen.add(id);
+  if (applied && endsMembership(event)) draft.rotationDue = true;
+  return applied;
 }

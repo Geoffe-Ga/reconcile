@@ -111,7 +111,9 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       aria-describedby={hint}
     >
       <Label className="field-label">
-        {version.steward === undefined && version.rules === undefined
+        {version.steward === undefined &&
+        version.rules === undefined &&
+        version.dissolve === undefined
           ? messages.ballot.scoreFor(version.number)
           : messages.stewards.score}
       </Label>

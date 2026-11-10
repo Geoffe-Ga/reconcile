@@ -90,9 +90,17 @@ export interface PushUpkeep {
 /** Push: Settings' controls and the sync loop's upkeep. */
 export type Push = PushControls & PushUpkeep;
 
-/** True while push is on for `group` and it isn't leaving this device. */
+/** True while `group` takes new things on this device: it isn't leaving, nor a read-only archive (#108). */
+function isLive(group: Group): boolean {
+  return group.leaving === undefined && group.archived === undefined;
+}
+
+/**
+ * True while push is on for `group` and it is live: a read-only archive gets
+ * no upkeep, so its registration is left to expire at the relay (#108).
+ */
 function isOn(group: Group): group is Group & Required<Pick<Group, 'push'>> {
-  return group.push !== undefined && group.leaving === undefined;
+  return group.push !== undefined && isLive(group);
 }
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
@@ -159,7 +167,9 @@ export function createPush(options: PushOptions): Push {
   /**
    * Registers `endpoint` under each of `group`'s mailboxes from its relay
    * time to 30 days on, then keeps the registration. An endpoint it replaces
-   * is forgotten first.
+   * is forgotten first. A mailbox the group no longer has, as after a key
+   * change moved it to a new one (#98), is forgotten once the new ones hold
+   * the endpoint, so nothing posted to the old mailbox wakes this phone.
    */
   async function register(group: Group, endpoint: string, now: number): Promise<void> {
     const old = group.push;
@@ -167,6 +177,11 @@ export function createPush(options: PushOptions): Push {
     const mailboxes = mailboxesFrom(group, now, mailboxAt);
     for (const mailbox of mailboxes) await relay.register(mailbox, endpoint);
     await store.setPush(group.groupId, { endpoint, mailboxes, instance: group.instance, at: now });
+    if (old?.endpoint !== endpoint) return;
+    await forgetAt(
+      old.mailboxes.filter((mailbox) => !mailboxes.includes(mailbox)),
+      endpoint,
+    );
   }
 
   /** True when `group`'s registration needs the relay again for `endpoint`. */
@@ -188,9 +203,7 @@ export function createPush(options: PushOptions): Push {
     try {
       const subscription = await subscriptionFor(await relay.key());
       const group = await store.getGroup(groupId);
-      if (group === undefined || group.relayNow === null || group.leaving !== undefined) {
-        return 'failed';
-      }
+      if (group === undefined || group.relayNow === null || !isLive(group)) return 'failed';
       await register(group, subscription.endpoint, group.relayNow);
       return 'on';
     } catch (error) {
@@ -269,7 +282,7 @@ export function createPush(options: PushOptions): Push {
     },
     async nudge(groupId) {
       const group = await store.getGroup(groupId);
-      if (group === undefined || group.leaving !== undefined) return;
+      if (group === undefined || !isLive(group)) return;
       if (posted.get(groupId) !== group.log.length) await postDue(group);
     },
     async upkeep() {

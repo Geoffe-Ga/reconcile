@@ -42,6 +42,21 @@ describe('nudgesFor: the wakes a proposer’s device schedules (#99)', () => {
     expect(nudgesFor(log.state(deadlineOf(log.minute)), ANA)).toEqual([]);
   });
 
+  it('gives none once the group has dissolved: a Proposal still open then never closes (#108)', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const open = log.propose('Ana');
+    const motion = log.proposeDissolve('Ana', false);
+    log.vote('Ana', motion, 4);
+    log.vote('Ben', motion, 4);
+    expect(nudgesFor(log.state(), ANA).map((n) => n.proposal)).toEqual([open, open]);
+    log.minute += 1;
+    log.dissolve('Ben', motion);
+
+    expect(log.state().dissolved).not.toBeNull();
+    expect(log.state().proposals.find((p) => p.id === open)?.final).toBe(false);
+    expect(nudgesFor(log.state(), ANA)).toEqual([]);
+  });
+
   it('names each nudge by its Proposal and minute', () => {
     expect(nudgeKey({ proposal: 'p1', minute: 29_010_080 })).toBe('p1@29010080');
   });

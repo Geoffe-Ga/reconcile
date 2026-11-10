@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useRef, useState } from 'react';
+import { type SyntheticEvent, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -14,9 +14,11 @@ import { messages } from '../app/messages';
 import type { StewardValues } from '../app/proposals';
 import { motionFor } from '../app/stewardLines';
 import { MotionTitle, SuspendedNote } from '../app/stewards';
+import { checkTitle, checkWhy } from '../app/proposalFields';
 import { BackLink, Field, PageHeader } from '../app/ui';
+import { type SendOutcome, useSend } from '../app/useSend';
 import { can, isSuspended } from '../engine/capabilities';
-import { type GroupState, TITLE_MAX, WHY_MAX } from '../engine/fold';
+import type { GroupState } from '../engine/fold';
 import { displayName } from '../engine/names';
 import {
   canStand,
@@ -25,10 +27,9 @@ import {
   type SeatNumber,
   seatTakesElection,
 } from '../engine/stewards';
-import { nfcLength } from '../engine/text';
 
 /** How sending went: `proposed` moves on to the Proposal; the others stay on the form. */
-export type StewardOutcome = 'proposed' | 'too-large' | 'failed';
+export type StewardOutcome = SendOutcome;
 
 /** Props for {@link StewardComposer}. */
 export interface StewardComposerProps {
@@ -43,26 +44,6 @@ export interface StewardComposerProps {
   /** Queues the steward Proposal from valid entries. */
   readonly onPropose: (values: StewardValues) => Promise<StewardOutcome>;
 }
-
-/** Limits count code points after NFC (spec §4), never UTF-16 units. */
-function required(missing: string, max: number, tooLong: string) {
-  return (value: string): string | null => {
-    const text = value.trim();
-    if (text === '') return missing;
-    return nfcLength(text) > max ? tooLong : null;
-  };
-}
-
-const checkTitle = required(
-  messages.composer.titleMissing,
-  TITLE_MAX,
-  messages.composer.titleTooLong(TITLE_MAX),
-);
-const checkWhy = required(
-  messages.composer.whyMissing,
-  WHY_MAX,
-  messages.composer.whyTooLong(WHY_MAX),
-);
 
 /** The screen without a form: why there's nothing to propose here. */
 function Unavailable({ state, me, text }: { state: GroupState; me: string; text: string }) {
@@ -80,28 +61,6 @@ function Unavailable({ state, me, text }: { state: GroupState; me: string; text:
       )}
     </main>
   );
-}
-
-/** Runs `onPropose` once at a time; what was proposed leaves this screen, so the button stays off. */
-function useSend(onPropose: StewardComposerProps['onPropose']) {
-  const busy = useRef(false);
-  const [running, setRunning] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [refused, setRefused] = useState<Record<string, string>>({});
-  const run = async (values: StewardValues) => {
-    if (busy.current) return;
-    busy.current = true;
-    setRunning(true);
-    setFailed(false);
-    setRefused({});
-    const outcome = await onPropose(values).catch(() => 'failed' as const);
-    if (outcome === 'proposed') return;
-    busy.current = false;
-    setRunning(false);
-    setRefused(outcome === 'too-large' ? { why: messages.composer.tooLarge } : {});
-    setFailed(outcome === 'failed');
-  };
-  return { run, running, failed, refused };
 }
 
 interface NomineesProps {

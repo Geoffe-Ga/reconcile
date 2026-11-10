@@ -98,12 +98,12 @@ async function restore(person: Person, file: string): Promise<void> {
   await expectAccessible(person, 'Start, restored');
 }
 
-/** `person` scores the Proposal `pill` from Group home's Needs your vote, and waits for Sent. */
-async function vote(person: Person, pill: string): Promise<void> {
+/** `person` scores the Proposal `pill` from the list `list` on Group home, and waits for Sent. */
+async function vote(person: Person, pill: string, list: string): Promise<void> {
   const { page } = person;
   await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();
-  const needs = page.getByRole('region', { name: 'Needs your vote' });
-  await needs.getByRole('link', { name: new RegExp(CANARY.title) }).click();
+  const listed = page.getByRole('region', { name: list, exact: true });
+  await listed.getByRole('link', { name: new RegExp(CANARY.title) }).click();
   await pick(page, pill);
   await page.getByRole('button', { name: /your vote$/ }).click();
   await expect(page.getByText('Sent', { exact: true })).toBeVisible();
@@ -161,7 +161,9 @@ test('a backup restores on two fresh devices, holds nothing readable, and votes 
       textCanary('Proposal title', CANARY.title),
       ...keyCanaries('Ana’s signing key', Uint8Array.from(held.signingKey)),
       ...keyCanaries('group secret', Uint8Array.from(held.secret)),
+      ...keyCanaries('Ana’s encryption key (#98)', Uint8Array.from(held.kxKey ?? [])),
     ];
+    expect(held.kxKey).toHaveLength(32);
     expect(findIn(bytes, 'backup file', canaries).map(describeFinding)).toEqual([]);
   });
 
@@ -185,8 +187,9 @@ test('a backup restores on two fresh devices, holds nothing readable, and votes 
   });
 
   await test.step('both vote, and the tally counts one voter with the later ballot', async () => {
-    await vote(phone, '1 · Opposed');
-    await vote(laptop, '4 · Strongly supportive');
+    await vote(phone, '1 · Opposed', 'Needs your vote');
+    // The laptop is the same person, so once it syncs the phone's ballot, nothing needs its vote.
+    await vote(laptop, '4 · Strongly supportive', 'Open Proposals');
     const { page } = ben;
     await page.getByRole('link', { name: 'Your groups' }).click();
     await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();

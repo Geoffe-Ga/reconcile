@@ -22,9 +22,12 @@ export interface Nudge {
 /**
  * Two nudges for each of `me`'s open Proposals, in relay order: a day before
  * its deadline (closing soon) and at its deadline (its result, when no ballot
- * closes it early). None for anyone else's, or for one that has closed.
+ * closes it early). None for anyone else's, or for one that has closed, and
+ * none once the group has dissolved (#108): a Proposal still open then never
+ * closes, and nothing more goes to the group's mailbox.
  */
 export function nudgesFor(state: GroupState, me: string): Nudge[] {
+  if (state.dissolved !== null) return [];
   return state.proposals
     .filter((p) => p.author === me && !p.final)
     .flatMap((p) => [

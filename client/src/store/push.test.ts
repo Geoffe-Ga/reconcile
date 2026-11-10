@@ -12,6 +12,7 @@ import { base64url } from '../crypto/base64url';
 import { xchachaSeal } from '../crypto/seal';
 import { LEVELS } from '../engine/capabilities';
 import { type EventBodies, type EventType, signEvent } from '../engine/event';
+import { fold } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { createPushRelay } from '../net/push';
 import { createRelay, type Fetch } from '../net/relay';
@@ -438,19 +439,20 @@ describe('upkeep, after each sync pass (#99)', () => {
     const later = at({ secret }, turn);
 
     expect(await push.turnOn(groupId)).toBe('on');
+    expect(fake.endpoints(early)).toEqual([fakeEndpoint(1)]);
+    expect(fake.endpoints(later)).toEqual([fakeEndpoint(1)]);
+    // Ana's own sync runs her own push, whose one mailbox moves the registration back (#98's path).
     await propose(ana, groupId);
     // Ana's own sync posted these to today's one mailbox; ask again through the stub.
     await ana.services.store.markNudged(groupId, []);
     await push.nudge(groupId);
     const deadline = fake.minute + 7 * DAY_MINUTES;
 
-    expect(fake.endpoints(early)).toEqual([fakeEndpoint(1)]);
-    expect(fake.endpoints(later)).toEqual([fakeEndpoint(1)]);
     expect(fake.nudges(later)).toEqual([deadline - DAY_MINUTES, deadline]);
     expect(fake.nudges(early)).toEqual([]);
   });
 
-  it('re-PUTs when the mailbox set changes', async () => {
+  it('re-PUTs when the mailbox set changes, then forgets the mailbox it no longer has', async () => {
     const { fake, ana, groupId, mailbox } = await pushOn();
     const at = twoMailboxes(fake.minute + 40 * DAY_MINUTES);
     const push = createPush({
@@ -462,10 +464,18 @@ describe('upkeep, after each sync pass (#99)', () => {
     const stored = await ana.services.store.getGroup(groupId);
     if (stored === undefined) throw new Error('Expected the group.');
 
+    const before = fake.requests.length;
     await push.upkeep();
 
-    expect(fake.endpoints(at(stored, fake.minute))).toEqual([fakeEndpoint(1)]);
-    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
+    const early = at(stored, fake.minute);
+    expect(pushRequests(fake, before).map(line)).toEqual([
+      ['GET', '/v1/push/key'],
+      ['PUT', `/v1/push/${early}`],
+      ['DELETE', `/v1/push/${mailbox}`],
+    ]);
+    expect(fake.endpoints(early)).toEqual([fakeEndpoint(1)]);
+    expect(fake.endpoints(mailbox)).toEqual([]);
+    expect((await ana.services.store.getGroup(groupId))?.push?.mailboxes).toEqual([early]);
   });
 
   it('resubscribes when the relay’s key changes, and swaps the endpoint', async () => {
@@ -642,6 +652,207 @@ describe('wakes, as each device posts its outbox (#99)', () => {
   });
 });
 
+/** Ana, Ben and Cal in one group on `fake`, synced, with push on for Ana. */
+async function threeWithPush(fake: FakeRelay = createFakeRelay()) {
+  const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
+  opened.push(...devices);
+  const [ana, ben, cal] = devices as [TestDevice, TestDevice, TestDevice];
+  ana.push.answer = 'granted';
+  expect(await ana.services.push.turnOn(groupId)).toBe('on');
+  const stored = await ana.services.store.getGroup(groupId);
+  if (stored === undefined) throw new Error('Expected the group on Ana’s device.');
+  return { fake, groupId, ana, ben, cal, mailbox: mailboxAt(stored, 0) };
+}
+
+/** Cal leaves from his own device, which posts his leave and forgets the group. */
+async function calLeaves(cal: TestDevice, groupId: string): Promise<void> {
+  await queueLeave(cal, groupId);
+  await cal.services.sync.syncOnce();
+  expect(await cal.services.store.getGroup(groupId)).toBeUndefined();
+}
+
+/** The group's mailbox on `device` now: its current epoch's (#98). */
+async function mailboxNow(device: TestDevice, groupId: string): Promise<string> {
+  const held = await device.services.store.getGroup(groupId);
+  if (held === undefined) throw new Error('Expected the group.');
+  return mailboxAt(held, 0);
+}
+
+describe('push across a key change (#98)', () => {
+  it('moves the registration to the new key’s mailbox: a PUT there, then a DELETE of the old one', async () => {
+    const { fake, groupId, ana, cal, mailbox } = await threeWithPush();
+    await calLeaves(cal, groupId);
+    const before = fake.requests.length;
+
+    // Ana's pass reads the leave, writes the key change, moves to epoch 1, and upkeep follows.
+    await ana.services.sync.syncOnce();
+
+    const held = await ana.services.store.getGroup(groupId);
+    const next = mailboxAt(held ?? never(), 0);
+    expect(held?.epoch).toBe(1);
+    expect(next).not.toBe(mailbox);
+    expect(pushRequests(fake, before).map(line)).toEqual([
+      ['GET', '/v1/push/key'],
+      ['PUT', `/v1/push/${next}`],
+      ['DELETE', `/v1/push/${mailbox}`],
+    ]);
+    expect([fake.endpoints(next), fake.endpoints(mailbox)]).toEqual([[fakeEndpoint(1)], []]);
+    expect(held?.push?.mailboxes).toEqual([next]);
+    // A later pass finds nothing due.
+    const after = fake.requests.length;
+    await ana.services.sync.syncOnce();
+    expect(pushRequests(fake, after)).toEqual([]);
+  });
+
+  it('wakes as before: the key change asks no wake, and a Proposal after it wakes the new mailbox', async () => {
+    const { fake, groupId, ana, cal, mailbox } = await threeWithPush();
+    await calLeaves(cal, groupId);
+    const before = fake.requests.length;
+    await ana.services.sync.syncOnce();
+    const next = await mailboxNow(ana, groupId);
+    const puts = (from: number, box: string) =>
+      fake.requests
+        .slice(from)
+        .filter((r) => r.method === 'PUT' && r.url.startsWith(`/v1/mailbox/${box}?`))
+        .map((r) => r.url.endsWith('&wake=1'));
+    // The key change went to the old mailbox, asking no wake.
+    expect(puts(before, mailbox)).toEqual([false]);
+
+    const from = fake.requests.length;
+    await propose(ana, groupId);
+
+    expect(puts(from, next)).toEqual([true]);
+    expect(puts(from, mailbox)).toEqual([]);
+    expect(fake.nudges(next)).toHaveLength(2);
+  });
+
+  it('still fires Leave’s keepalive DELETE while a key change holds the outbox', async () => {
+    const { fake, groupId, ana, cal, mailbox } = await threeWithPush();
+    await calLeaves(cal, groupId);
+    // Ana's device reads Cal's leave, but the relay turns its key change away, so the outbox freezes.
+    let refuse = true;
+    const fetch: Fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const blob = init?.method === 'PUT' && url.startsWith('/v1/mailbox/');
+      if (refuse && blob) return Promise.resolve(new Response(null, { status: 503 }));
+      return fake.fetch(input, init);
+    };
+    const { store } = ana.services;
+    const deletes: RequestInit[] = [];
+    const watching: Fetch = (input, init) => {
+      if (init?.method === 'DELETE') deletes.push(init);
+      return fake.fetch(input, init);
+    };
+    const push = createPush({
+      store,
+      relay: createPushRelay({ fetch: watching }),
+      port: browserPushPort(ana.push.environment),
+    });
+    const sync = createSync({ store, relay: createRelay({ fetch }), seal: xchachaSeal, push });
+    expect(await sync.syncOnce()).toBe(false);
+    const held = await store.getGroup(groupId);
+    expect([fold(held?.log ?? [], null).rotationDue, held?.epoch ?? 0]).toEqual([true, 0]);
+    refuse = false;
+
+    await queueLeave(ana, groupId);
+    await sync.syncOnce();
+
+    expect(await store.getGroup(groupId)).toBeUndefined();
+    expect(deletes.map((init) => init.keepalive)).toEqual([true]);
+    await vi.waitFor(() => {
+      expect(fake.endpoints(mailbox)).toEqual([]);
+    });
+  });
+});
+
+/** Ana and Ben pass a dissolve with two 4s, while Ana's edit is still open, and Ana's device archives the group. */
+async function dissolveWithPush() {
+  const setup = await group();
+  const { ana, ben, groupId } = setup;
+  expect(await ana.services.push.turnOn(groupId)).toBe('on');
+  const open = await propose(ana, groupId);
+  const body = {
+    target: { kind: 'dissolve', wipe: false },
+    title: 'Dissolve',
+    why: 'Done.',
+  } as const;
+  const motion = await say(ana, groupId, { type: 'proposal', body });
+  await ben.services.sync.syncOnce();
+  await say(ben, groupId, { type: 'vote', body: { proposal: motion, scores: { [motion]: 4 } } });
+  await say(ana, groupId, { type: 'vote', body: { proposal: motion, scores: { [motion]: 4 } } });
+  // Ana's device posts her dissolve, and archives the group once it folds.
+  await ana.services.sync.syncOnce();
+  await ana.services.sync.syncOnce();
+  const held = await ana.services.store.getGroup(groupId);
+  expect(held?.archived).toEqual({ reason: 'dissolved' });
+  return { ...setup, open, held };
+}
+
+/** Push for `device` on `fake`, as the device's own is made, with its nudges and upkeep in reach. */
+function pushOf(device: TestDevice, fake: FakeRelay) {
+  return createPush({
+    store: device.services.store,
+    relay: createPushRelay({ fetch: fake.fetch }),
+    port: browserPushPort(device.push.environment),
+  });
+}
+
+describe('push in a dissolved group (#108)', () => {
+  it('sends no push PUT, nudge or DELETE once the group dissolves, and leaves its registration to expire', async () => {
+    const { fake, ana, groupId, mailbox, held } = await dissolveWithPush();
+    expect(held?.push).toBeUndefined();
+    expect(held?.nudged).toBeUndefined();
+    const before = fake.requests.length;
+
+    // Past a renewal, a nudge's minute and the deadline of the edit left open.
+    for (const minutes of [RENEW_MINUTES, 7 * DAY_MINUTES]) {
+      fake.minute += minutes;
+      await ana.services.sync.syncOnce();
+    }
+    const push = pushOf(ana, fake);
+    await push.nudge(groupId);
+    await push.upkeep();
+    await push.turnOff(groupId);
+
+    expect(fake.requests.slice(before).filter((r) => r.url.includes(mailbox))).toEqual([]);
+    expect(pushRequests(fake, before)).toEqual([]);
+    // The relay keeps the endpoint until it expires, as it keeps the mailbox's blobs.
+    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
+  });
+
+  it('turns nothing on for a read-only archive, and nudges nothing for one with no dissolve in its log (#115)', async () => {
+    const { fake, ana, groupId } = await group();
+    await propose(ana, groupId);
+    await ana.services.store.markArchived(groupId, 'dissolved');
+    const before = fake.requests.length;
+
+    const push = pushOf(ana, fake);
+    expect(await push.turnOn(groupId)).toBe('failed');
+    await push.nudge(groupId);
+    await push.upkeep();
+
+    expect(pushRequests(fake, before).filter((r) => r.method !== 'GET')).toEqual([]);
+    expect((await ana.services.store.getGroup(groupId))?.push).toBeUndefined();
+  });
+
+  it('keeps up no registration a restore carried into a read-only copy', async () => {
+    const { fake, ana, groupId, mailbox } = await group();
+    await ana.services.push.turnOn(groupId);
+    const held = (await ana.services.store.getGroup(groupId)) ?? never();
+    // As a restore over this device's copy would leave it: the registration, under an archive.
+    await ana.services.store.markArchived(groupId, 'dissolved');
+    await ana.services.store.setPush(groupId, held.push ?? null);
+    // A new endpoint makes the registration due at once.
+    ana.push.rotate();
+    const before = fake.requests.length;
+
+    await pushOf(ana, fake).upkeep();
+    await ana.services.sync.syncOnce();
+
+    expect(fake.requests.slice(before).filter((r) => r.url.includes(mailbox))).toEqual([]);
+  });
+});
+
 describe('what push sends the relay', () => {
   it('holds only an endpoint or a relay minute, and never the group, its names or its secret', async () => {
     const { fake, ana, ben, groupId, secret } = await group();
@@ -673,3 +884,8 @@ describe('what push sends the relay', () => {
     }
   });
 });
+
+/** Fails a test that reached a value it expected to exist. */
+function never(): never {
+  throw new Error('Expected a value here.');
+}

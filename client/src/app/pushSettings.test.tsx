@@ -152,6 +152,47 @@ describe('Settings › Notifications (#99)', () => {
     expect(fake.endpoints(mailbox)).toEqual([]);
   });
 
+  it('gives a personal Document no switch, since it isn’t a group (#93)', async () => {
+    const statement = {
+      id: 'Q2FuYXJ5IHN0YXRlbWVudA',
+      title: 'Canary personal title',
+      text: 'What I stand for.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const made = await members(createFakeRelay(), ['Ana', 'Ben']);
+    opened.push(...made.devices);
+    const [ana] = made.devices;
+    if (ana === undefined) throw new Error('Expected Ana.');
+    await ana.services.store.savePersonal(statement);
+    go('#/settings');
+    const app = mountApp(ana.services, 'ana');
+    mounted.push(app);
+
+    const section = await within(app.container).findByRole('region', { name: 'Notifications' });
+
+    expect(within(section).getAllByRole('switch')).toHaveLength(1);
+    expect(within(section).getByRole('switch', { name: SWITCH })).not.toBeChecked();
+    expect(section).not.toHaveTextContent(statement.title);
+  });
+
+  it('shows no switch for a dissolved group’s read-only copy, which takes nothing new (#108)', async () => {
+    const { section, ana, groupId, fake } = await settings();
+    expect(within(section).getAllByRole('switch')).toHaveLength(1);
+    const before = fake.requests.length;
+
+    await ana.services.store.markArchived(groupId, 'dissolved');
+
+    await waitFor(() => {
+      expect(within(section).queryAllByRole('switch')).toEqual([]);
+    });
+    expect(section).toHaveTextContent(
+      'Once you’re in a group, you can turn on its notifications here.',
+    );
+    expect(fake.requests.slice(before).filter((r) => r.url.startsWith('/v1/push'))).toEqual([]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('shows no switch, only why, on a device without the Push API', async () => {
     const fake = createFakeRelay();
     const made = await members(fake, ['Ana']);
