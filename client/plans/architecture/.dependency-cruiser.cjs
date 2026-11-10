@@ -42,10 +42,18 @@ module.exports = {
     {
       name: 'crypto-imports-only-noble',
       comment:
-        'src/crypto depends on no third-party package but the audited @noble/* libraries: no hand-rolled or unaudited cryptography (spec §2-§3, #69). Its tests may use the test runner.',
+        'src/crypto depends on no third-party package but the audited @noble/* libraries, and the one audited Shamir library that only shares.ts may import (below): no hand-rolled or unaudited cryptography (spec §2-§3, #69, ADR-0075 §4). Its tests may use the test runner.',
       severity: 'error',
       from: { path: '^src/crypto/', pathNot: '\\.test\\.tsx?$' },
-      to: { dependencyTypesNot: ['local'], pathNot: 'node_modules/@noble/' },
+      to: { dependencyTypesNot: ['local'], pathNot: 'node_modules/(@noble|shamir-secret-sharing)/' },
+    },
+    {
+      name: 'only-shares-ts-imports-shamir',
+      comment:
+        'shamir-secret-sharing, pinned exactly, is the one library beyond @noble/* (ADR-0075 §4). Only src/crypto/shares.ts imports it, tests included, so recovery shares are split and rebuilt in one place (#109).',
+      severity: 'error',
+      from: { pathNot: '^src/crypto/shares\\.ts$' },
+      to: { path: 'node_modules/shamir-secret-sharing/' },
     },
     {
       name: 'only-qr-ts-imports-qr',
