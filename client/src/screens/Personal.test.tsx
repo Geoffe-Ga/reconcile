@@ -80,9 +80,29 @@ describe('Personal', () => {
     ).toBeVisible();
     expect(
       screen.getByText(
-        'They stay on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes them.',
+        'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
       ),
     ).toBeVisible();
     expect(screen.getByRole('link', { name: /Your groups/ })).toHaveAttribute('href', '#/');
+  });
+
+  it('marks a Document shared by link under its title, and no other (#105)', async () => {
+    const [first, second] = DOCUMENTS;
+    if (first === undefined || second === undefined) throw new Error('Expected two Documents.');
+    const share = {
+      seed: new Uint8Array(32),
+      secretKey: new Uint8Array(32),
+      publicKey: new Uint8Array(32),
+      n: 1,
+      lastPostedAt: 1,
+      pending: false,
+    };
+    render(<Personal documents={[first, { ...second, share }]} newId={NEW_ID} />);
+
+    const [plain, shared] = within(screen.getByRole('list')).getAllByRole('link');
+    expect(plain).not.toHaveTextContent('Shared by link');
+    expect(shared).toHaveTextContent('ليست القراءة');
+    expect(shared).toHaveTextContent('Shared by link');
+    expect(await axeViolations()).toEqual([]);
   });
 });

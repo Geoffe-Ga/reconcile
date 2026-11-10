@@ -15,8 +15,11 @@
  * to be erased, and a file would keep them past that.
  *
  * Each personal Document goes in whole: its id, title, text, and when it
- * was made and last edited. The format number stays 1: a file from before
- * #93 has no `personal` field, and reads as holding no personal Documents.
+ * was made and last edited, and its share by link while it is shared (#105),
+ * so a restore keeps the same link; a second device's link (#96) takes
+ * `withoutShares`. The format number stays 1: a file from before #93 has no
+ * `personal` field, and reads as holding no personal Documents, and one from
+ * before #105 holds no shares.
  *
  * Restoring opens the file, then checks everything before it writes
  * anything: the shape of every field, that each key makes its author, that
@@ -35,7 +38,14 @@ import { publicKeyOf } from '../crypto/sign';
 import { fold, type LogRecord } from '../engine/fold';
 import type { Archive, BackedUpGroup, Group, Store } from './db';
 import { eventIdOf } from './eventId';
-import { isPersonalDocument, type PersonalDocument } from './personal';
+import {
+  isPersonalDocument,
+  isShareState,
+  type PersonalDocument,
+  type PersonalText,
+  type ShareState,
+  textOf,
+} from './personal';
 
 /** The plaintext's format number, which a later layout would change. */
 export const SNAPSHOT_FORMAT = 1;
@@ -97,10 +107,34 @@ export async function deviceSnapshot(
   return { groups: backedUpGroups(groups), personal };
 }
 
-/** One personal Document as the backup's JSON holds it: its five fields and nothing else. */
-function personalJson(document: PersonalDocument): PersonalDocument {
-  const { id, title, text, createdAt, updatedAt } = document;
-  return { id, title, text, createdAt, updatedAt };
+/**
+ * The snapshot a second device takes (#96): every group and Document as
+ * `snapshot` holds them, less each Document's share by link (#105).
+ * Personal Documents don't sync between devices, so two devices posting
+ * one share would roll its link back and forth; the linked device can make
+ * its own link instead.
+ */
+export function withoutShares(snapshot: Snapshot): Snapshot {
+  return { groups: snapshot.groups, personal: snapshot.personal.map(textOf) };
+}
+
+/** A share by link (#105) as the backup's JSON holds it: its bytes in unpadded base64url. */
+function shareJson(share: ShareState) {
+  const { seed, secretKey, publicKey, n, lastPostedAt, pending } = share;
+  return {
+    seed: base64url(seed),
+    secretKey: base64url(secretKey),
+    publicKey: base64url(publicKey),
+    n,
+    lastPostedAt,
+    pending,
+  };
+}
+
+/** One personal Document as the backup's JSON holds it: its five fields, and its share when shared. */
+function personalJson(document: PersonalDocument) {
+  const { share } = document;
+  return { ...textOf(document), ...(share === undefined ? {} : { share: shareJson(share) }) };
 }
 
 /** `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
@@ -201,8 +235,32 @@ function groupsIn(value: unknown): BackedUpGroup[] | null {
 /** The personal Documents in `value`, or null when it isn't a list of valid ones, each once. */
 function personalIn(value: unknown): PersonalDocument[] | null {
   if (!Array.isArray(value)) return null;
-  const read = (item: unknown) => (isPersonalDocument(item) ? personalJson(item) : null);
-  return allUnique(value, read, (document) => document.id);
+  return allUnique(value, documentIn, (document) => document.id);
+}
+
+/** One personal Document in `value`, with its share when it has one (#105), or null. */
+function documentIn(value: unknown): PersonalDocument | null {
+  if (!isObject(value)) return null;
+  const share = value.share === undefined ? undefined : shareIn(value.share);
+  if (share === null) return null;
+  // Read only through isPersonalDocument, which checks every field this picks.
+  const words = textOf(value as unknown as PersonalText);
+  const document: PersonalDocument = share === undefined ? words : { ...words, share };
+  return isPersonalDocument(document) ? document : null;
+}
+
+/** A share by link in `value` (#105), or null when any part of it doesn't check out. */
+function shareIn(value: unknown): ShareState | null {
+  if (!isObject(value)) return null;
+  const share = {
+    seed: keyIn(value.seed),
+    secretKey: keyIn(value.secretKey),
+    publicKey: keyIn(value.publicKey),
+    n: value.n,
+    lastPostedAt: value.lastPostedAt,
+    pending: value.pending,
+  };
+  return isShareState(share) ? share : null;
 }
 
 /** The JSON value `bytes` spell in UTF-8, or undefined when they don't. */

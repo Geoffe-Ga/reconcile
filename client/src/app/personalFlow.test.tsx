@@ -13,6 +13,7 @@ import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { App } from './App';
+import { messages } from './messages';
 
 freshIndexedDBPerTest();
 
@@ -114,5 +115,37 @@ describe('Personal in the app', () => {
     expect(window.location.hash).toBe(href);
     expect(await screen.findByRole('heading', { level: 1, name: 'Untitled' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+  });
+
+  it('shares a Document by link, copies it, marks it on Personal, and the link reads it back in the app (#105)', async () => {
+    const user = userEvent.setup();
+    const ana = await device('ana');
+    const id = 'Q2FuYXJ5IHN0YXRlbWVudA';
+    await ana.services.store.savePersonal({
+      id,
+      title: 'My mission statement',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    window.history.replaceState(null, '', `#/me/${id}`);
+    render(<App services={ana.services} />);
+    const { share } = messages.personal;
+
+    await user.click(await screen.findByRole('button', { name: share.start }));
+
+    expect(await screen.findByText(share.copied)).toBeVisible();
+    const link = screen.getByRole<HTMLInputElement>('textbox', { name: share.field }).value;
+    expect(ana.copied).toEqual([`${share.message} ${link}`]);
+    expect(link.startsWith(`${ana.services.origin}/#share/`)).toBe(true);
+    await user.click(screen.getByRole('link', { name: /Personal/ }));
+    expect(await screen.findByText(messages.personal.sharedLine)).toBeVisible();
+
+    window.history.pushState(null, '', new URL(link).hash);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+
+    expect(await screen.findByText('I show up.')).toBeVisible();
+    expect(screen.getByText(messages.shared.note)).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1, name: 'My mission statement' })).toBeVisible();
   });
 });

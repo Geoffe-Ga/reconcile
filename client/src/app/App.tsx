@@ -23,6 +23,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
 import { Settings } from '../screens/Settings';
+import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
@@ -41,6 +42,7 @@ import {
   makeInvite,
 } from './actions';
 import { makeBackup, restoreBackup, saveBackup } from './backup';
+import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
@@ -129,13 +131,20 @@ interface PersonalDocumentScreenProps {
   readonly id: string;
 }
 
-/** One personal Document (#93); deleting it goes back to Personal in its place. */
+/** One personal Document (#93), shareable by link (#105); deleting it goes back to Personal in its place. */
 function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
   const onDeleted = useCallback(() => {
     replaceRoute({ name: 'personal' });
   }, []);
+  const sharing = useMemo(() => personalSharing(services), [services]);
   return (
-    <PersonalDocument id={id} documents={services.store} now={services.now} onDeleted={onDeleted} />
+    <PersonalDocument
+      id={id}
+      documents={services.store}
+      now={services.now}
+      onDeleted={onDeleted}
+      sharing={sharing}
+    />
   );
 }
 
@@ -584,6 +593,9 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
+    case 'shared':
+      // Root shows a share link's page before first run; App shows it too, on the same relay.
+      return <SharedPage payload={route.payload} reader={services} />;
     case 'join':
       return (
         <JoinScreen

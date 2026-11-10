@@ -8,6 +8,8 @@ const ATOM = `${GROUP}.0`;
 const PROPOSAL = 'p'.repeat(43);
 /** A personal Document's id (#93): 16 bytes in unpadded base64url. */
 const PERSONAL = 'Q2FuYXJ5IHN0YXRlbWVudA';
+/** A share link's payload (#105): its seed and public key, 43 base64url characters each. */
+const SHARE = `${'s'.repeat(43)}.${'k'.repeat(43)}`;
 
 afterEach(() => {
   window.history.replaceState(null, '', '#/');
@@ -27,6 +29,11 @@ describe('parseRoute', () => {
     ['#/join/abc.def', { name: 'join', payload: 'abc.def' }],
     ['#join/abc-def', { name: 'join', payload: 'abc-def' }],
     ['#join/abc.def', { name: 'join', payload: 'abc.def' }],
+    [`#share/${SHARE}`, { name: 'shared', payload: SHARE }],
+    // Any #share/ link reaches the shared page, which reads a damaged one as not shared (#105).
+    ['#share/', { name: 'shared', payload: '' }],
+    ['#share/abc/def', { name: 'shared', payload: 'abc/def' }],
+    ['#share/has space', { name: 'shared', payload: 'has space' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
@@ -99,6 +106,8 @@ describe('parseRoute', () => {
     '#join/',
     '#join/abc/def',
     '#join/has space',
+    '#/share/abc',
+    '#share',
     'create',
   ])('sends the unknown %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
@@ -114,6 +123,7 @@ describe('routeHref', () => {
     [{ name: 'personalDocument', id: PERSONAL }, `#/me/${PERSONAL}`],
     [{ name: 'join', payload: null }, '#/join'],
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
+    [{ name: 'shared', payload: SHARE }, `#share/${SHARE}`],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
