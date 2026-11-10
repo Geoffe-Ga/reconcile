@@ -34,6 +34,7 @@ npm run build            # production build
 ## Client rules
 
 - **No hand-rolled cryptography.** Use audited `@noble/*` libraries (spec, Identity and keys), plus `shamir-secret-sharing`, imported only by `src/crypto/shares.ts` ([ADR-0075](../docs/adr/0075-safeguards-for-the-revised-mvp.md) §4).
+- **QR codes** (#96) come from `qr`, a dependency-free encoder and decoder that does no cryptography, imported only by `src/app/qr.ts` (dependency-cruiser holds it).
 - **Nothing readable leaves the device.** Anything sent to the relay is a sealed, padded, encrypted blob (ADR-0019).
 - **No analytics, telemetry, or third-party scripts.** The app's only network calls go to the relay and, once a group has turned its bot on by Proposal, that group's Discord webhook (#119). Only `src/net/relay.ts` and `src/net/discord.ts` call `fetch`, and the deploy CSP's `connect-src` allows nothing but the app's own origin and `https://discord.com/api/webhooks/`. Push (#99) will add the browser's push service.
 - **Quiet safety:** protective features live in Settings and aren't promoted (ADR-0018).

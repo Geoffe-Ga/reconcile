@@ -5,14 +5,14 @@
  * only after a tap, facing away from the person, and every track stops when
  * the scanner closes or unmounts.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import decodeQR from 'qr/decode.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { linkCode, newLinkKeys, newLinkSeed } from '../crypto/link';
 import { axeViolations } from '../test/axe';
 import { messages } from './messages';
-import { canvasFrames, type Frame, MAX_FRAME, qrModules, QUIET_ZONE } from './qr';
+import { canvasFrames, decodeFrame, type Frame, MAX_FRAME, qrModules, QUIET_ZONE } from './qr';
 import { QrCode } from './QrCode';
 import { FRAME_MS, QrScanner } from './QrScanner';
 
@@ -51,6 +51,18 @@ async function frames(count: number): Promise<void> {
   }
 }
 
+/**
+ * Waits until the scanner shows the camera and its effect has attached
+ * `stream` to the video, which React runs after the commit that shows Stop
+ * scanning.
+ */
+async function scanning(stream: MediaStream): Promise<void> {
+  await screen.findByRole('button', { name: messages.link.stopScan });
+  await waitFor(() => {
+    expect(document.querySelector('video')?.srcObject).toBe(stream);
+  });
+}
+
 /** Gives `navigator` these `mediaDevices` (jsdom has none); returns the way to take them back. */
 function withMediaDevices(value: unknown): () => void {
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value });
@@ -78,6 +90,12 @@ describe('qrModules', () => {
   it('round-trips the code through the decoder, from an ImageData-shaped array', () => {
     const text = code();
     expect(decodeQR(pixels(qrModules(text)))).toBe(text);
+  });
+
+  it('reads no code from a frame without one, rather than throwing', () => {
+    const blank = { width: 64, height: 64, data: new Uint8ClampedArray(64 * 64 * 4).fill(255) };
+    expect(decodeFrame(blank)).toBeNull();
+    expect(decodeFrame(pixels(qrModules('RL1.text')))).toBe('RL1.text');
   });
 
   it('keeps a 4-module light quiet zone around the symbol', () => {
@@ -150,7 +168,7 @@ describe('QrScanner', () => {
 
     fireEvent.click(screen.getByRole('button', { name: messages.link.scan }));
 
-    await screen.findByRole('button', { name: messages.link.stopScan });
+    await scanning(stream);
     expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({
       video: { facingMode: 'environment' },
       audio: false,
@@ -190,7 +208,8 @@ describe('QrScanner', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: messages.link.scan }));
-    const stop = await screen.findByRole('button', { name: messages.link.stopScan });
+    await scanning(stream);
+    const stop = screen.getByRole('button', { name: messages.link.stopScan });
 
     fireEvent.click(stop);
 
@@ -209,7 +228,7 @@ describe('QrScanner', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: messages.link.scan }));
-    await screen.findByRole('button', { name: messages.link.stopScan });
+    await scanning(stream);
 
     view.unmount();
 
@@ -280,7 +299,7 @@ describe('QrScanner', () => {
       </main>,
     );
     fireEvent.click(screen.getByRole('button', { name: messages.link.scan }));
-    await screen.findByRole('button', { name: messages.link.stopScan });
+    await scanning(stream);
 
     const video = document.querySelector('video');
     expect(video?.srcObject).toBe(stream);
