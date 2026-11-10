@@ -55,6 +55,21 @@ describe('putBlob', () => {
     expect(fake.requests[0]?.url).toBe(`/v1/mailbox/${mailbox}`);
   });
 
+  it('asks the relay to wake the mailbox with wake=1 only when told to (#99)', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+
+    await relay.putBlob(mailbox, blob(1), 30, { wake: true });
+    await relay.putBlob(mailbox, blob(2), 30, { wake: false });
+    await relay.putBlob(mailbox, blob(3), undefined, { wake: true });
+
+    expect(fake.requests.map((request) => request.url)).toEqual([
+      `/v1/mailbox/${mailbox}?ttl_days=30&wake=1`,
+      `/v1/mailbox/${mailbox}?ttl_days=30`,
+      `/v1/mailbox/${mailbox}?wake=1`,
+    ]);
+  });
+
   it('turns a refusal into a RelayError carrying the status and code', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
