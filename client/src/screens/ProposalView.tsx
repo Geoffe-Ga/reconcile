@@ -21,7 +21,8 @@ import { type VersionView, versionViews } from '../app/versionViews';
 import { rulesView } from '../app/optInLines';
 import { Named, SuspendedNote } from '../app/stewards';
 import { stewardView } from '../app/versionViews';
-import { can, isSuspended } from '../engine/capabilities';
+import { rightsAt } from '../engine/admission';
+import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import {
   isRulesProposal,
@@ -193,8 +194,9 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 
 /**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they joined after it opened, weren't at a voting
- * level then, or are the steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
+ * Outside its eligible set, they joined after it opened, hadn't earned a vote
+ * yet when it opened (#101), weren't at a voting level then, or are the
+ * steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
  */
@@ -205,9 +207,16 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
   const change = stewardChangeOf(proposal);
   if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
-  return member !== undefined && member.seq < proposal.seq
-    ? messages.proposal.notVotingLevel
-    : messages.proposal.joinedAfter;
+  if (member === undefined || member.seq > proposal.seq) return messages.proposal.joinedAfter;
+  return hadNoVote(state, me, proposal)
+    ? messages.admission.noVoteYet
+    : messages.proposal.notVotingLevel;
+}
+
+/** True when `me`'s voting rights hadn't arrived yet when `proposal` opened (#101). */
+function hadNoVote(state: GroupState, me: string, proposal: Proposal): boolean {
+  const arrived = rightsAt(state, me);
+  return arrived === null || arrived > proposal.received;
 }
 
 interface NoVoteProps {
@@ -217,10 +226,14 @@ interface NoVoteProps {
   readonly leaving: boolean;
 }
 
-/** Why they can't vote, and where they change their level when theirs doesn't vote now. */
+/**
+ * Why they can't vote, and where they change their level when theirs doesn't
+ * vote now. A newcomer gets their own line instead: no level votes until
+ * their rights arrive (#101).
+ */
 function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   const levelDoesntVote =
-    !leaving && can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
+    !leaving && holdsRights(state, me) && !can(state, me, 'vote') && !isSuspended(state, me);
   return (
     <div className="stack">
       <p className="lede">{reason}</p>

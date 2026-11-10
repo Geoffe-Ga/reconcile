@@ -55,6 +55,7 @@ import {
   suspend,
   type ProposalValues,
   type VersionValues,
+  vouch,
 } from './proposals';
 import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
@@ -299,6 +300,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             replaceRoute({ name: 'start' });
           }}
           onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
+          onVouch={(member) => vouch(services, groupId, member)}
         />
       )}
     </GroupGate>

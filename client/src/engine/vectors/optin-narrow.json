@@ -6,13 +6,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -23,13 +23,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -38,13 +38,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -53,13 +53,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -68,6 +68,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -89,7 +117,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -98,15 +126,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -115,15 +143,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -132,15 +160,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -149,15 +177,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -177,7 +205,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375031,
           "event": {
             "v": 1,
@@ -187,7 +215,7 @@
             "ts": 1762501860000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         }
@@ -203,25 +231,25 @@
         },
         "ignored": [
           {
-            "seq": 11,
-            "id": "@11"
+            "seq": 13,
+            "id": "@13"
           }
         ]
       },
-      "unchangedWithout": [11]
+      "unchangedWithout": [13]
     },
     {
       "name": "a steward's narrow is ignored with no off-Proposal of their own open: beside a closed on-Proposal, or beside someone else's off-Proposal",
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -232,13 +260,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -247,13 +275,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -262,13 +290,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -277,6 +305,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -298,7 +354,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -307,15 +363,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -324,15 +380,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -341,15 +397,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -358,15 +414,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -376,12 +432,12 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@5"
+              "proposal": "@7"
             }
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375031,
           "event": {
             "v": 1,
@@ -401,7 +457,7 @@
           }
         },
         {
-          "seq": 12,
+          "seq": 14,
           "received": 29375032,
           "event": {
             "v": 1,
@@ -411,7 +467,7 @@
             "ts": 1762501920000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@11"
+              "proposal": "@13"
             }
           }
         }
@@ -427,29 +483,29 @@
         },
         "ignored": [
           {
-            "seq": 10,
-            "id": "@10"
-          },
-          {
             "seq": 12,
             "id": "@12"
+          },
+          {
+            "seq": 14,
+            "id": "@14"
           }
         ]
       },
-      "unchangedWithout": [10, 12]
+      "unchangedWithout": [12, 14]
     },
     {
       "name": "a steward's narrow beside their own off-Proposal turns the chat bot off at once while the rules still hold it on, and a second narrow while it's in force is ignored",
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -460,13 +516,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -475,13 +531,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -490,13 +546,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -505,6 +561,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -526,7 +610,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -535,15 +619,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -552,15 +636,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -569,15 +653,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -586,15 +670,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -614,7 +698,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -624,12 +708,12 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         },
         {
-          "seq": 12,
+          "seq": 14,
           "received": 29375031,
           "event": {
             "v": 1,
@@ -639,7 +723,7 @@
             "ts": 1762501860000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         }
@@ -648,10 +732,10 @@
       "expect": {
         "proposals": [
           {
-            "id": "@5"
+            "id": "@7"
           },
           {
-            "id": "@10",
+            "id": "@12",
             "class": "ordinary",
             "deadline": 29385110,
             "final": false
@@ -659,12 +743,12 @@
         ],
         "narrowings": [
           {
-            "id": "@11",
-            "seq": 11,
+            "id": "@13",
+            "seq": 13,
             "received": 29375030,
             "by": "%ana",
             "optIn": "chatBot",
-            "proposal": "@10"
+            "proposal": "@12"
           }
         ],
         "rules": {
@@ -681,25 +765,25 @@
         },
         "ignored": [
           {
-            "seq": 12,
-            "id": "@12"
+            "seq": 14,
+            "id": "@14"
           }
         ]
       },
-      "unchangedWithout": [12]
+      "unchangedWithout": [14]
     },
     {
       "name": "the chat bot stays off for good once the steward's off-Proposal passes",
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -710,13 +794,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -725,13 +809,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -740,13 +824,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -755,6 +839,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -776,7 +888,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -785,15 +897,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -802,15 +914,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -819,15 +931,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -836,15 +948,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -864,7 +976,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -874,12 +986,12 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         },
         {
-          "seq": 12,
+          "seq": 14,
           "received": 29375040,
           "event": {
             "v": 1,
@@ -888,15 +1000,15 @@
             "author": "%ana",
             "ts": 1762502400000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 4
+                "@12": 4
               }
             }
           }
         },
         {
-          "seq": 13,
+          "seq": 15,
           "received": 29375041,
           "event": {
             "v": 1,
@@ -905,15 +1017,15 @@
             "author": "%ben",
             "ts": 1762502460000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 4
+                "@12": 4
               }
             }
           }
         },
         {
-          "seq": 14,
+          "seq": 16,
           "received": 29375042,
           "event": {
             "v": 1,
@@ -922,15 +1034,15 @@
             "author": "%cal",
             "ts": 1762502520000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 4
+                "@12": 4
               }
             }
           }
         },
         {
-          "seq": 15,
+          "seq": 17,
           "received": 29375043,
           "event": {
             "v": 1,
@@ -939,9 +1051,9 @@
             "author": "%dee",
             "ts": 1762502580000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 4
+                "@12": 4
               }
             }
           }
@@ -951,14 +1063,14 @@
       "expect": {
         "proposals": [
           {
-            "id": "@5"
+            "id": "@7"
           },
           {
-            "id": "@10",
+            "id": "@12",
             "closedAt": 29375043,
             "outcome": {
               "kind": "pass",
-              "version": "@10",
+              "version": "@12",
               "bar": {
                 "avgAtLeast": 2,
                 "zerosUnderPercent": 10
@@ -968,12 +1080,12 @@
         ],
         "narrowings": [
           {
-            "id": "@11",
-            "seq": 11,
+            "id": "@13",
+            "seq": 13,
             "received": 29375030,
             "by": "%ana",
             "optIn": "chatBot",
-            "proposal": "@10"
+            "proposal": "@12"
           }
         ],
         "rules": {
@@ -994,13 +1106,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -1011,13 +1123,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -1026,13 +1138,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -1041,13 +1153,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -1056,6 +1168,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -1077,7 +1217,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -1086,15 +1226,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -1103,15 +1243,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -1120,15 +1260,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -1137,15 +1277,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -1165,7 +1305,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -1175,12 +1315,12 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         },
         {
-          "seq": 12,
+          "seq": 14,
           "received": 29375040,
           "event": {
             "v": 1,
@@ -1189,16 +1329,16 @@
             "author": "%ana",
             "ts": 1762502400000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 13,
+          "seq": 15,
           "received": 29375041,
           "event": {
             "v": 1,
@@ -1207,16 +1347,16 @@
             "author": "%ben",
             "ts": 1762502460000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 14,
+          "seq": 16,
           "received": 29375042,
           "event": {
             "v": 1,
@@ -1225,16 +1365,16 @@
             "author": "%cal",
             "ts": 1762502520000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 15,
+          "seq": 17,
           "received": 29375043,
           "event": {
             "v": 1,
@@ -1243,9 +1383,9 @@
             "author": "%dee",
             "ts": 1762502580000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
@@ -1256,10 +1396,10 @@
       "expect": {
         "proposals": [
           {
-            "id": "@5"
+            "id": "@7"
           },
           {
-            "id": "@10",
+            "id": "@12",
             "closedAt": 29375043,
             "final": true,
             "outcome": {
@@ -1273,12 +1413,12 @@
         ],
         "narrowings": [
           {
-            "id": "@11",
-            "seq": 11,
+            "id": "@13",
+            "seq": 13,
             "received": 29375030,
             "by": "%ana",
             "optIn": "chatBot",
-            "proposal": "@10"
+            "proposal": "@12"
           }
         ],
         "rules": {
@@ -1303,13 +1443,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -1320,13 +1460,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -1335,13 +1475,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -1350,13 +1490,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -1365,6 +1505,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -1386,7 +1554,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -1395,15 +1563,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -1412,15 +1580,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -1429,15 +1597,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -1446,15 +1614,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -1474,7 +1642,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -1484,7 +1652,7 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         }
@@ -1493,10 +1661,10 @@
       "expect": {
         "proposals": [
           {
-            "id": "@5"
+            "id": "@7"
           },
           {
-            "id": "@10",
+            "id": "@12",
             "final": true,
             "outcome": {
               "kind": "lapse",
@@ -1509,12 +1677,12 @@
         ],
         "narrowings": [
           {
-            "id": "@11",
-            "seq": 11,
+            "id": "@13",
+            "seq": 13,
             "received": 29375030,
             "by": "%ana",
             "optIn": "chatBot",
-            "proposal": "@10"
+            "proposal": "@12"
           }
         ],
         "optIns": {
@@ -1531,13 +1699,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -1548,13 +1716,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -1563,13 +1731,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -1578,13 +1746,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -1593,6 +1761,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -1614,7 +1810,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -1623,15 +1819,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -1640,15 +1836,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -1657,15 +1853,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -1674,15 +1870,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -1702,7 +1898,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -1712,12 +1908,12 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         },
         {
-          "seq": 12,
+          "seq": 14,
           "received": 29375040,
           "event": {
             "v": 1,
@@ -1726,16 +1922,16 @@
             "author": "%ana",
             "ts": 1762502400000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 13,
+          "seq": 15,
           "received": 29375041,
           "event": {
             "v": 1,
@@ -1744,16 +1940,16 @@
             "author": "%ben",
             "ts": 1762502460000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 14,
+          "seq": 16,
           "received": 29375042,
           "event": {
             "v": 1,
@@ -1762,16 +1958,16 @@
             "author": "%cal",
             "ts": 1762502520000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 15,
+          "seq": 17,
           "received": 29375043,
           "event": {
             "v": 1,
@@ -1780,16 +1976,16 @@
             "author": "%dee",
             "ts": 1762502580000,
             "body": {
-              "proposal": "@10",
+              "proposal": "@12",
               "scores": {
-                "@10": 0
+                "@12": 0
               },
               "note": "Keep it as it is."
             }
           }
         },
         {
-          "seq": 16,
+          "seq": 18,
           "received": 29418243,
           "event": {
             "v": 1,
@@ -1809,7 +2005,7 @@
           }
         },
         {
-          "seq": 17,
+          "seq": 19,
           "received": 29418243,
           "event": {
             "v": 1,
@@ -1819,12 +2015,12 @@
             "ts": 1765094580000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@16"
+              "proposal": "@18"
             }
           }
         },
         {
-          "seq": 18,
+          "seq": 20,
           "received": 29418244,
           "event": {
             "v": 1,
@@ -1834,7 +2030,7 @@
             "ts": 1765094640000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@16"
+              "proposal": "@18"
             }
           }
         }
@@ -1843,10 +2039,10 @@
       "expect": {
         "proposals": [
           {
-            "id": "@5"
+            "id": "@7"
           },
           {
-            "id": "@10",
+            "id": "@12",
             "outcome": {
               "kind": "fail",
               "bar": {
@@ -1856,27 +2052,27 @@
             }
           },
           {
-            "id": "@16",
+            "id": "@18",
             "class": "ordinary",
             "final": false
           }
         ],
         "narrowings": [
           {
-            "id": "@11",
-            "seq": 11,
+            "id": "@13",
+            "seq": 13,
             "received": 29375030,
             "by": "%ana",
             "optIn": "chatBot",
-            "proposal": "@10"
+            "proposal": "@12"
           },
           {
-            "id": "@18",
-            "seq": 18,
+            "id": "@20",
+            "seq": 20,
             "received": 29418244,
             "by": "%ana",
             "optIn": "chatBot",
-            "proposal": "@16"
+            "proposal": "@18"
           }
         ],
         "optIns": {
@@ -1885,25 +2081,25 @@
         },
         "ignored": [
           {
-            "seq": 17,
-            "id": "@17"
+            "seq": 19,
+            "id": "@19"
           }
         ]
       },
-      "unchangedWithout": [17]
+      "unchangedWithout": [19]
     },
     {
       "name": "a narrow from a steward facing an open recall is ignored",
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -1914,13 +2110,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -1929,13 +2125,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -1944,13 +2140,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -1959,6 +2155,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -1980,7 +2204,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -1989,15 +2213,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -2006,15 +2230,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -2023,15 +2247,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -2040,15 +2264,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -2068,7 +2292,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375031,
           "event": {
             "v": 1,
@@ -2088,7 +2312,7 @@
           }
         },
         {
-          "seq": 12,
+          "seq": 14,
           "received": 29375032,
           "event": {
             "v": 1,
@@ -2098,7 +2322,7 @@
             "ts": 1762501920000,
             "body": {
               "optIn": "chatBot",
-              "proposal": "@11"
+              "proposal": "@13"
             }
           }
         }
@@ -2114,25 +2338,25 @@
         },
         "ignored": [
           {
-            "seq": 12,
-            "id": "@12"
+            "seq": 14,
+            "id": "@14"
           }
         ]
       },
-      "unchangedWithout": [12]
+      "unchangedWithout": [14]
     },
     {
       "name": "a steward closes the front door at once the same way, and the chat bot isn't touched",
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -2143,13 +2367,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -2158,13 +2382,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal",
               "level": "co-creator"
@@ -2173,13 +2397,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee",
               "level": "co-creator"
@@ -2188,6 +2412,34 @@
         },
         {
           "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -2207,7 +2459,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29375020,
           "event": {
             "v": 1,
@@ -2216,15 +2468,15 @@
             "author": "%ana",
             "ts": 1762501200000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29375021,
           "event": {
             "v": 1,
@@ -2233,15 +2485,15 @@
             "author": "%ben",
             "ts": 1762501260000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29375022,
           "event": {
             "v": 1,
@@ -2250,15 +2502,15 @@
             "author": "%cal",
             "ts": 1762501320000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29375023,
           "event": {
             "v": 1,
@@ -2267,15 +2519,15 @@
             "author": "%dee",
             "ts": 1762501380000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 4
+                "@7": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 12,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -2295,7 +2547,7 @@
           }
         },
         {
-          "seq": 11,
+          "seq": 13,
           "received": 29375030,
           "event": {
             "v": 1,
@@ -2305,7 +2557,7 @@
             "ts": 1762501800000,
             "body": {
               "optIn": "frontDoor",
-              "proposal": "@10"
+              "proposal": "@12"
             }
           }
         }
@@ -2314,12 +2566,12 @@
       "expect": {
         "narrowings": [
           {
-            "id": "@11",
-            "seq": 11,
+            "id": "@13",
+            "seq": 13,
             "received": 29375030,
             "by": "%ana",
             "optIn": "frontDoor",
-            "proposal": "@10"
+            "proposal": "@12"
           }
         ],
         "rules": {

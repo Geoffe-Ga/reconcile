@@ -677,6 +677,42 @@ export const messages = {
     deleteCancel: 'Cancel',
     deleteFailed: 'It couldn’t be deleted from this device. Try again.',
   },
+  /**
+   * Earning a vote (#101; ADR-0014, ADR-0021): a newcomer's progress on the
+   * People list, Vouch and its dialog, and the newcomer's own lines. Where a
+   * name sits inside a sentence, the words around it are kept apart, so the
+   * screen sets the name in `<bdi>`.
+   */
+  admission: {
+    /** The first word of a newcomer's progress, as in "New · 1 of 2 vouches · wait ends Sun 22 Nov". */
+    newcomer: 'New',
+    /** Between the parts of a newcomer's progress. */
+    separator: '·',
+    vouches: (have: number, need: number) => `${count(have)} of ${count(need)} vouches`,
+    waitEnds: (date: string) => `wait ends ${date}`,
+    canVoteFrom: (date: string) => `can vote from ${date}`,
+    /** Before the names of everyone who has vouched for a newcomer, as in "Vouched for by Ana and Ben". */
+    vouchedBy: 'Vouched for by',
+    vouchFor: { before: 'Vouch for' },
+    dialogTitle: { before: 'Vouch for', after: '?' },
+    dialogLine:
+      'Vouch only for someone you’ve met or talked with, on a call or in person. Everyone in the group sees your vouch.',
+    confirm: 'Vouch',
+    cancel: 'Cancel',
+    failed: 'Your vouch couldn’t be saved on this device. Try again.',
+    /** A newcomer's own line before anyone has given them every vouch they need, while the wait runs. */
+    voteAfterOnce: (date: string, need: number) =>
+      `You can vote on Proposals that open after ${date}, once ${count(need)} people vouch for you.`,
+    /** A newcomer's own line once the wait has ended without every vouch they need. */
+    voteOnce: (need: number) =>
+      `You can vote on Proposals that open once ${count(need)} people vouch for you.`,
+    /** A newcomer's own line once vouched for, while the wait runs. */
+    voteAfter: (date: string) => `You can vote on Proposals that open after ${date}.`,
+    /** Under the level picker while a newcomer earns their vote. */
+    levelsWait: 'Voting and proposing start once you have a vote. Until then, you read and follow.',
+    /** On a Proposal that opened before this member's vote arrived. */
+    noVoteYet: 'You didn’t have a vote yet when this opened.',
+  },
   // Settings (#78): save and restore a backup, and Erase (ADR-0046 as cut by ADR-0073).
   settings: {
     pageTitle: 'Settings',
