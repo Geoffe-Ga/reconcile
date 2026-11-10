@@ -55,13 +55,19 @@ export interface LevelBody {
   readonly level: string;
 }
 
-/** Proposes new text for one Atom, with a title, a justification and an optional discussion link. */
+/**
+ * Proposes new text for one Atom, with a title, a justification, an optional
+ * discussion link and an optional voting window in whole days (#106). The
+ * window is kept as written: the fold checks it against the bounds of the
+ * Proposal's class, and a Proposal without one runs the class default.
+ */
 export interface ProposalBody {
   readonly atom: string;
   readonly title: string;
   readonly why: string;
   readonly text: string;
   readonly link?: string;
+  readonly window?: number;
 }
 
 /**
@@ -95,7 +101,8 @@ export interface PriorityTarget {
 /**
  * Asks the group what to focus on (#107): `title` is the question, `why` its
  * justification, and `options` the 2–7 answers everyone scores, in ballot
- * order. It carries `target` in place of an Atom, and no text.
+ * order. It carries `target` in place of an Atom, and no text. Its `window`
+ * is kept as written, as an edit's is (#106).
  */
 export interface PriorityProposalBody {
   readonly target: PriorityTarget;
@@ -103,6 +110,7 @@ export interface PriorityProposalBody {
   readonly why: string;
   readonly options: readonly string[];
   readonly link?: string;
+  readonly window?: number;
 }
 
 /**
@@ -239,6 +247,10 @@ function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
 }
 
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || typeof value === 'number';
+}
+
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
@@ -296,7 +308,7 @@ function parseStewardTarget(value: unknown): StewardTarget | null {
   return { kind: 'steward', seat, member };
 }
 
-/** A steward Proposal carries `target` and no `atom`; any `text` is dropped (#102). */
+/** A steward Proposal carries `target` and no `atom`; any `text` or `window` is dropped (#102, #106). */
 function parseStewardProposal(body: Json): StewardProposalBody | null {
   const { atom, target, title, why, link } = body;
   const parsed = parseStewardTarget(target);
@@ -306,19 +318,22 @@ function parseStewardProposal(body: Json): StewardProposalBody | null {
 }
 
 /**
- * A priority vote's body (#107): its target, question, why, options and an
- * optional link, or null for any other shape. It names no Atom and has no text.
+ * A priority vote's body (#107): its target, question, why, options, an
+ * optional link and an optional window (#106), or null for any other shape.
+ * It names no Atom and has no text.
  */
 function parsePriority(body: Json): PriorityProposalBody | null {
-  const { atom, text, title, why, options, link } = body;
-  if (atom !== undefined || text !== undefined || !isOptionalString(link)) return null;
+  const { atom, text, title, why, options, link, window } = body;
+  if (atom !== undefined || text !== undefined) return null;
   if (!isString(title) || !isString(why) || !isStringList(options)) return null;
+  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
   return {
     target: { kind: 'priority' },
     title,
     why,
     options,
     ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
   };
 }
 
@@ -333,10 +348,17 @@ function parseTargeted(body: Json): StewardProposalBody | PriorityProposalBody |
 /** An edit names an `atom`; a steward change (#102) or a priority vote (#107) carries `target`. */
 function parseProposal(body: Json): ProposalEventBody | null {
   if (body.target !== undefined) return parseTargeted(body);
-  const { atom, title, why, text, link } = body;
+  const { atom, title, why, text, link, window } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
-  if (!isOptionalString(link)) return null;
-  return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
+  return {
+    atom,
+    title,
+    why,
+    text,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+  };
 }
 
 function parseSuspend(body: Json): SuspendBody | null {

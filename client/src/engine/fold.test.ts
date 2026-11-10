@@ -140,6 +140,7 @@ describe('fold', () => {
         text: '',
         link: 'https://chat.example/s',
         class: 'ordinary',
+        window: 7,
         deadline: R + 10 + 10_080,
         eligible: ['ana', 'ben', 'cal'].map(authorOf),
         versions: [{ id, author: authorOf('ben'), text: '' }],
@@ -247,7 +248,7 @@ describe('fold', () => {
     ]);
   });
 
-  it('carries a Proposal’s fields, its class, its one version and its deadline', () => {
+  it('carries a Proposal’s fields, its class, its window, its one version and its deadline', () => {
     const { log, proposal } = threeMembersAndAProposal({ link: 'https://chat.example/p' });
     expect(fold(log.records, R + 10).proposals).toEqual([
       {
@@ -262,6 +263,7 @@ describe('fold', () => {
         text: 'New',
         link: 'https://chat.example/p',
         class: 'ordinary',
+        window: 7,
         deadline: R + 10 + 10_080,
         eligible: ['ana', 'ben', 'cal'].map(authorOf),
         versions: [{ id: proposal, author: authorOf('ana'), text: 'New' }],

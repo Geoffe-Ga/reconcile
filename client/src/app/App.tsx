@@ -179,10 +179,16 @@ function askFor(services: AppServices, groupId: string) {
 
 /** Ask what to focus on (`priority`, #107). */
 function PriorityScreen({ services, groupId }: GroupScreenProps) {
+  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
       {({ state, me }) => (
-        <PriorityComposer state={state} me={me.author} onAsk={askFor(services, groupId)} />
+        <PriorityComposer
+          state={state}
+          me={me.author}
+          now={deviceNow}
+          onAsk={askFor(services, groupId)}
+        />
       )}
     </GroupGate>
   );
@@ -198,6 +204,7 @@ interface ProposeScreenProps extends GroupScreenProps {
 function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
+  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
@@ -207,6 +214,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
             <PriorityComposer
               state={state}
               me={me.author}
+              now={deviceNow}
               onAsk={askFor(services, groupId)}
               again={again}
             />
@@ -232,6 +240,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
             me={me.author}
             atomId={again?.atom ?? atomId ?? ''}
             drafts={drafts}
+            now={deviceNow}
             onPropose={onPropose}
             onAddVersion={onAddVersion}
             {...(again === undefined ? {} : { again })}

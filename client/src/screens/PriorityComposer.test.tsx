@@ -8,13 +8,15 @@ import type { GroupState, Proposal } from '../engine/fold';
 import { optionId } from '../engine/priority';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
-import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
+import { groupLog, START_MINUTE } from '../test/votes';
 import type { ComposeOutcome } from './Composer';
 import { PriorityComposer } from './PriorityComposer';
 
 type OnAsk = (values: PriorityValues) => Promise<ComposeOutcome>;
 
 const [, VOTING] = LEVELS;
+/** The device clock, 10 Nov 2026 at noon UTC, which the voting time's closing line counts from. */
+const NOW = Date.UTC(2026, 10, 10, 12);
 
 interface Setup {
   readonly state?: GroupState;
@@ -30,6 +32,7 @@ function setup(options: Setup = {}) {
     <PriorityComposer
       state={state}
       me={options.me ?? authorOf('ana')}
+      now={NOW}
       onAsk={onAsk}
       {...(options.again === undefined ? {} : { again: options.again })}
     />,
@@ -97,6 +100,7 @@ describe('PriorityComposer (#107)', () => {
       title: 'What should we focus on?',
       why: 'We can only do one thing well.',
       options: [' Fix the website ', 'Plan the picnic'],
+      window: 7,
     });
     expect(submit()).toHaveProperty('disabled', true);
   });
@@ -146,6 +150,25 @@ describe('PriorityComposer (#107)', () => {
     expect(onAsk).toHaveBeenCalledTimes(2);
   });
 
+  it('runs the ordinary default of 7 days, and sends the voting time chosen within 3 to 14 (#106)', async () => {
+    const { user, onAsk } = setup();
+    const days = box('Voting time (days)');
+    expect(days).toHaveProperty('value', '7');
+    await type(user, 'Why', 'Because.');
+    await type(user, 'Option 1', 'Fix the website');
+    await type(user, 'Option 2', 'Plan the picnic');
+    await user.clear(days);
+    await user.type(days, '15');
+    await user.click(submit());
+    expect(onAsk).not.toHaveBeenCalled();
+    expect(screen.getByText('Choose from 3 to 14 days.')).toBeDefined();
+    await user.clear(days);
+    await user.type(days, '3');
+    await user.click(submit());
+    expect(onAsk.mock.calls[0]?.[0].window).toBe(3);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('shows no form to someone who can’t propose', () => {
     const state = groupLog({ members: ['Ben'], levels: { Ben: VOTING } }).state();
     setup({ state, me: authorOf('ben') });
@@ -172,9 +195,10 @@ describe('PriorityComposer (#107)', () => {
     const lapsed = log.ask('ana', ['Fix the website', 'Plan the picnic', 'New bylaws'], {
       title: 'What first?',
       why: 'Spring is coming.',
+      window: 10,
     });
     log.ballot('ana', lapsed, { [optionId(lapsed, 0)]: 4 });
-    const state = log.state(deadlineOf(START_MINUTE));
+    const state = log.state(START_MINUTE + 10 * 1_440);
     const again = state.proposals.find((proposal) => proposal.id === lapsed);
     const { user, onAsk } = setup({ state, ...(again === undefined ? {} : { again }) });
     expect(screen.getByRole('heading', { level: 1, name: 'Propose again' })).toBeDefined();
@@ -184,6 +208,7 @@ describe('PriorityComposer (#107)', () => {
       title: 'What first?',
       why: 'Spring is coming.',
       options: ['Fix the website', 'Plan the picnic', 'New bylaws'],
+      window: 10,
     });
     expect(
       within(screen.getByRole('group', { name: 'Options' })).getAllByRole('textbox'),

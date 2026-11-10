@@ -4,8 +4,9 @@
  * never reaches back into a Proposal that's already open, and an Atom never has two open
  * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
  * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
- * a priority vote's ranking (#107): it holds exactly the options that pass, best first, its first
- * is always the tally's winner, and the order ballots arrive in never changes it.
+ * windows (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
+ * And of a priority vote's ranking (#107): it holds exactly the options that pass, best first, its
+ * first is always the tally's winner, and the order ballots arrive in never changes it.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +17,7 @@ import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
 import { fold, type LogRecord } from './fold';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
-import { type Bar, DEFAULT_RULES, defaultWindowMinutes } from './rules';
+import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { rank, tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
@@ -59,8 +60,9 @@ class Log {
     return log;
   }
 
-  propose(received: number, atom: string, text: string): string {
-    const body = { atom, title: 'T', why: 'W', text };
+  /** A Proposal by member 0, for `window` days when given, else the class default. */
+  propose(received: number, atom: string, text: string, window?: number): string {
+    const body = { atom, title: 'T', why: 'W', text, ...(window === undefined ? {} : { window }) };
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
@@ -284,9 +286,31 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         for (const p of proposals) {
           // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
           expect(p.class).toBe('ordinary');
+          expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
           expect(p.outcome.bar).toEqual(rules.bars[p.class]);
         }
+      }),
+    );
+  });
+
+  it('opens a Proposal exactly when its window is valid for its class, closing it that many days later', () => {
+    const window = fc.oneof(
+      fc.integer({ min: -2, max: 31 }),
+      fc.double({ min: -2, max: 31, noNaN: true }),
+      fc.constantFrom(Number.NaN, Number.POSITIVE_INFINITY),
+    );
+    fc.assert(
+      fc.property(window, fc.nat({ max: 100 }), (days, offset) => {
+        const log = Log.founded(2);
+        // JSON writes NaN and Infinity as null, which the fold reads as a bad shape.
+        log.propose(R + offset, `${log.group}.0`, 'New text', days);
+        const { proposals, rules } = fold(log.records, R + offset);
+        const [p] = proposals;
+        expect(p !== undefined).toBe(validWindow(rules, 'ordinary', days));
+        if (p === undefined) return;
+        expect(p.window).toBe(days);
+        expect(p.deadline).toBe(R + offset + days * DAY_MINUTES);
       }),
     );
   });

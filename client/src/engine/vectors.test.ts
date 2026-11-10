@@ -228,6 +228,8 @@ describe('vector files', () => {
       './vectors/versions-late-low-quorum.json',
       './vectors/versions-one-open.json',
       './vectors/versions-tie.json',
+      './vectors/window-bounds.json',
+      './vectors/window-deadline.json',
     ]);
     expect(Object.values(FILES).map((file) => file.kind)).toEqual([
       'atom-text',
@@ -256,6 +258,8 @@ describe('vector files', () => {
       'fold',
       'fold',
       'tally',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -384,6 +388,7 @@ describe('vector files', () => {
     'priority-options: a priority vote with two equal options is ignored, and so is one with a blank or empty option',
     'priority-options: a second priority vote while one is open is ignored, and one opens once the first has closed early, even in the same minute',
     'priority-options: an edit Proposal opens beside an open priority vote',
+    'priority-options: a priority vote\'s window of 3 days sets its deadline to received + 4,320; one of 15 days is ignored, and one of "7", a string, holds no event',
     'priority-options: a version on a priority vote is ignored, so its options stay as proposed',
     "priority-options: a Collaborator's priority vote is ignored, since asking needs propose",
     'priority-options: a priority vote that also names an Atom or text, lacks options, has a non-string option or list, or names an unknown target holds no event, and one with an empty question is ignored',
@@ -394,6 +399,17 @@ describe('vector files', () => {
     'priority-focus: a later priority vote that passes replaces the focus with its top option',
     'priority-focus: an edit that passes after a priority vote changes its Atom and leaves the focus',
     'priority-focus: a group whose only priority vote fails has no focus',
+    'window-ordinary-min: a window of 3 days, the ordinary minimum, opens the Proposal and its deadline is received + 4,320',
+    'window-ordinary-max: a window of 14 days, the ordinary maximum, opens the Proposal and its deadline is received + 20,160',
+    'window-below-min: a window of 2 days, under the ordinary minimum, makes the fold ignore the Proposal',
+    'window-above-max: a window of 15 days, over the ordinary maximum, makes the fold ignore the Proposal',
+    'window-fraction: a window of 7.5 days makes the fold ignore the Proposal, as windows are whole days',
+    'window-string: a window of "7", a string, makes the Proposal a bad shape, so the fold ignores it',
+    'window-default: a Proposal with no window runs the ordinary default, so its deadline is received + 10,080',
+    'window sets the deadline: a window of 10 days gives a deadline of received + 14,400',
+    'a 10-day Proposal whose author ts is 10 days old is still open, and takes a ballot, a minute before its relay deadline',
+    'a 10-day Proposal whose author ts is 10 days old closes when relay time reaches its deadline, 10 full days after receipt',
+    'a 14-day vote still closes early once every eligible member has scored, and its deadline stays received + 20,160',
     'steward-founder-seat: the founder holds seat 1 at genesis with no term end, and seat 2 starts empty',
     'a steward Proposal is ignored at 2 voting members, even with a Member following too',
     'a steward Proposal is accepted at 3 voting members: ordinary, 7 days, one version with no text',
@@ -413,6 +429,7 @@ describe('vector files', () => {
     'a suspension 25 days after the previous one ended is ignored, and one 31 days after it is accepted',
     'suspend-lapse: a steward suspends Kim at minute 2,000,000; her ballot at 2,005,000 is ignored and her ballot from 1,999,000 still counts; her ballot on another Proposal at 2,010,080 counts',
     "a suspended member's proposal, level, version and vote are ignored, yet they stay eligible on a Proposal that opens meanwhile, which can't close early without them",
+    'window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days',
   ])('include the fold vector "%s"', (name) => {
     expect(foldVectors.map((vector) => vector.name)).toContain(name);
   });

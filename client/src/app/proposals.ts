@@ -29,6 +29,11 @@ export interface ProposalValues {
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
+  /**
+   * How many whole days voting runs, already checked against the bounds of
+   * the target's class (#106). Absent, the Proposal runs the class default.
+   */
+  readonly window?: number;
   /** Proposing a lapsed Proposal again (#74): that Proposal's id, whose draft this was written in. */
   readonly again?: string;
   /** The texts of the other versions to put on its ballot after it, as typed, in order. */
@@ -61,6 +66,8 @@ export interface PriorityValues {
   readonly why: string;
   /** The options in ballot order, as typed; `askPriority` normalizes each with {@link optionText}. */
   readonly options: readonly string[];
+  /** How many whole days voting runs, already checked against its class's bounds (#106). */
+  readonly window?: number;
 }
 
 /** One ballot: a score for each version, keyed by version id, and one note, blank for none. */
@@ -99,9 +106,10 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, as this device's member of `groupId`. Every
- * value is NFC-normalized before the event is signed, and the text goes
- * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
+ * Proposes new text for one Atom, as this device's member of `groupId`, for
+ * the voting window the proposer chose, if any. Every string is
+ * NFC-normalized before the event is signed, and the text goes through
+ * `normalizeAtomText` (spec §4). Queuing the Proposal clears the
  * private draft it was written in, keyed by its Atom, in the same change. A
  * Proposal whose record is over 64,000 bytes is refused before anything is
  * queued, and its draft kept.
@@ -115,13 +123,14 @@ export async function propose(
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link, again, versions = [] } = values;
+  const { atom, title, why, text, link, window, again, versions = [] } = values;
   const body = {
     atom,
     title: nfc(title),
     why: nfc(why),
     text: normalizeAtomText(text),
     ...(link === null ? {} : { link: nfc(link) }),
+    ...(window === undefined ? {} : { window }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
@@ -159,7 +168,8 @@ export function optionText(option: string): string {
  * `groupId`: one `proposal` whose target is `{kind: "priority"}`, its title the
  * question, with the options in order. The fold ignores it unless there are
  * 2–7 distinct options of 1–120 code points and no other priority vote is
- * open, which the composer checks first. It keeps no draft. A record over
+ * open, which the composer checks first, for the voting window the asker
+ * chose, if any (#106). It keeps no draft. A record over
  * 64,000 bytes is refused before anything is queued.
  */
 export async function askPriority(
@@ -167,11 +177,13 @@ export async function askPriority(
   groupId: string,
   values: PriorityValues,
 ): Promise<ProposeResult> {
+  const { window } = values;
   const body = {
     target: { kind: 'priority' } as const,
     title: nfc(values.title),
     why: nfc(values.why),
     options: values.options.map(optionText),
+    ...(window === undefined ? {} : { window }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',

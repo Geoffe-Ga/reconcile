@@ -4,7 +4,8 @@
  * that pass rank by average, and the top one becomes the group's focus.
  *
  * The question starts as "What should we focus on?" and the form as two empty
- * options, with Add option up to seven and Remove down to two. Each option is
+ * options, with Add option up to seven and Remove down to two, then the
+ * voting time in days within the class's bounds (`WindowField`, #106). Each option is
  * checked as it will be signed, NFC-normalized and trimmed, by the engine's
  * own rule (`optionProblems`), so the composer never sends what the fold would
  * ignore. Asking again after a lapse (#74) starts from the lapsed vote.
@@ -17,6 +18,7 @@ import { optionText, type PriorityValues } from '../app/proposals';
 import { routeHref } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { holdPresses } from '../app/useSaving';
+import { WindowField } from '../app/WindowField';
 import { can } from '../engine/capabilities';
 import { type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import {
@@ -27,6 +29,7 @@ import {
   OPTIONS_MIN,
   openPriority,
 } from '../engine/priority';
+import { type ProposalClass, targetClass, validWindow } from '../engine/rules';
 import { nfcLength } from '../engine/text';
 import type { ComposeOutcome } from './Composer';
 
@@ -36,6 +39,8 @@ export interface PriorityComposerProps {
   readonly state: GroupState;
   /** This device's author id in the group. */
   readonly me: string;
+  /** The device clock now, in ms, which the voting time's closing line counts from. */
+  readonly now: number;
   /** Queues the priority vote from valid entries. */
   readonly onAsk: (values: PriorityValues) => Promise<ComposeOutcome>;
   /** A lapsed priority vote to ask again (#74), from the `again` route. */
@@ -74,13 +79,22 @@ const checkWhy = required(
   messages.composer.whyTooLong(WHY_MAX),
 );
 
-/** Where the form starts: the default question and two empty options, or a lapsed vote's own. */
-function startOf(again: Proposal | undefined) {
+/** The class `targetClass` gives a priority vote, which bounds its voting time (#106). */
+function priorityClass(state: GroupState): ProposalClass {
+  return targetClass(state, { target: { kind: 'priority' }, title: '', why: '', options: [] });
+}
+
+/**
+ * Where the form starts: the default question, two empty options and the
+ * class's default voting time, or a lapsed vote's own.
+ */
+function startOf(state: GroupState, again: Proposal | undefined) {
   const texts = again === undefined ? ['', ''] : again.versions.map((option) => option.text);
   return {
     title: again?.title ?? messages.priority.question,
     why: again?.why ?? '',
     rows: texts.map((text, key) => ({ key, text })),
+    window: again?.window ?? state.rules.windows[priorityClass(state)].default,
   };
 }
 
@@ -152,16 +166,19 @@ function OptionRows({ rows, onChange, onRemoved }: OptionRowsProps) {
 
 interface FormProps {
   readonly state: GroupState;
+  readonly now: number;
   readonly onAsk: PriorityComposerProps['onAsk'];
   readonly again: Proposal | undefined;
 }
 
-/** The question, why and options, then Ask your group. */
-function PriorityForm({ state, onAsk, again }: FormProps) {
-  const start = startOf(again);
+/** The question, why, options and voting time, then Ask your group. */
+function PriorityForm({ state, now, onAsk, again }: FormProps) {
+  const start = startOf(state, again);
+  const cls = priorityClass(state);
   const [title, setTitle] = useState(start.title);
   const [why, setWhy] = useState(start.why);
   const [rows, setRows] = useState<Row[]>(start.rows);
+  const [window, setWindow] = useState(start.window);
   const nextKey = useRef(start.rows.length);
   // A fresh object each time, so moving the focus to the same row again still runs the effect.
   const [focusRow, setFocusRow] = useState<{ readonly row: number } | null>(null);
@@ -179,7 +196,9 @@ function PriorityForm({ state, onAsk, again }: FormProps) {
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (problemsOf(rows).some((problem) => problem !== null)) return;
-    void run({ title: title.trim(), why: why.trim(), options: rows.map((row) => row.text) });
+    if (!validWindow(state.rules, cls, window)) return;
+    const options = rows.map((row) => row.text);
+    void run({ title: title.trim(), why: why.trim(), options, window });
   };
   const add = () => {
     setRows([...rows, { key: nextKey.current, text: '' }]);
@@ -232,6 +251,7 @@ function PriorityForm({ state, onAsk, again }: FormProps) {
             </div>
           ) : null}
         </fieldset>
+        <WindowField rules={state.rules} cls={cls} value={window} onChange={setWindow} now={now} />
         <p className="caption">{priority.visibility}</p>
         {failed ? (
           <p role="alert" className="form-error">
@@ -279,11 +299,13 @@ function Unavailable({ state, open }: { readonly state: GroupState; open: Propos
  * priority vote is open, else why not. Asking again after a lapse starts from
  * the lapsed vote's question, why and options.
  */
-export function PriorityComposer({ state, me, onAsk, again }: PriorityComposerProps) {
+export function PriorityComposer({ state, me, now, onAsk, again }: PriorityComposerProps) {
   const open = openPriority(state);
   if (!can(state, me, 'propose') || open !== undefined) {
     return <Unavailable state={state} open={can(state, me, 'propose') ? open : undefined} />;
   }
   const lapsed = again?.final === true && again.outcome.kind === 'lapse' ? again : undefined;
-  return <PriorityForm key={lapsed?.id ?? 'new'} state={state} onAsk={onAsk} again={lapsed} />;
+  return (
+    <PriorityForm key={lapsed?.id ?? 'new'} state={state} now={now} onAsk={onAsk} again={lapsed} />
+  );
 }
