@@ -169,7 +169,7 @@ export function DissolveComposer(props: DissolveComposerProps) {
         title={dissolve.title}
         pageTitle={dissolve.pageTitle}
       />
-      <div className="stack">
+      <div className="stack dissolve-about">
         <p className="lede">{dissolve.lede}</p>
         <p className="caption">{dissolve.bar(formatAverageLine(bar), formatZeroLine(bar))}</p>
       </div>

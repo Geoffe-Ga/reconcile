@@ -574,7 +574,8 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 
 /**
  * People, the Stewards (#102) and the invite, each for whoever may see it.
- * While this member's leave waits for the relay, there's no invite.
+ * While this member's leave waits for the relay, there's no invite. A
+ * dissolved group has no stewards to speak of, so its copy leaves them out (#108).
  */
 function MemberSections(props: GroupHomeProps) {
   const { state, me, makeInviteLink, copyText, leaving = false } = props;
@@ -582,7 +583,7 @@ function MemberSections(props: GroupHomeProps) {
   return (
     <>
       {roster ? <PeopleSection {...props} /> : null}
-      {roster ? (
+      {roster && state.dissolved === null ? (
         <Section title={messages.stewards.heading}>
           <StewardSeats state={state} me={me} leaving={leaving} />
         </Section>

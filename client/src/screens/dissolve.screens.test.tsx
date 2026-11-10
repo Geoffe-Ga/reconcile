@@ -159,6 +159,7 @@ describe('a dissolved group on Group home', () => {
     expect(screen.queryByRole('button', { name: 'Leave this group' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Suspend / })).toBeNull();
     expect(screen.queryByRole('link', { name: /Propose a steward/ })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Stewards' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Propose dissolving the group' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remove from this device' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);

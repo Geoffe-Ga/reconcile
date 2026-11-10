@@ -1024,6 +1024,11 @@ a[data-focus-visible] {
   font: var(--type-caption);
 }
 
+/* The bar a dissolve needs, in words, kept to the lede's reading measure. */
+.dissolve-about .caption {
+  max-width: 34em;
+}
+
 /* A dissolved group's note under its heading: read only, in words, then Remove
  * from this device. It sits in .page-top as the leaving note does. */
 .archive-note {
