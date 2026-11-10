@@ -210,6 +210,14 @@ a[data-focus-visible] {
   text-decoration: none;
 }
 
+/* Unavailable, as a step button at its bound reads: sunken, with muted words. */
+.button-secondary[data-disabled],
+.button-secondary[data-disabled]:hover {
+  border-color: var(--hairline);
+  background: var(--sunken);
+  color: var(--muted);
+}
+
 /* Forms ------------------------------------------------------------------- */
 
 .form {
@@ -571,6 +579,24 @@ a[data-focus-visible] {
   overflow-wrap: anywhere;
 }
 
+/* Join (#91): the whole Document reads like print under the card's title, in
+ * the excerpt's place, a hairline under the title so a section's own heading
+ * never reads as the title, and another sets the question to join apart. */
+.invite-document > .document {
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.join-decide {
+  padding-block-start: var(--space-6);
+  border-top: 1px solid var(--hairline);
+}
+
+.join-decide > h2 {
+  text-wrap: balance;
+}
+
 /* Write and Preview (MarkdownField) ------------------------------------- */
 
 .markdown-tabs {
@@ -905,6 +931,11 @@ a[data-focus-visible] {
   font: var(--type-heading-2);
   text-wrap: balance;
   overflow-wrap: anywhere;
+}
+
+/* A title the app moves focus to, as the guide does with each card's (#91), as h1 is. */
+.dialog-title:focus {
+  outline: none;
 }
 
 /* Coming back and leaving (#77) ------------------------------------------- */

@@ -122,11 +122,37 @@ export async function pick(page: Page, name: string, within?: Locator): Promise<
   await expect(radio).toBeChecked();
 }
 
-/** First run (#76): a new profile's pilot notice, checked by axe, then accepted. */
-export async function acceptNotice(person: Person): Promise<void> {
+/**
+ * The `localStorage` key of the first-run guide's flag (`src/platform/guide.ts`,
+ * #91). The specs reach the app only from outside, so they spell it here.
+ */
+export const GUIDE_KEY = 'reconcile.first-run-guide';
+
+/** What first run leaves for later in a profile. */
+export interface FirstRunOptions {
+  /** True to meet the first-run guide (#91) after the profile's first create or join. */
+  readonly guide?: boolean;
+}
+
+/**
+ * First run (#76): a new profile's pilot notice, checked by axe, then
+ * accepted. Unless `guide` is true, the profile then counts the first-run
+ * guide (#91) as seen, as its Skip leaves it, so a spec about something else
+ * isn't stopped by the guide's dialog after its first create or join.
+ */
+export async function acceptNotice(person: Person, options: FirstRunOptions = {}): Promise<void> {
   await expect(heading(person.page, 'Before you start')).toBeVisible();
   await expectAccessible(person, 'Pilot notice');
   await person.page.getByRole('button', { name: 'I understand' }).click();
+  if (options.guide === true) return;
+  await person.page.evaluate((key) => {
+    window.localStorage.setItem(key, '1');
+  }, GUIDE_KEY);
+}
+
+/** The keys in the origin's `localStorage` on `page`, sorted. */
+export function localKeys(page: Page): Promise<string[]> {
+  return page.evaluate(() => Object.keys(window.localStorage).sort());
 }
 
 /** A group to found: its name, its Document's title and sections, and the founder's name. */

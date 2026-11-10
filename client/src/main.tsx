@@ -16,6 +16,7 @@ import { copyToClipboard } from './app/services';
 import { browserShare } from './app/share';
 import { xchachaSeal } from './crypto/seal';
 import { createRelay } from './net/relay';
+import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
 import { requestPersistence } from './platform/persist';
@@ -46,6 +47,7 @@ async function start(container: HTMLElement): Promise<void> {
     origin: window.location.origin,
     copyText: copyToClipboard,
     share: browserShare(),
+    guide: guideRecord(),
   };
   const firstRun = { platform: readPlatform(), notice: noticeRecord(), requestPersistence };
   createRoot(container).render(

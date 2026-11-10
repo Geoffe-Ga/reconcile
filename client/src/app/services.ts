@@ -1,8 +1,9 @@
 /**
  * Everything the app reaches outside React: the store, the sync loop, the
- * relay, the seal, the clock, the clipboard and Web Share. `main.tsx` builds
+ * relay, the seal, the clock, the clipboard, Web Share and the guide's flag. `main.tsx` builds
  * the real ones; tests hand in a fake relay and fake IndexedDB.
  */
+import type { GuideRecord } from '../platform/guide';
 import type { Sync } from '../store/sync';
 import type { Services } from './actions';
 import type { WebShare } from './share';
@@ -21,6 +22,11 @@ export interface AppServices extends Services {
   readonly copyText: (text: string | Promise<string>) => Promise<void>;
   /** The browser's Web Share (`navigator.share`), or undefined where it has none (#77). */
   readonly share: WebShare | undefined;
+  /**
+   * Whether this device has seen the first-run guide (#91). Without one, as in
+   * most tests, the guide never shows.
+   */
+  readonly guide?: GuideRecord;
 }
 
 /**
