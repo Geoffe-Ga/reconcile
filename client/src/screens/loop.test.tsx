@@ -198,6 +198,8 @@ describe('propose, vote, and see the Update', () => {
     await user.type(within(a).getByRole('textbox', { name: 'Section text' }), 'Guests by 11.');
     await user.click(within(a).getByRole('button', { name: 'Propose this section' }));
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // Let the pass that sent the add finish, its nudges (#99) included, as for a change above.
+    await sync(ana);
     fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
 
@@ -220,6 +222,8 @@ describe('propose, vote, and see the Update', () => {
     await user.type(within(a).getByRole('textbox', { name: 'Why' }), 'Nobody keeps them.');
     await user.click(within(a).getByRole('button', { name: 'Propose removing it' }));
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // Let the pass that sent the removal finish, its nudges (#99) included, as for a change above.
+    await sync(ana);
     fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
 
