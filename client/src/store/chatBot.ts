@@ -19,7 +19,8 @@
  * makes from the Proposal's number, which are all they are given: never a
  * title, a name or anything else of the group. A slow or failing Discord
  * never holds up sync. A group this device is leaving (#77) claims and posts
- * nothing.
+ * nothing, and nor does one that has dissolved (#108): once a `dissolve`
+ * folds, not even the dissolve's own result goes out.
  *
  * Each Proposal gets its own thread when the webhook belongs to a forum
  * channel (#123). A post for a Proposal with no thread in the log asks
@@ -130,9 +131,12 @@ function settlementOf(state: GroupState, claim: ChatClaim, webhook: Webhook | nu
   return webhook === null ? WAIT : { kind: 'post', webhook, proposal };
 }
 
-/** The webhook the bot posts through now: the effective one, while `me` is a member, or null. */
+/**
+ * The webhook the bot posts through now: the effective one, while `me` is a
+ * member and the group hasn't dissolved (#108), or null.
+ */
 function webhookFor(state: GroupState, me: string): Webhook | null {
-  if (!can(state, me, 'read')) return null;
+  if (state.dissolved !== null || !can(state, me, 'read')) return null;
   const url = effectiveOptIn(state, 'chatBot')?.webhook;
   const parts = webhookParts(url);
   return url === undefined || parts === null ? null : { url, id: parts.id };

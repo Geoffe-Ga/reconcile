@@ -31,7 +31,8 @@ function vouch(by: string, to: string, received: number): Vouch {
 /**
  * Ana (founder), Ben and Cal hold rights; Ben follows as a Member. Kim joined
  * at {@link JOINED} and Ana has vouched for her once. Dee is a newcomer too.
- * Gus held rights and has left. Relay time stands a day after Kim's join.
+ * Gus held rights and has left. The group goes on: it hasn't dissolved.
+ * Relay time stands a day after Kim's join.
  */
 function group(overrides: Partial<AdmissionState> = {}): AdmissionState {
   return {
@@ -45,6 +46,7 @@ function group(overrides: Partial<AdmissionState> = {}): AdmissionState {
     ],
     former: [{ author: 'gus', received: 4, rightsAt: 4 }],
     vouches: [vouch('ana', 'kim', JOINED + 10)],
+    dissolved: null,
     stewards: [],
     suspensions: [],
     at: JOINED + 1_440,
@@ -145,6 +147,12 @@ describe('mayVouch', () => {
     expect(mayVouch(suspended, 'cal', 'kim')).toBe(false);
     expect(mayVouch(group(), 'gus', 'kim')).toBe(false);
   });
+
+  it('refuses every vouch once the group has dissolved (#108), as the fold does', () => {
+    const dissolved = group({ dissolved: { received: JOINED + 1_000, wipe: false } });
+    expect(mayVouch(dissolved, 'cal', 'kim')).toBe(false);
+    expect(mayVouch(dissolved, 'ana', 'dee')).toBe(false);
+  });
 });
 
 describe('bootstrapOpen', () => {
@@ -236,6 +244,12 @@ describe('vouchWanted', () => {
     const vouches = [vouch('ana', 'kim', JOINED + 10), vouch('cal', 'kim', JOINED + 12)];
     expect(vouchWanted(group({ members }), 'eve', 'kim')).toBe(true);
     expect(vouchWanted(group({ members, vouches }), 'eve', 'kim')).toBe(false);
+  });
+
+  it('offers nothing in a dissolved group (#108), whose copy only reads', () => {
+    const dissolved = group({ dissolved: { received: JOINED + 1_000, wipe: true } });
+    expect(vouchWanted(dissolved, 'cal', 'kim')).toBe(false);
+    expect(vouchWanted(dissolved, 'ana', 'dee')).toBe(false);
   });
 
   it('offers nothing for someone who holds rights, or to someone who may not vouch', () => {

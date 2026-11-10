@@ -23,6 +23,7 @@ import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
 import { requestPersistence } from './platform/persist';
+import { sweepArchives } from './store/archive';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
@@ -37,11 +38,15 @@ if (root === null) {
  * Opens the store, starts syncing while the page is visible, and renders the
  * app behind first run: the install gate and the pilot notice (#76). The store
  * opens empty on a new device, and nothing makes keys until first run is through.
- * The chat bot posts only for a group that turned it on by Proposal (#119),
- * into a thread per Proposal when its webhook is a forum channel's (#123).
+ * Each launch first wipes, or clears the ballots of, any dissolved group
+ * whose time has come by this device's clock (#108). The chat bot posts only
+ * for a group that turned it on by Proposal and hasn't dissolved (#119), into
+ * a thread per Proposal when its webhook is a forum channel's (#123).
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
+  // A sweep that fails tries again at the next launch; the app opens either way.
+  await sweepArchives(store).catch(() => undefined);
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
   const chatBot = createChatBot({

@@ -356,3 +356,43 @@ describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123
     );
   });
 });
+
+describe('a claim after the group dissolves (#108)', () => {
+  it('is ignored, even a claim of the dissolve’s own result while it is still due', () => {
+    const log = botOn();
+    const motion = log.proposeDissolve('Ana', false);
+    log.minute += 1;
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('Ben', motion);
+    log.minute += 1;
+    const late = log.chatPosted('Cal', motion, 'result');
+
+    const state = log.state();
+    const dissolve = state.proposals.find((p) => p.id === motion);
+    if (dissolve === undefined) throw new Error('Expected the dissolve Proposal.');
+    expect(state.dissolved).not.toBeNull();
+    expect(dueMoment(dissolve, state.at)).toBe('result');
+    expect(state.chatPosts).toEqual([]);
+    expect(state.ignored.map((record) => record.id)).toContain(late);
+  });
+
+  it('records no thread either, even from the open claimant of a Proposal still open (#123)', () => {
+    const log = botOn();
+    const edit = log.propose('Ben');
+    log.chatPosted('Cal', edit, 'open');
+    log.minute += 1;
+    const motion = log.proposeDissolve('Ana', false);
+    log.minute += 1;
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('Ben', motion);
+    log.minute += 1;
+    const late = log.chatThread('Cal', edit, THREAD_URL);
+
+    const state = log.state();
+    expect(state.dissolved).not.toBeNull();
+    expect(state.chatThreads).toEqual([]);
+    expect(state.ignored.map((record) => record.id)).toContain(late);
+  });
+});

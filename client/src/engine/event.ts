@@ -135,8 +135,35 @@ export interface RulesProposalBody {
   readonly window?: number;
 }
 
-/** What a `proposal` event carries: new text for an Atom, a steward seat (#102), or an opt-in (#117). */
-export type ProposalEventBody = ProposalBody | StewardProposalBody | RulesProposalBody;
+/**
+ * Dissolving the group (ADR-0051, ADR-0072 §10, #108): `wipe` is true when
+ * the vote also asks every device to erase its copy, a week after the dissolve.
+ */
+export interface DissolveTarget {
+  readonly kind: 'dissolve';
+  readonly wipe: boolean;
+}
+
+/**
+ * Proposes dissolving the group (#108): an entrenched Proposal with a title,
+ * a justification, an optional discussion link and an optional voting window
+ * in whole days, whose target says whether to wipe. It carries no text, so
+ * its ballot has one version, under the Proposal's id.
+ */
+export interface DissolveProposalBody {
+  readonly target: DissolveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+}
+
+/**
+ * What a `proposal` event carries: new text for an Atom, a steward seat
+ * (#102), an opt-in (#117), or dissolving the group (#108).
+ */
+export type ProposalEventBody =
+  ProposalBody | StewardProposalBody | RulesProposalBody | DissolveProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -146,6 +173,11 @@ export function isStewardProposal(body: ProposalEventBody): body is StewardPropo
 /** True when a Proposal's body targets an opt-in (#117). */
 export function isRulesProposal(body: ProposalEventBody): body is RulesProposalBody {
   return 'target' in body && body.target.kind === 'rules';
+}
+
+/** True when a Proposal's body proposes dissolving the group (#108). */
+export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
+  return 'target' in body && body.target.kind === 'dissolve';
 }
 
 /**
@@ -217,6 +249,15 @@ export interface VoteBody {
 }
 
 /**
+ * Ends the group once a dissolve Proposal's pass is final (#108): any member's
+ * device that folds that pass posts one. The fold takes the first valid one,
+ * and ignores every event after it.
+ */
+export interface DissolveBody {
+  readonly proposal: string;
+}
+
+/**
  * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
  * the author is the one who leaves, and the fold reads any object as `{}`.
  */
@@ -233,6 +274,7 @@ export interface EventBodies {
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
+  readonly dissolve: DissolveBody;
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
   readonly 'chat-thread': ChatThreadBody;
@@ -413,23 +455,45 @@ function parseTargetedFields(body: Json): Omit<StewardProposalBody, 'target'> | 
   return { title, why, ...(link === undefined ? {} : { link }) };
 }
 
-/** A rules Proposal (#117): its target and fields, and the window its proposer chose, if any (#106). */
-function parseRulesProposal(body: Json, fields: Omit<StewardProposalBody, 'target'>) {
-  const target = parseRulesTarget(body.target);
+/** A dissolve target's kind and wipe, which must be true or false (#108). */
+function parseDissolveTarget(value: unknown): DissolveTarget | null {
+  if (!isObject(value) || value.kind !== 'dissolve') return null;
+  return typeof value.wipe === 'boolean' ? { kind: 'dissolve', wipe: value.wipe } : null;
+}
+
+/**
+ * A rules (#117) or dissolve (#108) Proposal: its target and fields, and the
+ * window its proposer chose, if any (#106).
+ */
+function withWindow<T>(target: T | null, body: Json, fields: Omit<StewardProposalBody, 'target'>) {
   const { window } = body;
   if (target === null || !isOptionalNumber(window)) return null;
   return { ...fields, target, ...(window === undefined ? {} : { window }) };
 }
 
+/** The target a Proposal names other than a steward seat: an opt-in (#117), or dissolving (#108). */
+function parseWindowedProposal(
+  body: Json,
+  fields: Omit<StewardProposalBody, 'target'>,
+): RulesProposalBody | DissolveProposalBody | null {
+  const dissolve = parseDissolveTarget(body.target);
+  return dissolve === null
+    ? withWindow(parseRulesTarget(body.target), body, fields)
+    : withWindow(dissolve, body, fields);
+}
+
 /**
- * A steward (#102) or rules (#117) Proposal carries `target` and no `atom`;
- * any `text` is dropped, and so is a steward Proposal's `window` (#106).
+ * A steward (#102), rules (#117) or dissolve (#108) Proposal carries `target`
+ * and no `atom`; any `text` is dropped, and so is a steward Proposal's
+ * `window` (#106).
  */
-function parseTargetedProposal(body: Json): StewardProposalBody | RulesProposalBody | null {
+function parseTargetedProposal(
+  body: Json,
+): StewardProposalBody | RulesProposalBody | DissolveProposalBody | null {
   const fields = parseTargetedFields(body);
   if (fields === null) return null;
   const steward = parseStewardTarget(body.target);
-  return steward === null ? parseRulesProposal(body, fields) : { ...fields, target: steward };
+  return steward === null ? parseWindowedProposal(body, fields) : { ...fields, target: steward };
 }
 
 function parseProposal(body: Json): ProposalEventBody | null {
@@ -451,6 +515,10 @@ function parseSuspend(body: Json): SuspendBody | null {
   const { member, reason } = body;
   if (!isString(member) || !isOptionalString(reason)) return null;
   return { member, ...(reason === undefined ? {} : { reason }) };
+}
+
+function parseDissolve(body: Json): DissolveBody | null {
+  return isString(body.proposal) ? { proposal: body.proposal } : null;
 }
 
 function parseNarrow(body: Json): NarrowBody | null {
@@ -529,8 +597,8 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 
 /**
  * {@link withBody} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `vouch` (#101), `chat-posted` (#119) and
- * `chat-thread` (#123).
+ * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
+ * (#119) and `chat-thread` (#123).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -538,6 +606,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'narrow':
       return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'dissolve':
+      return attach(parseDissolve(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'vouch':
       return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-posted':

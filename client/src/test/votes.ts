@@ -63,6 +63,10 @@ export interface LogBuilder {
   steward(name: string, seat: number, nominee: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s suspension of the person named `who`, with an optional reason. */
   suspend(name: string, who: string, reason?: string): string;
+  /** Adds `name`'s Proposal to dissolve the group, wiping every copy when `wipe` (#108), returning its id. */
+  proposeDissolve(name: string, wipe: boolean, entry?: ProposalEntry): string;
+  /** Adds `name`'s `dissolve`, naming the dissolve Proposal `proposal` (#108). */
+  dissolve(name: string, proposal: string): string;
   /** Adds `name`'s rules Proposal setting `optIn` to `value` (#117), returning its id. */
   rules(name: string, optIn: string, value: unknown, entry?: ProposalEntry): string;
   /** Adds `name`'s narrowing of `optIn` beside the off-Proposal `proposal` (#117), returning its id. */
@@ -168,6 +172,19 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         ...(reason === undefined ? {} : { reason }),
       };
       return add(name, { type: 'suspend', group, ts: 0, body });
+    },
+    proposeDissolve(name: string, wipe: boolean, entry: ProposalEntry = {}) {
+      const { title = 'Dissolve our group', why = 'We have all moved out.' } = entry;
+      const body = {
+        target: { kind: 'dissolve' as const, wipe },
+        title,
+        why,
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
+    dissolve(name: string, proposal: string) {
+      return add(name, { type: 'dissolve', group, ts: 0, body: { proposal } });
     },
     rules(name: string, optIn: string, value: unknown, entry: ProposalEntry = {}) {
       const { title = 'Our chat bot', why = 'A nudge when votes open.' } = entry;

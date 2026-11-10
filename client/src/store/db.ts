@@ -16,16 +16,28 @@
  * included. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
- * left open.
+ * left open. Personal Documents (#93) sit in a store of their own beside the
+ * groups (`./personal.ts`), and a backup file brings them back in that same
+ * transaction. A dissolved group stays as a read-only archive (#108): nothing
+ * more is queued, claimed or sent for it, and its ballots and notes can be
+ * cleared while its outcomes stay.
  */
 
 import { openDB } from 'idb';
-import type { DBSchema, IDBPDatabase } from 'idb';
+import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
-import type { LogRecord } from '../engine/fold';
+import type { GroupState, LogRecord } from '../engine/fold';
+import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
+import {
+  byCreation,
+  isPersonalDocument,
+  keepsHeldCopy,
+  type PersonalDocument,
+  type PersonalStore,
+} from './personal';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -113,6 +125,35 @@ export interface Group {
    * Discord once: absent until it learns something. A new webhook starts over.
    */
   chatChannel?: ChatChannel;
+  /**
+   * Set once the group is read-only on this device (#108): absent while it
+   * goes on. Nothing is queued, claimed or synced for it from then on.
+   */
+  archived?: Archive;
+}
+
+/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
+export type ArchiveReason = 'dissolved';
+
+/**
+ * A dissolved archive once this device has cleared its ballots and notes
+ * (#108; ADR-0075 §5): the group as the device last folded it, every ballot
+ * and note taken out, with each decided Proposal's totals and outcome from
+ * the device's own tally. The log that held the ballots is gone.
+ */
+export interface ClearedArchive {
+  /** When this device cleared them, in device milliseconds. */
+  readonly at: number;
+  /** The group's folded state then, with no ballot on any Proposal. */
+  readonly state: GroupState;
+  /** Each decided Proposal's totals and outcome, by its id. */
+  readonly tallies: Readonly<Record<string, TallyDetail>>;
+}
+
+/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+export interface Archive {
+  readonly reason: ArchiveReason;
+  readonly cleared?: ClearedArchive;
 }
 
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
@@ -121,7 +162,9 @@ export type BackupMark = 'saved' | 'not-now';
 /**
  * A group as a backup file carries it (#78): its keys, secret, your name, its
  * relay-ordered log and sync state, and whether some history may be missing.
- * Never the outbox or drafts, so a restore never sends stale intent.
+ * Never the outbox or drafts, so a restore never sends stale intent. A file
+ * never holds `archived`: a restore sets it when the log folds to a
+ * `dissolve` (#108), so the group comes back read-only.
  */
 export type BackedUpGroup = Pick<
   Group,
@@ -134,6 +177,7 @@ export type BackedUpGroup = Pick<
   | 'relayNow'
   | 'instance'
   | 'lastSyncAt'
+  | 'archived'
 > & { readonly missingHistory: boolean };
 
 /**
@@ -163,8 +207,8 @@ export interface Pull {
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups. */
-export interface Store extends DraftStore {
+/** The device's groups, and its personal Documents (#93). */
+export interface Store extends DraftStore, PersonalStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -198,7 +242,7 @@ export interface Store extends DraftStore {
    * Queue a signed `chat-posted` claim and keep it as one of this device's
    * claims, in one change (#119). Returns false, changing nothing, when this
    * device already holds a claim of that moment, as a second tab might, or the
-   * group is leaving.
+   * group is leaving or archived (#108).
    *
    * @throws {RecordTooLarge} when the record is over 64,000 bytes.
    */
@@ -219,10 +263,26 @@ export interface Store extends DraftStore {
   /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
-   * calls it once the relay has returned a seq for the group's leave. A group
-   * that is already gone is left alone.
+   * calls it once the relay has returned a seq for the group's leave, a
+   * dissolved group's wipe calls it, and so does Remove from this device
+   * (#108). A group that is already gone is left alone.
    */
   purgeGroup(groupId: string): Promise<void>;
+  /**
+   * Keep the group read-only on this device, in one change (#108; #115
+   * reuses it): drop its outbox, its drafts, any leave, the chat bot's
+   * claims (#119) and what it learned of the webhook (#123), and mark it
+   * archived for `reason`. From then on nothing is
+   * queued or claimed for it, and the sync loop sends, reads and posts
+   * nothing for it. A group already archived keeps its archive.
+   */
+  markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
+  /**
+   * Clear an archived group's ballots and notes, in one change (#108): keep
+   * `cleared`, the state to show from now on, and drop the log that held
+   * them. Refuses a group that isn't archived.
+   */
+  clearArchive(groupId: string, cleared: ClearedArchive): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
@@ -234,19 +294,25 @@ export interface Store extends DraftStore {
   /**
    * Add each of an invite's `records` whose event id the log lacks, each in
    * seq order among the records already there, and clear `missingHistory`
-   * (#73). The cursor and sync state stay as they are.
+   * (#73). The cursor and sync state stay as they are. A read-only archive
+   * takes nothing (#108), so a cleared one never gets its ballots back.
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
-   * Keep a backup file's groups, in one transaction (#78). A group new to the
-   * device is kept as the file has it, with an empty outbox, no drafts and no
-   * chat claims (#119). For
-   * a group already here, whichever whole copy synced later stays: the file's
-   * replaces the device's only when its last sync is later, and a group this
-   * device is leaving stays as it is. Either way the group is marked `saved`,
-   * since a backup file holds it. Nothing is stamped with the time now.
+   * Keep a backup file's groups and personal Documents, in one transaction
+   * (#78, #93). A group new to the device is kept as the file has it, with an
+   * empty outbox, no drafts and no chat claims (#119). For a group already
+   * here, whichever whole copy synced later stays: the file's replaces the
+   * device's only when its last sync is later, and a group this device is
+   * leaving or keeps read-only (#108) stays as it is. Either way the group is
+   * marked `saved`, since a backup file holds it. A personal Document merges
+   * by id the same way: the file's replaces the device's only when it was
+   * edited later (`keepsHeldCopy`). Nothing is stamped with the time now.
    */
-  restoreGroups(groups: readonly BackedUpGroup[]): Promise<void>;
+  restoreGroups(
+    groups: readonly BackedUpGroup[],
+    personal?: readonly PersonalDocument[],
+  ): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
@@ -259,16 +325,35 @@ export interface Store extends DraftStore {
 
 interface Schema extends DBSchema {
   groups: { key: string; value: Group };
+  personal: { key: string; value: PersonalDocument };
 }
 
 /**
- * The schema version. Version 3 holds a real group secret, from which the
- * mailbox id and seal key derive (#71); version 2 held signed records (#69)
- * and version 1 the stub era's unsigned data. Older data, whose relay blobs
- * anyone could read, is deleted on upgrade, with no migration.
+ * The schema version. Version 4 adds the personal store (#93) and deletes
+ * nothing. Version 3 holds a real group secret, from which the mailbox id and
+ * seal key derive (#71); version 2 held signed records (#69) and version 1
+ * the stub era's unsigned data. That older data, whose relay blobs anyone
+ * could read, is deleted on upgrade, with no migration. A dissolved group's
+ * `archived` mark (#108) is an optional field of its record, so it needed no
+ * version of its own: a version 3 group that holds one keeps it through the
+ * upgrade.
  */
-const VERSION = 3;
+const VERSION = 4;
 const GROUPS = 'groups';
+const PERSONAL = 'personal';
+
+/**
+ * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
+ * version 3 are deleted, and the personal store is added beside whatever
+ * groups version 3 kept.
+ */
+function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
+  if (oldVersion < 3) {
+    if (database.objectStoreNames.contains(GROUPS)) database.deleteObjectStore(GROUPS);
+    database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+  }
+  if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
+}
 
 /** The IndexedDB database the app keeps its groups in. */
 export const DATABASE_NAME = 'reconcile';
@@ -280,11 +365,8 @@ export const DATABASE_NAME = 'reconcile';
  */
 export async function openStore(name = DATABASE_NAME): Promise<Store> {
   const db = await openDB<Schema>(name, VERSION, {
-    upgrade(database) {
-      if (database.objectStoreNames.contains(GROUPS)) {
-        database.deleteObjectStore(GROUPS);
-      }
-      database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+    upgrade(database, oldVersion) {
+      upgradeFrom(database, oldVersion);
     },
     blocking() {
       db.close();
@@ -304,6 +386,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     }
     await change(groupId, (group) => {
       if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
+      if (group.archived !== undefined) throw new Error('This group is read-only on this device.');
       group.outbox.push(...records);
       if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
     });
@@ -349,7 +432,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await change(groupId, (group) => {
         const held = group.chatClaims ?? [];
         const same = held.some((c) => c.proposal === claim.proposal && c.moment === claim.moment);
-        if (group.leaving !== undefined || same) return;
+        if (group.leaving !== undefined || group.archived !== undefined || same) return;
         group.outbox.push(record);
         group.chatClaims = [...held, claim];
         queued = true;
@@ -376,6 +459,22 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
       if (found) notify(groupId);
     },
+    markArchived: (groupId, reason) =>
+      change(groupId, (group) => {
+        if (group.archived !== undefined) return;
+        group.archived = { reason };
+        group.outbox = [];
+        delete group.drafts;
+        delete group.leaving;
+        delete group.chatClaims;
+        delete group.chatChannel;
+      }),
+    clearArchive: (groupId, cleared) =>
+      change(groupId, (group) => {
+        if (group.archived === undefined) throw new Error('This group isn’t archived.');
+        group.archived = { ...group.archived, cleared };
+        group.log = [];
+      }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
         // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
@@ -397,14 +496,18 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       }),
     mergeLog: (groupId, records, idOf) =>
       change(groupId, (group) => {
+        if (group.archived !== undefined) return;
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
-    async restoreGroups(groups) {
-      const tx = db.transaction(GROUPS, 'readwrite');
-      for (const restored of groups) {
-        const held = await tx.store.get(restored.groupId);
-        await tx.store.put(keptCopy(held, restored));
+    async restoreGroups(groups, personal = []) {
+      const tx = db.transaction([GROUPS, PERSONAL], 'readwrite');
+      try {
+        await restoreInto(tx, groups, personal);
+      } catch (error) {
+        // Anything that fails takes the whole restore with it, groups and Documents alike.
+        await abandon(tx);
+        throw error;
       }
       await tx.done;
       for (const { groupId } of groups) notify(groupId);
@@ -422,6 +525,17 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
       for (const groupId of marked) notify(groupId);
     },
+    async listPersonal() {
+      return (await db.getAll(PERSONAL)).sort(byCreation);
+    },
+    getPersonal: (id) => db.get(PERSONAL, id),
+    async savePersonal(document) {
+      if (!isPersonalDocument(document)) {
+        throw new Error('This isn’t a personal Document this device can keep.');
+      }
+      await db.put(PERSONAL, document);
+    },
+    deletePersonal: (id) => db.delete(PERSONAL, id),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -438,16 +552,59 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 }
 
 /**
+ * Aborts `tx` and waits for it to end. A transaction that a failed request
+ * has already aborted can't be aborted again, and that's fine: either way,
+ * nothing it wrote stays.
+ */
+async function abandon(tx: RestoreTransaction): Promise<void> {
+  try {
+    tx.abort();
+  } catch {
+    // Already aborted by the request that failed.
+  }
+  await tx.done.catch(() => undefined);
+}
+
+/** A transaction over both of the store's object stores, as a restore opens it. */
+type RestoreTransaction = IDBPTransaction<Schema, ['groups', 'personal'], 'readwrite'>;
+
+/**
+ * Puts each group and personal Document a backup holds into `tx`, keeping
+ * the device's copy wherever it's the one to keep (`keptCopy`,
+ * `keepsHeldCopy`).
+ */
+async function restoreInto(
+  tx: RestoreTransaction,
+  groups: readonly BackedUpGroup[],
+  personal: readonly PersonalDocument[],
+): Promise<void> {
+  const kept = tx.objectStore(GROUPS);
+  for (const restored of groups) {
+    await kept.put(keptCopy(await kept.get(restored.groupId), restored));
+  }
+  const documents = tx.objectStore(PERSONAL);
+  for (const restored of personal) {
+    if (!keepsHeldCopy(await documents.get(restored.id), restored)) await documents.put(restored);
+  }
+}
+
+/**
  * The copy of a group to keep when a backup file holds `restored` and the
  * device holds `held` (#78): the file's, with no outbox, drafts or chat
- * claims, unless the device's synced at least as late or is leaving. Either
- * is marked `saved`.
+ * claims, unless the device's synced at least as late, is leaving, or is a
+ * read-only archive, which a restore never brings back to life (#108).
+ * Either is marked `saved`.
  */
 function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
-  if (held !== undefined && (held.leaving !== undefined || syncedSince(held, restored))) {
+  if (held !== undefined && (stays(held) || syncedSince(held, restored))) {
     return { ...held, backup: 'saved' };
   }
   return { ...restored, outbox: [], backup: 'saved' };
+}
+
+/** Whether a restore leaves `held` as it is: the device is leaving it, or keeps it read-only. */
+function stays(held: Group): boolean {
+  return held.leaving !== undefined || held.archived !== undefined;
 }
 
 /** Whether `held` last synced no earlier than `restored`; a copy that never synced is the oldest. */

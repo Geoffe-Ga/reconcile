@@ -18,9 +18,11 @@
  * joiners, else after vouches and a wait (admission.ts, #101). The chat bot's
  * claims keep the first per Proposal moment (#119), and each Proposal keeps
  * the first Discord thread its open claimant records (#123). Each Proposal is
- * numbered by its place among the group's Proposals (#123). The fold is pure: no I/O,
- * no clock, no randomness, so every device that folds the same records builds
- * the same state.
+ * numbered by its place among the group's Proposals (#123). A `dissolve` ends
+ * the group (#108): relay time stops at its receipt, and the fold ignores
+ * every event after it, so no vouch lands and no wait ends from then on. The
+ * fold is pure: no I/O, no clock, no randomness, so every device that folds
+ * the same records builds the same state.
  */
 import { verifyInviteToken } from '../crypto/invite';
 import { bootstrapOpen, earnedAt, mayVouch, type Vouch, vouchesFor } from './admission';
@@ -42,14 +44,18 @@ import {
   mayRecordThread,
 } from './chatPosts';
 import { optionFor } from './composeOption';
+import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
   type ChatPostedBody,
   type ChatThreadBody,
+  type DissolveBody,
+  type DissolveProposalBody,
   EVENT_VERSION,
   fromBase64url,
   type GenesisBody,
   type GroupEvent,
   type InviteToken,
+  isDissolveProposal,
   isRulesProposal,
   isStewardProposal,
   type LevelBody,
@@ -167,12 +173,14 @@ export interface Ballot {
 }
 
 /**
- * A proposed change to one Atom, a steward seat or an opt-in, with its vote.
+ * A proposed change to one Atom, a steward seat, an opt-in, or whether the
+ * group goes on, with its vote.
  *
- * `target` says which: an edit of `atom`, a steward change (#102), or a rules
- * change to an opt-in (#117). A steward or rules Proposal's `atom` and `text`
- * are `""`, and its one version, under its own id, has no text. A recall's
- * eligible set leaves out the steward it would remove.
+ * `target` says which: an edit of `atom`, a steward change (#102), a rules
+ * change to an opt-in (#117), or dissolving the group (#108). A steward,
+ * rules or dissolve Proposal's `atom` and `text` are `""`, and its one
+ * version, under its own id, has no text. A recall's eligible set leaves out
+ * the steward it would remove.
  *
  * `number` is its 1-based place among the group's Proposals in relay order,
  * counting only the ones the fold kept (#123): the name of its Discord thread
@@ -189,7 +197,8 @@ export interface Ballot {
  * count it. `closedAt` is the receipt minute of the ballot that closed it
  * early, or null. `final` is true once it has closed, early or because relay
  * time reached `deadline`. `outcome` is the tally of the ballots so far, and
- * is settled only when `final`.
+ * is settled only when `final`. A Proposal still open when its group
+ * dissolved (#108) is never final, so it has no outcome.
  */
 export interface Proposal {
   readonly id: string;
@@ -244,6 +253,9 @@ export interface IgnoredRecord {
  * the chat bot's winning claims, the first valid `chat-posted` per (Proposal,
  * moment), in relay order (#119), and `chatThreads` each Proposal's Discord
  * thread, the first valid `chat-thread` for it, in relay order (#123).
+ * `dissolved` is when the group dissolved, and whether its vote chose to wipe
+ * every copy, or null while it goes on (#108). Once it has dissolved, `at`
+ * stays at that receipt whatever the relay's `now`.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -263,6 +275,7 @@ export interface GroupState {
   readonly vouches: readonly Vouch[];
   readonly chatPosts: readonly ChatPost[];
   readonly chatThreads: readonly ChatThread[];
+  readonly dissolved: Dissolution | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -310,6 +323,7 @@ interface Draft {
   readonly chatThreads: ChatThread[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
+  dissolved: Dissolution | null;
 }
 
 /** Founds the group, unless its rules differ from the defaults (rules.ts). */
@@ -568,6 +582,34 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
   return true;
 }
 
+/**
+ * Opens a dissolve Proposal (ADR-0051, #108) when its author may propose, no
+ * other is open and the group hasn't dissolved (dissolve.ts). It is
+ * entrenched, so it runs the window its proposer chose within the entrenched
+ * bounds (#106), or their default. Its one version has no text, and everyone
+ * whose level votes is eligible.
+ */
+function applyDissolveProposal(
+  draft: Draft,
+  body: DissolveProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!fieldsAreValid(body) || !mayProposeDissolve(draft, author)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  draft.proposals.push({
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: '',
+    target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
@@ -576,7 +618,23 @@ function applyProposal(
 ): boolean {
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
+  if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
   return applyEdit(draft, body, author, at);
+}
+
+/**
+ * Ends the group (#108): the first `dissolve` from a member that names a
+ * dissolve Proposal whose pass is final at the relay's receipt of it. From
+ * here on the fold ignores every event ({@link admits}), and relay time
+ * stops at this receipt.
+ */
+function applyDissolve(draft: Draft, body: DissolveBody, author: string, at: Receipt): boolean {
+  const proposal = draft.proposals.find((p) => p.id === body.proposal);
+  if (proposal?.target.kind !== 'dissolve' || !can(draft, author, 'read')) return false;
+  if (isOpenAt(proposal, at.received)) return false;
+  if (settle(proposal, draft.rules, at.received).outcome.kind !== 'pass') return false;
+  draft.dissolved = { received: at.received, wipe: proposal.target.wipe };
+  return true;
 }
 
 /**
@@ -643,7 +701,7 @@ function applyChatThread(draft: Draft, body: ChatThreadBody, author: string, at:
 function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
-  // A steward Proposal has no text, so it takes no versions (#102).
+  // A steward, rules or dissolve Proposal has no text, so it takes no versions (#102, #117, #108).
   if (proposal.target.kind !== 'edit') return false;
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
@@ -707,14 +765,32 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
 }
 
 /**
- * A version-1 event for this group, from someone who isn't suspended: the
- * fold ignores a suspended member's events until the suspension ends
- * (ADR-0016), except their `leave`, since exit is always possible (ADR-0010,
- * #77).
+ * The one event guard: a version-1 event for a group that hasn't dissolved,
+ * from someone who isn't suspended. After a `dissolve` the fold ignores every
+ * event, a second `dissolve` included (#108). It ignores a suspended member's
+ * events until the suspension ends (ADR-0016), except their `leave`, since
+ * exit is always possible (ADR-0010, #77).
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
   const free = event.type === 'leave' || !isSuspended(draft, event.author);
-  return event.v === EVENT_VERSION && inGroup(draft, event) && free;
+  return draft.dissolved === null && event.v === EVENT_VERSION && inGroup(draft, event) && free;
+}
+
+/** The events that act on a Proposal: proposing, wording, voting, and dissolving on a pass (#108). */
+type ProposalEvent = Extract<GroupEvent, { type: 'proposal' | 'version' | 'vote' | 'dissolve' }>;
+
+/** Applies one admitted event that acts on a Proposal, or returns false to ignore it. */
+function applyProposalEvent(draft: Draft, event: ProposalEvent, at: Receipt): boolean {
+  switch (event.type) {
+    case 'proposal':
+      return applyProposal(draft, event.body, event.author, at);
+    case 'version':
+      return applyVersion(draft, event.body, event.author, at);
+    case 'vote':
+      return applyVote(draft, event.body, event.author, at);
+    case 'dissolve':
+      return applyDissolve(draft, event.body, event.author, at);
+  }
 }
 
 /** Applies one verified event to the draft, or returns false to ignore it. */
@@ -729,12 +805,6 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyGenesis(draft, event.body, event.author, at);
     case 'join':
       return applyJoin(draft, event, at);
-    case 'proposal':
-      return applyProposal(draft, event.body, event.author, at);
-    case 'version':
-      return applyVersion(draft, event.body, event.author, at);
-    case 'vote':
-      return applyVote(draft, event.body, event.author, at);
     case 'level':
       return applyLevel(draft, event.body, event.author);
     case 'leave':
@@ -744,19 +814,20 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
   }
 }
 
-/** The event types the restored features added. */
-type LaterType = 'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'chat-thread';
+/**
+ * The events the restored features added: `suspend` (#102), `narrow` (#117),
+ * `vouch` (#101), `chat-posted` (#119) and `chat-thread` (#123).
+ */
+type LaterEvent = Extract<
+  GroupEvent,
+  { readonly type: 'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'chat-thread' }
+>;
 
 /**
- * {@link applyAdmitted} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `vouch` (#101), `chat-posted` (#119) and
- * `chat-thread` (#123).
+ * {@link applyAdmitted} for the types the restored features added, and the
+ * events that act on a Proposal ({@link applyProposalEvent}).
  */
-function applyLater(
-  draft: Draft,
-  event: Extract<GroupEvent, { readonly type: LaterType }>,
-  at: Receipt,
-): boolean {
+function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt): boolean {
   switch (event.type) {
     case 'suspend':
       return applySuspend(draft, event.body, event.author, at);
@@ -768,6 +839,8 @@ function applyLater(
       return applyChatPosted(draft, event.body, event.author, at);
     case 'chat-thread':
       return applyChatThread(draft, event.body, event.author, at);
+    default:
+      return applyProposalEvent(draft, event, at);
   }
 }
 
@@ -897,7 +970,10 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
  * Folds a group's records, in relay order, into its state.
  *
  * `relayNow` is the relay's latest `now`, in minutes, or null before the first
- * sync; it decides only which Proposals have reached their deadline. A record
+ * sync; it decides only which Proposals have reached their deadline. Once the
+ * group has dissolved, relay time stops at the dissolve's receipt (#108), so a
+ * Proposal open then stays open, with no outcome, and no opt-in changes,
+ * whatever `relayNow` says. A record
  * that doesn't verify, or whose event's `author` isn't the key that signed it,
  * is ignored before it is parsed or claims an event id, so a forged copy of a
  * real event can never shadow it. A repeated event id is ignored (the first
@@ -925,14 +1001,17 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     chatThreads: [],
     seated: new Set(),
     ruled: new Set(),
+    dissolved: null,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
   for (const { seq, received, bytes } of records) {
-    // Relay time only moves on, whatever the record holds.
-    draft.at = Math.max(draft.at, received);
-    advanceSeats(draft);
-    advanceOptIns(draft);
+    // Relay time only moves on, whatever the record holds, until the group dissolves (#108).
+    if (draft.dissolved === null) {
+      draft.at = Math.max(draft.at, received);
+      advanceSeats(draft);
+      advanceOptIns(draft);
+    }
     const parsed = parseRecord(bytes);
     if (parsed === null) {
       ignored.push({ seq, id: null });
@@ -943,10 +1022,11 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     seen.add(id);
     if (!applied) ignored.push({ seq, id });
   }
-  draft.at = relayNow ?? draft.at;
+  const now = draft.dissolved?.received ?? relayNow;
+  draft.at = now ?? draft.at;
   advanceSeats(draft);
   advanceOptIns(draft);
-  const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
+  const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
   const { narrowings, vouches, chatPosts, chatThreads } = draft;
@@ -968,6 +1048,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     vouches,
     chatPosts,
     chatThreads,
+    dissolved: draft.dissolved,
     ignored,
   };
 }

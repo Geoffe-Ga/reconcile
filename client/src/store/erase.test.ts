@@ -125,6 +125,25 @@ describe('eraseDevice', () => {
     reopened.close();
   });
 
+  it('takes every personal Document (#93) with the rest', async () => {
+    const app = await runningApp();
+    await app.store.savePersonal({
+      id: 'AAAAAAAAAAAAAAAAAAAAAA',
+      title: 'My mission statement',
+      text: 'Canary: I show up for my neighbors.',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await eraseDevice(app, targets());
+
+    expect(await indexedDB.databases()).toEqual([]);
+    const reopened = await openStore();
+    expect(await reopened.listPersonal()).toEqual([]);
+    expect(await reopened.getPersonal('AAAAAAAAAAAAAAAAAAAAAA')).toBeUndefined();
+    reopened.close();
+  });
+
   it('takes the first-run guide’s flag (#91) and the chat bot’s claims (#119) with the rest', async () => {
     const app = await runningApp();
     const guide = guideRecord();
@@ -137,6 +156,19 @@ describe('eraseDevice', () => {
     expect(guide.seen()).toBe(false);
     const reopened = await openStore();
     expect(await reopened.getGroup('group-1')).toBeUndefined();
+    reopened.close();
+  });
+
+  it('takes a dissolved group’s read-only copy (#108) with the rest', async () => {
+    const app = await runningApp();
+    await app.store.markArchived('group-1', 'dissolved');
+    expect((await app.store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved' });
+
+    await eraseDevice(app, targets());
+
+    expect(await indexedDB.databases()).toEqual([]);
+    const reopened = await openStore();
+    expect(await reopened.listGroups()).toEqual([]);
     reopened.close();
   });
 

@@ -1,14 +1,19 @@
 /**
- * What the store does for a backup (#78): restoring groups from a file in one
- * transaction, keeping whichever whole copy synced later, and marking groups
- * as in a backup, or the backup card as answered.
+ * What the store does for a backup (#78): restoring groups and personal
+ * Documents (#93) from a file in one transaction, keeping whichever whole
+ * copy synced or was edited later, and marking groups as in a backup, or the
+ * backup card as answered.
  */
-import { IDBDatabase as FakeIDBDatabase } from 'fake-indexeddb';
+import {
+  IDBDatabase as FakeIDBDatabase,
+  IDBObjectStore as FakeIDBObjectStore,
+} from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { local, text, utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { type BackedUpGroup, DATABASE_NAME, type Group, type NewGroup, openStore } from './db';
+import type { PersonalDocument } from './personal';
 
 freshIndexedDBPerTest();
 
@@ -145,6 +150,99 @@ describe('restoreGroups', () => {
     expect(transaction.mock.calls[0]?.[1]).toBe('readwrite');
     expect(heard).toEqual([ana.groupId, 'group-2']);
     transaction.mockRestore();
+  });
+});
+
+describe('restoreGroups with personal Documents (#93)', () => {
+  /** A personal Document, last edited at `updatedAt`. */
+  function statement(id: string, updatedAt: number, text = `Edited at ${String(updatedAt)}.`) {
+    return { id, title: 'My mission statement', text, createdAt: 1, updatedAt };
+  }
+  const FIRST = 'AAAAAAAAAAAAAAAAAAAAAA';
+  const SECOND = 'BBBBBBBBBBBBBBBBBBBBBA';
+
+  it('keeps a Document new to the device as the file has it', async () => {
+    const store = await openStore();
+
+    await store.restoreGroups([], [statement(FIRST, 5), statement(SECOND, 6)]);
+
+    expect(await store.listPersonal()).toEqual([statement(FIRST, 5), statement(SECOND, 6)]);
+  });
+
+  it('replaces the device’s copy only with one edited later; a tie keeps the device’s', async () => {
+    const store = await openStore();
+    await store.savePersonal(statement(FIRST, 5, 'Older on the device.'));
+    await store.savePersonal(statement(SECOND, 9, 'Newer on the device.'));
+    const third = 'CCCCCCCCCCCCCCCCCCCCCA';
+    await store.savePersonal(statement(third, 7, 'Same time on the device.'));
+
+    await store.restoreGroups(
+      [],
+      [
+        statement(FIRST, 6, 'Newer in the file.'),
+        statement(SECOND, 8, 'Older in the file.'),
+        statement(third, 7, 'Same time in the file.'),
+      ],
+    );
+
+    expect((await store.listPersonal()).map((kept) => kept.text)).toEqual([
+      'Newer in the file.',
+      'Newer on the device.',
+      'Same time on the device.',
+    ]);
+  });
+
+  it('keeps the file’s groups and Documents in one transaction over both stores', async () => {
+    const store = await openStore();
+    const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+
+    await store.restoreGroups([copy(1)], [statement(FIRST, 5)]);
+    const calls = transaction.mock.calls.map(([names, mode]) => [names, mode]);
+    transaction.mockRestore();
+
+    expect(calls).toEqual([[['groups', 'personal'], 'readwrite']]);
+    expect((await store.listGroups()).map((group) => group.groupId)).toEqual([ana.groupId]);
+    expect(await store.listPersonal()).toEqual([statement(FIRST, 5)]);
+  });
+
+  it('writes nothing at all when any part fails, groups included', async () => {
+    const store = await openStore();
+    const keyless = { ...statement(FIRST, 5), id: undefined } as unknown as PersonalDocument;
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await expect(store.restoreGroups([copy(1)], [statement(SECOND, 5), keyless])).rejects.toThrow();
+
+    expect(await store.listGroups()).toEqual([]);
+    expect(await store.listPersonal()).toEqual([]);
+    expect(heard).toEqual([]);
+  });
+
+  it('fails with the write’s own error when that failure already aborted the transaction', async () => {
+    const store = await openStore();
+    const put = vi.spyOn(FakeIDBObjectStore.prototype, 'put').mockImplementationOnce(function (
+      this: IDBObjectStore,
+    ) {
+      this.transaction.abort();
+      throw new Error('Quota exceeded.');
+    });
+
+    const restoring = store.restoreGroups([copy(1)], [statement(FIRST, 5)]);
+
+    await expect(restoring).rejects.toThrow('Quota exceeded.');
+    put.mockRestore();
+    expect(await store.listGroups()).toEqual([]);
+    expect(await store.listPersonal()).toEqual([]);
+  });
+
+  it('restores groups alone when the file holds no Documents, as an older backup does', async () => {
+    const store = await openStore();
+    await store.savePersonal(statement(FIRST, 5));
+
+    await store.restoreGroups([copy(1)]);
+
+    expect((await store.listGroups()).map((group) => group.groupId)).toEqual([ana.groupId]);
+    expect(await store.listPersonal()).toEqual([statement(FIRST, 5)]);
   });
 });
 

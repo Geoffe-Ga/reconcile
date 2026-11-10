@@ -6,7 +6,7 @@
  * device falls back once and then posts as #119 does. With
  * the bot on, each moment of a Proposal reaches Discord exactly once across
  * every device, two devices holding one key included; with it off, narrowed,
- * or the device leaving, nothing does. A canary in every field of the group
+ * the device leaving, or the group dissolved (#108), nothing does. A canary in every field of the group
  * shows no post carries anything but the fixed line and the app's address,
  * and the webhook never reaches the relay readable.
  */
@@ -378,6 +378,19 @@ describe('the chat bot posts nothing', () => {
     expect(await ana.services.store.getGroup(groupId)).toBeUndefined();
     expect(fake.discord.requests).toEqual([]);
   });
+
+  it('from a device whose group has dissolved, even for a claim it won before the dissolve (#108)', async () => {
+    const { fake, groupId, ana } = await dissolvedAfterAWin();
+
+    await ana.services.sync.syncOnce();
+    await ana.services.sync.syncOnce();
+
+    expect(fake.discord.requests).toEqual([]);
+    const kept = await ana.services.store.getGroup(groupId);
+    expect(kept?.archived).toEqual({ reason: 'dissolved' });
+    expect(kept?.chatClaims).toBeUndefined();
+    expect(kept?.outbox).toEqual([]);
+  });
 });
 
 /** Reads `groupId`'s new records into `device`'s store as a sync pass would, posting none of its outbox. */
@@ -403,6 +416,46 @@ async function leaveOf(device: TestDevice, groupId: string): Promise<Uint8Array>
   if (group === undefined) throw new Error('Expected the group on this device.');
   return signEvent(group.signingKey, { type: 'leave', group: groupId, ts: TEST_NOW, body: {} })
     .record;
+}
+
+/** A sync loop for `device` that runs no chat bot, so nothing it reads is posted. */
+function quietSync(device: TestDevice) {
+  const { store, relay } = device.services;
+  return createSync({ store, relay, seal: xchachaSeal, clock: () => TEST_NOW });
+}
+
+/**
+ * Ana's group with the bot on, her winning claim of the canary Proposal's
+ * opening folded and not yet posted, and a dissolve Proposal (#108) both
+ * pass, so Ben's `dissolve` is at the relay. Ana's device hasn't read it:
+ * the claim's moment is still due at the dissolve's receipt.
+ */
+async function dissolvedAfterAWin() {
+  const fake = createFakeRelay({ minute: START });
+  const { groupId, devices } = await group(fake);
+  const [ana, ben] = devices;
+  if (ana === undefined || ben === undefined) throw new Error('Expected two devices.');
+  await turnBotOn(devices, groupId);
+  await syncRounds(devices);
+  await proposeCanary(fake, ana, groupId);
+  await ana.services.sync.syncOnce();
+  const [quietAna, quietBen] = [quietSync(ana), quietSync(ben)];
+  // The claim goes up and comes back the winner, unposted, before the dissolve Proposal.
+  await quietAna.syncOnce();
+  const motion = await say(ana, groupId, {
+    type: 'proposal',
+    body: { target: { kind: 'dissolve', wipe: false }, title: 'Dissolve', why: 'We moved out.' },
+  });
+  await say(ana, groupId, { type: 'vote', body: { proposal: motion, scores: { [motion]: 4 } } });
+  await quietAna.syncOnce();
+  await say(ben, groupId, { type: 'vote', body: { proposal: motion, scores: { [motion]: 4 } } });
+  // Ben's pass reads the final pass and queues his dissolve; the next sends it.
+  await quietBen.syncOnce();
+  await quietBen.syncOnce();
+  expect((await ben.services.store.getGroup(groupId))?.archived).toEqual({ reason: 'dissolved' });
+  expect((await ana.services.store.getGroup(groupId))?.chatClaims).toHaveLength(1);
+  fake.discord.requests.length = 0;
+  return { fake, groupId, ana };
 }
 
 describe('createChatBot over one store', () => {
@@ -493,6 +546,19 @@ describe('createChatBot over one store', () => {
 
     expect(fake.discord.requests).toEqual([]);
     expect((await store.getGroup(groupId))?.chatClaims).toEqual([]);
+  });
+
+  it('posts and claims nothing once a dissolve has folded, before the group is archived (#108)', async () => {
+    const { fake, groupId, ana } = await dissolvedAfterAWin();
+    const { store } = ana.services;
+    await pullOnly(ana, groupId);
+    const before = await store.getGroup(groupId);
+    expect(before?.archived).toBeUndefined();
+
+    await testBot(store, fake).run(groupId);
+
+    expect(fake.discord.requests).toEqual([]);
+    expect(await store.getGroup(groupId)).toEqual(before);
   });
 
   it('does nothing for a group that isn’t on the device', async () => {

@@ -6,6 +6,8 @@ import { navigate, parseRoute, replaceRoute, routeHref, type Route, useRoute } f
 const GROUP = 'g'.repeat(43);
 const ATOM = `${GROUP}.0`;
 const PROPOSAL = 'p'.repeat(43);
+/** A personal Document's id (#93): 16 bytes in unpadded base64url. */
+const PERSONAL = 'Q2FuYXJ5IHN0YXRlbWVudA';
 
 afterEach(() => {
   window.history.replaceState(null, '', '#/');
@@ -18,6 +20,9 @@ describe('parseRoute', () => {
     ['#/', { name: 'start' }],
     ['#/create', { name: 'create' }],
     ['#/settings', { name: 'settings' }],
+    ['#/me', { name: 'personal' }],
+    [`#/me/${PERSONAL}`, { name: 'personalDocument', id: PERSONAL }],
+    ['#/me/A-_aAAAAAAAAAAAAAAAAAA', { name: 'personalDocument', id: 'A-_aAAAAAAAAAAAAAAAAAA' }],
     ['#/join', { name: 'join', payload: null }],
     ['#/join/abc.def', { name: 'join', payload: 'abc.def' }],
     ['#join/abc-def', { name: 'join', payload: 'abc-def' }],
@@ -43,6 +48,7 @@ describe('parseRoute', () => {
       `#/g/${GROUP}/narrow/chatBot`,
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
+    [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -51,6 +57,14 @@ describe('parseRoute', () => {
     '#/nowhere',
     '#/create/extra',
     '#/settings/extra',
+    '#/me/',
+    `#/me/${PERSONAL}/extra`,
+    `#/me/${PERSONAL}A`,
+    `#/me/${PERSONAL.slice(1)}`,
+    '#/me/has space in its twenty',
+    `#/me/${PERSONAL.slice(1)}=`,
+    `#/me/${'A'.repeat(21)}B`,
+    `#/me/${'%2e'.repeat(7)}a`,
     '#/g/',
     '#/g/has space',
     '#/g/%2e%2e',
@@ -78,6 +92,8 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/rules/chatBot/extra`,
     `#/g/${GROUP}/narrow`,
     `#/g/${GROUP}/narrow/toString`,
+    `#/g/${GROUP}/dissolve/${PROPOSAL}`,
+    `#/g/${GROUP}/dissolve/extra/more`,
     '#/join/',
     '#join',
     '#join/',
@@ -94,6 +110,8 @@ describe('routeHref', () => {
     [{ name: 'start' }, '#/'],
     [{ name: 'create' }, '#/create'],
     [{ name: 'settings' }, '#/settings'],
+    [{ name: 'personal' }, '#/me'],
+    [{ name: 'personalDocument', id: PERSONAL }, `#/me/${PERSONAL}`],
     [{ name: 'join', payload: null }, '#/join'],
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
@@ -112,6 +130,7 @@ describe('routeHref', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
       `#/g/${GROUP}/narrow/chatBot`,
     ],
+    [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);
