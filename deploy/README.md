@@ -143,13 +143,18 @@ The push services see the VM's address, and when each phone is woken, but never 
 
 ## The CSP
 
-Caddy sends this header on every response, and `vite preview` sends the same one ([`client/vite.config.ts`](../client/vite.config.ts)):
+Caddy sends this header on every response, and `vite preview` sends the same one ([`client/vite.config.ts`](../client/vite.config.ts)). The hash is shortened here; the [Caddyfile](Caddyfile) has it in full:
 
 ```
-default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-…'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
 ```
 
 This CSP and #70's Markdown sanitizer are the main defense against injected script stealing keys. The page can load script only from its own origin: no inline script, no third party, no plugins. No `<base>` tag can redirect its URLs, and no other site can frame it.
+
+**One inline style, by its hash (#153).** On iOS and iPadOS, React Aria inserts a `<style>` with one fixed rule, `@layer { * { overscroll-behavior: contain; } }`, while a Modal or a modal Popover (Select, ComboBox, Menu, DatePicker) is open, so scrolling inside the overlay doesn't scroll the page behind it. It has no id, so it can't be claimed the way the pressable style is (#150). `style-src-elem` allows `<style>` and stylesheet elements from `'self'`, plus that one text by the SHA-256 hash of its exact bytes, and nothing else:
+- It isn't `'unsafe-inline'`. An injected `<style>` with any other text is still blocked, `style` attributes still fall back to `default-src 'self'`, and script is untouched.
+- Every browser [ADR-0042](../docs/adr/0042-broad-device-support.md) supports understands `style-src-elem` (since Safari 15.4, Chromium 75 and Firefox 108). An older one ignores it and falls back to `default-src 'self'`, which blocks the style: it fails closed.
+- `client/src/styles/scrollLockStyle.test.tsx` hashes the text the installed React Aria injects and fails if the CSP's hash differs, so an upgrade that changes it can't ship silently. `client/e2e/ios-scroll-lock.spec.ts` opens a Modal as an iPhone under this CSP and under the same CSP without the hash, and expects no violation and then the violation.
 
 To change the CSP, change both files: `deploy/check.sh` fails when they differ. Since the CSP allows no `data:` URLs, the client build inlines no assets (`build.assetsInlineLimit: 0`).
 

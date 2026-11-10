@@ -23,7 +23,12 @@
 		# The main defense against injected script stealing keys, together
 		# with #70's Markdown sanitizer. client/vite.config.ts serves the same
 		# header under `vite preview`; deploy/check.sh keeps the two equal.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		# style-src-elem allows one inline <style> by its hash: React Aria's
+		# iOS scroll lock (#153). client/src/styles/scrollLockStyle.test.tsx
+		# fails if React Aria changes that text. Never 'unsafe-inline'. The
+		# hash is of public CSS, so the pragma tells detect-secrets it's no secret.
+		# pragma: allowlist nextline secret
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 		# HSTS: for a year after each visit, a browser uses only HTTPS here,
 		# so no later request goes out in plaintext to be downgraded. No
 		# includeSubDomains and no preload: deploy/README.md says why, and
