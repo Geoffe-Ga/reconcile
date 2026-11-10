@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { genesisAtoms, normalizeAtomText } from '../engine/atomText';
 import { type EventDraft, signEvent } from '../engine/event';
+import { DEFAULT_RULES } from '../engine/rules';
 import { type TestDevice, testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -63,7 +64,7 @@ describe('Create group', () => {
     type: 'genesis',
     group: '',
     ts: NOW,
-    body: { ...NAMES, atoms: genesisAtoms(text) },
+    body: { ...NAMES, atoms: genesisAtoms(text), rules: DEFAULT_RULES },
   });
 
   it('refuses a founding Document whose record is 64,001 bytes, tied to its text, and queues nothing', async () => {

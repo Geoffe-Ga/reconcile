@@ -27,6 +27,15 @@ export interface ProposalValues {
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
+  /** Proposing a lapsed Proposal again (#74): that Proposal's id, whose draft this was written in. */
+  readonly again?: string;
+  /** The texts of the other versions to put on its ballot after it, as typed, in order. */
+  readonly versions?: readonly string[];
+}
+
+/** The draft target a lapsed Proposal is proposed again from: apart from its Atom's own draft. */
+export function againDraft(proposalId: string): string {
+  return `again:${proposalId}`;
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -64,6 +73,21 @@ async function signFor(
   return signEvent(group.signingKey, draft);
 }
 
+/** One `version` of `proposal`, its text normalized as Atom text, signed by this device's member. */
+function signVersion(
+  services: ProposalServices,
+  groupId: string,
+  values: VersionValues,
+): Promise<SignedEvent> {
+  const body = { proposal: values.proposal, text: normalizeAtomText(values.text) };
+  return signFor(services, groupId, { type: 'version', group: groupId, ts: services.now(), body });
+}
+
+/** True when no record is over 64,000 bytes, so each fits in a blob and an invite chunk. */
+function allFit(events: readonly SignedEvent[]): boolean {
+  return events.every((event) => event.record.length <= MAX_RECORD_BYTES);
+}
+
 /**
  * Proposes new text for one Atom, as this device's member of `groupId`. Every
  * value is NFC-normalized before the event is signed, and the text goes
@@ -71,13 +95,17 @@ async function signFor(
  * private draft it was written in, keyed by its Atom, in the same change. A
  * Proposal whose record is over 64,000 bytes is refused before anything is
  * queued, and its draft kept.
+ *
+ * Proposed again (#74), it carries the lapsed Proposal's other versions: one
+ * `version` of the new Proposal for each, queued after it in the same change,
+ * which clears the draft kept under {@link againDraft} instead.
  */
 export async function propose(
   services: ProposalServices,
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link } = values;
+  const { atom, title, why, text, link, again, versions = [] } = values;
   const body = {
     atom,
     title: nfc(title),
@@ -91,8 +119,19 @@ export async function propose(
     ts: services.now(),
     body,
   });
-  if (event.record.length > MAX_RECORD_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, atom);
+  const others = await Promise.all(
+    versions.map((version) =>
+      signVersion(services, groupId, { proposal: event.id, text: version }),
+    ),
+  );
+  const events = [event, ...others];
+  if (!allFit(events)) return { outcome: 'too-large' };
+  const draft = again === undefined ? atom : againDraft(again);
+  await services.store.enqueueAll(
+    groupId,
+    events.map((signed) => signed.record),
+    draft,
+  );
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
 }
@@ -110,16 +149,9 @@ export async function addVersion(
   groupId: string,
   values: VersionValues,
 ): Promise<AddVersionResult> {
-  const { proposal } = values;
-  const body = { proposal, text: normalizeAtomText(values.text) };
-  const event = await signFor(services, groupId, {
-    type: 'version',
-    group: groupId,
-    ts: services.now(),
-    body,
-  });
-  if (event.record.length > MAX_RECORD_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, proposal);
+  const event = await signVersion(services, groupId, values);
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record, values.proposal);
   void services.sync.syncOnce();
   return { outcome: 'added', versionId: event.id };
 }

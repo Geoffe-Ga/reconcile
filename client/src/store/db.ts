@@ -93,6 +93,14 @@ export interface Store extends DraftStore {
    * @throws {RecordTooLarge} when the record is over 64,000 bytes.
    */
   enqueue(groupId: string, bytes: Uint8Array, draft?: string): Promise<void>;
+  /**
+   * Queue several signed records, in order, in one change, as `enqueue` does
+   * one: a Proposal proposed again with its other versions (#74). If any is
+   * over 64,000 bytes, none is queued and the draft stays.
+   *
+   * @throws {RecordTooLarge} when a record is over 64,000 bytes.
+   */
+  enqueueAll(groupId: string, records: readonly Uint8Array[], draft?: string): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /** Append each record whose event id isn't in the log yet, and save the sync state. */
@@ -136,6 +144,15 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
   };
   const change = changer(db, notify);
   const changeQuietly = changer(db, () => undefined);
+  const enqueueAll: Store['enqueueAll'] = async (groupId, records, draft) => {
+    for (const { length } of records) {
+      if (length > MAX_RECORD_BYTES) throw new RecordTooLarge(length);
+    }
+    await change(groupId, (group) => {
+      group.outbox.push(...records);
+      if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
+    });
+  };
 
   return {
     listGroups: () => db.getAll(GROUPS),
@@ -154,13 +171,8 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       notify(group.groupId);
       return stored;
     },
-    async enqueue(groupId, bytes, draft) {
-      if (bytes.length > MAX_RECORD_BYTES) throw new RecordTooLarge(bytes.length);
-      await change(groupId, (group) => {
-        group.outbox.push(bytes);
-        if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
-      });
-    },
+    enqueue: (groupId, bytes, draft) => enqueueAll(groupId, [bytes], draft),
+    enqueueAll,
     async readDraft(groupId, target) {
       const group = await db.get(GROUPS, groupId);
       return group === undefined ? undefined : draftIn(group, target);

@@ -7,7 +7,7 @@ import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { VOTE_WINDOW_MINUTES } from '../engine/fold';
+import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -105,7 +105,7 @@ describe('propose, vote, and see the Update', () => {
     // Let the pass that sent the ballot finish reading back before relay time moves on.
     await sync(ana);
 
-    fake.minute += VOTE_WINDOW_MINUTES;
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
     expect(await within(a).findByRole('region', { name: 'Result' })).toHaveTextContent(
       'Not enough people weighed in. This isn’t a no.',
@@ -120,6 +120,68 @@ describe('propose, vote, and see the Update', () => {
       'Not enough people weighed in.',
     );
     for (const radio of within(b).getAllByRole('radio')) expect(radio).toBeDisabled();
+  });
+
+  it('tells a voter whose offline ballot reached the relay after the deadline, and nobody else', async () => {
+    const user = userEvent.setup();
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana, ben] = devices;
+    go(`#/g/${groupId}/doc`);
+    const a = mount(ana, 'a');
+    await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    await sync(ben);
+    const b = mount(ben, 'b');
+
+    // Ben votes offline, and his device only reaches the relay once the week is over.
+    fake.offline = true;
+    await score(within(b), user, '3 · Supportive');
+    await within(b).findByText(/^Saved on this device/);
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    fake.offline = false;
+    await sync(ben);
+    const late = 'Your vote arrived after voting closed and wasn’t counted.';
+    const bResult = await within(b).findByRole('region', { name: 'Result' });
+    expect(bResult).toHaveTextContent('Not enough people weighed in. This isn’t a no.');
+    expect(await within(bResult).findByText(late)).toBeVisible();
+
+    await sync(ana);
+    const aResult = await within(a).findByRole('region', { name: 'Result' });
+    expect(within(aResult).queryByText(late)).not.toBeInTheDocument();
+  });
+
+  it('proposes a lapse again: the same wording, as a fresh Proposal with its own window', async () => {
+    const user = userEvent.setup();
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana] = devices;
+    go(`#/g/${groupId}/doc`);
+    const a = mount(ana, 'a');
+    await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    const lapsed = window.location.hash;
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    await sync(ana);
+
+    const result = await within(a).findByRole('region', { name: 'Result' });
+    await user.click(within(result).getByRole('button', { name: 'Propose again' }));
+    expect(window.location.hash).toBe(lapsed.replace('/p/', '/again/'));
+    const title = await within(a).findByRole('textbox', { name: 'Title' });
+    expect(title).toHaveValue('Quiet hours');
+    // The test devices' clocks stand still, so a changed title keeps the new event's id apart.
+    await user.type(title, ', again');
+    const proposedAt = fake.minute;
+    await user.click(within(a).getByRole('button', { name: 'Propose this change' }));
+    await waitFor(() => {
+      expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/`));
+    });
+    expect(window.location.hash).not.toBe(lapsed);
+    await sync(ana);
+    expect(
+      await within(a).findByRole('heading', { level: 1, name: 'Quiet hours, again' }),
+    ).toBeVisible();
+    expect(await within(a).findByText('Closes in 7 days')).toBeVisible();
+    const stored = await ana?.services.store.getGroup(groupId);
+    expect(stored?.log.at(-1)?.received).toBe(proposedAt);
   });
 
   it('keeps a ballot cast offline on the device, sends it on recovery, and says so', async () => {

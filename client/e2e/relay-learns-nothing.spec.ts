@@ -203,9 +203,10 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
   await test.step('the vote closes early, and both see the Update', async () => {
     for (const { page } of [ana, ben]) {
       const result = page.getByRole('region', { name: 'Result' });
-      await expect(result.getByRole('paragraph')).toHaveText([
+      await expect(result.locator('.result-outcome').getByRole('paragraph')).toHaveText([
         'This passed. The Document now reads:',
         words.newText,
+        `Thank you, ${words.ana}.`,
       ]);
     }
   });

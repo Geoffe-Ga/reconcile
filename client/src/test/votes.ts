@@ -6,7 +6,8 @@
  */
 import { type Level, LEVELS } from '../engine/capabilities';
 import type { EventDraft, Score } from '../engine/event';
-import { fold, type GroupState, type LogRecord, VOTE_WINDOW_MINUTES } from '../engine/fold';
+import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { signedAs } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
@@ -127,7 +128,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
   return log;
 }
 
-/** The relay minute a Proposal received at `received` closes at. */
+/** The relay minute an ordinary Proposal received at `received` closes at. */
 export function deadlineOf(received: number): number {
-  return received + VOTE_WINDOW_MINUTES;
+  return received + defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 }

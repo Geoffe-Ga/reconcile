@@ -16,6 +16,7 @@ import { genesisAtoms } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
 import { base64url, signEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
+import { DEFAULT_RULES } from '../engine/rules';
 import type { Relay } from '../net/relay';
 import type { Store } from '../store/db';
 import { eventIdOf } from '../store/eventId';
@@ -51,9 +52,11 @@ export type CreateResult =
 
 /**
  * Founds a group: a fresh secret and keys, a signed genesis carrying the
- * Document's sections (split at blank lines, each normalized as Atom text),
- * and the group kept under the genesis id, which is the group id (spec §4). A
- * genesis whose record is over 64,000 bytes is refused before anything is kept.
+ * Document's sections (split at blank lines, each normalized as Atom text)
+ * and the founding rules, and the group kept under the genesis id, which is
+ * the group id (spec §4). Every group is founded with `DEFAULT_RULES`
+ * (ADR-0074). A genesis whose record is over 64,000 bytes is refused before
+ * anything is kept.
  */
 export async function createGroup(
   services: Services,
@@ -68,6 +71,7 @@ export async function createGroup(
     title,
     atoms: genesisAtoms(text),
     ...(chat === null ? {} : { chat }),
+    rules: DEFAULT_RULES,
   };
   const genesis = signEvent(keys.secretKey, {
     type: 'genesis',

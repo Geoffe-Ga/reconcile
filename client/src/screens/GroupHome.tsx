@@ -9,12 +9,13 @@ import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
-import { formatSyncedAt } from '../app/time';
+import { formatDay } from '../app/format';
+import { formatSyncedAt, minuteIso } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
 import { can, isLevel, type Level } from '../engine/capabilities';
 import type { ParsedEvent } from '../engine/event';
-import type { GroupState } from '../engine/fold';
+import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 
 /** Props for {@link GroupHome}. */
@@ -81,6 +82,54 @@ function OpenProposals({ state, now }: { readonly state: GroupState; readonly no
             </span>
             <span className="meta">
               <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
+function closedAt(proposal: Proposal): number {
+  return proposal.closedAt ?? proposal.deadline;
+}
+
+/** Closed Proposals, newest first by when they closed, and by relay order within a minute. */
+function decided(state: GroupState): Proposal[] {
+  return state.proposals
+    .filter((proposal) => proposal.final)
+    .reverse()
+    .sort((a, b) => closedAt(b) - closedAt(a));
+}
+
+/**
+ * Decided: the group's history, each closed Proposal with its title, its
+ * outcome in a word, and its close date, opening its result.
+ */
+function Decided({ state }: { readonly state: GroupState }) {
+  const groupId = state.group ?? '';
+  const closed = decided(state);
+  if (closed.length === 0) return <p>{messages.decided.empty}</p>;
+  return (
+    <ul className="card-list">
+      {closed.map((proposal) => (
+        <li key={proposal.id}>
+          <Link
+            className="card-link"
+            href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
+          >
+            <span className="card-link-title">
+              <span className="heading-3">
+                <bdi>{proposal.title}</bdi>
+              </span>
+              <span className="card-link-arrow" aria-hidden="true">
+                {messages.app.forward}
+              </span>
+            </span>
+            <span className="meta countdown">
+              <span>{messages.decided.outcomes[proposal.outcome.kind]}</span>
+              <time dateTime={minuteIso(closedAt(proposal))}>{formatDay(closedAt(proposal))}</time>
             </span>
           </Link>
         </li>
@@ -239,10 +288,10 @@ function Invite({
 }
 
 /**
- * Group home (`#/g/{groupId}`): the group's Document, its open Proposals, its
- * people with their levels and the viewer's own involvement, and its invite
- * link, each shown only to members whose capabilities allow it (spec §8;
- * `can()` is the only check).
+ * Group home (`#/g/{groupId}`): the group's Document, its open Proposals, the
+ * Decided list of closed ones, its people with their levels and the viewer's
+ * own involvement, and its invite link, each shown only to members whose
+ * capabilities allow it (spec §8; `can()` is the only check).
  */
 export function GroupHome(props: GroupHomeProps) {
   const { state, me, inviteLink, copyText, now, sync } = props;
@@ -273,6 +322,9 @@ export function GroupHome(props: GroupHomeProps) {
       <div className="sections">
         <Section title={messages.home.openProposals}>
           <OpenProposals state={state} now={now} />
+        </Section>
+        <Section title={messages.decided.title}>
+          <Decided state={state} />
         </Section>
         {can(state, me, 'see-roster') ? <PeopleSection {...props} /> : null}
         {can(state, me, 'invite') ? (

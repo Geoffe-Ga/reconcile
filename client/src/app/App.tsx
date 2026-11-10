@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
+import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DocumentView } from '../screens/DocumentView';
@@ -148,15 +149,19 @@ function DocumentScreen({ groupId }: { readonly groupId: string }) {
 }
 
 interface ProposeScreenProps extends GroupScreenProps {
-  readonly atomId: string;
+  /** The section to propose on, from `propose/{atomId}`. */
+  readonly atomId?: string;
+  /** The lapsed Proposal to propose again, from `again/{proposalId}` (#74). */
+  readonly againId?: string;
 }
 
-function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
+function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
   return (
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
+        const again = state.proposals.find((proposal) => proposal.id === againId);
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
           const result = await propose(services, groupId, values);
           if (result.outcome === 'too-large') return result.outcome;
@@ -175,10 +180,11 @@ function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
           <Composer
             state={state}
             me={me.author}
-            atomId={atomId}
+            atomId={again?.atom ?? atomId ?? ''}
             drafts={drafts}
             onPropose={onPropose}
             onAddVersion={onAddVersion}
+            {...(again === undefined ? {} : { again })}
           />
         );
       }}
@@ -198,6 +204,9 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const author = group.me.author;
         const onVote = (scores: Scores, note: string) =>
           castBallot(services, groupId, { proposal: proposalId, scores, note });
+        const onProposeAgain = () => {
+          navigate({ name: 'again', groupId, proposalId });
+        };
         return (
           <ProposalView
             state={group.state}
@@ -206,7 +215,9 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             pending={group.pending}
             reachable={group.reachable}
             now={relayMinuteNow(group, deviceNow)}
+            own={ownBallot(group.state, group.log, proposalId, author)}
             onVote={onVote}
+            onProposeAgain={onProposeAgain}
           />
         );
       }}
@@ -255,6 +266,10 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
     case 'proposal':
       return (
         <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />
+      );
+    case 'again':
+      return (
+        <ProposeScreen services={services} groupId={route.groupId} againId={route.proposalId} />
       );
   }
 }

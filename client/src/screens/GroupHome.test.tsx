@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { formatDay } from '../app/format';
 import { formatMinute, formatSyncedAt, MINUTE_MS } from '../app/time';
 import { type Level, LEVELS } from '../engine/capabilities';
 import { createEvent, type ParsedEvent, parseEvent } from '../engine/event';
@@ -137,6 +138,50 @@ describe('GroupHome', () => {
     expect(within(card).getByText(formatMinute(deadlineOf(START_MINUTE + 60))).tagName).toBe(
       'TIME',
     );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing has been decided yet, in its own section', () => {
+    setup({ proposals: ['Later quiet hours on Fridays'] });
+    const decided = section('Decided');
+    expect(within(decided).getByText('Nothing decided yet.')).toBeVisible();
+    expect(within(decided).queryByRole('list')).not.toBeInTheDocument();
+  });
+
+  it('lists decided Proposals newest first, each with its outcome and close date, opening its result', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    // Lapses at its deadline, a week after the start.
+    const lapsed = log.propose('ana', { title: 'Paint the hall', atom: 1 });
+    // Passes early, ten minutes in.
+    const passed = log.propose('ana', { title: 'Later quiet hours' });
+    log.minute += 10;
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, passed, 4);
+    // Fails early, a day in, on a section the first pass has left free again.
+    log.minute = START_MINUTE + 1_440;
+    const failed = log.propose('ben', { title: 'No quiet hours' });
+    log.vote('ana', failed, 0, 'We need them.');
+    log.vote('ben', failed, 2);
+    log.vote('cal', failed, 1);
+    const now = deadlineOf(START_MINUTE) + 5;
+    renderHome(log.state(now), { now });
+
+    const decided = section('Decided');
+    const cards = within(decided).getAllByRole('link');
+    expect(cards.map((card) => card.getAttribute('href'))).toEqual([
+      `#/g/${log.group}/p/${lapsed}`,
+      `#/g/${log.group}/p/${failed}`,
+      `#/g/${log.group}/p/${passed}`,
+    ]);
+    expect(cards.map((card) => card.textContent)).toEqual([
+      `Paint the hall→Lapsed${formatDay(deadlineOf(START_MINUTE))}`,
+      `No quiet hours→Didn’t pass${formatDay(START_MINUTE + 1_440)}`,
+      `Later quiet hours→Passed${formatDay(START_MINUTE + 10)}`,
+    ]);
+    const [date] = within(cards[0] as HTMLElement).getAllByText(
+      formatDay(deadlineOf(START_MINUTE)),
+    );
+    expect(date?.tagName).toBe('TIME');
+    expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
 

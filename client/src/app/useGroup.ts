@@ -20,7 +20,7 @@ import {
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
-import type { GroupState } from '../engine/fold';
+import type { GroupState, LogRecord } from '../engine/fold';
 import type { Group, Me, Store } from '../store/db';
 import type { Invite } from './invite';
 
@@ -45,6 +45,8 @@ export const GroupServicesContext = createContext<GroupServices | null>(null);
 export interface GroupView {
   /** The group folded from relay records, or `null` while loading or when the device isn't in it. */
   state: GroupState | null;
+  /** The relay records `state` was folded from, in relay order, or none likewise. */
+  log: readonly LogRecord[];
   /** This device's events the relay hasn't accepted yet, oldest first. They are never in `state`. */
   pending: ParsedEvent[];
   /** When the last sync succeeded, in device milliseconds, or `null` before one. */
@@ -61,6 +63,9 @@ export interface GroupView {
   loaded: boolean;
 }
 
+/** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
+const NO_RECORDS: readonly LogRecord[] = [];
+
 /** The group `groupId`, kept current as sync and the user change it. */
 export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
@@ -74,6 +79,7 @@ export function useGroup(groupId: string): GroupView {
   const invite = useMemo(() => (group === undefined ? null : { secret: group.secret }), [group]);
   return {
     state,
+    log: group?.log ?? NO_RECORDS,
     pending,
     lastSyncAt: group?.lastSyncAt ?? null,
     relayNow: group?.relayNow ?? null,
