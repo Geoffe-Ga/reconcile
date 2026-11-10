@@ -22,6 +22,9 @@ export const EVENT_VERSION = 1;
 /** A score on one version: 0 (strongly opposed) to 4 (strongly supportive). */
 export type Score = 0 | 1 | 2 | 3 | 4;
 
+/** The lowest score, which needs a reason; the guide (#91) reads the scale's ends from here. */
+export const SCORE_MIN = 0;
+
 /** The highest score, the top of the scale the consent meter's average bar spans. */
 export const SCORE_MAX = 4;
 
@@ -297,7 +300,7 @@ function isWholeNumber(value: unknown): value is number {
 }
 
 function isScore(value: unknown): value is Score {
-  return isWholeNumber(value) && value >= 0 && value <= SCORE_MAX;
+  return isWholeNumber(value) && value >= SCORE_MIN && value <= SCORE_MAX;
 }
 
 /** A public key's 43 base64url characters. The record's key must also match it exactly. */
