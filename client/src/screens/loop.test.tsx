@@ -273,3 +273,101 @@ describe('propose, vote, and see the Update', () => {
     expect(within(c).queryAllByRole('radio')).toEqual([]);
   });
 });
+
+describe('ask what to focus on, vote, and see the focus (#107)', () => {
+  /** From Group home, asks about `options` with a why, and lands on the new vote. */
+  async function ask(
+    app: HTMLElement,
+    user: ReturnType<typeof userEvent.setup>,
+    options: string[],
+  ) {
+    const view = within(app);
+    await user.click(await view.findByRole('link', { name: 'Ask what to focus on' }));
+    await user.type(await view.findByRole('textbox', { name: 'Why' }), 'One thing at a time.');
+    for (const [index, option] of options.entries()) {
+      if (index >= 2) await user.click(view.getByRole('button', { name: 'Add option' }));
+      await user.type(view.getByRole('textbox', { name: `Option ${String(index + 1)}` }), option);
+    }
+    await user.click(view.getByRole('button', { name: 'Ask your group' }));
+    await view.findByRole('region', { name: 'Options' });
+  }
+
+  /** Scores each option with its pill, in order, and sends the ballot. */
+  async function scoreEach(
+    app: HTMLElement,
+    user: ReturnType<typeof userEvent.setup>,
+    pills: Record<string, string>,
+  ) {
+    const view = within(app);
+    for (const [option, pill] of Object.entries(pills)) {
+      const group = await view.findByRole('radiogroup', { name: `Score for ${option}` });
+      await user.click(within(group).getByRole('radio', { name: pill }));
+    }
+    await user.click(view.getByRole('button', { name: 'Send your vote' }));
+    expect(await view.findByText('Sent')).toBeVisible();
+  }
+
+  it('closes early once both have scored both options, and both homes show the focus', async () => {
+    const user = userEvent.setup();
+    const { groupId, devices } = await group(['Ana', 'Ben']);
+    const [ana, ben] = devices;
+    go(`#/g/${groupId}`);
+    const a = mount(ana, 'a');
+    await ask(a, user, ['Fix the website', 'Plan the picnic', 'Rent strike']);
+    expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+    await scoreEach(a, user, {
+      'Fix the website': '3 · Supportive',
+      'Plan the picnic': '4 · Strongly supportive',
+      'Rent strike': '1 · Opposed',
+    });
+
+    await sync(ben);
+    const b = mount(ben, 'b');
+    await scoreEach(b, user, {
+      'Fix the website': '4 · Strongly supportive',
+      'Plan the picnic': '4 · Strongly supportive',
+      'Rent strike': '2 · Neutral',
+    });
+    const result = await within(b).findByRole('region', { name: 'Result' });
+    expect(within(result).getByRole('list', { name: 'Passed, best first' })).toHaveTextContent(
+      'Plan the picnicFix the website',
+    );
+
+    await sync(ana);
+    go(`#/g/${groupId}`);
+    for (const app of [a, b]) {
+      const focus = await within(app).findByRole('region', { name: 'Focus' });
+      expect(await within(focus).findByRole('link', { name: /Current focus/ })).toHaveTextContent(
+        'Current focusPlan the picnic',
+      );
+    }
+  });
+
+  it('asks a lapsed priority vote again, from its options, as a fresh vote', async () => {
+    const user = userEvent.setup();
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana] = devices;
+    go(`#/g/${groupId}`);
+    const a = mount(ana, 'a');
+    await ask(a, user, ['Fix the website', 'Plan the picnic']);
+    const lapsed = window.location.hash;
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    await sync(ana);
+
+    const result = await within(a).findByRole('region', { name: 'Result' });
+    await user.click(within(result).getByRole('button', { name: 'Propose again' }));
+    expect(window.location.hash).toBe(lapsed.replace('/p/', '/again/'));
+    expect(await within(a).findByRole('textbox', { name: 'Option 2' })).toHaveValue(
+      'Plan the picnic',
+    );
+    // The test devices' clocks stand still, so a changed question keeps the new event's id apart.
+    await user.type(within(a).getByRole('textbox', { name: 'Question' }), ' Again');
+    await user.click(within(a).getByRole('button', { name: 'Ask your group' }));
+    await within(a).findByRole('region', { name: 'Options' });
+    expect(window.location.hash).not.toBe(lapsed);
+    await sync(ana);
+    expect(
+      await within(a).findByRole('heading', { level: 1, name: 'What should we focus on? Again' }),
+    ).toBeVisible();
+  });
+});

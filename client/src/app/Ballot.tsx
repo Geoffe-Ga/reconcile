@@ -1,4 +1,4 @@
-import { type PointerEvent, type ReactNode, type SyntheticEvent, useId, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useId, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -14,10 +14,10 @@ import type { Score } from '../engine/event';
 import { NOTE_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
 import { messages } from './messages';
+import { ChoiceList } from './Options';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
-import { useSaving } from './useSaving';
-import { VersionList } from './Versions';
+import { holdPresses, useSaving } from './useSaving';
 import type { VersionView } from './versionViews';
 
 /** A score for each version, by version id. */
@@ -45,6 +45,11 @@ export interface BallotProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** What goes under each version's pills, such as its consent meter. */
   readonly below?: (version: VersionView) => ReactNode;
+  /**
+   * `versions` shows each version with its change (the default); `options`
+   * shows a priority vote's options as plain text (#107).
+   */
+  readonly layout?: 'versions' | 'options';
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
@@ -85,6 +90,8 @@ function ScorePill({ score }: { readonly score: Score }) {
 
 interface ScoreGroupProps {
   readonly version: VersionView;
+  /** The group's label: "Score for version N", or "Score for <option>". */
+  readonly label: ReactNode;
   readonly score: Score | undefined;
   /** The id of the line that says who sees the scores. */
   readonly hint: string;
@@ -93,7 +100,7 @@ interface ScoreGroupProps {
 }
 
 /** One version's five pills, in a React Aria RadioGroup labelled "Score for version N". */
-function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupProps) {
+function ScoreGroup({ version, label, score, hint, isDisabled, onChange }: ScoreGroupProps) {
   return (
     <RadioGroup
       className="score-group"
@@ -107,7 +114,7 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       isDisabled={isDisabled}
       aria-describedby={hint}
     >
-      <Label className="field-label">{messages.ballot.scoreFor(version.number)}</Label>
+      <Label className="field-label">{label}</Label>
       <div className="score-pills">
         {SCORES.map((option) => (
           <ScorePill key={option} score={option} />
@@ -116,19 +123,6 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       <FieldError className="field-error">{messages.ballot.scoreMissing}</FieldError>
     </RadioGroup>
   );
-}
-
-/**
- * Keeps a press from starting on the send button while it saves. React Aria's
- * usePress starts one on pointerdown even on a disabled button, and a browser
- * gives a disabled button pointerdown and pointerup but no click, so 80 ms later
- * usePress clicks the button itself. If saving finished within those 80 ms, the
- * button was enabled again and a second ballot went out (#190).
- */
-function holdPresses(saving: boolean) {
-  return (event: PointerEvent) => {
-    if (saving) event.stopPropagation();
-  };
 }
 
 /** What the note asks for: a reason for any 0, else what would make a 1 a 3, else anything. */
@@ -176,6 +170,16 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
   );
 }
 
+/** "Score for version N", or for a priority option, "Score for <option>" with the option in `<bdi>`. */
+function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
+  if (layout !== 'options') return messages.ballot.scoreFor(version.number);
+  return (
+    <>
+      {messages.ballot.scoreForOption} <bdi>{version.text}</bdi>
+    </>
+  );
+}
+
 /**
  * The ballot (DESIGN.md, Ballot; spec §8): every version side by side, each
  * with its word diff and five score pills in a React Aria RadioGroup that
@@ -184,7 +188,8 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
  * asks "What would make this a 3 for you?" when a score is 1 and none is 0.
  * Every version needs a score. Sending again before the close replaces the
  * earlier ballot in full, so a voter whose latest ballot misses a version
- * added since is asked to score it, with their earlier scores kept.
+ * added since is asked to score it, with their earlier scores kept. A
+ * priority vote's ballot shows its options instead, each with its own pills.
  */
 export function Ballot(props: BallotProps) {
   const { versions, current, initialScores, hasVoted, isDisabled, pending, reachable } = props;
@@ -212,11 +217,12 @@ export function Ballot(props: BallotProps) {
       <p id={hint} className="field-hint">
         {messages.ballot.visibility}
       </p>
-      <VersionList versions={versions} current={current}>
+      <ChoiceList versions={versions} current={current} layout={props.layout ?? 'versions'}>
         {(version) => (
           <>
             <ScoreGroup
               version={version}
+              label={scoreLabel(version, props.layout)}
               score={scores[version.id]}
               hint={hint}
               isDisabled={isDisabled}
@@ -227,7 +233,7 @@ export function Ballot(props: BallotProps) {
             {props.below?.(version)}
           </>
         )}
-      </VersionList>
+      </ChoiceList>
       <BallotNote note={note} ask={ask} isDisabled={isDisabled} onChange={setNote} />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">

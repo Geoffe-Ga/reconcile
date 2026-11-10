@@ -17,6 +17,7 @@ import { can, isLevel, type Level } from '../engine/capabilities';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
+import { isPriority, openPriority } from '../engine/priority';
 
 /** Props for {@link GroupHome}. */
 export interface GroupHomeProps {
@@ -103,9 +104,17 @@ function decided(state: GroupState): Proposal[] {
     .sort((a, b) => closedAt(b) - closedAt(a));
 }
 
+/** A closed priority vote's top option once it passed, else null (#107). */
+function topOption(proposal: Proposal): string | null {
+  if (!isPriority(proposal) || proposal.outcome.kind !== 'pass') return null;
+  const winner = proposal.outcome.version;
+  return proposal.versions.find((version) => version.id === winner)?.text ?? null;
+}
+
 /**
  * Decided: the group's history, each closed Proposal with its title, its
- * outcome in a word, and its close date, opening its result.
+ * outcome in a word, and its close date, opening its result. A priority
+ * vote that passed also names its top option (#107).
  */
 function Decided({ state }: { readonly state: GroupState }) {
   const groupId = state.group ?? '';
@@ -127,6 +136,7 @@ function Decided({ state }: { readonly state: GroupState }) {
                 {messages.app.forward}
               </span>
             </span>
+            <TopOption proposal={proposal} />
             <span className="meta countdown">
               <span>{messages.decided.outcomes[proposal.outcome.kind]}</span>
               <time dateTime={minuteIso(closedAt(proposal))}>{formatDay(closedAt(proposal))}</time>
@@ -135,6 +145,56 @@ function Decided({ state }: { readonly state: GroupState }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A passed priority vote's top option, on its Decided card. */
+function TopOption({ proposal }: { readonly proposal: Proposal }) {
+  const top = topOption(proposal);
+  return top === null ? null : (
+    <span className="card-link-focus">
+      <bdi>{top}</bdi>
+    </span>
+  );
+}
+
+/**
+ * The group's current focus (#107): the top option of the latest priority
+ * vote to pass, opening its result, or a sentence before there is one. Those
+ * who can propose may ask what to focus on while no priority vote is open.
+ */
+function Focus({ state, me }: { readonly state: GroupState; readonly me: string }) {
+  const groupId = state.group ?? '';
+  const { focus } = state;
+  const canAsk = can(state, me, 'propose') && openPriority(state) === undefined;
+  return (
+    <div className="stack">
+      {focus === null ? (
+        <p>{messages.home.noFocus}</p>
+      ) : (
+        <Link
+          className="card-link"
+          href={routeHref({ name: 'proposal', groupId, proposalId: focus.proposal })}
+        >
+          <span className="eyebrow">{messages.home.currentFocus}</span>
+          <span className="card-link-title">
+            <span className="heading-3">
+              <bdi>{focus.text}</bdi>
+            </span>
+            <span className="card-link-arrow" aria-hidden="true">
+              {messages.app.forward}
+            </span>
+          </span>
+        </Link>
+      )}
+      {canAsk ? (
+        <div>
+          <Link className="button button-secondary" href={routeHref({ name: 'priority', groupId })}>
+            {messages.home.askFocus}
+          </Link>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -288,8 +348,8 @@ function Invite({
 }
 
 /**
- * Group home (`#/g/{groupId}`): the group's Document, its open Proposals, the
- * Decided list of closed ones, its people with their levels and the viewer's
+ * Group home (`#/g/{groupId}`): the group's Document, its open Proposals, its
+ * current focus (#107), the Decided list of closed ones, its people with their levels and the viewer's
  * own involvement, and its invite link, each shown only to members whose
  * capabilities allow it (spec §8; `can()` is the only check).
  */
@@ -322,6 +382,9 @@ export function GroupHome(props: GroupHomeProps) {
       <div className="sections">
         <Section title={messages.home.openProposals}>
           <OpenProposals state={state} now={now} />
+        </Section>
+        <Section title={messages.home.focus}>
+          <Focus state={state} me={me} />
         </Section>
         <Section title={messages.decided.title}>
           <Decided state={state} />

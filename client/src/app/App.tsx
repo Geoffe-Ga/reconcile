@@ -9,12 +9,14 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import type { Level } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
+import { isPriority } from '../engine/priority';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import { PriorityComposer } from '../screens/PriorityComposer';
 import { ProposalView } from '../screens/ProposalView';
 import { Start } from '../screens/Start';
 import type { Persistence } from '../platform/persist';
@@ -31,8 +33,10 @@ import { type Invite, inviteLink } from './invite';
 import type { Scores } from './Ballot';
 import {
   addVersion,
+  askPriority,
   castBallot,
   chooseLevel,
+  type PriorityValues,
   propose,
   type ProposalValues,
   type VersionValues,
@@ -156,6 +160,28 @@ function DocumentScreen({ groupId }: { readonly groupId: string }) {
   );
 }
 
+/** Queues a priority vote, then shows it in place of the composer (#107). */
+function askFor(services: AppServices, groupId: string) {
+  return async (values: PriorityValues): Promise<ComposeOutcome> => {
+    const result = await askPriority(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the vote returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+}
+
+/** Ask what to focus on (`priority`, #107). */
+function PriorityScreen({ services, groupId }: GroupScreenProps) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => (
+        <PriorityComposer state={state} me={me.author} onAsk={askFor(services, groupId)} />
+      )}
+    </GroupGate>
+  );
+}
+
 interface ProposeScreenProps extends GroupScreenProps {
   /** The section to propose on, from `propose/{atomId}`. */
   readonly atomId?: string;
@@ -170,6 +196,16 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
     <GroupGate groupId={groupId}>
       {({ state, me }) => {
         const again = state.proposals.find((proposal) => proposal.id === againId);
+        if (again !== undefined && isPriority(again)) {
+          return (
+            <PriorityComposer
+              state={state}
+              me={me.author}
+              onAsk={askFor(services, groupId)}
+              again={again}
+            />
+          );
+        }
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
           const result = await propose(services, groupId, values);
           if (result.outcome === 'too-large') return result.outcome;
@@ -274,6 +310,8 @@ function Screen({ route, services, heldInvite, holdInvite, persistence }: Screen
       return <DocumentScreen groupId={route.groupId} />;
     case 'propose':
       return <ProposeScreen services={services} groupId={route.groupId} atomId={route.atomId} />;
+    case 'priority':
+      return <PriorityScreen services={services} groupId={route.groupId} />;
     case 'proposal':
       return (
         <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />

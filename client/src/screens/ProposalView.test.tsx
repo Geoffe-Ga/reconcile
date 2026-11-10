@@ -627,3 +627,109 @@ describe('ProposalView, missing', () => {
     expect(await axeViolations()).toEqual([]);
   });
 });
+
+describe('ProposalView: a priority vote (#107)', () => {
+  const SEVEN = [
+    'Fix the website',
+    'Plan the picnic',
+    'New bylaws',
+    'Rent strike',
+    'Fund the food bank',
+    'Repaint the hall',
+    'Start a **newsletter**',
+  ];
+
+  /** Ana asks about seven options in a group of Ana and Ben; the vote is still open. */
+  function sevenOptions() {
+    const log = groupLog();
+    const proposalId = log.ask('ana', SEVEN);
+    return { log, proposalId };
+  }
+
+  it('shows each option as plain text with its own pills and meter, and no Add your version', async () => {
+    const { log, proposalId } = sevenOptions();
+    setup({ state: log.state(), proposalId });
+    expect(screen.getByText('Priority vote', { selector: 'p' })).toBeVisible();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'What should we focus on?' }),
+    ).toBeVisible();
+    const options = screen.getByRole('region', { name: 'Options' });
+    expect(
+      within(options).getByText(
+        'Score each option. The options that pass rank by their average, and the top one becomes your group’s focus.',
+      ),
+    ).toBeVisible();
+    for (const option of SEVEN) {
+      const card = within(options).getByRole('region', { name: option });
+      expect(within(card).getByRole('radiogroup', { name: `Score for ${option}` })).toBeVisible();
+      expect(
+        within(card).getByRole('group', { name: `How ${option} stands so far` }),
+      ).toBeVisible();
+      expect(within(card).getAllByRole('radio')).toHaveLength(5);
+    }
+    // Plain text in <bdi>, never Markdown.
+    const markdown = within(options).getByRole('heading', { name: 'Start a **newsletter**' });
+    expect(markdown.querySelector('bdi')?.textContent).toBe('Start a **newsletter**');
+    expect(markdown.querySelector('strong')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sends a score for every option, each under its option id', async () => {
+    const log = groupLog();
+    const proposalId = log.ask('ana', ['Fix the website', 'Plan the picnic']);
+    const { user, onVote } = setup({ state: log.state(), proposalId });
+    const group = (name: string) => screen.getByRole('radiogroup', { name: `Score for ${name}` });
+    await user.click(within(group('Fix the website')).getByRole('radio', { name: /^4/ }));
+    await user.click(within(group('Plan the picnic')).getByRole('radio', { name: /^2/ }));
+    await user.click(screen.getByRole('button', { name: 'Send your vote' }));
+    expect(onVote).toHaveBeenCalledWith({ [`${proposalId}.0`]: 4, [`${proposalId}.1`]: 2 }, '');
+  });
+
+  it('shows the options without pills to someone who can’t vote on it', () => {
+    const log = groupLog({ members: ['Ben'], levels: { Ben: FOLLOWING } });
+    const proposalId = log.ask('ana', ['Fix the website', 'Plan the picnic']);
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    const options = screen.getByRole('region', { name: 'Options' });
+    expect(within(options).getByRole('region', { name: 'Fix the website' })).toBeVisible();
+    expect(radios()).toEqual([]);
+  });
+
+  it('leads with the ranking once it closes, under “Closed priority vote”', () => {
+    const log = groupLog();
+    const proposalId = log.ask('ana', ['Fix the website', 'Plan the picnic']);
+    log.ballot('ana', proposalId, { [`${proposalId}.0`]: 3, [`${proposalId}.1`]: 4 });
+    log.ballot('ben', proposalId, { [`${proposalId}.0`]: 3, [`${proposalId}.1`]: 4 });
+    setup({ state: log.state(), proposalId });
+    expect(screen.getByText('Closed priority vote', { selector: 'p' })).toBeVisible();
+    expect(screen.queryByText(/^Score each option\./)).toBeNull();
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(
+      within(result).getByText('Plan the picnic', { selector: '.result-focus bdi' }),
+    ).toBeVisible();
+  });
+
+  it('shows a priority vote waiting in the outbox with its options', () => {
+    const state = groupLog().state();
+    const body = {
+      target: { kind: 'priority' },
+      title: 'What should we focus on?',
+      why: 'One thing at a time.',
+      options: ['Fix the website', 'Plan the picnic'],
+    } as const;
+    const event = pendingEvent({
+      type: 'proposal',
+      group: state.group ?? '',
+      author: authorOf('ana'),
+      ts: 0,
+      body,
+    });
+    setup({ state, proposalId: event.id, pending: [event] });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'What should we focus on?' }),
+    ).toBeVisible();
+    const options = screen.getByRole('region', { name: 'Options' });
+    expect(within(options).getByRole('region', { name: 'Plan the picnic' })).toBeVisible();
+    expect(radios()).toEqual([]);
+  });
+});

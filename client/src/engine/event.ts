@@ -56,12 +56,41 @@ export interface LevelBody {
 }
 
 /** Proposes new text for one Atom, with a title, a justification and an optional discussion link. */
-export interface ProposalBody {
+export interface EditProposalBody {
   readonly atom: string;
   readonly title: string;
   readonly why: string;
   readonly text: string;
   readonly link?: string;
+}
+
+/** A priority vote's target (#107): it asks what the group should focus on, and changes no Atom. */
+export interface PriorityTarget {
+  readonly kind: 'priority';
+}
+
+/**
+ * Asks the group what to focus on (#107): `title` is the question, `why` its
+ * justification, and `options` the 2–7 answers everyone scores, in ballot
+ * order. It carries `target` in place of an Atom, and no text.
+ */
+export interface PriorityProposalBody {
+  readonly target: PriorityTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly options: readonly string[];
+  readonly link?: string;
+}
+
+/** A Proposal: an edit of one Atom, or a priority vote (#107). */
+export type ProposalBody = EditProposalBody | PriorityProposalBody;
+
+/** What a Proposal changes: one Atom's text, or nothing, for a priority vote (#107). */
+export type ProposalTarget = { readonly kind: 'edit' } | PriorityTarget;
+
+/** What a Proposal's body targets: the Atom it edits, or the group's focus. */
+export function targetOf(body: ProposalBody): ProposalTarget {
+  return 'target' in body ? body.target : { kind: 'edit' };
 }
 
 /**
@@ -220,7 +249,27 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
+/**
+ * A priority vote's body (#107): its target, question, why, options and an
+ * optional link, or null for any other shape. It names no Atom and has no text.
+ */
+function parsePriority(body: Json): PriorityProposalBody | null {
+  const { target, atom, text, title, why, options, link } = body;
+  if (!isObject(target) || target.kind !== 'priority') return null;
+  if (atom !== undefined || text !== undefined || !isOptionalString(link)) return null;
+  if (!isString(title) || !isString(why) || !isStringList(options)) return null;
+  return {
+    target: { kind: 'priority' },
+    title,
+    why,
+    options,
+    ...(link === undefined ? {} : { link }),
+  };
+}
+
+/** An edit names an `atom`; a priority vote carries `target` instead (#107). */
 function parseProposal(body: Json): ProposalBody | null {
+  if (body.target !== undefined) return parsePriority(body);
   const { atom, title, why, text, link } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
   if (!isOptionalString(link)) return null;

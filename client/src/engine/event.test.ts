@@ -16,6 +16,7 @@ import {
   parseEvent,
   parseRecord,
   signEvent,
+  targetOf,
 } from './event';
 
 const encoder = new TextEncoder();
@@ -381,6 +382,44 @@ describe('parseEvent', () => {
     });
     const vote = parseEvent(json(envelope('vote', { proposal: 'p', scores: {}, note: 'n' })));
     expect(vote?.event.body).toEqual({ proposal: 'p', scores: {}, note: 'n' });
+  });
+});
+
+describe('parseEvent: a priority vote (#107)', () => {
+  const priority = { target: { kind: 'priority' }, title: 'q', why: 'w', options: ['a', 'b'] };
+
+  it('reads its target, question, why and options, keeping a link and dropping unknown keys', () => {
+    const body = { ...priority, link: 'https://l', extra: 1, target: { kind: 'priority', x: 1 } };
+    expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual({
+      ...priority,
+      link: 'https://l',
+    });
+  });
+
+  it('leaves an absent link absent', () => {
+    expect(Object.keys(parseEvent(json(envelope('proposal', priority)))?.event.body ?? {})).toEqual(
+      ['target', 'title', 'why', 'options'],
+    );
+  });
+
+  it.each([
+    ['an Atom', { ...priority, atom: 'a' }],
+    ['text', { ...priority, text: 'x' }],
+    ['no options', { target: { kind: 'priority' }, title: 'q', why: 'w' }],
+    ['a non-string option', { ...priority, options: ['a', 1] }],
+    ['options that are a string', { ...priority, options: 'a, b' }],
+    ['an unknown target', { ...priority, target: { kind: 'focus' } }],
+    ['a target that is a string', { ...priority, target: 'priority' }],
+    ['a non-string question', { ...priority, title: 1 }],
+    ['a non-string why', { ...priority, why: null }],
+    ['a non-string link', { ...priority, link: 1 }],
+  ])('rejects one with %s', (_what, body) => {
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  it('tells its target from an edit’s', () => {
+    expect(targetOf({ ...priority, target: { kind: 'priority' } })).toEqual({ kind: 'priority' });
+    expect(targetOf({ atom: 'a', title: 't', why: 'w', text: 'x' })).toEqual({ kind: 'edit' });
   });
 });
 

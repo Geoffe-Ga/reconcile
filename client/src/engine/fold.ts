@@ -7,9 +7,10 @@
  * (`received`, in whole minutes); the author's `ts` plays no part. Genesis
  * founds the group with its rules, and each Proposal's class, set when it
  * opens, picks its window and its bar. A Document's text changes only when a
- * Proposal's pass is final. The fold is pure: no I/O, no clock, no
- * randomness, so every device that folds the same records builds the same
- * state.
+ * Proposal's pass is final. A priority vote changes no Atom: the top option of
+ * the latest one to pass is the group's focus (#107). The fold is pure: no
+ * I/O, no clock, no randomness, so every device that folds the same records
+ * builds the same state.
  */
 import {
   can,
@@ -23,15 +24,20 @@ import { optionFor } from './composeOption';
 import {
   EVENT_VERSION,
   type GenesisBody,
+  type EditProposalBody,
   type GroupEvent,
   type JoinBody,
   type LevelBody,
   parseRecord,
+  type PriorityProposalBody,
   type ProposalBody,
+  type ProposalTarget,
   type Score,
+  targetOf,
   type VersionBody,
   type VoteBody,
 } from './event';
+import { isPriority, optionId, optionsAreValid } from './priority';
 import {
   type Bar,
   DEFAULT_RULES,
@@ -97,7 +103,11 @@ export interface Ballot {
 }
 
 /**
- * A proposed change to one Atom, with its vote.
+ * A proposed change to one Atom, with its vote, or a priority vote (#107).
+ *
+ * `target` says which. A priority vote's `atom` is its own id, which no Atom
+ * has, its `text` is `""`, and its versions are its options, option `i` with
+ * the id `${id}.${i}`, all by its proposer; `title` is its question.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
  * opened, never from the proposer's own fields. It fixes `deadline`, the
@@ -116,6 +126,7 @@ export interface Proposal {
   readonly received: number;
   readonly author: string;
   readonly atom: string;
+  readonly target: ProposalTarget;
   readonly title: string;
   readonly why: string;
   readonly text: string;
@@ -142,9 +153,20 @@ export interface IgnoredRecord {
 }
 
 /**
+ * The group's current focus (#107): the top option of the latest priority
+ * vote whose pass is final, with the vote's id, the option's id and its text.
+ */
+export interface Focus {
+  readonly proposal: string;
+  readonly option: string;
+  readonly text: string;
+}
+
+/**
  * A group as one device sees it after folding its log. `group` is the genesis
  * id, or null before one. `rules` are the founding rules its genesis set:
- * `DEFAULT_RULES` in every MVP group, and before any genesis.
+ * `DEFAULT_RULES` in every MVP group, and before any genesis. `focus` is the
+ * current focus, or null before any priority vote passes.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -155,6 +177,7 @@ export interface GroupState {
   readonly members: readonly Member[];
   readonly atoms: readonly Atom[];
   readonly proposals: readonly Proposal[];
+  readonly focus: Focus | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -239,46 +262,110 @@ function openOn(draft: Draft, atom: string, received: number): OpenProposal | un
   return draft.proposals.find((p) => p.atom === atom && isOpenAt(p, received));
 }
 
-function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
+/** The title is 1–120 code points and the justification at most 2,000. */
+function fieldsFit(body: ProposalBody): boolean {
   const titleLength = codePointLength(body.title);
+  return titleLength >= 1 && titleLength <= TITLE_MAX && codePointLength(body.why) <= WHY_MAX;
+}
+
+function proposalIsValid(
+  draft: Draft,
+  body: EditProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
   return (
     can(draft, author, 'propose') &&
     draft.atoms.some((a) => a.id === body.atom) &&
     optionFor(openOn(draft, body.atom, at.received)) === 'propose' &&
-    titleLength >= 1 &&
-    titleLength <= TITLE_MAX &&
-    codePointLength(body.why) <= WHY_MAX
+    fieldsFit(body)
   );
 }
 
-function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
-  if (!proposalIsValid(draft, body, author, at)) return false;
+/** What a Proposal's own body decides: its Atom, its target, its text and its versions. */
+type ProposalOwn = Pick<OpenProposal, 'atom' | 'target' | 'text' | 'versions'>;
+
+/**
+ * Opens a Proposal at its class's bar and window, with who could vote then
+ * (ADR-0015), and what its body decides.
+ */
+function openProposal(
+  draft: Draft,
+  body: ProposalBody,
+  author: string,
+  at: Receipt,
+  own: ProposalOwn,
+) {
   const cls = targetClass(draft, body);
   draft.proposals.push({
     ...at,
     author,
-    atom: body.atom,
+    ...own,
     title: body.title,
     why: body.why,
-    text: body.text,
     link: body.link ?? null,
     class: cls,
     deadline: at.received + defaultWindowMinutes(draft.rules, cls),
     eligible: draft.members.filter((m) => wouldVote(draft, m.author)).map((m) => m.author),
-    versions: [{ id: at.id, author, text: body.text }],
     ballots: [],
     closedAt: null,
+  });
+}
+
+function applyEdit(draft: Draft, body: EditProposalBody, author: string, at: Receipt): boolean {
+  if (!proposalIsValid(draft, body, author, at)) return false;
+  openProposal(draft, body, author, at, {
+    atom: body.atom,
+    target: targetOf(body),
+    text: body.text,
+    versions: [{ id: at.id, author, text: body.text }],
   });
   return true;
 }
 
+/** True while a priority vote is open at relay minute `received`. A group has at most one. */
+function priorityOpenAt(draft: Draft, received: number): boolean {
+  return draft.proposals.some((p) => isPriority(p) && isOpenAt(p, received));
+}
+
+/**
+ * Opens a priority vote (#107): its author holds `propose`, it has 2–7
+ * options, each 1–120 code points and no two the same, and no other priority
+ * vote is open. Option `i` goes on the ballot as the version `${id}.${i}`.
+ */
+function applyPriority(
+  draft: Draft,
+  body: PriorityProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!can(draft, author, 'propose') || !fieldsFit(body)) return false;
+  if (!optionsAreValid(body.options) || priorityOpenAt(draft, at.received)) return false;
+  openProposal(draft, body, author, at, {
+    atom: at.id,
+    target: body.target,
+    text: '',
+    versions: body.options.map((text, i) => ({ id: optionId(at.id, i), author, text })),
+  });
+  return true;
+}
+
+function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
+  return 'options' in body
+    ? applyPriority(draft, body, author, at)
+    : applyEdit(draft, body, author, at);
+}
+
 /**
  * Adds a version to an open Proposal's ballot, in relay order, while it holds
- * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
+ * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`. A
+ * priority vote's options are fixed when it opens, so it takes none (#107).
  */
 function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
-  if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
+  if (proposal === undefined || !isOpenAt(proposal, at.received) || isPriority(proposal)) {
+    return false;
+  }
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
   return true;
@@ -401,9 +488,12 @@ function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): 
   return { ...proposal, final, outcome };
 }
 
-/** The `[atom, text]` a Proposal sets: its winning version's text once its pass is final, else none. */
+/**
+ * The `[atom, text]` a Proposal sets: its winning version's text once its pass
+ * is final, else none. A priority vote sets none (#107).
+ */
 function finalUpdate(proposal: Proposal): [string, string][] {
-  if (!proposal.final || proposal.outcome.kind !== 'pass') return [];
+  if (!proposal.final || proposal.outcome.kind !== 'pass' || isPriority(proposal)) return [];
   const winner = proposal.outcome.version;
   return proposal.versions.filter((v) => v.id === winner).map((v) => [proposal.atom, v.text]);
 }
@@ -413,16 +503,36 @@ function closeTime(proposal: Proposal): number {
   return proposal.closedAt ?? proposal.deadline;
 }
 
+/** The Proposals in order of close time, then relay order. */
+function inCloseOrder(proposals: readonly Proposal[]): Proposal[] {
+  // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
+  return [...proposals].sort((a, b) => closeTime(a) - closeTime(b));
+}
+
 /** Applies final passes to the Atoms in order of close time, then the Proposals' relay order. */
 function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): readonly Atom[] {
-  // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
-  const byClose = [...proposals].sort((a, b) => closeTime(a) - closeTime(b));
   // A later entry for the same Atom replaces an earlier one, so the last pass to close wins.
-  const texts = new Map(byClose.flatMap(finalUpdate));
+  const texts = new Map(inCloseOrder(proposals).flatMap(finalUpdate));
   return atoms.map((atom) => {
     const text = texts.get(atom.id);
     return text === undefined ? atom : { ...atom, text };
   });
+}
+
+/** A priority vote's top option, once its pass is final, else null (#107). */
+function topOption(proposal: Proposal): Focus | null {
+  if (!isPriority(proposal) || !proposal.final || proposal.outcome.kind !== 'pass') return null;
+  const option = proposal.outcome.version;
+  const text = proposal.versions.find((v) => v.id === option)?.text;
+  return text === undefined ? null : { proposal: proposal.id, option, text };
+}
+
+/**
+ * The group's focus (#107): the top option of the last priority vote to pass,
+ * in close order. A priority vote that fails or lapses leaves it as it was.
+ */
+function focusOf(proposals: readonly Proposal[]): Focus | null {
+  return inCloseOrder(proposals).reduce<Focus | null>((focus, p) => topOption(p) ?? focus, null);
 }
 
 /**
@@ -463,6 +573,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   }
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
   const atoms = applyPasses(draft.atoms, proposals);
+  const focus = focusOf(proposals);
   const { group, rules, name, chat, title, members } = draft;
-  return { group, rules, name, chat, title, members, atoms, proposals, ignored };
+  return { group, rules, name, chat, title, members, atoms, proposals, focus, ignored };
 }

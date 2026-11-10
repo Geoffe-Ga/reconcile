@@ -6,9 +6,10 @@
  * because Vite's own JSON loader refuses the lone-surrogate escapes atom-text.json needs.
  * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
  *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, bar?, versions, expect}`. `bar` names a class whose
- *   bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
- *   `expect` with that bar added.
+ * - A tally vector is `{name, eligible, bar?, versions, expect, rank?}`. `bar` names a class
+ *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
+ *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
+ *   first (#107).
  * - A fold vector is `{name, records, relayNow, expect, unchangedWithout?}`.
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
@@ -32,7 +33,7 @@ import { concat, fromHex } from '../test/bytes';
 import { base64url, eventId } from './event';
 import { fold, type LogRecord } from './fold';
 import { DEFAULT_RULES, type ProposalClass } from './rules';
-import { tally, type TallyInput, type TallyOutcome } from './tally';
+import { rank, tally, type TallyInput, type TallyOutcome } from './tally';
 
 /** `Omit` applied to each member of a union, so each outcome kind keeps its own fields. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -42,6 +43,8 @@ interface TallyVector extends Omit<TallyInput, 'bar'> {
   readonly bar?: ProposalClass;
   /** The outcome without its bar, which the runner adds. */
   readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
+  /** The passing versions' ids, best first, as `rank()` gives them (#107). */
+  readonly rank?: readonly string[];
 }
 
 /** How a vector record departs from a plain record signed by its author. */
@@ -202,6 +205,9 @@ describe('vector files', () => {
       './vectors/levels-eligible-count.json',
       './vectors/levels-step-down.json',
       './vectors/levels-step-up-after-open.json',
+      './vectors/priority-focus.json',
+      './vectors/priority-options.json',
+      './vectors/priority-rank.json',
       './vectors/rules-class-forged.json',
       './vectors/rules-genesis-defaults.json',
       './vectors/rules-genesis-differs.json',
@@ -225,6 +231,9 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'tally',
       'fold',
       'fold',
       'fold',
@@ -284,6 +293,13 @@ describe('vector files', () => {
     'an average of exactly 2.5 with no zeros fails the entrenched bar',
     'an average of exactly 2.5 with no zeros passes the ordinary bar',
     'entrenched lapse below quorum',
+    'priority-rank: of four options, A and B pass and tie on average and zeros, so A, the earlier, comes first; C is below quorum and D fails the floor',
+    'priority-rank: the higher average ranks first, wherever it sits on the ballot',
+    'priority-rank: an equal average ranks the option with fewer zeros first, then the earlier option',
+    'priority-rank: two options, one at exactly 2.0 and one just under, rank only the one at 2.0',
+    'priority-rank: seven options, of which the three that clear the floor and quorum rank by average',
+    'priority-rank: options at quorum that all miss the floor rank nothing, and the vote fails',
+    'priority-rank: options that all miss quorum rank nothing, and the vote lapses',
   ])('include the tally vector "%s"', (name) => {
     expect(tallyVectors.map((vector) => vector.name)).toContain(name);
   });
@@ -345,6 +361,23 @@ describe('vector files', () => {
     'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
     'a genesis whose entrenched avgAtLeast is 1 forms no group',
     'a Proposal that writes its own class, bar and deadline is still ordinary: 7 days, and a 2.5 average passes',
+    'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
+    'priority-options: a priority vote with 7 options opens',
+    'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
+    'priority-options: an option of 121 code points is ignored, and one of exactly 120 opens, though it takes 240 UTF-16 units',
+    'priority-options: a priority vote with two equal options is ignored, and so is one with a blank or empty option',
+    'priority-options: a second priority vote while one is open is ignored, and one opens once the first has closed early, even in the same minute',
+    'priority-options: an edit Proposal opens beside an open priority vote',
+    'priority-options: a version on a priority vote is ignored, so its options stay as proposed',
+    "priority-options: a Collaborator's priority vote is ignored, since asking needs propose",
+    'priority-options: a priority vote that also names an Atom or text, lacks options, has a non-string option or list, or names an unknown target holds no event, and one with an empty question is ignored',
+    'priority-focus: of four options, Fix the website and Plan the picnic pass and tie, so the earlier, Fix the website, becomes the focus, and every Atom stays byte-identical',
+    'priority-focus: a priority vote whose top option passes sets no focus until its pass is final',
+    'priority-focus: a later priority vote that lapses leaves the focus unchanged',
+    'priority-focus: a later priority vote in which no option passes leaves the focus unchanged',
+    'priority-focus: a later priority vote that passes replaces the focus with its top option',
+    'priority-focus: an edit that passes after a priority vote changes its Atom and leaves the focus',
+    'priority-focus: a group whose only priority vote fails has no focus',
   ])('include the fold vector "%s"', (name) => {
     expect(foldVectors.map((vector) => vector.name)).toContain(name);
   });
@@ -355,6 +388,9 @@ describe('tally vectors', () => {
     const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
     const { eligible, versions } = vector;
     expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
+    if (vector.rank !== undefined) {
+      expect(rank({ eligible, versions, bar }).map((option) => option.id)).toEqual(vector.rank);
+    }
   });
 });
 

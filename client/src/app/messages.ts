@@ -165,6 +165,11 @@ export const messages = {
     unreachableSince: (time: string) => `Can’t reach the relay right now. Last synced ${time}.`,
     missingTitle: 'This group isn’t on this device',
     missing: 'Open an invite link to join it, or go back to your groups.',
+    focus: 'Focus',
+    /** Over the option a priority vote chose, on the card that opens its result (#107). */
+    currentFocus: 'Current focus',
+    noFocus: 'Your group hasn’t chosen a focus yet.',
+    askFocus: 'Ask what to focus on',
     settingUpTitle: 'Setting up your group',
     settingUp: 'Your group is saved on this device. It appears here once it reaches the relay.',
   },
@@ -222,6 +227,34 @@ export const messages = {
     fullTitle: 'This ballot is full',
     full: 'This ballot already has three versions.',
   },
+  /** The priority composer (#107): one question, 2–7 options, everyone scores each. */
+  priority: {
+    pageTitle: 'Ask what to focus on',
+    title: 'Ask what to focus on',
+    lede: 'Everyone scores each option from 0 to 4. The options that pass rank by their average, and the top one becomes your group’s focus.',
+    questionLabel: 'Question',
+    question: 'What should we focus on?',
+    questionMissing: 'Write the question your group will answer.',
+    questionTooLong: (max: number) => `Keep the question to ${count(max)} characters or fewer.`,
+    whyHint: 'Tell your group why it’s time to choose.',
+    whyMissing: 'Say why you’re asking now.',
+    optionsLabel: 'Options',
+    optionsHint: (min: number, max: number, length: number) =>
+      `From ${count(min)} to ${count(max)} options, each up to ${count(length)} characters.`,
+    optionLabel: (option: number) => `Option ${String(option)}`,
+    optionBlank: 'Write this option, or remove it.',
+    optionTooLong: (max: number) => `Keep each option to ${count(max)} characters or fewer.`,
+    optionRepeated: 'This option is already on the list.',
+    addOption: 'Add option',
+    remove: 'Remove',
+    removeLabel: (option: number) => `Remove option ${String(option)}`,
+    visibility: 'Everyone in your group sees this question and that you asked it.',
+    submit: 'Ask your group',
+    failed: 'Your question couldn’t be saved on this device. Try again.',
+    openTitle: 'Your group is already choosing a focus',
+    open: 'You can ask again once its vote closes.',
+    seeOpen: 'See the open vote',
+  },
   proposal: {
     pageTitle: 'Proposal',
     eyebrowOpen: 'Open Proposal',
@@ -239,10 +272,17 @@ export const messages = {
     notVotingLevel: 'You weren’t at a voting level when this opened, so you can’t vote on it.',
     missingTitle: 'This Proposal isn’t on this device',
     missing: 'Go back to your group to see its open Proposals.',
+    eyebrowPriority: 'Priority vote',
+    eyebrowPriorityClosed: 'Closed priority vote',
+    options: 'Options',
+    optionsHint:
+      'Score each option. The options that pass rank by their average, and the top one becomes your group’s focus.',
   },
   ballot: {
     version: (version: number) => `Version ${String(version)}`,
     scoreFor: (version: number) => `Score for version ${String(version)}`,
+    /** Before a priority option's text, which follows in `<bdi>`: "Score for Fix the website". */
+    scoreForOption: 'Score for',
     visibility: 'Everyone in your group sees your scores and note.',
     newVersion: 'A new version was added. Score it to update your ballot.',
     separator: '·',
@@ -262,6 +302,7 @@ export const messages = {
     /** The meter's eyebrow, over each version's two bars while the vote is open. */
     title: 'So far',
     label: (version: number) => `How version ${String(version)} stands so far`,
+    optionLabel: (option: string) => `How ${option} stands so far`,
     average: 'Average',
     zeros: 'Zeros',
     /** The line the average must reach, from the bar, such as "needs 2.5". */
@@ -322,6 +363,18 @@ export const messages = {
     ranTo: '–',
     ranEnd: '.',
     ranEarlyEnd: ', when everyone had voted.',
+    /** A priority vote's result (#107). */
+    focusNow: 'Your group’s focus is now:',
+    noOption: 'No option passed, so your group’s focus stays as it was.',
+    ranked: 'Passed, best first',
+    notCleared: 'Didn’t clear the floor',
+    /** The disclosure that holds a priority vote's totals and its ballots. */
+    details: (n: number) =>
+      n === 1 ? 'Totals and individual ballots (1)' : `Totals and individual ballots (${count(n)})`,
+    /** Between an option, in `<bdi>`, and what follows, as in "Fix the website: 3 · Supportive". */
+    optionSeparator: ':',
+    notScored: 'not scored',
+    priorityBusy: 'Your group has an open priority vote now. You can ask again once it closes.',
   },
   decided: {
     title: 'Decided',

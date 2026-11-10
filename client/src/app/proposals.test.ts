@@ -12,8 +12,10 @@ import { createGroup } from './actions';
 import {
   addVersion,
   againDraft,
+  askPriority,
   castBallot,
   chooseLevel,
+  optionText,
   propose,
   type ProposalValues,
 } from './proposals';
@@ -103,7 +105,7 @@ describe('propose', () => {
       link: null,
     });
     const [queued] = await outbox(device, groupId);
-    expect(queued?.type === 'proposal' ? queued.body.text : null).toBe(
+    expect(queued?.type === 'proposal' && 'text' in queued.body ? queued.body.text : null).toBe(
       'Caf\u00e9 hours\nstart at ten.\n',
     );
   });
@@ -234,6 +236,54 @@ describe('propose, again', () => {
     const big = { ...values(atom), versions: ['Short.', 'x'.repeat(70_000)] };
     expect(await propose(device.services, groupId, big)).toEqual({ outcome: 'too-large' });
     expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
+describe('askPriority (#107)', () => {
+  it('queues one priority vote, its options NFC-normalized and trimmed, and the fold opens it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await askPriority(device.services, groupId, {
+      title: 'What should we focus on?',
+      why: 'One thing at a time.',
+      options: ['  Fix the cafe\u0301 sign ', 'Plan the picnic\t'],
+    });
+    const queued = await outbox(device, groupId);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      type: 'proposal',
+      author,
+      body: {
+        target: { kind: 'priority' },
+        title: 'What should we focus on?',
+        why: 'One thing at a time.',
+        options: ['Fix the caf\u00e9 sign', 'Plan the picnic'],
+      },
+    });
+    expect(result.outcome).toBe('proposed');
+    fake.offline = false;
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    const opened = state.proposals.find((proposal) => proposal.target.kind === 'priority');
+    expect(opened?.id).toBe(result.outcome === 'proposed' ? result.proposalId : null);
+    expect(opened?.versions.map((version) => version.text)).toEqual([
+      'Fix the caf\u00e9 sign',
+      'Plan the picnic',
+    ]);
+  });
+
+  it('refuses a question over 64,000 bytes before queuing anything', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const values = { title: 'Q', why: 'x'.repeat(70_000), options: ['a', 'b'] };
+    expect(await askPriority(device.services, groupId, values)).toEqual({ outcome: 'too-large' });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+
+  it('writes each option NFC-normalized, then trimmed', () => {
+    expect(optionText(' Cafe\u0301 ')).toBe('Caf\u00e9');
   });
 });
 

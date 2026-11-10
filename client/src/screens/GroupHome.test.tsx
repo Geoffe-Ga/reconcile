@@ -364,3 +364,66 @@ describe('GroupHome', () => {
     expect(screen.queryByRole('region', { name: 'Discussion' })).not.toBeInTheDocument();
   });
 });
+
+describe('GroupHome: the current focus (#107)', () => {
+  /** Ana asks in a group of Ana, Ben and Cal, and all three score both options, closing it early. */
+  function focused() {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const id = log.ask('ana', ['Fix the website', 'Plan the picnic']);
+    const [a, b] = [`${id}.0`, `${id}.1`];
+    log.minute += 5;
+    log.ballot('ana', id, { [a]: 4, [b]: 2 });
+    log.ballot('ben', id, { [a]: 3, [b]: 3 });
+    log.ballot('cal', id, { [a]: 3, [b]: 2 });
+    return { log, id };
+  }
+
+  it('says there is no focus yet, and offers Ask what to focus on to someone who can propose', async () => {
+    const { state } = setup();
+    const focus = section('Focus');
+    expect(within(focus).getByText('Your group hasn’t chosen a focus yet.')).toBeVisible();
+    expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/priority`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Ask what to focus on to someone who can’t propose', () => {
+    setup({ levels: { Ben: VOTING } }, authorOf('ben'));
+    expect(within(section('Focus')).queryByRole('link')).toBeNull();
+  });
+
+  it('shows the current focus after a pass, linking to its result, under the open Proposals', async () => {
+    const { log, id } = focused();
+    renderHome(log.state());
+    const focus = section('Focus');
+    const card = within(focus).getByRole('link', { name: /Current focus/ });
+    expect(card).toHaveTextContent('Current focusFix the website');
+    expect(card).toHaveAttribute('href', `#/g/${log.group}/p/${id}`);
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 3)).toEqual(['Open Proposals', 'Focus', 'Decided']);
+    expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('names the top option on the Decided card of a priority vote that passed', () => {
+    const { log } = focused();
+    renderHome(log.state());
+    const card = within(section('Decided')).getByRole('link', { name: /What should we focus on/ });
+    expect(card).toHaveTextContent(/^What should we focus on\?→Fix the websitePassed/);
+  });
+
+  it('keeps the focus, and offers no Ask, while another priority vote is open', () => {
+    const { log } = focused();
+    log.minute += 5;
+    log.ask('ben', ['New bylaws', 'Rent strike']);
+    renderHome(log.state());
+    const focus = section('Focus');
+    expect(within(focus).getByRole('link', { name: /Current focus/ })).toHaveTextContent(
+      'Fix the website',
+    );
+    expect(within(focus).queryByRole('link', { name: 'Ask what to focus on' })).toBeNull();
+    expect(within(section('Open Proposals')).getByText('What should we focus on?')).toBeVisible();
+  });
+});

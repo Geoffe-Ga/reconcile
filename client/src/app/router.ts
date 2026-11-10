@@ -15,6 +15,7 @@ export type Route =
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
+  | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string };
 
@@ -26,14 +27,28 @@ const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
-/** A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}` or `again/{proposalId}`. */
+/** The pages inside a group that take nothing after their name. */
+const BARE_PAGES: ReadonlyMap<string, (groupId: string) => Route> = new Map([
+  ['doc', (groupId: string): Route => ({ name: 'document', groupId })],
+  ['priority', (groupId: string): Route => ({ name: 'priority', groupId })],
+]);
+
+/** The pages inside a group that take one id, the pattern it must match, and their route. */
+const ID_PAGES: ReadonlyMap<string, readonly [RegExp, (groupId: string, id: string) => Route]> =
+  new Map([
+    ['propose', [ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId })]],
+    ['p', [ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId })]],
+    ['again', [ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId })]],
+  ]);
+
+/**
+ * A page inside a group: `doc`, `priority` (#107), `propose/{atomId}`,
+ * `p/{proposalId}` or `again/{proposalId}`.
+ */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
-  if (arg === undefined) return START;
-  if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
-  if (!ID.test(arg)) return START;
-  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
-  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
+  if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
+  const known = ID_PAGES.get(page);
+  return known?.[0].test(arg) === true ? known[1](groupId, arg) : START;
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -66,6 +81,27 @@ export function parseRoute(hash: string): Route {
   }
 }
 
+/** A route inside one group. */
+type GroupRoute = Exclude<Route, { readonly name: 'start' | 'create' | 'join' }>;
+
+/** The path of a page inside a group, after `#/g/{groupId}`. */
+function groupPath(route: GroupRoute): string {
+  switch (route.name) {
+    case 'group':
+      return '';
+    case 'document':
+      return '/doc';
+    case 'priority':
+      return '/priority';
+    case 'propose':
+      return `/propose/${route.atomId}`;
+    case 'proposal':
+      return `/p/${route.proposalId}`;
+    case 'again':
+      return `/again/${route.proposalId}`;
+  }
+}
+
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
   switch (route.name) {
@@ -75,16 +111,8 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'join':
       return route.payload === null ? '#/join' : `#/join/${route.payload}`;
-    case 'group':
-      return `#/g/${route.groupId}`;
-    case 'document':
-      return `#/g/${route.groupId}/doc`;
-    case 'propose':
-      return `#/g/${route.groupId}/propose/${route.atomId}`;
-    case 'proposal':
-      return `#/g/${route.groupId}/p/${route.proposalId}`;
-    case 'again':
-      return `#/g/${route.groupId}/again/${route.proposalId}`;
+    default:
+      return `#/g/${route.groupId}${groupPath(route)}`;
   }
 }
 
