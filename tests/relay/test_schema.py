@@ -1,4 +1,9 @@
-"""The database holds only what the issue allows: no column without an ADR."""
+"""The database holds only what the issue allows: no column without an ADR.
+
+#89 adds the two push tables ADR-0012 and ADR-0019 allow ("push adds
+endpoints and wake minutes, nothing else"): no push keys, since no payload is
+sent, and no timestamps or counters.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +27,8 @@ BLOB_COLUMNS = [
     ("received", "INTEGER"),
     ("expiry", "INTEGER"),
 ]
+PUSH_SUB_COLUMNS = [("mailbox", "TEXT"), ("endpoint", "TEXT"), ("expiry", "INTEGER")]
+NUDGE_COLUMNS = [("mailbox", "TEXT"), ("due", "INTEGER")]
 
 
 @pytest.fixture
@@ -55,7 +62,7 @@ def test_seq_is_an_autoincrement_primary_key(db: sqlite3.Connection) -> None:
     assert "INTEGER PRIMARY KEY AUTOINCREMENT" in " ".join(sql.split())
 
 
-def test_the_only_tables_are_blobs_meta_and_sqlite_sequence(
+def test_the_only_tables_are_blobs_meta_push_and_sqlite_sequence(
     db: sqlite3.Connection,
 ) -> None:
     """There is no other table to grow a list of people in."""
@@ -64,7 +71,40 @@ def test_the_only_tables_are_blobs_meta_and_sqlite_sequence(
         for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
 
-    assert tables == {"blobs", "meta", "sqlite_sequence"}
+    assert tables == {"blobs", "meta", "sqlite_sequence", "push_subs", "nudges"}
+
+
+@pytest.mark.parametrize(
+    ("table", "columns", "key"),
+    [
+        ("push_subs", PUSH_SUB_COLUMNS, ["mailbox", "endpoint"]),
+        ("nudges", NUDGE_COLUMNS, ["mailbox", "due"]),
+    ],
+)
+def test_the_push_tables_have_exactly_their_columns(
+    db: sqlite3.Connection, table: str, columns: list[tuple[str, str]], key: list[str]
+) -> None:
+    """Endpoints with an expiry day, and due minutes: nothing more, no rowid.
+
+    The primary key collapses repeats: one row per endpoint in a mailbox, and
+    one nudge per mailbox per minute. WITHOUT ROWID leaves no hidden counter.
+    """
+    info = list(db.execute(f"PRAGMA table_info({table})"))
+    (sql,) = db.execute(
+        "SELECT sql FROM sqlite_master WHERE name = ?", (table,)
+    ).fetchone()
+
+    assert [(row[1], row[2]) for row in info] == columns
+    assert [row[1] for row in sorted(info, key=lambda row: row[5]) if row[5]] == key
+    assert all(row[3] for row in info), "every column is NOT NULL"
+    assert " ".join(sql.split()).endswith("WITHOUT ROWID")
+
+
+def test_the_push_tables_have_no_extra_index(db: sqlite3.Connection) -> None:
+    """Only the primary keys index the push tables: two tables, one tick."""
+    for table in ("push_subs", "nudges"):
+        origins = [row[3] for row in db.execute(f"PRAGMA index_list({table})")]
+        assert origins == ["pk"], table
 
 
 def test_meta_holds_only_the_instance(db: sqlite3.Connection) -> None:

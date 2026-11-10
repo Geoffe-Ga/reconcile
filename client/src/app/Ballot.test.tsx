@@ -10,6 +10,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
 import { Ballot, type BallotProps } from './Ballot';
 import { castBallot } from './proposals';
+import type { VersionView } from './versionViews';
 
 freshIndexedDBPerTest();
 
@@ -21,12 +22,19 @@ const PILLS = [
   '4 · Strongly supportive',
 ];
 
-type OnVote = (score: Score, note: string) => Promise<void>;
+type OnVote = (scores: Readonly<Record<string, Score>>, note: string) => Promise<void>;
+
+const CURRENT = 'Quiet hours start at ten.\n';
+const V1: VersionView = { id: 'v1', number: 1, author: 'Ana', text: 'Quiet from eleven.\n' };
+const V2: VersionView = { id: 'v2', number: 2, author: 'Ben', text: 'Quiet from midnight.\n' };
+const V3: VersionView = { id: 'v3', number: 3, author: 'Cy', text: 'Quiet from nine.\n' };
 
 function setup(props: Partial<BallotProps> = {}) {
   const onVote = vi.fn<OnVote>(() => Promise.resolve());
   const all: BallotProps = {
-    initialScore: null,
+    versions: [V1],
+    current: CURRENT,
+    initialScores: {},
     initialNote: '',
     hasVoted: false,
     isDisabled: false,
@@ -39,6 +47,7 @@ function setup(props: Partial<BallotProps> = {}) {
   render(
     <main>
       <h1>Proposal</h1>
+      <h2>Changes to section 1</h2>
       <Ballot {...all} />
     </main>,
   );
@@ -47,15 +56,22 @@ function setup(props: Partial<BallotProps> = {}) {
 
 const note = () => screen.getByRole('textbox');
 const send = () => screen.getByRole('button', { name: /your vote/ });
+const scoreFor = (n: number) =>
+  screen.getByRole('radiogroup', { name: `Score for version ${String(n)}` });
+
+/** Picks `pill` in version `n`'s score group. */
+async function pick(user: ReturnType<typeof userEvent.setup>, n: number, pill: string) {
+  await user.click(within(scoreFor(n)).getByRole('radio', { name: pill }));
+}
 
 describe('Ballot', () => {
   it('offers five score pills, each with its number and label, and a note', async () => {
     setup();
-    const group = screen.getByRole('radiogroup', { name: 'Your score' });
+    const group = scoreFor(1);
     const pills = within(group).getAllByRole('radio');
     expect(pills.map((radio) => radio.closest('label')?.textContent)).toEqual(PILLS);
     for (const name of PILLS) expect(screen.getByRole('radio', { name })).not.toBeChecked();
-    expect(group).toHaveAccessibleDescription('Everyone in your group sees your score and note.');
+    expect(group).toHaveAccessibleDescription('Everyone in your group sees your scores and note.');
     expect(screen.getByRole('textbox', { name: 'Note (optional)' })).not.toBeRequired();
     expect(send()).toHaveTextContent('Send your vote');
     expect(await axeViolations()).toEqual([]);
@@ -74,7 +90,94 @@ describe('Ballot', () => {
     await user.click(screen.getByRole('radio', { name: '3 · Supportive' }));
     await user.type(note(), 'Works for me.');
     await user.click(send());
-    expect(onVote).toHaveBeenCalledWith(3, 'Works for me.');
+    expect(onVote).toHaveBeenCalledWith({ v1: 3 }, 'Works for me.');
+  });
+
+  it('shows each version under its number and author, its diff, and its own five pills', async () => {
+    setup({ versions: [V1, V2, V3] });
+    for (const version of [V1, V2, V3]) {
+      const card = screen.getByRole('region', {
+        name: `Version ${String(version.number)} · ${version.author}`,
+      });
+      expect(card.querySelector('.word-diff')).not.toBeNull();
+      const group = within(card).getByRole('radiogroup', {
+        name: `Score for version ${String(version.number)}`,
+      });
+      expect(within(group).getAllByRole('radio')).toHaveLength(5);
+    }
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sends a score for every version, keyed by version id, with one note', async () => {
+    const { user, onVote } = setup({ versions: [V1, V2] });
+    await pick(user, 1, '2 · Neutral');
+    await pick(user, 2, '4 · Strongly supportive');
+    await user.type(note(), 'Midnight suits us.');
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ v1: 2, v2: 4 }, 'Midnight suits us.');
+  });
+
+  it('asks for a score on every version before sending', async () => {
+    const { user, onVote } = setup({ versions: [V1, V2] });
+    await pick(user, 1, '3 · Supportive');
+    await user.click(send());
+    expect(onVote).not.toHaveBeenCalled();
+    expect(scoreFor(2)).toHaveAccessibleDescription(
+      'Choose a score from 0 to 4. Everyone in your group sees your scores and note.',
+    );
+    await pick(user, 2, '1 · Opposed');
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ v1: 3, v2: 1 }, '');
+  });
+
+  it('needs a reason when any version scores 0', async () => {
+    const { user, onVote } = setup({ versions: [V1, V2] });
+    await pick(user, 1, '4 · Strongly supportive');
+    await pick(user, 2, '0 · Strongly opposed');
+    const reason = screen.getByRole('textbox', { name: 'Your reason for a 0' });
+    expect(reason).toBeRequired();
+    await user.click(send());
+    expect(onVote).not.toHaveBeenCalled();
+    await user.type(reason, 'Midnight is too late.');
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ v1: 4, v2: 0 }, 'Midnight is too late.');
+  });
+
+  it('prefills the earlier ballot and asks for a score on a version added since', async () => {
+    const { user, onVote } = setup({
+      versions: [V1, V2],
+      initialScores: { v1: 3 },
+      initialNote: 'Fine by me.',
+      hasVoted: true,
+    });
+    expect(
+      screen.getByText('A new version was added. Score it to update your ballot.'),
+    ).toBeVisible();
+    expect(within(scoreFor(1)).getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
+    for (const radio of within(scoreFor(2)).getAllByRole('radio')) expect(radio).not.toBeChecked();
+    expect(note()).toHaveValue('Fine by me.');
+    expect(send()).toHaveTextContent('Update your vote');
+    expect(await axeViolations()).toEqual([]);
+    await pick(user, 2, '2 · Neutral');
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ v1: 3, v2: 2 }, 'Fine by me.');
+  });
+
+  it('asks for nothing new when the earlier ballot scores every version', () => {
+    setup({ versions: [V1, V2], initialScores: { v1: 3, v2: 1 }, hasVoted: true });
+    expect(screen.queryByText(/A new version was added/)).not.toBeInTheDocument();
+  });
+
+  it('asks for nothing new once voting has closed', () => {
+    setup({ versions: [V1, V2], initialScores: { v1: 3 }, hasVoted: true, isDisabled: true });
+    expect(screen.queryByText(/A new version was added/)).not.toBeInTheDocument();
+  });
+
+  it('ignores an earlier score for a version that isn’t on this ballot', async () => {
+    const { user, onVote } = setup({ initialScores: { v1: 2, gone: 4 }, hasVoted: true });
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ v1: 2 }, '');
   });
 
   it('asks for a score before sending', async () => {
@@ -82,7 +185,7 @@ describe('Ballot', () => {
     await user.click(send());
     expect(onVote).not.toHaveBeenCalled();
     expect(screen.getByRole('radiogroup')).toHaveAccessibleDescription(
-      'Everyone in your group sees your score and note. Choose a score from 0 to 4.',
+      'Choose a score from 0 to 4. Everyone in your group sees your scores and note.',
     );
   });
 
@@ -103,7 +206,7 @@ describe('Ballot', () => {
 
     await user.type(reason, 'It would end band practice.');
     await user.click(send());
-    expect(onVote).toHaveBeenCalledWith(0, '   It would end band practice.');
+    expect(onVote).toHaveBeenCalledWith({ v1: 0 }, '   It would end band practice.');
   });
 
   it('drops the need for a reason when the 0 changes to another score', async () => {
@@ -114,7 +217,7 @@ describe('Ballot', () => {
     await user.click(screen.getByRole('radio', { name: '1 · Opposed' }));
     expect(screen.getByRole('textbox', { name: 'Note (optional)' })).not.toBeRequired();
     await user.click(send());
-    expect(onVote).toHaveBeenCalledWith(1, '');
+    expect(onVote).toHaveBeenCalledWith({ v1: 1 }, '');
   });
 
   it('clears the missing-reason message as soon as the 0 changes, so Send stays put', async () => {
@@ -146,19 +249,24 @@ describe('Ballot', () => {
   });
 
   it('starts from the ballot already cast, and offers to update it', () => {
-    setup({ initialScore: 4, initialNote: 'Yes please.', hasVoted: true });
+    setup({ initialScores: { v1: 4 }, initialNote: 'Yes please.', hasVoted: true });
     expect(screen.getByRole('radio', { name: '4 · Strongly supportive' })).toBeChecked();
     expect(note()).toHaveValue('Yes please.');
     expect(send()).toHaveTextContent('Update your vote');
   });
 
   it('is disabled, and says why, once voting has closed', async () => {
-    setup({ isDisabled: true, initialScore: 3, initialNote: 'Fine by me.', hasVoted: true });
+    setup({
+      isDisabled: true,
+      initialScores: { v1: 3 },
+      initialNote: 'Fine by me.',
+      hasVoted: true,
+    });
     for (const name of PILLS) expect(screen.getByRole('radio', { name })).toBeDisabled();
     expect(screen.getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
     expect(note()).toBeDisabled();
     expect(note()).toHaveValue('Fine by me.');
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /your vote/ })).not.toBeInTheDocument();
     expect(screen.getByText('Voting has closed, so this ballot can’t change.')).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
@@ -167,7 +275,7 @@ describe('Ballot', () => {
     setup({ isDisabled: true });
     for (const name of PILLS) expect(screen.getByRole('radio', { name })).not.toBeChecked();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /your vote/ })).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
@@ -202,7 +310,7 @@ describe('Ballot', () => {
   });
 
   it('shows where a ballot waiting in the outbox has got to', () => {
-    setup({ pending: true, reachable: false, hasVoted: true, initialScore: 2 });
+    setup({ pending: true, reachable: false, hasVoted: true, initialScores: { v1: 2 } });
     expect(screen.getByRole('status')).toHaveTextContent(
       'Saved on this device. It will send when you’re back online.',
     );
@@ -249,7 +357,7 @@ describe('Ballot, in the app', () => {
     const proposal = window.location.hash.split('/').at(-1) ?? '';
     for (const device of [ana, cy]) {
       await device.services.sync.syncOnce();
-      await castBallot(device.services, groupId, { proposal, score: 3, note: '' });
+      await castBallot(device.services, groupId, { proposal, scores: { [proposal]: 3 }, note: '' });
       await device.services.sync.syncOnce();
     }
     await act(() => ben.services.sync.syncOnce());

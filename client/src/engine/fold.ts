@@ -17,6 +17,7 @@ import {
   type Level,
   wouldVote,
 } from './capabilities';
+import { optionFor } from './composeOption';
 import {
   EVENT_VERSION,
   type GenesisBody,
@@ -26,6 +27,7 @@ import {
   parseRecord,
   type ProposalBody,
   type Score,
+  type VersionBody,
   type VoteBody,
 } from './event';
 import { tally, type TallyOutcome } from './tally';
@@ -144,8 +146,12 @@ interface Receipt {
   readonly received: number;
 }
 
-/** A Proposal while the fold runs: its ballots and early close still change. */
-interface OpenProposal extends Omit<Proposal, 'ballots' | 'closedAt' | 'final' | 'outcome'> {
+/** A Proposal while the fold runs: its versions, ballots and early close still change. */
+interface OpenProposal extends Omit<
+  Proposal,
+  'versions' | 'ballots' | 'closedAt' | 'final' | 'outcome'
+> {
+  readonly versions: Version[];
   ballots: Ballot[];
   closedAt: number | null;
 }
@@ -196,11 +202,25 @@ function applyLevel(draft: Draft, body: LevelBody, author: string): boolean {
   return true;
 }
 
-function proposalIsValid(draft: Draft, body: ProposalBody, author: string): boolean {
+/**
+ * True while a Proposal takes versions and ballots at relay minute `received`:
+ * before its deadline, and before any early close.
+ */
+function isOpenAt(proposal: OpenProposal, received: number): boolean {
+  return proposal.closedAt === null && received < proposal.deadline;
+}
+
+/** The Proposal open on `atom` at relay minute `received`, if any. An Atom has at most one. */
+function openOn(draft: Draft, atom: string, received: number): OpenProposal | undefined {
+  return draft.proposals.find((p) => p.atom === atom && isOpenAt(p, received));
+}
+
+function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   const titleLength = codePointLength(body.title);
   return (
     can(draft, author, 'propose') &&
     draft.atoms.some((a) => a.id === body.atom) &&
+    optionFor(openOn(draft, body.atom, at.received)) === 'propose' &&
     titleLength >= 1 &&
     titleLength <= TITLE_MAX &&
     codePointLength(body.why) <= WHY_MAX
@@ -208,7 +228,7 @@ function proposalIsValid(draft: Draft, body: ProposalBody, author: string): bool
 }
 
 function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
-  if (!proposalIsValid(draft, body, author)) return false;
+  if (!proposalIsValid(draft, body, author, at)) return false;
   draft.proposals.push({
     ...at,
     author,
@@ -223,6 +243,18 @@ function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Rec
     ballots: [],
     closedAt: null,
   });
+  return true;
+}
+
+/**
+ * Adds a version to an open Proposal's ballot, in relay order, while it holds
+ * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
+ */
+function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
+  const proposal = draft.proposals.find((p) => p.id === body.proposal);
+  if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
+  if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
+  proposal.versions.push({ id: at.id, author, text: body.text });
   return true;
 }
 
@@ -252,8 +284,7 @@ function ballotIsValid(
     can(draft, author, 'vote') &&
     scoresAreKnown(proposal, body.scores) &&
     noteIsValid(body) &&
-    at.received < proposal.deadline &&
-    proposal.closedAt === null
+    isOpenAt(proposal, at.received)
   );
 }
 
@@ -293,6 +324,8 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyJoin(draft, event.body, event.author, at);
     case 'proposal':
       return applyProposal(draft, event.body, event.author, at);
+    case 'version':
+      return applyVersion(draft, event.body, event.author, at);
     case 'vote':
       return applyVote(draft, event.body, event.author, at);
     case 'level':

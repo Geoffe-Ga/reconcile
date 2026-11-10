@@ -21,7 +21,7 @@ import { statSync } from 'node:fs';
 
 import type { Page } from '@playwright/test';
 
-import { expect, heading, type Person, test } from './support/fixtures';
+import { expect, heading, type Person, pick, test } from './support/fixtures';
 import {
   type Canary,
   describeFinding,
@@ -91,15 +91,10 @@ function storedGroups(page: Page): Promise<StoredGroup[]> {
 /** Scores the open Proposal with `pill`, writes `note` when there is one, and sends the ballot. */
 async function vote(person: Person, pill: string, note?: string): Promise<void> {
   const { page } = person;
-  const radio = page.getByRole('radio', { name: pill });
-  // React Aria hides the native radio under its pill, so press the pill's label.
-  await page.locator('label', { has: radio }).click();
-  await expect(radio).toBeChecked();
+  await pick(page, pill);
   if (note !== undefined) await page.getByRole('textbox', { name: 'Note (optional)' }).fill(note);
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.getByRole('region', { name: 'Your vote' }).getByRole('status')).toHaveText(
-    'Sent',
-  );
+  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
 }
 
 test('the scan finds a canary in every spelling, at every byte alignment', () => {
@@ -196,7 +191,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     await page.getByRole('textbox', { name: 'Why' }).fill(words.why);
     await page.getByRole('textbox', { name: 'New text' }).fill(words.newText);
     await page.getByRole('button', { name: 'Propose this change' }).click();
-    await expect(page.getByRole('radiogroup', { name: 'Your score' })).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
     await vote(ana, '4 · Strongly supportive');
 
     const open = ben.page.getByRole('region', { name: 'Open Proposals' });

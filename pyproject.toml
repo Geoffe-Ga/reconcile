@@ -128,6 +128,8 @@ strict_concatenate = true
 # One file set for local, pre-commit, and CI runs (scripts/typecheck.sh).
 files = ["reconcile", "tests", "scripts", ".claude/skills/decide/scripts"]
 explicit_package_bases = true
+# Typed stubs for py-vapid, which ships none (#89): no ignore_missing_imports.
+mypy_path = "stubs"
 
 [[tool.mypy.overrides]]
 module = "tests.*"

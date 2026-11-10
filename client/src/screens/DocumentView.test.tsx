@@ -7,6 +7,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup } from '../test/groups';
 import { authorOf } from '../test/keys';
+import { groupLog } from '../test/votes';
 import { DocumentView } from './DocumentView';
 
 const [FOLLOWING, VOTING] = LEVELS;
@@ -135,6 +136,34 @@ describe('DocumentView', () => {
     expect(screen.queryByRole('button', { name: /^Propose a change/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /involvement/ })).not.toBeInTheDocument();
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
+  });
+
+  it('turns Propose a change into Add your version on a section with an open Proposal', async () => {
+    const user = userEvent.setup();
+    const log = groupLog();
+    log.propose('ana');
+    const state = log.state();
+    const onPropose = vi.fn();
+    view(state, authorOf('ana'), onPropose);
+    const add = screen.getByRole('button', { name: 'Add your version to section 1' });
+    expect(add).toHaveTextContent('Add your version');
+    expect(screen.getByRole('button', { name: 'Propose a change to section 2' })).toBeVisible();
+    await user.click(add);
+    expect(onPropose).toHaveBeenCalledWith(`${log.group}.0`);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a section’s ballot is full once it holds three versions, with no button', async () => {
+    const log = groupLog();
+    const proposal = log.propose('ana');
+    log.version('ben', proposal, 'Quiet after midnight.');
+    log.version('ben', proposal, 'Quiet after 10pm.');
+    view(log.state());
+    expect(screen.getByText('This section’s ballot already has three versions.')).toBeVisible();
+    expect(
+      screen.getAllByRole('button').map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Propose a change to section 2']);
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('says so when the Document has no sections', async () => {

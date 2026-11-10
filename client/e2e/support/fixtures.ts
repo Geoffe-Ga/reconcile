@@ -1,7 +1,10 @@
 /**
- * What every e2e test runs on: a fresh run of the real relay (`relay.ts`),
- * and browser profiles that fail the test on any CSP violation.
+ * What the end-to-end specs share: a fresh run of the real relay for each
+ * test (`relay.ts`), a fixture that opens one browser profile per person
+ * under the deploy CSP and fails the test on any CSP violation in any of
+ * them, axe on the screen a person is looking at, and a few locators.
  */
+import AxeBuilder from '@axe-core/playwright';
 import {
   type BrowserContextOptions,
   expect,
@@ -11,6 +14,11 @@ import {
 } from '@playwright/test';
 
 import { type RunningRelay, startRelay } from './relay';
+
+export { expect };
+
+/** WCAG 2.0–2.2 A and AA plus axe's best practices, as `src/test/axe.ts`, with contrast on. */
+const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
 
 /** The name the init script reports CSP violations to, exposed on every page. */
 const REPORT_VIOLATION = 'e2eReportCspViolation';
@@ -41,6 +49,10 @@ function recordCspViolations(report: string): void {
   );
 }
 
+/**
+ * Playwright's `test`, with the relay started before each test and stopped after
+ * it, and `openProfile`: each profile it opens is checked for CSP violations.
+ */
 export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile }>({
   // Every test gets the relay, started before it and stopped after it. It waits for
   // the relay's health check through `request`.
@@ -82,9 +94,29 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
   },
 });
 
-export { expect };
-
 /** The screen's one `h1`. */
 export function heading(page: Page, name: string): Locator {
   return page.getByRole('heading', { level: 1, name });
+}
+
+/** Fails on any axe violation on the screen `person` is looking at. */
+export async function expectAccessible(person: Person, screen: string): Promise<void> {
+  const results = await new AxeBuilder({ page: person.page }).withTags(AXE_TAGS).analyze();
+  const lines = results.violations.map((violation) => {
+    const targets = violation.nodes.map((node) => node.target.join(' ')).join(', ');
+    return `${violation.id}: ${violation.help} (${targets})`;
+  });
+  expect(lines, `axe on ${person.name}'s ${screen}`).toEqual([]);
+}
+
+/**
+ * Presses the React Aria radio `name`, inside `within` when given: React Aria
+ * hides the native input under its label, so this presses the label.
+ */
+export async function pick(page: Page, name: string, within?: Locator): Promise<void> {
+  const scope = within ?? page;
+  const radio = scope.getByRole('radio', { name });
+  // `has` is matched inside each label, so it names the radio from the page, not the scope.
+  await scope.locator('label', { has: page.getByRole('radio', { name }) }).click();
+  await expect(radio).toBeChecked();
 }

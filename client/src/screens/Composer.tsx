@@ -4,19 +4,20 @@ import { Button, Form } from 'react-aria-components';
 import { latestLink } from '../app/latestLink';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
-import type { ProposalValues } from '../app/proposals';
+import type { ProposalValues, VersionValues } from '../app/proposals';
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { type DraftState, useDraft } from '../app/useDraft';
 import { normalizeAtomText } from '../engine/atomText';
 import { can } from '../engine/capabilities';
-import { type Atom, type GroupState, TITLE_MAX, WHY_MAX } from '../engine/fold';
+import { composeOption, openProposalOn } from '../engine/composeOption';
+import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
 import type { Draft, GroupDrafts } from '../store/drafts';
 
-/** How proposing went: `proposed` moves on to the Proposal; the others stay on the form. */
-export type ComposeOutcome = 'proposed' | 'too-large' | 'failed';
+/** How sending went: `proposed` and `added` move on to the Proposal; the others stay on the form. */
+export type ComposeOutcome = 'proposed' | 'added' | 'too-large' | 'failed';
 
 /** Props for {@link Composer}. */
 export interface ComposerProps {
@@ -30,6 +31,8 @@ export interface ComposerProps {
   readonly drafts: GroupDrafts;
   /** Queues the Proposal from valid entries, clearing its draft as it does. */
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
+  /** Queues a version of the section's open Proposal, clearing its draft as it does. */
+  readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
 }
 
 /** Limits count code points after NFC (spec §4), never UTF-16 units as `maxLength` does. */
@@ -53,13 +56,22 @@ const checkWhy = required(
 );
 
 /** Refuses blank text, and text that normalizes to the section's own (spec §4). */
-function textCheck(current: string) {
+function textCheck(current: string, missing: string = messages.composer.textMissing) {
   const now = normalizeAtomText(current);
   return (value: string): string | null => {
     const text = normalizeAtomText(value);
-    if (text === '') return messages.composer.textMissing;
+    if (text === '') return missing;
     return text === now ? messages.composer.textUnchanged : null;
   };
+}
+
+/** As {@link textCheck}, and refuses text that normalizes to a version already on the ballot. */
+function versionCheck(current: string, proposal: Proposal) {
+  const section = textCheck(current, messages.composer.versionMissing);
+  const onBallot = new Set(proposal.versions.map((version) => normalizeAtomText(version.text)));
+  return (value: string): string | null =>
+    section(value) ??
+    (onBallot.has(normalizeAtomText(value)) ? messages.composer.textOnBallot : null);
 }
 
 function checkLink(value: string): string | null {
@@ -90,8 +102,19 @@ function startOf(state: GroupState, atom: Atom): Draft {
   return { title: '', why: '', text: atom.text, link: latestLink(state) ?? '' };
 }
 
+/** Where a new version starts: the section's text. A version keeps only its text. */
+function versionStartOf(atom: Atom): Draft {
+  return { title: '', why: '', text: atom.text, link: '' };
+}
+
+interface UnavailableProps {
+  readonly state: GroupState;
+  readonly title: string;
+  readonly text: string;
+}
+
 /** Shown in place of the form when there's nothing here to propose on. */
-function Unavailable({ state, title, text }: { state: GroupState; title: string; text: string }) {
+function Unavailable({ state, title, text }: UnavailableProps) {
   return (
     <main className="shell">
       <BackLink to={{ name: 'document', groupId: state.group ?? '' }} label={state.title} />
@@ -115,16 +138,16 @@ function CurrentText({ atom, section }: { readonly atom: Atom; readonly section:
 }
 
 /**
- * Runs `onPropose` once at a time, keeping the button disabled until it is
- * done. The draft holds still while the Proposal is queued, since queuing
- * clears it, and saves again if the Proposal couldn't be queued.
+ * Runs `send` once at a time, keeping the button disabled until it is done.
+ * The draft holds still while the Proposal or version is queued, since
+ * queuing clears it, and saves again if it couldn't be queued.
  */
-function usePropose(onPropose: ComposerProps['onPropose'], draft: DraftState) {
+function useSend<V>(send: (values: V) => Promise<ComposeOutcome>, draft: DraftState) {
   const busy = useRef(false);
   const [running, setRunning] = useState(false);
   const [failed, setFailed] = useState(false);
   const [refused, setRefused] = useState<Record<string, string>>({});
-  const run = async (values: ProposalValues) => {
+  const run = async (values: V) => {
     if (busy.current) return;
     busy.current = true;
     setRunning(true);
@@ -132,9 +155,9 @@ function usePropose(onPropose: ComposerProps['onPropose'], draft: DraftState) {
     // Each submit starts with no refusals, so `refused` only holds the latest answer.
     setRefused({});
     draft.hold();
-    const outcome = await onPropose(values).catch(() => 'failed' as const);
-    // A Proposal that was queued leaves this screen, so the button stays disabled.
-    if (outcome === 'proposed') return;
+    const outcome = await send(values).catch(() => 'failed' as const);
+    // What was queued leaves this screen, so the button stays disabled.
+    if (outcome === 'proposed' || outcome === 'added') return;
     draft.resume();
     busy.current = false;
     setRunning(false);
@@ -211,7 +234,7 @@ interface ComposerFormProps {
 
 function ComposerForm({ state, atom, section, drafts, onPropose }: ComposerFormProps) {
   const draft = useDraft(drafts, atom.id, startOf(state, atom));
-  const { run, running, failed, refused } = usePropose(onPropose, draft);
+  const { run, running, failed, refused } = useSend(onPropose, draft);
   const form = useRef<HTMLFormElement>(null);
   const [said, setSaid] = useState('');
   const { values } = draft;
@@ -262,24 +285,130 @@ function ComposerForm({ state, atom, section, drafts, onPropose }: ComposerFormP
   );
 }
 
+interface VersionFormProps {
+  readonly state: GroupState;
+  readonly atom: Atom;
+  readonly section: number;
+  readonly proposal: Proposal;
+  readonly drafts: GroupDrafts;
+  readonly onAddVersion: ComposerProps['onAddVersion'];
+}
+
 /**
- * The composer (`#/g/{groupId}/propose/{atomId}`; spec §8): a title, a why,
- * the section's new text in Write and Preview tabs (prefilled with the current
- * text), and a discussion link (prefilled with the group's latest one). What
- * is typed is kept as a private draft on this device until it is proposed or
- * discarded. Submitting queues one `proposal`. Only someone who may propose
- * sees the form (`can()`).
+ * "Add your version" (ADR-0004): the new text alone, for the section's open
+ * Proposal, starting from the section as it reads now. Its draft is kept
+ * under the Proposal, apart from any Proposal drafted for the section.
  */
-export function Composer({ state, me, atomId, drafts, onPropose }: ComposerProps) {
+function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: VersionFormProps) {
+  const draft = useDraft(drafts, proposal.id, versionStartOf(atom));
+  const { run, running, failed, refused } = useSend(onAddVersion, draft);
+  const form = useRef<HTMLFormElement>(null);
+  const [said, setSaid] = useState('');
+  const { values } = draft;
+  // The draft is read before the form shows, so nothing typed is ever replaced by it.
+  if (values === null) return null;
+  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void run({ proposal: proposal.id, text: values.text });
+  };
+  const discard = () => {
+    draft.discard();
+    setSaid(messages.composer.discarded);
+    form.current?.querySelector<HTMLTextAreaElement>('textarea[name="text"]')?.focus();
+  };
+  const groupId = state.group ?? '';
+  return (
+    <main className="shell">
+      <BackLink
+        to={{ name: 'proposal', groupId, proposalId: proposal.id }}
+        label={proposal.title}
+      />
+      <PageHeader
+        title={messages.composer.versionTitle}
+        pageTitle={messages.composer.versionPageTitle}
+      />
+      <p className="lede">{messages.composer.versionLede}</p>
+      <CurrentText atom={atom} section={section} />
+      {draft.restored ? <p className="draft-note">{messages.composer.draftRestored}</p> : null}
+      <Form ref={form} className="form" onSubmit={submit} validationErrors={refused}>
+        <MarkdownField
+          name="text"
+          label={messages.composer.versionLabel}
+          hint={messages.composer.versionHint}
+          value={values.text}
+          onChange={(text) => {
+            setSaid('');
+            draft.update({ ...values, text });
+          }}
+          validate={versionCheck(atom.text, proposal)}
+          isRequired
+          preview={preview}
+        />
+        <p className="caption">{messages.composer.versionVisibility}</p>
+        {failed ? (
+          <p role="alert" className="form-error">
+            {messages.composer.versionFailed}
+          </p>
+        ) : null}
+        <div className="row form-actions">
+          <Button type="submit" className="button button-primary" isDisabled={running}>
+            {messages.composer.versionSubmit}
+          </Button>
+          {draft.changed ? (
+            <Button className="button button-quiet" isDisabled={running} onPress={discard}>
+              {messages.composer.discard}
+            </Button>
+          ) : null}
+        </div>
+        <p role="status" className="status">
+          {said}
+        </p>
+      </Form>
+    </main>
+  );
+}
+
+/**
+ * The composer (`#/g/{groupId}/propose/{atomId}`; spec §8). On a section with
+ * no open Proposal: a title, a why, the section's new text in Write and
+ * Preview tabs (prefilled with the current text), and a discussion link
+ * (prefilled with the group's latest one), and submitting queues one
+ * `proposal`. On a section whose Proposal is open, "Add your version": the
+ * text alone, and submitting queues one `version`. A full ballot takes no
+ * more. `composeOption` decides which, as it does for the fold. What is typed
+ * is kept as a private draft on this device until it is sent or discarded.
+ * Only someone who may propose sees a form (`can()`).
+ */
+export function Composer(props: ComposerProps) {
+  const { state, me, atomId, drafts } = props;
   const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
   const atom = state.atoms[index];
+  const { composer } = messages;
   if (atom === undefined) {
-    const { missingTitle, missing } = messages.composer;
-    return <Unavailable state={state} title={missingTitle} text={missing} />;
+    return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
   if (!can(state, me, 'propose')) {
-    const { notAllowedTitle, notAllowed } = messages.composer;
-    return <Unavailable state={state} title={notAllowedTitle} text={notAllowed} />;
+    return (
+      <Unavailable state={state} title={composer.notAllowedTitle} text={composer.notAllowed} />
+    );
+  }
+  const open = openProposalOn(state, atom.id);
+  const option = composeOption(state, atom.id);
+  if (option === 'ballot-full') {
+    return <Unavailable state={state} title={composer.fullTitle} text={composer.full} />;
+  }
+  if (open !== undefined) {
+    return (
+      <VersionForm
+        key={open.id}
+        state={state}
+        atom={atom}
+        section={index + 1}
+        proposal={open}
+        drafts={drafts}
+        onAddVersion={props.onAddVersion}
+      />
+    );
   }
   return (
     <ComposerForm
@@ -288,7 +417,7 @@ export function Composer({ state, me, atomId, drafts, onPropose }: ComposerProps
       atom={atom}
       section={index + 1}
       drafts={drafts}
-      onPropose={onPropose}
+      onPropose={props.onPropose}
     />
   );
 }
