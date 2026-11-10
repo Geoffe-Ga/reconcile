@@ -406,6 +406,7 @@ describe('vector files', () => {
     'removal-suspension-none',
     'removal-suspension-early-fail',
     'removal-suspension-opened-before',
+    'removal-suspension-opened-before-closes-early',
   ])('include the removal vector "%s" (#115)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });

@@ -150,6 +150,17 @@ describe('shareableTitle and chatDetails', () => {
     expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
     expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Ben');
   });
+
+  it('never offers a removal’s title, the most sensitive text a group holds (#115)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.proposeRemoval('ana', 'Cal', { title: 'Remove Cal' });
+    const [folded] = log.state().proposals;
+    if (folded === undefined) throw new Error('Expected the removal.');
+
+    expect(shareableTitle(folded)).toBeNull();
+    expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
+    expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Cal');
+  });
 });
 
 describe('botNotice: what the chat bot posts (#119)', () => {

@@ -366,7 +366,7 @@ describe('a removal and the relay backup (#97)', () => {
       records: [record],
       cursor: held.cursor + 1,
       relayNow: START + 1,
-      instance: held.instance,
+      instance: held.instance ?? never(),
       lastSyncAt: TS,
     };
     await device.store.applyPull(groupId, pull, (bytes) => parseRecord(bytes)?.id ?? null);

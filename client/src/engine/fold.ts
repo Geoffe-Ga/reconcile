@@ -685,19 +685,23 @@ function applyRemovalProposal(
     versions: [{ id: at.id, author, text: '' }],
   };
   draft.proposals.push(proposal);
-  extendSuspension(draft, member, proposal);
+  // The suspension of them running now, if any, lasts until this vote closes.
+  extendSuspension(draft, proposal, (s) => s.member === member && draft.at < s.until);
   return true;
 }
 
 /**
- * Keeps the running suspension of `person`, if any, until removal `proposal`
- * closes (ADR-0059): at its deadline when it opens, and at its early close
- * once one comes.
+ * Keeps the suspension `which` picks, if any, until removal `proposal` closes
+ * (ADR-0059): the one running when the removal opens, to its deadline, and
+ * then the one it extended, to its early close once one comes. A suspension
+ * that starts while a removal is open is never tied to it.
  */
-function extendSuspension(draft: Draft, person: string, proposal: OpenProposal): void {
-  const index = draft.suspensions.findIndex(
-    (s) => s.removal === proposal.id || (s.member === person && draft.at < s.until),
-  );
+function extendSuspension(
+  draft: Draft,
+  proposal: OpenProposal,
+  which: (suspension: Suspension) => boolean,
+): void {
+  const index = draft.suspensions.findIndex(which);
   const suspension = draft.suspensions[index];
   if (suspension !== undefined) {
     draft.suspensions[index] = extendedBy(suspension, draft.rules, proposal);
@@ -855,8 +859,7 @@ function applyVote(draft: Draft, body: VoteBody, author: string, at: Receipt): b
   proposal.ballots = [...proposal.ballots.filter((b) => b.voter !== author), ballot];
   if (everyoneHasScored(proposal)) {
     proposal.closedAt = at.received;
-    if (proposal.target.kind === 'remove')
-      extendSuspension(draft, proposal.target.member, proposal);
+    extendSuspension(draft, proposal, (s) => s.removal === proposal.id);
   }
   return true;
 }
