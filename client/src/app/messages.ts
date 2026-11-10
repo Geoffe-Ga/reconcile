@@ -343,14 +343,31 @@ export const messages = {
   },
   tell: {
     action: 'Tell your group',
-    hint: 'Shares one line saying a vote is open and when it ends, with Reconcile’s address. It doesn’t say what the vote is about.',
-    /** The line shared after proposing; the deadline is the only thing that changes. */
-    proposal: (day: string) => `I proposed a change in Reconcile. Voting ends ${day}.`,
-    /** The line shared after adding a version. */
-    version: (day: string) => `I added a version in Reconcile. Voting ends ${day}.`,
+    /** Over the message Tell your group shares, which shows beneath it as it will read. */
+    hint: 'Shares this message and Reconcile’s address:',
+    /** Adds the Proposal's title to the message, for one share; it starts unticked every time. */
+    includeTitle: 'Include the title',
     shared: 'Shared.',
     copied: 'Copied. Paste it into your group’s chat.',
     blocked: 'Sharing and copying are both blocked here. Tell your group in your chat instead.',
+  },
+  /**
+   * The ready-made chat messages (#113; ADR-0074, Discussion bridge), one for
+   * each moment of a vote. Each first sentence ends with `end`: a period, or
+   * the quoted title when someone ticks Include the title (./chatMessages.ts).
+   * The open lines' only other variable is the day voting ends.
+   */
+  chat: {
+    open: (end: string, day: string) =>
+      `A new Proposal is open in Reconcile${end} Voting ends ${day}.`,
+    version: (end: string, day: string) =>
+      `I added a version in Reconcile${end} Voting ends ${day}.`,
+    closing: (end: string) => `A vote closes within a day in Reconcile${end}`,
+    result: (end: string) => `A vote has finished in Reconcile${end}`,
+    /** How a first sentence ends with no title. */
+    untitled: '.',
+    /** How it ends with the title, such as `: "Quiet hours".` */
+    titled: (title: string) => `: "${title}".`,
   },
   decided: {
     title: 'Decided',

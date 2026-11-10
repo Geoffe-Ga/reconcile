@@ -1,19 +1,16 @@
 /**
- * Sharing out of the app (#77; docs/spec/phase-1-spec.md §9, "Shares carry no
- * content"): Tell your group's line, and the one way it leaves the device.
+ * Sharing out of the app (#77, #113; docs/spec/phase-1-spec.md §9, "Shares
+ * carry no content"): Tell your group's message, and the one way it leaves
+ * the device.
  *
- * What's shared goes into third-party chats, so it is fixed copy whose only
- * variable is a deadline, formatted on the device, and the app's address,
- * `location.origin + '/'`. It never carries a title, Document text, a group
- * name, a link fragment or a secret, and Web Share never gets a `title`,
- * because some apps use it as a subject line.
+ * What's shared goes into third-party chats, so it is one of the fixed
+ * messages in ./chatMessages.ts, whose only variables are a deadline,
+ * formatted on the device, and a title the person chose to include for that
+ * one share, and the app's address, `location.origin + '/'`. It never carries
+ * Document text, a group name, a member's name, a link fragment or a secret,
+ * and Web Share never gets a `title`, because some apps use it as a subject line.
  */
-import type { Proposal } from '../engine/fold';
-import { formatDay } from './format';
-import { messages } from './messages';
-
-/** Which line Tell your group offers: after proposing, or after adding a version. */
-export type TellKind = 'proposal' | 'version';
+import { type ChatDetails, type ChatMoment, chatMessage } from './chatMessages';
 
 /** What a share carries: text and an address, and nothing else. */
 export interface SharePayload {
@@ -35,35 +32,14 @@ export interface ShareTargets {
   readonly copyText: (text: string) => Promise<void>;
 }
 
-/**
- * Tell your group's line: "I proposed a change in Reconcile. Voting ends Fri
- * 14 Nov.", or "I added a version…". `deadline` is a relay minute, dated in
- * the device's time zone unless a test names one.
- */
-export function tellText(kind: TellKind, deadline: number, timeZone?: string): string {
-  return messages.tell[kind](formatDay(deadline, timeZone));
-}
-
-/** What Tell your group shares: its line, and the app's address with nothing after the `/`. */
-export function tellPayload(
-  kind: TellKind,
-  deadline: number,
+/** What Tell your group shares at `moment`: its message, and the app's address with nothing after the `/`. */
+export function chatPayload(
+  moment: ChatMoment,
+  details: ChatDetails,
   origin: string,
   timeZone?: string,
 ): SharePayload {
-  return { text: tellText(kind, deadline, timeZone), url: `${origin}/` };
-}
-
-/**
- * The line Tell your group offers `me` on `proposal`: `proposal` when they
- * proposed it, `version` when they added a version to it, and null otherwise.
- */
-export function tellKind(
-  proposal: Pick<Proposal, 'author' | 'versions'>,
-  me: string,
-): TellKind | null {
-  if (proposal.author === me) return 'proposal';
-  return proposal.versions.some((version) => version.author === me) ? 'version' : null;
+  return { text: chatMessage(moment, details, timeZone), url: `${origin}/` };
 }
 
 /**
