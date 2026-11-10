@@ -8,9 +8,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createGroup, leaveGroup } from '../app/actions';
 import { base64url } from '../crypto/base64url';
 import { xchachaSeal } from '../crypto/seal';
+import { LEVELS } from '../engine/capabilities';
 import { type EventBodies, type EventType, signEvent } from '../engine/event';
 import { DAY_MINUTES } from '../engine/rules';
 import { createPushRelay } from '../net/push';
@@ -25,12 +25,14 @@ import {
   TEST_PUSH_KEY,
 } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { FOUNDING, members } from '../test/members';
+import { FOUNDING, foundAnother, members } from '../test/members';
 import { mailboxAt, type MailboxAt } from './mailbox';
 import { createPush, RENEW_MINUTES, REST_MS } from './push';
 import { createSync } from './sync';
 
 freshIndexedDBPerTest();
+
+const [MEMBER] = LEVELS;
 
 const opened: TestDevice[] = [];
 
@@ -69,6 +71,15 @@ async function say(device: TestDevice, groupId: string, draft: Said): Promise<st
   await device.services.store.enqueue(groupId, event.record);
   await device.services.sync.syncOnce();
   return event.id;
+}
+
+/** `device` queues its signed leave of `groupId` and marks the group leaving, as Leave does, without syncing. */
+async function queueLeave(device: TestDevice, groupId: string): Promise<void> {
+  const held = await device.services.store.getGroup(groupId);
+  if (held === undefined) throw new Error('Expected the group.');
+  const body = {};
+  const leave = signEvent(held.signingKey, { type: 'leave', group: groupId, ts: TEST_NOW, body });
+  await device.services.store.markLeaving(groupId, leave.record);
 }
 
 /** `device` proposes a change to the first section of `groupId` and syncs. */
@@ -190,9 +201,7 @@ describe('turning push on for a group (#99)', () => {
 
   it('gives a second group the same endpoint, from the one subscription (ADR-0075 §2)', async () => {
     const { fake, ana, groupId, mailbox } = await group();
-    const created = await createGroup(ana.services, { ...FOUNDING, yourName: 'Ana', chat: null });
-    if (created.outcome !== 'created') throw new Error('Expected a second group.');
-    await ana.services.sync.syncOnce();
+    const created = { groupId: await foundAnother(ana, 'Ana') };
     const second = await ana.services.store.getGroup(created.groupId);
     if (second === undefined) throw new Error('Expected the second group.');
 
@@ -207,9 +216,7 @@ describe('turning push on for a group (#99)', () => {
 
   it('keeps the subscription while another group is still on', async () => {
     const { ana, groupId } = await group();
-    const created = await createGroup(ana.services, { ...FOUNDING, yourName: 'Ana', chat: null });
-    if (created.outcome !== 'created') throw new Error('Expected a second group.');
-    await ana.services.sync.syncOnce();
+    const created = { groupId: await foundAnother(ana, 'Ana') };
     await ana.services.push.turnOn(groupId);
     await ana.services.push.turnOn(created.groupId);
 
@@ -572,15 +579,7 @@ describe('Leave (#77, #99)', () => {
     });
 
     // Queued straight in the store: Leave's own sync would race this one.
-    const held = await store.getGroup(groupId);
-    if (held === undefined) throw new Error('Expected the group.');
-    const leave = signEvent(held.signingKey, {
-      type: 'leave',
-      group: groupId,
-      ts: TEST_NOW,
-      body: {},
-    });
-    await store.markLeaving(groupId, leave.record);
+    await queueLeave(ana, groupId);
     await sync.syncOnce();
 
     expect(order).toEqual(['delete', 'purge']);
@@ -596,7 +595,7 @@ describe('Leave (#77, #99)', () => {
 
   it('sends nothing for a group whose push was off', async () => {
     const { fake, ana, groupId } = await group();
-    await leaveGroup(ana.services, groupId);
+    await queueLeave(ana, groupId);
     const before = fake.requests.length;
 
     await ana.services.sync.syncOnce();
@@ -630,7 +629,7 @@ describe('wakes, as each device posts its outbox (#99)', () => {
     await say(ana, groupId, { type: 'vote', body: { proposal, scores: { [proposal]: 4 } } });
     const closing = wakes(from);
     from = fake.requests.length;
-    await say(ben, groupId, { type: 'level', body: { level: 'member' } });
+    await say(ben, groupId, { type: 'level', body: { level: MEMBER } });
     const level = wakes(from);
 
     // Genesis and the join, then each later event: Ana's and Ben's push are both off throughout.

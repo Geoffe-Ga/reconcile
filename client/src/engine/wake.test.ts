@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { LEVELS } from './capabilities';
 import { type EventDraft, type GroupEvent, parseRecord } from './event';
 import { authorOf, signedAs } from '../test/keys';
 import { deadlineOf, groupLog } from '../test/votes';
 import { wakeFor } from './wake';
+
+const [MEMBER, , CO_CREATOR] = LEVELS;
 
 /** The event `name` signs, as the outbox holds it. */
 function eventOf(name: string, draft: EventDraft): GroupEvent {
@@ -79,7 +82,7 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
   it('doesn’t wake for a last ballot the fold would ignore: a voter who stepped down to Member', () => {
     const { log, proposal, vote } = openProposal();
     log.vote('Ana', proposal, 4);
-    log.level('Ben', 'member');
+    log.level('Ben', MEMBER);
 
     expect(wakeFor(log.state(), vote('Ben', { [proposal]: 3 }))).toBe(false);
   });
@@ -117,8 +120,8 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
     };
     const others: EventDraft[] = [
       { type: 'genesis', group: '', ts: 0, body: genesis },
-      { type: 'join', group, ts: 0, body: { name: 'Cal', level: 'co-creator' } },
-      { type: 'level', group, ts: 0, body: { level: 'member' } },
+      { type: 'join', group, ts: 0, body: { name: 'Cal', level: CO_CREATOR } },
+      { type: 'level', group, ts: 0, body: { level: MEMBER } },
       { type: 'version', group, ts: 0, body: { proposal, text: 'Quiet at nine.' } },
       { type: 'leave', group, ts: 0, body: {} },
       { type: 'chat-posted', group, ts: 0, body: { proposal, moment: 'open', nonce: 'n' } },
