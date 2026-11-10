@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type EventDraft, type GroupEvent, parseRecord } from './event';
-import { signedAs } from '../test/keys';
+import { authorOf, signedAs } from '../test/keys';
 import { deadlineOf, groupLog } from '../test/votes';
 import { wakeFor } from './wake';
 
@@ -74,6 +74,36 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
 
     expect(wakeFor(closed, vote('Ana', { [proposal]: 4 }))).toBe(false);
     expect(wakeFor(log.state(), vote('Ana', { unknown: 4 }))).toBe(false);
+  });
+
+  it('doesn’t wake for a last ballot the fold would ignore: a voter who stepped down to Member', () => {
+    const { log, proposal, vote } = openProposal();
+    log.vote('Ana', proposal, 4);
+    log.level('Ben', 'member');
+
+    expect(wakeFor(log.state(), vote('Ben', { [proposal]: 3 }))).toBe(false);
+  });
+
+  it('counts only the eligible set: a newcomer still earning voting rights neither closes nor wakes (#101)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.minute += 10;
+    // Dee joins once the bootstrap's 3 voting members are in, so she waits for vouches.
+    log.join('Dee');
+    const proposal = log.propose('Ana');
+    log.vote('Ana', proposal, 4);
+    log.vote('Ben', proposal, 4);
+    const by = (name: string) =>
+      eventOf(name, {
+        type: 'vote',
+        group: log.group,
+        ts: 0,
+        body: { proposal, scores: { [proposal]: 3 } },
+      });
+    const state = log.state();
+
+    expect(state.proposals[0]?.eligible).not.toContain(authorOf('dee'));
+    expect(wakeFor(state, by('Dee'))).toBe(false);
+    expect(wakeFor(state, by('Cal'))).toBe(true);
   });
 
   it('doesn’t wake for a join, a genesis, a level, a version, a leave or anything else', () => {

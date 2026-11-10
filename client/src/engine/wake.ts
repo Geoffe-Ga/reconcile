@@ -11,17 +11,21 @@
  * Every device marks wakes, whether or not its own push is on: the wake is
  * for the others' phones.
  */
+import { can } from './capabilities';
 import { type GroupEvent, parseRecord } from './event';
 import { everyoneHasScored, type GroupState } from './fold';
 
 /**
  * True when this device's fold, standing at `before`, would close the open
- * Proposal that `vote` scores once `vote` joins it: after it, every eligible
- * member's latest ballot scores every version.
+ * Proposal that `vote` scores once `vote` joins it: the voter holds `vote`
+ * now, as the fold requires of a ballot, and after it every eligible
+ * member's latest ballot scores every version. Eligibility is the
+ * Proposal's own, so a newcomer still earning voting rights (#101) never
+ * counts.
  */
 function closesEarly(before: GroupState, vote: Extract<GroupEvent, { type: 'vote' }>): boolean {
   const proposal = before.proposals.find((p) => p.id === vote.body.proposal);
-  if (proposal === undefined || proposal.final) return false;
+  if (proposal === undefined || proposal.final || !can(before, vote.author, 'vote')) return false;
   const ballot = { voter: vote.author, scores: vote.body.scores };
   const ballots = [...proposal.ballots.filter((b) => b.voter !== vote.author), ballot];
   return everyoneHasScored({ ...proposal, ballots });
