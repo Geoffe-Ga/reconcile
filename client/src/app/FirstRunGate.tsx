@@ -22,7 +22,7 @@ import type { Persistence } from '../platform/persist';
 import { type Arrival, InstallGuide } from '../screens/InstallGuide';
 import { PilotNotice } from '../screens/PilotNotice';
 import type { InviteLookup } from './actions';
-import { type Invite, parseInvitePayload } from './invite';
+import { parseInvitePayload } from './invite';
 import { parseRoute, replaceRoute } from './router';
 
 /** What first run reads and records on this device, built once by `main.tsx`. */
@@ -37,8 +37,8 @@ export interface FirstRunServices {
 
 /** What the app opens with. */
 export interface OpenedApp {
-  /** An invite link first run took out of the address bar, for Join. */
-  readonly heldInvite: Invite | null;
+  /** The seed of an invite link first run took out of the address bar, for Join. */
+  readonly heldSeed: Uint8Array | null;
   /** What the browser said about keeping the data, or null until it answers. */
   readonly persistence: Persistence | null;
 }
@@ -49,18 +49,18 @@ export interface FirstRunGateProps extends FirstRunServices {
   readonly origin: string;
   /** Puts text on the clipboard, for the guide's Copy. */
   readonly copyText: (text: string) => Promise<void>;
-  /** Reads an invite's mailbox, for the guide's preview. */
-  readonly lookup: (invite: Invite) => Promise<InviteLookup>;
+  /** Opens an invite's envelope, for the guide's preview (#73's `lookupInvite`). */
+  readonly lookup: (seed: Uint8Array) => Promise<InviteLookup>;
   /** The app, once first run is through. */
   readonly children: (opened: OpenedApp) => ReactNode;
 }
 
-/** How the page was opened, read from its `#/join/{payload}` route. */
+/** How the page was opened, read from its `#join/{seed}` route. */
 function arrivalFrom(hash: string): Arrival {
   const route = parseRoute(hash);
   if (route.name !== 'join' || route.payload === null) return { kind: 'plain' };
-  const invite = parseInvitePayload(route.payload);
-  return invite === null ? { kind: 'damaged' } : { kind: 'invite', invite };
+  const seed = parseInvitePayload(route.payload);
+  return seed === null ? { kind: 'damaged' } : { kind: 'invite', seed };
 }
 
 /** What first run holds: how the page was opened, and a count that moves with each new link. */
@@ -156,6 +156,6 @@ export function FirstRunGate(props: FirstRunGateProps) {
     };
     return <PilotNotice onAccept={accept} />;
   }
-  const heldInvite = !acceptedAtLaunch && arrival.kind === 'invite' ? arrival.invite : null;
-  return children({ heldInvite, persistence });
+  const heldSeed = !acceptedAtLaunch && arrival.kind === 'invite' ? arrival.seed : null;
+  return children({ heldSeed, persistence });
 }

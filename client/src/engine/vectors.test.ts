@@ -28,6 +28,7 @@ describe('vector files', () => {
       'bars-ordinary-pairs.json',
       'fold.json',
       'home-two-open-proposals.json',
+      'invite.json',
       'keys.json',
       'leave-ballots.json',
       'leave-eligibility.json',
@@ -67,6 +68,7 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'fold',
       'fold',
       'fold',
       'keys',
@@ -276,6 +278,20 @@ describe('vector files', () => {
     'a narrow from a steward facing an open recall is ignored',
     "a steward closes the front door at once the same way, and the chat bot isn't touched",
   ])('include the fold vector "%s"', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    "invite-token-member: a token a member signed over the group id names them as the joiner's inviter",
+    "invite-token-non-member: a token from someone who isn't a member gives a valid join with no inviter",
+    "invite-token-other-group: a member's token over another group's id gives a valid join with no inviter",
+    "invite-token-event-tag: a member's signature over the group id under the event tag gives a valid join with no inviter",
+    'invite-token-forged: a token naming a member but signed by someone else gives a valid join with no inviter',
+    'invite-token-joined-later: a token from someone who joins after the joiner names no one',
+    'invite-token-chain: a member who joined by invite names the next joiner',
+    'invite-token-malformed: a token of the wrong shape gives a valid join with no inviter',
+    'invite-token-none: a join with no token, as the tracer made, names no inviter',
+  ])('include the invite vector "%s"', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 });

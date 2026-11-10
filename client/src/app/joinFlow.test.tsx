@@ -8,9 +8,10 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { deriveSealKey } from '../crypto/groupKeys';
+import { deriveInviteKey } from '../crypto/invite';
 import { base64url } from '../engine/event';
 import type { FakeRequest } from '../test/fakeRelay';
-import { createFakeRelay } from '../test/fakeRelay';
+import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { TEST_ORIGIN, type TestDevice, testDevice } from '../test/appServices';
 import { App } from './App';
@@ -62,6 +63,23 @@ function sent(request: FakeRequest): string[] {
   return [request.url, body, bodyB64];
 }
 
+/** Fails if any request's URL or body spells the group secret, the invite seed or a key from either. */
+function expectNoLeaks(
+  fake: FakeRelay,
+  secret: Uint8Array = new Uint8Array(32),
+  seed: Uint8Array | null = null,
+): void {
+  const invited = seed ?? new Uint8Array(32);
+  const keys = [secret, deriveSealKey(secret), invited, deriveInviteKey(invited)];
+  const leaks = keys.flatMap(spellings);
+  expect(fake.requests.length).toBeGreaterThan(3);
+  for (const request of fake.requests) {
+    for (const text of sent(request)) {
+      for (const leak of leaks) expect(text).not.toContain(leak);
+    }
+  }
+}
+
 describe('create, invite by link, join, and read the Document', () => {
   it('lets B join A’s group from the link and read the same Document, with both names', async () => {
     const user = userEvent.setup();
@@ -75,22 +93,32 @@ describe('create, invite by link, join, and read the Document', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),
     ).toBeVisible();
+    expect(
+      screen.getByText(
+        'Anyone who opens this link in the next 2 days can read everything this group has written and voted on, and what comes next. Send it directly to the people you’re inviting.',
+      ),
+    ).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Copy invite link' }));
+    expect(await screen.findByRole('textbox', { name: 'Invite link' })).toHaveValue(
+      ana.copied[0] ?? '',
+    );
     const [link = ''] = ana.copied;
-    expect(screen.getByRole('textbox', { name: 'Invite link' })).toHaveValue(link);
     a.unmount();
 
-    // The link puts the group secret after #, and nowhere else; the mailbox derives from it.
-    const invite = parseInviteLink(link);
-    expect(link).toMatch(/^https:\/\/reconcile\.test\/#\/join\/[A-Za-z0-9_-]{43}$/);
-    expect(link.startsWith(`${TEST_ORIGIN}/#/join/`)).toBe(true);
+    // The link puts only the invite seed after #; the envelope holds the group secret.
+    const seed = parseInviteLink(link);
+    expect(link).toMatch(/^https:\/\/reconcile\.test\/#join\/[A-Za-z0-9_-]{43}$/);
+    expect(link.startsWith(`${TEST_ORIGIN}/#join/`)).toBe(true);
 
-    // B opens the link: the secret leaves the address bar before anything else.
+    // B opens the link: the seed leaves the address bar before anything else.
     window.history.replaceState(null, '', new URL(link).hash);
     render(<App services={ben.services} />);
     expect(window.location.hash).toBe('#/join');
     await user.type(await screen.findByRole('textbox', { name: 'Your name' }), 'Ben');
     expect(screen.getByRole('heading', { level: 1, name: 'Riverside Tenants' })).toBeVisible();
+    expect(screen.getByText(/^From/)).toHaveTextContent('From Ana’s invite');
+    expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
+    expect(await ben.services.store.listGroups()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Join group' }));
 
     // B lands on Group home once the join is back from the relay: both names, and B a
@@ -101,7 +129,7 @@ describe('create, invite by link, join, and read the Document', () => {
         within(people)
           .getAllByRole('listitem')
           .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator']);
+      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Collaborator']);
     });
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',
@@ -120,15 +148,8 @@ describe('create, invite by link, join, and read the Document', () => {
     const anaGroup = await ana.services.store.getGroup(groupId);
     expect(anaGroup?.log).toHaveLength(2);
 
-    // No request ever carried the secret or the seal key, in any spelling, in its URL or body.
-    expect(invite).not.toBeNull();
-    const secret = invite?.secret ?? new Uint8Array();
-    const leaks = [...spellings(secret), ...spellings(deriveSealKey(secret))];
-    expect(fake.requests.length).toBeGreaterThan(3);
-    for (const request of fake.requests) {
-      for (const text of sent(request)) {
-        for (const leak of leaks) expect(text).not.toContain(leak);
-      }
-    }
+    // No request ever carried the secret, the seed or a key, in any spelling, in its URL or body.
+    expect(seed).not.toBeNull();
+    expectNoLeaks(fake, anaGroup?.secret, seed);
   });
 });

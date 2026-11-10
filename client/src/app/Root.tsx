@@ -7,7 +7,6 @@ import { useCallback } from 'react';
 import { lookupInvite } from './actions';
 import { App } from './App';
 import { FirstRunGate, type FirstRunServices } from './FirstRunGate';
-import type { Invite } from './invite';
 import type { AppServices } from './services';
 
 /** Props for {@link Root}. */
@@ -20,7 +19,7 @@ export interface RootProps {
 
 /** First run, then the app with whatever invite first run held. */
 export function Root({ services, firstRun }: RootProps) {
-  const lookup = useCallback((invite: Invite) => lookupInvite(services, invite), [services]);
+  const lookup = useCallback((seed: Uint8Array) => lookupInvite(services, seed), [services]);
   return (
     <FirstRunGate
       {...firstRun}
@@ -28,8 +27,8 @@ export function Root({ services, firstRun }: RootProps) {
       copyText={services.copyText}
       lookup={lookup}
     >
-      {({ heldInvite, persistence }) => (
-        <App services={services} initialInvite={heldInvite} persistence={persistence} />
+      {({ heldSeed, persistence }) => (
+        <App services={services} initialSeed={heldSeed} persistence={persistence} />
       )}
     </FirstRunGate>
   );

@@ -8,11 +8,10 @@
  * and HKDF is one-way, so the id tells it nothing about the secret or the key.
  * `vectors/derive.json` pins both derivations, so the labels can't drift.
  */
-import { hkdf } from '@noble/hashes/hkdf.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { randomBytes, utf8ToBytes } from '@noble/hashes/utils.js';
+import { randomBytes } from '@noble/hashes/utils.js';
 
 import { base64url } from './base64url';
+import { hkdf32 } from './hkdf';
 
 /** A group secret's length in bytes. */
 export const GROUP_SECRET_BYTES = 32;
@@ -22,12 +21,6 @@ export const MAILBOX_INFO = 'reconcile/v1/mailbox';
 
 /** The HKDF label of a group's seal key. */
 export const SEAL_KEY_INFO = 'reconcile/v1/seal-key';
-
-/** Every derivation's output length in bytes. */
-const OUTPUT_BYTES = 32;
-
-/** RFC 5869's empty salt, which HMAC treats as HashLen zero bytes. */
-const EMPTY_SALT = new Uint8Array(0);
 
 /** A new group secret: 32 bytes from the platform's CSPRNG (`crypto.getRandomValues`). */
 export function newGroupSecret(): Uint8Array<ArrayBuffer> {
@@ -39,7 +32,7 @@ function derive(secret: Uint8Array, info: string): Uint8Array<ArrayBuffer> {
   if (secret.length !== GROUP_SECRET_BYTES) {
     throw new RangeError('A group secret is 32 bytes.');
   }
-  return Uint8Array.from(hkdf(sha256, secret, EMPTY_SALT, utf8ToBytes(info), OUTPUT_BYTES));
+  return hkdf32(secret, info);
 }
 
 /**

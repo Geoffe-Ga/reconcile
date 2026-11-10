@@ -99,6 +99,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
       .fill(`${FIRST_ATOM}\n\n${SECOND_ATOM}`);
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
     const invite = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
 
     await ben.page.goto(invite);

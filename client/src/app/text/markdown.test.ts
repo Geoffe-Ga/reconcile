@@ -5,7 +5,14 @@ import { render } from '@testing-library/react';
 import { createElement, Fragment } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { MARKDOWN_PROTOCOLS, parseAtom, renderAtom, renderTokens, safeHref } from './markdown';
+import {
+  MARKDOWN_PROTOCOLS,
+  parseAtom,
+  plainText,
+  renderAtom,
+  renderTokens,
+  safeHref,
+} from './markdown';
 
 /** Renders walker output inside a div and returns the div. */
 function mount(nodes: ReturnType<typeof renderAtom>): HTMLElement {
@@ -154,5 +161,42 @@ describe('renderAtom', () => {
 
   it('formats through the shared instance by default', () => {
     expect(mount(renderAtom('*x*\n')).querySelector('em')).toHaveTextContent('x');
+  });
+});
+
+describe('plainText', () => {
+  it.each([
+    ['plain words', 'Quiet hours start at ten.\n', 'Quiet hours start at ten.'],
+    [
+      'emphasis and a link, keeping the words',
+      '**Quiet** hours, [see](https://x.org).',
+      'Quiet hours, see.',
+    ],
+    [
+      'a heading, then a paragraph, one line each',
+      '# Our aims\n\nWe keep it fair.',
+      'Our aims\nWe keep it fair.',
+    ],
+    ['a soft break as a space', 'one\ntwo', 'one two'],
+    ['a hard break as a line break', 'one\\\ntwo', 'one\ntwo'],
+    ['a list, one item a line', '- one\n- two', 'one\ntwo'],
+    ['inline code as its text', 'Use `npm ci`.', 'Use npm ci.'],
+    ['a code block as its text', '    let a = 1;', 'let a = 1;'],
+    ['entities decoded', 'Fish &amp; chips', 'Fish & chips'],
+    [
+      'raw HTML as the text it is',
+      '<b>bold</b> <script>x</script>',
+      '<b>bold</b> <script>x</script>',
+    ],
+    ['an image as its words, never a fetch', '![cat](https://x.org/c.png)', '!cat'],
+    [
+      'a javascript: link as its source, never a link',
+      '[x](javascript:alert(1))',
+      '[x](javascript:alert(1))',
+    ],
+    ['a rule as nothing', 'one\n\n---\n\ntwo', 'one\ntwo'],
+    ['blank text as nothing', '', ''],
+  ])('reads %s', (_label, text, plain) => {
+    expect(plainText(text)).toBe(plain);
   });
 });

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { inviteLink } from '../app/invite';
-import { newGroupSecret } from '../crypto/groupKeys';
+import { newInviteSeed } from '../crypto/invite';
 import { axeViolations } from '../test/axe';
 import { Start, type StartGroup } from './Start';
 
@@ -74,15 +74,15 @@ describe('Start', () => {
   it('opens a pasted invite link, trimmed, from Join with an invite link', async () => {
     const user = userEvent.setup();
     const onOpenInvite = vi.fn();
-    const invite = { secret: newGroupSecret() };
+    const seed = newInviteSeed();
     render(<Start groups={[]} onOpenInvite={onOpenInvite} />);
 
     await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
-    await user.paste(`  ${inviteLink('https://reconcile.example', invite)}\n`);
+    await user.paste(`  ${inviteLink('https://reconcile.example', seed)}\n`);
     await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
 
     expect(onOpenInvite).toHaveBeenCalledTimes(1);
-    expect(onOpenInvite.mock.calls[0]?.[0]).toMatchObject({ secret: invite.secret });
+    expect(Array.from(onOpenInvite.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
   });
 
   it('never reads the clipboard on its own', async () => {

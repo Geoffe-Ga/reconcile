@@ -1,27 +1,40 @@
 /**
- * What Create group, Join and Leave do (spec §7 and §8), apart from any screen.
+ * What Create group, Copy invite link, Join and Leave do (spec §7 and §8), apart
+ * from any screen.
  *
- * Each action signs one event with the engine, keeps its record in the
- * store's outbox, and asks the sync loop to send it at once. Create group and
- * Join each make a fresh keypair for that one group (ADR-0009), kept only with
- * its records. Create group also makes the group secret, which the mailbox
- * id and seal key derive from (spec §3). Folded state still comes only from
- * relay records, so a new group shows once its genesis is back from the relay.
+ * Create group and Join each sign one event with the engine, keep its record
+ * in the store's outbox, and ask the sync loop to send it at once. Each makes
+ * a fresh keypair for that one group (ADR-0009), kept only with its records.
+ * Create group also makes the group secret, which the mailbox id and seal key
+ * derive from (spec §3). Copy invite link posts a sealed envelope holding the
+ * secret and the whole log to a short-lived invite mailbox (#73), so a joiner
+ * sees everything the group has decided, even what the relay has purged.
+ * Folded state still comes only from relay records, so a new group shows once
+ * its genesis is back from the relay.
  */
 import { newGroupSecret } from '../crypto/groupKeys';
+import { inviteChannelOf, newInviteSeed, signInviteToken } from '../crypto/invite';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import type { Seal } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
-import { base64url, signEvent } from '../engine/event';
-import { fold, type LogRecord } from '../engine/fold';
+import { base64url, type InviteToken, signEvent } from '../engine/event';
+import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { displayName } from '../engine/names';
 import { DEFAULT_RULES } from '../engine/rules';
+import {
+  INVITE_TTL_DAYS,
+  type InvitePreview,
+  openEnvelope,
+  sealEnvelope,
+} from '../invite/envelope';
 import type { Relay } from '../net/relay';
-import type { Store } from '../store/db';
+import type { Me, Store } from '../store/db';
 import { eventIdOf } from '../store/eventId';
-import { channelOf, openRecords, type Sync } from '../store/sync';
-import type { Invite } from './invite';
+import type { Sync } from '../store/sync';
+import { inviteLink } from './invite';
+import { plainText } from './text/markdown';
 
 /** What the actions work with. */
 export interface Services {
@@ -88,12 +101,20 @@ export async function createGroup(
   return { outcome: 'created', groupId };
 }
 
-/** What an invite's mailbox held: the group's genesis details and the records read. */
+/** An opened invite: the group it admits to, its preview, and the history it carries. */
 export interface FoundGroup {
+  /** The group id: the id of the first valid genesis among the entries. */
   readonly groupId: string;
-  readonly name: string;
-  readonly title: string;
-  /** The opened records and the relay's cursor, time and instance, kept on Join. */
+  /** What the Join screen shows, as plain text. */
+  readonly preview: InvitePreview;
+  /** The group secret the envelope carried, kept on Join. */
+  readonly secret: Uint8Array;
+  /** The inviter's token, which the join carries. */
+  readonly token: InviteToken;
+  /**
+   * The envelope's entries, the highest seq among them, and the invite GET's
+   * relay time and instance: what Join keeps, so the Document shows at once.
+   */
   readonly page: {
     readonly records: readonly LogRecord[];
     readonly cursor: number;
@@ -109,56 +130,111 @@ export type InviteLookup =
   | { readonly kind: 'missing' }
   | { readonly kind: 'offline' };
 
+/** What the invite's preview shows of a group: its name, the inviter's, the title and the first section. */
+function previewOf(state: GroupState, me: Me): InvitePreview {
+  return {
+    groupName: state.name,
+    inviterName: displayName(state, me.author) ?? me.name,
+    documentTitle: state.title,
+    excerpt: plainText(state.atoms[0]?.text ?? ''),
+  };
+}
+
 /**
- * Reads the mailbox the invite's secret derives, and folds it to find the
- * group. Only the mailbox id goes to the relay; the secret stays on the device.
+ * Copy invite link's work (spec §7): a fresh seed, then the envelope (the
+ * group secret, a preview, this member's token and the relay-accepted log,
+ * never the outbox) sealed under the invite key and posted to the invite
+ * mailbox, kept {@link INVITE_TTL_DAYS} day. Returns the link only once every
+ * PUT has succeeded; otherwise it rejects, and no link exists to copy.
+ *
+ * @throws {Error} when the device isn't in the group or the relay can't be reached.
  */
-export async function lookupInvite(services: Services, invite: Invite): Promise<InviteLookup> {
-  const channel = channelOf(invite.secret);
+export async function makeInvite(
+  services: Services,
+  groupId: string,
+  origin: string,
+): Promise<string> {
+  const group = await services.store.getGroup(groupId);
+  if (group === undefined) throw new Error('No such group on this device.');
+  const seed = newInviteSeed();
+  const channel = inviteChannelOf(seed);
+  const sig = base64url(signInviteToken(group.signingKey, groupId));
+  const blobs = sealEnvelope(services.seal, channel, {
+    groupSecret: group.secret,
+    preview: previewOf(fold(group.log, group.relayNow), group.me),
+    token: { by: group.me.author, sig },
+    entries: group.log,
+  });
+  for (const blob of blobs) {
+    await services.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
+  }
+  return inviteLink(origin, seed);
+}
+
+/** The highest seq among `records`, or 0 for none. */
+function highestSeq(records: readonly LogRecord[]): number {
+  return records.reduce((highest, record) => Math.max(highest, record.seq), 0);
+}
+
+/**
+ * Opens the invite the seed names: reads every blob in its mailbox, opens
+ * the envelope, and folds its entries in memory to find the group. Only the
+ * invite mailbox id goes to the relay. Nothing is stored for a newcomer,
+ * while a device already in the group merges in the entries it lacks (#73).
+ * An empty mailbox (an expired link), a missing chunk, a blob that won't
+ * open, or entries holding no genesis all read as `missing`.
+ */
+export async function lookupInvite(services: Services, seed: Uint8Array): Promise<InviteLookup> {
+  const channel = inviteChannelOf(seed);
   let page;
   try {
     page = await services.relay.getBlobs(channel.mailbox, 0);
   } catch {
     return { kind: 'offline' };
   }
-  const records = openRecords(services.seal, channel, page.records);
-  const state = fold(records, page.now);
-  if (state.group === null) return { kind: 'missing' };
-  const groupId = state.group;
-  if ((await services.store.getGroup(groupId)) !== undefined) return { kind: 'joined', groupId };
-  const cursor = page.records.at(-1)?.seq ?? 0;
+  const blobs = page.records.map((record) => record.data);
+  const envelope = openEnvelope(services.seal, channel, blobs);
+  const groupId = envelope === null ? null : fold(envelope.entries, page.now).group;
+  if (envelope === null || groupId === null) return { kind: 'missing' };
+  if ((await services.store.getGroup(groupId)) !== undefined) {
+    await services.store.mergeLog(groupId, envelope.entries, eventIdOf);
+    return { kind: 'joined', groupId };
+  }
+  const { preview, groupSecret: secret, token, entries } = envelope;
+  const cursor = highestSeq(entries);
   return {
     kind: 'found',
     group: {
       groupId,
-      name: state.name,
-      title: state.title,
-      page: { records, cursor, relayNow: page.now, instance: page.instance },
+      preview,
+      secret,
+      token,
+      page: { records: entries, cursor, relayNow: page.now, instance: page.instance },
     },
   };
 }
 
 /**
  * Joins under `name`, at the involvement level the person chose, with a fresh
- * keypair for this group: keeps the group with the records the invite read, so
- * its Document shows at once, then queues the signed `join` and sends it.
+ * keypair for this group: keeps the group with the invite's secret and its
+ * whole history, read through the same dedupe sync uses, with the cursor at
+ * its highest seq, so the Document shows at once. Then queues the signed
+ * `join`, carrying the inviter's token, and sends it.
  */
 export async function joinGroup(
   services: Services,
-  invite: Invite,
   found: FoundGroup,
   name: string,
   level: Level,
 ): Promise<string> {
-  const { groupId, page } = found;
+  const { groupId, secret, token, page } = found;
   const keys = newSigningKeys();
   const join = signEvent(keys.secretKey, {
     type: 'join',
     group: groupId,
     ts: services.now(),
-    body: { name, level },
+    body: { name, level, token: { by: token.by, sig: token.sig } },
   });
-  const { secret } = invite;
   const me = { author: base64url(keys.publicKey), name };
   await services.store.addGroup({ groupId, secret, signingKey: keys.secretKey, me });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };

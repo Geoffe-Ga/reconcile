@@ -14,7 +14,9 @@
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
  *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
- *     Atom, and `"%ana"` stands for ana's public key in base64url.
+ *     Atom, and `"%ana"` stands for ana's public key in base64url. `{"$base64url": [bytes]}`
+ *     stands for those bytes in unpadded base64url, as invite.json's token signatures are
+ *     written, so no high-entropy text sits in the repository.
  *   - The relay record is `publicKey ‖ signature ‖ event bytes` (spec §3), signed by the key
  *     `by` names, or else by the key the event's `"%name"` author names. `key` (hex, or
  *     `"%name"`) and `sig` (hex) replace those fields, and `flip: {in, at}` flips the low bit of
@@ -24,6 +26,7 @@
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
  *     deep-equal.
+ * - invite.json (#73) is a fold file: joins carrying invite tokens, each signed outside @noble.
  * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
@@ -125,11 +128,23 @@ function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
   return id + String(match[2]);
 }
 
-/** Resolves every `@n` and `%name` reference inside a JSON value, in keys as well as values. */
+/** The bytes of `{"$base64url": [bytes]}`, which stands for their unpadded base64url, or null. */
+function base64urlBytes(value: object): number[] | null {
+  const bytes: unknown =
+    Object.entries(value).length === 1 ? Reflect.get(value, '$base64url') : null;
+  return Array.isArray(bytes) && bytes.every((byte) => typeof byte === 'number') ? bytes : null;
+}
+
+/**
+ * Resolves every `@n` and `%name` reference inside a JSON value, in keys as
+ * well as values, and writes each `{"$base64url": [bytes]}` as its text.
+ */
 export function resolve(value: unknown, ids: ReadonlyMap<number, string>): unknown {
   if (typeof value === 'string') return resolveRef(value, ids);
   if (Array.isArray(value)) return value.map((item: unknown) => resolve(item, ids));
   if (typeof value === 'object' && value !== null) {
+    const bytes = base64urlBytes(value);
+    if (bytes !== null) return base64url(Uint8Array.from(bytes));
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [resolveRef(key, ids), resolve(item, ids)]),
     );

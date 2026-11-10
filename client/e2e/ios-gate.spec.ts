@@ -61,9 +61,11 @@ async function expectInviteGuide(page: Page, inviteLink: string): Promise<void> 
   await expect(heading(page, 'Add Reconcile to your Home Screen')).toBeVisible();
   const preview = page.getByRole('region', { name: GROUP.name });
   await expect(preview.getByText(GROUP.title)).toBeVisible();
+  await expect(preview.getByText(`From ${GROUP.founder}’s invite`)).toBeVisible();
+  await expect(preview.getByText(GROUP.atoms[0] ?? '')).toBeVisible();
   await expect(preview.getByRole('textbox', { name: 'Your invite link' })).toHaveValue(inviteLink);
   await expect(preview.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
-  // The invite's secret has left the address bar.
+  // The invite's seed has left the address bar.
   expect(page.url()).toBe(new URL('/', inviteLink).href);
 }
 
