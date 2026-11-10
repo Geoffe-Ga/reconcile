@@ -226,15 +226,22 @@ describe('answerFor', () => {
 
   it('never answers anything under /v1 from the cache, for any method or mode', () => {
     const modes: RequestMode[] = ['navigate', 'cors', 'no-cors', 'same-origin'];
+    // Paths under /v1 from path-safe characters, with an optional query. No
+    // `.`, so no `..` segment can resolve out of /v1 before the worker sees it.
+    const unit = fc.constantFrom(...'aZ09-_~!$&()*+,;=:@%'.split(''));
+    const segment = fc.string({ unit, maxLength: 8 });
+    const relayUrl = fc
+      .tuple(fc.array(segment, { maxLength: 4 }), fc.option(segment))
+      .map(([segments, query]) => {
+        const path = ['/v1', ...segments].join('/');
+        return `${ORIGIN}${path}${query === null ? '' : `?${query}`}`;
+      });
     fc.assert(
       fc.property(
-        fc.webPath(),
+        relayUrl,
         fc.constantFrom('GET', 'PUT', 'POST', 'HEAD'),
         fc.constantFrom(...modes),
-        (path, method, mode) => {
-          const url = `${ORIGIN}/v1${path.startsWith('/') ? path : `/${path}`}`;
-          expect(answerFor({ url, method, mode }, ORIGIN, urls)).toBe('network');
-        },
+        (url, method, mode) => answerFor({ url, method, mode }, ORIGIN, urls) === 'network',
       ),
     );
   });
