@@ -17,7 +17,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 
-import { parseEvent } from '../engine/event';
+import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import type { GroupState } from '../engine/fold';
@@ -139,10 +139,10 @@ function useStoredGroup(
     : { group: undefined, loaded: false };
 }
 
-/** The outbox's events, skipping any bytes that aren't one. */
+/** The events the outbox's signed records carry, skipping any record that doesn't verify. */
 function parsePending(outbox: readonly Uint8Array[]): ParsedEvent[] {
   return outbox.flatMap((bytes) => {
-    const parsed = parseEvent(bytes);
+    const parsed = parseRecord(bytes);
     return parsed === null ? [] : [parsed];
   });
 }

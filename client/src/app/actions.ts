@@ -1,14 +1,16 @@
 /**
  * What Create group and Join do (spec §7 and §8), apart from any screen.
  *
- * Each action writes one event with the engine, keeps it in the store's
- * outbox, and asks the sync loop to send it at once. Folded state still comes
- * only from relay records, so a new group shows once its genesis is back from
- * the relay.
+ * Each action signs one event with the engine, keeps its record in the
+ * store's outbox, and asks the sync loop to send it at once. Create group and
+ * Join each make a fresh keypair for that one group (ADR-0009), kept only with
+ * its records. Folded state still comes only from relay records, so a new
+ * group shows once its genesis is back from the relay.
  */
 import type { Seal } from '../crypto/seal';
 import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
-import { createEvent, stubAuthorId } from '../engine/event';
+import { newSigningKeys } from '../crypto/sign';
+import { base64url, signEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
 import { splitAtoms } from '../engine/text';
 import type { Relay } from '../net/relay';
@@ -45,16 +47,17 @@ export type CreateResult =
   { readonly outcome: 'created'; readonly groupId: string } | { readonly outcome: 'too-large' };
 
 /**
- * Founds a group: fresh keys, a genesis carrying the Document's sections, and
- * the group kept under the genesis id, which is the group id (spec §4).
+ * Founds a group: fresh keys, a signed genesis carrying the Document's
+ * sections, and the group kept under the genesis id, which is the group id
+ * (spec §4). A genesis whose record is too large for one blob is refused
+ * before anything is kept.
  */
 export async function createGroup(
   services: Services,
   values: CreateGroupValues,
 ): Promise<CreateResult> {
   const { mailbox, secret } = newInvite();
-  // STUB(identity): #69 makes a per-group Ed25519 keypair here.
-  const author = stubAuthorId();
+  const keys = newSigningKeys();
   const { groupName: name, yourName: founder, chat, title, text } = values;
   const body = {
     name,
@@ -63,11 +66,17 @@ export async function createGroup(
     atoms: splitAtoms(text),
     ...(chat === null ? {} : { chat }),
   };
-  const genesis = createEvent({ type: 'genesis', group: '', author, ts: services.now(), body });
-  if (genesis.bytes.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
+  const genesis = signEvent(keys.secretKey, {
+    type: 'genesis',
+    group: '',
+    ts: services.now(),
+    body,
+  });
+  if (genesis.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
   const groupId = genesis.id;
-  await services.store.addGroup({ groupId, mailbox, secret, me: { author, name: founder } });
-  await services.store.enqueue(groupId, genesis.bytes);
+  const me = { author: base64url(keys.publicKey), name: founder };
+  await services.store.addGroup({ groupId, mailbox, secret, signingKey: keys.secretKey, me });
+  await services.store.enqueue(groupId, genesis.record);
   void services.sync.syncOnce();
   return { outcome: 'created', groupId };
 }
@@ -126,8 +135,9 @@ export async function lookupInvite(services: Services, invite: Invite): Promise<
 }
 
 /**
- * Joins under `name`: keeps the group with the records the invite read, so
- * its Document shows at once, then queues the `join` and sends it.
+ * Joins under `name` with a fresh keypair for this group: keeps the group with
+ * the records the invite read, so its Document shows at once, then queues the
+ * signed `join` and sends it.
  */
 export async function joinGroup(
   services: Services,
@@ -136,20 +146,19 @@ export async function joinGroup(
   name: string,
 ): Promise<string> {
   const { groupId, page } = found;
-  // STUB(identity): #69 makes a per-group Ed25519 keypair here.
-  const author = stubAuthorId();
-  const join = createEvent({
+  const keys = newSigningKeys();
+  const join = signEvent(keys.secretKey, {
     type: 'join',
     group: groupId,
-    author,
     ts: services.now(),
     body: { name },
   });
   const { mailbox, secret } = invite;
-  await services.store.addGroup({ groupId, mailbox, secret, me: { author, name } });
+  const me = { author: base64url(keys.publicKey), name };
+  await services.store.addGroup({ groupId, mailbox, secret, signingKey: keys.secretKey, me });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };
   await services.store.applyPull(groupId, pull, eventIdOf);
-  await services.store.enqueue(groupId, join.bytes);
+  await services.store.enqueue(groupId, join.record);
   void services.sync.syncOnce();
   return groupId;
 }

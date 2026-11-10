@@ -1,10 +1,13 @@
 /**
  * The device's store: every group it belongs to, kept in IndexedDB (ADR-0029).
  *
- * A group's record holds its keys, the relay-ordered log, the outbox of events
- * not yet accepted by the relay, and the sync cursor. Nothing here touches the
- * network. Each change reads and writes one group in a single transaction, so
- * a crash or a closed tab leaves either the old record or the new one.
+ * A group's record holds its keys, the relay-ordered log, the outbox of signed
+ * records not yet accepted by the relay, and the sync cursor. Each membership
+ * has its own signing key, made for that group alone and kept only with its
+ * records (ADR-0009), so two groups on one device share no key or id. Nothing
+ * here touches the network. Each change reads and writes one group in a
+ * single transaction, so a crash or a closed tab leaves either the old record
+ * or the new one.
  */
 
 import { openDB } from 'idb';
@@ -15,7 +18,7 @@ import type { LogRecord } from '../engine/fold';
 
 /** Who this device is in a group. */
 export interface Me {
-  /** The author key every event this device makes carries. */
+  /** This membership's public key in base64url: the `author` every event this device makes carries. */
   author: string;
   /** The name this device joined with. */
   name: string;
@@ -29,6 +32,8 @@ export interface Group {
   mailbox: string;
   /** STUB(seal): the group secret, used as the seal key until #71 derives one from it. */
   secret: Uint8Array;
+  /** This membership's 32-byte Ed25519 secret key. It never leaves the device or this group. */
+  signingKey: Uint8Array;
   /** This device's membership. */
   me: Me;
   /** Relay records in relay order, each event once: the input to `fold`. */
@@ -39,14 +44,14 @@ export interface Group {
   relayNow: number | null;
   /** The relay instance the cursor belongs to, or `null` before the first GET. */
   instance: string | null;
-  /** Event bytes this device made that the relay hasn't accepted yet, oldest first. */
+  /** Signed records this device made that the relay hasn't accepted yet, oldest first. */
   outbox: Uint8Array[];
   /** When the last sync succeeded, in device milliseconds, or `null` before one. */
   lastSyncAt: number | null;
 }
 
 /** What a device knows about a group when it creates or joins it. */
-export type NewGroup = Pick<Group, 'groupId' | 'mailbox' | 'secret' | 'me'>;
+export type NewGroup = Pick<Group, 'groupId' | 'mailbox' | 'secret' | 'signingKey' | 'me'>;
 
 /** What one sync pass read from the relay. */
 export interface Pull {
@@ -62,7 +67,7 @@ export interface Pull {
   lastSyncAt: number;
 }
 
-/** An event's id, or `null` when the bytes aren't an event. */
+/** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
 /** The device's groups. */
@@ -74,9 +79,9 @@ export interface Store {
   /** Keep a new group; refuses an id the device already has. */
   addGroup(group: NewGroup): Promise<Group>;
   /**
-   * Queue an event for the relay, after the ones already queued.
+   * Queue a signed record for the relay, after the ones already queued.
    *
-   * @throws {PayloadTooLarge} when the event can't fit in any blob.
+   * @throws {PayloadTooLarge} when the record can't fit in any blob.
    */
   enqueue(groupId: string, bytes: Uint8Array): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
@@ -95,13 +100,20 @@ interface Schema extends DBSchema {
   groups: { key: string; value: Group };
 }
 
-const VERSION = 1;
+/**
+ * The schema version. Version 2 holds signed records and per-group keys (#69);
+ * version 1's unsigned stub-era data is deleted on upgrade, with no migration.
+ */
+const VERSION = 2;
 const GROUPS = 'groups';
 
 /** Open the store in the IndexedDB database `name`. */
 export async function openStore(name = 'reconcile'): Promise<Store> {
   const db = await openDB<Schema>(name, VERSION, {
     upgrade(database) {
+      if (database.objectStoreNames.contains(GROUPS)) {
+        database.deleteObjectStore(GROUPS);
+      }
       database.createObjectStore(GROUPS, { keyPath: 'groupId' });
     },
   });
@@ -185,7 +197,11 @@ function changer(
   };
 }
 
-/** The records of `incoming` whose event id is neither in `log` nor earlier in `incoming`. */
+/**
+ * The records of `incoming` that hold a signed event whose id is neither in
+ * `log` nor earlier in `incoming`. A record that doesn't verify has no id, so
+ * it is dropped and can never shadow the real record of the same event.
+ */
 function unseen(log: LogRecord[], incoming: LogRecord[], idOf: EventIdOf): LogRecord[] {
   if (incoming.length === 0) {
     return [];

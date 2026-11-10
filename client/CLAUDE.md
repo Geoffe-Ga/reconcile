@@ -48,6 +48,7 @@ npm run build            # production build
 - **Architecture:** `plans/architecture/.dependency-cruiser.cjs`
   - `src/engine`, `src/crypto`, and `src/store` may not import React or UI code
   - network libraries belong in `src/net/` only
+  - only `src/crypto` imports `@noble/*`, and `src/crypto` imports no other third-party package
 - **Audit:** `npm audit --audit-level=moderate`
   - `package.json` `overrides` pin `minimatch` and `qs` to patched releases. Remove an override once its upstream package ships the fix
 - **Fonts:** self-hosted through `@fontsource-variable/*`, never fetched from a third party

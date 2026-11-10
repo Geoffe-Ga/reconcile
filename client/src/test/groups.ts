@@ -1,11 +1,12 @@
 /**
- * Real group state for screen tests, built through the engine: events made
- * with `createEvent` and folded with `fold`, never hand-written state.
+ * Real group state for screen tests, built through the engine: events signed
+ * with `signEvent` and folded with `fold`, never hand-written state.
  */
-import { createEvent, type EventInput } from '../engine/event';
+import type { EventDraft } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { authorOf, signedAs } from './keys';
 
-/** What a test group holds. Members' authors are their names in lower case. */
+/** What a test group holds. Each member signs with the test key of their name in lower case. */
 export interface TestGroupOptions {
   readonly name?: string;
   readonly founder?: string;
@@ -16,7 +17,7 @@ export interface TestGroupOptions {
   readonly proposals?: readonly string[];
 }
 
-/** A folded group, its relay records, and the founder's author id. */
+/** A folded group, its relay records, and the founder's author key. */
 export interface TestGroup {
   readonly state: GroupState;
   readonly records: readonly LogRecord[];
@@ -38,16 +39,15 @@ const DEFAULTS = {
 export function testGroup(options: TestGroupOptions = {}): TestGroup {
   const { name, founder, title, atoms, chat, joiners, proposals } = { ...DEFAULTS, ...options };
   const records: LogRecord[] = [];
-  const add = (input: EventInput): string => {
-    const { bytes, id } = createEvent(input);
-    records.push({ seq: records.length + 1, received: MINUTE + records.length, bytes });
+  const add = (name: string, draft: EventDraft): string => {
+    const { record, id } = signedAs(name.toLowerCase(), draft);
+    records.push({ seq: records.length + 1, received: MINUTE + records.length, bytes: record });
     return id;
   };
-  const author = founder.toLowerCase();
   const body = { name, founder, title, atoms, ...(chat === undefined ? {} : { chat }) };
-  const group = add({ type: 'genesis', group: '', author, ts: 0, body });
+  const group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   for (const joiner of joiners) {
-    add({ type: 'join', group, author: joiner.toLowerCase(), ts: 0, body: { name: joiner } });
+    add(joiner, { type: 'join', group, ts: 0, body: { name: joiner } });
   }
   for (const proposal of proposals) {
     const proposalBody = {
@@ -56,7 +56,8 @@ export function testGroup(options: TestGroupOptions = {}): TestGroup {
       why: 'Why not.',
       text: 'New text.',
     };
-    add({ type: 'proposal', group, author, ts: 0, body: proposalBody });
+    add(founder, { type: 'proposal', group, ts: 0, body: proposalBody });
   }
+  const author = authorOf(founder.toLowerCase());
   return { state: fold(records, MINUTE + records.length), records, founder: author };
 }

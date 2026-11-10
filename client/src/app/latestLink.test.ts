@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createEvent, type EventInput } from '../engine/event';
+import type { EventDraft } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
+import { signedAs } from '../test/keys';
 import { latestLink } from './latestLink';
 
 const MINUTE = 29_000_000;
@@ -9,9 +10,9 @@ const MINUTE = 29_000_000;
 /** Folds a group whose genesis carries `chat`, then one Proposal per entry of `links`. */
 function groupWith(chat: string | undefined, links: readonly (string | undefined)[]) {
   const records: LogRecord[] = [];
-  const add = (input: EventInput): string => {
-    const { bytes, id } = createEvent(input);
-    records.push({ seq: records.length + 1, received: MINUTE, bytes });
+  const add = (draft: EventDraft): string => {
+    const { record, id } = signedAs('ana', draft);
+    records.push({ seq: records.length + 1, received: MINUTE, bytes: record });
     return id;
   };
   const body = {
@@ -21,7 +22,7 @@ function groupWith(chat: string | undefined, links: readonly (string | undefined
     atoms: ['Quiet hours start at ten.'],
     ...(chat === undefined ? {} : { chat }),
   };
-  const group = add({ type: 'genesis', group: '', author: 'ana', ts: 0, body });
+  const group = add({ type: 'genesis', group: '', ts: 0, body });
   links.forEach((link, index) => {
     const proposal = {
       atom: `${group}.0`,
@@ -30,7 +31,7 @@ function groupWith(chat: string | undefined, links: readonly (string | undefined
       text: 'New text.',
       ...(link === undefined ? {} : { link }),
     };
-    add({ type: 'proposal', group, author: 'ana', ts: 0, body: proposal });
+    add({ type: 'proposal', group, ts: 0, body: proposal });
   });
   return fold(records, MINUTE);
 }

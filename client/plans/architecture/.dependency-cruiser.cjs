@@ -32,6 +32,22 @@ module.exports = {
       to: { path: 'node_modules/(axios|ky|ofetch|socket\\.io-client)/' },
     },
     {
+      name: 'only-crypto-imports-noble',
+      comment:
+        'Every Ed25519 and hash call goes through src/crypto, so the cryptography can be audited in one place (spec §2, #69). Tests outside src/crypto use it through src/crypto too.',
+      severity: 'error',
+      from: { pathNot: '^src/crypto/' },
+      to: { path: 'node_modules/@noble/' },
+    },
+    {
+      name: 'crypto-imports-only-noble',
+      comment:
+        'src/crypto depends on no third-party package but the audited @noble/* libraries: no hand-rolled or unaudited cryptography (spec §2-§3, #69). Its tests may use the test runner.',
+      severity: 'error',
+      from: { path: '^src/crypto/', pathNot: '\\.test\\.tsx?$' },
+      to: { dependencyTypesNot: ['local'], pathNot: 'node_modules/@noble/' },
+    },
+    {
       name: 'test-helpers-stay-in-tests',
       comment:
         'src/test/ holds fakes (an in-memory relay, fake IndexedDB). Only tests may import them, so the app can never talk to a fake.',

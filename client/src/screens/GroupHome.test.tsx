@@ -7,6 +7,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
+import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 
 const LINK = 'https://reconcile.example/#/join/mailbox.secret';
@@ -18,7 +19,7 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
   render(
     <GroupHome
       state={state}
-      me="ana"
+      me={authorOf('ana')}
       inviteLink={LINK}
       copyText={copyText}
       now={NOW}
@@ -146,6 +147,17 @@ describe('GroupHome', () => {
   it('says nothing about the relay while it answers', () => {
     renderHome(groupLog().state());
     expect(screen.queryByText(/Can’t reach the relay/)).not.toBeInTheDocument();
+  });
+
+  it('tells two people of the same name apart by a key suffix, inside <bdi>', () => {
+    setup({ joiners: ['Sam', 'sam ', 'Sammy'] });
+    const people = within(section('People')).getAllByRole('listitem');
+    const [ana, sam, other, sammy] = people.map((item) => item.textContent);
+    expect([ana, sammy]).toEqual(['Ana', 'Sammy']);
+    expect(sam).toMatch(/^Sam · [0-9a-f]{4}$/);
+    expect(other).toMatch(/^sam {2}· [0-9a-f]{4}$/);
+    expect(sam?.slice(-4)).not.toBe(other?.slice(-4));
+    for (const item of people) expect(item.firstElementChild?.tagName).toBe('BDI');
   });
 
   it('shows people and the invite only to someone who may see them', () => {

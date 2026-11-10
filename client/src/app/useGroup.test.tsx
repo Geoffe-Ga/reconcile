@@ -2,8 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createEvent } from '../engine/event';
-import type { EncodedEvent } from '../engine/event';
+import type { SignedEvent } from '../engine/event';
 import { createRelay } from '../net/relay';
 import { openStore } from '../store/db';
 import type { Group, NewGroup, Store } from '../store/db';
@@ -12,6 +11,7 @@ import type { Sync } from '../store/sync';
 import { TEST_MAILBOX, createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { authorOf, signedAs, testKeys } from '../test/keys';
 import { GroupServicesContext, useGroup } from './useGroup';
 import type { GroupServices } from './useGroup';
 
@@ -27,21 +27,19 @@ afterEach(() => {
   }
 });
 
-function genesis(title = 'House rules'): EncodedEvent {
-  return createEvent({
+function genesis(title = 'House rules'): SignedEvent {
+  return signedAs('ana', {
     type: 'genesis',
     group: '',
-    author: 'author-ana',
     ts: TS,
     body: { name: 'Riverside Tenants', founder: 'Ana', title, atoms: ['Quiet after 10pm.'] },
   });
 }
 
-function join(founding: EncodedEvent, name: string): EncodedEvent {
-  return createEvent({
+function join(founding: SignedEvent, name: string): SignedEvent {
+  return signedAs(name.toLowerCase(), {
     type: 'join',
     group: founding.id,
-    author: `author-${name.toLowerCase()}`,
     ts: TS,
     body: { name },
   });
@@ -70,9 +68,9 @@ describe('useGroup', () => {
     const { store, sync } = await setUp(fake);
     const founding = genesis();
     const benJoins = join(founding, 'Ben');
-    await store.enqueue(GROUP, founding.bytes);
+    await store.enqueue(GROUP, founding.record);
     await sync.syncOnce();
-    await store.enqueue(GROUP, benJoins.bytes);
+    await store.enqueue(GROUP, benJoins.record);
 
     const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
 
@@ -88,9 +86,9 @@ describe('useGroup', () => {
     const fake = createFakeRelay();
     const { store, sync } = await setUp(fake);
     const founding = genesis();
-    await store.enqueue(GROUP, founding.bytes);
+    await store.enqueue(GROUP, founding.record);
     await sync.syncOnce();
-    await store.enqueue(GROUP, join(founding, 'Ben').bytes);
+    await store.enqueue(GROUP, join(founding, 'Ben').record);
     const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
     await waitFor(() => {
       expect(result.current.pending).toHaveLength(1);
@@ -145,7 +143,7 @@ describe('useGroup', () => {
   it('brings the group and its Document back after a reload with the network off', async () => {
     const fake = createFakeRelay();
     const first = await setUp(fake);
-    await first.store.enqueue(GROUP, genesis().bytes);
+    await first.store.enqueue(GROUP, genesis().record);
     await first.sync.syncOnce();
     first.store.close();
     fake.offline = true;
@@ -198,7 +196,7 @@ describe('useGroup', () => {
     });
 
     expect(atFirst).toMatchObject({ me: null, invite: null, loaded: false });
-    expect(result.current.me).toEqual({ author: 'author-ana', name: 'Ana' });
+    expect(result.current.me).toEqual({ author: authorOf('ana'), name: 'Ana' });
     expect(result.current.invite?.mailbox).toBe(TEST_MAILBOX);
     expect(Array.from(result.current.invite?.secret ?? [])).toEqual(Array(32).fill(0));
   });
@@ -213,9 +211,9 @@ describe('useGroup', () => {
     });
     const getGroup = vi.spyOn(store, 'getGroup');
 
-    await store.enqueue('other', genesis().bytes);
+    await store.enqueue('other', genesis().record);
     const afterOther = getGroup.mock.calls.length;
-    await store.enqueue(GROUP, genesis().bytes);
+    await store.enqueue(GROUP, genesis().record);
 
     expect(afterOther).toBe(0);
     expect(getGroup).toHaveBeenCalledTimes(1);
@@ -224,7 +222,7 @@ describe('useGroup', () => {
   it('shows nothing of the previous group while the next one loads', async () => {
     const fake = createFakeRelay();
     const { store, sync } = await setUp(fake);
-    await store.enqueue(GROUP, genesis().bytes);
+    await store.enqueue(GROUP, genesis().record);
     await sync.syncOnce();
     await store.addGroup(newGroup('other'));
     const { result, rerender } = renderHook(({ id }) => useGroup(id), {
@@ -323,15 +321,16 @@ function newGroup(groupId: string): NewGroup {
     groupId,
     mailbox: TEST_MAILBOX,
     secret: new Uint8Array(32),
-    me: { author: 'author-ana', name: 'Ana' },
+    signingKey: testKeys('ana').secretKey,
+    me: { author: authorOf('ana'), name: 'Ana' },
   };
 }
 
 /** A stored group whose log holds `event` at seq 1. */
-function groupWith(event: EncodedEvent): Group {
+function groupWith(event: SignedEvent): Group {
   return {
     ...newGroup(GROUP),
-    log: [{ seq: 1, received: 29_000_000, bytes: event.bytes }],
+    log: [{ seq: 1, received: 29_000_000, bytes: event.record }],
     cursor: 1,
     relayNow: 29_000_000,
     instance: 'relay',

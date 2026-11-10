@@ -1,12 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createEvent } from '../engine/event';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { createSync } from '../store/sync';
 import { createFakeRelay, TEST_MAILBOX } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { authorOf, signedAs, testKeys } from '../test/keys';
 import { useGroupList } from './useGroupList';
 
 freshIndexedDBPerTest();
@@ -19,21 +19,21 @@ afterEach(() => {
 async function storeWithGroup(): Promise<{ store: Store; groupId: string }> {
   const store = await openStore('list');
   opened.push(store);
-  const genesis = createEvent({
+  const genesis = signedAs('ana', {
     type: 'genesis',
     group: '',
-    author: 'ana',
     ts: 0,
     body: { name: 'Riverside Tenants', founder: 'Ana', title: 'House rules', atoms: ['A'] },
   });
-  const me = { author: 'ana', name: 'Ana' };
+  const me = { author: authorOf('ana'), name: 'Ana' };
   await store.addGroup({
     groupId: genesis.id,
     mailbox: TEST_MAILBOX,
     secret: new Uint8Array(32),
+    signingKey: testKeys('ana').secretKey,
     me,
   });
-  await store.enqueue(genesis.id, genesis.bytes);
+  await store.enqueue(genesis.id, genesis.record);
   return { store, groupId: genesis.id };
 }
 
@@ -126,7 +126,8 @@ function stored(groupId: string): Group {
     groupId,
     mailbox: TEST_MAILBOX,
     secret: new Uint8Array(32),
-    me: { author: 'ana', name: 'Ana' },
+    signingKey: testKeys('ana').secretKey,
+    me: { author: authorOf('ana'), name: 'Ana' },
     log: [],
     cursor: 0,
     relayNow: null,

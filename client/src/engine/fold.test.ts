@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
+import { authorOf, signedAs } from '../test/keys';
 import { can } from './capabilities';
-import { createEvent, type EventInput, type ProposalBody, type VoteBody } from './event';
+import type { EventDraft, ProposalBody, VoteBody } from './event';
 import { fold, type LogRecord, NOTE_MAX, TITLE_MAX, VOTE_WINDOW_MINUTES, WHY_MAX } from './fold';
 
 const R = 29_375_000;
 
-/** Builds a relay-ordered log of events, one seq per event. */
+/** Builds a relay-ordered log of events, one seq per event, each signed by its author's test key. */
 class TestLog {
   readonly records: LogRecord[] = [];
   group = '';
 
-  private add(received: number, input: EventInput): string {
-    const { bytes, id } = createEvent(input);
-    this.records.push({ seq: this.records.length + 1, received, bytes });
+  private add(received: number, author: string, draft: EventDraft): string {
+    const { record, id } = signedAs(author, draft);
+    this.records.push({ seq: this.records.length + 1, received, bytes: record });
     return id;
   }
 
@@ -21,36 +22,25 @@ class TestLog {
     const body = { name: 'Riverside', founder: 'Ana', title: 'House rules', atoms: ['A0', 'A1'] };
     const withChat = chat === undefined ? body : { ...body, chat };
     const ts = received * 60_000;
-    this.group = this.add(received, {
-      type: 'genesis',
-      group: '',
-      author: 'ana',
-      ts,
-      body: withChat,
-    });
+    this.group = this.add(received, 'ana', { type: 'genesis', group: '', ts, body: withChat });
     return this.group;
   }
 
   join(received: number, author: string): string {
     const ts = received * 60_000;
-    return this.add(received, {
-      type: 'join',
-      group: this.group,
-      author,
-      ts,
-      body: { name: author },
-    });
+    const body = { name: author };
+    return this.add(received, author, { type: 'join', group: this.group, ts, body });
   }
 
   propose(received: number, author: string, body: Partial<ProposalBody> = {}): string {
     const full = { atom: `${this.group}.0`, title: 'T', why: 'W', text: 'New', ...body };
     const ts = received * 60_000;
-    return this.add(received, { type: 'proposal', group: this.group, author, ts, body: full });
+    return this.add(received, author, { type: 'proposal', group: this.group, ts, body: full });
   }
 
   vote(received: number, author: string, body: VoteBody): string {
     const ts = received * 60_000;
-    return this.add(received, { type: 'vote', group: this.group, author, ts, body });
+    return this.add(received, author, { type: 'vote', group: this.group, ts, body });
   }
 }
 
@@ -100,9 +90,9 @@ describe('fold', () => {
     log.genesis(R);
     log.join(R + 1, 'ben');
     const state = fold(log.records, R + 1);
-    expect(can(state, 'ana', 'propose')).toBe(true);
-    expect(can(state, 'ben', 'vote')).toBe(true);
-    expect(can(state, 'cal', 'read')).toBe(false);
+    expect(can(state, authorOf('ana'), 'propose')).toBe(true);
+    expect(can(state, authorOf('ben'), 'vote')).toBe(true);
+    expect(can(state, authorOf('cal'), 'read')).toBe(false);
   });
 
   it('carries a Proposal’s fields, its one version and its deadline', () => {
@@ -112,15 +102,15 @@ describe('fold', () => {
         id: proposal,
         seq: 4,
         received: R + 10,
-        author: 'ana',
+        author: authorOf('ana'),
         atom: `${log.group}.0`,
         title: 'T',
         why: 'W',
         text: 'New',
         link: 'https://chat.example/p',
         deadline: R + 10 + 10_080,
-        eligible: ['ana', 'ben', 'cal'],
-        versions: [{ id: proposal, author: 'ana', text: 'New' }],
+        eligible: ['ana', 'ben', 'cal'].map(authorOf),
+        versions: [{ id: proposal, author: authorOf('ana'), text: 'New' }],
         ballots: [],
         closedAt: null,
         final: false,
@@ -142,7 +132,7 @@ describe('fold', () => {
         id: ballot,
         seq: 5,
         received: R + 20,
-        voter: 'ben',
+        voter: authorOf('ben'),
         scores: { [proposal]: 0 },
         note: 'No.',
       },
@@ -167,7 +157,7 @@ describe('fold', () => {
     log.vote(R + 20, 'ben', { proposal, scores: { [proposal]: 3 }, note: '\u{1F600}'.repeat(280) });
     log.vote(R + 21, 'cal', { proposal, scores: { [proposal]: 3 }, note: 'n'.repeat(281) });
     const state = fold(log.records, R + 21);
-    expect(state.proposals[0]?.ballots.map((b) => b.voter)).toEqual(['ben']);
+    expect(state.proposals[0]?.ballots.map((b) => b.voter)).toEqual([authorOf('ben')]);
     expect(state.ignored.map((i) => i.seq)).toEqual([6]);
   });
 
@@ -196,7 +186,7 @@ describe('fold', () => {
     log.vote(deadline - 1, 'ben', { proposal, scores: { [proposal]: 4 } });
     log.vote(deadline, 'cal', { proposal, scores: { [proposal]: 4 } });
     const state = fold(log.records, deadline);
-    expect(state.proposals[0]?.ballots.map((b) => b.voter)).toEqual(['ben']);
+    expect(state.proposals[0]?.ballots.map((b) => b.voter)).toEqual([authorOf('ben')]);
     expect(state.ignored.map((i) => i.seq)).toEqual([6]);
   });
 

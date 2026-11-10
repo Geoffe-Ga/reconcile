@@ -1,12 +1,17 @@
 /**
- * Group events: the envelope, its exact bytes and its id (docs/spec/phase-1-spec.md §4).
+ * Group events: the envelope, its exact bytes, its id and its signed record
+ * (docs/spec/phase-1-spec.md §3–§4).
  *
  * An author serializes an event once with `JSON.stringify` to UTF-8. Those
- * exact bytes are what travels, and the id is the unpadded base64url SHA-256
- * of them, so nobody ever re-encodes an event (ADR-0073).
+ * exact bytes are what is signed and travels, and the id is the unpadded
+ * base64url SHA-256 of them, so nobody ever re-encodes an event (ADR-0073).
+ * They travel inside a record, `publicKey ‖ signature ‖ event bytes`, and a
+ * reader trusts an event only once its record verifies and its `author` is the
+ * key that signed it (ADR-0006).
  */
-import { sha256 } from '@noble/hashes/sha2.js';
-import { randomBytes } from '@noble/hashes/utils.js';
+import { sha256 } from '../crypto/hash';
+import { signRecord, verifyRecord } from '../crypto/record';
+import { publicKeyOf } from '../crypto/sign';
 
 /** The only envelope version this engine understands. The fold ignores any other. */
 export const EVENT_VERSION = 1;
@@ -55,16 +60,18 @@ export interface EventBodies {
 /** The event types this engine understands. */
 export type EventType = keyof EventBodies;
 
-/** What an author supplies to write an event; `createEvent` adds `v`. */
-export type EventInput = {
+/** What an author supplies to sign an event; `signEvent` adds `author` from the key, and `v`. */
+export type EventDraft = {
   readonly [K in EventType]: {
     readonly type: K;
     readonly group: string;
-    readonly author: string;
     readonly ts: number;
     readonly body: EventBodies[K];
   };
 }[EventType];
+
+/** What an author supplies to write an event's bytes; `createEvent` adds `v`. */
+export type EventInput = EventDraft & { readonly author: string };
 
 /** A well-shaped event as read from its bytes. `ts` is the author's clock in ms, for display only. */
 export type GroupEvent = EventInput & { readonly v: number };
@@ -81,13 +88,20 @@ export interface ParsedEvent {
   readonly id: string;
 }
 
+/** A signed event: its exact bytes and id, and the record that carries them. */
+export interface SignedEvent extends EncodedEvent {
+  /** What a device posts and keeps: the author's public key ‖ signature ‖ the event bytes. */
+  readonly record: Uint8Array<ArrayBuffer>;
+}
+
 type Json = Readonly<Record<string, unknown>>;
 
 const encoder = new TextEncoder();
 // fatal: invalid UTF-8 throws. ignoreBOM: a leading BOM is kept, so JSON.parse rejects it.
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-const BASE64URL = /^[A-Za-z0-9_-]+$/;
+/** An author: a 32-byte Ed25519 public key in unpadded base64url. */
+const AUTHOR = /^[A-Za-z0-9_-]{43}$/;
 
 /** Encodes bytes as unpadded base64url. */
 export function base64url(bytes: Uint8Array): string {
@@ -96,15 +110,15 @@ export function base64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/** Decodes base64url, with or without padding, to bytes. */
+export function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
 /** The id of an event: the unpadded base64url SHA-256 of its exact bytes. */
 export function eventId(bytes: Uint8Array): string {
   return base64url(sha256(bytes));
-}
-
-/** A random author id: 16 random bytes in base64url. */
-// STUB(identity): #69 replaces this with the member's per-group Ed25519 public key.
-export function stubAuthorId(): string {
-  return base64url(randomBytes(16));
 }
 
 /** Returns `value` with every string inside it, however deeply nested, normalized to NFC. */
@@ -149,9 +163,9 @@ function isScore(value: unknown): value is Score {
   return isWholeNumber(value) && value >= 0 && value <= 4;
 }
 
-/** Stub author ids and #69's public keys are both non-empty base64url. */
+/** A public key's 43 base64url characters. The record's key must also match it exactly. */
 function isAuthor(value: unknown): value is string {
-  return isString(value) && BASE64URL.test(value);
+  return isString(value) && AUTHOR.test(value);
 }
 
 function isTimestamp(value: unknown): value is number {
@@ -246,4 +260,26 @@ export function decodeEvent(bytes: Uint8Array): GroupEvent | null {
 export function parseEvent(bytes: Uint8Array): ParsedEvent | null {
   const event = decodeEvent(bytes);
   return event === null ? null : { event, id: eventId(bytes) };
+}
+
+/**
+ * Signs an event with one membership's secret key: its `author` is that key's
+ * public half in base64url, and the record carries the exact bytes signed.
+ */
+export function signEvent(secretKey: Uint8Array, draft: EventDraft): SignedEvent {
+  const publicKey = publicKeyOf(secretKey);
+  const { bytes, id } = createEvent({ ...draft, author: base64url(publicKey) });
+  return { bytes, id, record: signRecord({ publicKey, secretKey }, bytes) };
+}
+
+/**
+ * Reads a signed record: verifies its signature before parsing anything, then
+ * requires the event's `author` to be the key that signed it. Returns null for
+ * anything else, so bytes a member didn't sign never claim an event id.
+ */
+export function parseRecord(record: Uint8Array): ParsedEvent | null {
+  const verified = verifyRecord(record);
+  if (verified === null) return null;
+  const parsed = parseEvent(verified.eventBytes);
+  return parsed?.event.author === base64url(verified.publicKey) ? parsed : null;
 }

@@ -249,8 +249,7 @@ describe('Ballot, in the app', () => {
     const proposal = window.location.hash.split('/').at(-1) ?? '';
     for (const device of [ana, cy]) {
       await device.services.sync.syncOnce();
-      const me = (await device.services.store.getGroup(groupId))?.me.author ?? '';
-      await castBallot(device.services, groupId, me, { proposal, score: 3, note: '' });
+      await castBallot(device.services, groupId, { proposal, score: 3, note: '' });
       await device.services.sync.syncOnce();
     }
     await act(() => ben.services.sync.syncOnce());

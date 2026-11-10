@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { parseEvent } from '../engine/event';
+import { publicKeyOf } from '../crypto/sign';
+import { base64url, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -42,7 +43,7 @@ async function founded(fake: FakeRelay) {
 /** The events in a group's outbox, read back. */
 async function outbox(device: TestDevice, groupId: string) {
   const group = await device.services.store.getGroup(groupId);
-  return (group?.outbox ?? []).map((bytes) => parseEvent(bytes)?.event);
+  return (group?.outbox ?? []).map((bytes) => parseRecord(bytes)?.event);
 }
 
 describe('propose', () => {
@@ -57,7 +58,7 @@ describe('propose', () => {
       text: 'Quiet after 10pm.',
       link: 'https://chat.example.org/quiet',
     };
-    const result = await propose(device.services, groupId, author, values);
+    const result = await propose(device.services, groupId, values);
 
     const queued = await outbox(device, groupId);
     expect(queued).toHaveLength(1);
@@ -76,15 +77,15 @@ describe('propose', () => {
     const group = await device.services.store.getGroup(groupId);
     expect(result).toEqual({
       outcome: 'proposed',
-      proposalId: parseEvent(group?.outbox[0] ?? new Uint8Array())?.id,
+      proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
     });
   });
 
   it('leaves the link out when there is none, and sends the Proposal', async () => {
     const fake = createFakeRelay();
-    const { device, groupId, author, atom } = await founded(fake);
+    const { device, groupId, atom } = await founded(fake);
     const values = { atom, title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: null };
-    const result = await propose(device.services, groupId, author, values);
+    const result = await propose(device.services, groupId, values);
     await device.services.sync.syncOnce();
 
     const group = await device.services.store.getGroup(groupId);
@@ -94,11 +95,31 @@ describe('propose', () => {
     ]);
   });
 
+  it('signs as this device’s member of the group, with the key kept for it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const values = { atom, title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: null };
+    await propose(device.services, groupId, values);
+    const group = await device.services.store.getGroup(groupId);
+    const record = group?.outbox[0] ?? new Uint8Array();
+    expect(base64url(record.subarray(0, 32))).toBe(group?.me.author);
+    expect(base64url(publicKeyOf(group?.signingKey ?? new Uint8Array(32)))).toBe(group?.me.author);
+  });
+
+  it('refuses to propose in a group this device isn’t in', async () => {
+    const fake = createFakeRelay();
+    const { device, atom } = await founded(fake);
+    const values = { atom, title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: null };
+    await expect(propose(device.services, 'elsewhere', values)).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+
   it('refuses a Proposal too large for any blob, and queues nothing', async () => {
     const fake = createFakeRelay();
-    const { device, groupId, author, atom } = await founded(fake);
+    const { device, groupId, atom } = await founded(fake);
     const values = { atom, title: 'Long', why: 'Why not.', text: 'x'.repeat(70_000), link: null };
-    expect(await propose(device.services, groupId, author, values)).toEqual({
+    expect(await propose(device.services, groupId, values)).toEqual({
       outcome: 'too-large',
     });
     expect(await outbox(device, groupId)).toEqual([]);
@@ -110,7 +131,7 @@ describe('castBallot', () => {
     const fake = createFakeRelay();
     const { device, groupId, author } = await founded(fake);
     fake.offline = true;
-    await castBallot(device.services, groupId, author, {
+    await castBallot(device.services, groupId, {
       proposal: 'proposal-1',
       score: 0,
       note: '  Too early for the café.  ',
@@ -130,9 +151,9 @@ describe('castBallot', () => {
 
   it('leaves a blank note out', async () => {
     const fake = createFakeRelay();
-    const { device, groupId, author } = await founded(fake);
+    const { device, groupId } = await founded(fake);
     fake.offline = true;
-    await castBallot(device.services, groupId, author, {
+    await castBallot(device.services, groupId, {
       proposal: 'proposal-1',
       score: 4,
       note: '  \n ',

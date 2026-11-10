@@ -6,6 +6,7 @@ import type { ProposalValues } from '../app/proposals';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { groupLog } from '../test/votes';
+import { authorOf } from '../test/keys';
 import { Composer, type ComposeOutcome } from './Composer';
 
 type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
@@ -17,7 +18,7 @@ interface Setup {
   readonly onPropose?: OnPropose;
 }
 
-function setup({ state, atom = 0, me = 'ana', onPropose }: Setup = {}) {
+function setup({ state, atom = 0, me = authorOf('ana'), onPropose }: Setup = {}) {
   const group = state ?? groupLog({ chat: 'https://chat.example.org/riverside' }).state();
   const propose = vi.fn<OnPropose>(onPropose ?? (() => Promise.resolve('proposed')));
   render(
@@ -216,7 +217,7 @@ describe('Composer', () => {
 
   it('says when the section isn’t in the Document', async () => {
     const state = groupLog().state();
-    render(<Composer state={state} me="ana" atomId="missing.0" onPropose={vi.fn()} />);
+    render(<Composer state={state} me={authorOf('ana')} atomId="missing.0" onPropose={vi.fn()} />);
     expect(
       screen.getByRole('heading', { level: 1, name: 'This section isn’t in the Document' }),
     ).toBeVisible();

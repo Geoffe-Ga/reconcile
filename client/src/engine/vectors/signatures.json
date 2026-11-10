@@ -1,0 +1,1171 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a forged genesis before the real one founds nothing, and the real one founds the group",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          },
+          "flip": {
+            "in": "signature",
+            "at": 0
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@2",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@2",
+        "members": [
+          {
+            "author": "%ana",
+            "seq": 2
+          },
+          {
+            "author": "%ben",
+            "seq": 3
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 1,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [1]
+    },
+    {
+      "name": "one byte flipped in the event bytes is ignored, and can't shadow the real event after it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          },
+          "flip": {
+            "in": "event",
+            "at": 30
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "seq": 4,
+            "received": 29375011,
+            "author": "%ana"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "one byte flipped in the signature is ignored, and can't shadow the real event after it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          },
+          "flip": {
+            "in": "signature",
+            "at": 40
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "seq": 4,
+            "received": 29375011,
+            "author": "%ana"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "one byte flipped in the key is ignored, and can't shadow the real event after it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          },
+          "flip": {
+            "in": "key",
+            "at": 0
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "seq": 4,
+            "received": 29375011,
+            "author": "%ana"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a member's real signature under another member's key is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          },
+          "by": "ana",
+          "key": "%ben"
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a record whose key isn't the event's author is ignored, and can't shadow the author's own",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          },
+          "by": "ben"
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "seq": 4,
+            "author": "%ana"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a Proposal validly signed by a key that never joined is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "replay-join-other-group: Kim's join, signed for group A, is ignored in group B",
+      "records": [
+        {
+          "seq": 101,
+          "received": 29374900,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%dee",
+            "ts": 1762494000000,
+            "body": {
+              "name": "Hilltop Allotments",
+              "founder": "Dee",
+              "title": "Plot rules",
+              "atoms": ["Water before nine."]
+            }
+          },
+          "elsewhere": true
+        },
+        {
+          "seq": 102,
+          "received": 29374910,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@101",
+            "author": "%kim",
+            "ts": 1762494600000,
+            "body": {
+              "name": "Kim"
+            }
+          },
+          "elsewhere": true
+        },
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@101",
+            "author": "%kim",
+            "ts": 1762494600000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@102"
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a second genesis, validly signed by a member, is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Takeover",
+              "founder": "Ben",
+              "title": "New rules",
+              "atoms": ["Ben decides."]
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@1",
+        "name": "Riverside Tenants",
+        "title": "House rules",
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a small-order key, whose signature holds for every message, can't join",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Nobody"
+            }
+          },
+          "key": "0100000000000000000000000000000000000000000000000000000000000000",
+          "sig": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a non-canonical encoding of a small-order key can't join either",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "7v_______________________________________38",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Nobody"
+            }
+          },
+          "key": "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+          "sig": "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "a bare event with no key or signature, as the stub era posted, is ignored and shadows nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          },
+          "unsigned": true
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "seq": 1
+          },
+          {
+            "author": "%ben",
+            "seq": 3
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 2,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "re-posting a member's older ballot as identical signed bytes, after their newer one, changes neither the outcome nor which ballot counts",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 0
+              },
+              "note": "Not yet."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 0
+              },
+              "note": "Not yet."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375050,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375060,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 2
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375060,
+      "expect": {
+        "proposals": [
+          {
+            "closedAt": 29375060,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4"
+            },
+            "ballots": [
+              {
+                "id": "@6",
+                "seq": 6,
+                "voter": "%ben",
+                "scores": {
+                  "@4": 4
+                }
+              },
+              {
+                "id": "@8",
+                "voter": "%ana",
+                "scores": {
+                  "@4": 3
+                }
+              },
+              {
+                "id": "@9",
+                "voter": "%cal",
+                "scores": {
+                  "@4": 2
+                }
+              }
+            ]
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 10pm."
+          },
+          {
+            "id": "@1.1",
+            "text": "Bins out on Sunday."
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    }
+  ]
+}
