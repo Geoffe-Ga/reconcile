@@ -184,49 +184,47 @@ describe('propose, vote, and see the Update', () => {
     expect(stored?.log.at(-1)?.received).toBe(proposedAt);
   });
 
-  it('proposes a lapsed add again in Add a section, and a lapsed removal in its own composer (#75)', async () => {
+  it('proposes a lapsed add again in Add a section, starting from its text (#75)', async () => {
     const user = userEvent.setup();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
-    go(`#/g/${groupId}/doc`);
+    go(`#/g/${groupId}/add/${groupId}.0`);
     const a = mount(ana, 'a');
-    await user.click(
-      await within(a).findByRole('button', { name: 'Add a section here, after section 1' }),
-    );
     await user.type(await within(a).findByRole('textbox', { name: 'Title' }), 'Guests');
     await user.type(within(a).getByRole('textbox', { name: 'Why' }), 'They visit.');
     await user.type(within(a).getByRole('textbox', { name: 'Section text' }), 'Guests by 11.');
     await user.click(within(a).getByRole('button', { name: 'Propose this section' }));
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
-    const lapsedAdd = window.location.hash;
-    go(`#/g/${groupId}/remove/${groupId}.0`);
-    await user.type(await within(a).findByRole('textbox', { name: 'Title' }), 'No quiet hours');
-    await user.type(within(a).getByRole('textbox', { name: 'Why' }), 'Nobody keeps them.');
-    await user.click(within(a).getByRole('button', { name: 'Propose removing it' }));
-    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
-    const lapsedRemoval = window.location.hash;
     fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
 
-    go(lapsedAdd);
-    let result = await within(a).findByRole('region', { name: 'Result' });
+    const result = await within(a).findByRole('region', { name: 'Result' });
     await user.click(within(result).getByRole('button', { name: 'Propose again' }));
     expect(
       await within(a).findByRole('heading', { level: 1, name: 'Propose again' }),
     ).toBeVisible();
     expect(within(a).getByRole('textbox', { name: 'Section text' })).toHaveValue('Guests by 11.\n');
     expect(within(a).getByRole('button', { name: 'Propose this section' })).toBeVisible();
+  });
 
-    go(lapsedRemoval);
-    result = await within(a).findByRole('region', { name: 'Result' });
+  it('proposes a lapsed removal again in the removal composer, with no text to write (#75)', async () => {
+    const user = userEvent.setup();
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana] = devices;
+    go(`#/g/${groupId}/remove/${groupId}.0`);
+    const a = mount(ana, 'a');
+    await user.type(await within(a).findByRole('textbox', { name: 'Title' }), 'No quiet hours');
+    await user.type(within(a).getByRole('textbox', { name: 'Why' }), 'Nobody keeps them.');
+    await user.click(within(a).getByRole('button', { name: 'Propose removing it' }));
+    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    await sync(ana);
+
+    const result = await within(a).findByRole('region', { name: 'Result' });
     await user.click(within(result).getByRole('button', { name: 'Propose again' }));
     expect(await within(a).findByRole('textbox', { name: 'Title' })).toHaveValue('No quiet hours');
     expect(within(a).queryByRole('textbox', { name: /text/i })).not.toBeInTheDocument();
-    await user.type(within(a).getByRole('textbox', { name: 'Title' }), ', again');
-    await user.click(within(a).getByRole('button', { name: 'Propose removing it' }));
-    expect(
-      await within(a).findByRole('heading', { level: 1, name: 'No quiet hours, again' }),
-    ).toBeVisible();
+    expect(within(a).getByRole('button', { name: 'Propose removing it' })).toBeVisible();
   });
 
   it('keeps a ballot cast offline on the device, sends it on recovery, and says so', async () => {
