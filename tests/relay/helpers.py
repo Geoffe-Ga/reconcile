@@ -11,9 +11,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import FastAPI
 
 from reconcile.relay.privacy import PrivacyMiddleware
+from reconcile.relay.push import run_due
 from reconcile.relay.store import BlobStore
 
 if TYPE_CHECKING:
@@ -29,6 +32,9 @@ MINUTE = 60
 
 Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
+
+# What deploy.sh sets: https:// and the site's domain (RFC 2606's example.org).
+SUBJECT = "https://relay.example.org"
 
 
 @dataclass
@@ -173,3 +179,104 @@ def body_receiver(*chunks: bytes) -> tuple[Receive, list[Message]]:
         return message
 
     return receive, given
+
+
+# --- Web Push --------------------------------------------------------------
+
+
+def write_vapid_key(path: Path) -> ec.EllipticCurvePrivateKey:
+    """Write a fresh P-256 key to ``path`` as ``openssl ecparam -noout`` would.
+
+    Keys are made at run time, so none is ever committed.
+    """
+    key = ec.generate_private_key(ec.SECP256R1())
+    path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    return key
+
+
+def push_endpoint(host: str = "web.push.apple.com", path: str | None = None) -> str:
+    """An endpoint on ``host``, with a random path unless one is given."""
+    return f"https://{host}/{secrets.token_urlsafe(24) if path is None else path}"
+
+
+class UnreachableError(ConnectionError):
+    """A transport failure whose message names the endpoint, as real ones do."""
+
+    def __init__(self, endpoint: str) -> None:
+        """Name ``endpoint``."""
+        super().__init__(f"couldn't reach {endpoint}")
+
+
+@dataclass
+class FakeSender:
+    """A push sender that records each endpoint and answers from a table.
+
+    Endpoints default to 201. One in ``failing`` raises with the endpoint in
+    the message, as a transport error would.
+    """
+
+    statuses: dict[str, int] = field(default_factory=dict)
+    failing: set[str] = field(default_factory=set)
+    sent: list[str] = field(default_factory=list)
+    closed: bool = False
+
+    async def send(self, endpoint: str) -> int:
+        """Record ``endpoint``, then answer or raise."""
+        self.sent.append(endpoint)
+        if endpoint in self.failing:
+            raise UnreachableError(endpoint)
+        return self.statuses.get(endpoint, 201)
+
+    async def aclose(self) -> None:
+        """Note that the relay closed its sender."""
+        self.closed = True
+
+
+def subscribe(client: TestClient, mailbox: str, endpoint: Any) -> Any:
+    """PUT ``{"endpoint": endpoint}`` to ``mailbox``'s push route."""
+    return client.put(f"/v1/push/{mailbox}", json={"endpoint": endpoint})
+
+
+def unsubscribe(client: TestClient, mailbox: str, endpoint: Any) -> Any:
+    """DELETE ``{"endpoint": endpoint}`` from ``mailbox``'s push route."""
+    return client.request("DELETE", f"/v1/push/{mailbox}", json={"endpoint": endpoint})
+
+
+def nudge(client: TestClient, mailbox: str, not_before: Any) -> Any:
+    """POST ``{"not_before": not_before}`` to ``mailbox``'s nudge route."""
+    return client.post(f"/v1/push/{mailbox}/nudge", json={"not_before": not_before})
+
+
+def wake_put(client: TestClient, mailbox: str, wake: str = "1") -> Any:
+    """PUT a 1 KiB blob to ``mailbox`` with ``wake`` in the query."""
+    return client.put(
+        f"/v1/mailbox/{mailbox}",
+        params={"wake": wake},
+        content=blob(),
+        headers=OCTET_STREAM,
+    )
+
+
+def tick(client: TestClient, app: object, sender: FakeSender, now: float) -> None:
+    """Run one ``run_due`` at ``now`` on the app's own event loop."""
+    assert client.portal is not None, "use the client inside its with block"
+    client.portal.call(run_due, store_of(app), sender, now)
+
+
+def push_rows(db_path: Path) -> list[tuple[Any, ...]]:
+    """Every ``push_subs`` row as (mailbox, endpoint, expiry), sorted."""
+    with closing(sqlite3.connect(db_path)) as db:
+        query = "SELECT mailbox, endpoint, expiry FROM push_subs ORDER BY 1, 2"
+        return list(db.execute(query).fetchall())
+
+
+def nudge_rows(db_path: Path) -> list[tuple[Any, ...]]:
+    """Every ``nudges`` row as (mailbox, due), sorted."""
+    with closing(sqlite3.connect(db_path)) as db:
+        return list(db.execute("SELECT mailbox, due FROM nudges ORDER BY 1, 2"))

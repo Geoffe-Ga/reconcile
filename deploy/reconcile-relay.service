@@ -1,6 +1,7 @@
 # The blind mailbox relay (reconcile.relay, ADR-0028), on loopback behind
 # Caddy. Uvicorn writes no access log, ignores forwarding headers and sends no
-# Server header; the app drops client addresses before any route runs.
+# Server header; the app drops client addresses before any route runs. Its
+# only outbound requests are empty Web Pushes to the browsers' push services.
 # deploy/deploy.sh installs this unit; the README sets up the user and venv.
 
 [Unit]
@@ -13,6 +14,10 @@ User=reconcile
 # directory; the venv holds only requirements.txt.
 WorkingDirectory=/opt/reconcile/src
 Environment=RECONCILE_RELAY_DB=/var/lib/reconcile/relay.db
+# Web Push (#89): deploy.sh makes this key once and never copies it, and its
+# drop-in, reconcile-relay.service.d/reconcile.conf, sets
+# RECONCILE_RELAY_VAPID_SUBJECT to https://$RECONCILE_SITE.
+Environment=RECONCILE_RELAY_VAPID_KEY=/var/lib/reconcile/vapid.pem
 StateDirectory=reconcile
 # Only the reconcile user may read the database and its WAL, as with
 # scripts/relay.sh's umask.

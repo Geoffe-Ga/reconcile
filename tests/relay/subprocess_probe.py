@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from starlette.types import ASGIApp, Receive, Scope, Send
 
     from reconcile.relay.app import Clock
+    from reconcile.relay.push import PushSender
     from reconcile.relay.settings import Settings
 
 PROBE_PATH = "/test-only/probe"
@@ -70,10 +71,12 @@ def install() -> None:
     original = relay_app.create_app
 
     def create_app(
-        settings: Settings | None = None, clock: Clock | None = None
+        settings: Settings | None = None,
+        clock: Clock | None = None,
+        sender: PushSender | None = None,
     ) -> ASGIApp:
         """Build the real relay, add the probe route, and wrap the result."""
-        app = original(settings, clock)
+        app = original(settings, clock, sender)
         api = app.app if isinstance(app, PrivacyMiddleware) else app
         assert isinstance(api, FastAPI)
         api.add_api_route(PROBE_PATH, probe)

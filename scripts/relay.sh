@@ -22,6 +22,9 @@ ENVIRONMENT:
     RECONCILE_RELAY_DB            SQLite file, relative to the project root
                                   (default .relay-data/relay.db, gitignored)
     RECONCILE_RELAY_MAX_DB_BYTES  Refuse PUTs above this size (default 1 GiB)
+    RECONCILE_RELAY_VAPID_KEY     A PEM P-256 key that turns Web Push on (#89);
+                                  unset, push is off (deploy/README.md)
+    RECONCILE_RELAY_VAPID_SUBJECT With a key: https://<domain> or mailto:<address>
 
 --no-proxy-headers matters: Uvicorn otherwise trusts X-Forwarded-For from
 127.0.0.1, which is where a reverse proxy on the same host connects from.

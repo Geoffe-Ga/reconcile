@@ -64,3 +64,34 @@ def test_settings_are_frozen() -> None:
     for field in dataclasses.fields(settings):
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(settings, field.name, None)
+
+
+def test_push_is_off_without_a_vapid_key() -> None:
+    """With no RECONCILE_RELAY_VAPID_KEY there is no key and no subject."""
+    settings = Settings.from_env({"RECONCILE_RELAY_DB": "relay.db"})
+
+    assert settings.vapid_key is None
+    assert settings.vapid_subject == ""
+
+
+def test_an_empty_vapid_key_leaves_push_off() -> None:
+    """An empty key path is as good as none: push stays off."""
+    settings = Settings.from_env(
+        {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_VAPID_KEY": ""}
+    )
+
+    assert settings.vapid_key is None
+
+
+def test_the_vapid_key_and_subject_are_read() -> None:
+    """The key is a path; the subject is kept exactly as given."""
+    settings = Settings.from_env(
+        {
+            "RECONCILE_RELAY_DB": "relay.db",
+            "RECONCILE_RELAY_VAPID_KEY": "/var/lib/reconcile/vapid.pem",
+            "RECONCILE_RELAY_VAPID_SUBJECT": "https://relay.example.org",
+        }
+    )
+
+    assert settings.vapid_key == Path("/var/lib/reconcile/vapid.pem")
+    assert settings.vapid_subject == "https://relay.example.org"
