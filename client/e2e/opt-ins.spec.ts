@@ -8,9 +8,10 @@
  * reads who did. axe checks each screen, and the fixture fails the test on
  * any CSP violation. Nothing moves time. Once the bot is on, exactly one of
  * the three devices posts the vote's result to the webhook (#119), under the
- * deploy CSP, and the fixture answers it as Discord would, so nothing reaches
- * Discord. The post carries the fixed line and the app's address alone, with
- * no cookie or referrer, and after the steward's narrowing nothing more goes.
+ * deploy CSP, and the fixture answers it as a forum channel's webhook would,
+ * so nothing reaches Discord. The post opens the vote's thread by its number
+ * alone (#123) and carries the fixed line and the app's address, with no
+ * cookie or referrer, and after the steward's narrowing nothing more goes.
  */
 import type { Page } from '@playwright/test';
 
@@ -133,13 +134,14 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     await expectAccessible(ben, 'Group rules on a phone, bot on');
   });
 
-  await test.step('one device posts the result to the webhook, and nothing of the group', async () => {
+  await test.step('one device posts the result to the webhook, opening its thread, and nothing of the group', async () => {
     await expect.poll(() => openProfile.discord.length, { timeout: 30_000 }).toBe(1);
     const [post] = openProfile.discord;
     expect(post?.method).toBe('POST');
-    expect(post?.url).toBe(WEBHOOK);
+    expect(post?.url).toBe(`${WEBHOOK}?wait=true`);
     expect(post?.body).toEqual({
       content: `A vote has finished in Reconcile.\n${origin}/`,
+      thread_name: 'Proposal 1 in Reconcile',
       allowed_mentions: { parse: [] },
     });
     expect(post?.headers['origin']).toBe(origin);

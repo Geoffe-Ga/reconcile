@@ -178,7 +178,7 @@ export interface SyncOptions {
   /** The timers the poller uses (default: the window's). */
   timers?: Timers;
   /** The chat bot, run after each group syncs (#119); without one, nothing posts. */
-  chatBot?: ChatBot;
+  chatBot?: Pick<ChatBot, 'run'>;
 }
 
 /** The running sync loop. */

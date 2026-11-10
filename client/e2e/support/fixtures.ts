@@ -4,8 +4,8 @@
  * under the deploy CSP and fails the test on any CSP violation in any of
  * them, axe on the screen a person is looking at, a few locators, and
  * first run's steps (#76). Every profile's requests to Discord are answered
- * by the fixture itself and kept in `discord` (#119), so no test ever posts
- * to Discord.
+ * by the fixture itself, as a forum channel's webhook would answer them, and
+ * kept in `discord` (#119, #123), so no test ever posts to Discord.
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -49,8 +49,58 @@ export function isDiscord(url: URL): boolean {
   return /(^|\.)(discord|discordapp)\.com$/.test(url.hostname);
 }
 
-/** Answers a request to Discord as a webhook does, keeping it; a CORS preflight gets its own answer. */
-async function answerAsDiscord(route: Route, requests: DiscordRequest[]): Promise<void> {
+/** The server the fixture's webhook belongs to (#123). */
+export const DISCORD_GUILD = '1188000000000000001';
+
+/** The forum channel the fixture's webhook belongs to (#123). */
+export const DISCORD_FORUM = '1199000000000000777';
+
+/** The id of the `index`th thread the fixture opens, counting from 0 (#123). */
+export function discordThread(index: number): string {
+  return `13090000000000000${String(index + 10)}`;
+}
+
+/** What the fixture's Discord has opened: how many threads so far. */
+interface Forum {
+  threads: number;
+}
+
+/**
+ * Discord's answer to a request, as a forum channel's webhook gives it (#123):
+ * a GET of the webhook names its server and channel; a post with
+ * `thread_name` opens a new thread and, with `?wait=true`, answers its
+ * message, whose `channel_id` is the thread; any other post answers 204. A
+ * Join discussion link (`/channels/…`) opens a plain page.
+ */
+function discordAnswer(url: URL, method: string, body: unknown, forum: Forum) {
+  const cors = { 'access-control-allow-origin': '*' };
+  const json = (value: unknown) => ({
+    status: 200,
+    headers: { ...cors, 'content-type': 'application/json' },
+    body: JSON.stringify(value),
+  });
+  if (url.pathname.startsWith('/channels/')) {
+    return {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      body: '<title>Discord</title>',
+    };
+  }
+  if (method === 'GET') {
+    return json({ id: '1199000000000000001', guild_id: DISCORD_GUILD, channel_id: DISCORD_FORUM });
+  }
+  const opens = typeof body === 'object' && body !== null && 'thread_name' in body;
+  const channel = opens ? discordThread(forum.threads++) : DISCORD_FORUM;
+  if (url.searchParams.get('wait') !== 'true') return { status: 204, headers: cors };
+  return json({ id: '1400000000000000001', type: 0, channel_id: channel });
+}
+
+/** Answers a request to Discord as a forum channel's webhook does, keeping it; a CORS preflight gets its own answer. */
+async function answerAsDiscord(
+  route: Route,
+  requests: DiscordRequest[],
+  forum: Forum,
+): Promise<void> {
   const request = route.request();
   const cors = { 'access-control-allow-origin': '*' };
   if (request.method() === 'OPTIONS') {
@@ -65,21 +115,27 @@ async function answerAsDiscord(route: Route, requests: DiscordRequest[]): Promis
     return;
   }
   const text = request.postData();
+  const body = text === null ? null : (JSON.parse(text) as unknown);
   requests.push({
     method: request.method(),
     url: request.url(),
     headers: await request.allHeaders(),
-    body: text === null ? null : (JSON.parse(text) as unknown),
+    body,
   });
-  await route.fulfill({ status: 204, headers: cors });
+  await route.fulfill(discordAnswer(new URL(request.url()), request.method(), body, forum));
 }
 
-/** Answers every request `context` makes to Discord itself, keeping each in `requests`. */
+/**
+ * Answers every request `context` makes to Discord itself, as a forum
+ * channel's webhook would, keeping each in `requests`. Profiles routed with
+ * one `forum` share its threads, as members of one group share its channel.
+ */
 export async function routeDiscord(
   context: BrowserContext,
   requests: DiscordRequest[],
+  forum: Forum = { threads: 0 },
 ): Promise<void> {
-  await context.route(isDiscord, (route) => answerAsDiscord(route, requests));
+  await context.route(isDiscord, (route) => answerAsDiscord(route, requests, forum));
 }
 
 /**
@@ -129,10 +185,11 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
   openProfile: async ({ browser }, provide) => {
     const profiles: { readonly person: Person; readonly violations: string[] }[] = [];
     const discord: DiscordRequest[] = [];
+    const forum: Forum = { threads: 0 };
     const open = async (name: string, options: BrowserContextOptions = {}): Promise<Person> => {
       // The project's `use` options (baseURL, device) apply; the CSP always does.
       const context = await browser.newContext({ ...options, bypassCSP: false });
-      await routeDiscord(context, discord);
+      await routeDiscord(context, discord, forum);
       const violations: string[] = [];
       await context.exposeFunction(REPORT_VIOLATION, (line: string) => {
         violations.push(line);

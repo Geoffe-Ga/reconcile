@@ -465,7 +465,7 @@ describe('a sync pass', () => {
 
 describe('the chat bot in a pass (#119)', () => {
   /** A sync loop for Ana in two groups, running `chatBot`, with one group's relay refusing. */
-  async function twoGroups(chatBot: ChatBot) {
+  async function twoGroups(chatBot: Pick<ChatBot, 'run'>) {
     const fake = createFakeRelay();
     const broken = newKeys();
     const refusing: Fetch = (input, init) =>

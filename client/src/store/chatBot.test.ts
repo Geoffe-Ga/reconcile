@@ -1,7 +1,9 @@
 /**
  * The chat bot through the sync loop (#119; docs/spec/phase-1-spec.md §4,
  * Chat bot): devices on one fake relay, each posting to one fake Discord
- * endpoint (src/test/fakeDiscord.ts), so nothing reaches the network. With
+ * endpoint (src/test/fakeDiscord.ts), so nothing reaches the network. The
+ * fake's webhook is a text channel's, which refuses a thread (#123), so each
+ * device falls back once and then posts as #119 does. With
  * the bot on, each moment of a Proposal reaches Discord exactly once across
  * every device, two devices holding one key included; with it off, narrowed,
  * or the device leaving, nothing does. A canary in every field of the group
@@ -13,8 +15,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { xchachaSeal } from '../crypto/seal';
 import { type EventBodies, type EventType, signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
-import { postWebhook } from '../net/discord';
+import { getWebhook, postWebhook } from '../net/discord';
 import { TEST_NOW, testDevice, type TestDevice } from '../test/appServices';
+import { delivered } from '../test/fakeDiscord';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { FOUNDING, joinLater, members } from '../test/members';
@@ -50,14 +53,32 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** What a post said, as Discord would read it. */
+/** What reached the channel: each post Discord took, as it read it. */
 function bodies(fake: FakeRelay): unknown[] {
+  return delivered(fake.discord).map((request) => request.body);
+}
+
+/** Every post a device tried, taken or not, as Discord would read it. */
+function attempts(fake: FakeRelay): unknown[] {
   return fake.discord.requests.map((request) => request.body);
 }
 
-/** The body Discord gets for `content`. */
-function posted(content: string) {
-  return { content, allowed_mentions: { parse: [] } };
+/** A bot over `store` that posts to `fake`'s Discord, each notice its moment's name. */
+function testBot(store: TestDevice['services']['store'], fake: FakeRelay) {
+  const discord = fake.discord.fetch;
+  return createChatBot({
+    store,
+    post: (webhook, content, place) => postWebhook(webhook, content, { ...place, fetch: discord }),
+    getWebhook: (webhook) => getWebhook(webhook, { fetch: discord }),
+    notice: (moment) => moment,
+    threadName: (number) => `Proposal ${String(number)}`,
+  });
+}
+
+/** The body Discord gets for `content`, opening thread `threadName` when given. */
+function posted(content: string, threadName?: string) {
+  const thread = threadName === undefined ? {} : { thread_name: threadName };
+  return { content, ...thread, allowed_mentions: { parse: [] } };
 }
 
 /** An event a test device says: its type and body, the group and time added by {@link say}. */
@@ -72,9 +93,12 @@ async function say(device: TestDevice, groupId: string, draft: Said): Promise<st
   return event.id;
 }
 
-/** Every device syncs once, in order. */
+/** Every device syncs once, in order, each waiting for the posts its bot started. */
 async function syncAll(devices: readonly TestDevice[]): Promise<void> {
-  for (const device of devices) await device.services.sync.syncOnce();
+  for (const device of devices) {
+    await device.services.sync.syncOnce();
+    await device.chatBot.idle();
+  }
 }
 
 /** Every device syncs `times` times. */
@@ -160,7 +184,7 @@ describe('the chat bot, with the bot on', () => {
     await syncRounds(devices);
 
     expect(bodies(fake)).toEqual([posted(NOTICES.result)]);
-    expect(fake.discord.requests.map((request) => request.url)).toEqual([WEBHOOK]);
+    expect(delivered(fake.discord).map((request) => request.url)).toEqual([WEBHOOK]);
   });
 
   it('posts a new Proposal, its last day and its result exactly once each across both devices, with nothing of the group in them', async () => {
@@ -207,7 +231,8 @@ describe('the chat bot, with the bot on', () => {
       expect(everything).not.toContain(canary);
     }
     for (const section of FOUNDING.text.split('\n\n')) expect(everything).not.toContain(section);
-    expect(fake.discord.requests.every((request) => request.url === WEBHOOK)).toBe(true);
+    const paths = fake.discord.requests.map((request) => request.url.split('?')[0]);
+    expect(paths.every((path) => path === WEBHOOK)).toBe(true);
     expect(relayLeaks(fake)).toEqual([]);
     expect(network).not.toHaveBeenCalled();
     const lines = JSON.stringify(logged.flatMap((spy) => spy.mock.calls));
@@ -250,7 +275,9 @@ describe('the chat bot, with the bot on', () => {
     await syncRounds(devices);
     fake.minute += 60;
     await syncRounds(devices);
-    expect(bodies(fake)).toEqual([posted(NOTICES.result)]);
+    // A 500 isn't a text channel's refusal of a thread, so nothing goes again.
+    const result = posted(NOTICES.result, 'Proposal 1 in Reconcile');
+    expect(attempts(fake)).toEqual([result]);
 
     const [ana] = devices;
     if (ana === undefined) throw new Error('Expected Ana’s device.');
@@ -259,7 +286,7 @@ describe('the chat bot, with the bot on', () => {
     await syncRounds(devices);
     fake.minute += 60;
     await syncRounds(devices);
-    expect(bodies(fake)).toEqual([posted(NOTICES.result), posted(NOTICES.open)]);
+    expect(attempts(fake)).toEqual([result, posted(NOTICES.open, 'Proposal 2 in Reconcile')]);
     expect(await Promise.all(devices.map((device) => device.services.sync.syncOnce()))).toEqual([
       true,
       true,
@@ -393,12 +420,7 @@ describe('createChatBot over one store', () => {
     const { store, relay } = ana.services;
     await createSync({ store, relay, seal: xchachaSeal }).syncOnce();
     fake.discord.requests.length = 0;
-    const bot = () =>
-      createChatBot({
-        store,
-        post: (webhook, content) => postWebhook(webhook, content, fake.discord.fetch),
-        notice: (moment) => moment,
-      });
+    const bot = () => testBot(store, fake);
     return { fake, groupId, ana, bot };
   }
 
@@ -467,11 +489,7 @@ describe('createChatBot over one store', () => {
     const { store } = ana.services;
     expect((await store.getGroup(groupId))?.outbox).toHaveLength(1);
 
-    await createChatBot({
-      store,
-      post: (webhook, content) => postWebhook(webhook, content, fake.discord.fetch),
-      notice: (moment) => moment,
-    }).run(groupId);
+    await testBot(store, fake).run(groupId);
 
     expect(fake.discord.requests).toEqual([]);
     expect((await store.getGroup(groupId))?.chatClaims).toEqual([]);

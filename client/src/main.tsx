@@ -12,12 +12,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
-import { botNotice } from './app/chatMessages';
+import { botNotice, botThreadName } from './app/chatMessages';
 import { Root } from './app/Root';
 import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
 import { xchachaSeal } from './crypto/seal';
-import { postWebhook } from './net/discord';
+import { getWebhook, postWebhook } from './net/discord';
 import { createRelay } from './net/relay';
 import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
@@ -37,13 +37,20 @@ if (root === null) {
  * Opens the store, starts syncing while the page is visible, and renders the
  * app behind first run: the install gate and the pilot notice (#76). The store
  * opens empty on a new device, and nothing makes keys until first run is through.
- * The chat bot posts only for a group that turned it on by Proposal (#119).
+ * The chat bot posts only for a group that turned it on by Proposal (#119),
+ * into a thread per Proposal when its webhook is a forum channel's (#123).
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
-  const chatBot = createChatBot({ store, post: postWebhook, notice });
+  const chatBot = createChatBot({
+    store,
+    post: postWebhook,
+    getWebhook,
+    notice,
+    threadName: botThreadName,
+  });
   const sync = createSync({ store, relay, seal: xchachaSeal, chatBot });
   sync.start();
   const services = {

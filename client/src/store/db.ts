@@ -12,7 +12,8 @@
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
  * record, so Leave deletes the group with a single delete (#77), the chat
- * bot's claims (#119) included. A backup file's groups come back in one
+ * bot's claims (#119) and what it learned of the group's webhook (#123)
+ * included. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
  * left open.
@@ -43,6 +44,17 @@ export interface ChatClaim {
   readonly id: string;
   readonly proposal: string;
   readonly moment: BotMoment;
+}
+
+/**
+ * What this device learned of the group's Discord webhook (#123), for the
+ * webhook whose id is `webhook` (never its token): `text` once Discord showed
+ * it posts into a text channel, which takes no threads, or the server and
+ * channel ids Discord gave for it, which tell a new thread from that channel.
+ */
+export interface ChatChannel {
+  readonly webhook: string;
+  readonly home: 'text' | { readonly guild: string; readonly channel: string };
 }
 
 /** Everything the device keeps about one group. */
@@ -96,6 +108,11 @@ export interface Group {
    * first: each is posted once if it won, or dropped. Absent until the first.
    */
   chatClaims?: ChatClaim[];
+  /**
+   * What this device learned of the group's webhook (#123), so it asks
+   * Discord once: absent until it learns something. A new webhook starts over.
+   */
+  chatChannel?: ChatChannel;
 }
 
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
@@ -193,6 +210,12 @@ export interface Store extends DraftStore {
    * hears of it.
    */
   settleChatClaim(groupId: string, id: string): Promise<boolean>;
+  /**
+   * Keep `channel` as what this device learned of the group's webhook, in one
+   * change, replacing anything it learned before (#123). No screen reads it,
+   * so no listener hears of it.
+   */
+  noteChatChannel(groupId: string, channel: ChatChannel): Promise<void>;
   /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
@@ -342,6 +365,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       });
       return held;
     },
+    noteChatChannel: (groupId, channel) =>
+      changeQuietly(groupId, (group) => {
+        group.chatChannel = channel;
+      }),
     async purgeGroup(groupId) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const found = (await tx.store.getKey(groupId)) !== undefined;

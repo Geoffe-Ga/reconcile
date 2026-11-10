@@ -71,6 +71,8 @@ export interface LogBuilder {
   vouch(name: string, who: string): string;
   /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
+  /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
+  chatThread(name: string, proposal: string, url: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -188,6 +190,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
       const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
       return add(name, { type: 'chat-posted', group, ts: 0, body });
+    },
+    chatThread(name: string, proposal: string, url: string) {
+      return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

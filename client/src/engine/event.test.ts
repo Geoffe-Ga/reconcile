@@ -460,6 +460,14 @@ describe('parseEvent', () => {
       'chat-posted',
       { proposal: 'p', moment: 'open', nonce: 7 },
     ],
+    ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
+    ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
+    ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
+    [
+      'chat-thread with a numeric Proposal',
+      'chat-thread',
+      { proposal: 1, url: 'https://discord.com/channels/1/2' },
+    ],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -580,6 +588,19 @@ describe('parseEvent', () => {
     });
     const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
     expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
+  });
+
+  it('reads a chat-thread as its Proposal and URL, kept as written, dropping unknown keys (#123)', () => {
+    const body = { proposal: 'p1', url: 'https://example.com/x', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-thread', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-thread',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', url: 'https://example.com/x' },
+    });
   });
 
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {

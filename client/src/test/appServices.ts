@@ -1,16 +1,17 @@
 /**
  * One device's `AppServices` for tests: its own IndexedDB database on the
  * shared fake-indexeddb, a relay client on a shared fake relay, and a chat
- * bot (#119) that posts to that fake's Discord endpoint, never the network.
+ * bot (#119, #123) that posts to that fake's Discord webhook, never the
+ * network.
  */
 import { vi } from 'vitest';
 
-import { botNotice } from '../app/chatMessages';
+import { botNotice, botThreadName } from '../app/chatMessages';
 import type { AppServices } from '../app/services';
 import { xchachaSeal } from '../crypto/seal';
-import { postWebhook } from '../net/discord';
+import { getWebhook, postWebhook } from '../net/discord';
 import { createRelay } from '../net/relay';
-import { createChatBot } from '../store/chatBot';
+import { type ChatBot, createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
 import { createSync } from '../store/sync';
 import type { FakeRelay } from './fakeRelay';
@@ -18,11 +19,15 @@ import type { FakeRelay } from './fakeRelay';
 /** The app's origin in tests. */
 export const TEST_ORIGIN = 'https://reconcile.test';
 
-/** A test device: its services, every text it copied, and every file it downloaded. */
+/**
+ * A test device: its services, every text it copied, every file it
+ * downloaded, and its chat bot, whose posts a test can wait for (#123).
+ */
 export interface TestDevice {
   readonly services: AppServices;
   readonly copied: string[];
   readonly downloaded: File[];
+  readonly chatBot: ChatBot;
 }
 
 /** The device clock tests start at, in milliseconds. */
@@ -43,10 +48,13 @@ export async function testDevice(
   const store = await openStore(name);
   const relay = createRelay({ fetch: fake.fetch });
   const now = (): number => clock();
+  const discord = fake.discord.fetch;
   const chatBot = createChatBot({
     store,
-    post: (webhook, content) => postWebhook(webhook, content, fake.discord.fetch),
+    post: (webhook, content, place) => postWebhook(webhook, content, { ...place, fetch: discord }),
+    getWebhook: (webhook) => getWebhook(webhook, { fetch: discord }),
     notice: botNotice(TEST_ORIGIN, 'UTC'),
+    threadName: botThreadName,
     clock: now,
   });
   const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot });
@@ -76,5 +84,5 @@ export async function testDevice(
     },
     erase: vi.fn(() => Promise.resolve()),
   };
-  return { services, copied, downloaded };
+  return { services, copied, downloaded, chatBot };
 }
