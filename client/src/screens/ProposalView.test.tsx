@@ -259,6 +259,18 @@ describe('ProposalView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('shows a closed Proposal’s ballot, unchangeable, to someone in its eligible set who stepped down', () => {
+    const { log, proposalId } = openVote();
+    log.vote('ben', proposalId, 3);
+    log.level('ben', FOLLOWING);
+    const deadline = deadlineOf(START_MINUTE);
+    setup({ state: log.state(deadline), proposalId, me: authorOf('ben'), now: deadline });
+    expect(screen.getByText('Voting has closed, so this ballot can’t change.')).toBeVisible();
+    expect(screen.getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
+    expect(screen.queryByText(/You’re following this group/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+  });
+
   it('gives the ballot back once they step up again before the deadline', () => {
     const { log, proposalId } = openVote();
     log.level('ben', FOLLOWING);

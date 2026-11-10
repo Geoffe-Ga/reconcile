@@ -153,14 +153,17 @@ function myBallot(props: ProposalViewProps, proposal: Proposal) {
 }
 
 /**
- * Why `me` can't vote on `proposal`, or null when they can (#166). Outside its
- * eligible set, they either joined after it opened or weren't at a voting
- * level then. Inside it, their level doesn't vote now, and choosing one that
- * does gives them the ballot back while it's open.
+ * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
+ * Outside its eligible set, they either joined after it opened or weren't at a
+ * voting level then. Inside it, they get the ballot, unchangeable once voting
+ * has closed; while it's open, they need a level that votes now, and choosing
+ * one gives them the ballot back.
  */
-function whyNoVote(state: GroupState, me: string, proposal: Proposal): string | null {
+function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
+  const { state, me, now } = props;
   if (proposal.eligible.includes(me)) {
-    return can(state, me, 'vote') ? null : messages.levels.following;
+    const closed = proposal.final || now >= proposal.deadline;
+    return closed || can(state, me, 'vote') ? null : messages.levels.following;
   }
   const member = state.members.find((candidate) => candidate.author === me);
   return member !== undefined && member.seq < proposal.seq
@@ -181,7 +184,7 @@ function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: 
 
 function Vote({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, me, now, reachable, onVote } = props;
-  const reason = whyNoVote(state, me, proposal);
+  const reason = whyNoVote(props, proposal);
   const mine = myBallot(props, proposal);
   return (
     <Block title={messages.ballot.heading} className="vote">

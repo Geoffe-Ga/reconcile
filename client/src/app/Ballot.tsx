@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useRef, useState } from 'react';
+import { type SyntheticEvent, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -17,6 +17,7 @@ import { nfcLength } from '../engine/text';
 import { messages } from './messages';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
+import { useSaving } from './useSaving';
 
 /** Props for {@link Ballot}. */
 export interface BallotProps {
@@ -62,27 +63,6 @@ function ScorePill({ score }: { readonly score: Score }) {
   );
 }
 
-/** Runs `vote` once at a time, and says how the last run went. */
-function useVote(onVote: BallotProps['onVote']) {
-  const busy = useRef(false);
-  const [running, setRunning] = useState(false);
-  const [outcome, setOutcome] = useState<'none' | 'sent' | 'failed'>('none');
-  const vote = async (score: Score, note: string) => {
-    if (busy.current) return;
-    busy.current = true;
-    setRunning(true);
-    setOutcome('none');
-    const saved = await onVote(score, note).then(
-      () => true,
-      () => false,
-    );
-    busy.current = false;
-    setRunning(false);
-    setOutcome(saved ? 'sent' : 'failed');
-  };
-  return { vote, running, outcome };
-}
-
 /**
  * The ballot (DESIGN.md, Ballot; spec §8): five score pills in a React Aria
  * RadioGroup, each always showing its number and label, and one note, which
@@ -95,7 +75,7 @@ export function Ballot(props: BallotProps) {
     initialScore === null ? null : String(initialScore),
   );
   const [note, setNote] = useState(initialNote);
-  const { vote, running, outcome } = useVote(props.onVote);
+  const { run: vote, running, outcome } = useSaving(props.onVote);
   const score = toScore(value);
   const forZero = score === 0;
 

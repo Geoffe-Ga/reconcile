@@ -159,6 +159,10 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each version shows a word diff of the Markdown source against the current text, in Newsreader with its line breaks kept: additions underlined on `primary-soft`, and deletions struck through on `negative-soft`, the `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
+- **Level picker** (#90): the three involvement levels as a radio group of cards, Member to Co-Creator.
+  - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
+  - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
+  - On People, Save your choice (secondary) appears only once the choice differs from the person's level.
 - **Consent meter:** two plain bars:
   - the average against the 2.0 line
   - the share of zeros against the 10% line

@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useRef, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { Button, Link, VisuallyHidden } from 'react-aria-components';
 
 import { ChatLink } from '../app/ChatLink';
@@ -11,6 +11,7 @@ import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import { formatSyncedAt } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
+import { useSaving } from '../app/useSaving';
 import { can, isLevel, type Level } from '../engine/capabilities';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
@@ -124,28 +125,6 @@ function waitingLevel(me: string, pending: readonly ParsedEvent[]): Level | unde
     .at(-1);
 }
 
-/** Runs `choose` once at a time, and says how the last run went. */
-function useChoose(choose: GroupHomeProps['onChooseLevel']) {
-  const busy = useRef(false);
-  const [running, setRunning] = useState(false);
-  const [outcome, setOutcome] = useState<'none' | 'sent' | 'failed'>('none');
-  const run = async (level: Level): Promise<boolean> => {
-    if (busy.current) return false;
-    busy.current = true;
-    setRunning(true);
-    setOutcome('none');
-    const saved = await choose(level).then(
-      () => true,
-      () => false,
-    );
-    busy.current = false;
-    setRunning(false);
-    setOutcome(saved ? 'sent' : 'failed');
-    return saved;
-  };
-  return { run, running, outcome };
-}
-
 interface InvolvementProps {
   readonly current: Level;
   readonly waiting: boolean;
@@ -160,7 +139,7 @@ interface InvolvementProps {
  */
 function Involvement({ current, waiting, reachable, onChooseLevel }: InvolvementProps) {
   const [choice, setChoice] = useState<Level | null>(null);
-  const { run, running, outcome } = useChoose(onChooseLevel);
+  const { run, running, outcome } = useSaving(onChooseLevel);
   const picked = choice ?? current;
   const save = () => {
     void run(picked).then((saved) => {
