@@ -17,6 +17,7 @@
  * The fold is pure: no I/O, no clock, no randomness, so every device that
  * folds the same records builds the same state.
  */
+import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
 import {
   can,
@@ -37,6 +38,8 @@ import {
   type GroupEvent,
   type InviteToken,
   isRulesProposal,
+  type KeyRotateBody,
+  type KxBody,
   isStewardProposal,
   type LevelBody,
   type NarrowBody,
@@ -100,17 +103,22 @@ export const NOTE_MAX = 280;
 /**
  * One record as the relay returned it: its seq, its receipt minute and the
  * signed record's bytes, `publicKey ‖ signature ‖ event bytes` (spec §3).
+ * `epoch` is the epoch of the mailbox it was read from (#98): absent for
+ * epoch 0, so logs kept before #98 read as they always did.
  */
 export interface LogRecord {
   readonly seq: number;
   readonly received: number;
   readonly bytes: Uint8Array;
+  readonly epoch?: number;
 }
 
 /**
  * A member: the name fixed at join, the involvement level they chose most
- * recently, the seq of the event that admitted them, and who invited them:
- * the author of a verified invite token (#73), or null.
+ * recently, the seq of the event that admitted them, who invited them: the
+ * author of a verified invite token (#73), or null, and their encryption key
+ * (#98): the X25519 public key their genesis, join or first `kx` carried, in
+ * base64url, or null before one.
  */
 export interface Member {
   readonly author: string;
@@ -118,6 +126,23 @@ export interface Member {
   readonly level: Level;
   readonly seq: number;
   readonly invitedBy: string | null;
+  readonly kx: string | null;
+}
+
+/**
+ * A canonical key change (#98): the first valid `key-rotate` of its epoch,
+ * where it sits in relay order, who wrote it, its commit, and its wraps by
+ * member key. Records read from the epoch before it, from its seq on, are
+ * ignored.
+ */
+export interface Rotation {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly by: string;
+  readonly epoch: number;
+  readonly commit: string;
+  readonly wraps: Readonly<Record<string, string>>;
 }
 
 /** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
@@ -214,7 +239,10 @@ export interface IgnoredRecord {
  * (`effectiveOptIn`). `narrowings` keeps every steward narrowing in relay
  * order, in force or ended (#117). `chatPosts` holds the chat bot's winning
  * claims, the first valid `chat-posted` per (Proposal, moment), in relay
- * order (#119).
+ * order (#119). `epoch` is the group key's epoch: 0 at genesis, then one more
+ * for each canonical key change, which `rotations` keeps in order (#98).
+ * `rotationDue` is true once a membership has ended since the last canonical
+ * key change, or genesis, until the next.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -232,6 +260,9 @@ export interface GroupState {
   readonly suspensions: readonly Suspension[];
   readonly narrowings: readonly Narrowing[];
   readonly chatPosts: readonly ChatPost[];
+  readonly epoch: number;
+  readonly rotations: readonly Rotation[];
+  readonly rotationDue: boolean;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -275,8 +306,16 @@ interface Draft {
   readonly suspensions: Suspension[];
   readonly narrowings: Narrowing[];
   readonly chatPosts: ChatPost[];
+  epoch: number;
+  readonly rotations: Rotation[];
+  rotationDue: boolean;
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
+}
+
+/** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
+function usableKx(kx: string | undefined): string | null {
+  return kx !== undefined && isUsableKxKey(fromBase64url(kx)) ? kx : null;
 }
 
 /** Founds the group, unless its rules differ from the defaults (rules.ts). */
@@ -294,6 +333,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
     level: FOUNDER_LEVEL,
     seq: at.seq,
     invitedBy: null,
+    kx: usableKx(body.kx),
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
@@ -332,7 +372,8 @@ function applyJoin(draft: Draft, event: JoinEvent, at: Receipt): boolean {
   const level = body.level ?? DEFAULT_JOIN_LEVEL;
   if (!isLevel(level) || hasJoined(draft, author)) return false;
   const invitedBy = inviterOf(draft, body.token, event.group);
-  draft.members.push({ author, name: body.name, level, seq: at.seq, invitedBy });
+  const kx = usableKx(body.kx);
+  draft.members.push({ author, name: body.name, level, seq: at.seq, invitedBy, kx });
   return true;
 }
 
@@ -670,11 +711,14 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 
 /**
  * {@link applyAdmitted} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117) and `chat-posted` (#119).
+ * (#102), `narrow` (#117), `chat-posted` (#119), and `kx` and `key-rotate` (#98).
  */
 function applyLater(
   draft: Draft,
-  event: Extract<GroupEvent, { readonly type: 'suspend' | 'narrow' | 'chat-posted' }>,
+  event: Extract<
+    GroupEvent,
+    { readonly type: 'suspend' | 'narrow' | 'chat-posted' | 'kx' | 'key-rotate' }
+  >,
   at: Receipt,
 ): boolean {
   switch (event.type) {
@@ -684,7 +728,73 @@ function applyLater(
       return applyNarrow(draft, event.body, event.author, at);
     case 'chat-posted':
       return applyChatPosted(draft, event.body, event.author, at);
+    case 'kx':
+      return applyKx(draft, event.body, event.author);
+    case 'key-rotate':
+      return applyKeyRotate(draft, event.body, event.author, at);
   }
+}
+
+/**
+ * Whether `event` ends a membership, and so calls for a new group key (#98;
+ * ADR-0072 item 11): a `leave` now, and #115's `remove` once it lands. The
+ * fold asks only of events it applied. This is the one trigger.
+ */
+export function endsMembership(event: Pick<GroupEvent, 'type'>): boolean {
+  return event.type === 'leave';
+}
+
+/**
+ * Records a member's encryption key (#98) when they have none yet and it is
+ * one a box can be sealed to: the first per member counts, and a key carried
+ * at genesis or join came first.
+ */
+function applyKx(draft: Draft, body: KxBody, author: string): boolean {
+  const index = draft.members.findIndex((m) => m.author === author);
+  const member = draft.members[index];
+  const kx = usableKx(body.kx);
+  if (member === undefined || member.kx !== null || kx === null) return false;
+  draft.members[index] = { ...member, kx };
+  return true;
+}
+
+/** A member who has an encryption key (#98). */
+export type KeyHolder = Member & { readonly kx: string };
+
+/** The members a key change must wrap to: every current member with an encryption key (#98). */
+export function keyHolders(state: Pick<GroupState, 'members'>): KeyHolder[] {
+  return state.members.filter((m): m is KeyHolder => m.kx !== null);
+}
+
+/** Whether `wraps` names exactly `recipients`, no one more and no one less. */
+function wrapsExactly(wraps: Readonly<Record<string, string>>, recipients: readonly string[]) {
+  const named = Object.keys(wraps);
+  return named.length === recipients.length && recipients.every((key) => Object.hasOwn(wraps, key));
+}
+
+/**
+ * Changes the group key (#98; ADR-0072 item 11), when a current member wrote
+ * it, a membership has ended since the last canonical change, it names the
+ * next epoch, and its wraps name exactly the current members with an
+ * encryption key. The first valid one per epoch is canonical (relay order
+ * decides, ADR-0073); from it on, records read from the old epoch's mailbox
+ * change nothing.
+ */
+function applyKeyRotate(draft: Draft, body: KeyRotateBody, author: string, at: Receipt): boolean {
+  const valid =
+    draft.rotationDue &&
+    draft.members.some((m) => m.author === author) &&
+    body.epoch === draft.epoch + 1 &&
+    wrapsExactly(
+      body.wraps,
+      keyHolders(draft).map((m) => m.author),
+    );
+  if (!valid) return false;
+  const { epoch, commit, wraps } = body;
+  draft.rotations.push({ ...at, by: author, epoch, commit, wraps });
+  draft.epoch = epoch;
+  draft.rotationDue = false;
+  return true;
 }
 
 /** Every score the ballots gave version `id`, one per ballot that scored it. */
@@ -837,25 +947,16 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     suspensions: [],
     narrowings: [],
     chatPosts: [],
+    epoch: 0,
+    rotations: [],
+    rotationDue: false,
     seated: new Set(),
     ruled: new Set(),
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
-  for (const { seq, received, bytes } of records) {
-    // Relay time only moves on, whatever the record holds.
-    draft.at = Math.max(draft.at, received);
-    advanceSeats(draft);
-    advanceOptIns(draft);
-    const parsed = parseRecord(bytes);
-    if (parsed === null) {
-      ignored.push({ seq, id: null });
-      continue;
-    }
-    const { event, id } = parsed;
-    const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
-    seen.add(id);
-    if (!applied) ignored.push({ seq, id });
+  for (const record of records) {
+    if (!foldRecord(draft, record, seen)) ignored.push({ seq: record.seq, id: idOf(record) });
   }
   draft.at = relayNow ?? draft.at;
   advanceSeats(draft);
@@ -863,7 +964,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings, chatPosts } = draft;
+  const { narrowings, chatPosts, epoch, rotations, rotationDue } = draft;
   return {
     group,
     rules,
@@ -880,6 +981,39 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     suspensions,
     narrowings,
     chatPosts,
+    epoch,
+    rotations,
+    rotationDue,
     ignored,
   };
+}
+
+/** The id of the event a record holds, or null when it doesn't verify or hold one. */
+function idOf(record: LogRecord): string | null {
+  return parseRecord(record.bytes)?.id ?? null;
+}
+
+/**
+ * Folds one record into the draft, returning whether it was applied.
+ *
+ * A record read from a mailbox of another epoch than the group's now, such as
+ * a stale invite's join or a late writer's Proposal after a key change (#98),
+ * changes nothing at all: not relay time, and not the event ids seen, so the
+ * copy its author posts again to the new mailbox folds once. Otherwise relay
+ * time moves on, whatever the record holds, and the seats and opt-ins catch up
+ * to it before the event is checked. A repeated event id is ignored.
+ */
+function foldRecord(draft: Draft, record: LogRecord, seen: Set<string>): boolean {
+  const { seq, received, bytes, epoch = 0 } = record;
+  if (epoch !== draft.epoch) return false;
+  draft.at = Math.max(draft.at, received);
+  advanceSeats(draft);
+  advanceOptIns(draft);
+  const parsed = parseRecord(bytes);
+  if (parsed === null) return false;
+  const { event, id } = parsed;
+  const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
+  seen.add(id);
+  if (applied && endsMembership(event)) draft.rotationDue = true;
+  return applied;
 }

@@ -16,6 +16,7 @@ interface TestMember {
   level: Level;
   seq: number;
   invitedBy: null;
+  kx: null;
 }
 
 /** Members with these names, each under a fresh key. */
@@ -26,6 +27,7 @@ function people(names: readonly string[]): TestMember[] {
     level: DEFAULT_JOIN_LEVEL,
     seq,
     invitedBy: null,
+    kx: null,
   }));
 }
 

@@ -4,7 +4,10 @@
  *
  * Create group and Join each sign one event with the engine, keep its record
  * in the store's outbox, and ask the sync loop to send it at once. Each makes
- * a fresh keypair for that one group (ADR-0009), kept only with its records.
+ * a fresh signing keypair and a fresh encryption keypair for that one group
+ * (ADR-0009, #98), kept only with its records; the event carries the
+ * encryption key's public half, `kx`, which the group's new secrets are
+ * wrapped to when its key changes.
  * Create group also makes the group secret, which the mailbox id and seal key
  * derive from (spec §3). Copy invite link posts a sealed envelope holding the
  * secret and the whole log to a short-lived invite mailbox (#73), so a joiner
@@ -12,6 +15,7 @@
  * Folded state still comes only from relay records, so a new group shows once
  * its genesis is back from the relay.
  */
+import { kxPublicKeyOf, newKxKey } from '../crypto/box';
 import { newGroupSecret } from '../crypto/groupKeys';
 import { inviteChannelOf, newInviteSeed, signInviteToken } from '../crypto/invite';
 import { MAX_RECORD_BYTES } from '../crypto/record';
@@ -24,6 +28,7 @@ import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { DEFAULT_RULES } from '../engine/rules';
 import {
+  type Envelope,
   INVITE_TTL_DAYS,
   type InvitePreview,
   openEnvelope,
@@ -31,6 +36,7 @@ import {
 } from '../invite/envelope';
 import type { Relay } from '../net/relay';
 import type { Me, Store } from '../store/db';
+import { adoptionFor, epochOf, secretFits } from '../store/epochs';
 import { eventIdOf } from '../store/eventId';
 import type { Sync } from '../store/sync';
 import { inviteLink } from './invite';
@@ -77,6 +83,7 @@ export async function createGroup(
 ): Promise<CreateResult> {
   const secret = newGroupSecret();
   const keys = newSigningKeys();
+  const kxKey = newKxKey();
   const { groupName: name, yourName: founder, chat, title, text } = values;
   const body = {
     name,
@@ -85,6 +92,7 @@ export async function createGroup(
     atoms: genesisAtoms(text),
     ...(chat === null ? {} : { chat }),
     rules: DEFAULT_RULES,
+    kx: base64url(kxPublicKeyOf(kxKey)),
   };
   const genesis = signEvent(keys.secretKey, {
     type: 'genesis',
@@ -95,7 +103,7 @@ export async function createGroup(
   if (genesis.record.length > MAX_RECORD_BYTES) return { outcome: 'too-large' };
   const groupId = genesis.id;
   const me = { author: base64url(keys.publicKey), name: founder };
-  await services.store.addGroup({ groupId, secret, signingKey: keys.secretKey, me });
+  await services.store.addGroup({ groupId, secret, signingKey: keys.secretKey, kxKey, me });
   await services.store.enqueue(groupId, genesis.record);
   void services.sync.syncOnce();
   return { outcome: 'created', groupId };
@@ -109,6 +117,8 @@ export interface FoundGroup {
   readonly preview: InvitePreview;
   /** The group secret the envelope carried, kept on Join. */
   readonly secret: Uint8Array;
+  /** That secret's epoch (#98), checked against its key change's commit. */
+  readonly epoch: number;
   /** The inviter's token, which the join carries. */
   readonly token: InviteToken;
   /**
@@ -161,6 +171,7 @@ export async function makeInvite(
   const sig = base64url(signInviteToken(group.signingKey, groupId));
   const blobs = sealEnvelope(services.seal, channel, {
     groupSecret: group.secret,
+    epoch: epochOf(group),
     preview: previewOf(fold(group.log, group.relayNow), group.me),
     token: { by: group.me.author, sig },
     entries: group.log,
@@ -177,12 +188,28 @@ function highestSeq(records: readonly LogRecord[]): number {
 }
 
 /**
+ * Merges an invite's entries into a group this device is already in (#73),
+ * then takes up the invite's secret when its epoch is later than the one the
+ * device holds and its key change's commit names it (#98): how a device that
+ * missed a new key gets back in.
+ */
+async function mergeInvite(services: Services, groupId: string, envelope: Envelope) {
+  const { store } = services;
+  await store.mergeLog(groupId, envelope.entries, eventIdOf);
+  const group = await store.getGroup(groupId);
+  const advance = group && adoptionFor(group, envelope.epoch, envelope.groupSecret);
+  if (advance) await store.adoptEpoch(groupId, advance);
+}
+
+/**
  * Opens the invite the seed names: reads every blob in its mailbox, opens
  * the envelope, and folds its entries in memory to find the group. Only the
  * invite mailbox id goes to the relay. Nothing is stored for a newcomer,
- * while a device already in the group merges in the entries it lacks (#73).
- * An empty mailbox (an expired link), a missing chunk, a blob that won't
- * open, or entries holding no genesis all read as `missing`.
+ * while a device already in the group merges in the entries it lacks (#73),
+ * and takes up a later key the invite carries (#98). An empty mailbox (an
+ * expired link), a missing chunk, a blob that won't open, entries holding no
+ * genesis, or a secret its epoch's key change doesn't commit to all read as
+ * `missing`.
  */
 export async function lookupInvite(services: Services, seed: Uint8Array): Promise<InviteLookup> {
   const channel = inviteChannelOf(seed);
@@ -194,13 +221,15 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
   }
   const blobs = page.records.map((record) => record.data);
   const envelope = openEnvelope(services.seal, channel, blobs);
-  const groupId = envelope === null ? null : fold(envelope.entries, page.now).group;
-  if (envelope === null || groupId === null) return { kind: 'missing' };
+  const state = envelope === null ? null : fold(envelope.entries, page.now);
+  const groupId = state?.group ?? null;
+  if (envelope === null || state === null || groupId === null) return { kind: 'missing' };
+  if (!secretFits(state, envelope.epoch, envelope.groupSecret)) return { kind: 'missing' };
   if ((await services.store.getGroup(groupId)) !== undefined) {
-    await services.store.mergeLog(groupId, envelope.entries, eventIdOf);
+    await mergeInvite(services, groupId, envelope);
     return { kind: 'joined', groupId };
   }
-  const { preview, groupSecret: secret, token, entries } = envelope;
+  const { preview, groupSecret: secret, epoch, token, entries } = envelope;
   const cursor = highestSeq(entries);
   return {
     kind: 'found',
@@ -208,6 +237,7 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
       groupId,
       preview,
       secret,
+      epoch,
       token,
       page: { records: entries, cursor, relayNow: page.now, instance: page.instance },
     },
@@ -227,16 +257,19 @@ export async function joinGroup(
   name: string,
   level: Level,
 ): Promise<string> {
-  const { groupId, secret, token, page } = found;
+  const { groupId, secret, epoch, token, page } = found;
   const keys = newSigningKeys();
+  const kxKey = newKxKey();
+  const kx = base64url(kxPublicKeyOf(kxKey));
   const join = signEvent(keys.secretKey, {
     type: 'join',
     group: groupId,
     ts: services.now(),
-    body: { name, level, token: { by: token.by, sig: token.sig } },
+    body: { name, level, token: { by: token.by, sig: token.sig }, kx },
   });
   const me = { author: base64url(keys.publicKey), name };
-  await services.store.addGroup({ groupId, secret, signingKey: keys.secretKey, me });
+  const signingKey = keys.secretKey;
+  await services.store.addGroup({ groupId, secret, signingKey, kxKey, epoch, me });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };
   await services.store.applyPull(groupId, pull, eventIdOf);
   await services.store.enqueue(groupId, join.record);

@@ -12,7 +12,7 @@ import type { Sync } from '../store/sync';
 import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { authorOf, signedAs, testKeys } from '../test/keys';
+import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { GroupServicesContext, useGroup } from './useGroup';
 import type { GroupServices } from './useGroup';
 
@@ -33,7 +33,13 @@ function genesis(title = 'House rules'): SignedEvent {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name: 'Riverside Tenants', founder: 'Ana', title, atoms: ['Quiet after 10pm.'] },
+    body: {
+      name: 'Riverside Tenants',
+      founder: 'Ana',
+      title,
+      atoms: ['Quiet after 10pm.'],
+      kx: testKx('ana').kx,
+    },
   });
 }
 
@@ -42,7 +48,7 @@ function join(founding: SignedEvent, name: string): SignedEvent {
     type: 'join',
     group: founding.id,
     ts: TS,
-    body: { name },
+    body: { name, kx: testKx(name.toLowerCase()).kx },
   });
 }
 
@@ -182,6 +188,7 @@ describe('useGroup', () => {
       state: null,
       log: [],
       pending: [],
+      keyChange: null,
       lastSyncAt: null,
       relayNow: null,
       reachable: true,
@@ -363,6 +370,7 @@ function newGroup(groupId: string): NewGroup {
     groupId,
     secret: new Uint8Array(32),
     signingKey: testKeys('ana').secretKey,
+    kxKey: testKx('ana').kxKey,
     me: { author: authorOf('ana'), name: 'Ana' },
   };
 }

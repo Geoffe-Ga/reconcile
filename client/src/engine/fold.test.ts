@@ -100,6 +100,9 @@ describe('fold', () => {
       suspensions: [],
       narrowings: [],
       chatPosts: [],
+      epoch: 0,
+      rotations: [],
+      rotationDue: false,
       ignored: [],
     });
   });
@@ -202,6 +205,7 @@ describe('fold', () => {
       level,
       seq: 2,
       invitedBy: null,
+      kx: null,
     });
   });
 
@@ -219,6 +223,7 @@ describe('fold', () => {
       level: follow,
       seq: 2,
       invitedBy: null,
+      kx: null,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);

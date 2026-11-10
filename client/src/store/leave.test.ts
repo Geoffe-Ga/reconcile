@@ -14,7 +14,7 @@ import { parseRecord, type SignedEvent } from '../engine/event';
 import { createRelay, type Relay } from '../net/relay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { signedAs, testKeys } from '../test/keys';
+import { signedAs, testKeys, testKx } from '../test/keys';
 import { openStore, type Store } from './db';
 import { createSync, type Sync } from './sync';
 
@@ -39,7 +39,13 @@ function founding(name: string, fill: number) {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name, founder: 'Ana', title: `${name} rules`, atoms: [`${name}: be kind.`] },
+    body: {
+      name,
+      founder: 'Ana',
+      title: `${name} rules`,
+      atoms: [`${name}: be kind.`],
+      kx: testKx('ana').kx,
+    },
   });
   const secret = new Uint8Array(32).fill(fill);
   return { genesis, secret, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
@@ -74,6 +80,7 @@ async function keep(store: Store, sync: Sync, group: Founded): Promise<void> {
     groupId: group.genesis.id,
     secret: group.secret,
     signingKey: secretKey,
+    kxKey: testKx('ana').kxKey,
     me: { author, name: 'Ana' },
   });
   await store.enqueue(group.genesis.id, group.genesis.record);

@@ -22,6 +22,7 @@ import type { ParsedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { Group, Me, Store } from '../store/db';
+import { type KeyChange, keyChangeOf } from '../store/epochs';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -67,6 +68,12 @@ export interface GroupView {
    */
   leaving: boolean;
   /**
+   * Why this device can't read what the group writes now (#98): `left` when
+   * this membership left on another device, `missed` when the group's key
+   * changed and this device didn't get the new one; null while it can.
+   */
+  keyChange: KeyChange | null;
+  /**
    * Whether group home suggests a backup (#78): the group is on the device,
    * no backup file it saved or restored from holds it, and nobody answered
    * Not now.
@@ -93,6 +100,7 @@ export function useGroup(groupId: string): GroupView {
     state,
     log: group?.log ?? NO_RECORDS,
     pending,
+    keyChange: group === undefined || state === null ? null : keyChangeOf(group, state),
     ...syncStatusOf(group),
     reachable,
     me: group?.me ?? null,

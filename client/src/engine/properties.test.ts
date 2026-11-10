@@ -6,6 +6,7 @@
  * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
  * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
  * windows (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
+ * And of epochs (#98): a record read from another epoch's mailbox changes nothing, not even relay time.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -250,6 +251,27 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         ];
         const state = fold(withForgery, relayNow);
         expect(state.ignored).toContainEqual({ seq: 0, id: null });
+        expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
+      }),
+    );
+  });
+
+  it('ignores any record read from another epoch’s mailbox, wherever it lands, even a late copy (#98)', () => {
+    const scenario = arbitraryLog.chain((log) =>
+      fc.record({
+        log: fc.constant(log),
+        source: fc.constantFrom(...log.records),
+        at: fc.nat({ max: log.records.length }),
+        epoch: fc.integer({ min: 1, max: 3 }),
+        late: fc.integer({ min: 0, max: 30 * DAY_MINUTES }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ log: { records, relayNow }, source, at, epoch, late }) => {
+        // No key change ever happened here, so every epoch but 0 is another mailbox's.
+        const stale = { ...source, seq: 0, received: source.received + late, epoch };
+        const state = fold([...records.slice(0, at), stale, ...records.slice(at)], relayNow);
+        expect(state.ignored).toContainEqual({ seq: 0, id: parseRecord(source.bytes)?.id ?? null });
         expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
       }),
     );

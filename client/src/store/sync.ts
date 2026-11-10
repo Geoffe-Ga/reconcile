@@ -32,15 +32,35 @@
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
  * event id keeps any event from folding twice. Folded state comes from the
  * log alone, so an event still in the outbox is pending and never folded.
+ *
+ * A group's key changes when someone leaves (#98, `epochs.ts`). Each record
+ * read is tagged with the epoch of the mailbox it came from. While a key
+ * change is due, the outbox sends only `key-rotate` and `leave`. After a pass
+ * in which every group synced, a device that sees a key change due syncs that
+ * group once more and, if none has landed, posts one to the outgoing epoch's
+ * mailbox. A pull that brings a canonical key change this member's wrap opens
+ * moves the group to the new mailbox, in the same store change, and that
+ * mailbox is read at once. A member with no encryption key posts one.
  */
 
+import { newKxKey } from '../crypto/box';
 import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
-import type { LogRecord } from '../engine/fold';
+import { fold, type LogRecord } from '../engine/fold';
 import type { ChatBot } from './chatBot';
 import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
+import {
+  advanceFor,
+  epochOf,
+  hasDuty,
+  isFrozen,
+  keyRotateRecord,
+  kxRecord,
+  needsKx,
+  passesFreeze,
+} from './epochs';
 import { eventIdOf } from './eventId';
 
 /** The wait between passes while they succeed. */
@@ -208,12 +228,14 @@ export function createSync(options: SyncOptions): Sync {
 
   /**
    * Post the group's current outbox in order; an entry leaves only once the
-   * relay accepts it. Once the relay has returned a seq for the group's leave,
-   * the group is purged, and this returns true.
+   * relay accepts it. While `frozen` (#98), every entry but a `key-rotate` or
+   * `leave` stays queued, in its place. Once the relay has returned a seq for
+   * the group's leave, the group is purged, and this returns true.
    */
-  async function postOutbox(groupId: string, { mailbox, key }: Channel): Promise<boolean> {
+  async function postOutbox(groupId: string, { mailbox, key }: Channel, frozen: boolean) {
     const current = await store.getGroup(groupId);
     for (const bytes of current?.outbox ?? []) {
+      if (frozen && !passesFreeze(bytes)) continue;
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS);
       if (current?.leaving !== undefined && sameBytes(bytes, current.leaving)) {
         await store.purgeGroup(groupId);
@@ -224,36 +246,99 @@ export function createSync(options: SyncOptions): Sync {
     return false;
   }
 
-  async function syncGroup(group: Group): Promise<void> {
+  /**
+   * Posts the outbox to the group's current mailbox and reads it once:
+   * `left` once the group's leave is posted and the group purged, `moved`
+   * when the pull took the group to its next epoch (#98), else `stayed`.
+   */
+  async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
     const channel = channelOf(group.secret);
-    if (await postOutbox(group.groupId, channel)) return;
+    const frozen = isFrozen(fold(group.log, group.relayNow), group);
+    if (await postOutbox(group.groupId, channel, frozen)) return 'left';
     let after = group.cursor;
     let page = await relay.getBlobs(channel.mailbox, after);
     if (group.instance !== null && page.instance !== group.instance) {
       await store.resetCursor(group.groupId, page.instance);
-      if (await postOutbox(group.groupId, channel)) return;
+      if (await postOutbox(group.groupId, channel, frozen)) return 'left';
       after = 0;
       page = await relay.getBlobs(channel.mailbox, after);
     }
+    const records = openRecords(seal, channel, page.records, epochOf(group));
+    const advance = advanceFor(group, records, page.now);
     const pull: Pull = {
-      records: openRecords(seal, channel, page.records),
+      records,
       cursor: page.records[page.records.length - 1]?.seq ?? after,
       relayNow: page.now,
       instance: page.instance,
       lastSyncAt: clock(),
+      ...(advance === null ? {} : { advance }),
     };
     await store.applyPull(group.groupId, pull, idOf);
+    return advance === null ? 'stayed' : 'moved';
+  }
+
+  /**
+   * Syncs the group's mailbox, and each new one a key change moves it to at
+   * once, then posts this member's encryption key if the fold has none
+   * (#98), then runs the chat bot. False when the group is gone.
+   */
+  async function syncGroup(group: Group): Promise<boolean> {
+    let current = group;
+    for (;;) {
+      const outcome = await syncMailbox(current);
+      const fresh = outcome === 'left' ? undefined : await store.getGroup(group.groupId);
+      if (fresh === undefined) return false;
+      current = fresh;
+      if (outcome === 'stayed') break;
+    }
+    await queueKx(current);
     // Once halted (Erase, #78), the bot neither claims nor posts.
     if (!halted) await chatBot?.run(group.groupId).catch(() => undefined);
+    return true;
+  }
+
+  /** Queues this member's `kx` when the fold has no encryption key for them (#98). */
+  async function queueKx(group: Group): Promise<void> {
+    const state = fold(group.log, group.relayNow);
+    if (state.group === null || !needsKx(group, state)) return;
+    const kxKey = await store.ensureKx(group.groupId, group.kxKey ?? newKxKey());
+    await store.enqueue(group.groupId, kxRecord(group, state.group, kxKey, clock()));
+  }
+
+  /**
+   * The duty (#98): when the group has a key change due that this device may
+   * write, sync it once more, and if one is still due, post it to the
+   * outgoing epoch's mailbox, then sync again to take up the new key.
+   */
+  async function rotateIfDue(groupId: string): Promise<void> {
+    const group = await store.getGroup(groupId);
+    if (group === undefined || !hasDuty(group, fold(group.log, group.relayNow))) return;
+    if (!(await syncGroup(group))) return;
+    const fresh = await store.getGroup(groupId);
+    const state = fresh === undefined ? null : fold(fresh.log, fresh.relayNow);
+    if (fresh === undefined || state === null || !hasDuty(fresh, state)) return;
+    const { mailbox, key } = channelOf(fresh.secret);
+    const record = keyRotateRecord(fresh, state, clock());
+    await relay.putBlob(mailbox, seal.seal(mailbox, key, record), GROUP_TTL_DAYS);
+    await syncGroup(fresh);
+  }
+
+  /** Runs `step` for each group in turn while not halted; true when every group's step succeeded. */
+  async function eachGroup(step: (group: Group) => Promise<unknown>): Promise<boolean> {
+    let ok = true;
+    for (const group of await store.listGroups()) {
+      if (halted) break;
+      ok = (await step(group).then(succeeded, failed)) && ok;
+    }
+    return ok;
   }
 
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
-      for (const group of await store.listGroups()) {
-        if (halted) break;
-        ok = (await syncGroup(group).then(succeeded, failed)) && ok;
-      }
+      ok = await eachGroup(syncGroup);
+      // Only after a complete pass: a device that missed records mustn't write a key change.
+      if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));
     } catch {
       ok = false;
     }
@@ -309,15 +394,21 @@ export function channelOf(secret: Uint8Array): Channel {
   return { mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
 }
 
-/** The relay records whose blobs open on `channel`, as log records; the rest are skipped. */
+/**
+ * The relay records whose blobs open on `channel`, as log records, each
+ * tagged with `epoch`, the epoch of the mailbox they came from, unless it is
+ * 0 (#98); the rest are skipped.
+ */
 export function openRecords(
   seal: Seal,
   { mailbox, key }: Channel,
   records: readonly RelayRecord[],
+  epoch = 0,
 ): LogRecord[] {
+  const tag = epoch === 0 ? {} : { epoch };
   return records.flatMap(({ seq, received, data }) => {
     const bytes = seal.open(mailbox, key, data);
-    return bytes === null ? [] : [{ seq, received, bytes }];
+    return bytes === null ? [] : [{ seq, received, bytes, ...tag }];
   });
 }
 

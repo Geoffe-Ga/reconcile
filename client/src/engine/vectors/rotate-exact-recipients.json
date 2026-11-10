@@ -1,0 +1,157 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "rotate-exact-recipients: A, B, C and D are members; D leaves at seq 9 and E joins at seq 10; a key-rotate that leaves E out is ignored, the next with exactly A, B, C and E is canonical, and a third for epoch 1 is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": { "name": "Ben", "level": "co-creator", "kx": "&ben" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": { "name": "Cal", "level": "co-creator", "kx": "&cal" }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": { "name": "Dee", "level": "co-creator", "kx": "&dee" }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375009,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500540000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500600000,
+            "body": { "name": "Eve", "level": "co-creator", "kx": "&eve" }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": { "%ana": "AA", "%ben": "AA", "%cal": "AA" }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": { "%ana": "AA", "%ben": "AA", "%cal": "AA", "%eve": "AA" }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": { "%ana": "AA", "%ben": "AA", "%cal": "AA", "%eve": "AA" }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375013,
+      "expect": {
+        "epoch": 1,
+        "rotationDue": false,
+        "rotations": [
+          {
+            "id": "@12",
+            "seq": 12,
+            "received": 29375012,
+            "by": "%ben",
+            "epoch": 1,
+            "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+            "wraps": { "%ana": "AA", "%ben": "AA", "%cal": "AA", "%eve": "AA" }
+          }
+        ],
+        "ignored": [
+          { "seq": 11, "id": "@11" },
+          { "seq": 13, "id": "@13" }
+        ]
+      },
+      "unchangedWithout": [11, 13]
+    }
+  ]
+}

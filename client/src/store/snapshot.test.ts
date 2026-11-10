@@ -169,7 +169,7 @@ describe('exportGroups and importGroups', () => {
     expect(text(plaintext)).not.toContain('Canary draft');
     expect(text(plaintext)).not.toContain('Canary claim');
     expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual(['format', 'groups']);
-    expect(SNAPSHOT_FORMAT).toBe(1);
+    expect(SNAPSHOT_FORMAT).toBe(2);
   });
 
   it('leave out a group this device is leaving, and one whose genesis the relay hasn’t returned', async () => {
@@ -214,6 +214,78 @@ describe('exportGroups and importGroups', () => {
 
     expect(groupIds).toEqual([]);
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toBe(0);
+  });
+});
+
+describe('encryption keys and epochs in a backup (#98)', () => {
+  it('bring back the group’s encryption key and epoch, and each record’s epoch', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    const kxKey = Uint8Array.from({ length: 32 }, (_, i) => i + 7);
+    await device.ensureKx(group.groupId, kxKey);
+    // A record a late writer posted to the old mailbox: the fold ignores it, and the backup keeps it.
+    const late = {
+      bytes: group.records[1]?.bytes ?? new Uint8Array(),
+      seq: 90,
+      received: 91,
+      epoch: 1,
+    };
+    const pull = { records: [late], cursor: 90, relayNow: 92, instance: 'relay-1', lastSyncAt: 1 };
+    await device.applyPull(group.groupId, pull, eventIdOf);
+
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('ana-again');
+    await importGroups(second, file, PASSPHRASE);
+
+    const [held] = await second.listGroups();
+    expect(local(held?.kxKey ?? new Uint8Array())).toEqual(kxKey);
+    expect(held?.epoch ?? 0).toBe(0);
+    expect(held?.log.map((record) => record.epoch ?? 0)).toEqual([
+      ...group.records.map(() => 0),
+      1,
+    ]);
+  });
+
+  it('reads a format 1 file, as #78 saved it: no encryption key, every record of epoch 0', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    const snapshot = JSON.parse(
+      text(encodeSnapshot(backedUpGroups(await device.listGroups()))),
+    ) as {
+      groups: Record<string, unknown>[];
+    };
+    const old = {
+      format: 1,
+      groups: snapshot.groups.map((group) =>
+        Object.fromEntries(
+          Object.entries(group).filter(([key]) => !['epoch', 'kxKey'].includes(key)),
+        ),
+      ),
+    };
+    const file = await sealBackup(utf8(JSON.stringify(old)), PASSPHRASE, CHEAP);
+    const second = await openStore('ana-again');
+
+    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+
+    const [held] = await second.listGroups();
+    expect(held?.kxKey).toBeUndefined();
+    expect(held?.epoch ?? 0).toBe(0);
+    expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
+  });
+
+  it('writes the encryption key and the epoch, and a record’s epoch only when it isn’t 0', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    await device.ensureKx(group.groupId, new Uint8Array(32).fill(3));
+    const [kept] = backedUpGroups(await device.listGroups());
+    const json = JSON.parse(text(encodeSnapshot(kept === undefined ? [] : [kept]))) as {
+      format: number;
+      groups: { kxKey: string; epoch: number; log: Record<string, unknown>[] }[];
+    };
+    expect(json.format).toBe(2);
+    expect(json.groups[0]?.kxKey).toBe(base64url(new Uint8Array(32).fill(3)));
+    expect(json.groups[0]?.epoch).toBe(0);
+    expect(json.groups[0]?.log.every((record) => !('epoch' in record))).toBe(true);
   });
 });
 
@@ -297,7 +369,26 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
   };
 
   const breakings: readonly (readonly [string, Breaking])[] = [
-    ['another format', (snapshot) => ({ ...snapshot, format: 2 })],
+    ['another format', (snapshot) => ({ ...snapshot, format: 3 })],
+    [
+      'an encryption key of 31 bytes (#98)',
+      withGroup((group) => ({ ...group, kxKey: base64url(new Uint8Array(31)) })),
+    ],
+    ['an epoch that isn’t whole (#98)', withGroup((group) => ({ ...group, epoch: 0.5 }))],
+    ['a negative epoch (#98)', withGroup((group) => ({ ...group, epoch: -1 }))],
+    ['no epoch in a format 2 file (#98)', withGroup((group) => ({ ...group, epoch: undefined }))],
+    [
+      'an epoch whose key change the log doesn’t hold (#98)',
+      withGroup((group) => ({ ...group, epoch: 1 })),
+    ],
+    [
+      'a record read from epoch 0, spelled out (#98)',
+      withGroup((group) => ({ ...group, log: [{ ...firstRecord(group), epoch: 0 }] })),
+    ],
+    [
+      'a record of a fractional epoch (#98)',
+      withGroup((group) => ({ ...group, log: [{ ...firstRecord(group), epoch: 1.5 }] })),
+    ],
     ['no groups list', (snapshot) => ({ format: snapshot.format })],
     [
       'the same group twice',

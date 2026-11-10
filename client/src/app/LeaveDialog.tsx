@@ -5,9 +5,9 @@
  *
  * Built on React Aria's `DialogTrigger`, `ModalOverlay`, `Modal` and `Dialog`,
  * so focus moves into the dialog, stays there, and returns to the button when
- * it closes. Escape and Cancel close it with nothing queued. Under ADR-0073,
- * keys don't rotate, and the dialog says so until #98 replaces its last
- * sentence.
+ * it closes. Escape and Cancel close it with nothing queued. Its last
+ * sentence says the group gets a new key when someone leaves (#98), so
+ * neither this device nor a backup reads what comes next.
  */
 import { Button, Dialog, DialogTrigger, Heading, Modal, ModalOverlay } from 'react-aria-components';
 

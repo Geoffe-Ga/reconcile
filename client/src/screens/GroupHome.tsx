@@ -24,6 +24,7 @@ import { closeTime, type GroupState, type Member, type Proposal } from '../engin
 import { homeLists } from '../engine/home';
 import { displayName } from '../engine/names';
 import { activeSuspension, maySuspend, seatOf, type Suspension } from '../engine/stewards';
+import type { KeyChange } from '../store/epochs';
 
 /** Props for {@link GroupHome}. */
 export interface GroupHomeProps {
@@ -66,6 +67,12 @@ export interface SyncStatus {
   readonly deviceNow: number;
   /** Whether a long gap between syncs may have lost some history (#73). */
   readonly missingHistory: boolean;
+  /**
+   * Why this device can't read what the group writes now (#98): this
+   * membership left on another device, or this device missed the group's new
+   * key. Null or absent while it can.
+   */
+  readonly keyChange?: KeyChange | null;
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
@@ -193,12 +200,19 @@ function Decided({
   );
 }
 
+/** What group home says when the group's key changed past this device (#98). */
+const KEY_CHANGE_LINE: Readonly<Record<KeyChange, string>> = {
+  left: messages.home.keyLeft,
+  missed: messages.home.keyMissed,
+};
+
 /**
- * "Can't reach the relay right now", and the catch-up line while some history
- * may be missing, in a live region that is always there.
+ * "Can't reach the relay right now", the catch-up line while some history
+ * may be missing, and why this device can't read on once the group's key has
+ * changed past it (#98), in a live region that is always there.
  */
 function SyncNotices({ sync }: { readonly sync: SyncStatus }) {
-  const { reachable, lastSyncAt, deviceNow, missingHistory } = sync;
+  const { reachable, lastSyncAt, deviceNow, missingHistory, keyChange = null } = sync;
   const line =
     lastSyncAt === null
       ? messages.home.unreachable
@@ -206,6 +220,7 @@ function SyncNotices({ sync }: { readonly sync: SyncStatus }) {
   return (
     <div role="status">
       {reachable ? null : <p className="notice">{line}</p>}
+      {keyChange === null ? null : <p className="notice">{KEY_CHANGE_LINE[keyChange]}</p>}
       {missingHistory ? <p className="notice">{messages.home.missingHistory}</p> : null}
     </div>
   );
@@ -502,11 +517,14 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 
 /**
  * People, the Stewards (#102) and the invite, each for whoever may see it.
- * While this member's leave waits for the relay, there's no invite.
+ * While this member's leave waits for the relay, there's no invite, nor once
+ * the group's key changed past this device (#98): its link would carry a key
+ * nobody reads any more.
  */
 function MemberSections(props: GroupHomeProps) {
   const { state, me, makeInviteLink, copyText, leaving = false } = props;
   const roster = can(state, me, 'see-roster');
+  const current = (props.sync.keyChange ?? null) === null;
   return (
     <>
       {roster ? <PeopleSection {...props} /> : null}
@@ -518,7 +536,7 @@ function MemberSections(props: GroupHomeProps) {
       <Section title={messages.optIns.homeHeading}>
         <RulesLink state={state} />
       </Section>
-      {can(state, me, 'invite') && !leaving ? (
+      {can(state, me, 'invite') && !leaving && current ? (
         <Section title={messages.home.invite}>
           <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
         </Section>
