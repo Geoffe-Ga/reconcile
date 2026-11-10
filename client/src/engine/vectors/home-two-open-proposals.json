@@ -1,0 +1,176 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "two-open-proposals: P2 opens on a Monday and P1 on the Tuesday, so P2 closes first; Ben has scored P1 only, and Cal joins after both opened",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29379360,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29379361,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29379362,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29379420,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Bin day",
+              "why": "It suits us better.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29380860,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "It suits us better.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29380900,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29380910,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500420000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        }
+      ],
+      "relayNow": 29380920,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "collaborator",
+            "seq": 2
+          },
+          {
+            "author": "%dee",
+            "name": "Dee",
+            "level": "collaborator",
+            "seq": 3
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "level": "collaborator",
+            "seq": 7
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@4",
+            "title": "Bin day",
+            "eligible": ["%ana", "%ben", "%dee"],
+            "deadline": 29389500,
+            "ballots": [],
+            "final": false
+          },
+          {
+            "id": "@5",
+            "title": "Quiet hours",
+            "eligible": ["%ana", "%ben", "%dee"],
+            "deadline": 29390940,
+            "ballots": [
+              {
+                "id": "@6",
+                "voter": "%ben",
+                "scores": {
+                  "@5": 3
+                }
+              }
+            ],
+            "final": false
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

@@ -1950,7 +1950,7 @@
           "received": 29375002,
           "event": {
             "v": 1,
-            "type": "leave",
+            "type": "no-such-type",
             "group": "@1",
             "author": "%ana",
             "ts": 1762500120000,

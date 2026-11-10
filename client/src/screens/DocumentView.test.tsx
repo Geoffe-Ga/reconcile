@@ -13,8 +13,8 @@ import { DocumentView } from './DocumentView';
 const [FOLLOWING, VOTING] = LEVELS;
 
 /** The Document view as `me` (default: the founder, Ana, a Co-Creator) sees it. */
-function view(state: GroupState, me = authorOf('ana'), onPropose = vi.fn()) {
-  return render(<DocumentView state={state} me={me} onPropose={onPropose} />);
+function view(state: GroupState, me = authorOf('ana'), onPropose = vi.fn(), leaving = false) {
+  return render(<DocumentView state={state} me={me} onPropose={onPropose} leaving={leaving} />);
 }
 
 describe('DocumentView', () => {
@@ -171,6 +171,17 @@ describe('DocumentView', () => {
     view(state);
     expect(screen.getByText('This Document has no sections yet.')).toBeVisible();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Propose or Add your version, and no level note, while the leave waits for the relay', async () => {
+    const log = groupLog();
+    log.propose('ana', { atom: 1 });
+    view(log.state(), authorOf('ana'), vi.fn(), true);
+    expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Choose Co-Creator|Choose Collaborator/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
   });
 });

@@ -219,6 +219,16 @@ describe('parseEvent', () => {
     });
   });
 
+  it('reads a leave, whose body carries nothing, and drops any field a body adds', () => {
+    for (const body of [{}, { reason: 'moving away' }]) {
+      const bytes = json(envelope('leave', body));
+      expect(parseEvent(bytes)).toEqual({
+        event: { v: 1, type: 'leave', group: 'g1', author: ANA, ts: 1, body: {} },
+        id: eventId(bytes),
+      });
+    }
+  });
+
   it.each([
     ['genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] }],
     ['join', { name: 'Ben' }],
@@ -260,7 +270,7 @@ describe('parseEvent', () => {
     ['a fractional ts', { ts: 1.5 }],
     ['a negative ts', { ts: -1 }],
     ['a string ts', { ts: '1' }],
-    ['an unknown type', { type: 'leave' }],
+    ['an unknown type', { type: 'no-such-type' }],
     ['a missing type', { type: undefined }],
     ['an array body', { body: [] }],
     ['a null body', { body: null }],

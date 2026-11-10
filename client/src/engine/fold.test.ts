@@ -87,6 +87,7 @@ describe('fold', () => {
       chat: null,
       title: '',
       members: [],
+      former: [],
       atoms: [],
       proposals: [],
       ignored: [],

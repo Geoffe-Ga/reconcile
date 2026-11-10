@@ -39,6 +39,8 @@ export interface ResultViewProps {
   readonly own: OwnBallot;
   /** Opens the composer to propose a lapsed Proposal again. */
   readonly onProposeAgain: () => void;
+  /** Whether this device's leave waits for the relay (#77): then nothing is proposed again. */
+  readonly leaving?: boolean;
 }
 
 /** What the outcome blocks read. */
@@ -121,14 +123,14 @@ function Failed({ detail, versions }: OutcomeProps) {
 }
 
 /**
- * Propose again, for someone who can propose (ADR-0069, as ADR-0073 cuts it:
- * a fresh Proposal with a fresh window). It waits, and says why, while
- * another Proposal is open on the section.
+ * Propose again, for someone who can propose and isn't leaving (ADR-0069, as
+ * ADR-0073 cuts it: a fresh Proposal with a fresh window). It waits, and says
+ * why, while another Proposal is open on the section.
  */
 function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
-  const { state, me, proposal, onProposeAgain } = props;
+  const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  if (!can(state, me, 'propose')) return null;
+  if (leaving || !can(state, me, 'propose')) return null;
   const busy = composeOption(state, proposal.atom) !== 'propose';
   return (
     <div className="row result-again">

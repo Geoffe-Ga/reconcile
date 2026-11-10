@@ -35,6 +35,8 @@ export interface ComposerProps {
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
   /** A lapsed Proposal to propose again on this section (#74), from the `again` route. */
   readonly again?: Proposal;
+  /** Whether this device's leave waits for the relay (#77): then it shows no form. */
+  readonly leaving?: boolean;
 }
 
 /** Limits count code points after NFC (spec §4), never UTF-16 units as `maxLength` does. */
@@ -441,7 +443,7 @@ function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: V
  * text alone, and submitting queues one `version`. A full ballot takes no
  * more. `composeOption` decides which, as it does for the fold. What is typed
  * is kept as a private draft on this device until it is sent or discarded.
- * Only someone who may propose sees a form (`can()`).
+ * Only someone who may propose, and isn't leaving, sees a form (`can()`).
  *
  * Proposing a lapsed Proposal again (#74) is the same form, starting from its
  * title, why, text and link, with its other versions carried onto the new
@@ -454,6 +456,10 @@ export function Composer(props: ComposerProps) {
   const { composer } = messages;
   if (atom === undefined) {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
+  }
+  if (props.leaving === true) {
+    const { leave } = messages;
+    return <Unavailable state={state} title={leave.noProposingTitle} text={leave.noProposing} />;
   }
   if (!can(state, me, 'propose')) {
     return (

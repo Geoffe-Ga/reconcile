@@ -144,7 +144,10 @@ export interface IgnoredRecord {
 /**
  * A group as one device sees it after folding its log. `group` is the genesis
  * id, or null before one. `rules` are the founding rules its genesis set:
- * `DEFAULT_RULES` in every MVP group, and before any genesis.
+ * `DEFAULT_RULES` in every MVP group, and before any genesis. `members` are
+ * the people in the group now. `former` are those who have left, in the order
+ * they left, as they were when they did: their names still show on the
+ * Proposals, versions and ballots they made before (#77).
  */
 export interface GroupState {
   readonly group: string | null;
@@ -153,6 +156,7 @@ export interface GroupState {
   readonly chat: string | null;
   readonly title: string;
   readonly members: readonly Member[];
+  readonly former: readonly Member[];
   readonly atoms: readonly Atom[];
   readonly proposals: readonly Proposal[];
   readonly ignored: readonly IgnoredRecord[];
@@ -183,6 +187,7 @@ interface Draft {
   chat: string | null;
   title: string;
   readonly members: Member[];
+  readonly former: Member[];
   atoms: Atom[];
   readonly proposals: OpenProposal[];
 }
@@ -205,10 +210,19 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   return true;
 }
 
-/** A join names a level it knows, or none (a Collaborator), and comes from someone not yet in. */
+/** True when `author` is in the group, or was until they left. */
+function hasJoined(draft: Draft, author: string): boolean {
+  return [...draft.members, ...draft.former].some((m) => m.author === author);
+}
+
+/**
+ * A join names a level it knows, or none (a Collaborator), and comes from
+ * someone not yet in. A key that has left never joins again: rejoining takes
+ * a new membership, with its own key (ADR-0009).
+ */
 function applyJoin(draft: Draft, body: JoinBody, author: string, at: Receipt): boolean {
   const level = body.level ?? DEFAULT_JOIN_LEVEL;
-  if (!isLevel(level) || draft.members.some((m) => m.author === author)) return false;
+  if (!isLevel(level) || hasJoined(draft, author)) return false;
   draft.members.push({ author, name: body.name, level, seq: at.seq });
   return true;
 }
@@ -223,6 +237,24 @@ function applyLevel(draft: Draft, body: LevelBody, author: string): boolean {
   const { level } = body;
   if (member === undefined || !isLevel(level) || member.level === level) return false;
   draft.members[index] = { ...member, level };
+  return true;
+}
+
+/**
+ * A member leaves (ADR-0010: exit is always possible). They move from
+ * `members` to `former`, so from here on `can()` refuses them everything and
+ * the fold ignores their later events. A Proposal already open keeps them in
+ * its eligible set (ADR-0015 §1), so its quorum and early close don't change,
+ * the ballots they sent before still count, and their Proposals and versions
+ * stay on the ballot. This is the one place a leave takes effect: anything
+ * else a member holds, such as a steward's seat (#102), empties here too.
+ */
+function applyLeave(draft: Draft, author: string): boolean {
+  const index = draft.members.findIndex((m) => m.author === author);
+  const member = draft.members[index];
+  if (member === undefined) return false;
+  draft.members.splice(index, 1);
+  draft.former.push(member);
   return true;
 }
 
@@ -356,6 +388,8 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyVote(draft, event.body, event.author, at);
     case 'level':
       return applyLevel(draft, event.body, event.author);
+    case 'leave':
+      return applyLeave(draft, event.author);
   }
 }
 
@@ -408,8 +442,8 @@ function finalUpdate(proposal: Proposal): [string, string][] {
   return proposal.versions.filter((v) => v.id === winner).map((v) => [proposal.atom, v.text]);
 }
 
-/** When a closed Proposal closed: early, or at its deadline. */
-function closeTime(proposal: Proposal): number {
+/** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
+export function closeTime(proposal: Pick<Proposal, 'closedAt' | 'deadline'>): number {
   return proposal.closedAt ?? proposal.deadline;
 }
 
@@ -435,7 +469,7 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
  * real event can never shadow it. A repeated event id is ignored (the first
  * copy keeps its seq and receipt time), as is any event whose `v` isn't 1 or
  * whose `group` isn't the genesis id. Only members act, except on their own
- * join: `can()` is false for anyone else.
+ * join: `can()` is false for anyone else, including someone who has left.
  */
 export function fold(records: readonly LogRecord[], relayNow: number | null): GroupState {
   const draft: Draft = {
@@ -445,6 +479,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     chat: null,
     title: '',
     members: [],
+    former: [],
     atoms: [],
     proposals: [],
   };
@@ -463,6 +498,6 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   }
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
   const atoms = applyPasses(draft.atoms, proposals);
-  const { group, rules, name, chat, title, members } = draft;
-  return { group, rules, name, chat, title, members, atoms, proposals, ignored };
+  const { group, rules, name, chat, title, members, former } = draft;
+  return { group, rules, name, chat, title, members, former, atoms, proposals, ignored };
 }
