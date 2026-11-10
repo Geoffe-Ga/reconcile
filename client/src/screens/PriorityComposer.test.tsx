@@ -107,7 +107,7 @@ describe('PriorityComposer (#107)', () => {
     await user.click(screen.getByRole('button', { name: 'Add option' }));
     await type(user, 'Option 1', 'Café');
     // The same option once NFC-normalized and trimmed, as it would be signed.
-    await type(user, 'Option 2', ' Café ');
+    await type(user, 'Option 2', ' Cafe\u0301 ');
     await type(user, 'Option 3', 'x'.repeat(121));
     await user.click(screen.getByRole('button', { name: 'Add option' }));
     await user.click(submit());

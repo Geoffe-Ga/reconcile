@@ -32,7 +32,12 @@ describe('priority options (#107)', () => {
   });
 
   it('compares options exactly as given: the author normalizes and trims them first', () => {
-    expect(optionProblems(['Café', 'Café', 'Picnic', ' Picnic'])).toEqual([null, null, null, null]);
+    expect(optionProblems(['Café', 'Cafe\u0301', 'Picnic', ' Picnic'])).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 
   it('accepts 2 to 7 fine options, and nothing else', () => {

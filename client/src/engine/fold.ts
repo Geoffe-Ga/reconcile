@@ -490,10 +490,11 @@ function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): 
 
 /**
  * The `[atom, text]` a Proposal sets: its winning version's text once its pass
- * is final, else none. A priority vote sets none (#107).
+ * is final, else none. A priority vote's `atom` is its own id, which no Atom
+ * has, so its pass sets none (#107).
  */
 function finalUpdate(proposal: Proposal): [string, string][] {
-  if (!proposal.final || proposal.outcome.kind !== 'pass' || isPriority(proposal)) return [];
+  if (!proposal.final || proposal.outcome.kind !== 'pass') return [];
   const winner = proposal.outcome.version;
   return proposal.versions.filter((v) => v.id === winner).map((v) => [proposal.atom, v.text]);
 }
