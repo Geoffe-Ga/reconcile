@@ -735,3 +735,147 @@ a[data-focus-visible] {
   color: var(--body);
   font: var(--type-ui);
 }
+
+/* Stewards and suspensions (#102) ----------------------------------------- */
+
+/* A person's level, their Steward badge and Suspend, kept together on the right. */
+.person-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Information, not an action: a quiet chip, paired with its word. */
+.badge {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--ink);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.person-action {
+  margin-inline-start: 0;
+}
+
+/* Everyone reads a suspension on the suspended person's row (ADR-0016). */
+.person-suspension,
+.person-status {
+  flex-basis: 100%;
+}
+
+.person-suspension {
+  display: grid;
+  gap: var(--space-1);
+  margin-block: var(--space-1);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--clay);
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+/* The steward's own words, as plain text with its line breaks kept. */
+.person-reason {
+  color: var(--body);
+  font: var(--type-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The suspended person's own line, where their screens would offer posting. */
+.suspended-note {
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--clay);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.due-note {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+.seats {
+  display: grid;
+  max-width: 30rem;
+  padding: 0;
+  list-style: none;
+}
+
+.seat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.seat:first-child {
+  padding-block-start: 0;
+}
+
+.seat-label {
+  color: var(--muted);
+  font: var(--type-eyebrow);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.seat-holder {
+  color: var(--ink);
+  font: var(--type-body);
+  overflow-wrap: anywhere;
+}
+
+.seat-term {
+  flex-basis: 100%;
+  color: var(--body);
+  font: var(--type-caption);
+}
+
+/* The modal dialog (React Aria Modal): one soft shadow, the only floating layer. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--scrim);
+}
+
+.modal {
+  width: min(100%, 28rem);
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--scrim);
+}
+
+.dialog {
+  padding: var(--space-5);
+  outline: none;
+}
+
+.dialog-title {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-heading-2);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}

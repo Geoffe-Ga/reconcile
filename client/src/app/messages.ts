@@ -430,4 +430,77 @@ export const messages = {
     ballotFull: 'This section’s ballot already has three versions.',
     empty: 'This Document has no sections yet.',
   },
+  /**
+   * Stewards and suspensions (#102). Where a person's name sits inside a
+   * sentence, the words before and after it are kept apart, so the screen
+   * sets the name in `<bdi>` (see `Named` in src/app/stewards.tsx).
+   */
+  stewards: {
+    heading: 'Stewards',
+    badge: 'Steward',
+    /** Read between a level and the badge, as in "Ana, Co-Creator, Steward". */
+    badgeSeparator: ',',
+    seat: (seat: number) => `Seat ${String(seat)}`,
+    empty: 'Empty',
+    founderHold: 'Holds this seat until your group elects a steward.',
+    termEnds: (date: string) => `Term ends ${date}.`,
+    termEnded: (date: string) =>
+      `Term ended ${date}. They stay steward until your group elects someone.`,
+    secondSeat: (members: number) =>
+      `A second seat opens once ${count(members)} people in your group vote.`,
+    due: (seat: number) => `A steward election is due for seat ${String(seat)}.`,
+    about: (days: number) =>
+      `A steward can suspend someone at once, for ${count(days)} days. Everyone in the group sees each suspension, and your group can recall a steward by a vote at any time.`,
+    propose: 'Propose a steward',
+    proposeFor: (seat: number) => `Propose a steward for seat ${String(seat)}`,
+    recall: 'Propose recall',
+    recallLabel: (name: string) => `Propose recall of ${name}`,
+    suspend: 'Suspend',
+    suspendLabel: (name: string) => `Suspend ${name}`,
+    suspendedUntil: (date: string) => `Suspended until ${date}.`,
+    reasonPrefix: 'Reason:',
+    youAreSuspended: (date: string) =>
+      `A steward suspended you until ${date}. You can read, but not post, propose or vote.`,
+    dialogTitle: { before: 'Suspend', after: '?' },
+    dialogLine: (days: number) =>
+      `Everyone in the group will see this. It ends after ${count(days)} days.`,
+    reasonLabel: 'Reason (optional)',
+    reasonHint: 'Say what happened, in a sentence. Everyone in the group reads it.',
+    reasonTooLong: (max: number) => `Keep the reason to ${count(max)} characters or fewer.`,
+    confirm: 'Suspend',
+    cancel: 'Cancel',
+    suspendFailed: 'The suspension couldn’t be saved on this device. Try again.',
+    makeSteward: (seat: number) => ({ before: 'Make', after: `steward (seat ${String(seat)})` }),
+    recallSteward: { before: 'Recall', after: 'as steward' },
+    makeStewardTitle: (name: string, seat: number) => `Make ${name} steward (seat ${String(seat)})`,
+    recallStewardTitle: (name: string) => `Recall ${name} as steward`,
+    electLine: (days: number) =>
+      `If this passes, they can suspend someone at once, for ${count(days)} days, until your group recalls them or their term ends.`,
+    recallLine: 'If this passes, their seat is empty until your group elects a steward.',
+    score: 'Your score',
+    ownRecall: 'This Proposal would recall you as steward, so you don’t vote on it.',
+    elected: (seat: number) => ({
+      before: 'This passed.',
+      after: `is now steward for seat ${String(seat)}.`,
+    }),
+    recalled: { before: 'This passed.', after: 'is no longer a steward.' },
+    composerPageTitle: 'Propose a steward',
+    composerTitle: (seat: number) => `Propose a steward for seat ${String(seat)}`,
+    recallPageTitle: 'Propose a recall',
+    recallTitle: (seat: number) => `Propose a recall for seat ${String(seat)}`,
+    nomineeLabel: 'Who should hold this seat?',
+    nomineeHint: 'Anyone who votes here and isn’t suspended can stand.',
+    nomineeMissing: 'Choose who you’re proposing.',
+    titleHint: 'It starts as what the ballot will say. Change it if you like.',
+    whyHint: 'Tell your group why. They’ll talk it over before voting.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose this steward',
+    recallSubmit: 'Propose this recall',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'This seat can’t take a Proposal now',
+    unavailable:
+      'Another steward Proposal for this seat may be open, or your group isn’t large enough for it yet. Go back to your group to see its stewards.',
+    notAllowed: 'Your place in this group doesn’t include proposing.',
+    noNominees: 'Nobody in your group can stand for this seat right now.',
+  },
 } as const;

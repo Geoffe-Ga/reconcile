@@ -15,8 +15,9 @@ import { useId } from 'react';
 
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
+import { Named } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
-import { type VersionView, versionViews } from '../app/versionViews';
+import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
 import type { Bar } from '../engine/rules';
@@ -39,6 +40,20 @@ interface OutcomeProps {
   readonly props: ResultViewProps;
   readonly detail: TallyDetail;
   readonly versions: readonly VersionView[];
+}
+
+/** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
+function StewardPassed({ steward }: { readonly steward: StewardView }) {
+  const { motion } = steward;
+  const { stewards } = messages;
+  const parts = motion.kind === 'elect' ? stewards.elected(motion.seat) : stewards.recalled;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">
+        <Named parts={parts} name={motion.name} />
+      </p>
+    </div>
+  );
 }
 
 /** A pass: its sentence, the winning text as the Document now reads, and thanks. No numbers. */
@@ -110,6 +125,8 @@ function Lapsed({ props }: OutcomeProps) {
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
+  const steward = props.versions[0]?.steward;
+  if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }

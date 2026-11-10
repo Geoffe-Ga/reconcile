@@ -9,6 +9,7 @@ import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-compone
 
 import { formatAverage } from '../app/format';
 import { messages } from '../app/messages';
+import { MotionTitle } from '../app/stewards';
 import { formatMinute, minuteIso } from '../app/time';
 import type { VersionView } from '../app/versionViews';
 import { can } from '../engine/capabilities';
@@ -58,7 +59,8 @@ export function Thanks({ names }: { readonly names: readonly string[] }) {
 export function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
   const { state, me, proposal, onProposeAgain } = props;
   const reason = useId();
-  if (!can(state, me, 'propose')) return null;
+  // A steward vote isn't proposed again from here: Group home says when an election is due (#102).
+  if (proposal.target.kind === 'steward' || !can(state, me, 'propose')) return null;
   const priority = isPriority(proposal);
   const busy = priority
     ? openPriority(state) !== undefined
@@ -90,9 +92,13 @@ export function LateNotice({ own }: { readonly own: OwnBallot }) {
 /** How the result names each choice: "Version 1 · Ana", or a priority option by its text (#107). */
 export type Naming = 'versions' | 'options';
 
-/** "Version 1 · Ana", the version's heading wherever the result names it, or an option's text. */
+/**
+ * "Version 1 · Ana", the version's heading wherever the result names it, what a
+ * steward ballot decided (#102), or a priority option's text (#107).
+ */
 function VersionName({ version, naming }: { readonly version: VersionView; naming: Naming }) {
   if (naming === 'options') return <bdi>{version.text}</bdi>;
+  if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}

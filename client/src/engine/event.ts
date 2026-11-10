@@ -56,11 +56,34 @@ export interface LevelBody {
 }
 
 /** Proposes new text for one Atom, with a title, a justification and an optional discussion link. */
-export interface EditProposalBody {
+export interface ProposalBody {
   readonly atom: string;
   readonly title: string;
   readonly why: string;
   readonly text: string;
+  readonly link?: string;
+}
+
+/**
+ * A steward seat a Proposal fills or empties (ADR-0049, #102): its member is the
+ * nominee, or null for a recall of whoever holds `seat`. The fold checks the
+ * seat and the member.
+ */
+export interface StewardTarget {
+  readonly kind: 'steward';
+  readonly seat: number;
+  readonly member: string | null;
+}
+
+/**
+ * Elects or recalls a steward (#102): an ordinary Proposal with a title, a
+ * justification and an optional discussion link, whose target is a seat. It
+ * carries no text, so its ballot has one version, under the Proposal's id.
+ */
+export interface StewardProposalBody {
+  readonly target: StewardTarget;
+  readonly title: string;
+  readonly why: string;
   readonly link?: string;
 }
 
@@ -82,15 +105,30 @@ export interface PriorityProposalBody {
   readonly link?: string;
 }
 
-/** A Proposal: an edit of one Atom, or a priority vote (#107). */
-export type ProposalBody = EditProposalBody | PriorityProposalBody;
+/**
+ * What a `proposal` event carries: new text for an Atom, a steward seat
+ * (#102), or a priority vote's question and options (#107).
+ */
+export type ProposalEventBody = ProposalBody | StewardProposalBody | PriorityProposalBody;
 
-/** What a Proposal changes: one Atom's text, or nothing, for a priority vote (#107). */
-export type ProposalTarget = { readonly kind: 'edit' } | PriorityTarget;
+/** True when a Proposal's body targets a steward seat rather than an Atom. */
+export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
+  return 'target' in body && body.target.kind === 'steward';
+}
 
-/** What a Proposal's body targets: the Atom it edits, or the group's focus. */
-export function targetOf(body: ProposalBody): ProposalTarget {
-  return 'target' in body ? body.target : { kind: 'edit' };
+/** True when a Proposal's body is a priority vote (#107). */
+export function isPriorityProposal(body: ProposalEventBody): body is PriorityProposalBody {
+  return 'target' in body && body.target.kind === 'priority';
+}
+
+/**
+ * Suspends a member at once, for the group's `suspensionDays` (ADR-0016,
+ * #102), with an optional reason everyone in the group reads. The fold checks
+ * that the author may suspend them.
+ */
+export interface SuspendBody {
+  readonly member: string;
+  readonly reason?: string;
 }
 
 /**
@@ -113,10 +151,11 @@ export interface VoteBody {
 export interface EventBodies {
   readonly genesis: GenesisBody;
   readonly join: JoinBody;
-  readonly proposal: ProposalBody;
+  readonly proposal: ProposalEventBody;
   readonly version: VersionBody;
   readonly vote: VoteBody;
   readonly level: LevelBody;
+  readonly suspend: SuspendBody;
 }
 
 /** The event types this engine understands. */
@@ -249,13 +288,29 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
+/** A steward target's kind, seat and member, or null for any other shape (#102). */
+function parseStewardTarget(value: unknown): StewardTarget | null {
+  if (!isObject(value) || value.kind !== 'steward') return null;
+  const { seat, member } = value;
+  if (!isWholeNumber(seat) || (member !== null && !isString(member))) return null;
+  return { kind: 'steward', seat, member };
+}
+
+/** A steward Proposal carries `target` and no `atom`; any `text` is dropped (#102). */
+function parseStewardProposal(body: Json): StewardProposalBody | null {
+  const { atom, target, title, why, link } = body;
+  const parsed = parseStewardTarget(target);
+  if (parsed === null || atom !== undefined || !isString(title) || !isString(why)) return null;
+  if (!isOptionalString(link)) return null;
+  return { target: parsed, title, why, ...(link === undefined ? {} : { link }) };
+}
+
 /**
  * A priority vote's body (#107): its target, question, why, options and an
  * optional link, or null for any other shape. It names no Atom and has no text.
  */
 function parsePriority(body: Json): PriorityProposalBody | null {
-  const { target, atom, text, title, why, options, link } = body;
-  if (!isObject(target) || target.kind !== 'priority') return null;
+  const { atom, text, title, why, options, link } = body;
   if (atom !== undefined || text !== undefined || !isOptionalString(link)) return null;
   if (!isString(title) || !isString(why) || !isStringList(options)) return null;
   return {
@@ -267,13 +322,27 @@ function parsePriority(body: Json): PriorityProposalBody | null {
   };
 }
 
-/** An edit names an `atom`; a priority vote carries `target` instead (#107). */
-function parseProposal(body: Json): ProposalBody | null {
-  if (body.target !== undefined) return parsePriority(body);
+/** A body whose target is a priority vote's (#107), or else a steward seat's (#102). */
+function parseTargeted(body: Json): StewardProposalBody | PriorityProposalBody | null {
+  const { target } = body;
+  return isObject(target) && target.kind === 'priority'
+    ? parsePriority(body)
+    : parseStewardProposal(body);
+}
+
+/** An edit names an `atom`; a steward change (#102) or a priority vote (#107) carries `target`. */
+function parseProposal(body: Json): ProposalEventBody | null {
+  if (body.target !== undefined) return parseTargeted(body);
   const { atom, title, why, text, link } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
   if (!isOptionalString(link)) return null;
   return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+}
+
+function parseSuspend(body: Json): SuspendBody | null {
+  const { member, reason } = body;
+  if (!isString(member) || !isOptionalString(reason)) return null;
+  return { member, ...(reason === undefined ? {} : { reason }) };
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -324,6 +393,8 @@ function withBody(
       return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'level':
       return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'suspend':
+      return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

@@ -23,6 +23,7 @@ colors:
   warning: "#85560f"
   negative: "#b3362a"
   negative-soft: "#f5ddd5" # tint under deleted words in a word diff (ink on it: 13.1:1)
+  scrim: "#1d1c1973"       # ink at 45%: behind a modal dialog, and its one soft shadow
   # Ballot scale 0–4 (diverging; always paired with the number and label)
   score-0: "#b3362a"
   score-1: "#a85a35"
@@ -49,6 +50,7 @@ colors-dark:
   warning: "#e0b25c"
   negative: "#e0705f"
   negative-soft: "#402a22" # ink on it: 11.4:1
+  scrim: "#0a0a07b3"       # near-black at 70%: dark in both themes, never a light wash
   score-0: "#e0705f"
   score-1: "#d9946a"
   score-2: "#a39d8f"
@@ -145,6 +147,7 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 
 - Radius: `sm` 6px for inputs and chips, `md` 10px for cards and ballots, `full` for buttons and score pills.
 - Depth comes from surface contrast (`canvas` → `surface` → `sunken`) and 1px `hairline` borders. One soft shadow at most, and only for floating layers (menus, dialogs).
+- A modal dialog sits on `surface` over a `scrim`, which darkens the page in both themes, and its shadow uses the same `scrim`.
 
 ## Components (Reconcile-specific)
 

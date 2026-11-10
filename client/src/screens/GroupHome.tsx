@@ -10,14 +10,18 @@ import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import { formatDay } from '../app/format';
-import { formatSyncedAt, minuteIso } from '../app/time';
+import { StewardSeats } from '../app/StewardSeats';
+import { SuspendedNote } from '../app/stewards';
+import { SuspendDialog } from '../app/SuspendDialog';
+import { formatMinute, formatSyncedAt, minuteIso } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
-import { can, isLevel, type Level } from '../engine/capabilities';
+import { can, isLevel, isSuspended, type Level } from '../engine/capabilities';
 import type { ParsedEvent } from '../engine/event';
-import type { GroupState, Proposal } from '../engine/fold';
+import type { GroupState, Member, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { isPriority, openPriority } from '../engine/priority';
+import { activeSuspension, maySuspend, seatOf, type Suspension } from '../engine/stewards';
 
 /** Props for {@link GroupHome}. */
 export interface GroupHomeProps {
@@ -37,6 +41,8 @@ export interface GroupHomeProps {
   readonly pending: readonly ParsedEvent[];
   /** Queues this member's move to another level; rejects when it couldn't be saved. */
   readonly onChooseLevel: (level: Level) => Promise<void>;
+  /** Queues this steward's suspension of the member named, with a reason, blank for none (#102). */
+  readonly onSuspend: (member: string, reason: string) => Promise<void>;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -208,16 +214,88 @@ function Reachability({ sync }: { readonly sync: SyncStatus }) {
   return <div role="status">{reachable ? null : <p className="notice">{line}</p>}</div>;
 }
 
-/** Everyone in the group, each with the level they chose (ADR-0074: every level sees it). */
-function People({ state }: { readonly state: GroupState }) {
+/** "Suspended until <date>.", and the steward's reason as plain text, on the suspended person's row. */
+function SuspensionLine({ suspension }: { readonly suspension: Suspension }) {
+  return (
+    <div className="person-suspension">
+      <p>{messages.stewards.suspendedUntil(formatMinute(suspension.until))}</p>
+      {suspension.reason === null || suspension.reason.trim() === '' ? null : (
+        <p className="person-reason">
+          {messages.stewards.reasonPrefix} <span dir="auto">{suspension.reason}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface PersonProps {
+  readonly props: GroupHomeProps;
+  readonly member: Member;
+  /** The member this device's `suspend` in the outbox names, if one waits. */
+  readonly suspending: string | undefined;
+}
+
+/**
+ * One person: their name, level and Steward badge, any running suspension,
+ * and Suspend when this member may suspend them now and has none waiting to
+ * send (stewards.ts decides, as the fold does).
+ */
+function Person({ props, member, suspending }: PersonProps) {
+  const { state, me, sync, onSuspend } = props;
+  const { author } = member;
+  const name = displayName(state, author) ?? '';
+  const suspension = activeSuspension(state, author);
+  const offered = suspending === undefined && maySuspend(state, me, author);
+  return (
+    <li className="person">
+      <bdi className="person-name">{name}</bdi>
+      <span className="person-tags">
+        <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>{' '}
+        <span className="person-level">{levelName(member.level)}</span>
+        {seatOf(state, author) === undefined ? null : (
+          <>
+            <VisuallyHidden>{messages.stewards.badgeSeparator}</VisuallyHidden>{' '}
+            <span className="badge">{messages.stewards.badge}</span>
+          </>
+        )}
+        {offered ? (
+          <SuspendDialog
+            name={name}
+            days={state.rules.suspensionDays}
+            onSuspend={(reason) => onSuspend(author, reason)}
+          />
+        ) : null}
+      </span>
+      {suspension === undefined ? null : <SuspensionLine suspension={suspension} />}
+      {suspending === author ? (
+        <div className="person-status">
+          <SendStatus pending reachable={sync.reachable} sent={false} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** Whom this member's `suspend` still in the outbox names, if one waits. */
+function waitingSuspend(me: string, pending: readonly ParsedEvent[]): string | undefined {
+  return pending
+    .flatMap(({ event }) =>
+      event.type === 'suspend' && event.author === me ? [event.body.member] : [],
+    )
+    .at(-1);
+}
+
+/**
+ * Everyone in the group, each with the level they chose and any steward seat
+ * or suspension (ADR-0074: every level sees it; ADR-0016: everyone sees a
+ * suspension).
+ */
+function People(props: GroupHomeProps) {
+  const suspending = waitingSuspend(props.me, props.pending);
   return (
     <ul className="people">
-      {state.members.map((member) => (
-        <li key={member.author} className="person">
-          <bdi className="person-name">{displayName(state, member.author)}</bdi>
-          <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>{' '}
-          <span className="person-level">{levelName(member.level)}</span>
-        </li>
+      {props.state.members.map((member) => (
+        <Person key={member.author} props={props} member={member} suspending={suspending} />
       ))}
     </ul>
   );
@@ -238,6 +316,8 @@ interface InvolvementProps {
   readonly current: Level;
   readonly waiting: boolean;
   readonly reachable: boolean;
+  /** True while a suspension runs: the fold ignores a suspended member's level change. */
+  readonly suspended: boolean;
   readonly onChooseLevel: GroupHomeProps['onChooseLevel'];
 }
 
@@ -246,7 +326,8 @@ interface InvolvementProps {
  * the level held. Saving queues one `level` event; the People list shows the
  * new level once the relay returns it (ADR-0021: self-selected).
  */
-function Involvement({ current, waiting, reachable, onChooseLevel }: InvolvementProps) {
+function Involvement(props: InvolvementProps) {
+  const { current, waiting, reachable, suspended, onChooseLevel } = props;
   const [choice, setChoice] = useState<Level | null>(null);
   const { run, running, outcome } = useSaving(onChooseLevel);
   const picked = choice ?? current;
@@ -257,7 +338,7 @@ function Involvement({ current, waiting, reachable, onChooseLevel }: Involvement
   };
   return (
     <div className="involvement">
-      <LevelPicker value={picked} onChange={setChoice} isDisabled={running} />
+      <LevelPicker value={picked} onChange={setChoice} isDisabled={running || suspended} />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.levels.failed}
@@ -284,12 +365,13 @@ function PeopleSection(props: GroupHomeProps) {
   return (
     <Section title={messages.home.people}>
       <div className="stack people-stack">
-        <People state={state} />
+        <People {...props} />
         {mine === undefined ? null : (
           <Involvement
             current={waiting ?? mine.level}
             waiting={waiting !== undefined}
             reachable={sync.reachable}
+            suspended={isSuspended(state, me)}
             onChooseLevel={onChooseLevel}
           />
         )}
@@ -368,6 +450,7 @@ export function GroupHome(props: GroupHomeProps) {
         />
         <Reachability sync={sync} />
       </div>
+      <SuspendedNote state={state} me={me} />
       <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
         <span className="eyebrow">{messages.home.documentLabel}</span>
         <span className="card-link-title">
@@ -390,6 +473,11 @@ export function GroupHome(props: GroupHomeProps) {
           <Decided state={state} />
         </Section>
         {can(state, me, 'see-roster') ? <PeopleSection {...props} /> : null}
+        {can(state, me, 'see-roster') ? (
+          <Section title={messages.stewards.heading}>
+            <StewardSeats state={state} me={me} />
+          </Section>
+        ) : null}
         {can(state, me, 'invite') ? (
           <Section title={messages.home.invite}>
             <Invite link={inviteLink} copyText={copyText} />

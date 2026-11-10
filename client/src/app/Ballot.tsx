@@ -50,6 +50,8 @@ export interface BallotProps {
    * shows a priority vote's options as plain text (#107).
    */
   readonly layout?: 'versions' | 'options';
+  /** Why a disabled ballot can't change, in place of "Voting has closed", such as a suspension (#102). */
+  readonly disabledNote?: ReactNode;
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
@@ -170,9 +172,16 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
   );
 }
 
-/** "Score for version N", or for a priority option, "Score for <option>" with the option in `<bdi>`. */
+/**
+ * "Score for version N", a steward ballot's own label (#102), or for a
+ * priority option, "Score for <option>" with the option in `<bdi>` (#107).
+ */
 function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
-  if (layout !== 'options') return messages.ballot.scoreFor(version.number);
+  if (layout !== 'options') {
+    return version.steward === undefined
+      ? messages.ballot.scoreFor(version.number)
+      : messages.stewards.score;
+  }
   return (
     <>
       {messages.ballot.scoreForOption} <bdi>{version.text}</bdi>
@@ -210,7 +219,9 @@ export function Ballot(props: BallotProps) {
 
   return (
     <Form className="ballot" onSubmit={submit}>
-      {isDisabled ? <p className="caption">{messages.ballot.closed}</p> : null}
+      {isDisabled
+        ? (props.disabledNote ?? <p className="caption">{messages.ballot.closed}</p>)
+        : null}
       {hasVoted && missing && !isDisabled ? (
         <p className="ballot-notice">{messages.ballot.newVersion}</p>
       ) : null}

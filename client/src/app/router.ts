@@ -7,6 +7,8 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import { SEATS, type SeatNumber } from '../engine/stewards';
+
 /** Where the app is. Unknown hashes read as Start. */
 export type Route =
   | { readonly name: 'start' }
@@ -17,7 +19,14 @@ export type Route =
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
-  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string };
+  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
+  | {
+      readonly name: 'steward';
+      readonly groupId: string;
+      readonly seat: SeatNumber;
+      /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
+      readonly recall: boolean;
+    };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -27,28 +36,39 @@ const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
-/** The pages inside a group that take nothing after their name. */
-const BARE_PAGES: ReadonlyMap<string, (groupId: string) => Route> = new Map([
-  ['doc', (groupId: string): Route => ({ name: 'document', groupId })],
-  ['priority', (groupId: string): Route => ({ name: 'priority', groupId })],
-]);
+/** A steward seat's number as a route writes it, or undefined for anything else. */
+function seatIn(arg: string): SeatNumber | undefined {
+  return SEATS.find((seat) => String(seat) === arg);
+}
 
-/** The pages inside a group that take one id, the pattern it must match, and their route. */
-const ID_PAGES: ReadonlyMap<string, readonly [RegExp, (groupId: string, id: string) => Route]> =
-  new Map([
-    ['propose', [ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId })]],
-    ['p', [ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId })]],
-    ['again', [ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId })]],
-  ]);
+/** `steward/{seat}` or, when `recall`, `recall/{seat}`: the steward composer for one seat (#102). */
+function stewardPage(groupId: string, recall: boolean, arg: string): Route {
+  const seat = seatIn(arg);
+  return seat === undefined ? START : { name: 'steward', groupId, seat, recall };
+}
+
+/** `p/{proposalId}` or `again/{proposalId}`. */
+function proposalPage(groupId: string, page: string, arg: string): Route {
+  if (!ID.test(arg)) return START;
+  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
+  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
+}
+
+/** `doc`, or `priority` (#107): the pages that take nothing after their name. */
+function barePage(groupId: string, page: string): Route {
+  if (page === 'doc') return { name: 'document', groupId };
+  return page === 'priority' ? { name: 'priority', groupId } : START;
+}
 
 /**
  * A page inside a group: `doc`, `priority` (#107), `propose/{atomId}`,
- * `p/{proposalId}` or `again/{proposalId}`.
+ * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}` or `recall/{seat}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
-  const known = ID_PAGES.get(page);
-  return known?.[0].test(arg) === true ? known[1](groupId, arg) : START;
+  if (arg === undefined) return barePage(groupId, page);
+  if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
+  if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
+  return proposalPage(groupId, page, arg);
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -81,6 +101,17 @@ export function parseRoute(hash: string): Route {
   }
 }
 
+/** Join's `href`: with its invite payload, or bare once Join has read it. */
+function joinHref(payload: string | null): string {
+  return payload === null ? '#/join' : `#/join/${payload}`;
+}
+
+/** A steward composer's path: `recall/{seat}` for a recall, else `steward/{seat}` (#102). */
+function stewardPath(route: Extract<Route, { readonly name: 'steward' }>): string {
+  const page = route.recall ? 'recall' : 'steward';
+  return `/${page}/${String(route.seat)}`;
+}
+
 /** A route inside one group. */
 type GroupRoute = Exclude<Route, { readonly name: 'start' | 'create' | 'join' }>;
 
@@ -99,6 +130,8 @@ function groupPath(route: GroupRoute): string {
       return `/p/${route.proposalId}`;
     case 'again':
       return `/again/${route.proposalId}`;
+    case 'steward':
+      return stewardPath(route);
   }
 }
 
@@ -110,7 +143,7 @@ export function routeHref(route: Route): string {
     case 'create':
       return '#/create';
     case 'join':
-      return route.payload === null ? '#/join' : `#/join/${route.payload}`;
+      return joinHref(route.payload);
     default:
       return `#/g/${route.groupId}${groupPath(route)}`;
   }
