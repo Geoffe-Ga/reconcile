@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProposalBody } from './event';
 import {
+  chosenWindow,
   DAY_MINUTES,
   DEFAULT_RULES,
   defaultWindowMinutes,
   foundingRules,
   RULE_CLASS,
   targetClass,
+  validWindow,
 } from './rules';
 
 /** A copy of DEFAULT_RULES as a genesis carries it: plain JSON, read back. */
@@ -33,7 +35,7 @@ function withLeaf(path: readonly string[], value: unknown): Record<string, unkno
 const EDIT: ProposalBody = { atom: 'g.0', title: 'T', why: 'W', text: 'New\n' };
 
 describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-0015)', () => {
-  it('holds the ordinary and entrenched bars, windows, quorum, vouches, wait and ballot expiry', () => {
+  it('holds the bars, windows, quorum, vouches, wait, ballot expiry, stewards and suspension', () => {
     expect(DEFAULT_RULES).toEqual({
       bars: {
         ordinary: { avgAtLeast: 2, zerosUnderPercent: 10 },
@@ -47,6 +49,8 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
       vouches: 2,
       waitDays: 14,
       ballotExpiryDays: 30,
+      stewards: { firstElectionAt: 3, secondSeatAt: 6, termDays: 182 },
+      suspensionDays: 7,
     });
   });
 
@@ -65,7 +69,7 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
 });
 
 describe('RULE_CLASS: each founding rule’s class (ADR-0051)', () => {
-  it('entrenches the pass rules and quorum, and keeps windows, vouches, the wait and expiry ordinary', () => {
+  it('entrenches the pass rules, quorum, stewards and suspension, and keeps windows, vouches, the wait and expiry ordinary', () => {
     expect(RULE_CLASS).toEqual({
       bars: 'entrenched',
       windows: 'ordinary',
@@ -73,6 +77,8 @@ describe('RULE_CLASS: each founding rule’s class (ADR-0051)', () => {
       vouches: 'ordinary',
       waitDays: 'ordinary',
       ballotExpiryDays: 'ordinary',
+      stewards: 'entrenched',
+      suspensionDays: 'entrenched',
     });
   });
 
@@ -134,7 +140,7 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
   });
 
   it('leaves out fields it doesn’t know, so a later rule a newer device writes founds the group here', () => {
-    const rules = { ...asJson(), stewards: { firstElectionAt: 3 }, extra: 'x' };
+    const rules = { ...asJson(), optIns: { bot: false }, extra: 'x' };
     expect(foundingRules(rules)).toEqual(DEFAULT_RULES);
     expect(foundingRules({ bars: { removal: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
   });
@@ -164,5 +170,54 @@ describe('windows in relay minutes', () => {
   it('gives each class’s default window: 7 days ordinary, 14 entrenched', () => {
     expect(defaultWindowMinutes(DEFAULT_RULES, 'ordinary')).toBe(10_080);
     expect(defaultWindowMinutes(DEFAULT_RULES, 'entrenched')).toBe(20_160);
+  });
+});
+
+describe('validWindow: a window the proposer may choose (#106, ADR-0074)', () => {
+  it.each([3, 4, 7, 13, 14])('accepts %s days for an ordinary change', (days) => {
+    expect(validWindow(DEFAULT_RULES, 'ordinary', days)).toBe(true);
+  });
+
+  it.each([2, 15, 0, -7, 7.5, 3.000001, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses %s days for an ordinary change',
+    (days) => {
+      expect(validWindow(DEFAULT_RULES, 'ordinary', days)).toBe(false);
+    },
+  );
+
+  it('accepts 14 and 28 days for the entrenched class, and refuses 13 and 29', () => {
+    expect(validWindow(DEFAULT_RULES, 'entrenched', 14)).toBe(true);
+    expect(validWindow(DEFAULT_RULES, 'entrenched', 28)).toBe(true);
+    expect(validWindow(DEFAULT_RULES, 'entrenched', 13)).toBe(false);
+    expect(validWindow(DEFAULT_RULES, 'entrenched', 29)).toBe(false);
+  });
+
+  it('reads the bounds from the rules it is given, not from the defaults', () => {
+    const rules = {
+      ...DEFAULT_RULES,
+      windows: { ...DEFAULT_RULES.windows, ordinary: { min: 5, max: 6, default: 5 } },
+    };
+    expect(validWindow(rules, 'ordinary', 4)).toBe(false);
+    expect(validWindow(rules, 'ordinary', 5)).toBe(true);
+    expect(validWindow(rules, 'ordinary', 6)).toBe(true);
+    expect(validWindow(rules, 'ordinary', 7)).toBe(false);
+  });
+});
+
+describe('chosenWindow: how many days a Proposal runs (#106)', () => {
+  it('is the class default when the proposer names no window', () => {
+    expect(chosenWindow(DEFAULT_RULES, 'ordinary', undefined)).toBe(7);
+    expect(chosenWindow(DEFAULT_RULES, 'entrenched', undefined)).toBe(14);
+  });
+
+  it('is the window the proposer chose when it is valid for the class', () => {
+    expect(chosenWindow(DEFAULT_RULES, 'ordinary', 10)).toBe(10);
+    expect(chosenWindow(DEFAULT_RULES, 'entrenched', 28)).toBe(28);
+  });
+
+  it('is null for a window outside the class’s bounds or not a whole number', () => {
+    expect(chosenWindow(DEFAULT_RULES, 'ordinary', 15)).toBeNull();
+    expect(chosenWindow(DEFAULT_RULES, 'entrenched', 10)).toBeNull();
+    expect(chosenWindow(DEFAULT_RULES, 'ordinary', 7.5)).toBeNull();
   });
 });

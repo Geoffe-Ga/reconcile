@@ -10,17 +10,27 @@ import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
+import { type ShareOutcome, type TellKind, tellKind } from '../app/share';
+import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
 import { type VersionView, versionViews } from '../app/versionViews';
-import { can } from '../engine/capabilities';
+import { SuspendedNote } from '../app/stewards';
+import { stewardView } from '../app/versionViews';
+import { can, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
-import type { ParsedEvent, ProposalBody } from '../engine/event';
+import {
+  isStewardProposal,
+  type ParsedEvent,
+  type ProposalEventBody,
+  type StewardProposalBody,
+} from '../engine/event';
 import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
 import type { OwnBallot } from '../engine/ownBallot';
+import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -44,6 +54,10 @@ export interface ProposalViewProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** Opens the composer to propose this Proposal again, once it has lapsed. */
   readonly onProposeAgain: () => void;
+  /** Tells the group's chat that a vote is open, with the line for `kind` and its deadline (#77). */
+  readonly onTell: (kind: TellKind, deadline: number) => Promise<ShareOutcome>;
+  /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
+  readonly leaving?: boolean;
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -103,6 +117,16 @@ function comparisonFor(state: GroupState, atom: string, passed: boolean): Compar
   return { title: messages.proposal.changes(index + 1), current: now.text };
 }
 
+/** A steward ballot shows what it decides, never a diff: it changes no section (#102). */
+const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
+
+/** What a folded Proposal's versions are shown against: a section, or nothing for a steward one. */
+function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
+  return proposal.target.kind === 'edit'
+    ? comparisonFor(state, proposal.atom, passed)
+    : STEWARD_BALLOT;
+}
+
 /** The diff legend, under the heading, whenever the versions show as diffs. */
 function Legend({ comparison }: { readonly comparison: Comparison }) {
   return comparison.current === null ? null : <p className="caption">{messages.diff.legend}</p>;
@@ -128,27 +152,47 @@ function myBallot(props: ProposalViewProps, proposal: Proposal) {
 }
 
 /**
+ * Why someone in the eligible set gets no ballot now, or null: they get one
+ * once voting has closed (unchangeable), or while their level votes, or while
+ * a suspension runs (disabled, until it ends, #102).
+ */
+function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): string | null {
+  const { state, me, now } = props;
+  const closed = proposal.final || now >= proposal.deadline;
+  const votes = can(state, me, 'vote') || isSuspended(state, me);
+  return closed || votes ? null : messages.levels.following;
+}
+
+/**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they either joined after it opened or weren't at a
- * voting level then. Inside it, they get the ballot, unchangeable once voting
+ * Outside its eligible set, they joined after it opened, weren't at a voting
+ * level then, or are the steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
  */
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
-  const { state, me, now } = props;
-  if (proposal.eligible.includes(me)) {
-    const closed = proposal.final || now >= proposal.deadline;
-    return closed || can(state, me, 'vote') ? null : messages.levels.following;
-  }
+  const { state, me } = props;
+  if (props.leaving === true) return messages.leave.noVoting;
+  if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
+  const change = stewardChangeOf(proposal);
+  if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
   return member !== undefined && member.seq < proposal.seq
     ? messages.proposal.notVotingLevel
     : messages.proposal.joinedAfter;
 }
 
+interface NoVoteProps {
+  readonly state: GroupState;
+  readonly me: string;
+  readonly reason: string;
+  readonly leaving: boolean;
+}
+
 /** Why they can't vote, and where they change their level when theirs doesn't vote now. */
-function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: string }) {
-  const levelDoesntVote = can(state, me, 'read') && !can(state, me, 'vote');
+function NoVote({ state, me, reason, leaving }: NoVoteProps) {
+  const levelDoesntVote =
+    !leaving && can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
   return (
     <div className="stack">
       <p className="lede">{reason}</p>
@@ -157,14 +201,30 @@ function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: 
   );
 }
 
-/** Whether this member can still add wording: the vote is open and they may propose. */
+/** True while the vote takes ballots and versions, as far as this device can tell. */
+function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
+  return !proposal.final && props.now < proposal.deadline;
+}
+
+/** Whether this member can still add wording: the vote is open, they may propose, and they're staying. */
 function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
-  return !proposal.final && props.now < proposal.deadline && can(props.state, props.me, 'propose');
+  return isOpen(props, proposal) && props.leaving !== true && can(props.state, props.me, 'propose');
+}
+
+/**
+ * Tell your group, for whoever proposed it or added a version, while the vote
+ * is open and they're staying. Only a folded Proposal has a deadline to share.
+ */
+function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const kind = tellKind(proposal, props.me);
+  if (kind === null || !isOpen(props, proposal) || props.leaving === true) return null;
+  return <TellYourGroup onTell={() => props.onTell(kind, proposal.deadline)} />;
 }
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
 function AddVersion({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  if (!isOpenToVersions(props, proposal)) return null;
+  // A steward Proposal has no text, so it takes no versions (#102).
+  if (proposal.target.kind !== 'edit' || !isOpenToVersions(props, proposal)) return null;
   const option = composeOption(props.state, proposal.atom);
   if (option === 'ballot-full') return <p className="caption">{messages.proposal.ballotFull}</p>;
   const route = {
@@ -204,8 +264,10 @@ function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
-  const comparison = comparisonFor(state, proposal.atom, passed);
+  const comparison = comparisonOf(state, proposal, passed);
   const reason = whyNoVote(props, proposal);
+  const closed = proposal.final || now >= proposal.deadline;
+  const suspended = isSuspended(state, me);
   const mine = myBallot(props, proposal);
   const meters = metersFor(proposal);
   return (
@@ -219,18 +281,19 @@ function Vote({ props, proposal, versions }: VoteProps) {
           initialScores={mine.scores}
           initialNote={mine.note}
           hasVoted={mine.hasVoted}
-          isDisabled={proposal.final || now >= proposal.deadline}
+          isDisabled={closed || suspended}
           pending={mine.pending}
           reachable={reachable}
           onVote={onVote}
           below={meters}
+          disabledNote={closed || !suspended ? undefined : <SuspendedNote state={state} me={me} />}
         />
       ) : (
         <>
           <VersionList versions={versions} current={comparison.current}>
             {meters}
           </VersionList>
-          <NoVote state={state} me={me} reason={reason} />
+          <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
         </>
       )}
       <AddVersion props={props} proposal={proposal} />
@@ -262,9 +325,14 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
   );
 }
 
-/** Who proposed it, then the countdown, each on its own line so neither breaks mid-phrase. */
+/**
+ * Who proposed it, then the countdown, then, while voting is open, how many
+ * days its proposer set it to run (#106), each on its own line so none breaks
+ * mid-phrase.
+ */
 function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposal; now: number }) {
   const name = displayName(state, proposal.author) ?? '';
+  const open = !proposal.final && now < proposal.deadline;
   return (
     <div className="meta-lines">
       <p className="meta">
@@ -273,6 +341,7 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
       <p className="meta">
         <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
       </p>
+      {open ? <p className="meta">{messages.window.runs(proposal.window)}</p> : null}
     </div>
   );
 }
@@ -298,6 +367,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           me={props.me}
           own={props.own}
           onProposeAgain={props.onProposeAgain}
+          leaving={props.leaving === true}
         />
       ) : null}
       <div className="stack">
@@ -307,6 +377,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         </p>
       </div>
       <ChatLink href={link} />
+      <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} />
       <PendingVersions props={props} proposal={proposal} />
     </Screen>
@@ -316,15 +387,36 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
 interface WaitingProps {
   readonly state: GroupState;
   readonly me: string;
-  readonly body: ProposalBody;
+  readonly body: ProposalEventBody;
   readonly pending: boolean;
   readonly reachable: boolean;
 }
 
+/** A waiting steward Proposal's one version: what its ballot will decide, by the seat's holder now. */
+function waitingSteward(
+  state: GroupState,
+  author: string,
+  body: StewardProposalBody,
+): VersionView[] {
+  const { seat, member } = body.target;
+  if (!isSeatNumber(seat)) return [];
+  const steward = stewardView(state, { seat, member, holder: seatAt(state, seat).holder });
+  return [{ id: '', number: 1, author, text: '', steward }];
+}
+
+/** How a waiting Proposal's one version shows: its text against the section, or a steward ballot. */
+function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
+  const author = displayName(state, me) ?? '';
+  if (isStewardProposal(body)) {
+    return { comparison: STEWARD_BALLOT, versions: waitingSteward(state, author, body) };
+  }
+  const comparison = comparisonFor(state, body.atom, false);
+  return { comparison, versions: [{ id: '', number: 1, author, text: body.text }] };
+}
+
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
 function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
-  const comparison = comparisonFor(state, body.atom, false);
-  const version = { id: '', number: 1, author: displayName(state, me) ?? '', text: body.text };
+  const { comparison, versions } = waitingVersions(state, me, body);
   return (
     <Screen state={state}>
       <PageHeader
@@ -337,7 +429,7 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
       </p>
       <Block title={comparison.title} className="vote">
         <Legend comparison={comparison} />
-        <VersionList versions={[version]} current={comparison.current} />
+        <VersionList versions={versions} current={comparison.current} />
       </Block>
       <SendStatus pending={pending} reachable={reachable} sent />
     </Screen>
@@ -348,7 +440,7 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
 function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
   const event = pending.find((candidate) => candidate.id === id)?.event;
   const body = event?.type === 'proposal' ? event.body : null;
-  const [last, setLast] = useState<{ id: string; body: ProposalBody } | null>(null);
+  const [last, setLast] = useState<{ id: string; body: ProposalEventBody } | null>(null);
   if (body !== null && last?.body !== body) setLast({ id, body });
   const remembered = last?.id === id ? last.body : null;
   return { body: body ?? remembered, pending: body !== null };

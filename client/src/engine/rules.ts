@@ -6,11 +6,12 @@
  * founds every group with ADR-0067's Fellowship defaults and changes none of
  * them by vote (ADR-0074), so a genesis can only restate a default: it can't
  * lower a bar. Every Proposal gets its class from {@link targetClass} when it
- * opens, and its class picks the bar its vote must clear and its window.
+ * opens, and its class picks the bar its vote must clear and bounds the window
+ * its proposer chooses ({@link validWindow}, #106).
  * Integers only, like the tally: a bar is an average of at least
  * `avgAtLeast` with under `zerosUnderPercent`% zeros, compared as products.
  */
-import type { ProposalBody } from './event';
+import type { ProposalEventBody } from './event';
 
 /** How hard a change is: the class whose bar and window a Proposal gets. #115 adds removal's. */
 export type ProposalClass = 'ordinary' | 'entrenched';
@@ -35,10 +36,22 @@ export interface WindowBounds {
 }
 
 /**
+ * When a group's steward seats open and how long a term runs (ADR-0049,
+ * ADR-0075 §3): the first election at `firstElectionAt` voting members, the
+ * second seat at `secondSeatAt`, and terms of `termDays`.
+ */
+export interface StewardRules {
+  readonly firstElectionAt: number;
+  readonly secondSeatAt: number;
+  readonly termDays: number;
+}
+
+/**
  * A group's founding rules. Quorum per version is min(eligible, max(`min`,
  * ⌈`percent`% of eligible⌉)) scorers (ADR-0073). #101 reads `vouches` and
- * `waitDays`, and #111 reads `ballotExpiryDays`. #102 and #117 add their own
- * fields here, each with its class in {@link RULE_CLASS}.
+ * `waitDays`, #111 reads `ballotExpiryDays`, and #102 reads `stewards` and
+ * `suspensionDays`. #117 adds its own fields here, each with its class in
+ * {@link RULE_CLASS}.
  */
 export interface Rules {
   readonly bars: Readonly<Record<ProposalClass, Bar>>;
@@ -47,12 +60,15 @@ export interface Rules {
   readonly vouches: number;
   readonly waitDays: number;
   readonly ballotExpiryDays: number;
+  readonly stewards: StewardRules;
+  readonly suspensionDays: number;
 }
 
 /**
  * The founding rules every MVP group has: ADR-0067's Fellowship defaults, the
- * consent floor (ADR-0002), the entrenched bar (ADR-0015 §2), ADR-0074's windows
- * and ADR-0073's quorum. Create group writes them into genesis as they are.
+ * consent floor (ADR-0002), the entrenched bar (ADR-0015 §2), ADR-0074's windows,
+ * ADR-0073's quorum, ADR-0049's steward seats and ADR-0016's 7-day suspension.
+ * Create group writes them into genesis as they are.
  */
 export const DEFAULT_RULES = {
   bars: {
@@ -67,13 +83,15 @@ export const DEFAULT_RULES = {
   vouches: 2,
   waitDays: 14,
   ballotExpiryDays: 30,
+  stewards: { firstElectionAt: 3, secondSeatAt: 6, termDays: 182 },
+  suspensionDays: 7,
 } as const satisfies Rules;
 
 /**
- * Each founding rule's class (ADR-0051). The pass rules and quorum are
- * entrenched; the windows, vouches, the wait before voting and ballot expiry
- * are ordinary. Changing a rule by vote stays deferred apart from #117's
- * opt-ins, which add their own class here.
+ * Each founding rule's class (ADR-0051). The pass rules, quorum, the steward
+ * seats and the suspension's length are entrenched; the windows, vouches, the
+ * wait before voting and ballot expiry are ordinary. Changing a rule by vote
+ * stays deferred apart from #117's opt-ins, which add their own class here.
  */
 export const RULE_CLASS = {
   bars: 'entrenched',
@@ -82,6 +100,8 @@ export const RULE_CLASS = {
   vouches: 'ordinary',
   waitDays: 'ordinary',
   ballotExpiryDays: 'ordinary',
+  stewards: 'entrenched',
+  suspensionDays: 'entrenched',
 } as const satisfies Record<keyof Rules, RuleClass>;
 
 /** Relay minutes in a day. */
@@ -126,18 +146,44 @@ export interface ClassState {
 }
 
 /** How a Proposal's class is found, from the group's state when it opens and the Proposal's own body. */
-export type TargetClassifier = (state: ClassState, proposal: ProposalBody) => ProposalClass;
+export type TargetClassifier = (state: ClassState, proposal: ProposalEventBody) => ProposalClass;
 
 /**
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
  * change. The fold stores it as the Proposal's `class`. Every target is
- * ordinary today: entrenched sections (#116), removal (#115), widening an
- * opt-in (#117) and dissolution (#108) each add their case here.
+ * ordinary today, steward elections and recalls included (ADR-0049):
+ * entrenched sections (#116), removal (#115), widening an opt-in (#117) and
+ * dissolution (#108) each add their case here.
  */
 export const targetClass: TargetClassifier = () => 'ordinary';
 
 /** How long a vote of class `cls` runs when the proposer names no window, in relay minutes. */
 export function defaultWindowMinutes(rules: Rules, cls: ProposalClass): number {
   return rules.windows[cls].default * DAY_MINUTES;
+}
+
+/**
+ * True when a proposer may choose `days` for a vote of class `cls` (#106,
+ * ADR-0074): a whole number from `windows[cls].min` to `windows[cls].max`,
+ * both included. The composer checks it as the proposer types; the fold
+ * ignores a Proposal whose window fails it.
+ */
+export function validWindow(rules: Rules, cls: ProposalClass, days: number): boolean {
+  const { min, max } = rules.windows[cls];
+  return Number.isInteger(days) && days >= min && days <= max;
+}
+
+/**
+ * How many whole days a Proposal of class `cls` runs: the `window` its
+ * proposer chose, or the class default when it names none. Null when the
+ * window it names fails {@link validWindow}, so the fold ignores the Proposal.
+ */
+export function chosenWindow(
+  rules: Rules,
+  cls: ProposalClass,
+  window: number | undefined,
+): number | null {
+  if (window === undefined) return rules.windows[cls].default;
+  return validWindow(rules, cls, window) ? window : null;
 }

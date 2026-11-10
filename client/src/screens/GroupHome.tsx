@@ -4,19 +4,25 @@ import { Button, Link, VisuallyHidden } from 'react-aria-components';
 import { ChatLink } from '../app/ChatLink';
 import { Countdown } from '../app/Countdown';
 import { latestLink } from '../app/latestLink';
+import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import { formatDay } from '../app/format';
-import { formatSyncedAt, minuteIso } from '../app/time';
+import { StewardSeats } from '../app/StewardSeats';
+import { SuspendedNote } from '../app/stewards';
+import { SuspendDialog } from '../app/SuspendDialog';
+import { formatMinute, formatSyncedAt, minuteIso } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
-import { can, isLevel, type Level } from '../engine/capabilities';
+import { can, isLevel, isSuspended, type Level } from '../engine/capabilities';
 import type { ParsedEvent } from '../engine/event';
-import type { GroupState, Proposal } from '../engine/fold';
+import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
+import { homeLists } from '../engine/home';
 import { displayName } from '../engine/names';
+import { activeSuspension, maySuspend, seatOf, type Suspension } from '../engine/stewards';
 
 /** Props for {@link GroupHome}. */
 export interface GroupHomeProps {
@@ -39,6 +45,12 @@ export interface GroupHomeProps {
   readonly pending: readonly ParsedEvent[];
   /** Queues this member's move to another level; rejects when it couldn't be saved. */
   readonly onChooseLevel: (level: Level) => Promise<void>;
+  /** Queues this steward's suspension of the member named, with a reason, blank for none (#102). */
+  readonly onSuspend: (member: string, reason: string) => Promise<void>;
+  /** Queues this member's leave and marks the group as leaving; rejects when it couldn't be saved. */
+  readonly onLeave: () => Promise<void>;
+  /** Whether this device's leave waits for the relay (#77): the group reads, but takes no votes. */
+  readonly leaving?: boolean;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -65,13 +77,17 @@ function Section({ title, children }: { readonly title: string; readonly childre
   );
 }
 
-function OpenProposals({ state, now }: { readonly state: GroupState; readonly now: number }) {
-  const groupId = state.group ?? '';
-  const open = state.proposals.filter((proposal) => !proposal.final);
-  if (open.length === 0) return <p>{messages.home.noProposals}</p>;
+interface ProposalCardsProps {
+  readonly groupId: string;
+  readonly proposals: readonly Proposal[];
+  readonly now: number;
+}
+
+/** Open Proposals as cards, each with its title and countdown, opening its ballot. */
+function ProposalCards({ groupId, proposals, now }: ProposalCardsProps) {
   return (
     <ul className="card-list">
-      {open.map((proposal) => (
+      {proposals.map((proposal) => (
         <li key={proposal.id}>
           <Link
             className="card-link"
@@ -95,26 +111,55 @@ function OpenProposals({ state, now }: { readonly state: GroupState; readonly no
   );
 }
 
-/** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
-function closedAt(proposal: Proposal): number {
-  return proposal.closedAt ?? proposal.deadline;
+interface OpenListsProps {
+  readonly groupId: string;
+  /** What waits on this person; nothing while they're leaving. */
+  readonly needsYourVote: readonly Proposal[];
+  /** The other open Proposals, or every open one while they're leaving. */
+  readonly otherOpen: readonly Proposal[];
+  readonly now: number;
 }
 
-/** Closed Proposals, newest first by when they closed, and by relay order within a minute. */
-function decided(state: GroupState): Proposal[] {
-  return state.proposals
-    .filter((proposal) => proposal.final)
-    .reverse()
-    .sort((a, b) => closedAt(b) - closedAt(a));
+/**
+ * 'Needs your vote', when anything waits on this person, then the other open
+ * Proposals: "Open Proposals", or "Other open Proposals" after it. With none
+ * open, one line says so.
+ */
+function OpenLists({ groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
+  const { home } = messages;
+  const waits = needsYourVote.length > 0;
+  return (
+    <>
+      {waits ? (
+        <Section title={home.needsYourVote}>
+          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} />
+        </Section>
+      ) : null}
+      {otherOpen.length > 0 ? (
+        <Section title={waits ? home.otherOpen : home.openProposals}>
+          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} />
+        </Section>
+      ) : null}
+      {waits || otherOpen.length > 0 ? null : (
+        <Section title={home.openProposals}>
+          <p>{home.noProposals}</p>
+        </Section>
+      )}
+    </>
+  );
 }
 
 /**
  * Decided: the group's history, each closed Proposal with its title, its
  * outcome in a word, and its close date, opening its result.
  */
-function Decided({ state }: { readonly state: GroupState }) {
-  const groupId = state.group ?? '';
-  const closed = decided(state);
+function Decided({
+  groupId,
+  closed,
+}: {
+  readonly groupId: string;
+  readonly closed: readonly Proposal[];
+}) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
   return (
     <ul className="card-list">
@@ -134,7 +179,9 @@ function Decided({ state }: { readonly state: GroupState }) {
             </span>
             <span className="meta countdown">
               <span>{messages.decided.outcomes[proposal.outcome.kind]}</span>
-              <time dateTime={minuteIso(closedAt(proposal))}>{formatDay(closedAt(proposal))}</time>
+              <time dateTime={minuteIso(closeTime(proposal))}>
+                {formatDay(closeTime(proposal))}
+              </time>
             </span>
           </Link>
         </li>
@@ -173,24 +220,94 @@ function InvitedBy({ state, inviter }: { readonly state: GroupState; readonly in
   );
 }
 
+/** "Suspended until <date>.", and the steward's reason as plain text, on the suspended person's row. */
+function SuspensionLine({ suspension }: { readonly suspension: Suspension }) {
+  return (
+    <div className="person-suspension">
+      <p>{messages.stewards.suspendedUntil(formatMinute(suspension.until))}</p>
+      {suspension.reason === null || suspension.reason.trim() === '' ? null : (
+        <p className="person-reason">
+          {messages.stewards.reasonPrefix} <span dir="auto">{suspension.reason}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface PersonProps {
+  readonly props: GroupHomeProps;
+  readonly member: Member;
+  /** The member this device's `suspend` in the outbox names, if one waits. */
+  readonly suspending: string | undefined;
+}
+
 /**
- * Everyone in the group, each with who invited them and the level they chose
- * (ADR-0074: every level sees it).
+ * One person: their name and who invited them (#73), level and Steward
+ * badge, any running suspension, and Suspend when this member may suspend
+ * them now, has none waiting to send and isn't leaving (stewards.ts decides,
+ * as the fold does).
  */
-function People({ state }: { readonly state: GroupState }) {
+function Person({ props, member, suspending }: PersonProps) {
+  const { state, me, sync, onSuspend } = props;
+  const { author } = member;
+  const name = displayName(state, author) ?? '';
+  const suspension = activeSuspension(state, author);
+  // Nothing more is queued once this member's leave waits for the relay (#77).
+  const offered =
+    props.leaving !== true && suspending === undefined && maySuspend(state, me, author);
+  return (
+    <li className="person">
+      <span className="person-who">
+        <bdi className="person-name">{name}</bdi>
+        {member.invitedBy === null ? null : <InvitedBy state={state} inviter={member.invitedBy} />}
+      </span>
+      <span className="person-tags">
+        <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>{' '}
+        <span className="person-level">{levelName(member.level)}</span>
+        {seatOf(state, author) === undefined ? null : (
+          <>
+            <VisuallyHidden>{messages.stewards.badgeSeparator}</VisuallyHidden>{' '}
+            <span className="badge">{messages.stewards.badge}</span>
+          </>
+        )}
+        {offered ? (
+          <SuspendDialog
+            name={name}
+            days={state.rules.suspensionDays}
+            onSuspend={(reason) => onSuspend(author, reason)}
+          />
+        ) : null}
+      </span>
+      {suspension === undefined ? null : <SuspensionLine suspension={suspension} />}
+      {suspending === author ? (
+        <div className="person-status">
+          <SendStatus pending reachable={sync.reachable} sent={false} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** Whom this member's `suspend` still in the outbox names, if one waits. */
+function waitingSuspend(me: string, pending: readonly ParsedEvent[]): string | undefined {
+  return pending
+    .flatMap(({ event }) =>
+      event.type === 'suspend' && event.author === me ? [event.body.member] : [],
+    )
+    .at(-1);
+}
+
+/**
+ * Everyone in the group, each with who invited them, the level they chose and
+ * any steward seat or suspension (ADR-0074: every level sees it; ADR-0016: everyone sees a
+ * suspension).
+ */
+function People(props: GroupHomeProps) {
+  const suspending = waitingSuspend(props.me, props.pending);
   return (
     <ul className="people">
-      {state.members.map((member) => (
-        <li key={member.author} className="person">
-          <span className="person-who">
-            <bdi className="person-name">{displayName(state, member.author)}</bdi>
-            {member.invitedBy === null ? null : (
-              <InvitedBy state={state} inviter={member.invitedBy} />
-            )}
-          </span>
-          <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>{' '}
-          <span className="person-level">{levelName(member.level)}</span>
-        </li>
+      {props.state.members.map((member) => (
+        <Person key={member.author} props={props} member={member} suspending={suspending} />
       ))}
     </ul>
   );
@@ -211,6 +328,8 @@ interface InvolvementProps {
   readonly current: Level;
   readonly waiting: boolean;
   readonly reachable: boolean;
+  /** True while a suspension runs: the fold ignores a suspended member's level change. */
+  readonly suspended: boolean;
   readonly onChooseLevel: GroupHomeProps['onChooseLevel'];
 }
 
@@ -219,7 +338,8 @@ interface InvolvementProps {
  * the level held. Saving queues one `level` event; the People list shows the
  * new level once the relay returns it (ADR-0021: self-selected).
  */
-function Involvement({ current, waiting, reachable, onChooseLevel }: InvolvementProps) {
+function Involvement(props: InvolvementProps) {
+  const { current, waiting, reachable, suspended, onChooseLevel } = props;
   const [choice, setChoice] = useState<Level | null>(null);
   const { run, running, outcome } = useSaving(onChooseLevel);
   const picked = choice ?? current;
@@ -230,7 +350,7 @@ function Involvement({ current, waiting, reachable, onChooseLevel }: Involvement
   };
   return (
     <div className="involvement">
-      <LevelPicker value={picked} onChange={setChoice} isDisabled={running} />
+      <LevelPicker value={picked} onChange={setChoice} isDisabled={running || suspended} />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.levels.failed}
@@ -248,26 +368,46 @@ function Involvement({ current, waiting, reachable, onChooseLevel }: Involvement
   );
 }
 
-/** The People list, then this member's own involvement under it. */
+/**
+ * The People list, the group's current members, then this member's own
+ * involvement and Leave this group under it. While they're leaving, neither
+ * shows: the leave already waits in the outbox.
+ */
 function PeopleSection(props: GroupHomeProps) {
-  const { state, me, pending, sync, onChooseLevel } = props;
-  // Nobody chooses a level before the relay has returned their join.
-  const mine = state.members.find((member) => member.author === me);
+  const { state, me, pending, sync, onChooseLevel, onLeave, leaving = false } = props;
+  // Nobody chooses a level, or leaves, before the relay has returned their join.
+  const mine = leaving ? undefined : state.members.find((member) => member.author === me);
   const waiting = waitingLevel(me, pending);
   return (
     <Section title={messages.home.people}>
       <div className="stack people-stack">
-        <People state={state} />
+        <People {...props} />
         {mine === undefined ? null : (
-          <Involvement
-            current={waiting ?? mine.level}
-            waiting={waiting !== undefined}
-            reachable={sync.reachable}
-            onChooseLevel={onChooseLevel}
-          />
+          <>
+            <Involvement
+              current={waiting ?? mine.level}
+              waiting={waiting !== undefined}
+              reachable={sync.reachable}
+              suspended={isSuspended(state, me)}
+              onChooseLevel={onChooseLevel}
+            />
+            <div>
+              <LeaveDialog onLeave={onLeave} />
+            </div>
+          </>
         )}
       </div>
     </Section>
+  );
+}
+
+/** "Leaving…", and what that means, while this device's leave waits for the relay. */
+function LeavingNote() {
+  return (
+    <div className="leaving-note">
+      <p className="eyebrow">{messages.leave.leaving}</p>
+      <p>{messages.leave.leavingNote}</p>
+    </div>
   );
 }
 
@@ -358,15 +498,43 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 }
 
 /**
- * Group home (`#/g/{groupId}`): the group's Document, its open Proposals, the
- * Decided list of closed ones, its people with their levels and the viewer's
- * own involvement, and its invite link, each shown only to members whose
- * capabilities allow it (spec §8; `can()` is the only check).
+ * People, the Stewards (#102) and the invite, each for whoever may see it.
+ * While this member's leave waits for the relay, there's no invite.
+ */
+function MemberSections(props: GroupHomeProps) {
+  const { state, me, makeInviteLink, copyText, leaving = false } = props;
+  const roster = can(state, me, 'see-roster');
+  return (
+    <>
+      {roster ? <PeopleSection {...props} /> : null}
+      {roster ? (
+        <Section title={messages.stewards.heading}>
+          <StewardSeats state={state} me={me} leaving={leaving} />
+        </Section>
+      ) : null}
+      {can(state, me, 'invite') && !leaving ? (
+        <Section title={messages.home.invite}>
+          <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
+        </Section>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
+ * other open Proposals, the group's Document, the Decided list of closed ones,
+ * its people with their levels, the viewer's own involvement and Leave this
+ * group, the Stewards (#102), then its invite link and its discussion, each shown only to members
+ * whose capabilities allow it (`can()` is the only check). While the viewer's
+ * leave waits for the relay, it says so, lists every open Proposal together,
+ * and offers no level choice, invite or Leave.
  */
 export function GroupHome(props: GroupHomeProps) {
-  const { state, me, makeInviteLink, copyText, now, sync } = props;
+  const { state, me, now, sync, leaving = false } = props;
   const groupId = state.group ?? '';
   const discussion = latestLink(state);
+  const lists = homeLists(state, me, now);
   return (
     <main className="shell">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
@@ -377,31 +545,32 @@ export function GroupHome(props: GroupHomeProps) {
           pageTitle={messages.home.pageTitle}
         />
         <SyncNotices sync={sync} />
+        {leaving ? <LeavingNote /> : null}
       </div>
-      <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
-        <span className="eyebrow">{messages.home.documentLabel}</span>
-        <span className="card-link-title">
-          <span className="heading-2">
-            <bdi>{state.title}</bdi>
-          </span>
-          <span className="card-link-arrow" aria-hidden="true">
-            {messages.app.forward}
-          </span>
-        </span>
-      </Link>
+      <SuspendedNote state={state} me={me} />
       <div className="sections">
-        <Section title={messages.home.openProposals}>
-          <OpenProposals state={state} now={now} />
+        <OpenLists
+          groupId={groupId}
+          needsYourVote={leaving ? [] : lists.needsYourVote}
+          otherOpen={leaving ? lists.open : lists.otherOpen}
+          now={now}
+        />
+        <Section title={messages.home.documentLabel}>
+          <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
+            <span className="card-link-title">
+              <span className="heading-2">
+                <bdi>{state.title}</bdi>
+              </span>
+              <span className="card-link-arrow" aria-hidden="true">
+                {messages.app.forward}
+              </span>
+            </span>
+          </Link>
         </Section>
         <Section title={messages.decided.title}>
-          <Decided state={state} />
+          <Decided groupId={groupId} closed={lists.decided} />
         </Section>
-        {can(state, me, 'see-roster') ? <PeopleSection {...props} /> : null}
-        {can(state, me, 'invite') ? (
-          <Section title={messages.home.invite}>
-            <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
-          </Section>
-        ) : null}
+        <MemberSections {...props} />
         {discussion === null ? null : (
           <Section title={messages.home.discussion}>
             <div>

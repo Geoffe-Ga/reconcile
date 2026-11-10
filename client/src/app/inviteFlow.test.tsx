@@ -120,7 +120,7 @@ describe('opening an invite link', () => {
         within(people)
           .getAllByRole('listitem')
           .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator', 'Ben, invited by Ana, Collaborator']);
+      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Collaborator']);
     });
     expect((await ben.services.store.getGroup(groupId))?.log).toHaveLength(2);
   });

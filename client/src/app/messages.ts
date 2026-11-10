@@ -36,6 +36,7 @@ export const messages = {
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
+    leaving: 'Leaving…',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -153,7 +154,10 @@ export const messages = {
     pageTitle: 'Your group',
     eyebrow: 'Your group',
     documentLabel: 'Document',
+    needsYourVote: 'Needs your vote',
     openProposals: 'Open Proposals',
+    /** The open Proposals after 'Needs your vote', when it lists any. */
+    otherOpen: 'Other open Proposals',
     noProposals: 'Nothing to vote on yet.',
     people: 'People',
     /** Read between a name and its level, as in "Ana, Co-Creator"; the screen shows a gap. */
@@ -337,6 +341,31 @@ export const messages = {
     ranEnd: '.',
     ranEarlyEnd: ', when everyone had voted.',
   },
+  leave: {
+    open: 'Leave this group',
+    title: 'Leave this group?',
+    body: 'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    confirm: 'Leave this group',
+    cancel: 'Cancel',
+    failed: 'Leaving couldn’t be saved on this device. Try again.',
+    leaving: 'Leaving…',
+    leavingNote:
+      'This group leaves this device as soon as the relay has your leave. Until then, you can read it but not propose or vote.',
+    noVoting: 'You’re leaving this group, so you can’t vote here.',
+    noProposingTitle: 'You’re leaving this group',
+    noProposing: 'You can’t propose changes in a group you’re leaving.',
+  },
+  tell: {
+    action: 'Tell your group',
+    hint: 'Shares one line saying a vote is open and when it ends, with Reconcile’s address. It doesn’t say what the vote is about.',
+    /** The line shared after proposing; the deadline is the only thing that changes. */
+    proposal: (day: string) => `I proposed a change in Reconcile. Voting ends ${day}.`,
+    /** The line shared after adding a version. */
+    version: (day: string) => `I added a version in Reconcile. Voting ends ${day}.`,
+    shared: 'Shared.',
+    copied: 'Copied. Paste it into your group’s chat.',
+    blocked: 'Sharing and copying are both blocked here. Tell your group in your chat instead.',
+  },
   decided: {
     title: 'Decided',
     empty: 'Nothing decided yet.',
@@ -351,6 +380,17 @@ export const messages = {
   countdown: {
     closes: (left: string) => `Closes ${left}`,
     closed: 'Voting closed',
+  },
+  window: {
+    label: 'Voting time (days)',
+    closes: (day: string) =>
+      `Closes about ${day}. The exact time is set when the relay receives it.`,
+    range: (min: number, max: number) =>
+      `Voting can run ${count(min)} to ${count(max)} days, from when the relay receives your Proposal.`,
+    outside: (min: number, max: number) => `Choose from ${count(min)} to ${count(max)} days.`,
+    fewer: '−',
+    more: '+',
+    runs: (days: number) => `Voting runs ${count(days)} days`,
   },
   markdown: {
     hint: '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.',
@@ -390,5 +430,78 @@ export const messages = {
     addVersionLabel: (section: number) => `Add your version to section ${String(section)}`,
     ballotFull: 'This section’s ballot already has three versions.',
     empty: 'This Document has no sections yet.',
+  },
+  /**
+   * Stewards and suspensions (#102). Where a person's name sits inside a
+   * sentence, the words before and after it are kept apart, so the screen
+   * sets the name in `<bdi>` (see `Named` in src/app/stewards.tsx).
+   */
+  stewards: {
+    heading: 'Stewards',
+    badge: 'Steward',
+    /** Read between a level and the badge, as in "Ana, Co-Creator, Steward". */
+    badgeSeparator: ',',
+    seat: (seat: number) => `Seat ${String(seat)}`,
+    empty: 'Empty',
+    founderHold: 'Holds this seat until your group elects a steward.',
+    termEnds: (date: string) => `Term ends ${date}.`,
+    termEnded: (date: string) =>
+      `Term ended ${date}. They stay steward until your group elects someone.`,
+    secondSeat: (members: number) =>
+      `A second seat opens once ${count(members)} people in your group vote.`,
+    due: (seat: number) => `A steward election is due for seat ${String(seat)}.`,
+    about: (days: number) =>
+      `A steward can suspend someone at once, for ${count(days)} days. Everyone in the group sees each suspension, and your group can recall a steward by a vote at any time.`,
+    propose: 'Propose a steward',
+    proposeFor: (seat: number) => `Propose a steward for seat ${String(seat)}`,
+    recall: 'Propose recall',
+    recallLabel: (name: string) => `Propose recall of ${name}`,
+    suspend: 'Suspend',
+    suspendLabel: (name: string) => `Suspend ${name}`,
+    suspendedUntil: (date: string) => `Suspended until ${date}.`,
+    reasonPrefix: 'Reason:',
+    youAreSuspended: (date: string) =>
+      `A steward suspended you until ${date}. You can read, but not post, propose or vote.`,
+    dialogTitle: { before: 'Suspend', after: '?' },
+    dialogLine: (days: number) =>
+      `Everyone in the group will see this. It ends after ${count(days)} days.`,
+    reasonLabel: 'Reason (optional)',
+    reasonHint: 'Say what happened, in a sentence. Everyone in the group reads it.',
+    reasonTooLong: (max: number) => `Keep the reason to ${count(max)} characters or fewer.`,
+    confirm: 'Suspend',
+    cancel: 'Cancel',
+    suspendFailed: 'The suspension couldn’t be saved on this device. Try again.',
+    makeSteward: (seat: number) => ({ before: 'Make', after: `steward (seat ${String(seat)})` }),
+    recallSteward: { before: 'Recall', after: 'as steward' },
+    makeStewardTitle: (name: string, seat: number) => `Make ${name} steward (seat ${String(seat)})`,
+    recallStewardTitle: (name: string) => `Recall ${name} as steward`,
+    electLine: (days: number) =>
+      `If this passes, they can suspend someone at once, for ${count(days)} days, until your group recalls them or their term ends.`,
+    recallLine: 'If this passes, their seat is empty until your group elects a steward.',
+    score: 'Your score',
+    ownRecall: 'This Proposal would recall you as steward, so you don’t vote on it.',
+    elected: (seat: number) => ({
+      before: 'This passed.',
+      after: `is now steward for seat ${String(seat)}.`,
+    }),
+    recalled: { before: 'This passed.', after: 'is no longer a steward.' },
+    composerPageTitle: 'Propose a steward',
+    composerTitle: (seat: number) => `Propose a steward for seat ${String(seat)}`,
+    recallPageTitle: 'Propose a recall',
+    recallTitle: (seat: number) => `Propose a recall for seat ${String(seat)}`,
+    nomineeLabel: 'Who should hold this seat?',
+    nomineeHint: 'Anyone who votes here and isn’t suspended can stand.',
+    nomineeMissing: 'Choose who you’re proposing.',
+    titleHint: 'It starts as what the ballot will say. Change it if you like.',
+    whyHint: 'Tell your group why. They’ll talk it over before voting.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose this steward',
+    recallSubmit: 'Propose this recall',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'This seat can’t take a Proposal now',
+    unavailable:
+      'Another steward Proposal for this seat may be open, or your group isn’t large enough for it yet. Go back to your group to see its stewards.',
+    notAllowed: 'Your place in this group doesn’t include proposing.',
+    noNominees: 'Nobody in your group can stand for this seat right now.',
   },
 } as const;

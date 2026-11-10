@@ -27,7 +27,7 @@ const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 const PEOPLE = [
-  'Ana, Co-Creator',
+  'Ana, Co-Creator, Steward',
   'Ben, invited by Ana, Collaborator',
   'Cal, invited by Ana, Collaborator',
 ];
@@ -91,9 +91,10 @@ async function expectSameGroup(person: Person): Promise<void> {
   const { page } = person;
   await page.goto('/');
   await page.getByRole('link', { name: GROUP }).click();
-  await expect(page.getByRole('region', { name: 'People' }).getByRole('listitem')).toHaveText(
-    PEOPLE,
-  );
+  const people = page.getByRole('region', { name: 'People', exact: true }).getByRole('listitem');
+  // Each row in order; Ana, the steward, also sees Suspend on the others' rows (#102).
+  await expect(people).toHaveCount(PEOPLE.length);
+  await expect(people).toContainText(PEOPLE);
   await page.getByRole('link', { name: TITLE }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     NEW_TEXT,
@@ -139,7 +140,8 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     await expect(page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
     await vote(ana, '4 · Strongly supportive');
 
-    const open = ben.page.getByRole('region', { name: 'Open Proposals' });
+    // Ben hasn't scored it yet, so Group home lists it under Needs your vote (#77).
+    const open = ben.page.getByRole('region', { name: 'Needs your vote' });
     await open.getByRole('link', { name: PROPOSAL }).click();
     await vote(ben, '3 · Supportive');
     for (const { page: each } of [ana, ben]) {

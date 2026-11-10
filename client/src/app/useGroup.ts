@@ -61,6 +61,11 @@ export interface GroupView {
    * history may be missing, until an invite's merge clears it (#73).
    */
   missingHistory: boolean;
+  /**
+   * Whether this device has queued its leave (#77): the group waits, read
+   * only, until the relay has the leave and the sync loop deletes it.
+   */
+  leaving: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
 }
@@ -82,12 +87,22 @@ export function useGroup(groupId: string): GroupView {
     state,
     log: group?.log ?? NO_RECORDS,
     pending,
-    lastSyncAt: group?.lastSyncAt ?? null,
-    relayNow: group?.relayNow ?? null,
+    ...syncStatusOf(group),
     reachable,
     me: group?.me ?? null,
-    missingHistory: group?.missingHistory === true,
     loaded,
+  };
+}
+
+/** What a stored group says of its syncs and its leave, or nothing yet before it loads. */
+function syncStatusOf(
+  group: Group | undefined,
+): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving'> {
+  return {
+    lastSyncAt: group?.lastSyncAt ?? null,
+    relayNow: group?.relayNow ?? null,
+    missingHistory: group?.missingHistory === true,
+    leaving: group?.leaving !== undefined,
   };
 }
 

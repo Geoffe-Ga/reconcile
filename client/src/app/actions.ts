@@ -1,6 +1,6 @@
 /**
- * What Create group, Copy invite link and Join do (spec §7 and §8), apart from
- * any screen.
+ * What Create group, Copy invite link, Join and Leave do (spec §7 and §8), apart
+ * from any screen.
  *
  * Create group and Join each sign one event with the engine, keep its record
  * in the store's outbox, and ask the sync loop to send it at once. Each makes
@@ -242,4 +242,24 @@ export async function joinGroup(
   await services.store.enqueue(groupId, join.record);
   void services.sync.syncOnce();
   return groupId;
+}
+
+/**
+ * Leaves `groupId` (#77; ADR-0010): signs this member's `leave`, queues it
+ * after anything already queued and marks the group as leaving, in one store
+ * change, then sends it. Nothing more is queued for the group, and once the
+ * relay returns a seq for the leave, the sync loop deletes the group from this
+ * device. Offline, it waits in the outbox across reloads.
+ */
+export async function leaveGroup(services: Services, groupId: string): Promise<void> {
+  const group = await services.store.getGroup(groupId);
+  if (group === undefined) throw new Error('No such group on this device.');
+  const leave = signEvent(group.signingKey, {
+    type: 'leave',
+    group: groupId,
+    ts: services.now(),
+    body: {},
+  });
+  await services.store.markLeaving(groupId, leave.record);
+  void services.sync.syncOnce();
 }

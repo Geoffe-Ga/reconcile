@@ -42,6 +42,16 @@ export async function testDevice(
   const copyText = vi.fn(async (text: string | Promise<string>) => {
     copied.push(await text);
   });
-  const services = { store, relay, sync, seal: xchachaSeal, now, origin: TEST_ORIGIN, copyText };
+  // No Web Share, as in a desktop browser without it: Tell your group copies instead.
+  const services = {
+    store,
+    relay,
+    sync,
+    seal: xchachaSeal,
+    now,
+    origin: TEST_ORIGIN,
+    copyText,
+    share: undefined,
+  };
   return { services, copied };
 }

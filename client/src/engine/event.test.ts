@@ -238,6 +238,16 @@ describe('parseEvent', () => {
     });
   });
 
+  it('reads a leave, whose body carries nothing, and drops any field a body adds', () => {
+    for (const body of [{}, { reason: 'moving away' }]) {
+      const bytes = json(envelope('leave', body));
+      expect(parseEvent(bytes)).toEqual({
+        event: { v: 1, type: 'leave', group: 'g1', author: ANA, ts: 1, body: {} },
+        id: eventId(bytes),
+      });
+    }
+  });
+
   it.each([
     ['genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] }],
     ['join', { name: 'Ben' }],
@@ -279,7 +289,7 @@ describe('parseEvent', () => {
     ['a fractional ts', { ts: 1.5 }],
     ['a negative ts', { ts: -1 }],
     ['a string ts', { ts: '1' }],
-    ['an unknown type', { type: 'leave' }],
+    ['an unknown type', { type: 'no-such-type' }],
     ['a missing type', { type: undefined }],
     ['an array body', { body: [] }],
     ['a null body', { body: null }],
@@ -328,6 +338,16 @@ describe('parseEvent', () => {
     ['proposal without a title', 'proposal', { atom: 'a', why: 'w', text: 'x' }],
     ['proposal without a why', 'proposal', { atom: 'a', title: 't', text: 'x' }],
     [
+      'proposal with a string window',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', window: '7' },
+    ],
+    [
+      'proposal with a null window',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', window: null },
+    ],
+    [
       'proposal with a numeric link',
       'proposal',
       { atom: 'a', title: 't', why: 'w', text: 'x', link: 1 },
@@ -344,6 +364,51 @@ describe('parseEvent', () => {
     ['version without text', 'version', { proposal: 'p' }],
     ['version with a numeric proposal', 'version', { proposal: 1, text: 'x' }],
     ['version with null text', 'version', { proposal: 'p', text: null }],
+    ['a steward target that is a list', 'proposal', { target: [], title: 't', why: 'w' }],
+    [
+      'a target of an unknown kind',
+      'proposal',
+      { target: { kind: 'chair' }, title: 't', why: 'w' },
+    ],
+    [
+      'a steward target with its seat as text',
+      'proposal',
+      { target: { kind: 'steward', seat: '1', member: null }, title: 't', why: 'w' },
+    ],
+    [
+      'a steward target with a fractional seat',
+      'proposal',
+      { target: { kind: 'steward', seat: 1.5, member: null }, title: 't', why: 'w' },
+    ],
+    [
+      'a steward target with a numeric member',
+      'proposal',
+      { target: { kind: 'steward', seat: 1, member: 7 }, title: 't', why: 'w' },
+    ],
+    [
+      'a steward target that leaves out its member',
+      'proposal',
+      { target: { kind: 'steward', seat: 1 }, title: 't', why: 'w' },
+    ],
+    [
+      'a steward Proposal that also names an Atom',
+      'proposal',
+      { atom: 'a', target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w' },
+    ],
+    [
+      'a steward Proposal without a why',
+      'proposal',
+      { target: { kind: 'steward', seat: 1, member: null }, title: 't' },
+    ],
+    [
+      'a steward Proposal with a numeric link',
+      'proposal',
+      { target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w', link: 1 },
+    ],
+    ['suspend without a member', 'suspend', { reason: 'r' }],
+    ['suspend with a numeric member', 'suspend', { member: 1 }],
+    ['suspend with a null reason', 'suspend', { member: 'm', reason: null }],
+    ['suspend with a numeric reason', 'suspend', { member: 'm', reason: 3 }],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -387,6 +452,33 @@ describe('parseEvent', () => {
     });
   });
 
+  it('reads a steward election and a recall, dropping text and unknown keys (#102)', () => {
+    const target = { kind: 'steward', seat: 2, member: BEN };
+    const election = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', text: 'x', extra: 1 })),
+    );
+    expect(election?.event.body).toEqual({ target, title: 't', why: 'w' });
+    const recall = { kind: 'steward', seat: 1, member: null };
+    const linked = parseEvent(
+      json(envelope('proposal', { target: recall, title: 't', why: 'w', link: 'https://l' })),
+    );
+    expect(linked?.event.body).toEqual({ target: recall, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {
+    const plain = parseEvent(json(envelope('suspend', { member: BEN, until: 9 })));
+    expect(plain?.event).toEqual({
+      v: 1,
+      type: 'suspend',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { member: BEN },
+    });
+    const reasoned = parseEvent(json(envelope('suspend', { member: BEN, reason: 'Threats.' })));
+    expect(reasoned?.event.body).toEqual({ member: BEN, reason: 'Threats.' });
+  });
+
   it('keeps optional proposal and vote fields', () => {
     const proposal = parseEvent(
       json(envelope('proposal', { atom: 'a', title: 't', why: 'w', text: 'x', link: 'https://l' })),
@@ -400,6 +492,16 @@ describe('parseEvent', () => {
     });
     const vote = parseEvent(json(envelope('vote', { proposal: 'p', scores: {}, note: 'n' })));
     expect(vote?.event.body).toEqual({ proposal: 'p', scores: {}, note: 'n' });
+  });
+
+  it('keeps a proposal’s numeric window as written, even a fraction, for the fold to check (#106)', () => {
+    const body = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    for (const window of [10, 7.5, 0]) {
+      const parsed = parseEvent(json(envelope('proposal', { ...body, window })));
+      expect(parsed?.event.body).toEqual({ ...body, window });
+    }
+    const without = parseEvent(json(envelope('proposal', body)));
+    expect(without?.event.body).toEqual(body);
   });
 });
 

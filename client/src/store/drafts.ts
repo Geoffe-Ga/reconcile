@@ -17,16 +17,22 @@ export interface Draft {
   readonly text: string;
   /** The discussion link field, as typed, blank for none. */
   readonly link: string;
+  /**
+   * The voting window field in whole days, once the proposer has set it
+   * (#106), NaN while it's blank. Absent, the composer shows the class default.
+   */
+  readonly window?: number;
 }
 
 /** A group's drafts by target. Absent from records kept before drafts existed. */
 export type DraftShelf = ReadonlyMap<string, Draft>;
 
-/** True for a value shaped like a {@link Draft}: four strings, nothing missing. */
+/** True for a value shaped like a {@link Draft}: four strings, nothing missing, and any window a number. */
 export function isDraft(value: unknown): value is Draft {
   if (typeof value !== 'object' || value === null) return false;
-  const { title, why, text, link } = value as Record<string, unknown>;
-  return [title, why, text, link].every((field) => typeof field === 'string');
+  const { title, why, text, link, window } = value as Record<string, unknown>;
+  const strings = [title, why, text, link].every((field) => typeof field === 'string');
+  return strings && (window === undefined || typeof window === 'number');
 }
 
 /** The draft a group's record holds for `target`, or undefined for none or for one that isn't whole. */

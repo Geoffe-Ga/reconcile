@@ -10,19 +10,28 @@ function freshKey(): string {
   return base64url(newSigningKeys().publicKey);
 }
 
-/** A roster of members with these names, each under a fresh key. */
-function roster(...names: string[]): {
-  members: { author: string; name: string; level: Level; seq: number; invitedBy: null }[];
-} {
-  return {
-    members: names.map((name, seq) => ({
-      author: freshKey(),
-      name,
-      level: DEFAULT_JOIN_LEVEL,
-      seq,
-      invitedBy: null,
-    })),
-  };
+interface TestMember {
+  author: string;
+  name: string;
+  level: Level;
+  seq: number;
+  invitedBy: null;
+}
+
+/** Members with these names, each under a fresh key. */
+function people(names: readonly string[]): TestMember[] {
+  return names.map((name, seq) => ({
+    author: freshKey(),
+    name,
+    level: DEFAULT_JOIN_LEVEL,
+    seq,
+    invitedBy: null,
+  }));
+}
+
+/** A roster of members with these names, each under a fresh key, and nobody who has left. */
+function roster(...names: string[]): { members: TestMember[]; former: TestMember[] } {
+  return { members: people(names), former: [] };
 }
 
 /** The first 4 hex characters of the SHA-256 of the key's 32 bytes, by WebCrypto. */
@@ -34,7 +43,7 @@ async function expectedSuffix(author: string): Promise<string> {
 }
 
 /** The keys of a roster's members, in order. */
-function keys(state: ReturnType<typeof roster>): string[] {
+function keys(state: { readonly members: readonly TestMember[] }): string[] {
   return state.members.map((member) => member.author);
 }
 
@@ -74,6 +83,20 @@ describe('displayName', () => {
     const [one, two] = keys(state).map((key) => displayName(state, key)?.slice('Kim · '.length));
     expect(one).toMatch(/^[0-9a-f]{4}$/);
     expect(two).toMatch(/^[0-9a-f]{4}$/);
+  });
+
+  it('names someone who has left, so the ballots and Proposals they made still say who', () => {
+    const [ben] = people(['Ben']) as [TestMember];
+    expect(displayName({ ...roster('Ana'), former: [ben] }, ben.author)).toBe('Ben');
+  });
+
+  it('adds the suffix when a name matches someone who has left, whose ballots still show', async () => {
+    const [gone] = people(['Sam']) as [TestMember];
+    const state = { ...roster('sam', 'Ana'), former: [gone] };
+    const [sam, ana] = keys(state) as [string, string];
+    expect(displayName(state, sam)).toBe(`sam · ${await expectedSuffix(sam)}`);
+    expect(displayName(state, gone.author)).toBe(`Sam · ${await expectedSuffix(gone.author)}`);
+    expect(displayName(state, ana)).toBe('Ana');
   });
 
   it('gives no name for a key that isn’t a member', () => {

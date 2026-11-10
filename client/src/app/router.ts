@@ -9,6 +9,8 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import { SEATS, type SeatNumber } from '../engine/stewards';
+
 /** Where the app is. Unknown hashes read as Start. */
 export type Route =
   | { readonly name: 'start' }
@@ -18,7 +20,14 @@ export type Route =
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
-  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string };
+  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
+  | {
+      readonly name: 'steward';
+      readonly groupId: string;
+      readonly seat: SeatNumber;
+      /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
+      readonly recall: boolean;
+    };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -28,14 +37,34 @@ const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
-/** A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}` or `again/{proposalId}`. */
+/** A steward seat's number as a route writes it, or undefined for anything else. */
+function seatIn(arg: string): SeatNumber | undefined {
+  return SEATS.find((seat) => String(seat) === arg);
+}
+
+/** `steward/{seat}` or, when `recall`, `recall/{seat}`: the steward composer for one seat (#102). */
+function stewardPage(groupId: string, recall: boolean, arg: string): Route {
+  const seat = seatIn(arg);
+  return seat === undefined ? START : { name: 'steward', groupId, seat, recall };
+}
+
+/** `p/{proposalId}` or `again/{proposalId}`. */
+function proposalPage(groupId: string, page: string, arg: string): Route {
+  if (!ID.test(arg)) return START;
+  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
+  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
+}
+
+/**
+ * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `steward/{seat}` or `recall/{seat}`.
+ */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
   if (arg === undefined) return START;
   if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
-  if (!ID.test(arg)) return START;
-  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
-  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
+  if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
+  return proposalPage(groupId, page, arg);
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -75,6 +104,17 @@ export function parseRoute(hash: string): Route {
   }
 }
 
+/** Join's `href`: with its invite payload, or bare once Join has read it. */
+function joinHref(payload: string | null): string {
+  return payload === null ? '#/join' : `${INVITE_PREFIX}${payload}`;
+}
+
+/** A steward composer's `href`: `recall/{seat}` for a recall, else `steward/{seat}` (#102). */
+function stewardHref(route: Extract<Route, { readonly name: 'steward' }>): string {
+  const page = route.recall ? 'recall' : 'steward';
+  return `#/g/${route.groupId}/${page}/${String(route.seat)}`;
+}
+
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
   switch (route.name) {
@@ -83,7 +123,7 @@ export function routeHref(route: Route): string {
     case 'create':
       return '#/create';
     case 'join':
-      return route.payload === null ? '#/join' : `${INVITE_PREFIX}${route.payload}`;
+      return joinHref(route.payload);
     case 'group':
       return `#/g/${route.groupId}`;
     case 'document':
@@ -94,6 +134,8 @@ export function routeHref(route: Route): string {
       return `#/g/${route.groupId}/p/${route.proposalId}`;
     case 'again':
       return `#/g/${route.groupId}/again/${route.proposalId}`;
+    case 'steward':
+      return stewardHref(route);
   }
 }
 

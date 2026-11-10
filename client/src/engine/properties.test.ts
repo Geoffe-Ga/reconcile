@@ -1,9 +1,11 @@
 /**
  * Properties of the fold (fast-check): every device that folds the same relay
  * records builds the same state, the Document changes only on a final pass, a level change
- * never reaches back into a Proposal that's already open, and an Atom never has two open
+ * or a leave never reaches back into a Proposal that's already open, a member who has left
+ * acts no more, and an Atom never has two open
  * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
- * never easier than the ordinary one, and neither depends on the order ballots arrive in.
+ * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
+ * windows (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -13,10 +15,11 @@ import { LEVELS } from './capabilities';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
 import { fold, type LogRecord } from './fold';
-import { type Bar, DEFAULT_RULES, defaultWindowMinutes } from './rules';
+import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
+const [FOLLOWING, , CREATING] = LEVELS;
 /** How long an ordinary vote runs when no one chooses, in relay minutes. */
 const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 const encoder = new TextEncoder();
@@ -56,9 +59,14 @@ class Log {
     return log;
   }
 
-  propose(received: number, atom: string, text: string): string {
-    const body = { atom, title: 'T', why: 'W', text };
+  /** A Proposal by member 0, for `window` days when given, else the class default. */
+  propose(received: number, atom: string, text: string, window?: number): string {
+    const body = { atom, title: 'T', why: 'W', text, ...(window === undefined ? {} : { window }) };
     return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  leave(received: number, who: number): string {
+    return this.add(received, member(who), { type: 'leave', body: {} });
   }
 
   level(received: number, who: number, level: string): string {
@@ -274,6 +282,78 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('keeps an open Proposal’s eligible set, ballots and outcome whoever leaves after it opens', () => {
+    const scenario = electorate.chain(({ count, ballots }) =>
+      fc.record({
+        count: fc.constant(count),
+        ballots: fc.constant(ballots),
+        leavers: fc.uniqueArray(fc.nat({ max: count - 1 }), { maxLength: count }),
+        relayNow: minutesAfterR,
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ count, ballots, leavers, relayNow }) => {
+        const folded = (leaves: readonly number[]) => {
+          const log = Log.founded(count);
+          const id = log.propose(R + 20, `${log.group}.0`, 'New text');
+          ballots.forEach(({ voter, value }, i) => log.vote(R + 30 + i, voter, id, value));
+          leaves.forEach((who, i) => log.leave(R + 60 + i, who));
+          return fold(log.records, R + 20 + relayNow);
+        };
+        const left = folded(leavers);
+        const {
+          eligible,
+          deadline,
+          ballots: counted,
+          closedAt,
+          final,
+          outcome,
+        } = left.proposals[0] ?? {};
+        const stayed = folded([]).proposals[0];
+        expect({ eligible, deadline, ballots: counted, closedAt, final, outcome }).toEqual({
+          eligible: stayed?.eligible,
+          deadline: stayed?.deadline,
+          ballots: stayed?.ballots,
+          closedAt: stayed?.closedAt,
+          final: stayed?.final,
+          outcome: stayed?.outcome,
+        });
+        expect(left.members.length + left.former.length).toBe(count);
+        expect(left.former.map((m) => m.author)).toEqual(
+          leavers.map((who) => folded([]).members[who]?.author),
+        );
+      }),
+    );
+  });
+
+  it('ignores every ballot, version, level and join a member sends after they leave', () => {
+    const scenario = fc.record({
+      count: fc.integer({ min: 2, max: 8 }),
+      who: fc.nat({ max: 7 }),
+      value: score,
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, who, value }) => {
+        const leaver = 1 + (who % (count - 1));
+        const log = Log.founded(count);
+        // A Co-Creator, so their version would join the ballot had they stayed.
+        log.level(R + 15, leaver, CREATING);
+        const id = log.propose(R + 20, `${log.group}.0`, 'New text');
+        log.leave(R + 21, leaver);
+        const before = fold(log.records, R + 100);
+        log.vote(R + 22, leaver, id, value);
+        log.version(R + 23, leaver, id, 'Their wording');
+        log.level(R + 24, leaver, FOLLOWING);
+        log.add(R + 25, member(leaver), { type: 'join', body: { name: 'Back again' } });
+        const after = fold(log.records, R + 100);
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        expect(after.ignored.map((record) => record.seq)).toEqual(
+          log.records.slice(-4).map((record) => record.seq),
+        );
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
@@ -281,9 +361,31 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         for (const p of proposals) {
           // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
           expect(p.class).toBe('ordinary');
+          expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
           expect(p.outcome.bar).toEqual(rules.bars[p.class]);
         }
+      }),
+    );
+  });
+
+  it('opens a Proposal exactly when its window is valid for its class, closing it that many days later', () => {
+    const window = fc.oneof(
+      fc.integer({ min: -2, max: 31 }),
+      fc.double({ min: -2, max: 31, noNaN: true }),
+      fc.constantFrom(Number.NaN, Number.POSITIVE_INFINITY),
+    );
+    fc.assert(
+      fc.property(window, fc.nat({ max: 100 }), (days, offset) => {
+        const log = Log.founded(2);
+        // JSON writes NaN and Infinity as null, which the fold reads as a bad shape.
+        log.propose(R + offset, `${log.group}.0`, 'New text', days);
+        const { proposals, rules } = fold(log.records, R + offset);
+        const [p] = proposals;
+        expect(p !== undefined).toBe(validWindow(rules, 'ordinary', days));
+        if (p === undefined) return;
+        expect(p.window).toBe(days);
+        expect(p.deadline).toBe(R + offset + days * DAY_MINUTES);
       }),
     );
   });

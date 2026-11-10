@@ -16,8 +16,10 @@ import { GroupHome } from '../screens/GroupHome';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import { ProposalView } from '../screens/ProposalView';
-import { Start } from '../screens/Start';
+import type { SeatNumber } from '../engine/stewards';
 import type { Persistence } from '../platform/persist';
+import { Start } from '../screens/Start';
+import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
 import {
@@ -25,6 +27,7 @@ import {
   type CreateGroupValues,
   type FoundGroup,
   joinGroup,
+  leaveGroup,
   lookupInvite,
   makeInvite,
 } from './actions';
@@ -34,11 +37,15 @@ import {
   castBallot,
   chooseLevel,
   propose,
+  proposeSteward,
+  type StewardValues,
+  suspend,
   type ProposalValues,
   type VersionValues,
 } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
+import { shareOrCopy, type TellKind, tellPayload } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
@@ -142,7 +149,14 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             missingHistory: group.missingHistory,
           }}
           pending={group.pending}
+          leaving={group.leaving}
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
+          onLeave={async () => {
+            await leaveGroup(services, groupId);
+            // Back to Your groups, where the group reads Leaving… until the relay has the leave.
+            replaceRoute({ name: 'start' });
+          }}
+          onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
         />
       )}
     </GroupGate>
@@ -155,7 +169,9 @@ function DocumentScreen({ groupId }: { readonly groupId: string }) {
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => <DocumentView state={state} me={me.author} onPropose={openComposer} />}
+      {({ state, me, leaving }) => (
+        <DocumentView state={state} me={me.author} onPropose={openComposer} leaving={leaving} />
+      )}
     </GroupGate>
   );
 }
@@ -170,9 +186,10 @@ interface ProposeScreenProps extends GroupScreenProps {
 function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
+  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => {
+      {({ state, me, leaving }) => {
         const again = state.proposals.find((proposal) => proposal.id === againId);
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
           const result = await propose(services, groupId, values);
@@ -194,8 +211,10 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
             me={me.author}
             atomId={again?.atom ?? atomId ?? ''}
             drafts={drafts}
+            now={deviceNow}
             onPropose={onPropose}
             onAddVersion={onAddVersion}
+            leaving={leaving}
             {...(again === undefined ? {} : { again })}
           />
         );
@@ -219,6 +238,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const onProposeAgain = () => {
           navigate({ name: 'again', groupId, proposalId });
         };
+        const onTell = (kind: TellKind, deadline: number) =>
+          shareOrCopy(tellPayload(kind, deadline, services.origin), services);
         return (
           <ProposalView
             state={group.state}
@@ -228,11 +249,42 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             reachable={group.reachable}
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
+            leaving={group.leaving}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
+            onTell={onTell}
           />
         );
       }}
+    </GroupGate>
+  );
+}
+
+interface StewardScreenProps extends GroupScreenProps {
+  readonly seat: SeatNumber;
+  readonly recall: boolean;
+}
+
+/** The steward composer (#102); sending a Proposal replaces it with the Proposal's ballot. */
+function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) {
+  const onPropose = async (values: StewardValues): Promise<StewardOutcome> => {
+    const result = await proposeSteward(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => (
+        <StewardComposer
+          state={state}
+          me={me.author}
+          seat={seat}
+          recall={recall}
+          onPropose={onPropose}
+        />
+      )}
     </GroupGate>
   );
 }
@@ -285,6 +337,15 @@ function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProp
     case 'again':
       return (
         <ProposeScreen services={services} groupId={route.groupId} againId={route.proposalId} />
+      );
+    case 'steward':
+      return (
+        <StewardScreen
+          services={services}
+          groupId={route.groupId}
+          seat={route.seat}
+          recall={route.recall}
+        />
       );
   }
 }

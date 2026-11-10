@@ -1,6 +1,7 @@
 /**
  * What the composer, the ballot and the level picker do (spec §4 and §8),
- * apart from any screen: propose, add a version, vote, and choose a level.
+ * apart from any screen: propose, add a version, vote, and choose a level;
+ * and for stewards (#102), propose a steward or a recall, and suspend.
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -27,6 +28,11 @@ export interface ProposalValues {
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
+  /**
+   * How many whole days voting runs, already checked against the bounds of
+   * the target's class (#106). Absent, the Proposal runs the class default.
+   */
+  readonly window?: number;
   /** Proposing a lapsed Proposal again (#74): that Proposal's id, whose draft this was written in. */
   readonly again?: string;
   /** The texts of the other versions to put on its ballot after it, as typed, in order. */
@@ -89,9 +95,10 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, as this device's member of `groupId`. Every
- * value is NFC-normalized before the event is signed, and the text goes
- * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
+ * Proposes new text for one Atom, as this device's member of `groupId`, for
+ * the voting window the proposer chose, if any. Every string is
+ * NFC-normalized before the event is signed, and the text goes through
+ * `normalizeAtomText` (spec §4). Queuing the Proposal clears the
  * private draft it was written in, keyed by its Atom, in the same change. A
  * Proposal whose record is over 64,000 bytes is refused before anything is
  * queued, and its draft kept.
@@ -105,13 +112,14 @@ export async function propose(
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link, again, versions = [] } = values;
+  const { atom, title, why, text, link, window, again, versions = [] } = values;
   const body = {
     atom,
     title: nfc(title),
     why: nfc(why),
     text: normalizeAtomText(text),
     ...(link === null ? {} : { link: nfc(link) }),
+    ...(window === undefined ? {} : { window }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
@@ -195,6 +203,73 @@ export async function chooseLevel(
     group: groupId,
     ts: services.now(),
     body: { level },
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+}
+
+/** A steward Proposal's entries: the seat, the nominee (null for a recall), and title and why, trimmed. */
+export interface StewardValues {
+  readonly seat: number;
+  readonly member: string | null;
+  readonly title: string;
+  readonly why: string;
+}
+
+/**
+ * Proposes electing the nominee to `seat`, or recalling its steward when
+ * there is none (ADR-0049, #102), as this device's member of `groupId`.
+ * The title and why are NFC-normalized before signing. One too large for any
+ * blob is refused before anything is queued. The fold decides whether it
+ * opens: it ignores one the seat or the group's size doesn't allow.
+ */
+export async function proposeSteward(
+  services: ProposalServices,
+  groupId: string,
+  values: StewardValues,
+): Promise<ProposeResult> {
+  const { seat, member } = values;
+  const body = {
+    target: { kind: 'steward', seat, member } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
+/** A suspension's entries: the member it suspends, and the reason as typed, blank for none. */
+export interface SuspendValues {
+  readonly member: string;
+  readonly reason: string;
+}
+
+/**
+ * Suspends the member named (ADR-0016, #102), as this device's steward in `groupId`.
+ * The reason is trimmed and NFC-normalized, and left out when blank. The
+ * suspension starts when the relay receives it, and the fold decides whether
+ * it holds.
+ */
+export async function suspend(
+  services: ProposalServices,
+  groupId: string,
+  values: SuspendValues,
+): Promise<void> {
+  const reason = nfc(values.reason.trim());
+  const body = { member: values.member, ...(reason === '' ? {} : { reason }) };
+  const event = await signFor(services, groupId, {
+    type: 'suspend',
+    group: groupId,
+    ts: services.now(),
+    body,
   });
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();

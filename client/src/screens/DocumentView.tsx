@@ -2,9 +2,10 @@ import { Button } from 'react-aria-components';
 
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { messages } from '../app/messages';
+import { SuspendedNote } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
-import { can } from '../engine/capabilities';
+import { can, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import type { Atom, GroupState } from '../engine/fold';
 
@@ -16,6 +17,8 @@ export interface DocumentViewProps {
   readonly me: string;
   /** Opens the composer for one section. */
   readonly onPropose: (atomId: string) => void;
+  /** Whether this device's leave waits for the relay (#77): then nobody proposes from here. */
+  readonly leaving?: boolean;
 }
 
 /**
@@ -25,6 +28,8 @@ export interface DocumentViewProps {
  */
 function LevelNote({ state, me }: { readonly state: GroupState; readonly me: string }) {
   if (!can(state, me, 'read')) return null;
+  // A suspended member reads until when instead: no level change gives posting back (#102).
+  if (isSuspended(state, me)) return <SuspendedNote state={state} me={me} />;
   const note = can(state, me, 'vote') ? messages.levels.notProposing : messages.levels.following;
   return (
     <div className="level-note">
@@ -70,10 +75,11 @@ function SectionAction({ state, atom, section, onPropose }: SectionActionProps) 
  * (Atom) formatted through `<AtomText>` in the document style, with Propose a
  * change, or Add your version while the section's Proposal is open. Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
- * anyone else reads why, and where to change their level (ADR-0021).
+ * anyone else reads why, and where to change their level (ADR-0021). While
+ * this member is leaving, the Document only reads.
  */
-export function DocumentView({ state, me, onPropose }: DocumentViewProps) {
-  const proposes = can(state, me, 'propose');
+export function DocumentView({ state, me, onPropose, leaving = false }: DocumentViewProps) {
+  const proposes = !leaving && can(state, me, 'propose');
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
@@ -82,7 +88,7 @@ export function DocumentView({ state, me, onPropose }: DocumentViewProps) {
         title={state.title}
         pageTitle={messages.document.pageTitle}
       />
-      {proposes ? null : <LevelNote state={state} me={me} />}
+      {proposes || leaving ? null : <LevelNote state={state} me={me} />}
       {state.atoms.length === 0 ? (
         <p className="lede">{messages.document.empty}</p>
       ) : (

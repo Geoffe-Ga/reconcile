@@ -12,6 +12,8 @@ export interface StartGroup {
   readonly groupId: string;
   readonly name: string | null;
   readonly title: string | null;
+  /** Whether this device's leave waits for the relay (#77); the group goes once it's there. */
+  readonly leaving: boolean;
 }
 
 /** Props for {@link Start}. */
@@ -39,6 +41,7 @@ function GroupItem({ group }: { readonly group: StartGroup }) {
         {group.title === null ? null : (
           <span className="caption">{messages.start.documentTitle(group.title)}</span>
         )}
+        {group.leaving ? <span className="leaving-tag">{messages.start.leaving}</span> : null}
       </Link>
     </li>
   );
@@ -50,10 +53,11 @@ function checkInvite(text: string): string | null {
 }
 
 /**
- * Start (`#/`): the groups on this device, Create group, and Join with an
- * invite link, a field to paste one into. The app reads the clipboard only
- * through that paste. When the browser may clear the app's data, one quiet
- * line says so (ADR-0029).
+ * Start (`#/`): every group on this device by name, each marked while its
+ * leave waits for the relay (#77), Create group, and Join with an invite
+ * link, a field to paste one into. The app reads the clipboard only through
+ * that paste. When the browser may clear the app's data, one quiet line says
+ * so (ADR-0029).
  */
 export function Start({ groups, onOpenInvite, persistence = null }: StartProps) {
   const inviteHeading = useId();

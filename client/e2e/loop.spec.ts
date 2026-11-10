@@ -29,10 +29,11 @@ const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
 const ATOMS = [FIRST_ATOM, SECOND_ATOM];
 /**
  * Everyone on the People list, with who invited them and the level each chose:
- * both joined from Ana's link, and Cal picks Co-Creator at Join.
+ * both joined from Ana's link, and Cal picks Co-Creator at Join. Ana founded
+ * the group, so she holds steward seat 1 (#102).
  */
 const PEOPLE = [
-  'Ana, Co-Creator',
+  'Ana, Co-Creator, Steward',
   'Ben, invited by Ana, Collaborator',
   'Cal, invited by Ana, Co-Creator',
 ];
@@ -59,7 +60,9 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   const { page } = person;
   await expect(heading(page, GROUP)).toBeVisible();
   const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-  await expect(people).toHaveText(PEOPLE);
+  // Each row in order; the steward's own rows also hold Suspend (#102).
+  await expect(people).toHaveCount(PEOPLE.length);
+  await expect(people).toContainText(PEOPLE);
   await expectAccessible(person, 'Group home');
   await page.getByRole('link', { name: TITLE }).click();
   await expect(heading(page, TITLE)).toBeVisible();
@@ -67,11 +70,11 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   await expectAccessible(person, 'Document view');
 }
 
-/** From the Document view, back to Group home, then into the open Proposal. */
+/** From the Document view, back to Group home, then into the Proposal waiting under Needs your vote. */
 async function openProposal(person: Person): Promise<void> {
   const { page } = person;
   await page.getByRole('link', { name: GROUP }).click();
-  const open = page.getByRole('region', { name: 'Open Proposals' });
+  const open = page.getByRole('region', { name: 'Needs your vote' });
   await open.getByRole('link', { name: PROPOSAL }).click();
   await expect(heading(page, PROPOSAL)).toBeVisible();
   await expect(page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
@@ -151,7 +154,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     // Group home appears once the genesis is back from the relay.
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByRole('region', { name: 'People' }).getByRole('listitem')).toHaveText([
-      'Ana, Co-Creator',
+      'Ana, Co-Creator, Steward',
     ]);
     await expect(
       page.getByText('Anyone who opens this link in the next 2 days can read everything'),

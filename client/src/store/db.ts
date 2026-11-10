@@ -10,7 +10,8 @@
  * records (ADR-0009), so two groups on one device share no key or id. Nothing
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
- * or the new one.
+ * or the new one. Everything the device keeps about a group lives in that one
+ * record, so Leave deletes the group with a single delete (#77).
  */
 
 import { openDB } from 'idb';
@@ -61,6 +62,12 @@ export interface Group {
    * (#73). Only {@link Store.mergeLog} clears it. Absent until first set.
    */
   missingHistory?: boolean;
+  /**
+   * The signed `leave` this device queued (#77), while the group waits to be
+   * deleted: absent until Leave. Nothing more is queued after it, and the sync
+   * loop purges the group once the relay returns a seq for it.
+   */
+  leaving?: Uint8Array;
 }
 
 /**
@@ -114,6 +121,20 @@ export interface Store extends DraftStore {
    * @throws {RecordTooLarge} when a record is over 64,000 bytes.
    */
   enqueueAll(groupId: string, records: readonly Uint8Array[], draft?: string): Promise<void>;
+  /**
+   * Queue this member's signed `leave` after everything already queued, and
+   * mark the group as leaving, in one change (#77). From then on nothing else
+   * is queued, and it stays this way across reloads until the relay has the
+   * leave. A group already leaving keeps its first leave.
+   */
+  markLeaving(groupId: string, leave: Uint8Array): Promise<void>;
+  /**
+   * Delete everything this device keeps about the group, in one transaction:
+   * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
+   * calls it once the relay has returned a seq for the group's leave. A group
+   * that is already gone is left alone.
+   */
+  purgeGroup(groupId: string): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
@@ -172,6 +193,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       if (length > MAX_RECORD_BYTES) throw new RecordTooLarge(length);
     }
     await change(groupId, (group) => {
+      if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
       group.outbox.push(...records);
       if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
     });
@@ -205,6 +227,19 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       changeQuietly(groupId, (group) => {
         group.drafts = withDraft(group.drafts, target, draft);
       }),
+    markLeaving: (groupId, leave) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined) return;
+        group.outbox.push(leave);
+        group.leaving = leave;
+      }),
+    async purgeGroup(groupId) {
+      const tx = db.transaction(GROUPS, 'readwrite');
+      const found = (await tx.store.getKey(groupId)) !== undefined;
+      if (found) await tx.store.delete(groupId);
+      await tx.done;
+      if (found) notify(groupId);
+    },
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
         // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
@@ -244,7 +279,10 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
   };
 }
 
-/** A function that edits one group in one read-write transaction, then notifies. */
+/**
+ * A function that edits one group in one read-write transaction, then
+ * notifies. An edit that throws, like a missing group, changes nothing.
+ */
 function changer(
   db: IDBPDatabase<Schema>,
   notify: (groupId: string) => void,
@@ -252,12 +290,14 @@ function changer(
   return async (groupId, edit) => {
     const tx = db.transaction(GROUPS, 'readwrite');
     const group = await tx.store.get(groupId);
-    if (group === undefined) {
+    try {
+      if (group === undefined) throw new Error('No such group on this device.');
+      edit(group);
+    } catch (error) {
       tx.abort();
       await tx.done.catch(() => undefined);
-      throw new Error('No such group on this device.');
+      throw error;
     }
-    edit(group);
     await Promise.all([tx.store.put(group), tx.done]);
     notify(groupId);
   };
@@ -300,6 +340,7 @@ function inSeqOrder(log: readonly LogRecord[], added: readonly LogRecord[]): Log
   return merged;
 }
 
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+/** True when `a` and `b` hold the same bytes. */
+export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }

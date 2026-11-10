@@ -13,6 +13,7 @@ import { createRoot } from 'react-dom/client';
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
 import { Root } from './app/Root';
 import { copyToClipboard } from './app/services';
+import { browserShare } from './app/share';
 import { xchachaSeal } from './crypto/seal';
 import { createRelay } from './net/relay';
 import { readPlatform } from './platform/installGate';
@@ -44,6 +45,7 @@ async function start(container: HTMLElement): Promise<void> {
     now: () => Date.now(),
     origin: window.location.origin,
     copyText: copyToClipboard,
+    share: browserShare(),
   };
   const firstRun = { platform: readPlatform(), notice: noticeRecord(), requestPersistence };
   createRoot(container).render(

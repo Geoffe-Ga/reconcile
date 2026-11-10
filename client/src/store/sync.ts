@@ -16,6 +16,10 @@
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
  * blob that won't open, so one bad blob never stalls a group.
  *
+ * A group this device is leaving (#77) goes once the relay returns a seq for
+ * its leave: the pass purges it from the store and reads nothing more for it.
+ * Until then it stays, leaving, through failures and reloads.
+ *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
  * event id keeps any event from folding twice. Folded state comes from the
@@ -27,7 +31,7 @@ import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { LogRecord } from '../engine/fold';
-import type { EventIdOf, Group, Pull, Store } from './db';
+import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
 import { eventIdOf } from './eventId';
 
 /** The wait between passes while they succeed. */
@@ -183,23 +187,32 @@ export function createSync(options: SyncOptions): Sync {
   let reachable = true;
   let inFlight: Promise<boolean> | null = null;
 
-  /** Post the group's current outbox in order; an entry leaves only once the relay accepts it. */
-  async function postOutbox(groupId: string, { mailbox, key }: Channel): Promise<void> {
-    const outbox = (await store.getGroup(groupId))?.outbox ?? [];
-    for (const bytes of outbox) {
+  /**
+   * Post the group's current outbox in order; an entry leaves only once the
+   * relay accepts it. Once the relay has returned a seq for the group's leave,
+   * the group is purged, and this returns true.
+   */
+  async function postOutbox(groupId: string, { mailbox, key }: Channel): Promise<boolean> {
+    const current = await store.getGroup(groupId);
+    for (const bytes of current?.outbox ?? []) {
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS);
+      if (current?.leaving !== undefined && sameBytes(bytes, current.leaving)) {
+        await store.purgeGroup(groupId);
+        return true;
+      }
       await store.markSent(groupId, bytes);
     }
+    return false;
   }
 
   async function syncGroup(group: Group): Promise<void> {
     const channel = channelOf(group.secret);
-    await postOutbox(group.groupId, channel);
+    if (await postOutbox(group.groupId, channel)) return;
     let after = group.cursor;
     let page = await relay.getBlobs(channel.mailbox, after);
     if (group.instance !== null && page.instance !== group.instance) {
       await store.resetCursor(group.groupId, page.instance);
-      await postOutbox(group.groupId, channel);
+      if (await postOutbox(group.groupId, channel)) return;
       after = 0;
       page = await relay.getBlobs(channel.mailbox, after);
     }

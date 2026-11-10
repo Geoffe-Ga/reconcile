@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +26,7 @@ const SYNCED = {
 
 type OnChooseLevel = (level: Level) => Promise<void>;
 type CopyText = GroupHomeProps['copyText'];
+type OnLeave = () => Promise<void>;
 
 function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
   const copied: string[] = [];
@@ -34,6 +35,7 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
   });
   const makeInviteLink = vi.fn(() => Promise.resolve(LINK));
   const onChooseLevel = vi.fn<OnChooseLevel>(() => Promise.resolve());
+  const onLeave = vi.fn<OnLeave>(() => Promise.resolve());
   const all: GroupHomeProps = {
     state,
     me: authorOf('ana'),
@@ -43,6 +45,8 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
     sync: SYNCED,
     pending: [],
     onChooseLevel,
+    onLeave,
+    onSuspend: vi.fn(() => Promise.resolve()),
     ...props,
   };
   const view = render(<GroupHome {...all} />);
@@ -55,6 +59,7 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
     copyText: all.copyText,
     makeInviteLink: all.makeInviteLink,
     onChooseLevel: all.onChooseLevel,
+    onLeave: all.onLeave,
     rerender,
   };
 }
@@ -67,11 +72,15 @@ function pendingLevel(author: string, level: string): ParsedEvent {
   return parsed;
 }
 
-/** The text of each row of the People list. */
+/** The text of each row of the People list, leaving out its buttons (Suspend, #102). */
 const rows = () =>
   within(section('People'))
     .getAllByRole('listitem')
-    .map((item) => item.textContent);
+    .map((item) => {
+      const copy = item.cloneNode(true) as HTMLElement;
+      for (const button of copy.querySelectorAll('button')) button.remove();
+      return copy.textContent;
+    });
 
 function setup(options: TestGroupOptions = {}, me?: string) {
   const group = testGroup({ joiners: ['Ben'], ...options });
@@ -90,7 +99,7 @@ describe('GroupHome', () => {
     const documentLink = screen.getByRole('link', { name: /House rules/ });
     expect(documentLink).toHaveAttribute('href', `#/g/${state.group ?? ''}/doc`);
     expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Co-Creator']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator']);
     expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',
@@ -208,7 +217,7 @@ describe('GroupHome', () => {
     });
     renderHome(group.state, { me: group.founder });
     expect(rows()).toEqual([
-      'Ana, Co-Creator',
+      'Ana, Co-Creator, Steward',
       'Ben, invited by Ana, Co-Creator',
       'Cal, invited by Ben, Co-Creator',
       'Dee, Co-Creator',
@@ -218,11 +227,12 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('lists the open Proposals by title', () => {
+  it('lists the open Proposals waiting on this person by title, under Needs your vote', () => {
     setup({ proposals: ['Later quiet hours on Fridays'] });
-    const open = section('Open Proposals');
+    const open = section('Needs your vote');
     expect(within(open).getByRole('listitem')).toHaveTextContent('Later quiet hours on Fridays');
-    expect(within(open).queryByText('Nothing to vote on yet.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nothing to vote on yet.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /Open Proposals/ })).not.toBeInTheDocument();
   });
 
   it('links each open Proposal to its ballot, with a countdown, and leaves out closed ones', async () => {
@@ -234,15 +244,93 @@ describe('GroupHome', () => {
     const open = log.propose('ben', { title: 'Later quiet hours' });
     renderHome(log.state(NOW), { now: NOW });
 
-    const items = within(section('Open Proposals')).getAllByRole('listitem');
+    const items = within(section('Needs your vote')).getAllByRole('listitem');
     expect(items).toHaveLength(1);
-    const card = within(section('Open Proposals')).getByRole('link', { name: /Later quiet hours/ });
+    const card = within(section('Needs your vote')).getByRole('link', {
+      name: /Later quiet hours/,
+    });
     expect(card).toHaveAttribute('href', `#/g/${log.group}/p/${open}`);
     expect(card).toHaveTextContent('Closes in 7 days');
     expect(within(card).getByText(formatMinute(deadlineOf(START_MINUTE + 60))).tagName).toBe(
       'TIME',
     );
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows, in order: Needs your vote, the other open Proposals, the Document, Decided, People', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const scored = log.propose('ben', { title: 'Bins on Monday', atom: 1 });
+    log.vote('ana', scored, 3);
+    log.minute += 60;
+    const waiting = log.propose('ben', { title: 'Later quiet hours' });
+    const now = log.minute + 1;
+    renderHome(log.state(now), { now });
+
+    const regions = screen
+      .getAllByRole('region')
+      .map((region) => region.querySelector('h2')?.textContent);
+    expect(regions.slice(0, 5)).toEqual([
+      'Needs your vote',
+      'Other open Proposals',
+      'Document',
+      'Decided',
+      'People',
+    ]);
+    expect(within(section('Needs your vote')).getByRole('link')).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${waiting}`,
+    );
+    expect(within(section('Other open Proposals')).getByRole('link')).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${scored}`,
+    );
+    expect(within(section('Document')).getByRole('link', { name: /House rules/ })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/doc`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('moves a Proposal out of Needs your vote once the relay returns this person’s ballot', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const p = log.propose('ben', { title: 'Later quiet hours' });
+    const { rerender } = renderHome(log.state(), { now: log.minute });
+    expect(within(section('Needs your vote')).getByRole('link')).toHaveTextContent(
+      'Later quiet hours',
+    );
+
+    log.vote('ana', p, 4);
+    rerender({ state: log.state() });
+
+    expect(screen.queryByRole('region', { name: 'Needs your vote' })).not.toBeInTheDocument();
+    expect(within(section('Open Proposals')).getByRole('link')).toHaveTextContent(
+      'Later quiet hours',
+    );
+  });
+
+  it('keeps a Proposal in Needs your vote while a new version waits for this person’s score', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const p = log.propose('ben', { title: 'Later quiet hours' });
+    log.vote('ana', p, 4);
+    log.version('cal', p, 'Quiet after midnight.');
+    renderHome(log.state(), { now: log.minute });
+    expect(within(section('Needs your vote')).getByRole('link')).toHaveTextContent(
+      'Later quiet hours',
+    );
+  });
+
+  it('never lists under Needs your vote a Proposal this person can’t vote on', () => {
+    const log = groupLog({ members: ['Ben'], levels: { Ben: FOLLOWING } });
+    log.propose('ana', { title: 'Later quiet hours' });
+    log.join('Cal');
+    renderHome(log.state(), { now: log.minute, me: authorOf('ben') });
+    expect(screen.queryByRole('region', { name: 'Needs your vote' })).not.toBeInTheDocument();
+    expect(within(section('Open Proposals')).getByRole('link')).toHaveTextContent(
+      'Later quiet hours',
+    );
+    cleanup();
+    renderHome(log.state(), { now: log.minute, me: authorOf('cal') });
+    expect(screen.queryByRole('region', { name: 'Needs your vote' })).not.toBeInTheDocument();
   });
 
   it('says nothing has been decided yet, in its own section', () => {
@@ -343,13 +431,13 @@ describe('GroupHome', () => {
 
   it('shows each person’s level beside their name', async () => {
     setup({ joiners: ['Ben', 'Kim'], levels: { Ben: VOTING, Kim: FOLLOWING } });
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Collaborator', 'Kim, Member']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator', 'Kim, Member']);
     expect(await axeViolations()).toEqual([]);
   });
 
   it('shows a Member the People list and their involvement, but no invite', async () => {
     setup({ joiners: ['Kim'], levels: { Kim: FOLLOWING } }, authorOf('kim'));
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Kim, Member']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Kim, Member']);
     expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
     expect(screen.queryByRole('region', { name: 'Invite people' })).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
@@ -388,7 +476,7 @@ describe('GroupHome', () => {
     expect(screen.queryByRole('button', { name: 'Save your choice' })).not.toBeInTheDocument();
     expect(within(section('People')).getByRole('status')).toHaveTextContent('Sending…');
     // The People list changes only once the relay returns the event.
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Collaborator']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator']);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -453,7 +541,7 @@ describe('GroupHome', () => {
     const log = testGroup({ joiners: ['Ben'], levels: { Ben: FOLLOWING } });
     rerender({ state: log.state, pending: [] });
     expect(within(section('People')).getByRole('status')).toHaveTextContent('Sent');
-    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Member']);
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Member']);
   });
 
   it('offers no involvement choice before this device’s join is back from the relay', () => {
@@ -468,5 +556,125 @@ describe('GroupHome', () => {
     setup(chat === undefined ? {} : { chat });
     expect(screen.queryByRole('link', { name: /Join discussion/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Discussion' })).not.toBeInTheDocument();
+  });
+});
+
+describe('Leave this group', () => {
+  const dialog = () => screen.getByRole('alertdialog', { name: 'Leave this group?' });
+
+  it('sits in People and opens an alert dialog that says what leaving does and doesn’t do', async () => {
+    const { user, onLeave } = setup();
+    const open = within(section('People')).getByRole('button', { name: 'Leave this group' });
+    await user.click(open);
+
+    expect(dialog()).toHaveTextContent(
+      'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    );
+    expect(dialog()).toContainElement(document.activeElement as HTMLElement);
+    // Everything behind the dialog is hidden from assistive technology while it's open.
+    expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+    expect(onLeave).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps focus inside the dialog, and Cancel closes it with nothing queued', async () => {
+    const { user, onLeave } = setup();
+    const open = within(section('People')).getByRole('button', { name: 'Leave this group' });
+    await user.click(open);
+    for (let i = 0; i < 4; i += 1) {
+      await user.tab();
+      expect(dialog()).toContainElement(document.activeElement as HTMLElement);
+    }
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(open).toHaveFocus();
+    });
+    expect(onLeave).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape with nothing queued', async () => {
+    const { user, onLeave } = setup();
+    await user.click(within(section('People')).getByRole('button', { name: 'Leave this group' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onLeave).not.toHaveBeenCalled();
+  });
+
+  it('leaves once, however often the confirm is pressed, then closes', async () => {
+    let finish: () => void = () => undefined;
+    const onLeave = vi.fn<OnLeave>(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, { onLeave });
+    await user.click(within(section('People')).getByRole('button', { name: 'Leave this group' }));
+    const confirm = within(dialog()).getByRole('button', { name: 'Leave this group' });
+    await user.click(confirm);
+    await user.click(confirm);
+    expect(onLeave).toHaveBeenCalledTimes(1);
+    expect(confirm).toBeDisabled();
+    finish();
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('says so in the dialog when the leave couldn’t be saved, and lets them try again', async () => {
+    const onLeave = vi.fn<OnLeave>(() => Promise.reject(new Error('full')));
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, { onLeave });
+    await user.click(within(section('People')).getByRole('button', { name: 'Leave this group' }));
+    await user.click(within(dialog()).getByRole('button', { name: 'Leave this group' }));
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent(
+      'Leaving couldn’t be saved on this device. Try again.',
+    );
+    expect(within(dialog()).getByRole('button', { name: 'Leave this group' })).toBeEnabled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('reads Leaving… while the leave waits, with no voting list, level choice, invite or Leave', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.propose('ben', { title: 'Later quiet hours' });
+    renderHome(log.state(), { now: log.minute, leaving: true });
+
+    expect(screen.getByText('Leaving…', { selector: '.leaving-note *' })).toBeVisible();
+    expect(
+      screen.getByText(
+        'This group leaves this device as soon as the relay has your leave. Until then, you can read it but not propose or vote.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Needs your vote' })).not.toBeInTheDocument();
+    expect(within(section('Open Proposals')).getByRole('link')).toHaveTextContent(
+      'Later quiet hours',
+    );
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Invite people' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Leave this group' })).not.toBeInTheDocument();
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator', 'Cal, Co-Creator']);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers a steward no Suspend and no steward Proposal while the leave waits (#102)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const { rerender } = renderHome(log.state(), { now: log.minute });
+    // Staying, Ana, the founding steward, may suspend Ben and propose an election.
+    expect(screen.getByRole('button', { name: 'Suspend Ben' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Propose a steward for seat 1' })).toBeVisible();
+
+    rerender({ leaving: true });
+
+    expect(screen.queryByRole('button', { name: /^Suspend/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Propose a steward|^Propose recall/ })).toBeNull();
+    expect(within(section('Stewards')).getByText('Ana')).toBeVisible();
+  });
+
+  it('lists current members only: someone who left is gone from People', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.leave('Ben');
+    renderHome(log.state());
+    expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Cal, Co-Creator']);
   });
 });

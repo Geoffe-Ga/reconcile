@@ -73,5 +73,7 @@ describe('messages', () => {
   it('fills in names and counts', () => {
     expect(messages.document.proposeLabel(2)).toBe('Propose a change to section 2');
     expect(messages.app.pageTitle('Create a group')).toBe('Create a group · Reconcile');
+    expect(messages.window.outside(14, 28)).toBe('Choose from 14 to 28 days.');
+    expect(messages.window.runs(10)).toBe('Voting runs 10 days');
   });
 });
