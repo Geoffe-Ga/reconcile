@@ -9,6 +9,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { messages } from '../app/messages';
 import { formatDate, MINUTE_MS } from '../app/time';
 import { LEVELS } from '../engine/capabilities';
 import { createEvent, parseEvent } from '../engine/event';
@@ -166,6 +167,22 @@ describe('a dissolved group on Group home', () => {
     expect(screen.queryByRole('link', { name: 'Propose dissolving the group' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remove from this device' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows its archive note, never a line that the group’s key changed (#98)', async () => {
+    const { state } = dissolved();
+    for (const keyChange of ['left', 'missed'] as const) {
+      renderHome(state, 'ana', {
+        sync: { reachable: true, lastSyncAt: 0, deviceNow: 0, missingHistory: false, keyChange },
+        onRemove: () => Promise.resolve(),
+      });
+      expect(screen.getByText(/This is a read-only copy\./)).toBeVisible();
+      expect(screen.queryByText(messages.home.keyLeft)).toBeNull();
+      expect(screen.queryByText(messages.home.keyMissed)).toBeNull();
+      expect(screen.queryByRole('region', { name: 'Invite people' })).toBeNull();
+      expect(await axeViolations()).toEqual([]);
+      cleanup();
+    }
   });
 
   it('suggests no backup (#78), since no backup file carries a read-only copy', () => {

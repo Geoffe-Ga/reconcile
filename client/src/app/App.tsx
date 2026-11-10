@@ -292,6 +292,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             lastSyncAt: group.lastSyncAt,
             deviceNow,
             missingHistory: group.missingHistory,
+            keyChange: group.keyChange,
           }}
           pending={group.pending}
           leaving={group.leaving}

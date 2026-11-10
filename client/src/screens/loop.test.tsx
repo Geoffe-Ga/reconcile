@@ -159,6 +159,8 @@ describe('propose, vote, and see the Update', () => {
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
     const lapsed = window.location.hash;
+    // Let the pass that sends the Proposal finish first, so the next one reads the later minute.
+    await sync(ana);
     fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
 

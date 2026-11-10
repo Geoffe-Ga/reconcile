@@ -1,0 +1,45 @@
+{
+  "kind": "epoch",
+  "about": "A group key change's commit and one wrap (#98, crypto/epoch.ts). commit = SHA-256(UTF-8 'reconcile/v1/epoch-commit' ‖ 0x00 ‖ UTF-8 group id ‖ u32be(epoch) ‖ secret), and the event carries its unpadded base64url. The wrap is a box of the secret sealed to the member's X25519 key with info 'reconcile/v1/epoch-wrap' and AAD = UTF-8 group id ‖ u32be(epoch) ‖ UTF-8 member key ‖ UTF-8 base64url commit, the three texts as the key-rotate event spells them. Computed with Python's hashlib and the cryptography package as box.json is, and opened again with libsodium (PyNaCl); neither is @noble. The group id and member key are placeholder texts of the right length. Each value is its bytes.",
+  "vectors": [
+    {
+      "name": "epoch 1's secret, committed to and wrapped to one member",
+      "groupId": "group-id-of-the-epoch-vector-00000000000000",
+      "epoch": 1,
+      "secret": [
+        226, 191, 210, 84, 148, 81, 115, 75, 145, 159, 2, 238, 149, 253, 14, 122, 128, 235, 67, 152,
+        97, 146, 140, 30, 19, 116, 66, 27, 31, 240, 28, 204
+      ],
+      "commit": [
+        25, 143, 115, 169, 6, 207, 43, 70, 186, 85, 11, 85, 173, 219, 44, 190, 157, 67, 127, 28,
+        137, 153, 189, 67, 185, 81, 196, 231, 255, 124, 241, 78
+      ],
+      "memberKey": "member-key-of-the-epoch-vector-000000000000",
+      "kxSecret": [
+        186, 214, 81, 243, 137, 163, 230, 69, 75, 189, 98, 223, 228, 168, 91, 60, 39, 131, 16, 187,
+        221, 83, 101, 226, 236, 21, 46, 135, 118, 53, 114, 47
+      ],
+      "kxPublic": [
+        104, 147, 212, 128, 52, 121, 50, 198, 201, 167, 82, 137, 211, 131, 171, 36, 178, 228, 136,
+        38, 247, 59, 42, 125, 53, 90, 241, 111, 104, 46, 70, 26
+      ],
+      "aad": [
+        103, 114, 111, 117, 112, 45, 105, 100, 45, 111, 102, 45, 116, 104, 101, 45, 101, 112, 111,
+        99, 104, 45, 118, 101, 99, 116, 111, 114, 45, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48,
+        48, 48, 48, 0, 0, 0, 1, 109, 101, 109, 98, 101, 114, 45, 107, 101, 121, 45, 111, 102, 45,
+        116, 104, 101, 45, 101, 112, 111, 99, 104, 45, 118, 101, 99, 116, 111, 114, 45, 48, 48, 48,
+        48, 48, 48, 48, 48, 48, 48, 48, 48, 71, 89, 57, 122, 113, 81, 98, 80, 75, 48, 97, 54, 86,
+        81, 116, 86, 114, 100, 115, 115, 118, 112, 49, 68, 102, 120, 121, 74, 109, 98, 49, 68, 117,
+        86, 72, 69, 53, 95, 57, 56, 56, 85, 52
+      ],
+      "wrap": [
+        101, 244, 14, 4, 180, 113, 213, 209, 110, 247, 51, 184, 250, 59, 172, 232, 171, 37, 150,
+        178, 139, 108, 187, 56, 60, 207, 148, 213, 178, 19, 240, 39, 145, 151, 132, 236, 49, 120,
+        172, 33, 120, 169, 148, 88, 23, 189, 106, 119, 165, 239, 20, 6, 129, 248, 154, 215, 246, 70,
+        147, 21, 195, 80, 82, 207, 114, 226, 29, 43, 220, 205, 198, 21, 158, 118, 203, 16, 195, 112,
+        41, 91, 27, 96, 80, 74, 196, 31, 130, 38, 181, 240, 169, 93, 13, 14, 10, 21, 30, 252, 172,
+        60, 134, 29, 74, 45
+      ]
+    }
+  ]
+}
