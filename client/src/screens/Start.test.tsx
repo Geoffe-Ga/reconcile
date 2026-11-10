@@ -69,6 +69,28 @@ describe('Start', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('opens Personal (#93) from one card after the groups, whether or not there are any', async () => {
+    for (const groups of [[], GROUPS]) {
+      const { unmount } = render(<Start groups={groups} onOpenInvite={vi.fn()} />);
+      const personal = screen.getByRole('link', { name: /^Personal/ });
+      expect(personal).toHaveAttribute('href', '#/me');
+      expect(personal).toHaveTextContent(
+        'Your mission statement and other Documents of your own, on this device only.',
+      );
+      const create = screen.getByRole('link', { name: 'Create group' });
+      expect(create.compareDocumentPosition(personal) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(
+        screen
+          .queryAllByRole('list')
+          .flatMap((list) => within(list).queryAllByRole('link', { name: /^Personal/ })),
+      ).toEqual([]);
+      expect(await axeViolations()).toEqual([]);
+      unmount();
+    }
+  });
+
   it('names a group whose founding event hasn’t reached the relay yet', () => {
     render(
       <Start

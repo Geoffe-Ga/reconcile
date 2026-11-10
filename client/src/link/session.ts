@@ -15,7 +15,8 @@
  * 5. Both show the six-digit number. Only A can confirm: on Match it posts
  *    the bundle (`bundle.ts`) under K; on Don't match, or when it closes, it
  *    drops every secret and sends nothing under K. B checks the bundle and
- *    keeps its groups (`Store.restoreGroups`, as from a link).
+ *    keeps its groups and personal Documents (`Store.restoreGroups`, as from
+ *    a link).
  *
  * Every blob is sealed and padded, and every PUT uses `ttl_days=1`. Each
  * handshake message is a 1-byte tag (who posted it) and a 32-byte key. Each
@@ -63,8 +64,8 @@ const MESSAGE_BYTES = 33;
 export interface LinkServices {
   readonly relay: Relay;
   readonly seal: Seal;
-  /** A's groups go out of it; B's come into it. */
-  readonly store: Pick<Store, 'listGroups' | 'restoreGroups'>;
+  /** A's groups and personal Documents go out of it; B's come into it. */
+  readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'restoreGroups'>;
   /** The device clock in milliseconds, for the 10 minutes. */
   readonly now: () => number;
 }

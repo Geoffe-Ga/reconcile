@@ -6,14 +6,13 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { parseLinkCode } from '../crypto/link';
 import { bootstrapOpen, vouchesFor } from '../engine/admission';
 import { fold } from '../engine/fold';
-import { joinLink, offerLink } from '../link/session';
-import { testDevice, type TestDevice } from '../test/appServices';
+import type { TestDevice } from '../test/appServices';
 import { local } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { linkDevice } from '../test/link';
 import { joinLater, members } from '../test/members';
 import { vouch } from './proposals';
 
@@ -27,16 +26,8 @@ afterEach(() => {
 
 /** Links a fresh device to `from`, through the whole handshake, and syncs it. */
 async function linkFrom(fake: FakeRelay, from: TestDevice, name: string): Promise<TestDevice> {
-  const to = await testDevice(fake, name);
+  const to = await linkDevice(fake, from, name);
   opened.push(to);
-  const offer = offerLink(from.services);
-  const code = parseLinkCode(offer.code);
-  if (code === null) throw new Error('Expected a code.');
-  const join = await joinLink(to.services, code);
-  await offer.poll();
-  await join.poll();
-  expect(await offer.confirm()).toBe('sent');
-  expect((await join.poll()).kind).toBe('linked');
   await to.services.sync.syncOnce();
   return to;
 }

@@ -12,8 +12,8 @@
  * voter, with the laptop's later ballot.
  *
  * Every request either device sent is kept, and none holds the seed, K, a
- * one-time key, the pairing seal key, the group secret or Ana's signing key,
- * raw, in hex or in base64url; the pairing mailbox id, which a request must
+ * one-time key, the pairing seal key, the group secret, Ana's signing key or
+ * her encryption key (#98), raw, in hex or in base64url; the pairing mailbox id, which a request must
  * carry, is the scan's control. Then the relay stops, and its database, WAL,
  * shared memory and log hold no canary from the bundle. axe checks each
  * linking screen.
@@ -185,6 +185,8 @@ test('a second device links by a pasted code, the relay learns nothing, and both
     await expect
       .poll(async () => JSON.stringify(await storedLogs(laptop.page)))
       .toBe(JSON.stringify(await storedLogs(phone.page)));
+    // The same member (#98): the same keys and epoch, so the laptop opens what the phone opens.
+    expect(await onlyGroup(laptop.page)).toEqual(await onlyGroup(phone.page));
     const { page } = laptop;
     await page.getByRole('link', { name: 'Your groups' }).first().click();
     await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();
@@ -209,6 +211,7 @@ test('a second device links by a pasted code, the relay learns nothing, and both
   });
 
   const held = await onlyGroup(phone.page);
+  expect(held.kxKey).toHaveLength(32);
   const { seed } = codeParts(code);
   const secrets: Canary[] = [
     ...keyCanaries('the link seed', seed),
@@ -218,6 +221,7 @@ test('a second device links by a pasted code, the relay learns nothing, and both
     ...keyCanaries('the pairing seal key', keys.secrets.pairingKey),
     ...keyCanaries('the group secret', Uint8Array.from(held.secret)),
     ...keyCanaries('Ana’s signing key', Uint8Array.from(held.signingKey)),
+    ...keyCanaries('Ana’s encryption key', Uint8Array.from(held.kxKey ?? [])),
   ];
 
   await test.step('no request either device sent holds the seed, K or a key', () => {

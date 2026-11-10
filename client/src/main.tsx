@@ -19,14 +19,18 @@ import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
 import { xchachaSeal } from './crypto/seal';
 import { postWebhook } from './net/discord';
+import { createPushRelay } from './net/push';
 import { createRelay } from './net/relay';
 import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
 import { requestPersistence } from './platform/persist';
+import { browserPushPort, closeWhenVisible } from './platform/pushPort';
+import { sweepArchives } from './store/archive';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
+import { createPush } from './store/push';
 import { createSync } from './store/sync';
 
 const root = document.getElementById('root');
@@ -38,14 +42,23 @@ if (root === null) {
  * Opens the store, starts syncing while the page is visible, and renders the
  * app behind first run: the install gate and the pilot notice (#76). The store
  * opens empty on a new device, and nothing makes keys until first run is through.
- * The chat bot posts only for a group that turned it on by Proposal (#119).
+ * Each launch first wipes, or clears the ballots of, any dissolved group
+ * whose time has come by this device's clock (#108). The chat bot posts only
+ * for a group that turned it on by Proposal and hasn't dissolved (#119).
+ * Push stays off until the person turns a group on in Settings (#99), and the
+ * app closes its notifications whenever it comes to the front.
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
+  // A sweep that fails tries again at the next launch; the app opens either way.
+  await sweepArchives(store).catch(() => undefined);
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
   const chatBot = createChatBot({ store, post: postWebhook, notice });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot });
+  const port = browserPushPort();
+  const push = createPush({ store, relay: createPushRelay(), port });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push });
+  closeWhenVisible(port, document);
   sync.start();
   const services = {
     store,
@@ -58,6 +71,7 @@ async function start(container: HTMLElement): Promise<void> {
     share: browserShare(),
     files: browserFileTargets(),
     erase: () => eraseDevice({ sync, store }),
+    push,
     guide: guideRecord(),
   };
   const firstRun = { platform: readPlatform(), notice: noticeRecord(), requestPersistence };

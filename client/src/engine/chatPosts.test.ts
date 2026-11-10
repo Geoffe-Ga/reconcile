@@ -199,3 +199,24 @@ describe('mayClaim and dueClaims: what the fold keeps and what a device claims',
     expect(dueClaims(log.state(closed + DAY_MINUTES), authorOf('ben'))).toEqual([]);
   });
 });
+
+describe('a claim after the group dissolves (#108)', () => {
+  it('is ignored, even a claim of the dissolve’s own result while it is still due', () => {
+    const log = botOn();
+    const motion = log.proposeDissolve('Ana', false);
+    log.minute += 1;
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('Ben', motion);
+    log.minute += 1;
+    const late = log.chatPosted('Cal', motion, 'result');
+
+    const state = log.state();
+    const dissolve = state.proposals.find((p) => p.id === motion);
+    if (dissolve === undefined) throw new Error('Expected the dissolve Proposal.');
+    expect(state.dissolved).not.toBeNull();
+    expect(dueMoment(dissolve, state.at)).toBe('result');
+    expect(state.chatPosts).toEqual([]);
+    expect(state.ignored.map((record) => record.id)).toContain(late);
+  });
+});

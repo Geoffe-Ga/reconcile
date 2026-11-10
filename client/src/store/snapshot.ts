@@ -1,36 +1,62 @@
 /**
  * What a backup file holds (spec §3 "Backup file"; #78): every group on the
- * device, as JSON with its bytes in unpadded base64url, sealed by
- * `crypto/backup.ts` under the person's passphrase.
+ * device and every personal Document (#93), as JSON with its bytes in
+ * unpadded base64url, sealed by `crypto/backup.ts` under the person's
+ * passphrase.
  *
  * For each group it keeps the keys, the secret, your name, the log's event
  * bytes with their relay seqs and receipt times, the cursor, the relay's
  * last `now` and `instance`, the last successful sync time, and whether some
- * history may be missing. It leaves out the outbox and drafts, so a restore
+ * history may be missing. Format 2 (#98) adds the encryption key, the
+ * secret's epoch, and each record's epoch when it isn't 0; a format 1 file,
+ * as #78 saved it, reads as epoch 0 with no encryption key, and the sync loop
+ * then makes one. It leaves out the outbox and drafts, so a restore
  * never sends stale intent, and it leaves out a group this device is
  * leaving, and one whose genesis the relay hasn't returned yet, since
- * neither has anything to come back to.
+ * neither has anything to come back to. It leaves out a dissolved group's
+ * read-only copy too (#108): its ballots are due to be cleared, or the group
+ * to be erased, and a file would keep them past that.
+ *
+ * Each personal Document goes in whole: its id, title, text, and when it
+ * was made and last edited. #93 added them without a new format number, so a
+ * format 1 file may hold them or not: one from before #93 has no `personal`
+ * field, and reads as holding no personal Documents.
  *
  * Restoring opens the file, then checks everything before it writes
  * anything: the shape of every field, that each key makes its author, that
- * every log record verifies, and that each log folds to its own group.
+ * every log record verifies, that each log folds to its own group, and that
+ * each personal Document is one the device could keep (`isPersonalDocument`).
  * Anything wrong fails as a wrong passphrase does, with `BackupUnreadable`,
- * and the store keeps every group in one transaction (`Store.restoreGroups`).
+ * and the store keeps every group and Document in one transaction
+ * (`Store.restoreGroups`). A group whose log folds to a `dissolve`, as an
+ * older app's file could hold, comes back as a read-only copy, so a restore
+ * never brings a dissolved group back to life (#108).
  *
  * A second device's link bundle (#96) is the same plaintext without the
  * passphrase layer: `takeSnapshot` makes it and `restoreSnapshot` checks and
- * keeps it, and the link seals it under its own key instead.
+ * keeps it, and the link seals it under its own key instead. So a link
+ * carries what a backup does, format 2's keys and epochs (#98) and every
+ * personal Document (#93) included, and leaves out what a backup does, a
+ * dissolved group's read-only copy (#108) and push (#99) included.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { fold, type LogRecord } from '../engine/fold';
-import type { BackedUpGroup, Group, RestoredFrom, Store } from './db';
+import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
+import { epochOf, secretFits } from './epochs';
 import { eventIdOf } from './eventId';
+import { isPersonalDocument, type PersonalDocument } from './personal';
 
-/** The plaintext's format number, which a later layout would change. */
-export const SNAPSHOT_FORMAT = 1;
+/** The plaintext's format number: 2 since #98 added encryption keys and epochs. */
+export const SNAPSHOT_FORMAT = 2;
+
+/** The format #78 wrote, which a restore still reads. */
+const FORMAT_1 = 1;
+
+/** The largest epoch: a u32 carries it. */
+const MAX_EPOCH = 0xffff_ffff;
 
 /** The largest file a restore reads: 64 MiB, far past any pilot group's history. */
 export const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
@@ -40,6 +66,12 @@ const GROUP_ID = /^[A-Za-z0-9_-]{43}$/;
 
 /** A group's secret and signing key are 32 bytes each. */
 const KEY_BYTES = 32;
+
+/** Everything a backup holds: the groups it keeps, and every personal Document (#93). */
+export interface Snapshot {
+  readonly groups: readonly BackedUpGroup[];
+  readonly personal: readonly PersonalDocument[];
+}
 
 /** A saved backup: the sealed file, and the groups it holds. */
 export interface SavedBackup {
@@ -53,16 +85,20 @@ function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow'>): boolean 
 }
 
 /**
- * What a backup keeps of `groups`: each founded group that isn't leaving,
- * without its outbox, drafts, chat claims (#119) or marks.
+ * What a backup keeps of `groups`: each founded group that isn't leaving or
+ * a read-only archive (#108), without its outbox, drafts, chat claims (#119)
+ * or marks.
  */
 export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
   return groups
-    .filter((group) => group.leaving === undefined && isFounded(group))
+    .filter((group) => group.leaving === undefined && group.archived === undefined)
+    .filter(isFounded)
     .map((group) => ({
       groupId: group.groupId,
       secret: group.secret,
       signingKey: group.signingKey,
+      ...(group.kxKey === undefined ? {} : { kxKey: group.kxKey }),
+      ...(epochOf(group) === 0 ? {} : { epoch: epochOf(group) }),
       me: { author: group.me.author, name: group.me.name },
       log: group.log,
       cursor: group.cursor,
@@ -73,19 +109,36 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     }));
 }
 
-/** `groups` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
-export function encodeSnapshot(groups: readonly BackedUpGroup[]): Uint8Array<ArrayBuffer> {
+/** What a backup keeps of everything on `store`: its groups, and every personal Document. */
+export async function deviceSnapshot(
+  store: Pick<Store, 'listGroups' | 'listPersonal'>,
+): Promise<Snapshot> {
+  const [groups, personal] = await Promise.all([store.listGroups(), store.listPersonal()]);
+  return { groups: backedUpGroups(groups), personal };
+}
+
+/** One personal Document as the backup's JSON holds it: its five fields and nothing else. */
+function personalJson(document: PersonalDocument): PersonalDocument {
+  const { id, title, text, createdAt, updatedAt } = document;
+  return { id, title, text, createdAt, updatedAt };
+}
+
+/** `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
+export function encodeSnapshot({ groups, personal }: Snapshot): Uint8Array<ArrayBuffer> {
   const json = {
     format: SNAPSHOT_FORMAT,
     groups: groups.map((group) => ({
       groupId: group.groupId,
       secret: base64url(group.secret),
       signingKey: base64url(group.signingKey),
+      ...(group.kxKey === undefined ? {} : { kxKey: base64url(group.kxKey) }),
+      epoch: epochOf(group),
       me: { author: group.me.author, name: group.me.name },
-      log: group.log.map(({ seq, received, bytes }) => ({
+      log: group.log.map(({ seq, received, bytes, epoch = 0 }) => ({
         seq,
         received,
         bytes: base64url(bytes),
+        ...(epoch === 0 ? {} : { epoch }),
       })),
       cursor: group.cursor,
       relayNow: group.relayNow,
@@ -93,27 +146,38 @@ export function encodeSnapshot(groups: readonly BackedUpGroup[]): Uint8Array<Arr
       lastSyncAt: group.lastSyncAt,
       missingHistory: group.missingHistory,
     })),
+    personal: personal.map(personalJson),
   };
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
 
-/** Every group a backup keeps, as the plaintext a backup file or a link bundle carries. */
-export interface Snapshot {
+/** Everything a backup keeps, as the plaintext a backup file or a link bundle carries (#96). */
+export interface SnapshotPlaintext {
   /** The UTF-8 JSON, which the caller zeroes once it's sealed. */
   readonly plaintext: Uint8Array<ArrayBuffer>;
   /** The groups it holds. */
   readonly groupIds: readonly string[];
 }
 
-/** The plaintext of every group on the device that a backup keeps (#96: a link's bundle). */
-export async function takeSnapshot(store: Pick<Store, 'listGroups'>): Promise<Snapshot> {
-  const groups = backedUpGroups(await store.listGroups());
-  return { plaintext: encodeSnapshot(groups), groupIds: groups.map((group) => group.groupId) };
+/**
+ * The plaintext of everything on the device that a backup keeps: its groups
+ * and every personal Document (`deviceSnapshot`). It is a backup file's
+ * plaintext, and a link's bundle (#96).
+ */
+export async function takeSnapshot(
+  store: Pick<Store, 'listGroups' | 'listPersonal'>,
+): Promise<SnapshotPlaintext> {
+  const snapshot = await deviceSnapshot(store);
+  return {
+    plaintext: encodeSnapshot(snapshot),
+    groupIds: snapshot.groups.map((group) => group.groupId),
+  };
 }
 
 /**
- * Checks every group in `plaintext` and keeps them all in one transaction,
- * marked as `from` says (`Store.restoreGroups`). Returns how many it held.
+ * Checks every group and personal Document in `plaintext` and keeps them all
+ * in one transaction, marked as `from` says (`Store.restoreGroups`). Returns
+ * how many groups it held.
  *
  * @throws {BackupUnreadable} when anything in it doesn't check out; nothing is written then.
  */
@@ -122,18 +186,19 @@ export async function restoreSnapshot(
   plaintext: Uint8Array,
   from: RestoredFrom,
 ): Promise<number> {
-  const groups = decodeSnapshot(plaintext);
-  if (groups === null) throw new BackupUnreadable();
-  await store.restoreGroups(groups, from);
-  return groups.length;
+  const snapshot = decodeSnapshot(plaintext);
+  if (snapshot === null) throw new BackupUnreadable();
+  await store.restoreGroups(snapshot.groups, snapshot.personal, from);
+  return snapshot.groups.length;
 }
 
 /**
- * Seals every group on the device that a backup keeps under `passphrase`, at
- * scrypt cost `log2N` (17 unless a test asks for less).
+ * Seals every group on the device that a backup keeps, and every personal
+ * Document, under `passphrase`, at scrypt cost `log2N` (17 unless a test asks
+ * for less).
  */
 export async function exportGroups(
-  store: Pick<Store, 'listGroups'>,
+  store: Pick<Store, 'listGroups' | 'listPersonal'>,
   passphrase: string,
   log2N = BACKUP_LOG2_N,
 ): Promise<SavedBackup> {
@@ -147,8 +212,9 @@ export async function exportGroups(
 }
 
 /**
- * Opens `file` under `passphrase`, checks every group in it, and keeps them
- * all in one transaction. Returns how many groups the file held.
+ * Opens `file` under `passphrase`, checks every group and personal Document
+ * in it, and keeps them all in one transaction. Returns how many groups the
+ * file held.
  *
  * @throws {BackupUnreadable} for a wrong passphrase, a damaged or oversized
  *   file, or contents that don't check out; nothing is written then.
@@ -167,16 +233,46 @@ export async function importGroups(
   }
 }
 
-/** The groups in a backup's plaintext, or null when anything in it doesn't check out. */
-export function decodeSnapshot(plaintext: Uint8Array): BackedUpGroup[] | null {
+/** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
+export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
   const json = parseJson(plaintext);
-  if (!isObject(json) || json.format !== SNAPSHOT_FORMAT || !Array.isArray(json.groups)) {
-    return null;
-  }
-  const groups = json.groups.map(groupIn);
-  const ids = new Set(groups.map((group) => group?.groupId));
-  if (groups.some((group) => group === null) || ids.size !== groups.length) return null;
-  return groups.filter((group) => group !== null);
+  if (!isObject(json)) return null;
+  const { format } = json;
+  if (format !== SNAPSHOT_FORMAT && format !== FORMAT_1) return null;
+  const groups = groupsIn(json.groups, format === FORMAT_1 ? groupIn : groupWithKeysIn);
+  // A file from before #93 has no personal field: it holds no personal Documents.
+  const personal = json.personal === undefined ? [] : personalIn(json.personal);
+  return groups === null || personal === null ? null : { groups, personal };
+}
+
+/** Each of `values` read by `read`, or null when any is null or two share a key. */
+function allUnique<T>(
+  values: readonly unknown[],
+  read: (value: unknown) => T | null,
+  key: (item: T) => string,
+): T[] | null {
+  const items = values.map(read);
+  const kept = items.filter((item) => item !== null);
+  const keys = new Set(kept.map(key));
+  return kept.length === items.length && keys.size === kept.length ? kept : null;
+}
+
+/**
+ * The groups in `value`, each read by `read` as its file's format has it, or
+ * null when it isn't a list of valid groups, each once.
+ */
+function groupsIn(
+  value: unknown,
+  read: (value: unknown) => BackedUpGroup | null,
+): BackedUpGroup[] | null {
+  return Array.isArray(value) ? allUnique(value, read, (group) => group.groupId) : null;
+}
+
+/** The personal Documents in `value`, or null when it isn't a list of valid ones, each once. */
+function personalIn(value: unknown): PersonalDocument[] | null {
+  if (!Array.isArray(value)) return null;
+  const read = (item: unknown) => (isPersonalDocument(item) ? personalJson(item) : null);
+  return allUnique(value, read, (document) => document.id);
 }
 
 /** The JSON value `bytes` spell in UTF-8, or undefined when they don't. */
@@ -220,12 +316,27 @@ function keyIn(value: unknown): Uint8Array<ArrayBuffer> | null {
   return bytes?.length === KEY_BYTES ? bytes : null;
 }
 
-/** One log record in `value`: a whole seq and receipt time, and a signed record that verifies. */
+/** Whether `value` is an epoch from 1 up, as a record that names its epoch has (#98). */
+function isLaterEpoch(value: unknown): value is number {
+  return isCount(value) && value >= 1 && value <= MAX_EPOCH;
+}
+
+/**
+ * One log record in `value`: a whole seq and receipt time, a signed record
+ * that verifies, and the epoch it was read from when that isn't 0 (#98).
+ */
 function recordIn(value: unknown): LogRecord | null {
   if (!isObject(value) || !isCount(value.seq) || !isCount(value.received)) return null;
   const bytes = bytesIn(value.bytes);
   if (bytes === null || bytes.length > MAX_RECORD_BYTES || eventIdOf(bytes) === null) return null;
-  return { seq: value.seq, received: value.received, bytes };
+  const { epoch } = value;
+  if (epoch !== undefined && !isLaterEpoch(epoch)) return null;
+  return {
+    seq: value.seq,
+    received: value.received,
+    bytes,
+    ...(epoch === undefined ? {} : { epoch }),
+  };
 }
 
 /** The log in `value`, or null when it isn't a list of valid records. */
@@ -264,7 +375,8 @@ function groupIn(value: unknown): BackedUpGroup | null {
   const log = logIn(value.log);
   if (secret === null || signingKey === null || log === null || !hasSyncState(value)) return null;
   const me = meIn(value.me, signingKey);
-  const group = {
+  if (me === null) return null;
+  return restoredAs({
     groupId: value.groupId,
     secret,
     signingKey,
@@ -275,6 +387,37 @@ function groupIn(value: unknown): BackedUpGroup | null {
     instance: value.instance as string | null,
     lastSyncAt: value.lastSyncAt as number | null,
     missingHistory: value.missingHistory as boolean,
+  });
+}
+
+/** A dissolved group's read-only mark (#108). */
+const DISSOLVED: Archive = { reason: 'dissolved' };
+
+/**
+ * `group` as a restore keeps it, or null when its log doesn't fold to the
+ * group itself. A log holding a `dissolve` comes back read-only (#108).
+ */
+function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
+  const state = fold(group.log, group.relayNow);
+  if (state.group !== group.groupId) return null;
+  return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
+}
+
+/**
+ * One backed-up group of a format 2 file (#98): a format 1 group, plus its
+ * encryption key when it has one and the epoch of its secret, which must be
+ * 0 or the epoch of a key change in its log that commits to that secret.
+ */
+function groupWithKeysIn(value: unknown): BackedUpGroup | null {
+  const group = groupIn(value);
+  if (group === null || !isObject(value)) return null;
+  const { epoch } = value;
+  const kxKey = value.kxKey === undefined ? undefined : keyIn(value.kxKey);
+  if (kxKey === null || !(epoch === 0 || isLaterEpoch(epoch))) return null;
+  if (!secretFits(fold(group.log, group.relayNow), epoch, group.secret)) return null;
+  return {
+    ...group,
+    ...(kxKey === undefined ? {} : { kxKey }),
+    ...(epoch === 0 ? {} : { epoch }),
   };
-  return me !== null && isFounded(group) ? { ...group, me } : null;
 }

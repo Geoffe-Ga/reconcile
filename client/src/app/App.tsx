@@ -7,30 +7,34 @@
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
-import type { GroupState } from '../engine/fold';
+import { fold, type GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
+import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
-import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
+import { Personal } from '../screens/Personal';
+import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
-import { Settings } from '../screens/Settings';
+import { type NotifyGroup, Settings } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
-import type { Me } from '../store/db';
+import type { Group, Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
 import type { LinkCode } from '../crypto/link';
 import { joinLink, offerLink } from '../link/session';
+import { newPersonalId } from '../store/personal';
 import {
   createGroup,
   type CreateGroupValues,
@@ -48,7 +52,9 @@ import {
   addVersion,
   castBallot,
   chooseLevel,
+  type DissolveValues,
   propose,
+  proposeDissolve,
   proposeRules,
   proposeSteward,
   type RulesValues,
@@ -64,8 +70,9 @@ import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
-import { useGroupList } from './useGroupList';
+import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
+import { usePersonalList } from './usePersonalList';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -99,17 +106,61 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
   );
 }
 
-/** Settings (#78): Save a backup, Restore a backup, and Erase. */
+/**
+ * A group's push switch (#99): named once its genesis is back, and gone while
+ * it's leaving or once it's a read-only archive (#108).
+ */
+function notifyGroupOf(group: Group): NotifyGroup | null {
+  const state = fold(group.log, group.relayNow);
+  // A read-only archive takes nothing new, push included (#108).
+  if (state.group === null || group.leaving !== undefined || group.archived !== undefined) {
+    return null;
+  }
+  return { groupId: group.groupId, name: state.name, on: group.push !== undefined };
+}
+
+/** Settings (#78, #99): Notifications, Save a backup, Restore a backup, and Erase. */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
-  return groups === null ? null : (
+  const switches = useGroups(services.store, notifyGroupOf);
+  const { push } = services;
+  return groups === null || switches === null ? null : (
     <Settings
+      notify={{
+        availability: push.availability(),
+        groups: switches.filter((group) => group !== null),
+        onTurnOn: (groupId) => push.turnOn(groupId),
+        onTurnOff: (groupId) => push.turnOff(groupId),
+      }}
       hasGroups={groups.length > 0}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
     />
+  );
+}
+
+/** Personal (#93): this device's personal Documents, and the id a new one opens at. */
+function PersonalScreen({ services }: { readonly services: AppServices }) {
+  const documents = usePersonalList(services.store);
+  // One id per visit: nothing is stored under it until that Document's first save.
+  const [newId] = useState(newPersonalId);
+  return documents === null ? null : <Personal documents={documents} newId={newId} />;
+}
+
+interface PersonalDocumentScreenProps {
+  readonly services: AppServices;
+  readonly id: string;
+}
+
+/** One personal Document (#93); deleting it goes back to Personal in its place. */
+function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
+  const onDeleted = useCallback(() => {
+    replaceRoute({ name: 'personal' });
+  }, []);
+  return (
+    <PersonalDocument id={id} documents={services.store} now={services.now} onDeleted={onDeleted} />
   );
 }
 
@@ -243,16 +294,20 @@ interface ReadyGroup extends GroupView {
 
 interface GroupGateProps {
   readonly groupId: string;
+  /** True for a screen that writes something new: a dissolved group shows it only reads (#108). */
+  readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
 }
 
 /** Renders `children` once the group is ready, or says why it isn't. */
-function GroupGate({ groupId, children }: GroupGateProps) {
+function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   const group = useGroup(groupId);
   const { loaded, state, me } = group;
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
+  if (writes && state.dissolved !== null)
+    return <GroupArchived groupId={groupId} name={state.name} />;
   return children({ ...group, state, me });
 }
 
@@ -277,6 +332,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             lastSyncAt: group.lastSyncAt,
             deviceNow,
             missingHistory: group.missingHistory,
+            keyChange: group.keyChange,
           }}
           pending={group.pending}
           leaving={group.leaving}
@@ -293,6 +349,10 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
           onVouch={(member) => vouch(services, groupId, member)}
+          onRemove={async () => {
+            await services.store.purgeGroup(groupId);
+            replaceRoute({ name: 'start' });
+          }}
         />
       )}
     </GroupGate>
@@ -324,7 +384,7 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
   const deviceNow = useNow(services.now);
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me, leaving }) => {
         const again = state.proposals.find((proposal) => proposal.id === againId);
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
@@ -386,6 +446,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
+            {...(group.cleared === null ? {} : { cleared: group.cleared })}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
             onTell={onTell}
@@ -411,7 +472,7 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
     return result.outcome;
   };
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me }) => (
         <StewardComposer
           state={state}
@@ -427,7 +488,7 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
 
 function RulesScreen({ groupId }: { readonly groupId: string }) {
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me }) => <GroupRules state={state} me={me.author} />}
     </GroupGate>
   );
@@ -449,7 +510,7 @@ function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
     return result.outcome;
   };
   return (
-    <GroupGate groupId={groupId}>
+    <GroupGate groupId={groupId} writes>
       {({ state, me }) => (
         <OptInComposer
           state={state}
@@ -457,6 +518,31 @@ function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
           optIn={optIn}
           narrow={narrow}
           now={deviceNow}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** The dissolve composer (#108); sending the Proposal replaces it with the Proposal's ballot. */
+function DissolveScreen({ services, groupId }: GroupScreenProps) {
+  const deviceNow = useNow(services.now);
+  const onPropose = async (values: DissolveValues) => {
+    const result = await proposeDissolve(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <DissolveComposer
+          state={state}
+          me={me.author}
+          now={deviceNow}
+          leaving={leaving}
           onPropose={onPropose}
         />
       )}
@@ -500,6 +586,8 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
           narrow={route.narrow}
         />
       );
+    case 'dissolve':
+      return <DissolveScreen services={services} groupId={groupId} />;
   }
 }
 
@@ -532,6 +620,11 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       return <CreateScreen services={services} offerGuide={guide.offer} />;
     case 'settings':
       return <SettingsScreen services={services} />;
+    case 'personal':
+      return <PersonalScreen services={services} />;
+    case 'personalDocument':
+      // Keyed by id, so another Document starts its editor afresh.
+      return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
     case 'linkNew':
       return <LinkNewScreen services={services} />;
     case 'linkThis':

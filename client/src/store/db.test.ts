@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import { local, text, utf8 } from '../test/bytes';
+import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { HISTORY_GAP_MS, openStore } from './db';
-import type { NewGroup, Pull } from './db';
+import type { Group, NewGroup, Pull } from './db';
+import type { PersonalDocument } from './personal';
 
 freshIndexedDBPerTest();
 
@@ -30,6 +32,51 @@ function pull(records: Pull['records'], cursor: number): Pull {
     relayNow: 29_000_010,
     instance: 'relay-1',
     lastSyncAt: 1_762_650_000_000,
+  };
+}
+
+/** A personal Document (#93), as the store keeps one. */
+const statement: PersonalDocument = {
+  id: 'AAAAAAAAAAAAAAAAAAAAAA',
+  title: 'My mission statement',
+  text: 'I show up for my neighbors.\n',
+  createdAt: 1_762_650_000_000,
+  updatedAt: 1_762_650_000_000,
+};
+
+/** The schema every upgrade path ends at: version 4, with the groups and personal stores (#93). */
+const CURRENT_SCHEMA = { version: 4, stores: ['groups', 'personal'] };
+
+/** The version and object stores of the IndexedDB database `name`, as it now stands. */
+async function schemaOf(name: string): Promise<{ version: number; stores: string[] }> {
+  const database = await openDB(name);
+  const schema = { version: database.version, stores: [...database.objectStoreNames].sort() };
+  database.close();
+  return schema;
+}
+
+/** A group record as a version 3 or 4 store keeps one: `group` after a sync, with `changes`. */
+function storedGroup(changes: Partial<Group> = {}): Group {
+  return {
+    ...group,
+    log: [{ seq: 1, received: 9, bytes: utf8('{"g":1}') }],
+    cursor: 1,
+    relayNow: 29_000_010,
+    instance: 'relay-1',
+    outbox: [],
+    lastSyncAt: 1_762_650_000_000,
+    ...changes,
+  };
+}
+
+/** `group` with its bytes as plain arrays, so a stored copy and the one put compare. */
+function comparable(stored: Group | undefined) {
+  if (stored === undefined) return undefined;
+  return {
+    ...stored,
+    secret: Array.from(stored.secret),
+    signingKey: Array.from(stored.signingKey),
+    log: stored.log.map((record) => ({ ...record, bytes: Array.from(record.bytes) })),
   };
 }
 
@@ -112,8 +159,13 @@ describe('a group in the store', () => {
     const store = await openStore();
 
     expect(await store.listGroups()).toEqual([]);
+    expect(await store.listPersonal()).toEqual([]);
     await store.addGroup(group);
+    await store.savePersonal(statement);
     expect((await store.listGroups()).map((stored) => stored.groupId)).toEqual(['group-1']);
+    expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 
   it('keeps the secret and nothing derived from it', async () => {
@@ -519,6 +571,219 @@ describe('purgeGroup', () => {
   });
 });
 
+describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4)', () => {
+  it('starts a fresh install at version 4, with an empty groups store and personal store', async () => {
+    const store = await openStore();
+
+    expect(await store.listGroups()).toEqual([]);
+    expect(await store.listPersonal()).toEqual([]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('keeps version 3’s groups as #108 left them, archived and cleared ones read-only still, beside an empty personal store', async () => {
+    const live = storedGroup({ groupId: 'live', backup: 'saved' });
+    const archived = storedGroup({ groupId: 'archived', archived: { reason: 'dissolved' } });
+    const clearedArchive = { at: 7, state: testGroup().state, tallies: {} };
+    const cleared = storedGroup({
+      groupId: 'cleared',
+      log: [],
+      archived: { reason: 'dissolved', cleared: clearedArchive },
+    });
+    const old = await openDB('reconcile', 3, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+      },
+    });
+    for (const kept of [live, archived, cleared]) await old.put('groups', kept);
+    old.close();
+
+    const store = await openStore();
+
+    expect((await store.listGroups()).map(comparable)).toEqual(
+      [archived, cleared, live].map(comparable),
+    );
+    expect(await store.listPersonal()).toEqual([]);
+    await expect(store.enqueue('archived', utf8('{"late":1}'))).rejects.toThrow('read-only');
+    await expect(store.enqueue('cleared', utf8('{"late":1}'))).rejects.toThrow('read-only');
+    await store.savePersonal(statement);
+    expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('keeps a version 3 group’s encryption key, epoch and records’ epochs (#98), which need no version of their own', async () => {
+    const rotated = storedGroup({
+      groupId: 'rotated',
+      kxKey: new Uint8Array(32).fill(4),
+      epoch: 1,
+      log: [
+        { seq: 1, received: 9, bytes: utf8('{"g":1}') },
+        { seq: 2, received: 10, bytes: utf8('{"p":1}'), epoch: 1 },
+      ],
+      outbox: [utf8('{"frozen":1}')],
+    });
+    const old = await openDB('reconcile', 3, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+      },
+    });
+    await old.put('groups', rotated);
+    old.close();
+
+    const store = await openStore();
+
+    const [kept] = await store.listGroups();
+    const plain = (held: Group | undefined) => ({
+      ...comparable(held),
+      kxKey: Array.from(held?.kxKey ?? []),
+      outbox: held?.outbox.map(text),
+    });
+    expect(plain(kept)).toEqual(plain(rotated));
+    expect(plain(kept).kxKey).toHaveLength(32);
+    // A dissolve's archive drops the outbox a key change had frozen, so nothing waits on it (#108).
+    await store.markArchived('rotated', 'dissolved');
+    const archived = await store.getGroup('rotated');
+    expect([archived?.outbox, archived?.epoch, archived?.archived]).toEqual([
+      [],
+      1,
+      { reason: 'dissolved' },
+    ]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('opens version 4 as #93 left it, changing nothing, and archives a group in it', async () => {
+    const old = await openDB('reconcile', 4, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+      },
+    });
+    await old.put('groups', storedGroup());
+    await old.put('personal', statement);
+    old.close();
+
+    const store = await openStore();
+
+    expect((await store.listGroups()).map(comparable)).toEqual([comparable(storedGroup())]);
+    expect(await store.listPersonal()).toEqual([statement]);
+    await store.markArchived('group-1', 'dissolved');
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved' });
+    expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+});
+
+describe('markArchived', () => {
+  it('drops the outbox, drafts and any leave, marks the group archived and tells subscribers (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue('group-1', utf8('{"queued":1}'));
+    await store.writeDraft('group-1', 'atom-1', { title: 't', why: '', text: 'x', link: '' });
+    await store.markLeaving('group-1', utf8('{"leave":1}'));
+    const heard = vi.fn();
+    store.subscribe(heard);
+
+    await store.markArchived('group-1', 'dissolved');
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.archived).toEqual({ reason: 'dissolved' });
+    expect(kept?.outbox).toEqual([]);
+    expect(kept?.drafts).toBeUndefined();
+    expect(kept?.leaving).toBeUndefined();
+    expect(heard).toHaveBeenCalledWith('group-1');
+  });
+
+  it('forgets this device’s push registration and posted nudges, leaving the relay’s copy to expire (#99)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const push = { endpoint: 'https://push.example/1', mailboxes: ['m'], instance: 'i', at: 1 };
+    await store.setPush('group-1', push);
+    await store.markNudged('group-1', ['p1@29010080']);
+
+    await store.markArchived('group-1', 'dissolved');
+
+    const kept = await store.getGroup('group-1');
+    expect([kept?.archived, kept?.push, kept?.nudged]).toEqual([
+      { reason: 'dissolved' },
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('keeps an archive it already holds, cleared state included', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived('group-1', 'dissolved');
+    const cleared = { at: 5, state: testGroup().state, tallies: {} };
+    await store.clearArchive('group-1', cleared);
+
+    await store.markArchived('group-1', 'dissolved');
+
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved', cleared });
+  });
+
+  it('refuses anything queued once archived', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived('group-1', 'dissolved');
+
+    await expect(store.enqueue('group-1', utf8('{"late":1}'))).rejects.toThrow(
+      'This group is read-only on this device.',
+    );
+    expect((await store.getGroup('group-1'))?.outbox).toEqual([]);
+  });
+});
+
+describe('clearArchive', () => {
+  it('keeps the cleared state and drops the log, in one change (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(
+      'group-1',
+      pull([{ seq: 1, received: 1, bytes: utf8('{"a":1}') }], 1),
+      idOf,
+    );
+    await store.markArchived('group-1', 'dissolved');
+    const cleared = { at: 7, state: testGroup().state, tallies: {} };
+
+    await store.clearArchive('group-1', cleared);
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.log).toEqual([]);
+    expect(kept?.archived).toEqual({ reason: 'dissolved', cleared });
+  });
+
+  it('keeps a cleared archive free of anything an invite’s merge would bring back', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived('group-1', 'dissolved');
+    await store.clearArchive('group-1', { at: 7, state: testGroup().state, tallies: {} });
+    const before = await store.getGroup('group-1');
+
+    await store.mergeLog('group-1', [{ seq: 1, received: 1, bytes: utf8('{"vote":1}') }], idOf);
+
+    expect(await store.getGroup('group-1')).toEqual(before);
+  });
+
+  it('refuses a group that isn’t archived, and changes nothing', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(
+      'group-1',
+      pull([{ seq: 1, received: 1, bytes: utf8('{"a":1}') }], 1),
+      idOf,
+    );
+
+    await expect(
+      store.clearArchive('group-1', { at: 7, state: testGroup().state, tallies: {} }),
+    ).rejects.toThrow('This group isn’t archived.');
+    expect((await store.getGroup('group-1'))?.log).toHaveLength(1);
+  });
+});
+
 describe('the chat bot’s claims (#119)', () => {
   const claim = { id: 'claim-1', proposal: 'proposal-1', moment: 'open' } as const;
 
@@ -561,6 +826,31 @@ describe('the chat bot’s claims (#119)', () => {
     const kept = await store.getGroup(group.groupId);
     expect(kept?.outbox.map(text)).toEqual(['{"leave":1}']);
     expect(kept?.chatClaims).toBeUndefined();
+  });
+
+  it('queues nothing for a read-only archive (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markArchived(group.groupId, 'dissolved');
+
+    expect(await store.claimChat(group.groupId, utf8('{"claim":1}'), claim)).toBe(false);
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox).toEqual([]);
+    expect(kept?.chatClaims).toBeUndefined();
+  });
+
+  it('drops every claim this device holds once the group is archived (#108)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.claimChat(group.groupId, utf8('{"claim":1}'), claim);
+
+    await store.markArchived(group.groupId, 'dissolved');
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox).toEqual([]);
+    expect(kept?.chatClaims).toBeUndefined();
+    expect(await store.settleChatClaim(group.groupId, claim.id)).toBe(false);
   });
 
   it('refuses a claim over 64,000 bytes, keeping nothing', async () => {
@@ -616,6 +906,51 @@ describe('the chat bot’s claims (#119)', () => {
   });
 });
 
+describe('push for a group (#99)', () => {
+  const registration = {
+    endpoint: 'https://fcm.googleapis.com/fcm/send/device-1',
+    mailboxes: ['mailbox-1'],
+    instance: 'relay-1',
+    at: 29_000_010,
+  };
+
+  it('is off until the relay has taken an endpoint, then kept, and off again with null', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    expect((await store.getGroup(group.groupId))?.push).toBeUndefined();
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.setPush(group.groupId, registration);
+    const on = await store.getGroup(group.groupId);
+    await store.setPush(group.groupId, null);
+
+    expect(on?.push).toEqual(registration);
+    expect((await store.getGroup(group.groupId))?.push).toBeUndefined();
+    expect(heard).toEqual([group.groupId, group.groupId]);
+  });
+
+  it('keeps the nudges this device has posted, quietly, since no screen reads them', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.markNudged(group.groupId, ['p1@29010080', 'p1@29011520']);
+    await store.markNudged(group.groupId, ['p1@29011520']);
+
+    expect((await store.getGroup(group.groupId))?.nudged).toEqual(['p1@29011520']);
+    expect(heard).toEqual([]);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+
+    await expect(store.setPush('nope', registration)).rejects.toThrow('No such group');
+    await expect(store.markNudged('nope', [])).rejects.toThrow('No such group');
+  });
+});
+
 describe('every change', () => {
   it('runs in exactly one transaction', async () => {
     const store = await openStore();
@@ -633,6 +968,8 @@ describe('every change', () => {
           moment: 'open',
         }),
       () => store.settleChatClaim(group.groupId, 'claim-1'),
+      () => store.setPush(group.groupId, null),
+      () => store.markNudged(group.groupId, []),
       () => store.markLeaving(group.groupId, utf8('{"leave":1}')),
       () => store.purgeGroup(group.groupId),
     ];
@@ -656,5 +993,100 @@ describe('every change', () => {
     await store.enqueue(group.groupId, utf8('{"n":2}'));
 
     expect(heard).toEqual([group.groupId, group.groupId]);
+  });
+});
+
+describe('encryption keys and epochs (#98)', () => {
+  const KX_KEY = new Uint8Array(32).fill(5);
+  const NEXT = new Uint8Array(32).fill(6);
+
+  it('keeps the group’s encryption key and epoch as Create group or Join hands them over', async () => {
+    const store = await openStore();
+    await store.addGroup({ ...group, kxKey: KX_KEY, epoch: 2 });
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.kxKey === undefined ? null : local(kept.kxKey)).toEqual(KX_KEY);
+    expect(kept?.epoch).toBe(2);
+  });
+
+  it('keeps an encryption key once: the first one offered stays, as two tabs might race', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const first = await store.ensureKx(group.groupId, KX_KEY);
+    const second = await store.ensureKx(group.groupId, NEXT);
+    expect([local(first), local(second)]).toEqual([KX_KEY, KX_KEY]);
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.kxKey === undefined ? null : local(kept.kxKey)).toEqual(KX_KEY);
+    await expect(store.ensureKx('no-such-group', KX_KEY)).rejects.toThrow();
+  });
+
+  it('keeps one record per event and epoch, so a copy posted again to a new mailbox is kept', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const stale = { seq: 6, received: 9, bytes: utf8('{"p":1}') };
+    await store.applyPull(group.groupId, pull([stale, { ...stale, seq: 7 }], 7), idOf);
+    await store.applyPull(group.groupId, pull([{ ...stale, seq: 9, epoch: 1 }], 9), idOf);
+    await store.applyPull(group.groupId, pull([{ ...stale, seq: 10, epoch: 1 }], 10), idOf);
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.log.map(({ seq, epoch }) => [seq, epoch])).toEqual([
+      [6, undefined],
+      [9, 1],
+    ]);
+  });
+
+  it('moves to the next epoch in the same change as the pull: its secret, its cursor, and what to post again first', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue(group.groupId, utf8('{"queued":1}'));
+    const late = utf8('{"late":1}');
+    await store.applyPull(
+      group.groupId,
+      {
+        ...pull([{ seq: 12, received: 9, bytes: late }], 12),
+        advance: { epoch: 1, secret: NEXT, cursor: 11, repost: [late, utf8('{"queued":1}')] },
+      },
+      idOf,
+    );
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.epoch).toBe(1);
+    expect(kept === undefined ? null : local(kept.secret)).toEqual(NEXT);
+    expect(kept?.cursor).toBe(11);
+    expect(kept?.outbox.map(text)).toEqual(['{"late":1}', '{"queued":1}']);
+    expect(kept?.log.map((record) => record.seq)).toEqual([12]);
+  });
+
+  it('adopts a later epoch’s secret from an invite, and never an earlier or the same one', async () => {
+    const store = await openStore();
+    await store.addGroup({ ...group, epoch: 1 });
+    await store.applyPull(group.groupId, pull([], 30), idOf);
+    await store.adoptEpoch(group.groupId, { epoch: 1, secret: NEXT, cursor: 0, repost: [] });
+    await store.adoptEpoch(group.groupId, { epoch: 0, secret: NEXT, cursor: 0, repost: [] });
+    let kept = await store.getGroup(group.groupId);
+    expect([kept?.epoch, kept === undefined ? null : local(kept.secret), kept?.cursor]).toEqual([
+      1,
+      group.secret,
+      30,
+    ]);
+    const late = utf8('{"late":1}');
+    await store.adoptEpoch(group.groupId, { epoch: 2, secret: NEXT, cursor: 25, repost: [late] });
+    kept = await store.getGroup(group.groupId);
+    expect([kept?.epoch, kept === undefined ? null : local(kept.secret), kept?.cursor]).toEqual([
+      2,
+      NEXT,
+      25,
+    ]);
+    expect(kept?.outbox.map(text)).toEqual(['{"late":1}']);
+  });
+
+  it('merges an invite’s records by event and epoch too', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const record = { seq: 6, received: 9, bytes: utf8('{"p":1}') };
+    await store.applyPull(group.groupId, pull([record], 6), idOf);
+    await store.mergeLog(group.groupId, [record, { ...record, seq: 8, epoch: 1 }], idOf);
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.log.map(({ seq, epoch }) => [seq, epoch])).toEqual([
+      [6, undefined],
+      [8, 1],
+    ]);
   });
 });

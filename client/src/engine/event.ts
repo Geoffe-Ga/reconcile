@@ -9,7 +9,7 @@
  * reader trusts an event only once its record verifies and its `author` is the
  * key that signed it (ADR-0006).
  */
-import { base64url } from '../crypto/base64url';
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
 import { signRecord, verifyRecord } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
@@ -41,6 +41,8 @@ export interface GenesisBody {
   readonly title: string;
   readonly atoms: readonly string[];
   readonly rules?: Readonly<Record<string, unknown>>;
+  /** The founder's X25519 public key in base64url (#98), when the genesis carries a well-shaped one. */
+  readonly kx?: string;
 }
 
 /**
@@ -53,6 +55,8 @@ export interface JoinBody {
   readonly level?: string;
   /** The inviter's token from the invite link (#73), when the join carries a well-shaped one. */
   readonly token?: InviteToken;
+  /** The joiner's X25519 public key in base64url (#98), when the join carries a well-shaped one. */
+  readonly kx?: string;
 }
 
 /**
@@ -135,8 +139,35 @@ export interface RulesProposalBody {
   readonly window?: number;
 }
 
-/** What a `proposal` event carries: new text for an Atom, a steward seat (#102), or an opt-in (#117). */
-export type ProposalEventBody = ProposalBody | StewardProposalBody | RulesProposalBody;
+/**
+ * Dissolving the group (ADR-0051, ADR-0072 §10, #108): `wipe` is true when
+ * the vote also asks every device to erase its copy, a week after the dissolve.
+ */
+export interface DissolveTarget {
+  readonly kind: 'dissolve';
+  readonly wipe: boolean;
+}
+
+/**
+ * Proposes dissolving the group (#108): an entrenched Proposal with a title,
+ * a justification, an optional discussion link and an optional voting window
+ * in whole days, whose target says whether to wipe. It carries no text, so
+ * its ballot has one version, under the Proposal's id.
+ */
+export interface DissolveProposalBody {
+  readonly target: DissolveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+}
+
+/**
+ * What a `proposal` event carries: new text for an Atom, a steward seat
+ * (#102), an opt-in (#117), or dissolving the group (#108).
+ */
+export type ProposalEventBody =
+  ProposalBody | StewardProposalBody | RulesProposalBody | DissolveProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -146,6 +177,11 @@ export function isStewardProposal(body: ProposalEventBody): body is StewardPropo
 /** True when a Proposal's body targets an opt-in (#117). */
 export function isRulesProposal(body: ProposalEventBody): body is RulesProposalBody {
   return 'target' in body && body.target.kind === 'rules';
+}
+
+/** True when a Proposal's body proposes dissolving the group (#108). */
+export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
+  return 'target' in body && body.target.kind === 'dissolve';
 }
 
 /**
@@ -207,10 +243,39 @@ export interface VoteBody {
 }
 
 /**
+ * Ends the group once a dissolve Proposal's pass is final (#108): any member's
+ * device that folds that pass posts one. The fold takes the first valid one,
+ * and ignores every event after it.
+ */
+export interface DissolveBody {
+  readonly proposal: string;
+}
+
+/**
  * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
  * the author is the one who leaves, and the fold reads any object as `{}`.
  */
 export type LeaveBody = Readonly<Record<string, never>>;
+
+/**
+ * Gives a member who has none an encryption key (#98): the X25519 public key,
+ * in base64url, that the group's new secrets are wrapped to. A device that
+ * joined before #98 posts it once; the fold keeps the first per member.
+ */
+export interface KxBody {
+  readonly kx: string;
+}
+
+/**
+ * A new group key (#98; ADR-0072 item 11): epoch `epoch`'s commit, and its
+ * secret wrapped to each member who has an encryption key, by their `author`
+ * (`crypto/epoch.ts`). The fold keeps the first valid one per epoch.
+ */
+export interface KeyRotateBody {
+  readonly epoch: number;
+  readonly commit: string;
+  readonly wraps: Readonly<Record<string, string>>;
+}
 
 /** The body each event type carries. */
 export interface EventBodies {
@@ -223,8 +288,11 @@ export interface EventBodies {
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
+  readonly dissolve: DissolveBody;
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
+  readonly kx: KxBody;
+  readonly 'key-rotate': KeyRotateBody;
 }
 
 /** The event types this engine understands. */
@@ -275,6 +343,12 @@ const AUTHOR = /^[A-Za-z0-9_-]{43}$/;
 
 /** A 64-byte Ed25519 signature in unpadded base64url. */
 const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
+
+/** Unpadded base64url of at least one byte: a wrap's text. */
+const BASE64URL = /^[A-Za-z0-9_-]{2,}$/;
+
+/** The largest epoch a key change names: a big-endian u32 carries it (#98). */
+const MAX_EPOCH = 0xffff_ffff;
 
 /** The id of an event: the unpadded base64url SHA-256 of its exact bytes. */
 export function eventId(bytes: Uint8Array): string {
@@ -332,12 +406,25 @@ function isAuthor(value: unknown): value is string {
   return isString(value) && AUTHOR.test(value);
 }
 
+/**
+ * 32 bytes in canonical unpadded base64url: an X25519 key or a SHA-256 digest
+ * (#98). The last character's spare bits must be zero, so each key has one spelling.
+ */
+function isKey32(value: unknown): value is string {
+  return isAuthor(value) && base64url(fromBase64url(value)) === value;
+}
+
 function isTimestamp(value: unknown): value is number {
   return isWholeNumber(value) && value >= 0;
 }
 
 function isOptionalObject(value: unknown): value is Json | undefined {
   return value === undefined || isObject(value);
+}
+
+/** A well-shaped `kx` field as `{kx}`, or nothing: a bad key never sinks the event that carries it (#98). */
+function kxField(value: unknown): { readonly kx?: string } {
+  return isKey32(value) ? { kx: value } : {};
 }
 
 function parseGenesis(body: Json): GenesisBody | null {
@@ -351,6 +438,7 @@ function parseGenesis(body: Json): GenesisBody | null {
     atoms,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
+    ...kxField(body.kx),
   };
 }
 
@@ -369,6 +457,7 @@ function parseJoin(body: Json): JoinBody | null {
     name,
     ...(level === undefined ? {} : { level }),
     ...(token === undefined ? {} : { token }),
+    ...kxField(body.kx),
   };
 }
 
@@ -402,23 +491,45 @@ function parseTargetedFields(body: Json): Omit<StewardProposalBody, 'target'> | 
   return { title, why, ...(link === undefined ? {} : { link }) };
 }
 
-/** A rules Proposal (#117): its target and fields, and the window its proposer chose, if any (#106). */
-function parseRulesProposal(body: Json, fields: Omit<StewardProposalBody, 'target'>) {
-  const target = parseRulesTarget(body.target);
+/** A dissolve target's kind and wipe, which must be true or false (#108). */
+function parseDissolveTarget(value: unknown): DissolveTarget | null {
+  if (!isObject(value) || value.kind !== 'dissolve') return null;
+  return typeof value.wipe === 'boolean' ? { kind: 'dissolve', wipe: value.wipe } : null;
+}
+
+/**
+ * A rules (#117) or dissolve (#108) Proposal: its target and fields, and the
+ * window its proposer chose, if any (#106).
+ */
+function withWindow<T>(target: T | null, body: Json, fields: Omit<StewardProposalBody, 'target'>) {
   const { window } = body;
   if (target === null || !isOptionalNumber(window)) return null;
   return { ...fields, target, ...(window === undefined ? {} : { window }) };
 }
 
+/** The target a Proposal names other than a steward seat: an opt-in (#117), or dissolving (#108). */
+function parseWindowedProposal(
+  body: Json,
+  fields: Omit<StewardProposalBody, 'target'>,
+): RulesProposalBody | DissolveProposalBody | null {
+  const dissolve = parseDissolveTarget(body.target);
+  return dissolve === null
+    ? withWindow(parseRulesTarget(body.target), body, fields)
+    : withWindow(dissolve, body, fields);
+}
+
 /**
- * A steward (#102) or rules (#117) Proposal carries `target` and no `atom`;
- * any `text` is dropped, and so is a steward Proposal's `window` (#106).
+ * A steward (#102), rules (#117) or dissolve (#108) Proposal carries `target`
+ * and no `atom`; any `text` is dropped, and so is a steward Proposal's
+ * `window` (#106).
  */
-function parseTargetedProposal(body: Json): StewardProposalBody | RulesProposalBody | null {
+function parseTargetedProposal(
+  body: Json,
+): StewardProposalBody | RulesProposalBody | DissolveProposalBody | null {
   const fields = parseTargetedFields(body);
   if (fields === null) return null;
   const steward = parseStewardTarget(body.target);
-  return steward === null ? parseRulesProposal(body, fields) : { ...fields, target: steward };
+  return steward === null ? parseWindowedProposal(body, fields) : { ...fields, target: steward };
 }
 
 function parseProposal(body: Json): ProposalEventBody | null {
@@ -442,6 +553,10 @@ function parseSuspend(body: Json): SuspendBody | null {
   return { member, ...(reason === undefined ? {} : { reason }) };
 }
 
+function parseDissolve(body: Json): DissolveBody | null {
+  return isString(body.proposal) ? { proposal: body.proposal } : null;
+}
+
 function parseNarrow(body: Json): NarrowBody | null {
   const { optIn, proposal } = body;
   return isString(optIn) && isString(proposal) ? { optIn, proposal } : null;
@@ -455,6 +570,28 @@ function parseChatPosted(body: Json): ChatPostedBody | null {
   const { proposal, moment, nonce } = body;
   if (!isString(proposal) || !isString(moment) || !isOptionalString(nonce)) return null;
   return { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+}
+
+function parseKx(body: Json): KxBody | null {
+  return isKey32(body.kx) ? { kx: body.kx } : null;
+}
+
+/** A key change's wraps: an object from member keys to base64url wraps, or null. */
+function parseWraps(value: unknown): Record<string, string> | null {
+  if (!isObject(value)) return null;
+  const entries = Object.entries(value);
+  const valid = entries.every(
+    ([key, wrap]) => isAuthor(key) && isString(wrap) && BASE64URL.test(wrap),
+  );
+  // fromEntries defines own properties, so no key can reach a prototype.
+  return valid ? Object.fromEntries(entries as [string, string][]) : null;
+}
+
+function parseKeyRotate(body: Json): KeyRotateBody | null {
+  const { epoch, commit } = body;
+  const wraps = parseWraps(body.wraps);
+  if (!isWholeNumber(epoch) || epoch < 1 || epoch > MAX_EPOCH) return null;
+  return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -513,7 +650,8 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 
 /**
  * {@link withBody} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `vouch` (#101) and `chat-posted` (#119).
+ * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101) and
+ * `chat-posted` (#119).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -521,10 +659,24 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'narrow':
       return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'dissolve':
+      return attach(parseDissolve(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'vouch':
       return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-posted':
       return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withKeyBody(head, type, body);
+  }
+}
+
+/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
+    case 'kx':
+      return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'key-rotate':
+      return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

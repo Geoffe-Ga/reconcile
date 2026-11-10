@@ -645,7 +645,11 @@ describe('the code', () => {
       {
         relay: createRelay({ fetch: createFakeRelay().fetch }),
         seal: xchachaSeal,
-        store: { listGroups: () => Promise.resolve([]), restoreGroups: () => Promise.resolve() },
+        store: {
+          listGroups: () => Promise.resolve([]),
+          listPersonal: () => Promise.resolve([]),
+          restoreGroups: () => Promise.resolve(),
+        },
         now: () => clock,
       },
       keys,

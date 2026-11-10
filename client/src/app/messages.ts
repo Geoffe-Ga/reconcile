@@ -41,6 +41,8 @@ export const messages = {
     linkHeading: 'Have Reconcile on another device?',
     link: 'Link to my other device',
     settings: 'Settings',
+    personal: 'Personal',
+    personalHint: 'Your mission statement and other Documents of your own, on this device only.',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -209,6 +211,11 @@ export const messages = {
     copyFailed: 'Copying is blocked here. Select the link above and copy it yourself.',
     missingHistory:
       'Some history may be missing on this device. Open a new invite link from your group to catch up.',
+    /** When the group's key changed after this membership left on another device (#98). */
+    keyLeft: 'You left this group on another device.',
+    /** When the group's key changed and this device has no wrap that opens (#98). */
+    keyMissed:
+      'This group’s key changed and this device didn’t get the new one. Ask someone in the group for a new invite link.',
     joinDiscussion: 'Join discussion',
     discussion: 'Discussion',
     unreachable: 'Can’t reach the relay right now.',
@@ -376,7 +383,7 @@ export const messages = {
   leave: {
     open: 'Leave this group',
     title: 'Leave this group?',
-    body: 'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    body: 'Leaving removes this group from this device. Others keep what they already have. When you leave, the group gets a new key, so this device and any backup can’t read what comes next.',
     confirm: 'Leave this group',
     cancel: 'Cancel',
     failed: 'Leaving couldn’t be saved on this device. Try again.',
@@ -553,6 +560,51 @@ export const messages = {
     notAllowed: 'Your place in this group doesn’t include proposing.',
     noNominees: 'Nobody in your group can stand for this seat right now.',
   },
+  /** Dissolving a group (#108; ADR-0051): the composer, and what its ballot decides. */
+  dissolve: {
+    propose: 'Propose dissolving the group',
+    pageTitle: 'Propose dissolving',
+    eyebrow: 'Dissolve',
+    title: 'Propose dissolving the group',
+    lede: 'If your group passes this, it ends. Every device keeps a read-only copy, and nothing new is sent or accepted.',
+    bar: (average: string, zeros: string) =>
+      `Dissolving needs more support than an ordinary change: an average of at least ${average}, with under ${zeros} zeros.`,
+    titleHint: 'A few words your group will see on the ballot.',
+    whyHint: 'Tell your group why it’s time. They’ll talk it over before voting.',
+    wipeLabel: 'Also erase it from every device',
+    wipeHint:
+      'Each copy of Reconcile will erase this group. No app can stop someone who already kept a copy, a screenshot or a backup file.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose dissolving',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'You can’t propose dissolving now',
+    notAllowed: 'Your place in this group doesn’t include proposing.',
+    alreadyOpen:
+      'A Proposal to dissolve this group is already open. Go back to your group to vote on it.',
+    ballotTitle: 'Dissolve the group',
+    keepLine: 'If this passes, your group ends. Every device keeps a read-only copy.',
+    wipeLine: (days: number) =>
+      `If this passes, your group ends, and every device erases it ${count(days)} days later.`,
+    passed: 'This passed. Your group has dissolved.',
+  },
+  /** A dissolved group's read-only copy on this device (#108). */
+  archive: {
+    eyebrow: 'Dissolved',
+    dissolvedOn: (date: string) => `This group dissolved on ${date}. This is a read-only copy.`,
+    erasedOn: (date: string) => `It will be erased from this device on ${date}.`,
+    remove: 'Remove from this device',
+    removeTitle: 'Remove this group from this device?',
+    removeBody:
+      'This erases your read-only copy of this group from this device. Others keep their own copies.',
+    removeConfirm: 'Remove from this device',
+    cancel: 'Cancel',
+    removeFailed: 'This group couldn’t be removed from this device. Try again.',
+    unfinished: 'Not decided',
+    closed: 'Closed when the group dissolved',
+    readOnlyTitle: 'This group has dissolved',
+    readOnly: 'This is a read-only copy. Nothing new can be proposed or voted on.',
+    cleared: (date: string) => `Individual scores and notes were cleared on ${date}.`,
+  },
   /**
    * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat
    * bot and the front door. Each changes only by a Proposal, so nothing here
@@ -644,6 +696,39 @@ export const messages = {
     nowUnavailable:
       'You can’t turn this off at once right now. You can still propose turning it off.',
   },
+  // Personal (#93): a person's own Documents, kept on this device only (ADR-0001).
+  personal: {
+    pageTitle: 'Personal',
+    title: 'Personal',
+    lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
+    privacy:
+      'They stay on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes them.',
+    documentPrivacy:
+      'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+    missionTitle: 'My mission statement',
+    missionPrompt: 'What do you stand for, and what are you working toward?',
+    newDocument: 'New document',
+    documentPageTitle: 'Personal Document',
+    eyebrow: 'Personal',
+    untitled: 'Untitled',
+    titleLabel: 'Title',
+    titleMissing: 'Give this Document a title.',
+    titleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    textLabel: 'Text',
+    textHint: 'Nobody votes on this. It saves on this device as you type.',
+    saved: 'Saved on this device.',
+    notSaved: 'Not saved yet. Fix the title to save your changes.',
+    failed: 'Your changes couldn’t be saved on this device. Keep typing to try again.',
+    unreadable: 'This Document couldn’t be read on this device. Reload Reconcile, then try again.',
+    delete: 'Delete',
+    /** Around the Document's title, which renders in its own `<bdi>`: "Delete ‘Mine’ from this device?" */
+    deleteBefore: 'Delete ‘',
+    deleteAfter: '’ from this device?',
+    deleteBody: 'A backup you saved earlier still has it.',
+    deleteConfirm: 'Delete',
+    deleteCancel: 'Cancel',
+    deleteFailed: 'It couldn’t be deleted from this device. Try again.',
+  },
   /**
    * Earning a vote (#101; ADR-0014, ADR-0021): a newcomer's progress on the
    * People list, Vouch and its dialog, and the newcomer's own lines. Where a
@@ -684,13 +769,29 @@ export const messages = {
   settings: {
     pageTitle: 'Settings',
     title: 'Settings',
+    notifyHeading: 'Notifications',
     backupHeading: 'Back up your groups',
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
     eraseHeading: 'Erase this device',
   },
+  /**
+   * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows
+   * `somethingNew`: no group, name, text, id or count. The disclosure comes
+   * before any switch, and says plainly what the relay and Apple or Google see.
+   */
+  push: {
+    somethingNew: 'Something new in Reconcile',
+    disclosure:
+      'Notifications only ever say “Something new in Reconcile.” To send them, the relay keeps this phone’s push address for each group you turn on, for up to 30 days. That lets whoever runs the relay see that the same phone is in each of those groups. Apple or Google can see when this phone is woken. Notifications may show on your lock screen and a paired watch.',
+    notify: (group: string) => `Notify me about ${group}`,
+    blocked: 'Notifications are blocked for Reconcile in this device’s settings.',
+    unavailable: 'This device can’t get notifications from Reconcile.',
+    failed: 'That didn’t reach the relay, so nothing changed. Try again when you’re online.',
+    none: 'Once you’re in a group, you can turn on its notifications here.',
+  },
   backup: {
-    lede: 'One file holds every group on this device, with the keys and the name you use in each. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
+    lede: 'One file holds every group on this device, with the keys and the name you use in each, and your personal Documents. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
     passphrase: 'Passphrase',
     passphraseHint: 'At least 8 characters. Nobody can recover this passphrase for you.',
     passphraseShort: 'Use at least 8 characters.',

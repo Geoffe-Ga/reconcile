@@ -190,7 +190,7 @@ export interface Narrowing {
 export interface OptInProposalState {
   readonly id: string;
   readonly author: string;
-  readonly target: { readonly kind: 'edit' | 'steward' } | RulesChange;
+  readonly target: { readonly kind: 'edit' | 'steward' | 'dissolve' } | RulesChange;
   readonly deadline: number;
   readonly closedAt: number | null;
 }

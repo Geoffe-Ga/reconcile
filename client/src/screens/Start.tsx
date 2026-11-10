@@ -50,6 +50,23 @@ function GroupItem({ group }: { readonly group: StartGroup }) {
   );
 }
 
+/** One card that opens Personal (#93): the person's own Documents, on this device only. */
+function PersonalCard() {
+  return (
+    <div>
+      <Link className="card-link" href={routeHref({ name: 'personal' })}>
+        <span className="card-link-title">
+          <span className="heading-3">{messages.start.personal}</span>
+          <span className="card-link-arrow" aria-hidden="true">
+            {messages.app.forward}
+          </span>
+        </span>
+        <span className="caption">{messages.start.personalHint}</span>
+      </Link>
+    </div>
+  );
+}
+
 /** M2-03's expired-or-damaged line for anything that isn't an invite link. It never repeats the text. */
 function checkInvite(text: string): string | null {
   return parseInviteLink(text) === null ? messages.join.badLink : null;
@@ -87,9 +104,9 @@ function LinkSection() {
 
 /**
  * Start (`#/`): every group on this device by name, each marked while its
- * leave waits for the relay (#77), Create group, Join with an invite link, a
- * field to paste one into, Restore a backup (#78), Link to my other device
- * (#96), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
+ * leave waits for the relay (#77), Create group, a card that opens Personal
+ * (#93), Join with an invite link, a field to paste one into, Restore a
+ * backup (#78), Link to my other device (#96), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
  * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
 export function Start({ groups, onOpenInvite, persistence = null, onRestore }: StartProps) {
@@ -123,6 +140,7 @@ export function Start({ groups, onOpenInvite, persistence = null, onRestore }: S
           {messages.start.create}
         </Link>
       </div>
+      <PersonalCard />
       <section className="stack" aria-labelledby={inviteHeading}>
         <h2 id={inviteHeading} className="heading-3">
           {messages.start.inviteHeading}

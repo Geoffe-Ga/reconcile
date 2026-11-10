@@ -3,8 +3,10 @@
  * mailbox id and seal key (`groupKeys.ts`), an invite seed's mailbox id and
  * key (`invite.ts`) and a link's channels (`link.ts`, #96) all derive through
  * it, each under a label of its own, so no two ever coincide. Most take an
- * empty salt and 32 bytes of output; a link's number and key take a salt
- * (the hash of the link's transcript), and its number takes 4 bytes.
+ * empty salt and 32 bytes of output. A box's key (`box.ts`, #98) is salted
+ * with the two public keys of its X25519 exchange; a link's number and key
+ * are salted with the hash of the link's transcript, and its number takes 4
+ * bytes.
  */
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -26,7 +28,14 @@ export function hkdfSalted(
   return Uint8Array.from(hkdf(sha256, secret, salt, utf8ToBytes(info), length));
 }
 
-/** HKDF-SHA-256 of `secret` under the label `info`: 32 bytes. Callers check the secret's length. */
-export function hkdf32(secret: Uint8Array, info: string): Uint8Array<ArrayBuffer> {
-  return hkdfSalted(secret, EMPTY_SALT, info, OUTPUT_BYTES);
+/**
+ * HKDF-SHA-256 of `secret` under the label `info`, salted with `salt` (empty
+ * unless given): 32 bytes. Callers check the secret's length.
+ */
+export function hkdf32(
+  secret: Uint8Array,
+  info: string,
+  salt: Uint8Array = EMPTY_SALT,
+): Uint8Array<ArrayBuffer> {
+  return hkdfSalted(secret, salt, info, OUTPUT_BYTES);
 }
