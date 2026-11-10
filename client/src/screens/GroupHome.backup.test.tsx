@@ -29,6 +29,7 @@ function renderHome(props: Partial<GroupHomeProps> = {}) {
       onChooseLevel={vi.fn(() => Promise.resolve())}
       onSuspend={vi.fn(() => Promise.resolve())}
       onLeave={vi.fn(() => Promise.resolve())}
+      onVouch={vi.fn(() => Promise.resolve())}
       {...props}
     />,
   );

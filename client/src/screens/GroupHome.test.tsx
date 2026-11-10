@@ -47,6 +47,7 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
     onChooseLevel,
     onLeave,
     onSuspend: vi.fn(() => Promise.resolve()),
+    onVouch: vi.fn(() => Promise.resolve()),
     ...props,
   };
   const view = render(<GroupHome {...all} />);

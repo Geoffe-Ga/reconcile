@@ -58,7 +58,144 @@
       }
     },
     {
-      "name": "a steward Proposal is ignored at 2 voting members, even with a Member following too",
+      "name": "a steward Proposal is ignored at 2 people holding voting rights, even with a newcomer following too",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "Ben for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "rightsAt": 29375000
+          },
+          {
+            "author": "%ben",
+            "rightsAt": 29375001
+          },
+          {
+            "author": "%kim",
+            "rightsAt": null
+          }
+        ],
+        "proposals": [],
+        "stewards": [
+          {
+            "seat": 1,
+            "holder": "%ana",
+            "termEnd": null,
+            "elected": false
+          },
+          {
+            "seat": 2,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [6]
+    },
+    {
+      "name": "a steward Proposal is accepted at 3 people holding voting rights, even when one of them chose Member (ADR-0075 §3)",
       "records": [
         {
           "seq": 1,
@@ -130,29 +267,20 @@
       ],
       "relayNow": 29375010,
       "expect": {
-        "proposals": [],
-        "stewards": [
+        "proposals": [
           {
-            "seat": 1,
-            "holder": "%ana",
-            "termEnd": null,
-            "elected": false
-          },
-          {
-            "seat": 2,
-            "holder": null,
-            "termEnd": null,
-            "elected": false
+            "id": "@4",
+            "target": {
+              "kind": "steward",
+              "seat": 1,
+              "member": "%ben",
+              "holder": "%ana"
+            },
+            "eligible": ["%ana", "%ben"]
           }
         ],
-        "ignored": [
-          {
-            "seq": 4,
-            "id": "@4"
-          }
-        ]
-      },
-      "unchangedWithout": [4]
+        "ignored": []
+      }
     },
     {
       "name": "a steward Proposal is accepted at 3 voting members: ordinary, 7 days, one version with no text",
@@ -385,13 +513,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -402,13 +530,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -417,13 +545,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal"
             }
@@ -431,13 +559,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee"
             }
@@ -445,13 +573,13 @@
         },
         {
           "seq": 5,
-          "received": 29375004,
+          "received": 29354844,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%eve",
-            "ts": 1762500240000,
+            "ts": 1761290640000,
             "body": {
               "name": "Eve"
             }
@@ -459,13 +587,13 @@
         },
         {
           "seq": 6,
-          "received": 29375005,
+          "received": 29354845,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%fay",
-            "ts": 1762500300000,
+            "ts": 1761290700000,
             "body": {
               "name": "Fay"
             }
@@ -473,6 +601,90 @@
         },
         {
           "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290760000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290820000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290880000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290940000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 13,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -496,7 +708,7 @@
       "expect": {
         "proposals": [
           {
-            "id": "@7",
+            "id": "@13",
             "target": {
               "kind": "steward",
               "seat": 2,
