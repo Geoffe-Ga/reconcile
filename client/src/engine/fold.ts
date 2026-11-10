@@ -1081,9 +1081,12 @@ function advanceOptIns(draft: Draft): void {
   }
 }
 
-/** The Document a Proposal changes: its Atom's, for an edit, and none for any other target (#112). */
+/**
+ * The Document a Proposal changes (#112): its Atom's, for an edit. A steward,
+ * rules or dissolve Proposal's `atom` is `""`, which names no Atom, so it
+ * changes none.
+ */
 function documentOf(draft: Draft, proposal: OpenProposal): string | null {
-  if (proposal.target.kind !== 'edit') return null;
   return draft.atoms.find((atom) => atom.id === proposal.atom)?.documentId ?? null;
 }
 

@@ -79,12 +79,6 @@ export interface BallotValues {
 
 const nfc = (text: string): string => text.normalize('NFC');
 
-/** A Dispatch's title and text, NFC-normalized (#112). */
-const nfcWords = ({ title, text }: DispatchWords): DispatchWords => ({
-  title: nfc(title),
-  text: nfc(text),
-});
-
 /** `draft`, signed with this device's key in `groupId`. */
 async function signFor(
   services: ProposalServices,
@@ -137,7 +131,8 @@ export async function propose(
     text: normalizeAtomText(text),
     ...(link === null ? {} : { link: nfc(link) }),
     ...(window === undefined ? {} : { window }),
-    ...(dispatch === undefined ? {} : { dispatch: nfcWords(dispatch) }),
+    // Signing NFC-normalizes every string in a body, a Dispatch's too (createEvent).
+    ...(dispatch === undefined ? {} : { dispatch }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
@@ -419,8 +414,8 @@ export interface DispatchValues extends DispatchWords {
 
 /**
  * Sends a Dispatch to the whole group (#112), as this device's member of
- * `groupId`: its title and text NFC-normalized before signing, and its
- * Document, when one is chosen. Within its limits a Dispatch is a few
+ * `groupId`: its title and text, which signing NFC-normalizes (createEvent),
+ * and its Document, when one is chosen. Within its limits a Dispatch is a few
  * kilobytes at most, so it always fits a blob. Its PUT wakes the group's
  * phones (`wakeFor`), and the fold decides whether it holds: only a
  * Co-Creator's does. Resolves to the queued Dispatch's id.
@@ -430,8 +425,8 @@ export async function sendDispatch(
   groupId: string,
   values: DispatchValues,
 ): Promise<string> {
-  const { doc } = values;
-  const body = { ...nfcWords(values), ...(doc === null ? {} : { doc }) };
+  const { title, text, doc } = values;
+  const body = { title, text, ...(doc === null ? {} : { doc }) };
   const event = await signFor(services, groupId, {
     type: 'dispatch',
     group: groupId,
