@@ -72,11 +72,12 @@ Protective features are real but quiet. Nothing in the UI suggests the app is fo
 
 | Constant | Value | Source |
 |---|---|---|
-| Vote window | 7 days (10,080 relay minutes) from the relay's receipt of the Proposal. The author's `ts` plays no part | ADR-0073 |
+| Vote window | The default window of the Proposal's class, from the relay's receipt of the Proposal: 7 days (10,080 relay minutes) for an ordinary change, 14 days (20,160) for an entrenched one. The author's `ts` plays no part | ADR-0073, ADR-0074 (#94) |
 | Window bounds | Ordinary votes 3–14 days (default 7), entrenched votes 14–28 (default 14). The proposer's choice arrives in #106 | ADR-0074 |
 | Early close | Once every eligible member's latest ballot scores every version | ADR-0073 |
 | Quorum, per version | min(eligible, max(3, ⌈0.3 × eligible⌉)) scorers | ADR-0073 |
-| Pass (consent floor) | An average of at least 2.0, with fewer than 10% of the version's scorers giving a 0 | [ADR-0002](../adr/0002-consent-floor-vote-rule.md) |
+| Pass (consent floor) | An average of at least 2.0, with fewer than 10% of the version's scorers giving a 0: the ordinary bar | [ADR-0002](../adr/0002-consent-floor-vote-rule.md) |
+| Entrenched bar | An average of at least 3.0, with fewer than 5% of the version's scorers giving a 0 | [ADR-0015](../adr/0015-anti-capture.md) §2 (#94) |
 | Versions per ballot | At most 3 | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md), ADR-0073 |
 | Text caps | Title 120, justification 2,000 and note 280 Unicode code points, counted after NFC | [ADR-0072](../adr/0072-protocol-details-for-decomposition.md) item 4 |
 | Blob sizes | Exactly 1, 4, 16 or 64 KiB (1,024, 4,096, 16,384 or 65,536 bytes) | [ADR-0019](../adr/0019-sealed-sender-relay.md), ADR-0073 |
@@ -128,7 +129,7 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 
 ### The fold
 
-`fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group id (`group`, its genesis id, or null before one), the group's name and chat link, the Document title, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
+`fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group id (`group`, its genesis id, or null before one), the founding rules (`rules`, §11), the group's name and chat link, the Document title, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
 
 1. verifies the signature before it parses the event, and requires `author` to equal the record's key. A record that fails lands in `ignored` with `id: null` and claims no event id, so a forged copy of a real event never shadows it;
 2. drops a repeated event id, so the first copy keeps its seq and receipt time;
@@ -140,7 +141,7 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 
 | Type | Body | Valid when | Built by |
 |---|---|---|---|
-| `genesis` | `{name, chat?, founder, title, atoms}`: the group name, an optional chat link, the founder's name, the Document title and its Atoms | it is the first valid event in the mailbox | #63 |
+| `genesis` | `{name, chat?, founder, title, atoms, rules?}`: the group name, an optional chat link, the founder's name, the Document title, its Atoms and its founding rules (§11). Create group writes `rules: DEFAULT_RULES` | it is the first valid event in the mailbox, and `rules`, when present, is an object whose every field this engine knows equals its default (§11) | #63 (the rules: #94) |
 | `join` | `{name, level?, token?}`: the joiner's name, their involvement level (Collaborator when missing), and the inviter's token | the author isn't a member yet, and `level`, when present, is one of `LEVELS` | #63 (the level: #90; the token: #73) |
 | `level` | `{level}`: the involvement level the author moves to | the author is a member, and `level` is one of `LEVELS` other than the one they hold | #90 |
 | `proposal` | `{atom, title, why, text, link?}`: the target Atom (an add carries `target` instead, #75), the title, the justification, the proposed text and an optional discussion link | the author holds `propose`, the Atom exists and has no open Proposal (#72), the title is 1–120 code points, and the justification is at most 2,000 | #63 |
@@ -156,7 +157,7 @@ The founder becomes a member at genesis, as a Co-Creator. Genesis Atoms get the 
 - **One open Proposal per Atom** (ADR-0073, #72). A Proposal is open from its receipt until its deadline or its early close, whichever comes first, both in relay order: an event received in the minute of an early close, after the ballot that closed it, finds it closed. The fold ignores a `proposal` on an Atom that has an open one, and new wording joins that one as a version instead. `composeOption(state, atomId)` (`client/src/engine/composeOption.ts`) gives the screens the same rule over folded state: `'propose'` when nothing is open on the Atom, `'add-version'` while its open ballot has room, and `'ballot-full'` at 3 versions. It and the fold share `optionFor`, so the composer never offers what the fold would ignore.
 - **Targets** (#75). An edit names an `atom`. An add carries `target: {kind: "add", after: <atom id> | null}` instead, and the new Atom's id is the Proposal's id. An edit whose version text is `""` removes the Atom, and the fold then ignores later Proposals on it.
 - **Eligibility** ([ADR-0015](../adr/0015-anti-capture.md), #77, #90). The eligible voters are the members at the Proposal's place in relay order for whom `wouldVote` holds: people who joined before it and hadn't left, at a level that grants `vote`. A later join, leave or level change never changes an open Proposal's eligible set, quorum or early close. A ballot also needs `vote` when the relay receives it, so someone who steps down to Member can't vote until they step back up, while the vote is open.
-- **Deadline.** The Proposal's `received` plus 10,080 minutes.
+- **Class and deadline** (#94). `targetClass(state, body)` in `client/src/engine/rules.ts` gives a Proposal its class, `ordinary` or `entrenched`, from the state when it opens. It never reads a field the proposer writes, so nobody can understate a change. The Proposal keeps it as `class`, and its deadline is its `received` plus `windows[class].default` × 1,440 minutes: 10,080 for an ordinary change. Its versions are tallied at `rules.bars[class]` (§5). Every target is ordinary until entrenched sections (#116), removal (#115), widening an opt-in (#117) and dissolution (#108) each add their case to `targetClass`.
 - **Ballots.** A ballot scores versions by version id. A voter's latest valid ballot replaces their earlier one in full, so a version it leaves out loses that voter's score. A ballot that names a version not yet on the Proposal, in relay order, is ignored, even once that version arrives, and so is a ballot received after the deadline or the close. An ignored ballot never replaces the voter's earlier one.
 - **Close.** A Proposal closes early at the first ballot after which every eligible member's latest ballot scores every version; `closedAt` is that ballot's `received`. Otherwise it closes once `relayNow` reaches the deadline. A new version restarts the wait for an early close: it closes only once every eligible member's latest ballot scores the new version too.
 - **Apply.** Only a closed Proposal's outcome is final. A final pass sets the target Atom's text, or adds or removes the Atom. Final passes apply in order of close time (`closedAt`, or else the deadline), with ties broken by the Proposal's relay order, so every device builds the same Document.
@@ -181,10 +182,12 @@ The founder becomes a member at genesis, as a Co-Creator. Genesis Atoms get the 
 
 ## 5. Tally
 
-`tally({eligible, versions: [{id, scores}]})` returns `pass` with the winning version, `fail` or `lapse` (#63). It uses integers only: no floats, division or rounding. For each version, `n` is its number of scorers, `sum` their total, and `zeros` the number of 0s.
+`tally({eligible, versions: [{id, scores}], bar})` returns `pass` with the winning version, `fail` or `lapse`, each carrying the `bar` it was tallied at (#63, #94). The bar is the Proposal's class's, `rules.bars[class]` (§4). It uses integers only: no floats, division or rounding. For each version, `n` is its number of scorers, `sum` their total, and `zeros` the number of 0s.
 
-1. **Quorum** (ADR-0073). A version is at quorum when `n ≥ 1`, `n ≥ min(eligible, 3)` and `10·n ≥ 3·eligible`. That equals min(eligible, max(3, ⌈0.3 × eligible⌉)) scorers. Each version needs its own quorum.
-2. **Pass** (ADR-0002). A version at quorum passes when `sum ≥ 2·n` and `10·zeros < n`.
+1. **Quorum** (ADR-0073, `rules.quorum`). A version is at quorum when `n ≥ 1`, `n ≥ min(eligible, 3)` and `100·n ≥ 30·eligible`. That equals min(eligible, max(3, ⌈0.3 × eligible⌉)) scorers. Each version needs its own quorum, at every bar.
+2. **Pass.** A version at quorum passes its bar `{avgAtLeast, zerosUnderPercent}` when `sum ≥ avgAtLeast·n` and `100·zeros < zerosUnderPercent·n`:
+   - the ordinary bar, the consent floor (ADR-0002), is `{2, 10}`: `sum ≥ 2·n` and `10·zeros < n`;
+   - the entrenched bar (ADR-0015 §2) is `{3, 5}`: `sum ≥ 3·n` and `20·zeros < n`.
 3. **Winner** (ADR-0004). Among passing versions, the higher average wins (compare `sumA·nB` with `sumB·nA`), then fewer zeros, then the earlier version.
 4. **Outcome.** If no version is at quorum, the vote lapses. If some are at quorum and none passes, it fails.
 
@@ -194,11 +197,14 @@ The vectors in `client/src/engine/vectors/` pin the edges:
 - a 2-member group passes with 2 of 2 ballots;
 - at 11 eligible, 3 scorers lapse and 4 meet quorum; at 15 eligible, 4 lapse and 5 meet it;
 - a three-way tie goes to the earliest version;
-- a late version that only 2 of 10 eligible members score can't win, because it never reaches quorum (#72).
+- a late version that only 2 of 10 eligible members score can't win, because it never reaches quorum (#72);
+- at the entrenched bar (#94, `bars-entrenched-edges.json`), an average of exactly 3.0 passes and 2.95 fails; one 0 among 20 scorers (exactly 5%) fails and one among 21 passes; an average of exactly 2.5 with no zeros fails, and passes the ordinary bar (`bars-ordinary-pairs.json`); a vote below quorum lapses; and a version under 5% zeros beats a higher average with more.
 
-A lapse reads "Not enough people weighed in. This isn't a no." ([ADR-0069](../adr/0069-lapses-celebration-relational-pilot.md)), and Propose again starts a fresh Proposal with a fresh window (#74). The engine exposes each version's scorers, sum, zeros and quorum, and its pass flags, so the consent meter reads them live and `src/app` holds no threshold numbers (#74).
+Every ballot set that passes the entrenched bar passes the ordinary one, and neither outcome depends on the order ballots arrive in (`properties.test.ts`).
 
-Restored (§11): the entrenched bar (#94), removal's own bar (#115), and priority votes (#107).
+A lapse reads "Not enough people weighed in. This isn't a no." ([ADR-0069](../adr/0069-lapses-celebration-relational-pilot.md)), and Propose again starts a fresh Proposal with a fresh window (#74). The engine exposes each version's scorers, sum, zeros and quorum, and its pass flags, so the consent meter reads them live (#74). Each outcome carries its bar, so the meter draws the Proposal's own lines and `src/app` holds no threshold numbers.
+
+Restored (§11): removal's own bar (#115), and priority votes (#107).
 
 ---
 
@@ -368,10 +374,27 @@ These come from ADR-0074's "Rules this needs":
 
 - **Windows** (#94, #106). Ordinary votes run 3–14 days (default 7) and entrenched votes 14–28 (default 14). The deadline is fixed in relay time when the Proposal opens, and early close still applies.
 - **Bars** (ADR-0015, #94). Entrenched sections, dissolution and widening an opt-in pass at an average of at least 3.0 with under 5% zeros. Removal has its own bar (below).
-- **Rules are fixed at genesis** with ADR-0067's Fellowship defaults (#94). The one exception is the opt-ins that [ADR-0040](../adr/0040-group-opt-ins-are-governed.md) governs, the chat bot and the front door: a rules Proposal widens them at the entrenched bar and narrows them at the ordinary bar (#117).
+- **Rules are fixed at genesis** with ADR-0067's Fellowship defaults (#94, below). The one exception is the opt-ins that [ADR-0040](../adr/0040-group-opt-ins-are-governed.md) governs, the chat bot and the front door: a rules Proposal widens them at the entrenched bar and narrows them at the ordinary bar (#117).
 - **Coalitions form by private, group-to-group invitation,** with no public index, and nest up to 3 levels (#100, #122).
 - **One more network destination:** a Discord webhook, only for a group that turned its bot on by Proposal. The URL lives only in the encrypted group state (#119).
 - **Recovery uses a random backup key,** and contacts hold Shamir shares of it (#97, #109).
+
+### Founding rules
+
+#94 builds them in `client/src/engine/rules.ts` ([ADR-0051](../adr/0051-dissolution-and-rule-classes.md), [ADR-0067](../adr/0067-genesis-templates.md), ADR-0074). `DEFAULT_RULES` holds whole numbers only, and `RULE_CLASS` gives each field its ADR-0051 class:
+
+| Field | Default | Class |
+|---|---|---|
+| `bars` | ordinary `{avgAtLeast: 2, zerosUnderPercent: 10}`, entrenched `{avgAtLeast: 3, zerosUnderPercent: 5}` | entrenched |
+| `windows` (days) | ordinary `{min: 3, max: 14, default: 7}`, entrenched `{min: 14, max: 28, default: 14}` | ordinary |
+| `quorum` | `{min: 3, percent: 30}` | entrenched |
+| `vouches` | 2 (#101) | ordinary |
+| `waitDays` | 14 (#101) | ordinary |
+| `ballotExpiryDays` | 30 (#111) | ordinary |
+
+- **Genesis.** Create group writes `rules: DEFAULT_RULES` into genesis, and the fold keeps the result in `state.rules`. A missing field, at any depth, takes its default, so a genesis without `rules` (every one before #94) still founds its group. A field that differs from its default (the text `"2"` differs from the number 2) makes the genesis invalid: the MVP sets no rule but the defaults, so a hand-made genesis can't lower a bar, and a later change to a default must keep accepting the old value. A field this engine doesn't know is left out of `state.rules`, so a newer device's genesis still founds the group, and the engine that knows the field checks it.
+- **Classes.** `targetClass` gives each Proposal its class when it opens (§4), and the class picks its bar (§5) and its default window. #106 lets the proposer choose a window within `windows[class]`.
+- **Later fields.** #102 adds the steward and suspension rules and #117 the opt-ins, each with its class. #115 adds removal's bar.
 
 ### ADR-0075's safeguards
 

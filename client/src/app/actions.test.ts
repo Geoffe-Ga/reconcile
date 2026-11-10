@@ -6,6 +6,7 @@ import { stubSeal } from '../crypto/stubSeal';
 import { DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from '../engine/capabilities';
 import { base64url, type ParsedEvent, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
+import { DEFAULT_RULES } from '../engine/rules';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { createSync, type Sync } from '../store/sync';
@@ -118,8 +119,18 @@ describe('createGroup', () => {
         chat: 'https://chat.example.org/riverside',
         title: 'House rules',
         atoms: ['Quiet hours start at ten.\n', 'Bins go out on Tuesday.\n'],
+        rules: DEFAULT_RULES,
       },
     });
+  });
+
+  it('writes the founding rules into genesis, so the group folds with DEFAULT_RULES', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    const group = await stored(ana, await created(ana));
+    const record = group.outbox[0] ?? new Uint8Array();
+    const state = fold([{ seq: 1, received: 29_000_000, bytes: record }], 29_000_000);
+    expect(state.group).toBe(group.groupId);
+    expect(state.rules).toEqual(DEFAULT_RULES);
   });
 
   it('normalizes each section as Atom text before signing the genesis', async () => {

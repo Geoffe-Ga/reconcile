@@ -4,10 +4,12 @@
  *
  * Every rule is checked against the state before the event. An event that
  * breaks one lands in `ignored` and changes nothing. Votes run on relay time
- * (`received`, in whole minutes); the author's `ts` plays no part. A Document's
- * text changes only when a Proposal's pass is final. The fold is pure: no I/O,
- * no clock, no randomness, so every device that folds the same records builds
- * the same state.
+ * (`received`, in whole minutes); the author's `ts` plays no part. Genesis
+ * founds the group with its rules, and each Proposal's class, set when it
+ * opens, picks its window and its bar. A Document's text changes only when a
+ * Proposal's pass is final. The fold is pure: no I/O, no clock, no
+ * randomness, so every device that folds the same records builds the same
+ * state.
  */
 import {
   can,
@@ -30,11 +32,17 @@ import {
   type VersionBody,
   type VoteBody,
 } from './event';
+import {
+  DEFAULT_RULES,
+  defaultWindowMinutes,
+  foundingRules,
+  type ProposalClass,
+  type Rules,
+  targetClass,
+} from './rules';
 import { tally, type TallyOutcome } from './tally';
 import { codePointLength } from './text';
 
-/** How long a vote runs: 7 days of relay minutes from the relay's receipt of the Proposal. */
-export const VOTE_WINDOW_MINUTES = 10_080;
 /** The longest Proposal title, in code points. */
 export const TITLE_MAX = 120;
 /** The longest justification, in code points. */
@@ -90,12 +98,16 @@ export interface Ballot {
 /**
  * A proposed change to one Atom, with its vote.
  *
- * `eligible` is who could vote when it opened (ADR-0015): the members for whom
- * `wouldVote` held then. A later join or level change never changes it, nor the
- * quorum and early close that count it. `closedAt` is the
- * receipt minute of the ballot that closed it early, or null. `final` is true
- * once it has closed, early or because relay time reached `deadline`. `outcome`
- * is the tally of the ballots so far, and is settled only when `final`.
+ * `class` is how hard the change is, set by `targetClass` from state when it
+ * opened, never from the proposer's own fields. It fixes `deadline`, the
+ * relay's receipt plus the class's default window, and the bar the versions
+ * are tallied at, which `outcome` carries. `eligible` is who could vote when
+ * it opened (ADR-0015): the members for whom `wouldVote` held then. A later
+ * join or level change never changes it, nor the quorum and early close that
+ * count it. `closedAt` is the receipt minute of the ballot that closed it
+ * early, or null. `final` is true once it has closed, early or because relay
+ * time reached `deadline`. `outcome` is the tally of the ballots so far, and
+ * is settled only when `final`.
  */
 export interface Proposal {
   readonly id: string;
@@ -107,6 +119,7 @@ export interface Proposal {
   readonly why: string;
   readonly text: string;
   readonly link: string | null;
+  readonly class: ProposalClass;
   readonly deadline: number;
   readonly eligible: readonly string[];
   readonly versions: readonly Version[];
@@ -127,9 +140,14 @@ export interface IgnoredRecord {
   readonly id: string | null;
 }
 
-/** A group as one device sees it after folding its log. `group` is the genesis id, or null before one. */
+/**
+ * A group as one device sees it after folding its log. `group` is the genesis
+ * id, or null before one. `rules` are the founding rules its genesis set:
+ * `DEFAULT_RULES` in every MVP group, and before any genesis.
+ */
 export interface GroupState {
   readonly group: string | null;
+  readonly rules: Rules;
   readonly name: string;
   readonly chat: string | null;
   readonly title: string;
@@ -159,6 +177,7 @@ interface OpenProposal extends Omit<
 /** The state the fold builds up, one event at a time. */
 interface Draft {
   group: string | null;
+  rules: Rules;
   name: string;
   chat: string | null;
   title: string;
@@ -167,8 +186,12 @@ interface Draft {
   readonly proposals: OpenProposal[];
 }
 
+/** Founds the group, unless its rules differ from the defaults (rules.ts). */
 function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Receipt): boolean {
+  const rules = foundingRules(body.rules);
+  if (rules === null) return false;
   draft.group = at.id;
+  draft.rules = rules;
   draft.name = body.name;
   draft.chat = body.chat ?? null;
   draft.title = body.title;
@@ -229,6 +252,7 @@ function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: R
 
 function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   if (!proposalIsValid(draft, body, author, at)) return false;
+  const cls = targetClass(draft, body);
   draft.proposals.push({
     ...at,
     author,
@@ -237,7 +261,8 @@ function applyProposal(draft: Draft, body: ProposalBody, author: string, at: Rec
     why: body.why,
     text: body.text,
     link: body.link ?? null,
-    deadline: at.received + VOTE_WINDOW_MINUTES,
+    class: cls,
+    deadline: at.received + defaultWindowMinutes(draft.rules, cls),
     eligible: draft.members.filter((m) => wouldVote(draft, m.author)).map((m) => m.author),
     versions: [{ id: at.id, author, text: body.text }],
     ballots: [],
@@ -342,8 +367,8 @@ function scoresFor(ballots: readonly Ballot[], id: string): Score[] {
   );
 }
 
-/** Fixes a Proposal's finality and tallies its ballots. */
-function settle(proposal: OpenProposal, relayNow: number | null): Proposal {
+/** Fixes a Proposal's finality and tallies its ballots at its class's bar. */
+function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): Proposal {
   const final = proposal.closedAt !== null || (relayNow !== null && relayNow >= proposal.deadline);
   const outcome = tally({
     eligible: proposal.eligible.length,
@@ -351,6 +376,7 @@ function settle(proposal: OpenProposal, relayNow: number | null): Proposal {
       id: v.id,
       scores: scoresFor(proposal.ballots, v.id),
     })),
+    bar: rules.bars[proposal.class],
   });
   return { ...proposal, final, outcome };
 }
@@ -394,6 +420,7 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
 export function fold(records: readonly LogRecord[], relayNow: number | null): GroupState {
   const draft: Draft = {
     group: null,
+    rules: DEFAULT_RULES,
     name: '',
     chat: null,
     title: '',
@@ -414,8 +441,8 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     seen.add(id);
     if (!applied) ignored.push({ seq, id });
   }
-  const proposals = draft.proposals.map((p) => settle(p, relayNow));
+  const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
   const atoms = applyPasses(draft.atoms, proposals);
-  const { group, name, chat, title, members } = draft;
-  return { group, name, chat, title, members, atoms, proposals, ignored };
+  const { group, rules, name, chat, title, members } = draft;
+  return { group, rules, name, chat, title, members, atoms, proposals, ignored };
 }
