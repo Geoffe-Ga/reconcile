@@ -1,4 +1,4 @@
-import { type PointerEvent, type ReactNode, type SyntheticEvent, useId, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useId, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -13,6 +13,7 @@ import {
 import type { Score } from '../engine/event';
 import { NOTE_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
@@ -122,19 +123,6 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       <FieldError className="field-error">{messages.ballot.scoreMissing}</FieldError>
     </RadioGroup>
   );
-}
-
-/**
- * Keeps a press from starting on the send button while it saves. React Aria's
- * usePress starts one on pointerdown even on a disabled button, and a browser
- * gives a disabled button pointerdown and pointerup but no click, so 80 ms later
- * usePress clicks the button itself. If saving finished within those 80 ms, the
- * button was enabled again and a second ballot went out (#190).
- */
-function holdPresses(saving: boolean) {
-  return (event: PointerEvent) => {
-    if (saving) event.stopPropagation();
-  };
 }
 
 /** What the note asks for: a reason for any 0, else what would make a 1 a 3, else anything. */

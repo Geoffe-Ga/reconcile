@@ -335,13 +335,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 28999990,
+          "received": 28979830,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1739999400000,
+            "ts": 1738789800000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -352,13 +352,13 @@
         },
         {
           "seq": 2,
-          "received": 28999991,
+          "received": 28979831,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1739999460000,
+            "ts": 1738789860000,
             "body": {
               "name": "Ben"
             }
@@ -366,13 +366,13 @@
         },
         {
           "seq": 3,
-          "received": 28999992,
+          "received": 28979832,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1739999520000,
+            "ts": 1738789920000,
             "body": {
               "name": "Cal"
             }
@@ -380,13 +380,13 @@
         },
         {
           "seq": 4,
-          "received": 28999993,
+          "received": 28979833,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1739999580000,
+            "ts": 1738789980000,
             "body": {
               "name": "Dee"
             }
@@ -394,6 +394,34 @@
         },
         {
           "seq": 5,
+          "received": 28979834,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1738790040000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 28979835,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1738790100000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
           "received": 29000000,
           "event": {
             "v": 1,
@@ -411,7 +439,7 @@
           }
         },
         {
-          "seq": 6,
+          "seq": 8,
           "received": 29000060,
           "event": {
             "v": 1,
@@ -420,15 +448,15 @@
             "author": "%ana",
             "ts": 1740003600000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 3
+                "@7": 3
               }
             }
           }
         },
         {
-          "seq": 7,
+          "seq": 9,
           "received": 29000061,
           "event": {
             "v": 1,
@@ -437,15 +465,15 @@
             "author": "%ben",
             "ts": 1740003660000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 3
+                "@7": 3
               }
             }
           }
         },
         {
-          "seq": 8,
+          "seq": 10,
           "received": 29000062,
           "event": {
             "v": 1,
@@ -454,15 +482,15 @@
             "author": "%cal",
             "ts": 1740003720000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 3
+                "@7": 3
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 11,
           "received": 29000063,
           "event": {
             "v": 1,
@@ -471,9 +499,9 @@
             "author": "%dee",
             "ts": 1740003780000,
             "body": {
-              "proposal": "@5",
+              "proposal": "@7",
               "scores": {
-                "@5": 3
+                "@7": 3
               }
             }
           }
@@ -483,14 +511,14 @@
       "expect": {
         "proposals": [
           {
-            "id": "@5",
+            "id": "@7",
             "window": 14,
             "deadline": 29020160,
             "closedAt": 29000063,
             "final": true,
             "outcome": {
               "kind": "pass",
-              "version": "@5"
+              "version": "@7"
             }
           }
         ],

@@ -95,6 +95,11 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
 
   await test.step('Ana opens Group rules and proposes turning the chat bot on', async () => {
     const { page } = ana;
+    // Wait until both joins have synced to Ana's Group home: each newcomer adds a
+    // row (with #101 a taller one), which moves the Rules link below People. A click
+    // aimed while it moves can land elsewhere (seen on WebKit).
+    await expect(people(page)).toContainText(cal.name);
+    await expect(people(page)).toContainText(ben.name);
     await page.getByRole('link', { name: /Chat bot and front door/ }).click();
     await expect(heading(page, 'What reaches outside your group')).toBeVisible();
     rulesUrl = page.url();
