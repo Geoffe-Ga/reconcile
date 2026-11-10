@@ -17,6 +17,7 @@ describe('parseRoute', () => {
     ['#', { name: 'start' }],
     ['#/', { name: 'start' }],
     ['#/create', { name: 'create' }],
+    ['#/settings', { name: 'settings' }],
     ['#/join', { name: 'join', payload: null }],
     ['#/join/abc.def', { name: 'join', payload: 'abc.def' }],
     ['#join/abc-def', { name: 'join', payload: 'abc-def' }],
@@ -49,6 +50,7 @@ describe('parseRoute', () => {
   it.each([
     '#/nowhere',
     '#/create/extra',
+    '#/settings/extra',
     '#/g/',
     '#/g/has space',
     '#/g/%2e%2e',
@@ -91,6 +93,7 @@ describe('routeHref', () => {
   it.each<[Route, string]>([
     [{ name: 'start' }, '#/'],
     [{ name: 'create' }, '#/create'],
+    [{ name: 'settings' }, '#/settings'],
     [{ name: 'join', payload: null }, '#/join'],
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],

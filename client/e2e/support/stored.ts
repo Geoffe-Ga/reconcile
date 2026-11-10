@@ -51,6 +51,45 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
   });
 }
 
+/** One group's relay-ordered log on a device: each record's seq, receipt time and bytes in hex. */
+export interface StoredLog {
+  readonly groupId: string;
+  readonly author: string;
+  readonly log: readonly (readonly [number, number, string])[];
+}
+
+/** Every group's log in the app's IndexedDB on `page`, so two devices' folds can be compared (#78). */
+export function storedLogs(page: Page): Promise<StoredLog[]> {
+  return page.evaluate(async () => {
+    const request = <T>(asking: IDBRequest<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        asking.onsuccess = () => {
+          resolve(asking.result);
+        };
+        asking.onerror = () => {
+          reject(asking.error ?? new Error('IndexedDB refused the request.'));
+        };
+      });
+    const hex = (bytes: Uint8Array): string =>
+      Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const db = await request(indexedDB.open('reconcile'));
+    try {
+      const groups = (await request(db.transaction('groups').objectStore('groups').getAll())) as {
+        groupId: string;
+        me: { author: string };
+        log: { seq: number; received: number; bytes: Uint8Array }[];
+      }[];
+      return groups.map((group) => ({
+        groupId: group.groupId,
+        author: group.me.author,
+        log: group.log.map(({ seq, received, bytes }) => [seq, received, hex(bytes)] as const),
+      }));
+    } finally {
+      db.close();
+    }
+  });
+}
+
 /** The one group `page`'s device holds, or a clear stop when it holds another number. */
 export async function onlyGroup(page: Page): Promise<StoredGroup> {
   const groups = await storedGroups(page);
