@@ -257,6 +257,7 @@ describe('the dissolve ballot', () => {
       'Dissolve the group',
     );
     expect(screen.queryByRole('button', { name: /your vote$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tell your group' })).toBeNull();
     expect(await axeViolations()).toEqual([]);
   });
 });
