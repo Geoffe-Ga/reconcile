@@ -4,7 +4,7 @@
 - **Date:** 2026-11-09
 - **Decided via:** a review of the 57-issue backlog against ADR-0074 and the threat model ([`12_Security_Privacy_Threat_Model.md`](../plan/12_Security_Privacy_Threat_Model.md)). Most findings came from two issues interacting, not from either one alone. The issue edits are drafted in [`plans/2026-11-09-adr-0075-issue-edits.md`](../../plans/2026-11-09-adr-0075-issue-edits.md).
 - **Founder's answers (2026-11-09):** on removal, "With <= 21 people, a zero is non-blocking" (§3). On merge safeguards, "No merge safeguard. We're ai engineering this" (§6).
-- **Amends:** [ADR-0074](0074-mvp-scope-revised.md), plus [ADR-0060](0060-how-phase-1-is-built.md)'s library rule (§4) and its list of safeguards (§6). Nothing is superseded.
+- **Amends:** [ADR-0074](0074-mvp-scope-revised.md), plus [ADR-0060](0060-how-phase-1-is-built.md)'s library rule (§4) and its list of safeguards (§6). §3's steward rules amend [ADR-0016](0016-suspend-then-vote.md) (a suspension never shrinks the electorate; one at a time), [ADR-0049](0049-stewards-and-removal.md) (the removal bar, a fixed 14-day removal vote, one count of voting members) and [ADR-0059](0059-suspension-during-removal.md) (an extended suspension lasts at most 21 days). Nothing is superseded.
 
 ## Context
 
