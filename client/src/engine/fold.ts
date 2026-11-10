@@ -33,6 +33,7 @@ import {
   type VoteBody,
 } from './event';
 import {
+  type Bar,
   DEFAULT_RULES,
   defaultWindowMinutes,
   foundingRules,
@@ -40,7 +41,7 @@ import {
   type Rules,
   targetClass,
 } from './rules';
-import { tally, type TallyOutcome } from './tally';
+import { type TallyDetail, tallyDetail, type TallyOutcome } from './tally';
 import { codePointLength } from './text';
 
 /** The longest Proposal title, in code points. */
@@ -367,17 +368,36 @@ function scoresFor(ballots: readonly Ballot[], id: string): Score[] {
   );
 }
 
-/** Fixes a Proposal's finality and tallies its ballots at its class's bar. */
-function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): Proposal {
-  const final = proposal.closedAt !== null || (relayNow !== null && relayNow >= proposal.deadline);
-  const outcome = tally({
+/** What {@link proposalTally} reads of a Proposal: who could vote, its versions, its ballots and its bar. */
+export type TalliedProposal = Pick<Proposal, 'eligible' | 'versions' | 'ballots' | 'outcome'>;
+
+/** A Proposal's ballots so far, tallied version by version at `bar`. */
+function tallyAt(proposal: Omit<TalliedProposal, 'outcome'>, bar: Bar): TallyDetail {
+  return tallyDetail({
     eligible: proposal.eligible.length,
     versions: proposal.versions.map((v) => ({
       id: v.id,
       scores: scoresFor(proposal.ballots, v.id),
     })),
-    bar: rules.bars[proposal.class],
+    bar,
   });
+}
+
+/**
+ * Tallies a folded Proposal's ballots so far, version by version (spec §5),
+ * at the bar its outcome carries, which its class set: each version's
+ * scorers, sum, zeros and quorum, its pass flags, the bar, and the outcome.
+ * The fold settles every outcome the same way, so the consent meter and the
+ * result, which read this, can never disagree with the fold.
+ */
+export function proposalTally(proposal: TalliedProposal): TallyDetail {
+  return tallyAt(proposal, proposal.outcome.bar);
+}
+
+/** Fixes a Proposal's finality and tallies its ballots at its class's bar. */
+function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): Proposal {
+  const final = proposal.closedAt !== null || (relayNow !== null && relayNow >= proposal.deadline);
+  const { outcome } = tallyAt(proposal, rules.bars[proposal.class]);
   return { ...proposal, final, outcome };
 }
 

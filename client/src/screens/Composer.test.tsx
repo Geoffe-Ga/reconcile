@@ -3,8 +3,14 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createGroup } from '../app/actions';
-import { addVersion, propose, type ProposalValues, type VersionValues } from '../app/proposals';
-import { fold, type GroupState } from '../engine/fold';
+import {
+  addVersion,
+  againDraft,
+  propose,
+  type ProposalValues,
+  type VersionValues,
+} from '../app/proposals';
+import { fold, type GroupState, type Proposal } from '../engine/fold';
 import type { Draft, GroupDrafts } from '../store/drafts';
 import { groupDrafts } from '../store/drafts';
 import { testDevice, type TestDevice } from '../test/appServices';
@@ -12,7 +18,7 @@ import { axeViolations } from '../test/axe';
 import { memoryDrafts } from '../test/drafts';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { groupLog } from '../test/votes';
+import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { Composer, type ComposeOutcome } from './Composer';
 
@@ -31,11 +37,13 @@ interface Setup {
   readonly onPropose?: OnPropose;
   readonly onAddVersion?: OnAddVersion;
   readonly drafts?: GroupDrafts;
+  /** The Proposal being proposed again, from the `again` route. */
+  readonly again?: Proposal;
 }
 
 /** Renders the composer and waits for its draft to be read. */
 async function setup(options: Setup = {}) {
-  const { state, atom = 0, me = authorOf('ana'), onPropose, onAddVersion, drafts } = options;
+  const { state, atom = 0, me = authorOf('ana'), onPropose, onAddVersion, drafts, again } = options;
   const group = state ?? groupLog({ chat: 'https://chat.example.org/riverside' }).state();
   const propose = vi.fn<OnPropose>(onPropose ?? (() => Promise.resolve('proposed')));
   const add = vi.fn<OnAddVersion>(onAddVersion ?? (() => Promise.resolve('added')));
@@ -49,6 +57,7 @@ async function setup(options: Setup = {}) {
       drafts={drafts ?? memory.drafts}
       onPropose={propose}
       onAddVersion={add}
+      {...(again === undefined ? {} : { again })}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
@@ -455,6 +464,81 @@ describe('Composer, adding a version', () => {
     });
     expect(memory.shelf.get(`${state.group ?? ''}.0`)).toEqual(atomDraft);
     expect(memory.drafts.load).toHaveBeenCalledWith(proposal);
+  });
+});
+
+describe('Composer, proposing again', () => {
+  /** Ana proposes with a link, Ben adds a version, and nobody votes, so it lapses at its deadline. */
+  function lapsed() {
+    const log = groupLog({ chat: 'https://chat.example.org/riverside' });
+    const proposalId = log.propose('ana', {
+      title: 'Later quiet hours',
+      why: 'Weekends run late.',
+      text: 'Quiet after 11pm.\n',
+      link: 'https://chat.example.org/later',
+    });
+    log.version('ben', proposalId, 'Quiet after midnight.\n');
+    const state = log.state(deadlineOf(START_MINUTE));
+    const again = state.proposals.find((proposal) => proposal.id === proposalId);
+    if (again === undefined) throw new Error('Expected the Proposal.');
+    return { state, again };
+  }
+
+  it('opens on the same section with the same title, why, link and versions', async () => {
+    const { state, again } = lapsed();
+    await setup({ state, again });
+    expect(screen.getByRole('heading', { level: 1, name: 'Propose again' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Section 1 now reads' })).toHaveTextContent(
+      'Quiet hours start at ten.',
+    );
+    expect(box('Title')).toHaveValue('Later quiet hours');
+    expect(box('Why')).toHaveValue('Weekends run late.');
+    expect(box('New text')).toHaveValue('Quiet after 11pm.\n');
+    expect(box('Discussion link (optional)')).toHaveValue('https://chat.example.org/later');
+    const others = screen.getByRole('region', { name: 'Also on the ballot' });
+    expect(within(others).getByRole('region', { name: 'Version 2' })).toHaveTextContent(
+      'Quiet after midnight.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the entries with the other versions’ texts and the Proposal it repeats', async () => {
+    const { state, again } = lapsed();
+    const { user, onPropose } = await setup({ state, again });
+    await replace(user, 'Title', 'Quiet hours, again');
+    await user.click(submit());
+    expect(onPropose).toHaveBeenCalledWith({
+      atom: again.atom,
+      title: 'Quiet hours, again',
+      why: 'Weekends run late.',
+      text: 'Quiet after 11pm.\n',
+      link: 'https://chat.example.org/later',
+      again: again.id,
+      versions: ['Quiet after midnight.\n'],
+    });
+  });
+
+  it('keeps its draft under the Proposal it repeats, apart from the section’s own', async () => {
+    const { state, again } = lapsed();
+    const memory = memoryDrafts({
+      [again.atom]: { title: 'Another idea', why: 'Why not.', text: 'Quiet.', link: '' },
+    });
+    await setup({ state, again, drafts: memory.drafts });
+    expect(memory.drafts.load).toHaveBeenCalledWith(againDraft(again.id));
+    expect(box('Title')).toHaveValue('Later quiet hours');
+  });
+
+  it('is an ordinary composer for a Proposal that didn’t lapse', async () => {
+    const log = groupLog();
+    const proposalId = log.propose('ana');
+    log.vote('ana', proposalId, 4);
+    log.vote('ben', proposalId, 4);
+    const state = log.state();
+    const passed = state.proposals[0];
+    await setup({ state, ...(passed === undefined ? {} : { again: passed }) });
+    expect(screen.getByRole('heading', { level: 1, name: 'Propose a change' })).toBeVisible();
+    expect(box('Title')).toHaveValue('');
+    expect(proposalId).toBe(passed?.id);
   });
 });
 

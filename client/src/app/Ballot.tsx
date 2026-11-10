@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useId, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useId, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -43,6 +43,8 @@ export interface BallotProps {
   readonly reachable: boolean;
   /** Queues the ballot: a score for every version, and one note. Rejects when it couldn't be saved. */
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
+  /** What goes under each version's pills, such as its consent meter. */
+  readonly below?: (version: VersionView) => ReactNode;
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
@@ -116,24 +118,41 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
   );
 }
 
+/** What the note asks for: a reason for any 0, else what would make a 1 a 3, else anything. */
+type NoteAsk = 'reason' | 'better' | 'note';
+
+const NOTE_LABELS: Readonly<Record<NoteAsk, string>> = {
+  reason: messages.ballot.reasonLabel,
+  better: messages.ballot.betterLabel,
+  note: messages.ballot.noteLabel,
+};
+
+/** A 0 needs a reason (ADR-0002); a 1 with no 0 asks what would make it a 3 (spec §8). */
+function noteAsk(scores: Scores): NoteAsk {
+  const given = Object.values(scores);
+  if (given.includes(0)) return 'reason';
+  return given.includes(1) ? 'better' : 'note';
+}
+
 interface BallotNoteProps {
   readonly note: string;
-  /** Whether any score is 0, which makes the note a required reason. */
-  readonly forZero: boolean;
+  /** What the note asks for; only a reason for a 0 is required. */
+  readonly ask: NoteAsk;
   readonly isDisabled: boolean;
   readonly onChange: (note: string) => void;
 }
 
 /** The ballot's one note, or nothing on a closed ballot that has none. */
-function BallotNote({ note, forZero, isDisabled, onChange }: BallotNoteProps) {
+function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
   if (isDisabled && note.trim() === '') return null;
+  const forZero = ask === 'reason';
   return (
     <Field
       // A fresh field when the reason stops (or starts) being required, so a stale
       // "Add your reason" never lingers until blur and moves Send under the pointer.
       key={forZero ? 'reason' : 'note'}
       name="note"
-      label={forZero ? messages.ballot.reasonLabel : messages.ballot.noteLabel}
+      label={NOTE_LABELS[ask]}
       multiline
       value={note}
       onChange={onChange}
@@ -148,7 +167,8 @@ function BallotNote({ note, forZero, isDisabled, onChange }: BallotNoteProps) {
  * The ballot (DESIGN.md, Ballot; spec §8): every version side by side, each
  * with its word diff and five score pills in a React Aria RadioGroup that
  * always shows each pill's number and label, then one note for the whole
- * ballot, which becomes a required reason when any score is 0 (ADR-0002).
+ * ballot, which becomes a required reason when any score is 0 (ADR-0002) and
+ * asks "What would make this a 3 for you?" when a score is 1 and none is 0.
  * Every version needs a score. Sending again before the close replaces the
  * earlier ballot in full, so a voter whose latest ballot misses a version
  * added since is asked to score it, with their earlier scores kept.
@@ -160,7 +180,8 @@ export function Ballot(props: BallotProps) {
   const { run: vote, running, outcome } = useSaving(props.onVote);
   const hint = useId();
   const scores = scoresOn(versions, chosen);
-  const forZero = Object.values(scores).includes(0);
+  const ask = noteAsk(scores);
+  const forZero = ask === 'reason';
   const complete = Object.keys(scores).length === versions.length;
   const missing = versions.some((version) => !Object.hasOwn(initialScores, version.id));
 
@@ -180,18 +201,21 @@ export function Ballot(props: BallotProps) {
       </p>
       <VersionList versions={versions} current={current}>
         {(version) => (
-          <ScoreGroup
-            version={version}
-            score={scores[version.id]}
-            hint={hint}
-            isDisabled={isDisabled}
-            onChange={(score) => {
-              setChosen((now) => ({ ...now, [version.id]: score }));
-            }}
-          />
+          <>
+            <ScoreGroup
+              version={version}
+              score={scores[version.id]}
+              hint={hint}
+              isDisabled={isDisabled}
+              onChange={(score) => {
+                setChosen((now) => ({ ...now, [version.id]: score }));
+              }}
+            />
+            {props.below?.(version)}
+          </>
         )}
       </VersionList>
-      <BallotNote note={note} forZero={forZero} isDisabled={isDisabled} onChange={setNote} />
+      <BallotNote note={note} ask={ask} isDisabled={isDisabled} onChange={setNote} />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.ballot.failed}

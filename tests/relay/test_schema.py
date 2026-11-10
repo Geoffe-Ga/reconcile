@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from reconcile.relay.store import BlobStore
+from reconcile.relay.store import MAILBOX_BYTES_SQL, BlobStore
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -126,6 +126,36 @@ def test_blobs_is_indexed_by_mailbox_then_seq_and_by_expiry(
     }
 
     assert {("mailbox", "seq"), ("expiry",)} <= indexed
+
+
+def test_mailbox_bytes_counts_one_mailbox_s_unexpired_blobs(store: BlobStore) -> None:
+    """The cap counts a mailbox's blobs until their expiry day, and no one else's."""
+    mine, other = "A" * 43, "B" * 43
+    store.append(mine, b"\x01" * 1024, received=1, expiry=11)
+    store.append(mine, b"\x01" * 4096, received=1, expiry=12)
+    store.append(other, b"\x01" * 16384, received=1, expiry=12)
+
+    assert store.mailbox_bytes(mine, today=10) == 5120
+    assert store.mailbox_bytes(mine, today=11) == 4096
+    assert store.mailbox_bytes(mine, today=12) == 0
+    assert store.mailbox_bytes("C" * 43, today=0) == 0
+
+
+def test_mailbox_bytes_reads_an_index_and_no_blob(db: sqlite3.Connection) -> None:
+    """The cap's sum reads ``blobs_by_mailbox_size`` and never a ``blobs`` row (#141).
+
+    Through ``(mailbox, seq)`` it read every row of the mailbox: about 90 ms a
+    PUT once a mailbox held 64 MiB of 1 KiB blobs, against about 6 ms here
+    (SQLite 3.45, as on Ubuntu 24.04). The program opens ``blobs`` for a
+    deferred seek, but no ``Column`` op reads it. The query plan's text
+    can't show this: only newer SQLite labels the index "COVERING".
+    """
+    roots = dict(db.execute("SELECT rootpage, name FROM sqlite_master"))
+    program = db.execute("EXPLAIN " + MAILBOX_BYTES_SQL, ("A" * 43, 0)).fetchall()
+    opened = {row[2]: roots[row[3]] for row in program if row[1] == "OpenRead"}
+    read = {opened[row[2]] for row in program if row[1] == "Column"}
+
+    assert read == {"blobs_by_mailbox_size"}
 
 
 def test_the_database_is_in_wal_mode(db: sqlite3.Connection) -> None:
