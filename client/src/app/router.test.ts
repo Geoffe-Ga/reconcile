@@ -27,6 +27,19 @@ describe('parseRoute', () => {
     [`#/g/${GROUP}/steward/1`, { name: 'steward', groupId: GROUP, seat: 1, recall: false }],
     [`#/g/${GROUP}/steward/2`, { name: 'steward', groupId: GROUP, seat: 2, recall: false }],
     [`#/g/${GROUP}/recall/1`, { name: 'steward', groupId: GROUP, seat: 1, recall: true }],
+    [`#/g/${GROUP}/rules`, { name: 'rules', groupId: GROUP }],
+    [
+      `#/g/${GROUP}/rules/chatBot`,
+      { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: false },
+    ],
+    [
+      `#/g/${GROUP}/rules/frontDoor`,
+      { name: 'optIn', groupId: GROUP, optIn: 'frontDoor', narrow: false },
+    ],
+    [
+      `#/g/${GROUP}/narrow/chatBot`,
+      { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
+    ],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -56,6 +69,11 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/steward/01`,
     `#/g/${GROUP}/recall/x`,
     `#/g/${GROUP}/steward/1/extra`,
+    `#/g/${GROUP}/rules/signalBot`,
+    `#/g/${GROUP}/rules/chatbot`,
+    `#/g/${GROUP}/rules/chatBot/extra`,
+    `#/g/${GROUP}/narrow`,
+    `#/g/${GROUP}/narrow/toString`,
     '#/join/',
     'create',
   ])('sends the unknown %j to Start', (hash) => {
@@ -76,6 +94,15 @@ describe('routeHref', () => {
     [{ name: 'again', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/again/${PROPOSAL}`],
     [{ name: 'steward', groupId: GROUP, seat: 2, recall: false }, `#/g/${GROUP}/steward/2`],
     [{ name: 'steward', groupId: GROUP, seat: 1, recall: true }, `#/g/${GROUP}/recall/1`],
+    [{ name: 'rules', groupId: GROUP }, `#/g/${GROUP}/rules`],
+    [
+      { name: 'optIn', groupId: GROUP, optIn: 'frontDoor', narrow: false },
+      `#/g/${GROUP}/rules/frontDoor`,
+    ],
+    [
+      { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
+      `#/g/${GROUP}/narrow/chatBot`,
+    ],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);
