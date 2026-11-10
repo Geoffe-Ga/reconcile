@@ -18,6 +18,8 @@ import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import { LinkNewDevice } from '../screens/LinkNewDevice';
+import { LinkThisDevice } from '../screens/LinkThisDevice';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
@@ -32,6 +34,8 @@ import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Group, Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
+import type { LinkCode } from '../crypto/link';
+import { joinLink, offerLink } from '../link/session';
 import { newPersonalId } from '../store/personal';
 import {
   createGroup,
@@ -73,6 +77,7 @@ import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { useRelayBackupStatus } from './useRelayBackup';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -119,12 +124,16 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
   return { groupId: group.groupId, name: state.name, on: group.push !== undefined };
 }
 
-/** Settings (#78, #99): Notifications, Save a backup, Restore a backup, and Erase. */
+/**
+ * Settings (#78, #96, #99): Notifications, Save a backup with the relay
+ * backup's line (#97), Restore a backup, Link a new device, and Erase.
+ */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
+  const relayBackup = useRelayBackupStatus(services.store);
   const { push } = services;
-  return groups === null || switches === null ? null : (
+  return groups === null || switches === null || relayBackup === null ? null : (
     <Settings
       notify={{
         availability: push.availability(),
@@ -133,6 +142,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
         onTurnOff: (groupId) => push.turnOff(groupId),
       }}
       hasGroups={groups.length > 0}
+      relayBackup={relayBackup}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
@@ -162,6 +172,21 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
   return (
     <PersonalDocument id={id} documents={services.store} now={services.now} onDeleted={onDeleted} />
   );
+}
+
+/** Link a new device (#96), on the existing device: a fresh code each time it opens. */
+function LinkNewScreen({ services }: { readonly services: AppServices }) {
+  const start = useCallback(() => offerLink(services), [services]);
+  return <LinkNewDevice start={start} copyText={services.copyText} />;
+}
+
+/** Link to my other device (#96), on the new device: syncs once the groups are in. */
+function LinkThisScreen({ services }: { readonly services: AppServices }) {
+  const join = useCallback((code: LinkCode) => joinLink(services, code), [services]);
+  const onLinked = useCallback(() => {
+    void services.sync.syncOnce();
+  }, [services]);
+  return <LinkThisDevice join={join} onLinked={onLinked} />;
 }
 
 interface CreateScreenProps {
@@ -661,6 +686,10 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
     case 'join':
       return (
         <JoinScreen

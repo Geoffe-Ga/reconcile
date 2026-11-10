@@ -27,6 +27,7 @@ import { containsBytes, scanDb } from '../test/scanDb';
 import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import type { PersonalDocument } from './personal';
+import { fetchRelayBackup, startRelayBackup } from './relayBackup';
 import { encodeSnapshot, exportGroups, importGroups } from './snapshot';
 import { createSync, type Sync } from './sync';
 
@@ -495,6 +496,31 @@ describe('a dissolved group and backup files (#78)', () => {
     expect((await store.getGroup(group.genesis.id))?.archived).toEqual({ reason: 'dissolved' });
 
     expect((await exportGroups(store, PASSPHRASE, CHEAP)).groupIds).toEqual([]);
+  });
+
+  it('leaves the read-only copy out of the relay backup too (#97)', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events, last } = history(group, false);
+    const { store, sync } = await openDevice(fake.fetch);
+    const relay = createRelay({ fetch: fake.fetch });
+    const services = { store, relay, now: () => TS };
+    await keep(store, sync, group, [...events, last]);
+    await startRelayBackup(services);
+    const key = (await store.getRelayBackup())?.key ?? never();
+    const groupsIn = async () =>
+      (
+        JSON.parse(new TextDecoder().decode((await fetchRelayBackup(relay, key)) ?? never())) as {
+          groups: { groupId: string }[];
+        }
+      ).groups.map(({ groupId }) => groupId);
+    expect(await groupsIn()).toEqual([group.genesis.id]);
+
+    fake.minute = DISSOLVED;
+    expect(await sync.syncOnce()).toBe(true);
+    await startRelayBackup(services);
+
+    expect(await groupsIn()).toEqual([]);
   });
 
   it('keeps the read-only copy when a file holds the group live and synced later', async () => {

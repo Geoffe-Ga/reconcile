@@ -136,6 +136,13 @@
   margin-inline-start: 0;
 }
 
+/* Settings' line on the relay backup (#97): plain words, no semantic color. */
+.relay-backup {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
 /* The chosen backup file's name, which may be anything the person's device called it. */
 .restore-file {
   color: var(--body);
