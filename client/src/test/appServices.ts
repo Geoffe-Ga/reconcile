@@ -1,7 +1,9 @@
 /**
  * One device's `AppServices` for tests: its own IndexedDB database on the
- * shared fake-indexeddb, a relay client on a shared fake relay, and a chat
- * bot (#119) that posts to that fake's Discord endpoint, never the network.
+ * shared fake-indexeddb, a relay client on a shared fake relay, a chat bot
+ * (#119) that posts to that fake's Discord endpoint, never the network,
+ * push (#99) over a fake browser whose permission starts unasked, and the
+ * relay backup's daily refresh after each complete pass (#97).
  */
 import { vi } from 'vitest';
 
@@ -9,21 +11,33 @@ import { botNotice } from '../app/chatMessages';
 import type { AppServices } from '../app/services';
 import { xchachaSeal } from '../crypto/seal';
 import { postWebhook } from '../net/discord';
+import { createPushRelay } from '../net/push';
 import { createRelay } from '../net/relay';
+import { browserPushPort } from '../platform/pushPort';
 import { createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
+import type { MailboxAt } from '../store/mailbox';
+import { createPush } from '../store/push';
 import { refreshRelayBackup } from '../store/relayBackup';
 import { createSync } from '../store/sync';
+import { fakePushBrowser, type FakePushBrowser } from './fakePush';
 import type { FakeRelay } from './fakeRelay';
 
 /** The app's origin in tests. */
 export const TEST_ORIGIN = 'https://reconcile.test';
 
-/** A test device: its services, every text it copied, and every file it downloaded. */
+/** A test device: its services, every text it copied, every file it downloaded, and its browser's push. */
 export interface TestDevice {
   readonly services: AppServices;
   readonly copied: string[];
   readonly downloaded: File[];
+  readonly push: FakePushBrowser;
+}
+
+/** What a test may change about a device. */
+export interface TestDeviceOptions {
+  /** A group's mailbox at a relay minute, for push (#99): the store's own unless a test stubs it. */
+  readonly mailboxAt?: MailboxAt;
 }
 
 /** The device clock tests start at, in milliseconds. */
@@ -40,6 +54,7 @@ export async function testDevice(
   fake: FakeRelay,
   name: string,
   clock: () => number = () => TEST_NOW,
+  options: TestDeviceOptions = {},
 ): Promise<TestDevice> {
   const store = await openStore(name);
   const relay = createRelay({ fetch: fake.fetch });
@@ -50,9 +65,25 @@ export async function testDevice(
     notice: botNotice(TEST_ORIGIN, 'UTC'),
     clock: now,
   });
+  const browser = fakePushBrowser();
+  const push = createPush({
+    store,
+    relay: createPushRelay({ fetch: fake.fetch }),
+    port: browserPushPort(browser.environment),
+    clock: now,
+    ...(options.mailboxAt === undefined ? {} : { mailboxAt: options.mailboxAt }),
+  });
   // As in main.tsx, the relay backup refreshes after each complete pass (#97).
   const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
-  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot, afterPass });
+  const sync = createSync({
+    store,
+    relay,
+    seal: xchachaSeal,
+    clock: now,
+    chatBot,
+    push,
+    afterPass,
+  });
   const copied: string[] = [];
   const copyText = vi.fn(async (text: string | Promise<string>) => {
     copied.push(await text);
@@ -78,6 +109,7 @@ export async function testDevice(
       },
     },
     erase: vi.fn(() => Promise.resolve()),
+    push,
   };
-  return { services, copied, downloaded };
+  return { services, copied, downloaded, push: browser };
 }

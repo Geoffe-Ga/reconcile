@@ -30,10 +30,27 @@ export interface RelayPage {
   instance: string;
 }
 
+/** How a blob goes to its mailbox. */
+export interface PutOptions {
+  /**
+   * Ask the relay to wake the mailbox's push endpoints (`wake=1`, #89): set
+   * for a new Proposal and for a ballot that closes one early (#99).
+   */
+  readonly wake?: boolean;
+}
+
 /** The calls the app makes to a mailbox, and to the relay backup (#97). */
 export interface Relay {
-  /** Store `blob` in `mailbox`, kept `ttlDays` (the relay's default is 30), and return its seq. */
-  putBlob(mailbox: string, blob: Uint8Array<ArrayBuffer>, ttlDays?: number): Promise<number>;
+  /**
+   * Store `blob` in `mailbox`, kept `ttlDays` (the relay's default is 30), and
+   * return its seq. With `wake`, the relay wakes the mailbox's phones too.
+   */
+  putBlob(
+    mailbox: string,
+    blob: Uint8Array<ArrayBuffer>,
+    ttlDays?: number,
+    options?: PutOptions,
+  ): Promise<number>;
   /** Every record in `mailbox` after seq `after`, paging until a page comes back short. */
   getBlobs(mailbox: string, after: number): Promise<RelayPage>;
   /** Keep `blob` as the backup `backup`, replacing any earlier one; resolves on the relay's 204. */
@@ -70,14 +87,14 @@ const ERROR_CODE = /^[a-z_]{1,40}$/;
 const OCTET_STREAM = 'application/octet-stream';
 
 /** What every request sends: no cookies, no referrer, and no HTTP cache. */
-const PRIVATE: RequestInit = {
+export const PRIVATE: RequestInit = {
   credentials: 'omit',
   referrerPolicy: 'no-referrer',
   cache: 'no-store',
 };
 
 /** The browser's `fetch`, called unbound so it never sees a foreign `this`. */
-const browserFetch: Fetch = (input, init) => fetch(input, init);
+export const browserFetch: Fetch = (input, init) => fetch(input, init);
 
 /** A client for the relay at `baseUrl`. */
 export function createRelay({
@@ -91,8 +108,13 @@ export function createRelay({
     mailbox: string,
     blob: Uint8Array<ArrayBuffer>,
     ttlDays?: number,
+    options: PutOptions = {},
   ): Promise<number> {
-    const query = ttlDays === undefined ? '' : `?ttl_days=${String(ttlDays)}`;
+    const params = [
+      ...(ttlDays === undefined ? [] : [`ttl_days=${String(ttlDays)}`]),
+      ...(options.wake === true ? ['wake=1'] : []),
+    ];
+    const query = params.length === 0 ? '' : `?${params.join('&')}`;
     const response = await send(mailboxUrl(mailbox) + query, {
       ...PRIVATE,
       method: 'PUT',
@@ -151,7 +173,7 @@ export function createRelay({
 }
 
 /** `mailbox`, if it is 43 base64url characters; anything else could rewrite the URL. */
-function checkMailbox(mailbox: string): string {
+export function checkMailbox(mailbox: string): string {
   if (!MAILBOX_ID.test(mailbox)) {
     throw new RangeError('A mailbox id is 43 base64url characters.');
   }
@@ -188,7 +210,7 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 /** The relay's `{"error": code}`, or `http_<status>` when the body has none. */
-function errorCode(body: unknown, status: number): string {
+export function errorCode(body: unknown, status: number): string {
   if (isObject(body) && typeof body.error === 'string' && ERROR_CODE.test(body.error)) {
     return body.error;
   }

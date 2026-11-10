@@ -5,13 +5,17 @@
  * An envelope is a header blob, then one blob per chunk, each sealed under the
  * invite key (`crypto/invite.ts`) with the `Seal` the group's own blobs use.
  *
- * - The header is JSON `{groupSecret, preview, token, chunkCount}`: the group
- *   secret in base64url, the preview a joiner sees before choosing a name
- *   (ADR-0052), the inviter's token, and how many chunks follow. Every preview
- *   field is cut to a limit, so the header always fits one small blob.
- * - Each chunk packs log entries, `seq (8 bytes) ‖ received (8) ‖ length (4) ‖
- *   record`, big-endian, up to the 65,492 bytes a blob carries. `received`
- *   travels with each record because vote deadlines run on it.
+ * - The header is JSON `{groupSecret, epoch, preview, token, chunkCount}`: the
+ *   group's current secret in base64url and its epoch (#98), the preview a
+ *   joiner sees before choosing a name (ADR-0052), the inviter's token, and
+ *   how many chunks follow. Every preview field is cut to a limit, so the
+ *   header always fits one small blob.
+ * - Each chunk packs log entries, `seq (8 bytes) ‖ received (8) ‖ epoch (4) ‖
+ *   length (4) ‖ record`, big-endian, up to the 65,492 bytes a blob carries.
+ *   `received` travels with each record because vote deadlines run on it, and
+ *   `epoch`, the epoch of the mailbox it was read from, because the fold
+ *   ignores a record read from an epoch's mailbox after its key changed (#98).
+ *   An invite made before #98 has no epoch, and reads as damaged.
  *
  * Opening is all or nothing: an empty mailbox, a missing or extra blob, a blob
  * that won't open, or a header or chunk that doesn't parse all read as one
@@ -42,6 +46,8 @@ export interface InvitePreview {
 export interface Envelope {
   /** The 32-byte group secret, from which the joiner derives the group's mailbox and seal key. */
   readonly groupSecret: Uint8Array;
+  /** The epoch of that secret (#98): 0 until the group's key first changes. */
+  readonly epoch: number;
   /** The preview the Join screen shows. */
   readonly preview: InvitePreview;
   /** The inviter's token, which the joiner carries in their `join`. */
@@ -72,8 +78,11 @@ export const EXCERPT_MAX = 280;
 /** What a cut field ends with. */
 export const ELLIPSIS = '…';
 
-/** The bytes before each record in a chunk: seq (8), received (8) and length (4). */
-export const ENTRY_HEADER_BYTES = 20;
+/** The bytes before each record in a chunk: seq (8), received (8), epoch (4) and length (4). */
+export const ENTRY_HEADER_BYTES = 24;
+
+/** The largest epoch: a u32 carries it. */
+const MAX_EPOCH = 0xffff_ffff;
 
 /** The largest record a chunk can carry beside its entry header. Every record a device makes fits. */
 const MAX_ENTRY_RECORD = MAX_PLAINTEXT_BYTES - ENTRY_HEADER_BYTES;
@@ -92,13 +101,14 @@ export function clip(text: string, max: number): string {
   return points.length <= max ? text : `${points.slice(0, max).join('').trimEnd()}${ELLIPSIS}`;
 }
 
-/** One entry's bytes: seq ‖ received ‖ length ‖ record. */
-function entryBytes({ seq, received, bytes }: LogRecord): Uint8Array {
+/** One entry's bytes: seq ‖ received ‖ epoch ‖ length ‖ record. */
+function entryBytes({ seq, received, bytes, epoch = 0 }: LogRecord): Uint8Array {
   const out = new Uint8Array(ENTRY_HEADER_BYTES + bytes.length);
   const view = new DataView(out.buffer);
   view.setBigUint64(0, BigInt(seq));
   view.setBigUint64(8, BigInt(received));
-  view.setUint32(16, bytes.length);
+  view.setUint32(16, epoch);
+  view.setUint32(20, bytes.length);
   out.set(bytes, ENTRY_HEADER_BYTES);
   return out;
 }
@@ -150,13 +160,16 @@ function readEntry(chunk: Uint8Array, at: number): { entry: LogRecord; next: num
   const view = new DataView(chunk.buffer, chunk.byteOffset + at, ENTRY_HEADER_BYTES);
   const seq = safe(view.getBigUint64(0));
   const received = safe(view.getBigUint64(8));
-  const length = view.getUint32(16);
+  const epoch = view.getUint32(16);
+  const length = view.getUint32(20);
   const start = at + ENTRY_HEADER_BYTES;
   const next = start + length;
   if (seq === null || seq < 1 || received === null || length < 1 || next > chunk.length) {
     return null;
   }
-  return { entry: { seq, received, bytes: chunk.slice(start, next) }, next };
+  // The log keeps epoch 0 as no epoch at all, as it always has.
+  const bytes = chunk.slice(start, next);
+  return { entry: { seq, received, bytes, ...(epoch === 0 ? {} : { epoch }) }, next };
 }
 
 /** The entries packed in `chunk`, or null when it is empty or any entry doesn't parse. */
@@ -174,10 +187,11 @@ export function unpackChunk(chunk: Uint8Array): LogRecord[] | null {
 
 /** The header's JSON bytes, each preview field cut to its limit. */
 export function encodeHeader(header: InviteHeader): Uint8Array {
-  const { groupSecret, preview, token, chunkCount } = header;
+  const { groupSecret, epoch, preview, token, chunkCount } = header;
   return encoder.encode(
     JSON.stringify({
       groupSecret: base64url(groupSecret),
+      epoch,
       preview: {
         groupName: clip(preview.groupName, NAME_MAX),
         inviterName: clip(preview.inviterName, NAME_MAX),
@@ -244,12 +258,17 @@ export function decodeHeader(bytes: Uint8Array): InviteHeader | null {
   const groupSecret = parseSecret(raw.groupSecret);
   const preview = parsePreview(raw.preview);
   const token = parseToken(raw.token);
-  const { chunkCount } = raw;
-  if (groupSecret === null || preview === null || token === null) return null;
+  const { chunkCount, epoch } = raw;
+  if (groupSecret === null || preview === null || token === null || !isEpoch(epoch)) return null;
   if (!Number.isSafeInteger(chunkCount) || typeof chunkCount !== 'number' || chunkCount < 1) {
     return null;
   }
-  return { groupSecret, preview, token, chunkCount };
+  return { groupSecret, epoch, preview, token, chunkCount };
+}
+
+/** Whether `value` is an epoch: a whole number a u32 holds. */
+function isEpoch(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_EPOCH;
 }
 
 /** The envelope's blobs, in the order they're posted: the header, then each chunk. */
@@ -288,6 +307,6 @@ export function openEnvelope(
     if (read === null) return null;
     entries.push(...read);
   }
-  const { groupSecret, preview, token } = header;
-  return { groupSecret, preview, token, entries };
+  const { groupSecret, epoch, preview, token } = header;
+  return { groupSecret, epoch, preview, token, entries };
 }

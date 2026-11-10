@@ -24,6 +24,8 @@ colors:
   negative: "#b3362a"
   negative-soft: "#f5ddd5" # tint under deleted words in a word diff (ink on it: 13.1:1)
   scrim: "#1d1c1973"       # ink at 45%: behind a modal dialog, and its one soft shadow
+  qr-dark: "#1d1c19"       # a linking code's modules (#96): light ink, in both themes
+  qr-light: "#fffdf8"      # its ground and quiet zone: light surface, in both themes
   # Ballot scale 0–4 (diverging; always paired with the number and label)
   score-0: "#b3362a"
   score-1: "#a85a35"
@@ -51,6 +53,8 @@ colors-dark:
   negative: "#e0705f"
   negative-soft: "#402a22" # ink on it: 11.4:1
   scrim: "#0a0a07b3"       # near-black at 70%: dark in both themes, never a light wash
+  qr-dark: "#1d1c19"       # unchanged in dark: a camera reads dark modules on light
+  qr-light: "#fffdf8"
   score-0: "#e0705f"
   score-1: "#d9946a"
   score-2: "#a39d8f"
@@ -174,10 +178,19 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - The outcome sentence comes first.
   - Totals come next.
   - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
+- **Notification switches** (Settings, #99): the disclosure first, as plain body text, then one React Aria switch per group, "Notify me about <group>", all off to start.
+  - Each switch is a card on `surface` with a `hairline` border, and a tap anywhere on it toggles it. The track sits at the row's end, at least a 44px target with the card.
+  - Off: a `muted` ring with a `muted` thumb at the start. On: the track fills `primary` and the thumb, in `surface`, moves to the end, so the state never rests on color alone.
+  - Why one didn't turn on ("Notifications are blocked…", "This device can't get notifications…") is one line in `body`, never an alert color.
 - **Erase card** (Settings): one card, "Erase Reconcile from this device", in the same calm style as any setting.
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.
   - No skulls, no red banners, no "stealth" language.
+- **Linking code** (#96): the code a second device scans.
+  - An inline SVG of the QR modules, `qr-dark` on `qr-light` in both themes, with a 4-module quiet zone, a `hairline` border and `md` corners. Never a `data:` image (the CSP refuses one) or a light-on-dark code, which many cameras can't read.
+  - Beside it on wide screens, under it on phones, the same code as selectable `mono` text on `sunken`, which selects as a whole, and Copy the code (secondary).
+  - The six-digit number both devices show sits in a `surface` card with a `hairline` border: the prompt (heading-3), then the digits in two groups of three, in JetBrains Mono at `display` size.
+  - Match is the one primary action on the existing device. The new device shows the number with only Cancel.
 - **Gift prompt** (ADR-0025):
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line

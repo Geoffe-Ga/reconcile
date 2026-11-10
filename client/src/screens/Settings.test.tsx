@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,12 @@ import { Settings, type SettingsProps } from './Settings';
 
 function setup(props: Partial<SettingsProps> = {}) {
   const all: SettingsProps = {
+    notify: {
+      availability: 'ready',
+      groups: [{ groupId: 'g1', name: 'Riverside Tenants', on: false }],
+      onTurnOn: vi.fn(() => Promise.resolve('on' as const)),
+      onTurnOff: vi.fn(() => Promise.resolve()),
+    },
     hasGroups: true,
     onMake: vi.fn(() => Promise.reject(new Error('unused'))),
     onSave: vi.fn(() => Promise.resolve('downloaded' as const)),
@@ -38,6 +44,37 @@ describe('Settings', () => {
       within(erase).getByRole('button', { name: 'Erase Reconcile from this device' }),
     ).toHaveAttribute('aria-expanded', 'false');
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Link a new device under its heading, which opens the linking screen (#96)', async () => {
+    setup();
+
+    const link = screen.getByRole('region', { name: 'Link a new device' });
+    expect(link).toHaveTextContent(
+      'Use your groups on a laptop or a second phone. This device shows a code, the new one scans it, and both show a number for you to check before anything is sent.',
+    );
+    expect(within(link).getByRole('link', { name: 'Link a new device' })).toHaveAttribute(
+      'href',
+      '#/link-new',
+    );
+    // Linking comes after the backup and before Erase, with Notifications (#99) first.
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Notifications',
+      'Back up your groups',
+      'Restore a backup',
+      'Link a new device',
+      'Erase this device',
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says there is nothing to link on a device with no groups, and offers no link (#96)', () => {
+    setup({ hasGroups: false });
+
+    const link = screen.getByRole('region', { name: 'Link a new device' });
+    expect(link).toHaveTextContent('There are no groups on this device to link yet.');
+    expect(within(link).queryByRole('link')).not.toBeInTheDocument();
   });
 
   it('reveals what Erase does and the press-and-hold, the only negative control, and Cancel hides them', async () => {
@@ -79,7 +116,9 @@ describe('Settings’ relay backup line (#97)', () => {
   it('says nothing of a relay backup while the device keeps none', () => {
     setup({ relayBackup: { kind: 'off' } });
 
-    expect(screen.queryByText(/relay/)).not.toBeInTheDocument();
+    // Scoped to the backup: Notifications' disclosure speaks of the relay too (#99).
+    const section = screen.getByRole('region', { name: 'Back up your groups' });
+    expect(within(section).queryByText(/relay/)).not.toBeInTheDocument();
   });
 
   it.each([
@@ -98,5 +137,64 @@ describe('Settings’ relay backup line (#97)', () => {
     const section = screen.getByRole('region', { name: 'Back up your groups' });
     expect(within(section).getByText(words)).toHaveAttribute('role', 'status');
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('Settings › Notifications (#99)', () => {
+  const notify = (overrides: Partial<SettingsProps['notify']> = {}): SettingsProps['notify'] => ({
+    availability: 'ready',
+    groups: [{ groupId: 'g1', name: 'Riverside Tenants', on: true }],
+    onTurnOn: vi.fn(() => Promise.resolve('failed' as const)),
+    onTurnOff: vi.fn(() => Promise.resolve()),
+    ...overrides,
+  });
+
+  it('says a turn-on didn’t reach the relay, and that a turn-off failed', async () => {
+    const off = notify({ onTurnOff: vi.fn(() => Promise.reject(new Error('closed'))) });
+    const { user } = setup({ notify: off });
+
+    await user.click(screen.getByRole('switch', { name: 'Notify me about Riverside Tenants' }));
+
+    expect(
+      await screen.findByText(
+        'That didn’t reach the relay, so nothing changed. Try again when you’re online.',
+      ),
+    ).toBeVisible();
+    expect(off.onTurnOff).toHaveBeenCalledWith('g1');
+  });
+
+  it('shows each group’s switch as the store holds it, and none for no groups', async () => {
+    setup({ notify: notify({ groups: [] }) });
+
+    expect(
+      screen.getByText('Once you’re in a group, you can turn on its notifications here.'),
+    ).toBeVisible();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('turns on through onTurnOn, holding the switch still until it answers', async () => {
+    let answer: (outcome: 'failed') => void = () => undefined;
+    const pending = notify({
+      groups: [{ groupId: 'g1', name: 'Riverside Tenants', on: false }],
+      onTurnOn: vi.fn(
+        () =>
+          new Promise<'failed'>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+    });
+    const { user } = setup({ notify: pending });
+    const toggle = screen.getByRole('switch', { name: 'Notify me about Riverside Tenants' });
+
+    await user.click(toggle);
+
+    expect(pending.onTurnOn).toHaveBeenCalledWith('g1');
+    expect(toggle).toBeDisabled();
+    expect(toggle).not.toBeChecked();
+    answer('failed');
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
   });
 });

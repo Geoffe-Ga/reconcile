@@ -1,9 +1,9 @@
 /**
  * Leave this group (#77; ADR-0010: exit is always possible): a button on
  * People that opens an alert dialog ({@link ConfirmDialog}), which says
- * plainly what leaving does and doesn't do before anything is queued. Under
- * ADR-0073, keys don't rotate, and the dialog says so until #98 replaces its
- * last sentence.
+ * plainly what leaving does and doesn't do before anything is queued. Its
+ * last sentence says the group gets a new key when someone leaves (#98), so
+ * neither this device nor a backup reads what comes next.
  */
 import { ConfirmDialog } from './ConfirmDialog';
 import { messages } from './messages';

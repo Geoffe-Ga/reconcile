@@ -1,8 +1,106 @@
 /*
- * Settings, the backup card and Erase (#78), from tokens.css (DESIGN.md).
- * Safety stays quiet: the backup card is an inline card, never a modal, and
- * `negative` appears only on Erase's final press-and-hold confirm.
+ * Settings: Notifications (#99), the backup card and Erase (#78), from
+ * tokens.css (DESIGN.md). Safety stays quiet: the backup card is an inline
+ * card, never a modal, and `negative` appears only on Erase's final
+ * press-and-hold confirm.
  */
+
+/* Notifications: one switch per group, each a card whose whole row toggles it. */
+.notify-list {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 30rem;
+  padding: 0;
+  list-style: none;
+}
+
+.notify-switch {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  align-items: center;
+  min-height: var(--touch);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.notify-switch:hover {
+  border-color: var(--muted);
+}
+
+.notify-switch[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.notify-switch[data-disabled] {
+  cursor: progress;
+}
+
+/* A group's name is whatever its founder typed, so it may need to break anywhere. */
+.notify-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The track and thumb: the thumb's side says on or off, so the state never rests on color.
+ * muted on surface is 4.6:1 or more and primary on surface well past 3:1, in both themes. */
+.switch-track {
+  flex: none;
+  display: flex;
+  align-items: center;
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border: 2px solid var(--muted);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+}
+
+.switch-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  transition: transform 120ms ease-out;
+}
+
+.notify-switch[data-selected] .switch-track {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.notify-switch[data-selected] .switch-thumb {
+  background: var(--surface);
+  transform: translateX(14px);
+}
+
+:dir(rtl) .notify-switch[data-selected] .switch-thumb {
+  transform: translateX(-14px);
+}
+
+.notify-switch[data-disabled] .switch-track {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-thumb {
+    transition: none;
+  }
+}
+
+/* Why a switch didn't turn on, or why the device can't: plain words, never alarm. The
+ * live region stays in the page while empty, so a screen reader hears it when it fills. */
+.notify-note {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
 
 /* Group home's suggestion, quiet and inline, between the open Proposals and the Document.
  * Its row lines the card up with the sections' content column, as .section does. */

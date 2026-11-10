@@ -242,8 +242,9 @@ describe('the relay backup key in the file (#97, ADR-0075 §4)', () => {
     go('#/settings');
     const app = mount(ben, 'b');
 
-    await app.findByRole('region', { name: 'Back up your groups' });
+    const section = await app.findByRole('region', { name: 'Back up your groups' });
 
-    expect(app.queryByText(/relay/)).not.toBeInTheDocument();
+    // Scoped to the backup: Notifications' disclosure speaks of the relay too (#99).
+    expect(within(section).queryByText(/relay/)).not.toBeInTheDocument();
   });
 });

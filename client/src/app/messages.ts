@@ -38,6 +38,8 @@ export const messages = {
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
     leaving: 'Leaving…',
     restoreHeading: 'Have a backup file?',
+    linkHeading: 'Have Reconcile on another device?',
+    link: 'Link to my other device',
     settings: 'Settings',
     personal: 'Personal',
     personalHint: 'Your mission statement and other Documents of your own, on this device only.',
@@ -209,6 +211,11 @@ export const messages = {
     copyFailed: 'Copying is blocked here. Select the link above and copy it yourself.',
     missingHistory:
       'Some history may be missing on this device. Open a new invite link from your group to catch up.',
+    /** When the group's key changed after this membership left on another device (#98). */
+    keyLeft: 'You left this group on another device.',
+    /** When the group's key changed and this device has no wrap that opens (#98). */
+    keyMissed:
+      'This group’s key changed and this device didn’t get the new one. Ask someone in the group for a new invite link.',
     joinDiscussion: 'Join discussion',
     discussion: 'Discussion',
     unreachable: 'Can’t reach the relay right now.',
@@ -376,7 +383,7 @@ export const messages = {
   leave: {
     open: 'Leave this group',
     title: 'Leave this group?',
-    body: 'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    body: 'Leaving removes this group from this device. Others keep what they already have. When you leave, the group gets a new key, so this device and any backup can’t read what comes next.',
     confirm: 'Leave this group',
     cancel: 'Cancel',
     failed: 'Leaving couldn’t be saved on this device. Try again.',
@@ -762,9 +769,26 @@ export const messages = {
   settings: {
     pageTitle: 'Settings',
     title: 'Settings',
+    notifyHeading: 'Notifications',
     backupHeading: 'Back up your groups',
     restoreHeading: 'Restore a backup',
+    linkHeading: 'Link a new device',
     eraseHeading: 'Erase this device',
+  },
+  /**
+   * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows
+   * `somethingNew`: no group, name, text, id or count. The disclosure comes
+   * before any switch, and says plainly what the relay and Apple or Google see.
+   */
+  push: {
+    somethingNew: 'Something new in Reconcile',
+    disclosure:
+      'Notifications only ever say “Something new in Reconcile.” To send them, the relay keeps this phone’s push address for each group you turn on, for up to 30 days. That lets whoever runs the relay see that the same phone is in each of those groups. Apple or Google can see when this phone is woken. Notifications may show on your lock screen and a paired watch.',
+    notify: (group: string) => `Notify me about ${group}`,
+    blocked: 'Notifications are blocked for Reconcile in this device’s settings.',
+    unavailable: 'This device can’t get notifications from Reconcile.',
+    failed: 'That didn’t reach the relay, so nothing changed. Try again when you’re online.',
+    none: 'Once you’re in a group, you can turn on its notifications here.',
   },
   backup: {
     lede: 'One file holds every group on this device, with the keys and the name you use in each, and your personal Documents. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
@@ -819,6 +843,70 @@ export const messages = {
       `Press and hold for ${count(seconds)} seconds. On a keyboard, hold Space or Enter.`,
     holding: (left: number) =>
       left === 1 ? 'Keep holding: 1 second left.' : `Keep holding: ${count(left)} seconds left.`,
+  },
+  /**
+   * Linking a second device (#96; ADR-0044 as cut by ADR-0074): the existing
+   * device shows a code, the new one scans or pastes it, both show a number,
+   * and only the existing device confirms.
+   */
+  link: {
+    lede: 'Use your groups on a laptop or a second phone. This device shows a code, the new one scans it, and both show a number for you to check before anything is sent.',
+    open: 'Link a new device',
+    none: 'There are no groups on this device to link yet.',
+    // The existing device.
+    newPageTitle: 'Link a new device',
+    newTitle: 'Link a new device',
+    newLede:
+      'On your new device, open Reconcile and tap Link to my other device. Then scan this code, or paste it there.',
+    qrLabel: 'Linking code',
+    codeText: 'The same code as text',
+    copy: 'Copy the code',
+    copied: 'Copied. Paste it on your new device.',
+    copyFailed: 'The code couldn’t be copied. Select it and copy it instead.',
+    lasts:
+      'This code works for 10 minutes. Nothing is sent until you check a number on both devices.',
+    waitingNew: 'Waiting for your new device…',
+    number: (digits: string) => `${digits.slice(0, 3)} ${digits.slice(3)}`,
+    compare: 'Does your new device show the same number?',
+    match: 'Match',
+    noMatch: 'Don’t match',
+    sending: 'Sending your groups…',
+    sent: 'Sent. Your new device is adding your groups.',
+    notSent: 'Nothing was sent. Make a new code to try again.',
+    expired: 'This code has expired. Nothing was sent.',
+    sendFailed: 'Your groups couldn’t be sent. Make a new code to try again.',
+    again: 'Make a new code',
+    backToSettings: 'Settings',
+    // The new device.
+    thisPageTitle: 'Link to your other device',
+    thisTitle: 'Link to your other device',
+    thisLede:
+      'On your other device, open Settings and tap Link a new device. Then scan the code it shows, or paste it here.',
+    pasteLabel: 'Code from your other device',
+    pasteHint: 'It starts with RL1.',
+    pasteSubmit: 'Link this device',
+    notACode: 'That isn’t a linking code. Copy it again from your other device.',
+    connecting: 'Connecting to your other device…',
+    offline: 'Can’t reach the relay right now. Check your connection and try again.',
+    waitingOther: 'Waiting for your other device…',
+    check: 'Check that your other device shows the same number, then confirm there.',
+    cancel: 'Cancel',
+    linked: (groups: number) =>
+      groups === 1
+        ? 'Linked. This device now has 1 group.'
+        : `Linked. This device now has ${count(groups)} groups.`,
+    mismatch: 'That code didn’t match. Start again on your other device.',
+    damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
+    joinExpired: 'That code has expired. Start again on your other device.',
+    startAgain: 'Start again',
+    unreachable: 'Can’t reach the relay right now. Still trying.',
+    // The camera.
+    scan: 'Scan the code',
+    scanning: 'Point your camera at the code on your other device.',
+    stopScan: 'Stop scanning',
+    camera: 'Camera',
+    noCamera: 'The camera can’t be used here. Paste the code instead.',
+    notLinkCode: 'That isn’t a Reconcile linking code.',
   },
   /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
   backupCard: {

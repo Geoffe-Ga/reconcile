@@ -8,6 +8,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { epochCommit } from '../crypto/epoch';
 import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import { BACKUP_SEAL_INFO, backupIdFor, openRelayBackup } from '../crypto/relayBackup';
 import { sha256 } from '../crypto/hash';
@@ -21,8 +22,11 @@ import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
+import { groupLog } from '../test/votes';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
-import { openStore, type Store } from './db';
+import { type Group, openStore, type Store } from './db';
+import { hasDuty } from './epochs';
+import { eventIdOf } from './eventId';
 import { newPersonalId, type PersonalDocument } from './personal';
 import {
   fetchRelayBackup,
@@ -241,6 +245,35 @@ describe('what the relay holds', () => {
     expect(JSON.parse(text(sealed ?? new Uint8Array()))).toEqual(withoutKey);
   });
 
+  it('never carries this device’s push registration or posted nudges (#99), which a restore doesn’t bring', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    const endpoint = 'https://fcm.googleapis.com/fcm/send/canary-endpoint';
+    const mailbox = deriveMailboxId(secretFor(CANARY.group));
+    await device.store.setPush(founding.id, {
+      endpoint,
+      mailboxes: [mailbox],
+      instance: 'i',
+      at: 1,
+    });
+    await device.store.markNudged(founding.id, ['canary-nudge@29376720']);
+
+    await startRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    const plaintext = openRelayBackup(key, fake.backup(backupIdFor(key)) ?? new Uint8Array());
+    const opened = text(plaintext ?? new Uint8Array());
+    expect(opened).toContain(founding.id);
+    for (const word of [endpoint, 'canary-nudge', '"push"', '"nudged"']) {
+      expect(opened).not.toContain(word);
+    }
+    const fresh = await openStore('fresh');
+    await importSnapshot(fresh, plaintext ?? new Uint8Array());
+    const held = await fresh.getGroup(founding.id);
+    expect([held?.push, held?.nudged]).toEqual([undefined, undefined]);
+  });
+
   it('lives under an id that is no mailbox’s, and the request names nothing else', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
@@ -394,6 +427,102 @@ describe('the schedule', () => {
     expect(uploads(fake)).toHaveLength(1);
     expect(fake.backup(backupIdFor(key))).toEqual(good);
     expect(relayBackupStatus(await device.store.getRelayBackup())).toEqual({ kind: 'too-large' });
+  });
+});
+
+describe('a key change and the relay copy (#97, #98)', () => {
+  /**
+   * Ana's group on `device` after Ben left, at relay noon, with her encryption
+   * key kept: a key change is due, and her device should write it.
+   */
+  async function afterBenLeft(device: Device) {
+    const log = groupLog({ members: ['Ben'] });
+    log.leave('Ben');
+    const { secretKey, author } = testKeys('ana');
+    const groupId = log.group;
+    const secret = secretFor('before the key change');
+    await device.store.addGroup({
+      groupId,
+      secret,
+      signingKey: secretKey,
+      me: { author, name: 'Ana' },
+    });
+    const kxKey = Uint8Array.from({ length: 32 }, (_, i) => i + 40);
+    await device.store.ensureKx(groupId, kxKey);
+    const records = [...log.records];
+    const pull = { records, cursor: records.length, relayNow: NOON, instance: 'relay-1' };
+    await device.store.applyPull(groupId, { ...pull, lastSyncAt: TS }, eventIdOf);
+    return { groupId, secret, kxKey, seq: records.length };
+  }
+
+  /** The group `groupId` on `store`. */
+  async function groupOn(store: Store, groupId: string): Promise<Group> {
+    const group = await store.getGroup(groupId);
+    if (group === undefined) throw new Error('Expected the group.');
+    return group;
+  }
+
+  /** Each of `group`'s records as its seq and the epoch it was read from. */
+  function epochsOf(group: Group): number[][] {
+    return group.log.map((record) => [record.seq, record.epoch ?? 0]);
+  }
+
+  /** Ana's key change into epoch 1 lands on `device`, which takes up `next`, the secret it commits to. */
+  async function keyChangeLands(device: Device, groupId: string, seq: number, next: Uint8Array) {
+    const body = { epoch: 1, commit: epochCommit(groupId, 1, next), wraps: {} };
+    const rotate = signedAs('ana', { type: 'key-rotate', group: groupId, ts: TS, body });
+    const record = { seq: seq + 1, received: NOON + 1, bytes: rotate.record };
+    const advance = { epoch: 1, secret: next, cursor: seq + 1, repost: [] };
+    const pull = { records: [record], cursor: seq + 1, relayNow: NOON + 2, instance: 'relay-1' };
+    await device.store.applyPull(groupId, { ...pull, lastSyncAt: TS, advance }, eventIdOf);
+  }
+
+  it('uploads nothing while a key change this device should write is due, not even on start', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const { groupId } = await afterBenLeft(device);
+    const group = await groupOn(device.store, groupId);
+    expect(hasDuty(group, fold(group.log, group.relayNow))).toBe(true);
+
+    expect(await startRelayBackup(device.services)).toBeNull();
+    await refreshRelayBackup(device.services);
+
+    expect(uploads(fake)).toEqual([]);
+    expect(relayBackupStatus(await device.store.getRelayBackup())).toEqual({ kind: 'waiting' });
+    expect((await device.store.getRelayBackup())?.checkedDay).toBeNull();
+  });
+
+  it('uploads once the key change lands, and a restore from it comes back at the new epoch with every key', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const { groupId, secret, kxKey, seq } = await afterBenLeft(device);
+    await startRelayBackup(device.services);
+    const next = secretFor('after the key change');
+    await keyChangeLands(device, groupId, seq, next);
+
+    await refreshRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    expect(uploads(fake)).toEqual([backupIdFor(key)]);
+    const blob = fake.backup(backupIdFor(key)) ?? new Uint8Array();
+    const secrets = [
+      ...keyCanaries('old secret', secret),
+      ...keyCanaries('new secret', next),
+      ...keyCanaries('encryption key', kxKey),
+    ];
+    expect(findCanaries(blob, secrets)).toEqual([]);
+    const plaintext = (await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key)) ?? utf8('');
+    expect((JSON.parse(text(plaintext)) as { format: number }).format).toBe(2);
+    const fresh = await openStore('fresh');
+    expect(await importSnapshot(fresh, plaintext)).toBe(1);
+    const [held, original] = [await groupOn(fresh, groupId), await groupOn(device.store, groupId)];
+    expect(held.epoch).toBe(1);
+    expect(local(held.secret)).toEqual(local(next));
+    expect(local(held.kxKey ?? new Uint8Array())).toEqual(local(kxKey));
+    expect(epochsOf(held)).toEqual(epochsOf(original));
+    const state = fold(held.log, held.relayNow);
+    expect([state.epoch, state.rotationDue]).toEqual([1, false]);
+    expect(await folds(fresh)).toEqual(await folds(device.store));
   });
 });
 

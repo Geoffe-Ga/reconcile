@@ -24,6 +24,15 @@
  *   every change. The relay day is the latest `relayNow` among the device's
  *   groups, so with no synced group there is no day and nothing is
  *   scheduled. A failed upload tries again after the next complete pass.
+ * - **Key changes (#98).** The refresh runs after the pass's key changes, so
+ *   its copy holds each group at the epoch it moved to. While any group
+ *   still has a key change due that this device should write (`hasDuty`),
+ *   nothing is uploaded, not even by `startRelayBackup`, and the day stays
+ *   unchecked: the next complete pass, once the change has landed, uploads.
+ *   So the relay never holds a copy taken mid-change, whose groups would
+ *   come back on the secret the member who left still holds, until a sync
+ *   after the restore found the change. A group this device can't move on
+ *   from, as when it missed the new key, doesn't hold the backup up.
  * - **Too large.** Over 16 MiB the device keeps the last good backup on the
  *   relay, and Settings says so.
  * - **Reading it back.** {@link fetchRelayBackup} derives the id, GETs and
@@ -37,8 +46,10 @@ import {
   RelayBackupTooLarge,
   sealRelayBackup,
 } from '../crypto/relayBackup';
+import { fold } from '../engine/fold';
 import type { Relay } from '../net/relay';
 import type { RelayBackupState, Store } from './db';
+import { hasDuty } from './epochs';
 import { deviceSnapshot, encodeSnapshot, type Snapshot } from './snapshot';
 
 /** Minutes in a UTC day: a relay minute's day is ⌊minute / 1,440⌋. */
@@ -66,10 +77,12 @@ export type RelayBackupStatus =
 
 /**
  * Makes a backup key when the device has none or `newKey` is set, keeps it
- * device-wide, and uploads at once. Returns the id the replaced key named,
- * or null when no key was replaced. An upload that fails, offline say, leaves
- * the key kept and the status waiting, and the schedule tries again after the
- * next complete sync pass; one over 16 MiB leaves the status too large.
+ * device-wide, and uploads at once, unless a key change is due (#98), when
+ * the next complete sync pass uploads instead. Returns the id the replaced
+ * key named, or null when no key was replaced. An upload that fails, offline
+ * say, leaves the key kept and the status waiting, and the schedule tries
+ * again after the next complete sync pass; one over 16 MiB leaves the status
+ * too large.
  */
 export async function startRelayBackup(
   services: RelayBackupServices,
@@ -77,24 +90,42 @@ export async function startRelayBackup(
 ): Promise<string | null> {
   const held = await services.store.getRelayBackup();
   if (held !== undefined && !newKey) {
-    await upload(services, held.key, await relayCopy(services));
+    await uploadUnlessChanging(services, held.key);
     return null;
   }
   const key = newBackupKey();
   const replaced = await services.store.setRelayBackupKey(key);
-  await upload(services, key, await relayCopy(services));
+  await uploadUnlessChanging(services, key);
   key.fill(0);
   return replaced === undefined ? null : backupIdFor(replaced.key);
+}
+
+/** Uploads the relay copy under `key` now, unless a key change is due (`keyChangeDue`). */
+async function uploadUnlessChanging(services: RelayBackupServices, key: Uint8Array) {
+  if (await keyChangeDue(services.store)) return;
+  await upload(services, key, await relayCopy(services));
+}
+
+/**
+ * Whether any group on the device has a key change due that this device
+ * should write (#98, `hasDuty`): one the next sync pass will make, so a copy
+ * now would hold the secret it replaces.
+ */
+async function keyChangeDue(store: Pick<Store, 'listGroups'>): Promise<boolean> {
+  const groups = await store.listGroups();
+  return groups.some((group) => hasDuty(group, fold(group.log, group.relayNow)));
 }
 
 /**
  * The daily refresh, run after every sync pass in which every group synced:
  * the first such pass of each relay day uploads if anything changed since
- * the last upload, and every later pass that day does nothing.
+ * the last upload, and every later pass that day does nothing. A pass with a
+ * key change still due (#98) does nothing and checks no day.
  */
 export async function refreshRelayBackup(services: RelayBackupServices): Promise<void> {
   const state = await services.store.getRelayBackup();
-  if (state === undefined) return;
+  // Mid key change (#98), the day stays unchecked, so the pass after it lands uploads.
+  if (state === undefined || (await keyChangeDue(services.store))) return;
   const copy = await relayCopy(services);
   const day = relayDayOf(copy);
   if (day === null || (state.checkedDay !== null && day <= state.checkedDay)) return;

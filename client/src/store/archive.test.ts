@@ -22,7 +22,7 @@ import { DAY_MINUTES } from '../engine/rules';
 import { createRelay, type Fetch } from '../net/relay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { authorOf, signedAs, testKeys } from '../test/keys';
+import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { containsBytes, scanDb } from '../test/scanDb';
 import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
@@ -49,8 +49,12 @@ afterEach(() => {
   for (const store of stores.splice(0)) store.close();
 });
 
-/** Ana's genesis, the group secret, and the mailbox and key it derives. */
-function founding() {
+/**
+ * Ana's genesis, the group secret, and the mailbox and key it derives. Every
+ * member carries an encryption key (#98), as the app makes one at Create
+ * group and Join, unless `kx` is false: a group kept before #98.
+ */
+function founding(kx = true) {
   const genesis = signedAs('ana', {
     type: 'genesis',
     group: '',
@@ -60,10 +64,11 @@ function founding() {
       founder: 'Ana',
       title: 'House rules',
       atoms: ['Quiet after 11pm.', 'Bins out on Sunday.'],
+      ...(kx ? { kx: testKx('ana').kx } : {}),
     },
   });
   const secret = new Uint8Array(32).fill(7);
-  return { genesis, secret, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+  return { genesis, secret, kx, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
 }
 
 type Founded = ReturnType<typeof founding>;
@@ -97,9 +102,10 @@ function history(group: Founded, wipe: boolean) {
         ...(note === undefined ? {} : { note }),
       },
     });
-  const joins = ['ben', 'cal'].map((name) =>
-    signedAs(name, { ...draft, type: 'join', body: { name: name === 'ben' ? 'Ben' : 'Cal' } }),
-  );
+  const joins = ['ben', 'cal'].map((name) => {
+    const body = { name: name === 'ben' ? 'Ben' : 'Cal', ...kxOf(group, name) };
+    return signedAs(name, { ...draft, type: 'join', body });
+  });
   const events = [
     ...joins,
     edit,
@@ -126,6 +132,11 @@ async function openDevice(fetch: Fetch): Promise<{ store: Store; sync: Sync }> {
   return { store, sync };
 }
 
+/** `name`'s encryption key for a join body, when the group's members carry one (#98). */
+function kxOf(group: Founded, name: string): { kx?: string } {
+  return group.kx ? { kx: testKx(name).kx } : {};
+}
+
 /** Keeps the group on Ana's device and sends everything up to the motion's last ballot. */
 async function keep(store: Store, sync: Sync, group: Founded, events: readonly SignedEvent[]) {
   const { secretKey, author } = testKeys('ana');
@@ -134,6 +145,7 @@ async function keep(store: Store, sync: Sync, group: Founded, events: readonly S
     groupId,
     secret: group.secret,
     signingKey: secretKey,
+    ...(group.kx ? { kxKey: testKx('ana').kxKey } : {}),
     me: { author, name: 'Ana' },
   });
   await store.enqueueAll(groupId, [group.genesis.record, ...events.map((e) => e.record)]);
@@ -388,6 +400,70 @@ describe('settleDissolve', () => {
     expect(await sync.syncOnce()).toBe(true);
     expect(await outboxOf(store, groupId)).toEqual([]);
     await settleDissolve(store, 'no-such-group', () => TS);
+  });
+});
+
+describe('a dissolve beside key changes (#98)', () => {
+  it('archives a group kept before #98 without queueing a kx, and the pass that archives it succeeds', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding(false);
+    const { events, last } = history(group, false);
+    const { store, sync } = await openDevice(fake.fetch);
+    const groupId = group.genesis.id;
+    await keep(store, sync, group, [...events, last]);
+    // The device made an encryption key and queued its kx beside its dissolve.
+    expect((await outboxOf(store, groupId)).map((event) => event?.type)).toEqual([
+      'dissolve',
+      'kx',
+    ]);
+    fake.minute = DISSOLVED;
+
+    expect(await sync.syncOnce()).toBe(true);
+
+    const kept = (await store.getGroup(groupId)) ?? never();
+    expect(kept.archived).toEqual({ reason: 'dissolved' });
+    expect(kept.outbox).toEqual([]);
+    // The kx landed after the dissolve, so the fold ignored it, and no other is queued.
+    expect(shownState(kept).members.find((m) => m.author === authorOf('ana'))?.kx).toBeNull();
+    const requests = fake.requests.length;
+    fake.minute += 5;
+    expect(await sync.syncOnce()).toBe(true);
+    expect(fake.requests.length).toBe(requests);
+  });
+
+  it('starts no key change for a leave that lands just before the dissolve, and sends nothing after', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events, last } = history(group, false);
+    const { store, sync } = await openDevice(fake.fetch);
+    const groupId = group.genesis.id;
+    await keep(store, sync, group, [...events, last]);
+    expect((await outboxOf(store, groupId)).map((event) => event?.type)).toEqual(['dissolve']);
+    // Cal's device posts his leave before Ana's device has read it, so her dissolve still goes.
+    const leave = signedAs('cal', { type: 'leave', group: groupId, ts: TS, body: {} });
+    const cal = createRelay({ fetch: fake.fetch });
+    await cal.putBlob(group.mailbox, xchachaSeal.seal(group.mailbox, group.key, leave.record), 30);
+    fake.minute = DISSOLVED;
+    const before = fake.requests.length;
+
+    expect(await sync.syncOnce()).toBe(true);
+
+    const kept = (await store.getGroup(groupId)) ?? never();
+    expect(typesIn(kept).slice(-2)).toEqual(['leave', 'dissolve']);
+    expect(kept.archived).toEqual({ reason: 'dissolved' });
+    const state = shownState(kept);
+    expect([state.dissolved?.received, state.epoch, state.rotationDue]).toEqual([
+      DISSOLVED,
+      0,
+      false,
+    ]);
+    // One PUT, Ana's dissolve, and the GET that read it back: no key-rotate, in any mailbox.
+    const sent = fake.requests.slice(before);
+    expect(sent.map((request) => request.method)).toEqual(['PUT', 'GET']);
+    expect(kept.epoch ?? 0).toBe(0);
+    fake.minute += 5;
+    expect(await sync.syncOnce()).toBe(true);
+    expect(fake.requests.length).toBe(before + sent.length);
   });
 });
 

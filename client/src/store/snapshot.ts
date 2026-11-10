@@ -7,7 +7,10 @@
  * For each group it keeps the keys, the secret, your name, the log's event
  * bytes with their relay seqs and receipt times, the cursor, the relay's
  * last `now` and `instance`, the last successful sync time, and whether some
- * history may be missing. It leaves out the outbox and drafts, so a restore
+ * history may be missing. Format 2 (#98) adds the encryption key, the
+ * secret's epoch, and each record's epoch when it isn't 0; a format 1 file,
+ * as #78 saved it, reads as epoch 0 with no encryption key, and the sync loop
+ * then makes one. It leaves out the outbox and drafts, so a restore
  * never sends stale intent, and it leaves out a group this device is
  * leaving, and one whose genesis the relay hasn't returned yet, since
  * neither has anything to come back to. It leaves out a dissolved group's
@@ -15,8 +18,9 @@
  * to be erased, and a file would keep them past that.
  *
  * Each personal Document goes in whole: its id, title, text, and when it
- * was made and last edited. The format number stays 1: a file from before
- * #93 has no `personal` field, and reads as holding no personal Documents.
+ * was made and last edited. #93 added them without a new format number, so a
+ * format 1 file may hold them or not: one from before #93 has no `personal`
+ * field, and reads as holding no personal Documents.
  *
  * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
  * device keeps one, so a device restored from the file keeps the relay
@@ -35,18 +39,33 @@
  * group whose log folds to a `dissolve`, as an older app's file could hold,
  * comes back as a read-only copy, so a restore never brings a dissolved group
  * back to life (#108).
+ *
+ * A second device's link bundle (#96) is the same plaintext without the
+ * passphrase layer: `takeSnapshot` makes it and `importSnapshot` checks and
+ * keeps it, as from a link, and the link seals it under its own key instead.
+ * So a link carries what a backup does, format 2's keys and epochs (#98),
+ * every personal Document (#93) and the relay backup key (#97) included, and
+ * leaves out what a backup does, a dissolved group's read-only copy (#108)
+ * and push (#99) included.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { fold, type LogRecord } from '../engine/fold';
-import type { Archive, BackedUpGroup, Group, Store } from './db';
+import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
+import { epochOf, secretFits } from './epochs';
 import { eventIdOf } from './eventId';
 import { isPersonalDocument, type PersonalDocument } from './personal';
 
-/** The plaintext's format number, which a later layout would change. */
-export const SNAPSHOT_FORMAT = 1;
+/** The plaintext's format number: 2 since #98 added encryption keys and epochs. */
+export const SNAPSHOT_FORMAT = 2;
+
+/** The format #78 wrote, which a restore still reads. */
+const FORMAT_1 = 1;
+
+/** The largest epoch: a u32 carries it. */
+const MAX_EPOCH = 0xffff_ffff;
 
 /** The largest file a restore reads: 64 MiB, far past any pilot group's history. */
 export const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
@@ -92,6 +111,8 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
       groupId: group.groupId,
       secret: group.secret,
       signingKey: group.signingKey,
+      ...(group.kxKey === undefined ? {} : { kxKey: group.kxKey }),
+      ...(epochOf(group) === 0 ? {} : { epoch: epochOf(group) }),
       me: { author: group.me.author, name: group.me.name },
       log: group.log,
       cursor: group.cursor,
@@ -132,11 +153,14 @@ export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8
       groupId: group.groupId,
       secret: base64url(group.secret),
       signingKey: base64url(group.signingKey),
+      ...(group.kxKey === undefined ? {} : { kxKey: base64url(group.kxKey) }),
+      epoch: epochOf(group),
       me: { author: group.me.author, name: group.me.name },
-      log: group.log.map(({ seq, received, bytes }) => ({
+      log: group.log.map(({ seq, received, bytes, epoch = 0 }) => ({
         seq,
         received,
         bytes: base64url(bytes),
+        ...(epoch === 0 ? {} : { epoch }),
       })),
       cursor: group.cursor,
       relayNow: group.relayNow,
@@ -150,6 +174,29 @@ export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
 
+/** Everything a backup keeps, as the plaintext a backup file or a link bundle carries (#96). */
+export interface SnapshotPlaintext {
+  /** The UTF-8 JSON, which the caller zeroes once it's sealed. */
+  readonly plaintext: Uint8Array<ArrayBuffer>;
+  /** The groups it holds. */
+  readonly groupIds: readonly string[];
+}
+
+/**
+ * The plaintext of everything on the device that a backup keeps: its groups,
+ * every personal Document and its relay backup key (`deviceSnapshot`). It is
+ * a backup file's plaintext, and a link's bundle (#96).
+ */
+export async function takeSnapshot(
+  store: Parameters<typeof deviceSnapshot>[0],
+): Promise<SnapshotPlaintext> {
+  const snapshot = await deviceSnapshot(store);
+  return {
+    plaintext: encodeSnapshot(snapshot),
+    groupIds: snapshot.groups.map((group) => group.groupId),
+  };
+}
+
 /**
  * Seals every group on the device that a backup keeps, every personal
  * Document, and its relay backup key, under `passphrase`, at scrypt cost
@@ -160,12 +207,10 @@ export async function exportGroups(
   passphrase: string,
   log2N = BACKUP_LOG2_N,
 ): Promise<SavedBackup> {
-  const snapshot = await deviceSnapshot(store);
-  const { groups } = snapshot;
-  const plaintext = encodeSnapshot(snapshot);
+  const { plaintext, groupIds } = await takeSnapshot(store);
   try {
     const file = await sealBackup(plaintext, passphrase, log2N);
-    return { file, groupIds: groups.map((group) => group.groupId) };
+    return { file, groupIds };
   } finally {
     plaintext.fill(0);
   }
@@ -194,21 +239,23 @@ export async function importGroups(
 }
 
 /**
- * Checks every group and personal Document in a backup's `plaintext`, keeps
- * them all in one transaction, then keeps its relay backup key if the device
- * has none. Returns how many groups it held. `importGroups` calls it once a
- * file is open, and the relay backup's restore (#118) once `fetchRelayBackup`
- * has.
+ * Checks every group and personal Document in a backup's or a link bundle's
+ * `plaintext`, keeps them all in one transaction, marked as `from` says
+ * (`Store.restoreGroups`), then keeps its relay backup key if the device has
+ * none. Returns how many groups it held. `importGroups` calls it once a file
+ * is open, a second device's link (#96) once the bundle is in, and the relay
+ * backup's restore (#118) once `fetchRelayBackup` has.
  *
  * @throws {BackupUnreadable} when anything in it doesn't check out; nothing is written then.
  */
 export async function importSnapshot(
   store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
   plaintext: Uint8Array,
+  from: RestoredFrom = 'backup',
 ): Promise<number> {
   const snapshot = decodeSnapshot(plaintext);
   if (snapshot === null) throw new BackupUnreadable();
-  await store.restoreGroups(snapshot.groups, snapshot.personal);
+  await store.restoreGroups(snapshot.groups, snapshot.personal, from);
   if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
   return snapshot.groups.length;
 }
@@ -216,8 +263,10 @@ export async function importSnapshot(
 /** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
 export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
   const json = parseJson(plaintext);
-  if (!isObject(json) || json.format !== SNAPSHOT_FORMAT) return null;
-  const groups = groupsIn(json.groups);
+  if (!isObject(json)) return null;
+  const { format } = json;
+  if (format !== SNAPSHOT_FORMAT && format !== FORMAT_1) return null;
+  const groups = groupsIn(json.groups, format === FORMAT_1 ? groupIn : groupWithKeysIn);
   // A file from before #93 has no personal field: it holds no personal Documents.
   const personal = json.personal === undefined ? [] : personalIn(json.personal);
   if (groups === null || personal === null) return null;
@@ -239,9 +288,15 @@ function allUnique<T>(
   return kept.length === items.length && keys.size === kept.length ? kept : null;
 }
 
-/** The groups in `value`, or null when it isn't a list of valid groups, each once. */
-function groupsIn(value: unknown): BackedUpGroup[] | null {
-  return Array.isArray(value) ? allUnique(value, groupIn, (group) => group.groupId) : null;
+/**
+ * The groups in `value`, each read by `read` as its file's format has it, or
+ * null when it isn't a list of valid groups, each once.
+ */
+function groupsIn(
+  value: unknown,
+  read: (value: unknown) => BackedUpGroup | null,
+): BackedUpGroup[] | null {
+  return Array.isArray(value) ? allUnique(value, read, (group) => group.groupId) : null;
 }
 
 /** The personal Documents in `value`, or null when it isn't a list of valid ones, each once. */
@@ -292,12 +347,27 @@ function keyIn(value: unknown): Uint8Array<ArrayBuffer> | null {
   return bytes?.length === KEY_BYTES ? bytes : null;
 }
 
-/** One log record in `value`: a whole seq and receipt time, and a signed record that verifies. */
+/** Whether `value` is an epoch from 1 up, as a record that names its epoch has (#98). */
+function isLaterEpoch(value: unknown): value is number {
+  return isCount(value) && value >= 1 && value <= MAX_EPOCH;
+}
+
+/**
+ * One log record in `value`: a whole seq and receipt time, a signed record
+ * that verifies, and the epoch it was read from when that isn't 0 (#98).
+ */
 function recordIn(value: unknown): LogRecord | null {
   if (!isObject(value) || !isCount(value.seq) || !isCount(value.received)) return null;
   const bytes = bytesIn(value.bytes);
   if (bytes === null || bytes.length > MAX_RECORD_BYTES || eventIdOf(bytes) === null) return null;
-  return { seq: value.seq, received: value.received, bytes };
+  const { epoch } = value;
+  if (epoch !== undefined && !isLaterEpoch(epoch)) return null;
+  return {
+    seq: value.seq,
+    received: value.received,
+    bytes,
+    ...(epoch === undefined ? {} : { epoch }),
+  };
 }
 
 /** The log in `value`, or null when it isn't a list of valid records. */
@@ -362,4 +432,23 @@ function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
   const state = fold(group.log, group.relayNow);
   if (state.group !== group.groupId) return null;
   return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
+}
+
+/**
+ * One backed-up group of a format 2 file (#98): a format 1 group, plus its
+ * encryption key when it has one and the epoch of its secret, which must be
+ * 0 or the epoch of a key change in its log that commits to that secret.
+ */
+function groupWithKeysIn(value: unknown): BackedUpGroup | null {
+  const group = groupIn(value);
+  if (group === null || !isObject(value)) return null;
+  const { epoch } = value;
+  const kxKey = value.kxKey === undefined ? undefined : keyIn(value.kxKey);
+  if (kxKey === null || !(epoch === 0 || isLaterEpoch(epoch))) return null;
+  if (!secretFits(fold(group.log, group.relayNow), epoch, group.secret)) return null;
+  return {
+    ...group,
+    ...(kxKey === undefined ? {} : { kxKey }),
+    ...(epoch === 0 ? {} : { epoch }),
+  };
 }

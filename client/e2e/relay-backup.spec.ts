@@ -141,6 +141,7 @@ test('a restored device keeps the relay backup fresh, and the relay learns nothi
   });
 
   const group = await onlyGroup(ana.page);
+  expect(group.kxKey).toHaveLength(32);
   let blob: Buffer = Buffer.alloc(0);
 
   await test.step('the relay serves one padded blob that opens to Ana’s group, without the key', async () => {
@@ -152,10 +153,16 @@ test('a restored device keeps the relay backup fresh, and the relay learns nothi
     const plaintext = openRelayBackup(key, blob);
     if (plaintext === null) throw new Error('Expected the backup to open under its key.');
     const snapshot = JSON.parse(new TextDecoder().decode(plaintext)) as {
-      groups: { groupId: string }[];
+      format: number;
+      groups: { groupId: string; epoch: number; kxKey?: string }[];
     };
     expect(Object.keys(snapshot)).toEqual(['format', 'groups', 'personal']);
     expect(snapshot.groups.map(({ groupId }) => groupId)).toEqual([group.groupId]);
+    // Format 2 (#98): the group's epoch and Ana's encryption key, so a restore can open new keys.
+    expect(snapshot.format).toBe(2);
+    expect(snapshot.groups.map(({ epoch, kxKey }) => [epoch, kxKey])).toEqual([
+      [group.epoch, Buffer.from(group.kxKey ?? []).toString('base64url')],
+    ]);
     const unknown = await request.get(`/v1/backup/${randomBytes(32).toString('base64url')}`);
     expect([unknown.status(), await unknown.json()]).toEqual([404, { error: 'not_found' }]);
   });
@@ -183,6 +190,7 @@ test('a restored device keeps the relay backup fresh, and the relay learns nothi
     const canaries: Canary[] = [
       ...Object.entries(CANARY).map(([field, text]) => textCanary(field, text)),
       ...keyCanaries('Ana’s signing key', Uint8Array.from(group.signingKey)),
+      ...keyCanaries('Ana’s encryption key', Uint8Array.from(group.kxKey ?? [])),
       ...keyCanaries('the group secret', secret),
       ...keyCanaries('the group’s seal key', derive(secret, 'reconcile/v1/seal-key')),
       ...keyCanaries('the backup key', key),

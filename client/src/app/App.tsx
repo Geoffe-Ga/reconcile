@@ -7,7 +7,7 @@
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
-import type { GroupState } from '../engine/fold';
+import { fold, type GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
@@ -17,19 +17,23 @@ import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import { LinkNewDevice } from '../screens/LinkNewDevice';
+import { LinkThisDevice } from '../screens/LinkThisDevice';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
-import { Settings } from '../screens/Settings';
+import { type NotifyGroup, Settings } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
-import type { Me } from '../store/db';
+import type { Group, Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
+import type { LinkCode } from '../crypto/link';
+import { joinLink, offerLink } from '../link/session';
 import { newPersonalId } from '../store/personal';
 import {
   createGroup,
@@ -66,7 +70,7 @@ import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
-import { useGroupList } from './useGroupList';
+import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
 import { useRelayBackupStatus } from './useRelayBackup';
@@ -103,12 +107,36 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
   );
 }
 
-/** Settings (#78): Save a backup, with the relay backup's line (#97), Restore a backup, and Erase. */
+/**
+ * A group's push switch (#99): named once its genesis is back, and gone while
+ * it's leaving or once it's a read-only archive (#108).
+ */
+function notifyGroupOf(group: Group): NotifyGroup | null {
+  const state = fold(group.log, group.relayNow);
+  // A read-only archive takes nothing new, push included (#108).
+  if (state.group === null || group.leaving !== undefined || group.archived !== undefined) {
+    return null;
+  }
+  return { groupId: group.groupId, name: state.name, on: group.push !== undefined };
+}
+
+/**
+ * Settings (#78, #96, #99): Notifications, Save a backup with the relay
+ * backup's line (#97), Restore a backup, Link a new device, and Erase.
+ */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
+  const switches = useGroups(services.store, notifyGroupOf);
   const relayBackup = useRelayBackupStatus(services.store);
-  return groups === null || relayBackup === null ? null : (
+  const { push } = services;
+  return groups === null || switches === null || relayBackup === null ? null : (
     <Settings
+      notify={{
+        availability: push.availability(),
+        groups: switches.filter((group) => group !== null),
+        onTurnOn: (groupId) => push.turnOn(groupId),
+        onTurnOff: (groupId) => push.turnOff(groupId),
+      }}
       hasGroups={groups.length > 0}
       relayBackup={relayBackup}
       onMake={(passphrase) => makeBackup(services, passphrase)}
@@ -140,6 +168,21 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
   return (
     <PersonalDocument id={id} documents={services.store} now={services.now} onDeleted={onDeleted} />
   );
+}
+
+/** Link a new device (#96), on the existing device: a fresh code each time it opens. */
+function LinkNewScreen({ services }: { readonly services: AppServices }) {
+  const start = useCallback(() => offerLink(services), [services]);
+  return <LinkNewDevice start={start} copyText={services.copyText} />;
+}
+
+/** Link to my other device (#96), on the new device: syncs once the groups are in. */
+function LinkThisScreen({ services }: { readonly services: AppServices }) {
+  const join = useCallback((code: LinkCode) => joinLink(services, code), [services]);
+  const onLinked = useCallback(() => {
+    void services.sync.syncOnce();
+  }, [services]);
+  return <LinkThisDevice join={join} onLinked={onLinked} />;
 }
 
 interface CreateScreenProps {
@@ -295,6 +338,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             lastSyncAt: group.lastSyncAt,
             deviceNow,
             missingHistory: group.missingHistory,
+            keyChange: group.keyChange,
           }}
           pending={group.pending}
           leaving={group.leaving}
@@ -587,6 +631,10 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
     case 'join':
       return (
         <JoinScreen
