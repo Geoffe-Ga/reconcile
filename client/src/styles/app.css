@@ -229,6 +229,14 @@ a[data-focus-visible] {
   font: var(--type-caption);
 }
 
+/* One caption line, held open while the field is valid, so an error that
+ * appears or clears as the field loses focus never moves what follows: above
+ * all the submit button, whose press is what took the focus (#165). */
+.field-error-line {
+  min-height: 1lh;
+  font: var(--type-caption);
+}
+
 .field-error {
   color: var(--negative);
   font: var(--type-caption);

@@ -1,7 +1,6 @@
 import { type Key, type ReactNode, useId, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
-  FieldError,
   Label,
   Tab,
   TabList,
@@ -13,6 +12,7 @@ import {
 } from 'react-aria-components';
 
 import { messages } from '../messages';
+import { FieldErrorLine } from '../ui';
 
 /** Props for {@link MarkdownField}. */
 export interface MarkdownFieldProps {
@@ -43,7 +43,8 @@ type Mode = 'write' | 'preview';
  * The textarea stays mounted, though inert, while Preview shows, so the form
  * always holds the text. If the form is sent from Preview with the text
  * invalid, the field goes back to Write before React Aria focuses the textarea
- * and ties the error to it.
+ * and ties the error to it. The error has a line kept open for it
+ * ({@link FieldErrorLine}), so it never moves the submit button on blur.
  */
 export function MarkdownField({
   label,
@@ -96,7 +97,7 @@ export function MarkdownField({
           {shown ?? <p className="muted">{messages.markdown.previewEmpty}</p>}
         </TabPanel>
       </Tabs>
-      <FieldError className="field-error" />
+      <FieldErrorLine />
     </TextField>
   );
 }
