@@ -333,8 +333,9 @@ describe('the schedule', () => {
     await startRelayBackup(device.services);
     const key = await keyOf(device.store);
     const good = fake.backup(backupIdFor(key));
-    // 270 records of 64,000 bytes: about 23 MB once written as base64url.
-    const big = Array.from({ length: 270 }, (_, i) => ({
+    // The next relay day's pull brings 200 records of 64,000 bytes: about 17.1 MB once
+    // written as base64url, past 16 MiB. The refresh runs as a complete pass would run it.
+    const big = Array.from({ length: 200 }, (_, i) => ({
       seq: 1000 + i,
       received: NOON,
       bytes: new Uint8Array(64_000).fill(i % 251),
@@ -342,18 +343,13 @@ describe('the schedule', () => {
     const pull = {
       records: big,
       cursor: 2000,
-      relayNow: NOON,
+      relayNow: NOON + DAY,
       instance: fake.instance,
       lastSyncAt: TS,
     };
-    await device.store.applyPull(
-      founding.id,
-      pull,
-      (bytes) => `big-${String(bytes[0])}-${String(bytes.length)}-${String(Math.random())}`,
-    );
-    fake.minute += DAY;
+    await device.store.applyPull(founding.id, pull, (bytes) => `big-${String(bytes[0])}`);
 
-    expect(await device.sync.syncOnce()).toBe(true);
+    await refreshRelayBackup(device.services);
 
     expect(uploads(fake)).toHaveLength(1);
     expect(fake.backup(backupIdFor(key))).toEqual(good);

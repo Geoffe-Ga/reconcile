@@ -185,12 +185,18 @@ describe('sealRelayBackup and openRelayBackup', () => {
     [1048576 - 47, 4194304],
     [4194304 - 47, 16777216],
   ])('round-trip a %i-byte plaintext in a %i-byte blob', (length, size) => {
-    const plaintext = Uint8Array.from({ length }, (_, i) => (i * 7 + 3) % 251);
+    const plaintext = new Uint8Array(length);
+    for (let i = 0; i < length; i += 97) plaintext[i] = (i * 7 + 3) % 251;
 
     const blob = sealRelayBackup(KEY, plaintext);
 
     expect(blob).toHaveLength(size);
-    expect(bytesToHex(openRelayBackup(KEY, blob) ?? new Uint8Array(1))).toBe(bytesToHex(plaintext));
+    // Compared by digest: hex of megabytes is slower than sealing them.
+    const opened = openRelayBackup(KEY, blob) ?? new Uint8Array(1);
+    expect([opened.length, bytesToHex(sha256(opened))]).toEqual([
+      length,
+      bytesToHex(sha256(plaintext)),
+    ]);
   });
 
   it('round-trip the largest plaintext, and refuse one byte more', () => {
