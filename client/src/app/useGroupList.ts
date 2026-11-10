@@ -1,13 +1,13 @@
 /** The groups on this device, as Start lists them. */
 import { useEffect, useState } from 'react';
 
-import { fold } from '../engine/fold';
 import type { Group, Store } from '../store/db';
+import { foldGroup } from '../store/expiry';
 import type { StartGroup } from '../screens/Start';
 
 /** A group's name and Document title, folded from relay records; null until its genesis is back. */
 function summarize(group: Group): StartGroup {
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   return state.group === null
     ? { groupId: group.groupId, name: null, title: null }
     : { groupId: group.groupId, name: state.name, title: state.title };

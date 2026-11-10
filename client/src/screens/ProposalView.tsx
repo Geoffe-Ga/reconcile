@@ -200,7 +200,11 @@ function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
   };
 }
 
-/** The versions, each with its own pills for someone who can vote on them, then "Add your version". */
+/**
+ * The versions, each with its own pills for someone who can vote on them, then
+ * "Add your version". Once this device has cleared a Proposal's ballots
+ * (#111), there's no ballot left to show, so the versions stand alone.
+ */
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
@@ -211,7 +215,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
   return (
     <Block title={comparison.title} className="vote">
       <Legend comparison={comparison} />
-      {reason === null ? (
+      {reason === null && !proposal.cleared ? (
         <Ballot
           key={proposal.id}
           versions={versions}
@@ -230,7 +234,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
           <VersionList versions={versions} current={comparison.current}>
             {meters}
           </VersionList>
-          <NoVote state={state} me={me} reason={reason} />
+          {reason === null ? null : <NoVote state={state} me={me} reason={reason} />}
         </>
       )}
       <AddVersion props={props} proposal={proposal} />

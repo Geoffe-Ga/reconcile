@@ -2,7 +2,10 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { formatDay } from '../app/format';
+import { messages } from '../app/messages';
 import { formatMinute, minuteIso } from '../app/time';
+import { resultFor } from '../engine/expiry';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
 import { type OwnBallot, ownBallot } from '../engine/ownBallot';
@@ -317,6 +320,67 @@ describe('ResultView', () => {
     const second = show({ state: empty.state(DEADLINE), proposalId: quiet });
     expect(within(second.result).getByText('Nobody voted.')).toBeInTheDocument();
     expect(within(second.result).getByText('Nobody scored it.')).toBeVisible();
+  });
+
+  it('says until when individual scores and notes are visible, and that screenshots can outlast that', async () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const state = log.state();
+    const closedAt = state.proposals[0]?.closedAt ?? 0;
+    const { result } = show({ state, proposalId });
+    const { visibleUntil, visibleUntilEnd } = messages.result;
+    const line = within(result).getByText(
+      (_text, element) => element?.tagName === 'P' && element.textContent.startsWith(visibleUntil),
+    );
+    expect(line).toBeVisible();
+    expect(line).toHaveTextContent(
+      `${visibleUntil} ${formatDay(closedAt + 43_200)}${visibleUntilEnd}`,
+    );
+    expect(line.querySelector('time')?.getAttribute('datetime')).toBe(minuteIso(closedAt + 43_200));
+    expect(within(result).getByRole('button', { name: 'Individual ballots (3)' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says when individual scores and notes were cleared, offers no ballots, and keeps the totals', async () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const held = log.state();
+    const closedAt = held.proposals[0]?.closedAt ?? 0;
+    const body = resultFor(held.proposals[0] as Proposal);
+    const cleared = groupLog({ members: ['Ben', 'Cal'] });
+    cleared.propose('ana');
+    cleared.minute = closedAt + 1;
+    cleared.result('ben', body);
+    const state = cleared.state(closedAt + 43_200, [proposalId]);
+    const { result } = show({ state, proposalId });
+    const { clearedOn, clearedOnEnd, totalsLine } = messages.result;
+    expect(result).toHaveTextContent(`${clearedOn} ${formatDay(closedAt + 43_200)}${clearedOnEnd}`);
+    expect(within(result).queryByRole('button', { name: /Individual ballots/ })).toBeNull();
+    expect(within(result).getByText(totalsLine(3, '3.0', 0))).toBeVisible();
+    expect(within(result).getByText(messages.result.passed)).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('flags a record of the decision that doesn’t match the ballots on this device, naming who posted it', async () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const held = log.state();
+    const body = resultFor(held.proposals[0] as Proposal);
+    log.minute += 1;
+    log.result('ben', { ...body, versions: [{ id: proposalId, counts: [0, 0, 0, 0, 3] }] });
+    log.result('cal', body);
+    const { result } = show({ state: log.state(), proposalId });
+    const { mismatchBefore, mismatchAfter } = messages.result;
+    const flag = within(result).getByText(
+      (_text, element) =>
+        element?.tagName === 'P' && element.textContent.startsWith(mismatchBefore),
+    );
+    expect(flag).toHaveTextContent(`${mismatchBefore} Ben ${mismatchAfter}`);
+    expect(flag.querySelector('bdi')?.textContent).toBe('Ben');
+    expect(
+      within(result).queryAllByText(
+        (_text, element) =>
+          element?.tagName === 'P' && element.textContent.startsWith(mismatchBefore),
+      ),
+    ).toHaveLength(1);
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('says when voting ran in relay time, and that everyone had voted after an early close', () => {

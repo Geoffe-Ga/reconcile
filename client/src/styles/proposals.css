@@ -19,12 +19,14 @@
 }
 
 /* The dot is drawn here and hidden from screen readers. */
-.countdown > time::before {
+.countdown > time::before,
+.countdown > .decided-cleared::before {
   content: '·' / '';
   margin-inline: var(--space-2);
 }
 
-.countdown time {
+.countdown time,
+.decided-cleared {
   white-space: nowrap;
 }
 
@@ -214,7 +216,8 @@
   font: var(--type-ui);
 }
 
-.result-ran time {
+.result-ran time,
+.result-expiry time {
   white-space: nowrap;
 }
 

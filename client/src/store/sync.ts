@@ -10,7 +10,11 @@
  *    removing an entry only once the relay accepts it;
  * 2. reads every record after the cursor, opens each blob (skipping one that
  *    won't open), and appends each event the log doesn't hold yet;
- * 3. saves the cursor, the relay's time and instance, and when it synced.
+ * 3. saves the cursor, the relay's time and instance, and when it synced;
+ * 4. then (#111, ./expiry.ts) posts a result for each closed Proposal that
+ *    has none, after re-syncing once to be sure, and clears every ballot
+ *    that has expired. A group is checked again only once its log, the
+ *    relay's minute or its cleared list has changed.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -29,6 +33,7 @@ import type { Relay, RelayRecord } from '../net/relay';
 import type { LogRecord } from '../engine/fold';
 import type { EventIdOf, Group, Pull, Store } from './db';
 import { eventIdOf } from './eventId';
+import { clearExpiredBallots, foldGroup, resultsDue, signResults } from './expiry';
 
 /** The wait between passes while they succeed. */
 export const POLL_MS = 3000;
@@ -160,7 +165,7 @@ export interface SyncOptions {
   seal: Seal;
   /** An event's id, for dedupe (default: the engine's, via `parseEvent`). */
   idOf?: EventIdOf;
-  /** The device clock in milliseconds, for `lastSyncAt` (default: `Date.now`). */
+  /** The device clock in milliseconds, for `lastSyncAt` and a result's `ts` (default: `Date.now`). */
   clock?: () => number;
   /** The timers the poller uses (default: the window's). */
   timers?: Timers;
@@ -213,11 +218,44 @@ export function createSync(options: SyncOptions): Sync {
     await store.applyPull(group.groupId, pull, idOf);
   }
 
+  /** What each group looked like when its results and expiry were last settled. */
+  const settled = new Map<string, string>();
+
+  /** A group's log length, relay minute and cleared count: what settling depends on. */
+  function settleKey(group: Group): string {
+    return `${String(group.log.length)}:${String(group.relayNow)}:${String(group.cleared?.length ?? 0)}`;
+  }
+
+  /**
+   * Posts a result for each closed Proposal that has none (re-syncing once
+   * first, in case another device just posted one), then clears expired
+   * ballots (#111). Skips a group that hasn't changed since it last settled.
+   */
+  async function settle(groupId: string): Promise<void> {
+    let group = await store.getGroup(groupId);
+    if (group === undefined || settled.get(groupId) === settleKey(group)) return;
+    let state = foldGroup(group);
+    if (resultsDue(state, group).length > 0) {
+      await syncGroup(group);
+      group = (await store.getGroup(groupId)) ?? group;
+      state = foldGroup(group);
+      const records = signResults(state, group, resultsDue(state, group), clock());
+      if (records.length > 0) {
+        await store.enqueueAll(groupId, records);
+        await postOutbox(groupId, channelOf(group.secret));
+      }
+    }
+    await clearExpiredBallots(store, groupId, state);
+    const after = await store.getGroup(groupId);
+    if (after !== undefined) settled.set(groupId, settleKey(after));
+  }
+
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
       for (const group of await store.listGroups()) {
-        ok = (await syncGroup(group).then(succeeded, failed)) && ok;
+        const synced = await syncGroup(group).then(succeeded, failed);
+        ok = synced && (await settle(group.groupId).then(succeeded, failed)) && ok;
       }
     } catch {
       ok = false;

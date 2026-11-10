@@ -191,6 +191,9 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        result: null,
+        cleared: false,
+        mismatched: [],
       },
     ]);
   });
@@ -200,10 +203,12 @@ describe('fold', () => {
     expect(fold(log.records, R + 10).proposals[0]?.link).toBeNull();
   });
 
-  it('carries each ballot’s id, place in the log, voter, scores and note', () => {
+  it('carries each ballot’s id, place in the log, voter, scores, note and salt', () => {
     const { log, proposal } = threeMembersAndAProposal();
+    const salt = 'AQIDBAUGBwgJCgsMDQ4PEA';
     const ballot = log.vote(R + 20, 'ben', { proposal, scores: { [proposal]: 0 }, note: 'No.' });
-    expect(fold(log.records, R + 20).proposals[0]?.ballots).toEqual([
+    const salted = log.vote(R + 21, 'cal', { proposal, scores: { [proposal]: 3 }, salt });
+    expect(fold(log.records, R + 21).proposals[0]?.ballots).toEqual([
       {
         id: ballot,
         seq: 5,
@@ -211,6 +216,16 @@ describe('fold', () => {
         voter: authorOf('ben'),
         scores: { [proposal]: 0 },
         note: 'No.',
+        salt: '',
+      },
+      {
+        id: salted,
+        seq: 6,
+        received: R + 21,
+        voter: authorOf('cal'),
+        scores: { [proposal]: 3 },
+        note: null,
+        salt,
       },
     ]);
   });

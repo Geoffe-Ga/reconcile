@@ -3,8 +3,10 @@ import { openDB } from 'idb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
+import { eventIdOf } from './eventId';
 import { local, text, utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { signedAs } from '../test/keys';
 import { openStore } from './db';
 import type { NewGroup, Pull } from './db';
 
@@ -303,6 +305,112 @@ describe('applyPull', () => {
       cursor: 0,
       instance: null,
     });
+  });
+});
+
+/** Signed records naming the Proposal `p1` or `p2`: ballots, a result and a version. */
+function signed() {
+  const vote = (name: string, proposal: string) =>
+    signedAs(name, {
+      type: 'vote',
+      group: 'g',
+      ts: 0,
+      body: { proposal, scores: { [proposal]: 0 }, note: 'A canary reason.' },
+    }).record;
+  const result = (name: string, proposal: string) =>
+    signedAs(name, {
+      type: 'result',
+      group: 'g',
+      ts: 0,
+      body: {
+        proposal,
+        closedAt: 5,
+        eligible: 1,
+        versions: [{ id: proposal, counts: [1, 0, 0, 0, 0] }],
+        outcome: { kind: 'fail' },
+        commit: 'c',
+      },
+    });
+  const version = signedAs('ana', {
+    type: 'version',
+    group: 'g',
+    ts: 0,
+    body: { proposal: 'p1', text: 'A wording, which never expires.' },
+  }).record;
+  return { vote, result, version };
+}
+
+/** The pull of `bytes`, one relay record each, from seq `from`. */
+function records(bytes: readonly Uint8Array[], from = 1): Pull['records'] {
+  return bytes.map((item, i) => ({ seq: from + i, received: 10 + i, bytes: item }));
+}
+
+describe('clearBallots (#111)', () => {
+  it('deletes a Proposal’s ballots and every other result for it from the log and the outbox, in one change', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const { vote, result, version } = signed();
+    const kept = result('ana', 'p1');
+    const other = result('ben', 'p1').record;
+    const elsewhere = vote('ana', 'p2');
+    const log = [vote('ana', 'p1'), version, kept.record, other, elsewhere];
+    await store.applyPull(group.groupId, pull(records(log), 5), eventIdOf);
+    await store.enqueueAll(group.groupId, [vote('ben', 'p1'), vote('ben', 'p2')]);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+    const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+    transaction.mockClear();
+
+    await store.clearBallots(group.groupId, [{ proposal: 'p1', keep: kept.id }]);
+
+    expect(transaction.mock.calls.map((call) => call[1])).toEqual(['readwrite']);
+    expect(heard).toEqual([group.groupId]);
+    const saved = await store.getGroup(group.groupId);
+    expect(saved?.log.map((record) => local(record.bytes))).toEqual([
+      version,
+      kept.record,
+      elsewhere,
+    ]);
+    expect(saved?.outbox.map(local)).toEqual([vote('ben', 'p2')]);
+    expect(saved?.cleared).toEqual(['p1']);
+  });
+
+  it('adds each Proposal to cleared once, however often it runs', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.clearBallots(group.groupId, [{ proposal: 'p1', keep: 'r1' }]);
+    await store.clearBallots(group.groupId, [
+      { proposal: 'p1', keep: 'r1' },
+      { proposal: 'p2', keep: 'r2' },
+    ]);
+    expect((await store.getGroup(group.groupId))?.cleared).toEqual(['p1', 'p2']);
+  });
+
+  it('refuses a group that isn’t on the device', async () => {
+    const store = await openStore();
+    await expect(store.clearBallots('nope', [{ proposal: 'p1', keep: 'r' }])).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+});
+
+describe('applyPull once ballots are cleared (#111)', () => {
+  it('drops any ballot or result for a cleared Proposal, and keeps everything else', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const { vote, result, version } = signed();
+    await store.clearBallots(group.groupId, [{ proposal: 'p1', keep: 'kept' }]);
+    const elsewhere = vote('ana', 'p2');
+
+    await store.applyPull(
+      group.groupId,
+      pull(records([vote('ana', 'p1'), result('ben', 'p1').record, version, elsewhere]), 4),
+      eventIdOf,
+    );
+
+    const saved = await store.getGroup(group.groupId);
+    expect(saved?.log.map((record) => local(record.bytes))).toEqual([version, elsewhere]);
+    expect(saved?.cursor).toBe(4);
   });
 });
 

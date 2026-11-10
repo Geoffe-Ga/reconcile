@@ -170,7 +170,8 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
 - **Result:**
   - The outcome sentence comes first.
   - Totals come next.
-  - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
+  - Individual ballots appear under a disclosure, with the expiry date shown under its toggle ("Individual scores and notes are visible until Sat 12 Dec. Screenshots taken before then can outlast this.", #111).
+  - Once they expire, a caption takes the disclosure's place ("Individual scores and notes were cleared on Sat 12 Dec."), and the totals stay.
 - **Erase card** (Settings): one card, "Erase Reconcile from this device", in the same calm style as any setting.
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.

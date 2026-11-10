@@ -19,9 +19,9 @@ import {
 
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
-import { fold } from '../engine/fold';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { Group, Me, Store } from '../store/db';
+import { foldGroup } from '../store/expiry';
 import type { Invite } from './invite';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
@@ -71,10 +71,7 @@ export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
   const { group, loaded } = useStoredGroup(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
-  const state = useMemo(
-    () => (group === undefined ? null : fold(group.log, group.relayNow)),
-    [group],
-  );
+  const state = useMemo(() => (group === undefined ? null : foldGroup(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   const invite = useMemo(() => (group === undefined ? null : { secret: group.secret }), [group]);
   return {

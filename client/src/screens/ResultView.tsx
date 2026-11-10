@@ -7,19 +7,24 @@
  * ADR-0069's sentence and Propose again. Then each version's totals, the
  * individual ballots and notes under a disclosure, and when voting ran, in
  * relay time. A ballot that reached the relay too late tells its author so.
- * No result offers a part-ways action (ADR-0068). Everything here is read
- * from the group's own log on this device; nothing is sent.
+ * The disclosure says until when the individual scores and notes stay
+ * visible, and once this device has cleared them, when it did (#111), while
+ * the outcome and totals stay. A record of the decision that doesn't match
+ * this device's ballots names who posted it. No result offers a part-ways
+ * action (ADR-0068). Everything here is read from the group's own log on
+ * this device; nothing is sent.
  */
 import { Fragment, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
-import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
+import { formatAverage, formatAverageLine, formatDay, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
 import { AtomText } from '../app/text/AtomText';
 import { formatMinute, minuteIso } from '../app/time';
 import { type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
+import { ballotsExpireAt } from '../engine/expiry';
 import type { Ballot, GroupState, Proposal } from '../engine/fold';
 import { proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
@@ -249,10 +254,29 @@ function BallotRow({ state, ballot, versions }: BallotRowProps) {
   );
 }
 
-/** The individual ballots and notes, by name, one tap away (ADR-0010: open inside the group). */
+/** A relay minute as a day, in a `<time>` element that never breaks across lines. */
+function Day({ minute }: { readonly minute: number }) {
+  return <time dateTime={minuteIso(minute)}>{formatDay(minute)}</time>;
+}
+
+/**
+ * The individual ballots and notes, by name, one tap away (ADR-0010: open
+ * inside the group), with the day they expire (#111). Once this device has
+ * cleared them, only that day is left to say.
+ */
 function Ballots({ props, versions }: Omit<OutcomeProps, 'detail'>) {
   const { state, proposal } = props;
-  const label = messages.result.ballots(proposal.ballots.length);
+  const { result } = messages;
+  const expires = ballotsExpireAt(state.rules, proposal);
+  if (proposal.cleared) {
+    return (
+      <p className="caption result-expiry">
+        {result.clearedOn} <Day minute={expires} />
+        {result.clearedOnEnd}
+      </p>
+    );
+  }
+  const label = result.ballots(proposal.ballots.length);
   return (
     <Disclosure className="reads-as result-ballots">
       <Heading level={3} className="reads-as-heading">
@@ -260,9 +284,15 @@ function Ballots({ props, versions }: Omit<OutcomeProps, 'detail'>) {
           {label}
         </Button>
       </Heading>
+      {proposal.ballots.length === 0 ? null : (
+        <p className="caption result-expiry">
+          {result.visibleUntil} <Day minute={expires} />
+          {result.visibleUntilEnd}
+        </p>
+      )}
       <DisclosurePanel>
         {proposal.ballots.length === 0 ? (
-          <p className="caption">{messages.result.noBallots}</p>
+          <p className="caption">{result.noBallots}</p>
         ) : (
           <ul className="result-list" aria-label={label}>
             {proposal.ballots.map((ballot) => (
@@ -273,6 +303,16 @@ function Ballots({ props, versions }: Omit<OutcomeProps, 'detail'>) {
       </DisclosurePanel>
     </Disclosure>
   );
+}
+
+/** Each record of the decision that doesn't match this device's ballots, by who posted it (#111). */
+function Mismatches({ state, proposal }: Pick<ResultViewProps, 'state' | 'proposal'>) {
+  const { mismatchBefore, mismatchAfter } = messages.result;
+  return proposal.mismatched.map((author) => (
+    <p key={author} className="ballot-notice">
+      {mismatchBefore} <bdi>{displayName(state, author)}</bdi> {mismatchAfter}
+    </p>
+  ));
 }
 
 /** A relay minute as a date and time, in a `<time>` element that never breaks across lines. */
@@ -306,6 +346,7 @@ export function ResultView(props: ResultViewProps) {
       </h2>
       <Outcome props={props} detail={detail} versions={versions} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
+      <Mismatches state={state} proposal={proposal} />
       <Totals detail={detail} versions={versions} />
       <Ballots props={props} versions={versions} />
       <Ran proposal={proposal} />

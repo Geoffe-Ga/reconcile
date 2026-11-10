@@ -8,6 +8,7 @@ import { messages } from '../app/messages';
 import { replaceRoute, routeHref } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { DEFAULT_JOIN_LEVEL, type Level } from '../engine/capabilities';
+import { DEFAULT_RULES } from '../engine/rules';
 import { InvitePreview } from './InvitePreview';
 
 /** Props for {@link Join}. */
@@ -123,7 +124,7 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
           validate={checkName}
         />
         <LevelPicker value={level} onChange={setLevel} />
-        <p className="lede">{messages.join.visibility}</p>
+        <p className="lede">{messages.join.visibility(DEFAULT_RULES.ballotExpiryDays)}</p>
         {failed ? (
           <p role="alert" className="form-error">
             {messages.join.failed}

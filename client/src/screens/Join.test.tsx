@@ -70,7 +70,9 @@ describe('Join', () => {
       'This name is only shown in this group. It doesn’t have to be your real name.',
     );
     expect(
-      screen.getByText('People in this group will see the name you choose and how you vote.'),
+      screen.getByText(
+        'People in this group will see the name you choose and how you vote, until 30 days after each decision.',
+      ),
     ).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
@@ -104,7 +106,7 @@ describe('Join', () => {
     const name = await screen.findByRole('textbox', { name: 'Your name' });
     const picker = screen.getByRole('radiogroup', { name: 'Your involvement' });
     const visibility = screen.getByText(
-      'People in this group will see the name you choose and how you vote.',
+      'People in this group will see the name you choose and how you vote, until 30 days after each decision.',
     );
     expect(name.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(

@@ -11,12 +11,18 @@
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one.
+ *
+ * Once a decided Proposal's ballots expire (#111), `clearBallots` deletes
+ * them, its other results and anything else that expires with them from the
+ * log and the outbox, and marks the Proposal `cleared`. From then on every
+ * ingest drops such records for it, so none comes back from the relay.
  */
 
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
+import { expiryKeyOf } from '../engine/expiry';
 import type { LogRecord } from '../engine/fold';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
 
@@ -55,6 +61,18 @@ export interface Group {
   lastSyncAt: number | null;
   /** Private drafts by target, never sent (./drafts.ts). Absent until the first one. */
   drafts?: DraftShelf;
+  /**
+   * The Proposals whose ballots this device has deleted (#111), which `fold`
+   * takes, oldest first. Absent until the first. #73's invite header and #78's
+   * backup carry it, so a newcomer or a restored device knows which it can't check.
+   */
+  cleared?: string[];
+}
+
+/** A Proposal whose ballots expire now, and the event id of the result that stays. */
+export interface Clearing {
+  readonly proposal: string;
+  readonly keep: string;
 }
 
 /** What a device knows about a group when it creates or joins it. */
@@ -103,8 +121,18 @@ export interface Store extends DraftStore {
   enqueueAll(groupId: string, records: readonly Uint8Array[], draft?: string): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
-  /** Append each record whose event id isn't in the log yet, and save the sync state. */
+  /**
+   * Append each record whose event id isn't in the log yet, and save the sync
+   * state. A ballot, a result or anything else that expires with ballots, for a
+   * Proposal in `cleared`, is dropped (#111).
+   */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
+  /**
+   * In one change, delete from the log and the outbox every record that
+   * expires with each Proposal's ballots, apart from the result it keeps, and
+   * add the Proposal to `cleared` (#111).
+   */
+  clearBallots(groupId: string, clearings: readonly Clearing[]): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
@@ -192,11 +220,24 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       }),
     applyPull: (groupId, pull, idOf) =>
       change(groupId, (group) => {
-        group.log.push(...unseen(group.log, pull.records, idOf));
+        const kept = withoutCleared(pull.records, group.cleared ?? []);
+        group.log.push(...unseen(group.log, kept, idOf));
         group.cursor = pull.cursor;
         group.relayNow = pull.relayNow;
         group.instance = pull.instance;
         group.lastSyncAt = pull.lastSyncAt;
+      }),
+    clearBallots: (groupId, clearings) =>
+      change(groupId, (group) => {
+        const keep = new Map(clearings.map(({ proposal, keep }) => [proposal, keep]));
+        const expires = (bytes: Uint8Array): boolean => {
+          const key = expiryKeyOf(bytes);
+          return key !== null && keep.has(key.proposal) && keep.get(key.proposal) !== key.id;
+        };
+        group.log = group.log.filter((record) => !expires(record.bytes));
+        group.outbox = group.outbox.filter((bytes) => !expires(bytes));
+        const cleared = group.cleared ?? [];
+        group.cleared = [...cleared, ...[...keep.keys()].filter((id) => !cleared.includes(id))];
       }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
@@ -249,6 +290,15 @@ function unseen(log: LogRecord[], incoming: LogRecord[], idOf: EventIdOf): LogRe
     }
     seen.add(id);
     return true;
+  });
+}
+
+/** The records of `incoming` that don't expire with a Proposal in `cleared`. */
+function withoutCleared(incoming: LogRecord[], cleared: readonly string[]): LogRecord[] {
+  if (cleared.length === 0) return incoming;
+  return incoming.filter((record) => {
+    const proposal = expiryKeyOf(record.bytes)?.proposal;
+    return proposal === undefined || !cleared.includes(proposal);
   });
 }
 
