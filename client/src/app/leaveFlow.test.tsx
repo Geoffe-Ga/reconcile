@@ -50,7 +50,7 @@ async function sync(device: TestDevice | undefined): Promise<void> {
 describe('Group home brings people back', () => {
   it('lists a new Proposal under Needs your vote for the others, and not once they’ve voted', async () => {
     const user = userEvent.setup();
-    const { groupId, devices } = await group(['Ana', 'Ben', 'Cal']);
+    const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
     const a = mount(ana?.services, 'a');

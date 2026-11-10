@@ -128,6 +128,12 @@ describe('draft helpers', () => {
     expect(draftIn({}, 'atom-1')).toBeUndefined();
   });
 
+  it('read back a draft’s voting window with it (#106)', async () => {
+    const store = await storeWithGroup();
+    await store.writeDraft(group.groupId, 'atom-1', { ...draft, window: 10 });
+    expect(await store.readDraft(group.groupId, 'atom-1')).toEqual({ ...draft, window: 10 });
+  });
+
   it('skip a stored value that isn’t a whole draft', () => {
     const odd = new Map<string, unknown>([['atom-1', { title: 'x' }]]);
     expect(draftIn({ drafts: odd as Map<string, Draft> }, 'atom-1')).toBeUndefined();
@@ -149,6 +155,9 @@ describe('draft helpers', () => {
     ['a string', 'draft', false],
     ['a draft missing its link', { title: '', why: '', text: '' }, false],
     ['a draft with a number', { ...draft, why: 2 }, false],
+    ['a draft with a voting window', { ...draft, window: 10 }, true],
+    ['a draft with a blank voting window', { ...draft, window: Number.NaN }, true],
+    ['a draft with a voting window as text', { ...draft, window: '10' }, false],
   ])('know %s when they see it', (_name, value, expected) => {
     expect(isDraft(value)).toBe(expected);
   });
