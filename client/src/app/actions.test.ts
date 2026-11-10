@@ -18,6 +18,7 @@ import {
   createGroup,
   type CreateGroupValues,
   joinGroup,
+  leaveGroup,
   lookupInvite,
   type Services,
 } from './actions';
@@ -410,5 +411,37 @@ describe('joinGroup', () => {
 
     await expect(joinGroup(ana, invite, found, 'Ana again', FOUNDER_LEVEL)).rejects.toThrow();
     expect((await stored(ana, groupId)).outbox).toEqual([]);
+  });
+});
+
+describe('leaveGroup', () => {
+  it('queues a signed leave, marks the group leaving, and the group goes once the relay has it', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const created = await createGroup(ana, VALUES);
+    if (created.outcome !== 'created') throw new Error('Expected a group.');
+    await ana.sync.syncOnce();
+    fake.offline = true;
+
+    await leaveGroup(ana, created.groupId);
+
+    const group = await stored(ana, created.groupId);
+    const leave = queued(group);
+    expect(leave?.event).toMatchObject({
+      type: 'leave',
+      group: created.groupId,
+      author: group.me.author,
+      ts: NOW,
+      body: {},
+    });
+    expect(group.leaving).toEqual(group.outbox[0]);
+    fake.offline = false;
+    await ana.sync.syncOnce();
+    expect(await ana.store.getGroup(created.groupId)).toBeUndefined();
+  });
+
+  it('refuses a group this device isn’t in', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    await expect(leaveGroup(ana, 'no-such-group')).rejects.toThrow('No such group on this device.');
   });
 });

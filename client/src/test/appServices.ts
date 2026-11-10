@@ -31,6 +31,16 @@ export async function testDevice(fake: FakeRelay, name: string): Promise<TestDev
     copied.push(text);
     return Promise.resolve();
   });
-  const services = { store, relay, sync, seal: xchachaSeal, now, origin: TEST_ORIGIN, copyText };
+  // No Web Share, as in a desktop browser without it: Tell your group copies instead.
+  const services = {
+    store,
+    relay,
+    sync,
+    seal: xchachaSeal,
+    now,
+    origin: TEST_ORIGIN,
+    copyText,
+    share: undefined,
+  };
   return { services, copied };
 }

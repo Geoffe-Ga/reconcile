@@ -32,7 +32,7 @@ export interface VersionView {
 
 /** What a steward change's ballot decides: electing its nominee, or recalling its steward. */
 export function stewardView(
-  state: Pick<GroupState, 'members' | 'rules'>,
+  state: Pick<GroupState, 'members' | 'former' | 'rules'>,
   change: Omit<StewardChange, 'kind'>,
 ): StewardView {
   const motion = motionFor(state, change);

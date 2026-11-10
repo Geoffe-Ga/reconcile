@@ -20,7 +20,7 @@ export interface Motion {
 
 /** The motion for a steward change: its nominee, or for a recall (no nominee) the seat's steward. */
 export function motionFor(
-  state: Pick<GroupState, 'members'>,
+  state: Pick<GroupState, 'members' | 'former'>,
   change: {
     readonly seat: SeatNumber;
     readonly member: string | null;

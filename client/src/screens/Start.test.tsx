@@ -8,8 +8,8 @@ import { axeViolations } from '../test/axe';
 import { Start, type StartGroup } from './Start';
 
 const GROUPS: StartGroup[] = [
-  { groupId: 'group-one', name: 'Riverside Tenants', title: 'House rules' },
-  { groupId: 'group-two', name: 'Book club', title: 'What we read' },
+  { groupId: 'group-one', name: 'Riverside Tenants', title: 'House rules', leaving: false },
+  { groupId: 'group-two', name: 'Book club', title: 'What we read', leaving: false },
 ];
 
 describe('Start', () => {
@@ -25,6 +25,31 @@ describe('Start', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('lists every group on the device by name, however many there are', () => {
+    const names = ['Riverside Tenants', 'Book club', 'Allotment society', 'Choir'];
+    const groups = names.map((name, i) => ({
+      groupId: `group-${String(i)}`,
+      name,
+      title: 'Our rules',
+      leaving: false,
+    }));
+    render(<Start groups={groups} onOpenInvite={vi.fn()} />);
+    const titles = within(screen.getByRole('list'))
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('bdi')?.textContent);
+    expect(titles).toEqual(names);
+  });
+
+  it('marks a group whose leave waits for the relay as leaving', async () => {
+    const [first, second] = GROUPS as [StartGroup, StartGroup];
+    render(<Start groups={[{ ...first, leaving: true }, second]} onOpenInvite={vi.fn()} />);
+    const [leaving, staying] = within(screen.getByRole('list')).getAllByRole('link');
+    expect(within(leaving as HTMLElement).getByText('Leaving…')).toBeVisible();
+    expect(leaving).toHaveTextContent('Riverside Tenants');
+    expect(staying).not.toHaveTextContent('Leaving…');
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('says so in one sentence when there are no groups yet, and offers Create group', async () => {
     render(<Start groups={[]} onOpenInvite={vi.fn()} />);
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
@@ -34,7 +59,12 @@ describe('Start', () => {
   });
 
   it('names a group whose founding event hasn’t reached the relay yet', () => {
-    render(<Start groups={[{ groupId: 'g', name: null, title: null }]} onOpenInvite={vi.fn()} />);
+    render(
+      <Start
+        groups={[{ groupId: 'g', name: null, title: null, leaving: false }]}
+        onOpenInvite={vi.fn()}
+      />,
+    );
     expect(screen.getByRole('link', { name: /Waiting for the relay/ })).toHaveAttribute(
       'href',
       '#/g/g',
