@@ -21,6 +21,28 @@ import {
 /** The bytes before a record's event: the public key, then the signature. */
 export const RECORD_HEADER_BYTES = PUBLIC_KEY_BYTES + SIGNATURE_BYTES;
 
+/**
+ * The largest record a device queues: 64,000 bytes (spec §2), counted in
+ * bytes, never characters. It sits below the 65,492 a blob carries so #73 can
+ * put any record, with its seq and receipt time, in one invite chunk.
+ */
+export const MAX_RECORD_BYTES = 64_000;
+
+/** Thrown when a record is over {@link MAX_RECORD_BYTES}. */
+export class RecordTooLarge extends Error {
+  /** The refused record's length in bytes. */
+  readonly size: number;
+  /** The largest record a device queues. */
+  readonly limit = MAX_RECORD_BYTES;
+
+  /** Refuse a record of `size` bytes. */
+  constructor(size: number) {
+    super(`A record is at most ${String(MAX_RECORD_BYTES)} bytes, not ${String(size)}.`);
+    this.name = 'RecordTooLarge';
+    this.size = size;
+  }
+}
+
 /** A record whose signature verified. */
 export interface VerifiedRecord {
   /** The key that signed it. */

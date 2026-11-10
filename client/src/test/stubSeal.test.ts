@@ -1,9 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { utf8 } from '../test/bytes';
-import { TEST_MAILBOX } from '../test/fakeRelay';
-import { BLOB_SIZES, MAX_PLAINTEXT_BYTES, NONCE_BYTES, PayloadTooLarge, TAG_BYTES } from './seal';
+import { utf8 } from './bytes';
+import { TEST_MAILBOX } from './fakeRelay';
+import {
+  BLOB_SIZES,
+  MAX_PLAINTEXT_BYTES,
+  NONCE_BYTES,
+  PayloadTooLarge,
+  TAG_BYTES,
+} from '../crypto/seal';
 import { stubSeal } from './stubSeal';
 
 const mailbox = TEST_MAILBOX;

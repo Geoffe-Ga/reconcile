@@ -5,7 +5,7 @@
 import { vi } from 'vitest';
 
 import type { AppServices } from '../app/services';
-import { stubSeal } from '../crypto/stubSeal';
+import { xchachaSeal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import { openStore } from '../store/db';
 import { createSync } from '../store/sync';
@@ -25,12 +25,12 @@ export async function testDevice(fake: FakeRelay, name: string): Promise<TestDev
   const store = await openStore(name);
   const relay = createRelay({ fetch: fake.fetch });
   const now = (): number => 1_762_650_000_000;
-  const sync = createSync({ store, relay, clock: now });
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now });
   const copied: string[] = [];
   const copyText = vi.fn((text: string) => {
     copied.push(text);
     return Promise.resolve();
   });
-  const services = { store, relay, sync, seal: stubSeal, now, origin: TEST_ORIGIN, copyText };
+  const services = { store, relay, sync, seal: xchachaSeal, now, origin: TEST_ORIGIN, copyText };
   return { services, copied };
 }

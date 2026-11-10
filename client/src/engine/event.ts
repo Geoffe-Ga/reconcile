@@ -9,9 +9,12 @@
  * reader trusts an event only once its record verifies and its `author` is the
  * key that signed it (ADR-0006).
  */
+import { base64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
 import { signRecord, verifyRecord } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
+
+export { base64url, fromBase64url } from '../crypto/base64url';
 
 /** The only envelope version this engine understands. The fold ignores any other. */
 export const EVENT_VERSION = 1;
@@ -161,19 +164,6 @@ const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /** An author: a 32-byte Ed25519 public key in unpadded base64url. */
 const AUTHOR = /^[A-Za-z0-9_-]{43}$/;
-
-/** Encodes bytes as unpadded base64url. */
-export function base64url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/** Decodes base64url, with or without padding, to bytes. */
-export function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
 
 /** The id of an event: the unpadded base64url SHA-256 of its exact bytes. */
 export function eventId(bytes: Uint8Array): string {

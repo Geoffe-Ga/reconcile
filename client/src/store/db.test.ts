@@ -2,9 +2,8 @@ import { IDBDatabase as FakeIDBDatabase } from 'fake-indexeddb';
 import { openDB } from 'idb';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAX_PLAINTEXT_BYTES, PayloadTooLarge } from '../crypto/seal';
+import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import { local, text, utf8 } from '../test/bytes';
-import { TEST_MAILBOX } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { openStore } from './db';
 import type { NewGroup, Pull } from './db';
@@ -13,7 +12,6 @@ freshIndexedDBPerTest();
 
 const group: NewGroup = {
   groupId: 'group-1',
-  mailbox: TEST_MAILBOX,
   secret: new Uint8Array(32).fill(9),
   signingKey: new Uint8Array(32).fill(7),
   me: { author: 'author-ana', name: 'Ana' },
@@ -95,13 +93,20 @@ describe('a group in the store', () => {
     expect(back).toMatchObject({ cursor: 4, relayNow: 29_000_010, instance: 'relay-1' });
   });
 
-  it('deletes the stub era’s unsigned data when it upgrades, migrating none of it', async () => {
-    const old = await openDB('reconcile', 1, {
+  it.each([
+    [1, 'the stub era’s unsigned data'],
+    [2, 'the readable blobs era’s random mailbox ids'],
+  ])('deletes version %i’s data (%s) when it upgrades, migrating none of it', async (version) => {
+    const old = await openDB('reconcile', version, {
       upgrade(database) {
         database.createObjectStore('groups', { keyPath: 'groupId' });
       },
     });
-    await old.put('groups', { groupId: 'stub-era', me: { author: 'random-id', name: 'Ana' } });
+    await old.put('groups', {
+      groupId: 'old-era',
+      mailbox: 'random-id',
+      secret: new Uint8Array(32),
+    });
     old.close();
 
     const store = await openStore();
@@ -109,6 +114,26 @@ describe('a group in the store', () => {
     expect(await store.listGroups()).toEqual([]);
     await store.addGroup(group);
     expect((await store.listGroups()).map((stored) => stored.groupId)).toEqual(['group-1']);
+  });
+
+  it('keeps the secret and nothing derived from it', async () => {
+    const store = await openStore();
+
+    await store.addGroup(group);
+
+    const [stored] = await store.listGroups();
+    expect(Object.keys(stored ?? {}).sort()).toEqual([
+      'cursor',
+      'groupId',
+      'instance',
+      'lastSyncAt',
+      'log',
+      'me',
+      'outbox',
+      'relayNow',
+      'secret',
+      'signingKey',
+    ]);
   });
 
   it('keeps separately named stores apart', async () => {
@@ -133,14 +158,25 @@ describe('enqueue', () => {
     expect((await store.getGroup(group.groupId))?.outbox.map(text)).toEqual(['{"n":1}', '{"n":2}']);
   });
 
-  it('refuses an event too large for any blob, queuing nothing', async () => {
+  it('queues a record of exactly 64,000 bytes', async () => {
     const store = await openStore();
     await store.addGroup(group);
 
-    await expect(
-      store.enqueue(group.groupId, new Uint8Array(MAX_PLAINTEXT_BYTES + 1)),
-    ).rejects.toThrow(PayloadTooLarge);
+    await store.enqueue(group.groupId, new Uint8Array(MAX_RECORD_BYTES));
 
+    expect((await store.getGroup(group.groupId))?.outbox.map((entry) => entry.length)).toEqual([
+      64_000,
+    ]);
+  });
+
+  it('refuses a record over 64,000 bytes, queuing nothing', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+
+    const refused = store.enqueue(group.groupId, new Uint8Array(MAX_RECORD_BYTES + 1));
+
+    await expect(refused).rejects.toThrow(RecordTooLarge);
+    await expect(refused).rejects.toMatchObject({ size: 64_001 });
     expect((await store.getGroup(group.groupId))?.outbox).toEqual([]);
   });
 
@@ -171,7 +207,7 @@ describe('enqueueAll', () => {
     expect(await store.readDraft(group.groupId, 'again:p1')).toBeUndefined();
   });
 
-  it('queues none of them when one is too large for any blob, and keeps the draft', async () => {
+  it('queues none of them when one is over 64,000 bytes, and keeps the draft', async () => {
     const store = await openStore();
     await store.addGroup(group);
     const draft = { title: 'T', why: 'W', text: 'X', link: '' };
@@ -180,10 +216,10 @@ describe('enqueueAll', () => {
     await expect(
       store.enqueueAll(
         group.groupId,
-        [utf8('{"n":1}'), new Uint8Array(MAX_PLAINTEXT_BYTES + 1)],
+        [utf8('{"n":1}'), new Uint8Array(MAX_RECORD_BYTES + 1)],
         'atom-1',
       ),
-    ).rejects.toThrow(PayloadTooLarge);
+    ).rejects.toThrow(RecordTooLarge);
 
     expect((await store.getGroup(group.groupId))?.outbox).toEqual([]);
     expect(await store.readDraft(group.groupId, 'atom-1')).toEqual(draft);

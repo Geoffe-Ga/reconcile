@@ -11,7 +11,7 @@
  */
 import { type Locator, type Page } from '@playwright/test';
 
-import { expect, expectAccessible, heading, type Person, pick, test } from './support';
+import { expect, expectAccessible, heading, type Person, pick, test } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
+import { deriveMailboxId, deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
+import { MAX_RECORD_BYTES } from '../crypto/record';
+import { xchachaSeal } from '../crypto/seal';
 import { publicKeyOf } from '../crypto/sign';
-import { stubSeal } from '../crypto/stubSeal';
 import { DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from '../engine/capabilities';
 import { base64url, type ParsedEvent, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
@@ -10,6 +11,7 @@ import { DEFAULT_RULES } from '../engine/rules';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { createSync, type Sync } from '../store/sync';
+import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import {
@@ -19,7 +21,7 @@ import {
   lookupInvite,
   type Services,
 } from './actions';
-import { newInvite } from './invite';
+import type { Invite } from './invite';
 
 freshIndexedDBPerTest();
 
@@ -43,8 +45,18 @@ async function device(fake: FakeRelay, name: string): Promise<Services & { sync:
   const store = await openStore(name);
   opened.push(store);
   const relay = createRelay({ fetch: fake.fetch });
-  const sync = createSync({ store, relay, clock: () => NOW });
-  return { store, relay, sync, seal: stubSeal, now: () => NOW };
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: () => NOW });
+  return { store, relay, sync, seal: xchachaSeal, now: () => NOW };
+}
+
+/** An invite to a group no device has made. */
+function newInvite(): Invite {
+  return { secret: newGroupSecret() };
+}
+
+/** The invite `group`'s members hand out: its secret. */
+function inviteTo(group: Group): Invite {
+  return { secret: group.secret };
 }
 
 /** The stored group, which the test expects to exist. */
@@ -68,21 +80,13 @@ function secretsOf(group: Group): Set<string> {
   ]);
   return new Set([
     group.groupId,
-    group.mailbox,
+    deriveMailboxId(group.secret),
+    base64url(deriveSealKey(group.secret)),
     base64url(group.secret),
     base64url(group.signingKey),
     group.me.author,
     ...keys,
   ]);
-}
-
-/** Whether `needle` occurs anywhere inside `haystack`. */
-function contains(haystack: Uint8Array, needle: Uint8Array): boolean {
-  const last = haystack.length - needle.length;
-  for (let start = 0; start <= last; start += 1) {
-    if (needle.every((byte, i) => haystack[start + i] === byte)) return true;
-  }
-  return false;
 }
 
 async function created(services: Services, values = VALUES): Promise<string> {
@@ -97,7 +101,7 @@ describe('createGroup', () => {
     const groupId = await created(ana);
 
     const group = await stored(ana, groupId);
-    expect(group.mailbox).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(group).not.toHaveProperty('mailbox');
     expect(group.secret).toHaveLength(32);
     expect(group.me.name).toBe('Ana');
     expect(group.signingKey).toHaveLength(32);
@@ -157,12 +161,12 @@ describe('createGroup', () => {
     await ana.sync.syncOnce();
 
     const group = await stored(ana, groupId);
-    expect(fake.blobs(group.mailbox)).toHaveLength(1);
+    expect(fake.blobs(deriveMailboxId(group.secret))).toHaveLength(1);
     expect(group.outbox).toEqual([]);
     expect(fold(group.log, group.relayNow).title).toBe('House rules');
   });
 
-  it('refuses a Document too large for one blob, before anything is stored or sent', async () => {
+  it('refuses a Document too large for one record, before anything is stored or sent', async () => {
     const fake = createFakeRelay();
     const ana = await device(fake, 'ana');
     const result = await createGroup(ana, { ...VALUES, text: 'x'.repeat(66_000) });
@@ -171,26 +175,63 @@ describe('createGroup', () => {
     expect(fake.requests).toEqual([]);
   });
 
-  it('counts the record’s key and signature toward the blob’s limit', async () => {
+  it('takes a genesis record of exactly 64,000 bytes, key and signature included, and refuses one more', async () => {
     const ana = await device(createFakeRelay(), 'ana');
-    // A genesis whose bytes alone fit the largest blob, but not with the 96-byte header.
     const base = { ...VALUES, chat: null, text: 'x' };
     const result = await createGroup(ana, base);
     if (result.outcome !== 'created') throw new Error('Expected a group.');
     const record = (await stored(ana, result.groupId)).outbox[0] ?? new Uint8Array();
-    const room = MAX_PLAINTEXT_BYTES - record.length;
-    const text = 'x'.repeat(1 + room + 1);
-    expect(await createGroup(ana, { ...base, text })).toEqual({ outcome: 'too-large' });
-    expect(await createGroup(ana, { ...base, text: 'x'.repeat(1 + room) })).toMatchObject({
-      outcome: 'created',
+    const room = MAX_RECORD_BYTES - record.length;
+    const fits = await createGroup(ana, { ...base, text: 'x'.repeat(1 + room) });
+    if (fits.outcome !== 'created') throw new Error('Expected a group.');
+    expect((await stored(ana, fits.groupId)).outbox[0]).toHaveLength(64_000);
+    expect(await createGroup(ana, { ...base, text: 'x'.repeat(1 + room + 1) })).toEqual({
+      outcome: 'too-large',
     });
+  });
+
+  it('counts the bytes of a Document, not its characters', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    // 32,000 characters, each two bytes in UTF-8: far under 64,000 characters, over 64,000 bytes.
+    const result = await createGroup(ana, { ...VALUES, text: 'é'.repeat(32_000) });
+    expect(result).toEqual({ outcome: 'too-large' });
+    expect(await ana.store.listGroups()).toEqual([]);
+  });
+
+  it('gives two groups with the same name and founder different secrets and unrelated mailboxes', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    const one = await stored(ana, await created(ana));
+    const two = await stored(ana, await created(ana));
+    expect(one.groupId).not.toBe(two.groupId);
+    expect(base64url(one.secret)).not.toBe(base64url(two.secret));
+    expect(deriveMailboxId(one.secret)).not.toBe(deriveMailboxId(two.secret));
+    expect(base64url(deriveSealKey(one.secret))).not.toBe(base64url(deriveSealKey(two.secret)));
+  });
+
+  it('seals what it sends: no blob holds the group’s words, names, keys or ids', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const group = await stored(ana, await created(ana));
+    await ana.sync.syncOnce();
+
+    const [put] = fake.requests.filter((request) => request.method === 'PUT');
+    const blob = put?.body ?? new Uint8Array();
+    expect(blob).toHaveLength(1024);
+    const readable = [
+      ...['Riverside Tenants', 'Ana', 'House rules', 'Quiet hours start at ten.'].map(utf8),
+      ...[group.groupId, group.me.author, base64url(group.secret)].map(utf8),
+      group.secret,
+      group.signingKey,
+      publicKeyOf(group.signingKey),
+    ];
+    for (const bytes of readable) expect(contains(blob, bytes)).toBe(false);
   });
 
   it('makes different keys for every group', async () => {
     const ana = await device(createFakeRelay(), 'ana');
     const one = await stored(ana, await created(ana));
     const two = await stored(ana, await created(ana, { ...VALUES, title: 'Other' }));
-    expect(one.mailbox).not.toBe(two.mailbox);
     expect(base64url(one.secret)).not.toBe(base64url(two.secret));
     expect(base64url(one.signingKey)).not.toBe(base64url(two.signingKey));
     expect(one.me.author).not.toBe(two.me.author);
@@ -216,7 +257,7 @@ describe('a device in two groups', () => {
     const theirs = await created(ben, { ...VALUES, groupName: 'Hilltop Allotments' });
     await ben.sync.syncOnce();
     const benGroup = await stored(ben, theirs);
-    const invite = { mailbox: benGroup.mailbox, secret: benGroup.secret };
+    const invite = inviteTo(benGroup);
     const lookup = await lookupInvite(ana, invite);
     if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
     await joinGroup(ana, invite, lookup.group, 'Ana', DEFAULT_JOIN_LEVEL);
@@ -248,7 +289,7 @@ describe('lookupInvite', () => {
     const groupId = await created(ana);
     await ana.sync.syncOnce();
     const group = await stored(ana, groupId);
-    return { ana, groupId, invite: { mailbox: group.mailbox, secret: group.secret } };
+    return { ana, groupId, invite: inviteTo(group) };
   }
 
   it('finds the group’s id, name and Document title from its genesis', async () => {
@@ -276,7 +317,7 @@ describe('lookupInvite', () => {
     const invite = newInvite();
     expect(await lookupInvite(ben, invite)).toEqual({ kind: 'missing' });
 
-    await ben.relay.putBlob(invite.mailbox, new Uint8Array(1024).fill(7));
+    await ben.relay.putBlob(deriveMailboxId(invite.secret), new Uint8Array(1024).fill(7));
     expect(await lookupInvite(ben, invite)).toEqual({ kind: 'missing' });
   });
 
@@ -287,7 +328,7 @@ describe('lookupInvite', () => {
     expect(await lookupInvite(ben, newInvite())).toEqual({ kind: 'offline' });
   });
 
-  it('reads only the mailbox, and sends no secret', async () => {
+  it('reads only the mailbox the secret derives, and sends no secret', async () => {
     const fake = createFakeRelay();
     const { invite } = await anaInvites(fake);
     const ben = await device(fake, 'ben');
@@ -296,8 +337,19 @@ describe('lookupInvite', () => {
     await lookupInvite(ben, invite);
 
     expect(fake.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-      `GET /v1/mailbox/${invite.mailbox}?after=0&limit=100`,
+      `GET /v1/mailbox/${deriveMailboxId(invite.secret)}?after=0&limit=100`,
     ]);
+  });
+
+  it('opens nothing sealed under another group’s secret', async () => {
+    const fake = createFakeRelay();
+    const { invite } = await anaInvites(fake);
+    const ben = await device(fake, 'ben');
+    const elsewhere = newInvite();
+    const [blob] = fake.blobs(deriveMailboxId(invite.secret));
+    await ben.relay.putBlob(deriveMailboxId(elsewhere.secret), Uint8Array.from(blob ?? []));
+
+    expect(await lookupInvite(ben, elsewhere)).toEqual({ kind: 'missing' });
   });
 });
 
@@ -313,7 +365,7 @@ describe('joinGroup', () => {
     const groupId = await created(ana);
     await ana.sync.syncOnce();
     const anaGroup = await stored(ana, groupId);
-    const invite = { mailbox: anaGroup.mailbox, secret: anaGroup.secret };
+    const invite = inviteTo(anaGroup);
     const ben = await device(fake, 'ben');
     const lookup = await lookupInvite(ben, invite);
     if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
@@ -326,7 +378,7 @@ describe('joinGroup', () => {
     expect(before.signingKey).toHaveLength(32);
     expect(before.me.author).toBe(base64url(publicKeyOf(before.signingKey)));
     expect(before.me.author).not.toBe(anaGroup.me.author);
-    expect(before.mailbox).toBe(invite.mailbox);
+    expect(base64url(before.secret)).toBe(base64url(invite.secret));
     expect(before.cursor).toBe(lookup.group.page.cursor);
     expect(fold(before.log, before.relayNow).title).toBe('House rules');
     expect(queued(before)?.event).toEqual({
@@ -354,7 +406,7 @@ describe('joinGroup', () => {
     const group = await stored(ana, groupId);
     const page = { records: [], cursor: 0, relayNow: 0, instance: 'i' };
     const found = { groupId, name: 'n', title: 't', page };
-    const invite = { mailbox: group.mailbox, secret: group.secret };
+    const invite = inviteTo(group);
 
     await expect(joinGroup(ana, invite, found, 'Ana again', FOUNDER_LEVEL)).rejects.toThrow();
     expect((await stored(ana, groupId)).outbox).toEqual([]);

@@ -1,0 +1,25 @@
+{
+  "kind": "derive",
+  "about": "A group secret's derivations (spec §3): HKDF-SHA-256 (RFC 5869) with an empty salt and 32 bytes of output, computed with Python's hmac and hashlib, an implementation independent of @noble/hashes. Each value is its bytes; the mailbox id is the unpadded base64url of its bytes.",
+  "infos": {
+    "mailboxId": "reconcile/v1/mailbox",
+    "sealKey": "reconcile/v1/seal-key"
+  },
+  "vectors": [
+    {
+      "name": "the secret 00 01 02 … 1f",
+      "secret": [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31
+      ],
+      "mailboxId": [
+        65, 252, 77, 94, 48, 241, 122, 35, 35, 91, 225, 37, 25, 185, 244, 197, 195, 247, 106, 56,
+        55, 86, 28, 114, 3, 212, 113, 153, 3, 30, 35, 94
+      ],
+      "sealKey": [
+        179, 199, 208, 86, 217, 129, 166, 193, 135, 185, 139, 180, 214, 253, 66, 175, 101, 115, 50,
+        25, 52, 213, 230, 222, 74, 201, 208, 141, 117, 236, 182, 232
+      ]
+    }
+  ]
+}

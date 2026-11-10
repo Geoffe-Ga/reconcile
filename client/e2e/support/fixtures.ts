@@ -1,7 +1,8 @@
 /**
- * What the end-to-end specs share: a fixture that opens one browser profile
- * per person under the deploy CSP and fails the test on any CSP violation in
- * any of them, axe on the screen a person is looking at, and a few locators.
+ * What the end-to-end specs share: a fresh run of the real relay for each
+ * test (`relay.ts`), a fixture that opens one browser profile per person
+ * under the deploy CSP and fails the test on any CSP violation in any of
+ * them, axe on the screen a person is looking at, and a few locators.
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -11,6 +12,8 @@ import {
   type Page,
   test as base,
 } from '@playwright/test';
+
+import { type RunningRelay, startRelay } from './relay';
 
 export { expect };
 
@@ -27,7 +30,7 @@ export interface Person {
 }
 
 /** Opens a new profile for `name`; the fixture closes it after the test. */
-type OpenProfile = (name: string, options?: BrowserContextOptions) => Promise<Person>;
+export type OpenProfile = (name: string, options?: BrowserContextOptions) => Promise<Person>;
 
 /**
  * Runs in every page before the app: sends each `securitypolicyviolation` to
@@ -46,8 +49,24 @@ function recordCspViolations(report: string): void {
   );
 }
 
-/** Playwright's `test`, with `openProfile`: each profile it opens is checked for CSP violations. */
-export const test = base.extend<{ openProfile: OpenProfile }>({
+/**
+ * Playwright's `test`, with the relay started before each test and stopped after
+ * it, and `openProfile`: each profile it opens is checked for CSP violations.
+ */
+export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile }>({
+  // Every test gets the relay, started before it and stopped after it. It waits for
+  // the relay's health check through `request`.
+  relay: [
+    async ({ request }, provide) => {
+      const relay = await startRelay(request);
+      try {
+        await provide(relay);
+      } finally {
+        await relay.stop();
+      }
+    },
+    { auto: true },
+  ],
   openProfile: async ({ browser }, provide) => {
     const profiles: { readonly person: Person; readonly violations: string[] }[] = [];
     await provide(async (name, options = {}) => {
