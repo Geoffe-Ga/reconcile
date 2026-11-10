@@ -1,10 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { xchachaSeal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { createSync } from '../store/sync';
-import { createFakeRelay, TEST_MAILBOX } from '../test/fakeRelay';
+import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import { useGroupList } from './useGroupList';
@@ -28,7 +29,6 @@ async function storeWithGroup(): Promise<{ store: Store; groupId: string }> {
   const me = { author: authorOf('ana'), name: 'Ana' };
   await store.addGroup({
     groupId: genesis.id,
-    mailbox: TEST_MAILBOX,
     secret: new Uint8Array(32),
     signingKey: testKeys('ana').secretKey,
     me,
@@ -55,7 +55,8 @@ describe('useGroupList', () => {
       expect(result.current).toEqual([{ groupId, name: null, title: null }]);
     });
 
-    const sync = createSync({ store, relay: createRelay({ fetch: createFakeRelay().fetch }) });
+    const relay = createRelay({ fetch: createFakeRelay().fetch });
+    const sync = createSync({ store, relay, seal: xchachaSeal });
     await act(() => sync.syncOnce());
 
     await waitFor(() => {
@@ -124,7 +125,6 @@ describe('useGroupList', () => {
 function stored(groupId: string): Group {
   return {
     groupId,
-    mailbox: TEST_MAILBOX,
     secret: new Uint8Array(32),
     signingKey: testKeys('ana').secretKey,
     me: { author: authorOf('ana'), name: 'Ana' },

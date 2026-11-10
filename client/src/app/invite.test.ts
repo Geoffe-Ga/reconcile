@@ -1,50 +1,34 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { deriveMailboxId, newGroupSecret } from '../crypto/groupKeys';
 import { base64url } from '../engine/event';
 import {
   type Invite,
   inviteLink,
   invitePayload,
-  newInvite,
   parseInviteLink,
   parseInvitePayload,
 } from './invite';
 
-const ID = /^[A-Za-z0-9_-]{43}$/;
-const LINK = /^https?:\/\/[^#]+\/#\/join\/[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/;
+const LINK = /^https?:\/\/[^#]+\/#\/join\/[A-Za-z0-9_-]{43}$/;
 
-const bytes32 = fc.uint8Array({ minLength: 32, maxLength: 32 });
-const anInvite = fc.record({ mailbox: bytes32.map(base64url), secret: bytes32 });
+const anInvite = fc.record({ secret: fc.uint8Array({ minLength: 32, maxLength: 32 }) });
 
-describe('newInvite', () => {
-  it('makes a 43-character mailbox id and a 32-byte secret', () => {
-    const invite = newInvite();
-    expect(invite.mailbox).toMatch(ID);
-    expect(invite.secret).toBeInstanceOf(Uint8Array);
-    expect(invite.secret).toHaveLength(32);
-  });
-
-  it('never repeats itself', () => {
-    const a = newInvite();
-    const b = newInvite();
-    expect(a.mailbox).not.toBe(b.mailbox);
-    expect(base64url(a.secret)).not.toBe(base64url(b.secret));
-    expect(base64url(a.secret)).not.toBe(a.mailbox);
-  });
-});
+/** An invite to a new group. */
+function newInvite(): Invite {
+  return { secret: newGroupSecret() };
+}
 
 describe('inviteLink', () => {
-  it('puts the mailbox and secret after #, joined by a dot', () => {
+  it('puts the group secret after #, and no mailbox id anywhere', () => {
     const invite = newInvite();
     const link = inviteLink('https://reconcile.example', invite);
     expect(link).toMatch(LINK);
-    expect(link).toBe(
-      `https://reconcile.example/#/join/${invite.mailbox}.${base64url(invite.secret)}`,
-    );
+    expect(link).toBe(`https://reconcile.example/#/join/${base64url(invite.secret)}`);
     const [beforeHash] = link.split('#');
     expect(beforeHash).not.toContain(base64url(invite.secret));
-    expect(beforeHash).not.toContain(invite.mailbox);
+    expect(link).not.toContain(deriveMailboxId(invite.secret));
   });
 });
 
@@ -53,40 +37,34 @@ describe('parseInvitePayload', () => {
     fc.assert(
       fc.property(anInvite, (invite: Invite) => {
         const parsed = parseInvitePayload(invitePayload(invite));
-        expect(parsed?.mailbox).toBe(invite.mailbox);
         expect(Array.from(parsed?.secret ?? [])).toEqual(Array.from(invite.secret));
       }),
     );
   });
 
-  it('refuses anything that is not two 43-character base64url parts', () => {
-    const { mailbox, secret } = newInvite();
-    const key = base64url(secret);
+  it('refuses anything that is not one 43-character base64url secret', () => {
+    const key = base64url(newGroupSecret());
     for (const payload of [
       '',
       '.',
-      mailbox,
-      `${mailbox}.`,
-      `.${key}`,
-      `${mailbox}.${key}.${key}`,
-      `${mailbox.slice(1)}.${key}`,
-      `${mailbox}.${key.slice(1)}`,
-      `${mailbox}x.${key}`,
-      `${mailbox}.${key}x`,
-      `${mailbox.slice(1)}+.${key}`,
-      `${mailbox}.${key.slice(1)}/`,
-      `${mailbox}.${key.slice(1)}=`,
+      key.slice(1),
+      `${key}x`,
+      `${key}.`,
+      `${key}.${key}`,
+      `${key.slice(1)}+`,
+      `${key.slice(1)}/`,
+      `${key.slice(1)}=`,
     ]) {
       expect(parseInvitePayload(payload), payload).toBeNull();
     }
   });
 
   it('refuses a secret whose last character carries stray bits', () => {
-    const { mailbox, secret } = newInvite();
+    const secret = newGroupSecret();
     // 32 bytes leave 2 spare bits in the 43rd character; 'B' sets one of them.
     const key = base64url(secret.map(() => 0)).slice(0, 42) + 'B';
-    expect(parseInvitePayload(`${mailbox}.${key}`)).toBeNull();
-    expect(parseInvitePayload(`${mailbox}.${base64url(secret)}`)).not.toBeNull();
+    expect(parseInvitePayload(key)).toBeNull();
+    expect(parseInvitePayload(base64url(secret))).not.toBeNull();
   });
 });
 
@@ -99,8 +77,9 @@ describe('parseInviteLink', () => {
     ['a link from a dev server', `http://localhost:5173/#/join/${payload}`],
     ['a link with spaces around it', `  https://reconcile.example/#/join/${payload}\n`],
     ['the bare payload', payload],
+    ['the bare payload with spaces around it', `  ${payload}\n`],
   ])('reads %s', (_label, text) => {
-    expect(parseInviteLink(text)?.mailbox).toBe(invite.mailbox);
+    expect(base64url(parseInviteLink(text)?.secret ?? new Uint8Array())).toBe(payload);
   });
 
   it.each([
@@ -109,7 +88,11 @@ describe('parseInviteLink', () => {
     ['the payload in the path, not after #', `https://reconcile.example/join/${payload}`],
     [
       'a link with the payload cut short',
-      `https://reconcile.example/#/join/${payload.slice(0, 60)}`,
+      `https://reconcile.example/#/join/${payload.slice(0, 40)}`,
+    ],
+    [
+      'a link in the old mailbox.secret form',
+      `https://reconcile.example/#/join/${payload}.${payload}`,
     ],
     ['words', 'please join my group'],
   ])('refuses %s', (_label, text) => {

@@ -1,27 +1,23 @@
 /**
- * The end-to-end loop (#67): the built app under `vite preview`, which sends
- * the deploy CSP, talking to the real relay. Run it with `scripts/e2e.sh`,
- * which picks the ports and a throwaway relay database.
+ * The end-to-end tests (#67, #71): the built app under `vite preview`, which
+ * sends the deploy CSP, talking to the real relay. Run them with
+ * `scripts/e2e.sh`, which picks the ports, a throwaway relay database and the
+ * relay's log file. Each test starts and stops the relay itself
+ * (`e2e/support/relay.ts`), so one can scan what it left behind.
  */
 import { defineConfig, devices } from '@playwright/test';
 
-/** A variable `scripts/e2e.sh` sets, or a clear stop when it's missing. */
-function required(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value === '') {
-    throw new Error(`${name} is not set. Run the loop with client/scripts/e2e.sh, which sets it.`);
-  }
-  return value;
-}
+import { relayFiles, required } from './e2e/support/relay';
 
 const webPort = required('E2E_WEB_PORT');
-const relayPort = required('RECONCILE_RELAY_PORT');
-// relay.sh reads it itself; checked here so the loop never writes to .relay-data/.
-required('RECONCILE_RELAY_DB');
+// vite preview proxies /v1 to this port, where each test's relay listens.
+required('RECONCILE_RELAY_PORT');
+// Checked here so the tests never write to .relay-data/ or lose the relay's output.
+relayFiles();
 
 export default defineConfig({
   testDir: 'e2e',
-  // Every test runs the whole loop against one relay: one at a time, no retries.
+  // Every test runs a whole loop against the one relay port: one at a time, no retries.
   workers: 1,
   fullyParallel: false,
   retries: 0,
@@ -38,20 +34,11 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
-  webServer: [
-    {
-      command: '../scripts/relay.sh',
-      url: `http://127.0.0.1:${relayPort}/v1/health`,
-      reuseExistingServer: false,
-      stdout: 'ignore',
-      stderr: 'pipe',
-    },
-    {
-      command: `npx vite preview --host 127.0.0.1 --port ${webPort} --strictPort`,
-      url: `http://127.0.0.1:${webPort}/`,
-      reuseExistingServer: false,
-      stdout: 'ignore',
-      stderr: 'pipe',
-    },
-  ],
+  webServer: {
+    command: `npx vite preview --host 127.0.0.1 --port ${webPort} --strictPort`,
+    url: `http://127.0.0.1:${webPort}/`,
+    reuseExistingServer: false,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  },
 });

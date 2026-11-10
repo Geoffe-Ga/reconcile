@@ -3,7 +3,14 @@ import { bytesToHex, concatBytes } from '@noble/hashes/utils.js';
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { RECORD_HEADER_BYTES, signRecord, verifyRecord } from './record';
+import {
+  MAX_RECORD_BYTES,
+  RECORD_HEADER_BYTES,
+  RecordTooLarge,
+  signRecord,
+  verifyRecord,
+} from './record';
+import { MAX_PLAINTEXT_BYTES } from './seal';
 import { EVENT_CONTEXT, newSigningKeys, sign } from './sign';
 import { utf8 } from '../test/bytes';
 
@@ -110,5 +117,21 @@ describe('verifyRecord', () => {
     expect(opened(fresh)).not.toBeNull();
     expect(opened(forged)).toBeNull();
     expect(ed25519.verify).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('the largest record', () => {
+  it('is 64,000 bytes, leaving room in one blob for an invite chunk’s 20-byte entry header', () => {
+    expect(MAX_RECORD_BYTES).toBe(64_000);
+    // #73's chunk entry: seq (8 bytes), received (8) and length (4), then the record.
+    expect(MAX_RECORD_BYTES + 8 + 8 + 4).toBeLessThanOrEqual(MAX_PLAINTEXT_BYTES);
+  });
+
+  it('is refused with a typed error that says by how much', () => {
+    const error = new RecordTooLarge(64_001);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ name: 'RecordTooLarge', size: 64_001, limit: 64_000 });
+    expect(error.message).toBe('A record is at most 64000 bytes, not 64001.');
   });
 });

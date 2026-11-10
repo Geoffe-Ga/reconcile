@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
-import { type Invite, invitePayload, newInvite } from '../app/invite';
+import { type Invite, invitePayload } from '../app/invite';
+import { newGroupSecret } from '../crypto/groupKeys';
 import { DEFAULT_JOIN_LEVEL, LEVELS } from '../engine/capabilities';
 import { axeViolations } from '../test/axe';
 import { Join } from './Join';
@@ -18,6 +19,11 @@ const FOUND: FoundGroup = {
 afterEach(() => {
   window.history.replaceState(null, '', '#/');
 });
+
+/** An invite to a new group. */
+function newInvite(): Invite {
+  return { secret: newGroupSecret() };
+}
 
 interface Options {
   readonly payload?: string | null;
@@ -58,7 +64,7 @@ describe('Join', () => {
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),
     ).toBeVisible();
     expect(lookup).toHaveBeenCalledTimes(1);
-    expect(lookup.mock.calls[0]?.[0]?.mailbox).toBe(invite.mailbox);
+    expect(lookup.mock.calls[0]?.[0]?.secret).toEqual(invite.secret);
     expect(screen.getByText('House rules')).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Your name' })).toHaveAccessibleDescription(
       'This name is only shown in this group. It doesn’t have to be your real name.',
@@ -75,7 +81,7 @@ describe('Join', () => {
     expect(screen.getByRole('radio', { name: 'Collaborator' })).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Join group' }));
     expect(onJoin).toHaveBeenCalledWith(
-      expect.objectContaining({ mailbox: invite.mailbox }),
+      expect.objectContaining({ secret: invite.secret }),
       FOUND,
       'Ben',
       DEFAULT_JOIN_LEVEL,
@@ -236,7 +242,7 @@ describe('Join', () => {
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),
     ).toBeVisible();
     expect(lookup).toHaveBeenCalledTimes(1);
-    expect(lookup.mock.calls[0]?.[0]?.mailbox).toBe(next.mailbox);
+    expect(lookup.mock.calls[0]?.[0]?.secret).toEqual(next.secret);
   });
 
   it('reads the mailbox once per invite, even when handed a new lookup function', async () => {

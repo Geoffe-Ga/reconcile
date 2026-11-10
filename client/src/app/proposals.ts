@@ -8,7 +8,7 @@
  * state still comes only from relay records: a Proposal appears, and a ballot
  * counts, once the relay has ordered and timed it.
  */
-import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
+import { MAX_RECORD_BYTES } from '../crypto/record';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
 import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
@@ -58,8 +58,8 @@ async function signFor(
  * value is NFC-normalized before the event is signed, and the text goes
  * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
  * private draft it was written in, keyed by its Atom, in the same change. A
- * Proposal whose record is too large for any blob is refused before anything
- * is queued, and its draft kept.
+ * Proposal whose record is over 64,000 bytes is refused before anything is
+ * queued, and its draft kept.
  */
 export async function propose(
   services: ProposalServices,
@@ -80,7 +80,7 @@ export async function propose(
     ts: services.now(),
     body,
   });
-  if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
+  if (event.record.length > MAX_RECORD_BYTES) return { outcome: 'too-large' };
   await services.store.enqueue(groupId, event.record, atom);
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };

@@ -7,6 +7,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { deriveSealKey } from '../crypto/groupKeys';
 import { base64url } from '../engine/event';
 import type { FakeRequest } from '../test/fakeRelay';
 import { createFakeRelay } from '../test/fakeRelay';
@@ -79,11 +80,9 @@ describe('create, invite by link, join, and read the Document', () => {
     expect(screen.getByRole('textbox', { name: 'Invite link' })).toHaveValue(link);
     a.unmount();
 
-    // The link puts the mailbox and secret after #, and nowhere else.
+    // The link puts the group secret after #, and nowhere else; the mailbox derives from it.
     const invite = parseInviteLink(link);
-    expect(link).toMatch(
-      /^https:\/\/reconcile\.test\/#\/join\/[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/,
-    );
+    expect(link).toMatch(/^https:\/\/reconcile\.test\/#\/join\/[A-Za-z0-9_-]{43}$/);
     expect(link.startsWith(`${TEST_ORIGIN}/#/join/`)).toBe(true);
 
     // B opens the link: the secret leaves the address bar before anything else.
@@ -121,9 +120,10 @@ describe('create, invite by link, join, and read the Document', () => {
     const anaGroup = await ana.services.store.getGroup(groupId);
     expect(anaGroup?.log).toHaveLength(2);
 
-    // No request ever carried the secret, in any spelling, in its URL or body.
+    // No request ever carried the secret or the seal key, in any spelling, in its URL or body.
     expect(invite).not.toBeNull();
-    const leaks = spellings(invite?.secret ?? new Uint8Array());
+    const secret = invite?.secret ?? new Uint8Array();
+    const leaks = [...spellings(secret), ...spellings(deriveSealKey(secret))];
     expect(fake.requests.length).toBeGreaterThan(3);
     for (const request of fake.requests) {
       for (const text of sent(request)) {

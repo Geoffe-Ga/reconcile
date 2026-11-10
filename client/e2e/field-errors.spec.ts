@@ -8,12 +8,7 @@
  * nothing. Each step here types into a field, clicks submit once without
  * blurring first, and checks that the click took effect.
  */
-import { expect, type Locator, type Page, test } from '@playwright/test';
-
-/** The screen's one `h1`. */
-function heading(page: Page, name: string): Locator {
-  return page.getByRole('heading', { level: 1, name });
-}
+import { expect, heading, test } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';

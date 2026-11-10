@@ -10,78 +10,12 @@
  * closes early.
  */
 import AxeBuilder from '@axe-core/playwright';
-import {
-  type BrowserContextOptions,
-  expect,
-  type Locator,
-  type Page,
-  test as base,
-} from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+
+import { expect, heading, type Person, test } from './support/fixtures';
 
 /** WCAG 2.0–2.2 A and AA plus axe's best practices, as `src/test/axe.ts`, with contrast on. */
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
-
-/** The name the init script reports CSP violations to, exposed on every page. */
-const REPORT_VIOLATION = 'e2eReportCspViolation';
-
-/** One person: a browser profile of their own, and the page they use. */
-interface Person {
-  readonly name: string;
-  readonly page: Page;
-}
-
-/** Opens a new profile for `name`; the fixture closes it after the test. */
-type OpenProfile = (name: string, options?: BrowserContextOptions) => Promise<Person>;
-
-/**
- * Runs in every page before the app: sends each `securitypolicyviolation` to
- * the test. Playwright serializes it into the page, so it reads nothing else.
- */
-function recordCspViolations(report: string): void {
-  window.addEventListener(
-    'securitypolicyviolation',
-    (event) => {
-      const send = Reflect.get(window, report) as (line: string) => Promise<void>;
-      void send(
-        `${event.violatedDirective} blocked ${event.blockedURI || 'inline'} (${event.sourceFile})`,
-      );
-    },
-    true,
-  );
-}
-
-const test = base.extend<{ openProfile: OpenProfile }>({
-  openProfile: async ({ browser }, provide) => {
-    const profiles: { readonly person: Person; readonly violations: string[] }[] = [];
-    await provide(async (name, options = {}) => {
-      // The project's `use` options (baseURL, device) apply; the CSP always does.
-      const context = await browser.newContext({ ...options, bypassCSP: false });
-      const violations: string[] = [];
-      await context.exposeFunction(REPORT_VIOLATION, (line: string) => {
-        violations.push(line);
-      });
-      await context.addInitScript(recordCspViolations, REPORT_VIOLATION);
-      const person = { name, page: await context.newPage() };
-      profiles.push({ person, violations });
-      return person;
-    });
-    try {
-      // A round trip through each page lets any queued violation report arrive.
-      for (const { person } of profiles) await person.page.evaluate(() => undefined);
-      const all = profiles.flatMap(({ person, violations }) =>
-        violations.map((line) => `${person.name}: ${line}`),
-      );
-      expect(all, 'CSP violations').toEqual([]);
-    } finally {
-      await Promise.all(profiles.map(({ person }) => person.page.context().close()));
-    }
-  },
-});
-
-/** The screen's one `h1`. */
-function heading(page: Page, name: string): Locator {
-  return page.getByRole('heading', { level: 1, name });
-}
 
 /** Fails on any axe violation on the screen `person` is looking at. */
 async function expectAccessible(person: Person, screen: string): Promise<void> {
@@ -211,7 +145,8 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     const field = page.getByRole('textbox', { name: 'Invite link' });
     await expect(field).toHaveAttribute('readonly', '');
     inviteLink = await field.inputValue();
-    expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/join\/[\w-]{43}\.[\w-]{43}$/);
+    // The tracer link carries only the group secret; the joiner derives the mailbox.
+    expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/join\/[\w-]{43}$/);
   });
 
   await test.step('B joins from the link in A’s invite field, and C as a Co-Creator', async () => {

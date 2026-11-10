@@ -1,13 +1,20 @@
 /**
  * The sealed blob every event travels in (ADR-0019, spec §3 "Seal").
  *
- * A blob is a nonce slot, then a body, then a tag slot. The body is a 4-byte
- * big-endian plaintext length, the plaintext, then zeros, so that the whole
- * blob is exactly one of four sizes and the relay learns nothing from it but
- * which size. The real seal (#71) encrypts the body with XChaCha20-Poly1305,
- * binding the mailbox id as associated data; the stub (`stubSeal.ts`) frames
- * and pads exactly the same way without encrypting.
+ * A blob is a 24-byte random nonce, then the XChaCha20-Poly1305 ciphertext of
+ * a body, then its 16-byte tag. The body is a 4-byte big-endian payload
+ * length, the payload, then zeros, so that the whole blob is exactly one of
+ * four sizes and the relay learns nothing from it but which size. The
+ * mailbox id is the associated data, so a blob copied into another mailbox
+ * never opens. The author, the signature and every word of the event sit
+ * inside the ciphertext.
+ *
+ * `open` authenticates before it reads a byte of the body, and answers `null`
+ * for every failure alike, so a damaged or forged blob teaches its sender
+ * nothing about why it failed.
  */
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { concatBytes, randomBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
 /** A blob's possible sizes in bytes: 1, 4, 16 and 64 KiB, smallest first. */
 export const BLOB_SIZES = [1024, 4096, 16384, 65536] as const;
@@ -31,10 +38,9 @@ const OVERHEAD = NONCE_BYTES + LENGTH_BYTES + TAG_BYTES;
 export const MAX_PLAINTEXT_BYTES = 65536 - OVERHEAD;
 
 /**
- * Seals plaintext for one mailbox, and opens what was sealed for it.
- *
- * #71's real seal keeps this shape: it binds `mailbox` as associated data, so
- * a blob copied into another mailbox fails to open.
+ * Seals plaintext for one mailbox under a 32-byte key, and opens what was
+ * sealed for it. {@link xchachaSeal} is the app's; tests also have a stub
+ * that frames the same way without encrypting (`src/test/stubSeal.ts`).
  */
 export interface Seal {
   /** Seal `plaintext` into a blob of exactly one of {@link BLOB_SIZES}. */
@@ -110,3 +116,44 @@ export function unframeBody(body: Uint8Array): Uint8Array | null {
 export function isZero(bytes: Uint8Array): boolean {
   return bytes.every((byte) => byte === 0);
 }
+
+/**
+ * Seals `plaintext` for `mailbox` under the 32-byte `key`: a fresh random
+ * nonce, then XChaCha20-Poly1305 over the framed body with the mailbox id's
+ * UTF-8 as associated data. A random 24-byte nonce never repeats in practice,
+ * so no counter is kept.
+ *
+ * @throws {PayloadTooLarge} when the plaintext is too large for any blob.
+ */
+export function seal(
+  mailbox: string,
+  key: Uint8Array,
+  plaintext: Uint8Array,
+): Uint8Array<ArrayBuffer> {
+  const body = frameBody(plaintext);
+  const nonce = randomBytes(NONCE_BYTES);
+  const sealed = xchacha20poly1305(key, nonce, utf8ToBytes(mailbox)).encrypt(body);
+  return Uint8Array.from(concatBytes(nonce, sealed));
+}
+
+/**
+ * The plaintext sealed in `blob` for `mailbox` under `key`, or `null` when
+ * the blob isn't one of the four sizes, fails authentication (another key,
+ * another mailbox, any changed byte) or holds a frame that doesn't parse.
+ */
+export function open(mailbox: string, key: Uint8Array, blob: Uint8Array): Uint8Array | null {
+  if (!isBlobSize(blob.length)) {
+    return null;
+  }
+  const nonce = blob.subarray(0, NONCE_BYTES);
+  let body: Uint8Array;
+  try {
+    body = xchacha20poly1305(key, nonce, utf8ToBytes(mailbox)).decrypt(blob.subarray(NONCE_BYTES));
+  } catch {
+    return null;
+  }
+  return unframeBody(body);
+}
+
+/** The real seal, as the {@link Seal} the sync loop and Join take. */
+export const xchachaSeal: Seal = { seal, open };

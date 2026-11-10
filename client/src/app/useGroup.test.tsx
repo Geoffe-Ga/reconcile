@@ -2,13 +2,14 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { xchachaSeal } from '../crypto/seal';
 import type { SignedEvent } from '../engine/event';
 import { createRelay } from '../net/relay';
 import { openStore } from '../store/db';
 import type { Group, NewGroup, Store } from '../store/db';
 import { createSync } from '../store/sync';
 import type { Sync } from '../store/sync';
-import { TEST_MAILBOX, createFakeRelay } from '../test/fakeRelay';
+import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
@@ -51,7 +52,8 @@ async function setUp(fake: FakeRelay, name = 'ana'): Promise<{ store: Store; syn
   if ((await store.getGroup(GROUP)) === undefined) {
     await store.addGroup(newGroup(GROUP));
   }
-  const sync = createSync({ store, relay: createRelay({ fetch: fake.fetch }), clock: () => TS });
+  const relay = createRelay({ fetch: fake.fetch });
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: () => TS });
   syncs.push(sync);
   return { store, sync };
 }
@@ -197,7 +199,7 @@ describe('useGroup', () => {
 
     expect(atFirst).toMatchObject({ me: null, invite: null, loaded: false });
     expect(result.current.me).toEqual({ author: authorOf('ana'), name: 'Ana' });
-    expect(result.current.invite?.mailbox).toBe(TEST_MAILBOX);
+    expect(Object.keys(result.current.invite ?? {})).toEqual(['secret']);
     expect(Array.from(result.current.invite?.secret ?? [])).toEqual(Array(32).fill(0));
   });
 
@@ -319,7 +321,6 @@ describe('useGroup', () => {
 function newGroup(groupId: string): NewGroup {
   return {
     groupId,
-    mailbox: TEST_MAILBOX,
     secret: new Uint8Array(32),
     signingKey: testKeys('ana').secretKey,
     me: { author: authorOf('ana'), name: 'Ana' },

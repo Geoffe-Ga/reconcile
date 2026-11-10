@@ -11,7 +11,7 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App';
 import { copyToClipboard } from './app/services';
-import { stubSeal } from './crypto/stubSeal';
+import { xchachaSeal } from './crypto/seal';
 import { createRelay } from './net/relay';
 import { openStore } from './store/db';
 import { createSync } from './store/sync';
@@ -25,13 +25,13 @@ if (root === null) {
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
-  const sync = createSync({ store, relay });
+  const sync = createSync({ store, relay, seal: xchachaSeal });
   sync.start();
   const services = {
     store,
     relay,
     sync,
-    seal: stubSeal,
+    seal: xchachaSeal,
     now: () => Date.now(),
     origin: window.location.origin,
     copyText: copyToClipboard,
