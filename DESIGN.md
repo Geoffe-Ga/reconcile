@@ -174,6 +174,11 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - The outcome sentence comes first.
   - Totals come next.
   - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
+- **Dispatch card** (#112): a `surface` card with a `hairline` border, as every card.
+  - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it.
+  - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.
+  - "Open <Document title> →" as a forward link when it points to a Document.
+  - On the Dispatches view, Send a Dispatch is the one primary action; on Group home, it's secondary, beside See all.
 - **Notification switches** (Settings, #99): the disclosure first, as plain body text, then one React Aria switch per group, "Notify me about <group>", all off to start.
   - Each switch is a card on `surface` with a `hairline` border, and a tap anywhere on it toggles it. The track sits at the row's end, at least a 44px target with the card.
   - Off: a `muted` ring with a `muted` thumb at the start. On: the track fills `primary` and the thumb, in `surface`, moves to the end, so the state never rests on color alone.

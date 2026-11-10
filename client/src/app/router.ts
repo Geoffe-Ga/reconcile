@@ -42,7 +42,11 @@ export type Route =
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
     }
-  | { readonly name: 'dissolve'; readonly groupId: string };
+  | { readonly name: 'dissolve'; readonly groupId: string }
+  /** The group's Dispatches, newest first (#112). */
+  | { readonly name: 'dispatches'; readonly groupId: string }
+  /** Send a Dispatch (#112). */
+  | { readonly name: 'sendDispatch'; readonly groupId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -73,12 +77,29 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
   return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
 }
 
-/** A page with no argument: `doc`, `rules` (#117) or `dissolve` (#108). */
-function barePage(groupId: string, page: string): Route {
-  if (page === 'doc') return { name: 'document', groupId };
-  if (page === 'dissolve') return { name: 'dissolve', groupId };
-  return page === 'rules' ? { name: 'rules', groupId } : START;
-}
+/**
+ * The pages inside a group, Group home apart, that take nothing but the
+ * group: the Document, the rules (#117), dissolving (#108), and the
+ * Dispatches and Send a Dispatch (#112).
+ */
+const FIXED_NAMES = ['document', 'rules', 'dissolve', 'dispatches', 'sendDispatch'] as const;
+
+/** A page {@link FIXED_NAMES} lists. */
+type FixedName = (typeof FIXED_NAMES)[number];
+
+/** Each fixed page's path after `#/g/{groupId}/`. */
+const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
+  document: 'doc',
+  rules: 'rules',
+  dissolve: 'dissolve',
+  dispatches: 'dispatches',
+  sendDispatch: 'dispatch/new',
+};
+
+/** The fixed pages by path, as a group's route reads them. */
+const FIXED_PAGES: ReadonlyMap<string, FixedName> = new Map(
+  FIXED_NAMES.map((name) => [FIXED_PATHS[name], name]),
+);
 
 /** `p/{proposalId}` or `again/{proposalId}`. */
 function proposalPage(groupId: string, page: string, arg: string): Route {
@@ -88,12 +109,15 @@ function proposalPage(groupId: string, page: string, arg: string): Route {
 }
 
 /**
- * A page inside a group: `doc`, `rules`, `dissolve`, `propose/{atomId}`,
- * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`,
- * `rules/{optIn}` or `narrow/{optIn}`.
+ * A page inside a group: one of the fixed pages, such as `doc` or
+ * `dispatch/new`, or `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
+ * `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (arg === undefined) return barePage(groupId, page);
+  const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
+  if (fixed !== undefined) return { name: fixed, groupId };
+  if (arg === undefined) return START;
   if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
   if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
   if (page === 'rules' || page === 'narrow') return optInPage(groupId, page === 'narrow', arg);
@@ -173,10 +197,6 @@ function groupPath(route: GroupRoute): string {
   switch (route.name) {
     case 'group':
       return '';
-    case 'document':
-      return '/doc';
-    case 'rules':
-      return '/rules';
     case 'propose':
       return `/propose/${route.atomId}`;
     case 'proposal':
@@ -187,8 +207,8 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
-    case 'dissolve':
-      return '/dissolve';
+    default:
+      return `/${FIXED_PATHS[route.name]}`;
   }
 }
 
