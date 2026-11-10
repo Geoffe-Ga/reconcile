@@ -22,7 +22,7 @@ npm run build            # production build
 
 ### End-to-end loop
 
-`e2e/loop.spec.ts` is the tracer loop: three browser profiles create a group, join it from the invite link, propose, vote (one of them offline) and see the Update. axe runs on every screen they visit, and any CSP violation fails the run. Other specs (`e2e/versions.spec.ts`, competing versions on a phone and a desktop) share `e2e/support.ts`: its `openProfile` fixture fails the test on any CSP violation in any profile, and `expectAccessible` runs axe with contrast on.
+`e2e/loop.spec.ts` is the tracer loop: three browser profiles create a group, join it from the invite link, propose, vote (one of them offline) and see the Update. axe runs on every screen they visit, and any CSP violation fails the run. Other specs (`e2e/versions.spec.ts`, competing versions on a phone and a desktop) share `e2e/support.ts`: its `openProfile` fixture fails the test on any CSP violation in any profile, and `expectAccessible` runs axe with contrast on. `e2e/ios-scroll-lock.spec.ts` builds `e2e/ios-modal/`, a test-only page with one React Aria Modal, into a temp directory and serves it with `vite preview` and the app's config, until a screen of the app opens a modal (#153).
 
 - **Run it** with `./scripts/e2e.sh`, never bare `npx playwright test`. The script picks two free loopback ports (`E2E_WEB_PORT`, `RECONCILE_RELAY_PORT`) and puts the relay's database (`RECONCILE_RELAY_DB`) in a temp directory it deletes afterwards. It builds the app, then runs Playwright, whose config starts `../scripts/relay.sh` and `vite preview` (which sends the deploy CSP) and stops both.
 - **Browsers:** install them once with `npx playwright install chromium webkit` (on Linux, add `--with-deps`). On a machine where WebKit won't install, `E2E_PROJECTS=chromium ./scripts/e2e.sh` runs Chromium alone and says so. CI always runs both.
@@ -36,7 +36,7 @@ npm run build            # production build
 - **Nothing readable leaves the device.** Anything sent to the relay is a sealed, padded, encrypted blob (ADR-0019).
 - **No analytics, telemetry, or third-party scripts.** The app calls only the relay, the browser's push service (#99), and Discord webhooks for groups that opted in by Proposal (#119).
 - **Quiet safety:** protective features live in Settings and aren't promoted (ADR-0018).
-- **Keep the CSP clean.** The deploy CSP (spec §9) blocks inline `<style>` elements, `style` attributes in markup and `data:` URLs. React's `style` prop is fine: it sets styles through the CSSOM. React Aria's pressable `<style>` is claimed in `index.html`, and `src/styles/pressable.css` ships its rule instead; `src/styles/pressable.test.tsx` fails if React Aria changes it (#150).
+- **Keep the CSP clean.** The deploy CSP (spec §9) blocks inline `<style>` elements, `style` attributes in markup and `data:` URLs. React's `style` prop is fine: it sets styles through the CSSOM. React Aria's pressable `<style>` is claimed in `index.html`, and `src/styles/pressable.css` ships its rule instead; `src/styles/pressable.test.tsx` fails if React Aria changes it (#150). Its iOS scroll-lock `<style>` has no id, so the CSP allows that one text by its hash in `style-src-elem`; `src/styles/scrollLockStyle.test.tsx` fails if React Aria changes it, and `e2e/ios-scroll-lock.spec.ts` opens a Modal as an iPhone under the CSP (#153). Never add `'unsafe-inline'`.
 
 ## Toolchain
 
