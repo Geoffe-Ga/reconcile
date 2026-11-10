@@ -94,6 +94,13 @@ interface ScoreGroupProps {
   readonly onChange: (score: Score) => void;
 }
 
+/** A version's pills' label: "Your score" on a ballot that decides one thing, else "Score for version N". */
+function scoreLabel(version: VersionView): string {
+  if (version.steward !== undefined) return messages.stewards.score;
+  if (version.dissolve !== undefined) return messages.dissolve.score;
+  return messages.ballot.scoreFor(version.number);
+}
+
 /** One version's five pills, in a React Aria RadioGroup labelled "Score for version N". */
 function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupProps) {
   return (
@@ -109,11 +116,7 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       isDisabled={isDisabled}
       aria-describedby={hint}
     >
-      <Label className="field-label">
-        {version.steward === undefined
-          ? messages.ballot.scoreFor(version.number)
-          : messages.stewards.score}
-      </Label>
+      <Label className="field-label">{scoreLabel(version)}</Label>
       <div className="score-pills">
         {SCORES.map((option) => (
           <ScorePill key={option} score={option} />

@@ -25,7 +25,8 @@ export type Route =
       readonly seat: SeatNumber;
       /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
       readonly recall: boolean;
-    };
+    }
+  | { readonly name: 'dissolve'; readonly groupId: string };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -53,13 +54,18 @@ function proposalPage(groupId: string, page: string, arg: string): Route {
   return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
 }
 
+/** A page inside a group with no argument: `doc`, or `dissolve` (#108). */
+function plainPage(groupId: string, page: string): Route {
+  if (page === 'doc') return { name: 'document', groupId };
+  return page === 'dissolve' ? { name: 'dissolve', groupId } : START;
+}
+
 /**
- * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`,
- * `again/{proposalId}`, `steward/{seat}` or `recall/{seat}`.
+ * A page inside a group: `doc`, `dissolve`, `propose/{atomId}`,
+ * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}` or `recall/{seat}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
-  if (arg === undefined) return START;
+  if (arg === undefined) return plainPage(groupId, page);
   if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
   if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
   return proposalPage(groupId, page, arg);
@@ -106,6 +112,30 @@ function stewardHref(route: Extract<Route, { readonly name: 'steward' }>): strin
   return `#/g/${route.groupId}/${page}/${String(route.seat)}`;
 }
 
+/** A route inside a group: every route but Start, Create group and Join. */
+export type GroupRoute = Exclude<Route, { readonly name: 'start' | 'create' | 'join' }>;
+
+/** The `href` of a page inside a group. */
+function groupHref(route: GroupRoute): string {
+  const base = `#/g/${route.groupId}`;
+  switch (route.name) {
+    case 'group':
+      return base;
+    case 'document':
+      return `${base}/doc`;
+    case 'propose':
+      return `${base}/propose/${route.atomId}`;
+    case 'proposal':
+      return `${base}/p/${route.proposalId}`;
+    case 'again':
+      return `${base}/again/${route.proposalId}`;
+    case 'steward':
+      return stewardHref(route);
+    case 'dissolve':
+      return `${base}/dissolve`;
+  }
+}
+
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
   switch (route.name) {
@@ -115,18 +145,8 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'join':
       return joinHref(route.payload);
-    case 'group':
-      return `#/g/${route.groupId}`;
-    case 'document':
-      return `#/g/${route.groupId}/doc`;
-    case 'propose':
-      return `#/g/${route.groupId}/propose/${route.atomId}`;
-    case 'proposal':
-      return `#/g/${route.groupId}/p/${route.proposalId}`;
-    case 'again':
-      return `#/g/${route.groupId}/again/${route.proposalId}`;
-    case 'steward':
-      return stewardHref(route);
+    default:
+      return groupHref(route);
   }
 }
 

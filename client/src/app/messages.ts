@@ -490,4 +490,50 @@ export const messages = {
     notAllowed: 'Your place in this group doesn’t include proposing.',
     noNominees: 'Nobody in your group can stand for this seat right now.',
   },
+  /** Dissolving a group (#108; ADR-0051): the composer, and what its ballot decides. */
+  dissolve: {
+    propose: 'Propose dissolving the group',
+    pageTitle: 'Propose dissolving',
+    eyebrow: 'Dissolve',
+    title: 'Propose dissolving the group',
+    lede: 'If your group passes this, it ends. Every device keeps a read-only copy, and nothing new is sent or accepted.',
+    bar: (average: string, zeros: string) =>
+      `Dissolving needs more support than an ordinary change: an average of at least ${average}, with under ${zeros} zeros.`,
+    titleHint: 'A few words your group will see on the ballot.',
+    whyHint: 'Tell your group why it’s time. They’ll talk it over before voting.',
+    wipeLabel: 'Also erase it from every device',
+    wipeHint:
+      'Each copy of Reconcile will erase this group. No app can stop someone who already kept a copy, a screenshot or a backup file.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose dissolving',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'You can’t propose dissolving now',
+    notAllowed: 'Your place in this group doesn’t include proposing.',
+    alreadyOpen:
+      'A Proposal to dissolve this group is already open. Go back to your group to vote on it.',
+    ballotTitle: 'Dissolve the group',
+    keepLine: 'If this passes, your group ends. Every device keeps a read-only copy.',
+    wipeLine: (days: number) =>
+      `If this passes, your group ends, and every device erases it ${count(days)} days later.`,
+    score: 'Your score',
+    passed: 'This passed. Your group has dissolved.',
+  },
+  /** A dissolved group's read-only copy on this device (#108). */
+  archive: {
+    eyebrow: 'Dissolved',
+    dissolvedOn: (date: string) => `This group dissolved on ${date}. This is a read-only copy.`,
+    erasedOn: (date: string) => `It will be erased from this device on ${date}.`,
+    remove: 'Remove from this device',
+    removeTitle: 'Remove this group from this device?',
+    removeBody:
+      'This erases your read-only copy of this group from this device. Others keep their own copies.',
+    removeConfirm: 'Remove from this device',
+    cancel: 'Cancel',
+    removeFailed: 'This group couldn’t be removed from this device. Try again.',
+    unfinished: 'Not decided',
+    closed: 'Closed when the group dissolved',
+    readOnlyTitle: 'This group has dissolved',
+    readOnly: 'This is a read-only copy. Nothing new can be proposed or voted on.',
+    cleared: (date: string) => `Individual scores and notes were cleared on ${date}.`,
+  },
 } as const;

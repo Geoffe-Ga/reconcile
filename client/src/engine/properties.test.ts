@@ -354,12 +354,55 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('ignores every event anyone sends after the group dissolves, whatever it is (#108)', () => {
+    const late = fc.array(
+      fc.record({
+        who: fc.nat({ max: 5 }),
+        kind: fc.constantFrom('vote', 'version', 'level', 'join', 'proposal', 'dissolve'),
+        value: score,
+        gap: fc.integer({ min: 0, max: 2 * WINDOW }),
+      }),
+      { minLength: 1, maxLength: 6 },
+    );
+    fc.assert(
+      fc.property(fc.integer({ min: 3, max: 5 }), fc.boolean(), late, (count, wipe, events) => {
+        const log = Log.founded(count);
+        const edit = log.propose(R + 10, `${log.group}.0`, 'New text');
+        const target = { kind: 'dissolve' as const, wipe };
+        const body = { target, title: 'Dissolve', why: 'Done.' };
+        const motion = log.add(R + 11, member(0), { type: 'proposal', body });
+        for (let i = 0; i < count; i += 1) log.vote(R + 12 + i, i, motion, 4);
+        log.add(R + 20, member(1), { type: 'dissolve', body: { proposal: motion } });
+        const before = fold(log.records, R + 30);
+        let at = R + 20;
+        for (const { who, kind, value, gap } of events) {
+          at += gap;
+          const author = who % count;
+          if (kind === 'vote') log.vote(at, author, edit, value);
+          if (kind === 'version') log.version(at, author, edit, 'Late wording');
+          if (kind === 'level') log.level(at, author, FOLLOWING);
+          if (kind === 'join')
+            log.add(at, member(count + who), { type: 'join', body: { name: 'Late' } });
+          if (kind === 'proposal') log.propose(at, `${log.group}.1`, 'Late text');
+          if (kind === 'dissolve')
+            log.add(at, member(author), { type: 'dissolve', body: { proposal: motion } });
+        }
+        const after = fold(log.records, at + 3 * WINDOW);
+        expect(before.dissolved).toEqual({ received: R + 20, wipe });
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        expect(after.ignored.map((record) => record.seq)).toEqual(
+          log.records.slice(-events.length).map((record) => record.seq),
+        );
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const { proposals, rules } = fold(records, relayNow);
         for (const p of proposals) {
-          // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
+          // The log proposes only edits, which are ordinary; dissolving is entrenched (#108).
           expect(p.class).toBe('ordinary');
           expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));

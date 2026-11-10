@@ -20,6 +20,12 @@
  * its leave: the pass purges it from the store and reads nothing more for it.
  * Until then it stays, leaving, through failures and reloads.
  *
+ * A dissolved group (#108) is archived once its `dissolve` folds, and from
+ * then on a pass sends nothing for it and reads nothing: no request names its
+ * mailbox again. After a pass that brought new records or a new relay minute,
+ * `settleDissolve` (./archive.ts) archives the group, or posts this member's
+ * `dissolve` when a dissolve Proposal's pass has become final.
+ *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
  * event id keeps any event from folding twice. Folded state comes from the
@@ -31,6 +37,7 @@ import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { LogRecord } from '../engine/fold';
+import { settleDissolve } from './archive';
 import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
 import { eventIdOf } from './eventId';
 
@@ -206,6 +213,8 @@ export function createSync(options: SyncOptions): Sync {
   }
 
   async function syncGroup(group: Group): Promise<void> {
+    // A read-only archive sends and reads nothing, so no request names its mailbox (#108).
+    if (group.archived !== undefined) return;
     const channel = channelOf(group.secret);
     if (await postOutbox(group.groupId, channel)) return;
     let after = group.cursor;
@@ -224,6 +233,10 @@ export function createSync(options: SyncOptions): Sync {
       lastSyncAt: clock(),
     };
     await store.applyPull(group.groupId, pull, idOf);
+    // Only something new can finish a dissolve vote or bring a dissolve: a record, or a later minute.
+    if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
+      await settleDissolve(store, group.groupId, clock);
+    }
   }
 
   async function pass(): Promise<boolean> {

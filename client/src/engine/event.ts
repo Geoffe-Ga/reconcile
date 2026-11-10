@@ -93,12 +93,40 @@ export interface StewardProposalBody {
   readonly link?: string;
 }
 
-/** What a `proposal` event carries: new text for an Atom, or a steward seat (#102). */
-export type ProposalEventBody = ProposalBody | StewardProposalBody;
+/**
+ * Dissolving the group (ADR-0051, ADR-0072 §10, #108): `wipe` is true when
+ * the vote also asks every device to erase its copy, a week after the dissolve.
+ */
+export interface DissolveTarget {
+  readonly kind: 'dissolve';
+  readonly wipe: boolean;
+}
+
+/**
+ * Proposes dissolving the group (#108): an entrenched Proposal with a title,
+ * a justification, an optional discussion link and an optional voting window
+ * in whole days, whose target says whether to wipe. It carries no text, so
+ * its ballot has one version, under the Proposal's id.
+ */
+export interface DissolveProposalBody {
+  readonly target: DissolveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+}
+
+/** What a `proposal` event carries: new text for an Atom, a steward seat (#102), or dissolving (#108). */
+export type ProposalEventBody = ProposalBody | StewardProposalBody | DissolveProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
-  return 'target' in body;
+  return 'target' in body && body.target.kind === 'steward';
+}
+
+/** True when a Proposal's body proposes dissolving the group (#108). */
+export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
+  return 'target' in body && body.target.kind === 'dissolve';
 }
 
 /**
@@ -128,6 +156,15 @@ export interface VoteBody {
 }
 
 /**
+ * Ends the group once a dissolve Proposal's pass is final (#108): any member's
+ * device that folds that pass posts one. The fold takes the first valid one,
+ * and ignores every event after it.
+ */
+export interface DissolveBody {
+  readonly proposal: string;
+}
+
+/**
  * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
  * the author is the one who leaves, and the fold reads any object as `{}`.
  */
@@ -143,6 +180,7 @@ export interface EventBodies {
   readonly level: LevelBody;
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
+  readonly dissolve: DissolveBody;
 }
 
 /** The event types this engine understands. */
@@ -296,8 +334,36 @@ function parseStewardProposal(body: Json): StewardProposalBody | null {
   return { target: parsed, title, why, ...(link === undefined ? {} : { link }) };
 }
 
+/** A dissolve target's kind and wipe, which must be true or false (#108). */
+function parseDissolveTarget(value: unknown): DissolveTarget | null {
+  if (!isObject(value) || value.kind !== 'dissolve') return null;
+  return typeof value.wipe === 'boolean' ? { kind: 'dissolve', wipe: value.wipe } : null;
+}
+
+/** A dissolve Proposal carries `target` and no `atom`, and keeps any `window`; any `text` is dropped (#108). */
+function parseDissolveProposal(body: Json): DissolveProposalBody | null {
+  const { atom, target, title, why, link, window } = body;
+  const parsed = parseDissolveTarget(target);
+  if (parsed === null || atom !== undefined || !isString(title) || !isString(why)) return null;
+  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
+  return {
+    target: parsed,
+    title,
+    why,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+  };
+}
+
+/** A Proposal with a `target`: a steward seat (#102) or dissolving (#108), by the target's kind. */
+function parseTargeted(body: Json): ProposalEventBody | null {
+  return isObject(body.target) && body.target.kind === 'dissolve'
+    ? parseDissolveProposal(body)
+    : parseStewardProposal(body);
+}
+
 function parseProposal(body: Json): ProposalEventBody | null {
-  if (body.target !== undefined) return parseStewardProposal(body);
+  if (body.target !== undefined) return parseTargeted(body);
   const { atom, title, why, text, link, window } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
   if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
@@ -315,6 +381,10 @@ function parseSuspend(body: Json): SuspendBody | null {
   const { member, reason } = body;
   if (!isString(member) || !isOptionalString(reason)) return null;
   return { member, ...(reason === undefined ? {} : { reason }) };
+}
+
+function parseDissolve(body: Json): DissolveBody | null {
+  return isString(body.proposal) ? { proposal: body.proposal } : null;
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -369,6 +439,8 @@ function withBody(
       return { ...head, type, body: {} };
     case 'suspend':
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'dissolve':
+      return attach(parseDissolve(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

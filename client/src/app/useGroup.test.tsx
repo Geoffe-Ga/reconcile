@@ -189,6 +189,7 @@ describe('useGroup', () => {
       invite: null,
       leaving: false,
       loaded: true,
+      cleared: null,
     });
   });
 

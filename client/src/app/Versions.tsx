@@ -48,30 +48,42 @@ function Change({ version, current }: Omit<VersionCardProps, 'children'>) {
   );
 }
 
+/** What a ballot with no text decides, and what passing does: a steward motion (#102) or dissolving (#108). */
+function decisionOf(
+  version: VersionView,
+): { readonly title: ReactNode; readonly line: string } | null {
+  const { steward, dissolve } = version;
+  if (steward !== undefined) {
+    return { title: <MotionTitle motion={steward.motion} />, line: steward.line };
+  }
+  return dissolve ?? null;
+}
+
 /**
  * One version: its heading, its change, and whatever goes under it. A steward
  * ballot's one version is headed by what it decides, "Make <name> steward
- * (seat N)", with what passing does in place of a change (#102).
+ * (seat N)", with what passing does in place of a change (#102), and a
+ * dissolve ballot's by "Dissolve the group" (#108).
  */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();
-  const { steward } = version;
+  const decision = decisionOf(version);
   return (
     <section className="version" aria-labelledby={heading}>
       <h3 id={heading} className="version-heading">
-        {steward === undefined ? (
+        {decision === null ? (
           <>
             {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
             <bdi>{version.author}</bdi>
           </>
         ) : (
-          <MotionTitle motion={steward.motion} />
+          decision.title
         )}
       </h3>
-      {steward === undefined ? (
+      {decision === null ? (
         <Change version={version} current={current} />
       ) : (
-        <p className="caption">{steward.line}</p>
+        <p className="caption">{decision.line}</p>
       )}
       {children}
     </section>

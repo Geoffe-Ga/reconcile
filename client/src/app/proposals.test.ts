@@ -16,6 +16,7 @@ import {
   chooseLevel,
   propose,
   type ProposalValues,
+  proposeDissolve,
   proposeSteward,
   suspend,
 } from './proposals';
@@ -516,6 +517,49 @@ describe('proposeSteward', () => {
       why,
     });
     expect(result).toEqual({ outcome: 'too-large' });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
+describe('proposeDissolve', () => {
+  it('queues one dissolve Proposal with its wipe and window, NFC-normalized, and returns its id (#108)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeDissolve(device.services, groupId, {
+      title: 'Dissolve the cafe\u0301 group',
+      why: 'We all moved.',
+      window: 21,
+      wipe: true,
+    });
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: {
+          target: { kind: 'dissolve', wipe: true },
+          title: 'Dissolve the caf\u00e9 group',
+          why: 'We all moved.',
+          window: 21,
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    const id = parseRecord(group?.outbox[0] ?? new Uint8Array())?.id;
+    expect(result).toEqual({ outcome: 'proposed', proposalId: id });
+  });
+
+  it('refuses a dissolve Proposal too large for any blob, and queues nothing', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const values = { title: 'Dissolve', why: 'x'.repeat(70_000), window: 14, wipe: false };
+    expect(await proposeDissolve(device.services, groupId, values)).toEqual({
+      outcome: 'too-large',
+    });
     expect(await outbox(device, groupId)).toEqual([]);
   });
 });

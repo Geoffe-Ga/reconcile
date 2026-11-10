@@ -17,6 +17,7 @@
  * this file reads only the few fields it names.
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
+import type { DissolveTarget } from './event';
 import { DAY_MINUTES, type Rules } from './rules';
 import { codePointLength } from './text';
 
@@ -74,8 +75,8 @@ export interface StewardChange {
   readonly holder: string | null;
 }
 
-/** What a Proposal changes: an Atom's text (#63, #72), or a steward seat (#102). */
-export type ProposalTarget = { readonly kind: 'edit' } | StewardChange;
+/** What a Proposal changes: an Atom's text (#63, #72), a steward seat (#102), or whether the group goes on (#108). */
+export type ProposalTarget = { readonly kind: 'edit' } | StewardChange | DissolveTarget;
 
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that

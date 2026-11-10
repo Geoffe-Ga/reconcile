@@ -76,10 +76,12 @@ function SectionAction({ state, atom, section, onPropose }: SectionActionProps) 
  * change, or Add your version while the section's Proposal is open. Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
- * this member is leaving, the Document only reads.
+ * this member is leaving, or once the group has dissolved (#108), the
+ * Document only reads.
  */
 export function DocumentView({ state, me, onPropose, leaving = false }: DocumentViewProps) {
-  const proposes = !leaving && can(state, me, 'propose');
+  const readOnly = leaving || state.dissolved !== null;
+  const proposes = !readOnly && can(state, me, 'propose');
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
@@ -88,7 +90,7 @@ export function DocumentView({ state, me, onPropose, leaving = false }: Document
         title={state.title}
         pageTitle={messages.document.pageTitle}
       />
-      {proposes || leaving ? null : <LevelNote state={state} me={me} />}
+      {proposes || readOnly ? null : <LevelNote state={state} me={me} />}
       {state.atoms.length === 0 ? (
         <p className="lede">{messages.document.empty}</p>
       ) : (

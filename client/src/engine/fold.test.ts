@@ -97,6 +97,7 @@ describe('fold', () => {
       at: 0,
       stewards: EMPTY_SEATS,
       suspensions: [],
+      dissolved: null,
       ignored: [],
     });
   });

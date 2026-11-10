@@ -11,14 +11,17 @@
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
- * record, so Leave deletes the group with a single delete (#77).
+ * record, so Leave deletes the group with a single delete (#77). A dissolved
+ * group stays as a read-only archive (#108): nothing more is queued or sent
+ * for it, and its ballots and notes can be cleared while its outcomes stay.
  */
 
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
-import type { LogRecord } from '../engine/fold';
+import type { GroupState, LogRecord } from '../engine/fold';
+import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
 
 /** Who this device is in a group. */
@@ -62,6 +65,35 @@ export interface Group {
    * loop purges the group once the relay returns a seq for it.
    */
   leaving?: Uint8Array;
+  /**
+   * Set once the group is read-only on this device (#108): absent while it
+   * goes on. Nothing is queued or synced for it from then on.
+   */
+  archived?: Archive;
+}
+
+/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
+export type ArchiveReason = 'dissolved';
+
+/**
+ * A dissolved archive once this device has cleared its ballots and notes
+ * (#108; ADR-0075 §5): the group as the device last folded it, every ballot
+ * and note taken out, with each decided Proposal's totals and outcome from
+ * the device's own tally. The log that held the ballots is gone.
+ */
+export interface ClearedArchive {
+  /** When this device cleared them, in device milliseconds. */
+  readonly at: number;
+  /** The group's folded state then, with no ballot on any Proposal. */
+  readonly state: GroupState;
+  /** Each decided Proposal's totals and outcome, by its id. */
+  readonly tallies: Readonly<Record<string, TallyDetail>>;
+}
+
+/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+export interface Archive {
+  readonly reason: ArchiveReason;
+  readonly cleared?: ClearedArchive;
 }
 
 /** What a device knows about a group when it creates or joins it. */
@@ -118,10 +150,25 @@ export interface Store extends DraftStore {
   /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
-   * calls it once the relay has returned a seq for the group's leave. A group
-   * that is already gone is left alone.
+   * calls it once the relay has returned a seq for the group's leave, a
+   * dissolved group's wipe calls it, and so does Remove from this device
+   * (#108). A group that is already gone is left alone.
    */
   purgeGroup(groupId: string): Promise<void>;
+  /**
+   * Keep the group read-only on this device, in one change (#108; #115
+   * reuses it): drop its outbox, its drafts and any leave, and mark it
+   * archived for `reason`. From then on nothing is queued for it, and the
+   * sync loop sends and reads nothing for it. A group already archived keeps
+   * its archive.
+   */
+  markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
+  /**
+   * Clear an archived group's ballots and notes, in one change (#108): keep
+   * `cleared`, the state to show from now on, and drop the log that held
+   * them. Refuses a group that isn't archived.
+   */
+  clearArchive(groupId: string, cleared: ClearedArchive): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /** Append each record whose event id isn't in the log yet, and save the sync state. */
@@ -171,6 +218,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
     }
     await change(groupId, (group) => {
       if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
+      if (group.archived !== undefined) throw new Error('This group is read-only on this device.');
       group.outbox.push(...records);
       if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
     });
@@ -217,6 +265,20 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       await tx.done;
       if (found) notify(groupId);
     },
+    markArchived: (groupId, reason) =>
+      change(groupId, (group) => {
+        if (group.archived !== undefined) return;
+        group.archived = { reason };
+        group.outbox = [];
+        delete group.drafts;
+        delete group.leaving;
+      }),
+    clearArchive: (groupId, cleared) =>
+      change(groupId, (group) => {
+        if (group.archived === undefined) throw new Error('This group isn’t archived.');
+        group.archived = { ...group.archived, cleared };
+        group.log = [];
+      }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
         // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.

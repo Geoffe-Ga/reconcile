@@ -5,7 +5,8 @@
  * The state is `fold` over the relay records in the store's log, so it is the
  * same on every device that has synced the same records. Events still in the
  * outbox are listed as pending and never folded: the relay hasn't ordered or
- * timed them yet.
+ * timed them yet. A dissolved group whose ballots this device has cleared
+ * shows the state it kept instead (#108).
  */
 
 import {
@@ -19,9 +20,9 @@ import {
 
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
-import { fold } from '../engine/fold';
 import type { GroupState, LogRecord } from '../engine/fold';
-import type { Group, Me, Store } from '../store/db';
+import { shownState } from '../store/archive';
+import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import type { Invite } from './invite';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
@@ -66,34 +67,39 @@ export interface GroupView {
   leaving: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
+  /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
+  cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
 }
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
 const NO_RECORDS: readonly LogRecord[] = [];
+
+/** What a stored group gives the view as it is: nothing while it isn't loaded, or isn't on the device. */
+function storedFields(group: Group | undefined) {
+  if (group === undefined) {
+    return {
+      log: NO_RECORDS,
+      lastSyncAt: null,
+      relayNow: null,
+      me: null,
+      leaving: false,
+      cleared: null,
+    };
+  }
+  const { log, lastSyncAt, relayNow, me } = group;
+  const cleared = group.archived?.cleared ?? null;
+  return { log, lastSyncAt, relayNow, me, leaving: group.leaving !== undefined, cleared };
+}
 
 /** The group `groupId`, kept current as sync and the user change it. */
 export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
   const { group, loaded } = useStoredGroup(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
-  const state = useMemo(
-    () => (group === undefined ? null : fold(group.log, group.relayNow)),
-    [group],
-  );
+  const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   const invite = useMemo(() => (group === undefined ? null : { secret: group.secret }), [group]);
-  return {
-    state,
-    log: group?.log ?? NO_RECORDS,
-    pending,
-    lastSyncAt: group?.lastSyncAt ?? null,
-    relayNow: group?.relayNow ?? null,
-    reachable,
-    me: group?.me ?? null,
-    invite,
-    leaving: group?.leaving !== undefined,
-    loaded,
-  };
+  return { ...storedFields(group), state, pending, reachable, invite, loaded };
 }
 
 function useServices(): GroupServices {

@@ -1,7 +1,7 @@
 /** The groups on this device, as Start lists them. */
 import { useEffect, useState } from 'react';
 
-import { fold } from '../engine/fold';
+import { shownState } from '../store/archive';
 import type { Group, Store } from '../store/db';
 import type { StartGroup } from '../screens/Start';
 
@@ -10,7 +10,7 @@ import type { StartGroup } from '../screens/Start';
  * its genesis is back), and whether its leave waits for the relay.
  */
 function summarize(group: Group): StartGroup {
-  const state = fold(group.log, group.relayNow);
+  const state = shownState(group);
   const leaving = group.leaving !== undefined;
   return state.group === null
     ? { groupId: group.groupId, name: null, title: null, leaving }

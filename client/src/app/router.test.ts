@@ -27,6 +27,7 @@ describe('parseRoute', () => {
     [`#/g/${GROUP}/steward/1`, { name: 'steward', groupId: GROUP, seat: 1, recall: false }],
     [`#/g/${GROUP}/steward/2`, { name: 'steward', groupId: GROUP, seat: 2, recall: false }],
     [`#/g/${GROUP}/recall/1`, { name: 'steward', groupId: GROUP, seat: 1, recall: true }],
+    [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -56,6 +57,8 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/steward/01`,
     `#/g/${GROUP}/recall/x`,
     `#/g/${GROUP}/steward/1/extra`,
+    `#/g/${GROUP}/dissolve/${PROPOSAL}`,
+    `#/g/${GROUP}/dissolve/extra/more`,
     '#/join/',
     'create',
   ])('sends the unknown %j to Start', (hash) => {
@@ -76,6 +79,7 @@ describe('routeHref', () => {
     [{ name: 'again', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/again/${PROPOSAL}`],
     [{ name: 'steward', groupId: GROUP, seat: 2, recall: false }, `#/g/${GROUP}/steward/2`],
     [{ name: 'steward', groupId: GROUP, seat: 1, recall: true }, `#/g/${GROUP}/recall/1`],
+    [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

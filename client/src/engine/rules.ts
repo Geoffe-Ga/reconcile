@@ -11,7 +11,7 @@
  * Integers only, like the tally: a bar is an average of at least
  * `avgAtLeast` with under `zerosUnderPercent`% zeros, compared as products.
  */
-import type { ProposalEventBody } from './event';
+import { isDissolveProposal, type ProposalEventBody } from './event';
 
 /** How hard a change is: the class whose bar and window a Proposal gets. #115 adds removal's. */
 export type ProposalClass = 'ordinary' | 'entrenched';
@@ -151,12 +151,14 @@ export type TargetClassifier = (state: ClassState, proposal: ProposalEventBody) 
 /**
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
- * change. The fold stores it as the Proposal's `class`. Every target is
- * ordinary today, steward elections and recalls included (ADR-0049):
- * entrenched sections (#116), removal (#115), widening an opt-in (#117) and
- * dissolution (#108) each add their case here.
+ * change. The fold stores it as the Proposal's `class`. Dissolving the group
+ * is entrenched (ADR-0051, #108). Every other target is ordinary today,
+ * steward elections and recalls included (ADR-0049): entrenched sections
+ * (#116), removal (#115) and widening an opt-in (#117) each add their case
+ * here.
  */
-export const targetClass: TargetClassifier = () => 'ordinary';
+export const targetClass: TargetClassifier = (_state, proposal) =>
+  isDissolveProposal(proposal) ? 'entrenched' : 'ordinary';
 
 /** How long a vote of class `cls` runs when the proposer names no window, in relay minutes. */
 export function defaultWindowMinutes(rules: Rules, cls: ProposalClass): number {

@@ -10,7 +10,9 @@
  * Document's text changes only when a Proposal's pass is final. Steward seats
  * change when a steward Proposal's pass is final, and a suspension narrows
  * `can()` until it ends (#102): the fold keeps `at`, the relay minute it has
- * reached, and brings the seats up to it before each event. The fold is pure:
+ * reached, and brings the seats up to it before each event. A `dissolve` ends
+ * the group (#108): relay time stops at its receipt, and the fold ignores
+ * every event after it. The fold is pure:
  * no I/O, no clock, no randomness, so every device that folds the same
  * records builds the same state.
  */
@@ -24,10 +26,14 @@ import {
   wouldVote,
 } from './capabilities';
 import { optionFor } from './composeOption';
+import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
+  type DissolveBody,
+  type DissolveProposalBody,
   EVENT_VERSION,
   type GenesisBody,
   type GroupEvent,
+  isDissolveProposal,
   isStewardProposal,
   type JoinBody,
   type LevelBody,
@@ -122,11 +128,13 @@ export interface Ballot {
 }
 
 /**
- * A proposed change to one Atom, or to a steward seat, with its vote.
+ * A proposed change to one Atom, to a steward seat, or to whether the group
+ * goes on, with its vote.
  *
- * `target` says which: an edit of `atom`, or a steward change (#102), whose
- * `atom` and `text` are `""` and whose one version, under its own id, has no
- * text. A recall's eligible set leaves out the steward it would remove.
+ * `target` says which: an edit of `atom`, a steward change (#102), or
+ * dissolving the group (#108). A steward change's or a dissolve's `atom` and
+ * `text` are `""`, and its one version, under its own id, has no text. A
+ * recall's eligible set leaves out the steward it would remove.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
  * opened, never from the proposer's own fields. It picks the bar the versions
@@ -139,7 +147,8 @@ export interface Ballot {
  * count it. `closedAt` is the receipt minute of the ballot that closed it
  * early, or null. `final` is true once it has closed, early or because relay
  * time reached `deadline`. `outcome` is the tally of the ballots so far, and
- * is settled only when `final`.
+ * is settled only when `final`. A Proposal still open when its group
+ * dissolved (#108) is never final, so it has no outcome.
  */
 export interface Proposal {
   readonly id: string;
@@ -183,7 +192,10 @@ export interface IgnoredRecord {
  * Proposals, versions and ballots they made before (#77). `at` is the relay
  * minute the state stands at: `relayNow`, or the latest record's receipt when
  * that's null. `stewards` holds both seats as of `at`, and `suspensions`
- * every suspension in relay order, running or ended (#102).
+ * every suspension in relay order, running or ended (#102). `dissolved` is
+ * when the group dissolved, and whether its vote chose to wipe every copy, or
+ * null while it goes on (#108). Once it has dissolved, `at` stays at that
+ * receipt whatever the relay's `now`.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -198,6 +210,7 @@ export interface GroupState {
   readonly at: number;
   readonly stewards: readonly Seat[];
   readonly suspensions: readonly Suspension[];
+  readonly dissolved: Dissolution | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -236,6 +249,7 @@ interface Draft {
   stewards: readonly Seat[];
   readonly suspensions: Suspension[];
   readonly seated: Set<string>;
+  dissolved: Dissolution | null;
 }
 
 /** Founds the group, unless its rules differ from the defaults (rules.ts). */
@@ -419,15 +433,58 @@ function applySteward(
   return true;
 }
 
+/**
+ * Opens a dissolve Proposal (ADR-0051, #108) when its author may propose, no
+ * other is open and the group hasn't dissolved (dissolve.ts). It is
+ * entrenched, so it runs the window its proposer chose within the entrenched
+ * bounds (#106), or their default. Its one version has no text, and everyone
+ * whose level votes is eligible.
+ */
+function applyDissolveProposal(
+  draft: Draft,
+  body: DissolveProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!fieldsAreValid(body) || !mayProposeDissolve(draft, author)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  draft.proposals.push({
+    ...opening(body, author, at, { cls, window }),
+    atom: '',
+    target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
   author: string,
   at: Receipt,
 ): boolean {
-  return isStewardProposal(body)
-    ? applySteward(draft, body, author, at)
-    : applyEdit(draft, body, author, at);
+  if (isStewardProposal(body)) return applySteward(draft, body, author, at);
+  if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
+  return applyEdit(draft, body, author, at);
+}
+
+/**
+ * Ends the group (#108): the first `dissolve` from a member that names a
+ * dissolve Proposal whose pass is final at the relay's receipt of it. From
+ * here on the fold ignores every event ({@link admits}), and relay time
+ * stops at this receipt.
+ */
+function applyDissolve(draft: Draft, body: DissolveBody, author: string, at: Receipt): boolean {
+  const proposal = draft.proposals.find((p) => p.id === body.proposal);
+  if (proposal?.target.kind !== 'dissolve' || !can(draft, author, 'read')) return false;
+  if (isOpenAt(proposal, at.received)) return false;
+  if (settle(proposal, draft.rules, at.received).outcome.kind !== 'pass') return false;
+  draft.dissolved = { received: at.received, wipe: proposal.target.wipe };
+  return true;
 }
 
 /**
@@ -452,7 +509,7 @@ function applySuspend(draft: Draft, body: SuspendBody, author: string, at: Recei
 function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
-  // A steward Proposal has no text, so it takes no versions (#102).
+  // A steward or dissolve Proposal has no text, so it takes no versions (#102, #108).
   if (proposal.target.kind !== 'edit') return false;
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
@@ -516,14 +573,32 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
 }
 
 /**
- * A version-1 event for this group, from someone who isn't suspended: the
- * fold ignores a suspended member's events until the suspension ends
- * (ADR-0016), except their `leave`, since exit is always possible (ADR-0010,
- * #77).
+ * The one event guard: a version-1 event for a group that hasn't dissolved,
+ * from someone who isn't suspended. After a `dissolve` the fold ignores every
+ * event, a second `dissolve` included (#108). It ignores a suspended member's
+ * events until the suspension ends (ADR-0016), except their `leave`, since
+ * exit is always possible (ADR-0010, #77).
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
   const free = event.type === 'leave' || !isSuspended(draft, event.author);
-  return event.v === EVENT_VERSION && inGroup(draft, event) && free;
+  return draft.dissolved === null && event.v === EVENT_VERSION && inGroup(draft, event) && free;
+}
+
+/** The events that act on a Proposal: proposing, wording, voting, and dissolving on a pass (#108). */
+type ProposalEvent = Extract<GroupEvent, { type: 'proposal' | 'version' | 'vote' | 'dissolve' }>;
+
+/** Applies one event that acts on a Proposal, or returns false to ignore it. */
+function applyProposalEvent(draft: Draft, event: ProposalEvent, at: Receipt): boolean {
+  switch (event.type) {
+    case 'proposal':
+      return applyProposal(draft, event.body, event.author, at);
+    case 'version':
+      return applyVersion(draft, event.body, event.author, at);
+    case 'vote':
+      return applyVote(draft, event.body, event.author, at);
+    case 'dissolve':
+      return applyDissolve(draft, event.body, event.author, at);
+  }
 }
 
 /** Applies one verified event to the draft, or returns false to ignore it. */
@@ -534,18 +609,14 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyGenesis(draft, event.body, event.author, at);
     case 'join':
       return applyJoin(draft, event.body, event.author, at);
-    case 'proposal':
-      return applyProposal(draft, event.body, event.author, at);
-    case 'version':
-      return applyVersion(draft, event.body, event.author, at);
-    case 'vote':
-      return applyVote(draft, event.body, event.author, at);
     case 'level':
       return applyLevel(draft, event.body, event.author);
     case 'leave':
       return applyLeave(draft, event.author);
     case 'suspend':
       return applySuspend(draft, event.body, event.author, at);
+    default:
+      return applyProposalEvent(draft, event, at);
   }
 }
 
@@ -643,7 +714,9 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
  * Folds a group's records, in relay order, into its state.
  *
  * `relayNow` is the relay's latest `now`, in minutes, or null before the first
- * sync; it decides only which Proposals have reached their deadline. A record
+ * sync; it decides only which Proposals have reached their deadline. Once the
+ * group has dissolved, relay time stops at the dissolve's receipt (#108), so a
+ * Proposal open then stays open, with no outcome, whatever `relayNow` says. A record
  * that doesn't verify, or whose event's `author` isn't the key that signed it,
  * is ignored before it is parsed or claims an event id, so a forged copy of a
  * real event can never shadow it. A repeated event id is ignored (the first
@@ -666,13 +739,16 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     stewards: EMPTY_SEATS,
     suspensions: [],
     seated: new Set(),
+    dissolved: null,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
   for (const { seq, received, bytes } of records) {
-    // Relay time only moves on, whatever the record holds.
-    draft.at = Math.max(draft.at, received);
-    advanceSeats(draft);
+    // Relay time only moves on, whatever the record holds, until the group dissolves (#108).
+    if (draft.dissolved === null) {
+      draft.at = Math.max(draft.at, received);
+      advanceSeats(draft);
+    }
     const parsed = parseRecord(bytes);
     if (parsed === null) {
       ignored.push({ seq, id: null });
@@ -683,9 +759,10 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     seen.add(id);
     if (!applied) ignored.push({ seq, id });
   }
-  draft.at = relayNow ?? draft.at;
+  const now = draft.dissolved?.received ?? relayNow;
+  draft.at = now ?? draft.at;
   advanceSeats(draft);
-  const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
+  const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
   return {
@@ -701,6 +778,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     at,
     stewards,
     suspensions,
+    dissolved: draft.dissolved,
     ignored,
   };
 }

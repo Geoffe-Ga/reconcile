@@ -152,8 +152,21 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
 });
 
 describe('targetClass: how hard a change is', () => {
-  it('makes every target ordinary until a later issue registers an entrenched one', () => {
+  it('makes an edit ordinary, and a steward election too', () => {
     expect(targetClass({ rules: DEFAULT_RULES }, EDIT)).toBe('ordinary');
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null } as const,
+      title: 't',
+      why: 'w',
+    };
+    expect(targetClass({ rules: DEFAULT_RULES }, steward)).toBe('ordinary');
+  });
+
+  it('makes dissolving the group entrenched, wipe or not (ADR-0051, #108)', () => {
+    for (const wipe of [false, true]) {
+      const dissolve = { target: { kind: 'dissolve', wipe } as const, title: 't', why: 'w' };
+      expect(targetClass({ rules: DEFAULT_RULES }, dissolve)).toBe('entrenched');
+    }
   });
 
   it('never reads a class, bar or deadline the proposer wrote', () => {
