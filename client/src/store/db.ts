@@ -309,7 +309,10 @@ interface Schema extends DBSchema {
  * nothing. Version 3 holds a real group secret, from which the mailbox id and
  * seal key derive (#71); version 2 held signed records (#69) and version 1
  * the stub era's unsigned data. That older data, whose relay blobs anyone
- * could read, is deleted on upgrade, with no migration.
+ * could read, is deleted on upgrade, with no migration. A dissolved group's
+ * `archived` mark (#108) is an optional field of its record, so it needed no
+ * version of its own: a version 3 group that holds one keeps it through the
+ * upgrade.
  */
 const VERSION = 4;
 const GROUPS = 'groups';
