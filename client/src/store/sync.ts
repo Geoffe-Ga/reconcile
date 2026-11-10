@@ -13,8 +13,9 @@
  * 3. saves the cursor, the relay's time and instance, and when it synced;
  * 4. then (#111, ./expiry.ts) posts a result for each closed Proposal that
  *    has none, after re-syncing once to be sure, and clears every ballot
- *    that has expired. A group is checked again only once its log, the
- *    relay's minute or its cleared list has changed.
+ *    that has expired. Folding the log for this costs a signature check per
+ *    record, so a group is checked once per relay minute: the duty waits for
+ *    the minute after a close, and expiry for a minute, anyway.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -218,22 +219,17 @@ export function createSync(options: SyncOptions): Sync {
     await store.applyPull(group.groupId, pull, idOf);
   }
 
-  /** What each group looked like when its results and expiry were last settled. */
-  const settled = new Map<string, string>();
-
-  /** A group's log length, relay minute and cleared count: what settling depends on. */
-  function settleKey(group: Group): string {
-    return `${String(group.log.length)}:${String(group.relayNow)}:${String(group.cleared?.length ?? 0)}`;
-  }
+  /** The relay minute each group's results and expiry were last settled at. */
+  const settled = new Map<string, number | null>();
 
   /**
    * Posts a result for each closed Proposal that has none (re-syncing once
    * first, in case another device just posted one), then clears expired
-   * ballots (#111). Skips a group that hasn't changed since it last settled.
+   * ballots (#111). Skips a group already settled in this relay minute.
    */
   async function settle(groupId: string): Promise<void> {
     let group = await store.getGroup(groupId);
-    if (group === undefined || settled.get(groupId) === settleKey(group)) return;
+    if (group === undefined || settled.get(groupId) === group.relayNow) return;
     let state = foldGroup(group);
     if (resultsDue(state, group).length > 0) {
       await syncGroup(group);
@@ -246,8 +242,7 @@ export function createSync(options: SyncOptions): Sync {
       }
     }
     await clearExpiredBallots(store, groupId, state);
-    const after = await store.getGroup(groupId);
-    if (after !== undefined) settled.set(groupId, settleKey(after));
+    settled.set(groupId, group.relayNow);
   }
 
   async function pass(): Promise<boolean> {

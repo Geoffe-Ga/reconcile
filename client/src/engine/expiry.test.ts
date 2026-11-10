@@ -184,3 +184,35 @@ describe('expiringProposal and expiryKeyOf', () => {
     expect(EXPIRES_WITH_BALLOTS).toEqual([]);
   });
 });
+
+describe('a cleared steward election (#102)', () => {
+  it('seats the same steward at the same close, so a suspension straight after it still stands', () => {
+    const log = groupLog({ members: ['Ben', 'Cal', 'Kim'] });
+    const proposal = log.steward('Ben', 1, 'Ben');
+    for (const name of ['Ana', 'Ben', 'Cal', 'Kim']) log.vote(name, proposal, 4);
+    const closedAt = log.minute;
+    // Ben suspends Kim the minute after the close, before any result arrives.
+    log.minute += 1;
+    log.suspend('Ben', 'Kim', 'Threats.');
+    log.minute += 1;
+    log.result('Cal', resultFor(only(log.state().proposals)));
+    const now = closedAt + THIRTY_DAYS;
+    const held = fold(log.records, now);
+    const kept = log.records.filter((record) => {
+      const event = parseRecord(record.bytes)?.event;
+      return event?.type !== 'vote';
+    });
+
+    const cleared = fold(kept, now, [proposal]);
+
+    expect(held.suspensions).toHaveLength(1);
+    expect(cleared.stewards).toEqual(held.stewards);
+    expect(cleared.suspensions).toEqual(held.suspensions);
+    expect(cleared.proposals[0]).toMatchObject({
+      cleared: true,
+      closedAt,
+      outcome: { kind: 'pass' },
+    });
+    expect(cleared.proposals[0]?.result?.author).toBe(authorOf('cal'));
+  });
+});

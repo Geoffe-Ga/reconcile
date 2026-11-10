@@ -5,6 +5,10 @@ import { can, DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from './capabilities';
 import type { EventDraft, ProposalBody, VoteBody } from './event';
 import { fold, type LogRecord, NOTE_MAX, proposalTally, TITLE_MAX, WHY_MAX } from './fold';
 import { DEFAULT_RULES, defaultWindowMinutes } from './rules';
+import { EMPTY_SEATS } from './stewards';
+
+/** The creating level, for a joiner who proposes. */
+const [, , CREATING] = LEVELS;
 
 const R = 29_375_000;
 /** How long an ordinary vote runs when no one chooses, in relay minutes. */
@@ -15,7 +19,7 @@ class TestLog {
   readonly records: LogRecord[] = [];
   group = '';
 
-  private add(received: number, author: string, draft: EventDraft): string {
+  add(received: number, author: string, draft: EventDraft): string {
     const { record, id } = signedAs(author, draft);
     this.records.push({ seq: this.records.length + 1, received, bytes: record });
     return id;
@@ -89,8 +93,83 @@ describe('fold', () => {
       members: [],
       atoms: [],
       proposals: [],
+      at: 0,
+      stewards: EMPTY_SEATS,
+      suspensions: [],
       ignored: [],
     });
+  });
+
+  it('stands at relayNow, or at the latest receipt when there is none yet (#102)', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    log.join(R + 5, 'ben');
+    expect(fold(log.records, R + 99).at).toBe(R + 99);
+    expect(fold(log.records, null).at).toBe(R + 5);
+    expect(fold([...log.records].reverse(), null).at).toBe(R + 5);
+  });
+
+  it('seats the founder in seat 1 at genesis, with no term, and leaves seat 2 empty (#102)', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    expect(fold(log.records, R).stewards).toEqual([
+      { seat: 1, holder: authorOf('ana'), termEnd: null, elected: false },
+      { seat: 2, holder: null, termEnd: null, elected: false },
+    ]);
+  });
+
+  it('carries a steward Proposal’s fields: its target, no text, one version, ordinary (#102)', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    log.join(R + 1, 'ben', CREATING);
+    log.join(R + 2, 'cal');
+    const target = { kind: 'steward' as const, seat: 1, member: authorOf('ben') };
+    const body = { target, title: 'Ben for steward', why: 'Calm.', link: 'https://chat.example/s' };
+    const id = log.add(R + 10, 'ben', { type: 'proposal', group: log.group, ts: 0, body });
+    expect(fold(log.records, R + 10).proposals).toEqual([
+      {
+        id,
+        seq: 4,
+        received: R + 10,
+        author: authorOf('ben'),
+        atom: '',
+        target: { ...target, holder: authorOf('ana') },
+        title: 'Ben for steward',
+        why: 'Calm.',
+        text: '',
+        link: 'https://chat.example/s',
+        class: 'ordinary',
+        deadline: R + 10 + 10_080,
+        eligible: ['ana', 'ben', 'cal'].map(authorOf),
+        versions: [{ id, author: authorOf('ben'), text: '' }],
+        ballots: [],
+        closedAt: null,
+        final: false,
+        outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        result: null,
+        cleared: false,
+        mismatched: [],
+      },
+    ]);
+  });
+
+  it('carries a suspension’s fields, its reason kept as written (#102)', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    log.join(R + 1, 'kim');
+    const body = { member: authorOf('kim'), reason: '  <b>Threats</b> in chat  ' };
+    const id = log.add(R + 10, 'ana', { type: 'suspend', group: log.group, ts: 0, body });
+    expect(fold(log.records, R + 10).suspensions).toEqual([
+      {
+        id,
+        seq: 3,
+        received: R + 10,
+        by: authorOf('ana'),
+        member: authorOf('kim'),
+        reason: '  <b>Threats</b> in chat  ',
+        until: R + 10 + 10_080,
+      },
+    ]);
   });
 
   it('records a genesis without a chat link as null', () => {
@@ -179,6 +258,7 @@ describe('fold', () => {
         received: R + 10,
         author: authorOf('ana'),
         atom: `${log.group}.0`,
+        target: { kind: 'edit' },
         title: 'T',
         why: 'W',
         text: 'New',

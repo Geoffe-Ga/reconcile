@@ -990,7 +990,7 @@
       }
     },
     {
-      "name": "for a Proposal in cleared, a result from someone who isn't a member is ignored, and nothing passes",
+      "name": "for a Proposal in cleared, a result from someone who isn't a member is ignored, so it neither closes nor decides it",
       "cleared": ["@3"],
       "records": [
         {
@@ -1080,8 +1080,8 @@
         "proposals": [
           {
             "id": "@3",
-            "closedAt": 29375021,
-            "final": true,
+            "closedAt": null,
+            "final": false,
             "cleared": true,
             "outcome": {
               "kind": "lapse",
@@ -1103,7 +1103,7 @@
       }
     },
     {
-      "name": "for a Proposal in cleared, a result received in its own close's minute is ignored",
+      "name": "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
       "cleared": ["@3"],
       "records": [
         {
@@ -1193,8 +1193,8 @@
         "proposals": [
           {
             "id": "@3",
-            "closedAt": 29375021,
-            "final": true,
+            "closedAt": null,
+            "final": false,
             "cleared": true,
             "outcome": {
               "kind": "lapse",
@@ -1306,8 +1306,8 @@
         "proposals": [
           {
             "id": "@3",
-            "closedAt": 29375021,
-            "final": true,
+            "closedAt": null,
+            "final": false,
             "cleared": true,
             "outcome": {
               "kind": "lapse",
@@ -1418,8 +1418,8 @@
         "proposals": [
           {
             "id": "@3",
-            "closedAt": 29375021,
-            "final": true,
+            "closedAt": null,
+            "final": false,
             "cleared": true,
             "outcome": {
               "kind": "lapse",

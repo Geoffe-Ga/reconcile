@@ -1,0 +1,1256 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a steward Proposal from a Collaborator is ignored: it needs propose",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%cal"
+              },
+              "title": "Cal for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [6]
+    },
+    {
+      "name": "a second steward Proposal on a seat with one open is ignored, and opens once the first has closed",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "Ben for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%dee"
+              },
+              "title": "Dee for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29385090,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1763105400000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%dee"
+              },
+              "title": "Dee for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29385090,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@6",
+            "final": true,
+            "outcome": {
+              "kind": "lapse"
+            }
+          },
+          {
+            "id": "@8",
+            "target": {
+              "member": "%dee"
+            },
+            "final": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "an election whose nominee follows as a Member, or isn't a member, is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%kim"
+              },
+              "title": "Kim for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%zed"
+              },
+              "title": "Zed for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [6, 7]
+    },
+    {
+      "name": "an election whose nominee is suspended is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "member": "%dee",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%dee"
+              },
+              "title": "Dee for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "proposals": [],
+        "suspensions": [
+          {
+            "member": "%dee"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "an election whose nominee holds the other seat is ignored, and one that re-elects the holder of the same seat opens",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 2,
+                "member": "%ana"
+              },
+              "title": "Ana for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ana"
+              },
+              "title": "Ana for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@8",
+            "target": {
+              "kind": "steward",
+              "seat": 1,
+              "member": "%ana",
+              "holder": "%ana"
+            }
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "a steward Proposal for seat 0, seat 3 or seat \"2\" is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 0,
+                "member": "%cal"
+              },
+              "title": "Cal for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 3,
+                "member": "%cal"
+              },
+              "title": "Cal for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": "2",
+                "member": "%cal"
+              },
+              "title": "Cal for steward",
+              "why": "Calm."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375012,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          },
+          {
+            "seq": 9,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [7, 8, 9]
+    },
+    {
+      "name": "a recall of an empty seat is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 2,
+                "member": null
+              },
+              "title": "Recall seat 2",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [6]
+    },
+    {
+      "name": "a version on a steward Proposal is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "Ben for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@6",
+              "text": "Dee instead."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@6",
+            "versions": [
+              {
+                "id": "@6"
+              }
+            ]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "a steward Proposal with an empty title, or that also names an Atom, is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "Ben for steward",
+              "why": "Our group needs someone to step in when things go wrong.",
+              "atom": "@1.0"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [6, 7]
+    }
+  ]
+}

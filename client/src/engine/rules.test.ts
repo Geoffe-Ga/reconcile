@@ -33,7 +33,7 @@ function withLeaf(path: readonly string[], value: unknown): Record<string, unkno
 const EDIT: ProposalBody = { atom: 'g.0', title: 'T', why: 'W', text: 'New\n' };
 
 describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-0015)', () => {
-  it('holds the ordinary and entrenched bars, windows, quorum, vouches, wait and ballot expiry', () => {
+  it('holds the bars, windows, quorum, vouches, wait, ballot expiry, stewards and suspension', () => {
     expect(DEFAULT_RULES).toEqual({
       bars: {
         ordinary: { avgAtLeast: 2, zerosUnderPercent: 10 },
@@ -47,6 +47,8 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
       vouches: 2,
       waitDays: 14,
       ballotExpiryDays: 30,
+      stewards: { firstElectionAt: 3, secondSeatAt: 6, termDays: 182 },
+      suspensionDays: 7,
     });
   });
 
@@ -65,7 +67,7 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
 });
 
 describe('RULE_CLASS: each founding rule’s class (ADR-0051)', () => {
-  it('entrenches the pass rules and quorum, and keeps windows, vouches, the wait and expiry ordinary', () => {
+  it('entrenches the pass rules, quorum, stewards and suspension, and keeps windows, vouches, the wait and expiry ordinary', () => {
     expect(RULE_CLASS).toEqual({
       bars: 'entrenched',
       windows: 'ordinary',
@@ -73,6 +75,8 @@ describe('RULE_CLASS: each founding rule’s class (ADR-0051)', () => {
       vouches: 'ordinary',
       waitDays: 'ordinary',
       ballotExpiryDays: 'ordinary',
+      stewards: 'entrenched',
+      suspensionDays: 'entrenched',
     });
   });
 
@@ -134,7 +138,7 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
   });
 
   it('leaves out fields it doesn’t know, so a later rule a newer device writes founds the group here', () => {
-    const rules = { ...asJson(), stewards: { firstElectionAt: 3 }, extra: 'x' };
+    const rules = { ...asJson(), optIns: { bot: false }, extra: 'x' };
     expect(foundingRules(rules)).toEqual(DEFAULT_RULES);
     expect(foundingRules({ bars: { removal: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
   });

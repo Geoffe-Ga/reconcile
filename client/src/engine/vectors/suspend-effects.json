@@ -1,0 +1,465 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a suspended member's proposal, level, version and vote are ignored, yet they stay eligible on a Proposal that opens meanwhile, which can't close early without them",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500660000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after midnight."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500720000,
+            "body": {
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500780000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@8",
+              "text": "Quiet after midnight."
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375018,
+      "expect": {
+        "members": [
+          {},
+          {},
+          {},
+          {
+            "author": "%kim",
+            "level": "co-creator"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@8",
+            "eligible": ["%ana", "%ben", "%cal", "%kim"],
+            "versions": [
+              {
+                "id": "@8"
+              }
+            ],
+            "ballots": [
+              {
+                "id": "@11"
+              },
+              {
+                "id": "@12"
+              },
+              {
+                "id": "@13"
+              }
+            ],
+            "closedAt": null,
+            "final": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 9,
+            "id": "@9"
+          },
+          {
+            "seq": 10,
+            "id": "@10"
+          }
+        ]
+      },
+      "unchangedWithout": [6, 7, 9, 10]
+    },
+    {
+      "name": "suspending a nominee doesn't stop their election: they take the seat when it passes, and can't suspend until their suspension ends",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "steward",
+                "seat": 1,
+                "member": "%ben"
+              },
+              "title": "Ben for steward",
+              "why": "Our group needs someone to step in when things go wrong."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "member": "%ben",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500900000,
+            "body": {
+              "member": "%ana",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375015,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "closedAt": 29375014,
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          }
+        ],
+        "stewards": [
+          {
+            "seat": 1,
+            "holder": "%ben",
+            "termEnd": 29637094,
+            "elected": true
+          },
+          {
+            "seat": 2,
+            "holder": null,
+            "termEnd": null,
+            "elected": false
+          }
+        ],
+        "suspensions": [
+          {
+            "id": "@6",
+            "by": "%ana",
+            "member": "%ben"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      },
+      "unchangedWithout": [9]
+    }
+  ]
+}
