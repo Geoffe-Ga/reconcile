@@ -13,10 +13,11 @@
  * reached, and brings the seats up to it before each event. An opt-in's
  * standing value changes the same way, when a rules Proposal's pass is final,
  * and a steward's narrowing turns it off until its off-Proposal closes
- * (#117). A `dissolve` ends the group (#108): relay time stops at its
- * receipt, and the fold ignores every event after it. The fold is pure: no
- * I/O, no clock, no randomness, so every device that folds the same records
- * builds the same state.
+ * (#117). The chat bot's claims keep the first per Proposal moment (#119).
+ * A `dissolve` ends the group (#108): relay time stops at its receipt, and
+ * the fold ignores every event after it. The fold is pure: no I/O, no clock,
+ * no randomness, so every device that folds the same records builds the same
+ * state.
  */
 import { verifyInviteToken } from '../crypto/invite';
 import {
@@ -28,9 +29,11 @@ import {
   type Level,
   wouldVote,
 } from './capabilities';
+import { type ChatPost, isBotMoment, mayClaim } from './chatPosts';
 import { optionFor } from './composeOption';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
+  type ChatPostedBody,
   type DissolveBody,
   type DissolveProposalBody,
   EVENT_VERSION,
@@ -218,10 +221,11 @@ export interface IgnoredRecord {
  * the last passed rules Proposal set. `optIns` is what is in effect at `at`:
  * off while a steward's narrowing is in force, else the standing value
  * (`effectiveOptIn`). `narrowings` keeps every steward narrowing in relay
- * order, in force or ended (#117). `dissolved` is when the group dissolved,
- * and whether its vote chose to wipe every copy, or null while it goes on
- * (#108). Once it has dissolved, `at` stays at that receipt whatever the
- * relay's `now`.
+ * order, in force or ended (#117). `chatPosts` holds the chat bot's winning
+ * claims, the first valid `chat-posted` per (Proposal, moment), in relay
+ * order (#119). `dissolved` is when the group dissolved, and whether its vote
+ * chose to wipe every copy, or null while it goes on (#108). Once it has
+ * dissolved, `at` stays at that receipt whatever the relay's `now`.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -238,6 +242,7 @@ export interface GroupState {
   readonly stewards: readonly Seat[];
   readonly suspensions: readonly Suspension[];
   readonly narrowings: readonly Narrowing[];
+  readonly chatPosts: readonly ChatPost[];
   readonly dissolved: Dissolution | null;
   readonly ignored: readonly IgnoredRecord[];
 }
@@ -281,6 +286,7 @@ interface Draft {
   stewards: readonly Seat[];
   readonly suspensions: Suspension[];
   readonly narrowings: Narrowing[];
+  readonly chatPosts: ChatPost[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
   dissolved: Dissolution | null;
@@ -599,6 +605,19 @@ function applyNarrow(draft: Draft, body: NarrowBody, author: string, at: Receipt
 }
 
 /**
+ * Keeps a chat bot claim (#119) when its author may claim that moment at its
+ * receipt (chatPosts.ts): a member who isn't suspended, the bot on in effect,
+ * a known Proposal whose due moment it names, and no claim kept for it yet.
+ * The first valid claim per (Proposal, moment) in relay order wins.
+ */
+function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at: Receipt): boolean {
+  const { proposal, moment } = body;
+  if (!isBotMoment(moment) || !mayClaim(draft, author, proposal, moment)) return false;
+  draft.chatPosts.push({ ...at, by: author, proposal, moment });
+  return true;
+}
+
+/**
  * Adds a version to an open Proposal's ballot, in relay order, while it holds
  * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
  */
@@ -713,10 +732,26 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyLevel(draft, event.body, event.author);
     case 'leave':
       return applyLeave(draft, event.author);
+    default:
+      return applyLater(draft, event, at);
+  }
+}
+
+/** The events the restored features added: `suspend` (#102), `narrow` (#117) and `chat-posted` (#119). */
+type LaterEvent = Extract<GroupEvent, { readonly type: 'suspend' | 'narrow' | 'chat-posted' }>;
+
+/**
+ * {@link applyAdmitted} for the types the restored features added, and the
+ * events that act on a Proposal ({@link applyProposalEvent}).
+ */
+function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt): boolean {
+  switch (event.type) {
     case 'suspend':
       return applySuspend(draft, event.body, event.author, at);
     case 'narrow':
       return applyNarrow(draft, event.body, event.author, at);
+    case 'chat-posted':
+      return applyChatPosted(draft, event.body, event.author, at);
     default:
       return applyProposalEvent(draft, event, at);
   }
@@ -874,6 +909,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     stewards: EMPTY_SEATS,
     suspensions: [],
     narrowings: [],
+    chatPosts: [],
     seated: new Set(),
     ruled: new Set(),
     dissolved: null,
@@ -904,7 +940,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings } = draft;
+  const { narrowings, chatPosts } = draft;
   return {
     group,
     rules,
@@ -920,6 +956,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     stewards,
     suspensions,
     narrowings,
+    chatPosts,
     dissolved: draft.dissolved,
     ignored,
   };

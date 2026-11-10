@@ -64,6 +64,8 @@ export interface LogBuilder {
   rules(name: string, optIn: string, value: unknown, entry?: ProposalEntry): string;
   /** Adds `name`'s narrowing of `optIn` beside the off-Proposal `proposal` (#117), returning its id. */
   narrow(name: string, optIn: string, proposal: string): string;
+  /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
+  chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -179,6 +181,10 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     narrow(name: string, optIn: string, proposal: string) {
       return add(name, { type: 'narrow', group, ts: 0, body: { optIn, proposal } });
+    },
+    chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
+      const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+      return add(name, { type: 'chat-posted', group, ts: 0, body });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

@@ -22,6 +22,9 @@ export const EVENT_VERSION = 1;
 /** A score on one version: 0 (strongly opposed) to 4 (strongly supportive). */
 export type Score = 0 | 1 | 2 | 3 | 4;
 
+/** The lowest score, which needs a reason; the guide (#91) reads the scale's ends from here. */
+export const SCORE_MIN = 0;
+
 /** The highest score, the top of the scale the consent meter's average bar spans. */
 export const SCORE_MAX = 4;
 
@@ -198,6 +201,19 @@ export interface NarrowBody {
 }
 
 /**
+ * Claims one notice of the chat bot (#119): `moment` of `proposal`, which the
+ * author's device will post to the group's Discord webhook if its claim is
+ * the first. Both are kept as written: the fold checks them (chatPosts.ts).
+ * `nonce` is random, so two devices holding one key (#78) never sign the same
+ * bytes, and each can tell its own claim by its id. The fold doesn't read it.
+ */
+export interface ChatPostedBody {
+  readonly proposal: string;
+  readonly moment: string;
+  readonly nonce?: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -240,6 +256,7 @@ export interface EventBodies {
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
   readonly dissolve: DissolveBody;
+  readonly 'chat-posted': ChatPostedBody;
 }
 
 /** The event types this engine understands. */
@@ -339,7 +356,7 @@ function isWholeNumber(value: unknown): value is number {
 }
 
 function isScore(value: unknown): value is Score {
-  return isWholeNumber(value) && value >= 0 && value <= SCORE_MAX;
+  return isWholeNumber(value) && value >= SCORE_MIN && value <= SCORE_MAX;
 }
 
 /** A public key's 43 base64url characters. The record's key must also match it exactly. */
@@ -488,6 +505,12 @@ function parseNarrow(body: Json): NarrowBody | null {
   return isString(optIn) && isString(proposal) ? { optIn, proposal } : null;
 }
 
+function parseChatPosted(body: Json): ChatPostedBody | null {
+  const { proposal, moment, nonce } = body;
+  if (!isString(proposal) || !isString(moment) || !isOptionalString(nonce)) return null;
+  return { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -517,12 +540,11 @@ function attach<B>(body: B | null, make: (body: B) => GroupEvent): GroupEvent | 
   return body === null ? null : make(body);
 }
 
+/** An event's envelope fields, apart from its type and body. */
+type Head = Omit<GroupEvent, 'type' | 'body'>;
+
 /** Attaches a validated body to the envelope fields, or returns null for an unknown type or bad body. */
-function withBody(
-  head: Omit<GroupEvent, 'type' | 'body'>,
-  type: unknown,
-  body: Json,
-): GroupEvent | null {
+function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'genesis':
       return attach(parseGenesis(body), (parsed) => ({ ...head, type, body: parsed }));
@@ -539,16 +561,15 @@ function withBody(
     case 'leave':
       return { ...head, type, body: {} };
     default:
-      return withGovernanceBody(head, type, body);
+      return withLaterBody(head, type, body);
   }
 }
 
-/** Attaches a steward's or a dissolve's body (#102, #117, #108), or returns null for any other type. */
-function withGovernanceBody(
-  head: Omit<GroupEvent, 'type' | 'body'>,
-  type: unknown,
-  body: Json,
-): GroupEvent | null {
+/**
+ * {@link withBody} for the types the restored features added: `suspend`
+ * (#102), `narrow` (#117), `dissolve` (#108) and `chat-posted` (#119).
+ */
+function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'suspend':
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
@@ -556,6 +577,8 @@ function withGovernanceBody(
       return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dissolve':
       return attach(parseDissolve(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'chat-posted':
+      return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

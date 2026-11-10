@@ -11,12 +11,31 @@
  * Every request the three browsers send is captured, and none may carry the
  * group secret, an invite seed or an invite key, raw, in hex or in base64, in
  * its path, query or body.
+ *
+ * Reading before joining (#91): Cal reads the whole Document as it reads now
+ * on the Join screen while IndexedDB holds nothing and the invite GET is the
+ * only request, taps Not now, and comes back. Ana and Cal meet the first-run
+ * guide after their first create and join, and its cards send nothing. A
+ * second test opens an invite whose Document holds script, an image and
+ * `javascript:` links, which render as inert text with no CSP violation.
  */
 import { DatabaseSync } from 'node:sqlite';
 
 import type { Page, Request } from '@playwright/test';
 
-import { acceptNotice, expect, heading, type Person, pick, test } from './support/fixtures';
+import {
+  acceptNotice,
+  expect,
+  expectAccessible,
+  type FirstRunOptions,
+  GUIDE_KEY,
+  heading,
+  localKeys,
+  type Person,
+  pick,
+  storedRecords,
+  test,
+} from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
 import { derive, onlyGroup } from './support/stored';
 
@@ -34,6 +53,16 @@ const PEOPLE = [
 
 /** The form the issue pins for an invite link. */
 const LINK = /^https?:\/\/[^#]+\/#join\/[A-Za-z0-9_-]{43}$/;
+
+/** The pilot notice's `localStorage` key (`src/platform/notice.ts`): device-wide, set before Join. */
+const NOTICE_KEY = 'reconcile.pilot-notice';
+
+/** Join's question, under the whole Document (#91). */
+const QUESTION = 'Do you share enough of this to join?';
+
+/** The first-run guide's cards (#91): a Co-Creator sees all three, a Collaborator the last two. */
+const CO_CREATOR_CARDS = ['Propose', 'Vote 0–4', 'Discuss in your chat'];
+const COLLABORATOR_CARDS = CO_CREATOR_CARDS.slice(1);
 
 /** What one request carried where a server could read it: its path and query, and its body. */
 interface Sent {
@@ -65,17 +94,69 @@ function seedOf(link: string): Buffer {
   return Buffer.from(new URL(link).hash.slice('#join/'.length), 'base64url');
 }
 
-/** Opens `link`, checks the preview, and joins as `person.name` at Join's preselected level. */
-async function joinFrom(person: Person, link: string): Promise<void> {
+/** Opens `link` in a new profile, through the pilot notice, and checks Join's preview. */
+async function openInvite(person: Person, link: string, options?: FirstRunOptions): Promise<void> {
   const { page } = person;
   await page.goto(link);
-  await acceptNotice(person);
+  await acceptNotice(person, options);
   await expect(heading(page, GROUP)).toBeVisible();
   await expect(page).toHaveURL(/#\/join$/);
   await expect(page.getByText('From Ana’s invite')).toBeVisible();
+}
+
+/** Joins from the Join screen as `person.name` at Join's preselected level. */
+async function joinHere(person: Person): Promise<void> {
+  const { page } = person;
   await page.getByRole('textbox', { name: 'Your name' }).fill(person.name);
   await page.getByRole('button', { name: 'Join group' }).click();
   await expect(page).toHaveURL(/#\/g\/[\w-]+$/);
+}
+
+/** Opens `link`, checks the preview, and joins as `person.name` at Join's preselected level. */
+async function joinFrom(person: Person, link: string): Promise<void> {
+  await openInvite(person, link);
+  await joinHere(person);
+}
+
+/** The relay requests `page` sends while `act` runs, as "METHOD /path". */
+async function relayRequestsDuring(page: Page, act: () => Promise<void>): Promise<string[]> {
+  const seen: Request[] = [];
+  const record = (request: Request) => {
+    if (new URL(request.url()).pathname.startsWith('/v1/')) seen.push(request);
+  };
+  page.on('request', record);
+  try {
+    await act();
+  } finally {
+    page.off('request', record);
+  }
+  return seen.map((request) => `${request.method()} ${new URL(request.url()).pathname}`);
+}
+
+/**
+ * Walks the first-run guide on Group home (#91): each card in `titles` in
+ * turn, its heading focused and axe checked, then Done. The guide sends
+ * nothing: the only relay requests meanwhile are the sync loop's reads of the
+ * group's own mailbox. Done leaves the guide's flag set on the device.
+ */
+async function walkGuide(person: Person, titles: readonly string[]): Promise<void> {
+  const { page } = person;
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  const { secret } = await onlyGroup(page);
+  const mailbox = derive(Uint8Array.from(secret), 'reconcile/v1/mailbox').toString('base64url');
+  const sent = await relayRequestsDuring(page, async () => {
+    for (const [i, title] of titles.entries()) {
+      await expect(dialog.getByRole('heading', { name: title })).toBeFocused();
+      await expect(dialog.getByText(`${String(i + 1)} of ${String(titles.length)}`)).toBeVisible();
+      await expectAccessible(person, `first-run guide, card ${String(i + 1)}`);
+      const last = i === titles.length - 1;
+      await dialog.getByRole('button', { name: last ? 'Done' : 'Next' }).click();
+    }
+    await expect(dialog).toHaveCount(0);
+  });
+  expect(sent.filter((line) => line !== `GET /v1/mailbox/${mailbox}`)).toEqual([]);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), GUIDE_KEY)).toBe('1');
 }
 
 /** Scores the open Proposal with `pill` and sends the ballot. */
@@ -113,10 +194,10 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
   for (const { page } of [ana, ben, cal]) page.on('request', (request) => requests.push(request));
   const links: string[] = [];
 
-  await test.step('A creates a group and copies an invite link; B joins from it', async () => {
+  await test.step('A creates a group, walks the first-run guide, and copies an invite link; B joins from it', async () => {
     const { page } = ana;
     await page.goto('/#/create');
-    await acceptNotice(ana);
+    await acceptNotice(ana, { guide: true });
     await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
     await page.getByRole('textbox', { name: 'Your name' }).fill(ana.name);
     await page.getByRole('textbox', { name: 'Document title' }).fill(TITLE);
@@ -125,6 +206,10 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
       .fill([FIRST_ATOM, SECOND_ATOM].join('\n\n'));
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
+    await walkGuide(ana, CO_CREATOR_CARDS);
+    await page.reload();
+    await expect(heading(page, GROUP)).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     links.push(await copyInvite(page));
     await joinFrom(ben, links[0] ?? '');
   });
@@ -176,11 +261,44 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     }
   });
 
-  await test.step('C joins from a fresh link and sees what A and B see', async () => {
+  await test.step('C reads the whole current Document before any key exists, and taps Not now', async () => {
     await ana.page.goto('/');
     await ana.page.getByRole('link', { name: GROUP }).click();
     links.push(await copyInvite(ana.page));
-    await joinFrom(cal, links[1] ?? '');
+    const link = links[1] ?? '';
+    const { page } = cal;
+    const inviteMailbox = derive(seedOf(link), 'reconcile/v1/invite-mailbox').toString('base64url');
+    const inviteGet = [`GET /v1/mailbox/${inviteMailbox}`];
+
+    const reading = await relayRequestsDuring(page, async () => {
+      await openInvite(cal, link, { guide: true });
+      const document = page.getByRole('article');
+      await expect(document.getByRole('paragraph')).toHaveText([NEW_TEXT, SECOND_ATOM]);
+      await expect(page.getByRole('heading', { level: 2, name: TITLE })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 2, name: QUESTION })).toBeVisible();
+      expect(await storedRecords(page)).toBe(0);
+      expect(await localKeys(page)).toEqual([NOTICE_KEY]);
+      await expectAccessible(cal, 'Join, with the whole Document');
+      await page.getByRole('button', { name: 'Not now' }).click();
+      await expect(heading(page, 'Your groups')).toBeVisible();
+    });
+    // Reading the Document and Not now sent nothing beyond the invite GET, and wrote nothing.
+    expect(reading).toEqual(inviteGet);
+    expect(await storedRecords(page)).toBe(0);
+    expect(await localKeys(page)).toEqual([NOTICE_KEY]);
+  });
+
+  await test.step('C opens the link again, joins, walks the guide, and sees what A and B see', async () => {
+    const { page } = cal;
+    await page.goto(links[1] ?? '');
+    await expect(heading(page, GROUP)).toBeVisible();
+    await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
+      NEW_TEXT,
+      SECOND_ATOM,
+    ]);
+    expect(await storedRecords(page)).toBe(0);
+    await joinHere(cal);
+    await walkGuide(cal, COLLABORATOR_CARDS);
     for (const person of [cal, ana, ben]) await expectSameGroup(person);
   });
 
@@ -215,4 +333,40 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     );
     expect(findings.map(describeFinding)).toEqual([]);
   });
+});
+
+test('an invite’s Document renders script, an image and javascript: links as inert text', async ({
+  openProfile,
+}) => {
+  const ana = await openProfile('Ana');
+  const ben = await openProfile('Ben');
+  const atoms = [
+    '<script>window.xssRan = true</script>',
+    '<img src="/xss.png" onerror="window.xssRan = true">',
+    '[Open](javascript:window.xssRan=true) and <a href="javascript:window.xssRan=true">this</a>',
+  ];
+  const { page } = ana;
+  await page.goto('/#/create');
+  await acceptNotice(ana);
+  await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
+  await page.getByRole('textbox', { name: 'Your name' }).fill(ana.name);
+  await page.getByRole('textbox', { name: 'Document title' }).fill(TITLE);
+  await page.getByRole('textbox', { name: 'Document text' }).fill(atoms.join('\n\n'));
+  await page.getByRole('button', { name: 'Create group' }).click();
+  await expect(heading(page, GROUP)).toBeVisible();
+  const link = await copyInvite(page);
+
+  const fetched: string[] = [];
+  ben.page.on('request', (request) => fetched.push(new URL(request.url()).pathname));
+  await openInvite(ben, link);
+  const document = ben.page.getByRole('article');
+  for (const atom of atoms) await expect(document).toContainText(atom);
+  await expect(ben.page.locator('main :is(script, img, iframe, [onerror])')).toHaveCount(0);
+  await expect(document.locator('[style]')).toHaveCount(0);
+  await expect(ben.page.locator('a[href^="javascript" i]')).toHaveCount(0);
+  await expect(document.getByRole('link')).toHaveCount(0);
+  expect(await ben.page.evaluate(() => 'xssRan' in window)).toBe(false);
+  expect(fetched.filter((path) => path.endsWith('/xss.png'))).toEqual([]);
+  await expectAccessible(ben, 'Join, with markup in the Document');
+  // The fixture fails the test on any CSP violation in either profile.
 });

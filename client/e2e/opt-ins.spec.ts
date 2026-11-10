@@ -6,8 +6,11 @@
  * entrenched bar. Ben reads it on, by the webhook's last 4 characters only,
  * and sees no Turn off now. Then Ana, the steward, turns it off now, and Ben
  * reads who did. axe checks each screen, and the fixture fails the test on
- * any CSP violation. Nothing moves time, and nothing posts to Discord: #119
- * builds that.
+ * any CSP violation. Nothing moves time. Once the bot is on, exactly one of
+ * the three devices posts the vote's result to the webhook (#119), under the
+ * deploy CSP, and the fixture answers it as Discord would, so nothing reaches
+ * Discord. The post carries the fixed line and the app's address alone, with
+ * no cookie or referrer, and after the steward's narrowing nothing more goes.
  */
 import type { Page } from '@playwright/test';
 
@@ -65,7 +68,9 @@ async function vote(person: Person, url: string): Promise<void> {
 
 test('the group turns its chat bot on by an entrenched vote, and a steward turns it off now', async ({
   openProfile,
+  baseURL,
 }) => {
+  const origin = new URL(baseURL ?? '').origin;
   const ana = await openProfile('Ana', { viewport: { width: 1280, height: 800 } });
   const ben = await openProfile('Ben', { viewport: PHONE, colorScheme: 'dark' });
   const cal = await openProfile('Cal');
@@ -123,6 +128,21 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     await expectAccessible(ben, 'Group rules on a phone, bot on');
   });
 
+  await test.step('one device posts the result to the webhook, and nothing of the group', async () => {
+    await expect.poll(() => openProfile.discord.length, { timeout: 30_000 }).toBe(1);
+    const [post] = openProfile.discord;
+    expect(post?.method).toBe('POST');
+    expect(post?.url).toBe(WEBHOOK);
+    expect(post?.body).toEqual({
+      content: `A vote has finished in Reconcile.\n${origin}/`,
+      allowed_mentions: { parse: [] },
+    });
+    expect(post?.headers['origin']).toBe(origin);
+    expect(post?.headers['content-type']).toBe('application/json');
+    expect(post?.headers['referer']).toBeUndefined();
+    expect(post?.headers['cookie']).toBeUndefined();
+  });
+
   await test.step('Ana, the steward, turns it off now, and Ben reads who did', async () => {
     const { page } = ana;
     await page.goto(rulesUrl);
@@ -144,5 +164,7 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
       'Off for now. Steward Ana turned it off while your group votes.',
     );
     await expectAccessible(ben, 'Group rules on a phone, narrowed');
+    // The off-Proposal opened while the bot was narrowed, so no device posts it.
+    expect(openProfile.discord).toHaveLength(1);
   });
 });

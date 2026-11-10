@@ -10,7 +10,10 @@
  *    removing an entry only once the relay accepts it;
  * 2. reads every record after the cursor, opens each blob (skipping one that
  *    won't open), and appends each event the log doesn't hold yet;
- * 3. saves the cursor, the relay's time and instance, and when it synced.
+ * 3. saves the cursor, the relay's time and instance, and when it synced;
+ * 4. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
+ *    only while the group has its bot on and hasn't dissolved. Nothing the
+ *    bot does, or fails to do, changes whether the pass succeeded.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -22,9 +25,10 @@
  *
  * A dissolved group (#108) is archived once its `dissolve` folds, and from
  * then on a pass sends nothing for it and reads nothing: no request names its
- * mailbox again. After a pass that brought new records or a new relay minute,
- * `settleDissolve` (./archive.ts) archives the group, or posts this member's
- * `dissolve` when a dissolve Proposal's pass has become final.
+ * mailbox again, and its chat bot posts nothing. After a pass that brought
+ * new records or a new relay minute, `settleDissolve` (./archive.ts)
+ * archives the group, or posts this member's `dissolve` when a dissolve
+ * Proposal's pass has become final.
  *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
@@ -38,6 +42,7 @@ import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { LogRecord } from '../engine/fold';
 import { settleDissolve } from './archive';
+import type { ChatBot } from './chatBot';
 import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
 import { eventIdOf } from './eventId';
 
@@ -175,6 +180,8 @@ export interface SyncOptions {
   clock?: () => number;
   /** The timers the poller uses (default: the window's). */
   timers?: Timers;
+  /** The chat bot, run after each group syncs (#119); without one, nothing posts. */
+  chatBot?: ChatBot;
 }
 
 /** The running sync loop. */
@@ -190,6 +197,7 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
+  const { chatBot } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let inFlight: Promise<boolean> | null = null;
@@ -233,10 +241,19 @@ export function createSync(options: SyncOptions): Sync {
       lastSyncAt: clock(),
     };
     await store.applyPull(group.groupId, pull, idOf);
+    await afterPull(group, pull);
+  }
+
+  /**
+   * Once a pull is saved: settle a dissolve (#108), then run the chat bot
+   * (#119), which posts and claims nothing once a `dissolve` has folded.
+   */
+  async function afterPull(group: Group, pull: Pull): Promise<void> {
     // Only something new can finish a dissolve vote or bring a dissolve: a record, or a later minute.
     if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
       await settleDissolve(store, group.groupId, clock);
     }
+    await chatBot?.run(group.groupId).catch(() => undefined);
   }
 
   async function pass(): Promise<boolean> {

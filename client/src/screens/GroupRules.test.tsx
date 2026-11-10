@@ -39,6 +39,9 @@ describe('GroupRules', () => {
     renderRules(log.state(), 'ben');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(messages.optIns.title);
     expect(within(bot()).getByText(warnings.chatBot)).toBeVisible();
+    expect(warnings.chatBot).toMatch(
+      / Discord also sees the internet address of the member’s phone that posts each notice\.$/,
+    );
     expect(within(door()).getByText(warnings.frontDoor)).toBeVisible();
     expect(within(bot()).getByText('Off')).toBeVisible();
     expect(within(door()).getByText('Closed')).toBeVisible();

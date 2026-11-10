@@ -11,15 +11,17 @@
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
- * record, so Leave deletes the group with a single delete (#77). A dissolved
- * group stays as a read-only archive (#108): nothing more is queued or sent
- * for it, and its ballots and notes can be cleared while its outcomes stay.
+ * record, so Leave deletes the group with a single delete (#77), the chat
+ * bot's claims (#119) included. A dissolved group stays as a read-only
+ * archive (#108): nothing more is queued, claimed or sent for it, and its
+ * ballots and notes can be cleared while its outcomes stay.
  */
 
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
+import type { BotMoment } from '../engine/chatPosts';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
@@ -30,6 +32,17 @@ export interface Me {
   author: string;
   /** The name this device joined with. */
   name: string;
+}
+
+/**
+ * A chat bot claim this device made (#119): its `chat-posted` event's id, and
+ * the Proposal and moment it claims. Only the device that made the winning
+ * claim posts it, and it knows the claim by this id.
+ */
+export interface ChatClaim {
+  readonly id: string;
+  readonly proposal: string;
+  readonly moment: BotMoment;
 }
 
 /** Everything the device keeps about one group. */
@@ -72,8 +85,13 @@ export interface Group {
    */
   leaving?: Uint8Array;
   /**
+   * The chat bot claims this device made and hasn't settled yet (#119), oldest
+   * first: each is posted once if it won, or dropped. Absent until the first.
+   */
+  chatClaims?: ChatClaim[];
+  /**
    * Set once the group is read-only on this device (#108): absent while it
-   * goes on. Nothing is queued or synced for it from then on.
+   * goes on. Nothing is queued, claimed or synced for it from then on.
    */
   archived?: Archive;
 }
@@ -161,6 +179,22 @@ export interface Store extends DraftStore {
    */
   markLeaving(groupId: string, leave: Uint8Array): Promise<void>;
   /**
+   * Queue a signed `chat-posted` claim and keep it as one of this device's
+   * claims, in one change (#119). Returns false, changing nothing, when this
+   * device already holds a claim of that moment, as a second tab might, or the
+   * group is leaving or archived (#108).
+   *
+   * @throws {RecordTooLarge} when the record is over 64,000 bytes.
+   */
+  claimChat(groupId: string, record: Uint8Array, claim: ChatClaim): Promise<boolean>;
+  /**
+   * Drop the claim `id` from this device's claims, in one change, and return
+   * whether it was there. Two tabs settling one claim can't both hear true,
+   * so a claim is posted at most once. No screen reads claims, so no listener
+   * hears of it.
+   */
+  settleChatClaim(groupId: string, id: string): Promise<boolean>;
+  /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
    * calls it once the relay has returned a seq for the group's leave, a
@@ -170,10 +204,10 @@ export interface Store extends DraftStore {
   purgeGroup(groupId: string): Promise<void>;
   /**
    * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts and any leave, and mark it
-   * archived for `reason`. From then on nothing is queued for it, and the
-   * sync loop sends and reads nothing for it. A group already archived keeps
-   * its archive.
+   * reuses it): drop its outbox, its drafts, any leave and the chat bot's
+   * claims (#119), and mark it archived for `reason`. From then on nothing is
+   * queued or claimed for it, and the sync loop sends, reads and posts
+   * nothing for it. A group already archived keeps its archive.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
@@ -282,6 +316,28 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.outbox.push(leave);
         group.leaving = leave;
       }),
+    async claimChat(groupId, record, claim) {
+      if (record.length > MAX_RECORD_BYTES) throw new RecordTooLarge(record.length);
+      let queued = false;
+      await change(groupId, (group) => {
+        const held = group.chatClaims ?? [];
+        const same = held.some((c) => c.proposal === claim.proposal && c.moment === claim.moment);
+        if (group.leaving !== undefined || group.archived !== undefined || same) return;
+        group.outbox.push(record);
+        group.chatClaims = [...held, claim];
+        queued = true;
+      });
+      return queued;
+    },
+    async settleChatClaim(groupId, id) {
+      let held = false;
+      await changeQuietly(groupId, (group) => {
+        const claims = group.chatClaims ?? [];
+        held = claims.some((claim) => claim.id === id);
+        group.chatClaims = claims.filter((claim) => claim.id !== id);
+      });
+      return held;
+    },
     async purgeGroup(groupId) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const found = (await tx.store.getKey(groupId)) !== undefined;
@@ -296,6 +352,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.outbox = [];
         delete group.drafts;
         delete group.leaving;
+        delete group.chatClaims;
       }),
     clearArchive: (groupId, cleared) =>
       change(groupId, (group) => {

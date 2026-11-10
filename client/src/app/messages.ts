@@ -145,10 +145,38 @@ export const messages = {
     offline: 'Can’t reach the relay right now. Check your connection, then try again.',
     retry: 'Try again',
     failed: 'Joining didn’t finish. Try again.',
+    /** Under the whole Document (#91): the explicit fit check before a name is asked for. */
+    question: 'Do you share enough of this to join?',
+    notNow: 'Not now',
+    /** Read as Not now's description: it drops the invite and writes nothing. */
+    notNowHint: 'You can open the link again while it lasts.',
     memberTitle: 'You’re already in this group',
     alreadyJoined:
       'This invite is for a group you’re already in on this device. Anything this device was missing from its history is here now.',
     openGroup: 'Open your group',
+  },
+  /**
+   * The first-run guide (#91): up to three cards after the first Create group
+   * or Join on a device. Every number arrives from the engine's rules and the
+   * score scale, never typed here.
+   */
+  guide: {
+    /** Where a card sits among those this person sees, such as "2 of 3". */
+    step: (step: number, steps: number) => `${count(step)} of ${count(steps)}`,
+    next: 'Next',
+    back: 'Back',
+    skip: 'Skip',
+    done: 'Done',
+    proposeTitle: 'Propose',
+    propose:
+      'Suggest new wording for any section, with a short reason. Nothing changes until the group agrees.',
+    /** The score scale's ends, such as "Vote 0–4". */
+    voteTitle: (low: string, high: string) => `Vote ${low}–${high}`,
+    /** The scale's ends, then the ordinary bar's average line and share of zeros, such as "2.0" and "10%". */
+    vote: (low: string, high: string, average: string, zeros: string) =>
+      `Score each version from ${low} (strongly opposed) to ${high} (strongly supportive). Most changes pass when the average is at least ${average} and fewer than ${zeros} of scores are ${low}. A ${low} needs a reason.`,
+    discussTitle: 'Discuss in your chat',
+    discuss: 'Talk it through in your group’s own chat. Every Proposal links to it.',
   },
   home: {
     pageTitle: 'Your group',
@@ -580,7 +608,7 @@ export const messages = {
     names: { chatBot: 'Discord chat bot', frontDoor: 'Front door' },
     warnings: {
       chatBot:
-        'Discord’s servers will hold that this group uses Reconcile and when votes open and close. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges.',
+        'Discord’s servers will hold that this group uses Reconcile and when votes open and close. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges. Discord also sees the internet address of the member’s phone that posts each notice.',
       frontDoor:
         'Anyone with the address can see the group’s name and a short excerpt of its mission statement, and ask to join. It never lists people.',
     },
@@ -647,7 +675,7 @@ export const messages = {
     nowLine: 'It’s off until the group decides. This Proposal asks the group to keep it off.',
     webhookLabel: 'Discord webhook URL',
     webhookHint:
-      'In Discord, open the channel’s settings, then Integrations, then Webhooks, and copy the URL. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
+      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
     webhookMissing: 'Paste the webhook URL from Discord.',
     webhookInvalid: 'Use a Discord webhook URL, starting with https://discord.com/api/webhooks/.',
     submitNow: 'Turn off now',
