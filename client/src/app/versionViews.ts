@@ -2,13 +2,15 @@
  * A Proposal's versions as the screens show them (spec §8; ADR-0004):
  * numbered in ballot order, which is relay order, each with its author's name,
  * and, for an add or a removal (#75), a line that says first what it does. A
- * steward Proposal's one version has no text: it carries what the ballot
- * decides instead (#102).
+ * steward or rules Proposal's one version has no text: it carries what the
+ * ballot decides instead (#102, #117).
  */
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
+import { rulesChangeOf } from '../engine/optIns';
 import { type ProposalTarget, type StewardChange, stewardChangeOf } from '../engine/stewards';
 import { messages } from './messages';
+import { type RulesView, rulesView } from './optInLines';
 import { type Motion, motionFor } from './stewardLines';
 import { firstWords } from './text/firstWords';
 
@@ -32,6 +34,8 @@ export interface VersionView {
   readonly does?: string;
   /** For a steward Proposal, what its ballot decides, in place of any text (#102). */
   readonly steward?: StewardView;
+  /** For a rules Proposal, what its ballot decides, in place of any text (#117). */
+  readonly rules?: RulesView;
 }
 
 /** Where an add's section goes: after its anchor's first words, at the start, or at the end once the anchor is gone. */
@@ -79,6 +83,7 @@ export function stewardView(
 /** A Proposal's versions in ballot order, each numbered and named. */
 export function versionViews(state: GroupState, proposal: Proposal): VersionView[] {
   const change = stewardChangeOf(proposal);
+  const rules = rulesChangeOf(proposal);
   return proposal.versions.map((version, index) => {
     const does = versionDoes(state, proposal.target, version.text);
     return {
@@ -88,6 +93,7 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
       text: version.text,
       ...(does === null ? {} : { does }),
       ...(change === null ? {} : { steward: stewardView(state, change) }),
+      ...(rules === null ? {} : { rules: rulesView(rules) }),
     };
   });
 }

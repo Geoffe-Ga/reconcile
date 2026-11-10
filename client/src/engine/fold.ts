@@ -10,10 +10,13 @@
  * changes only when a Proposal's pass is final: an edit sets an Atom's text
  * or, with `""`, removes it, and an add puts a new Atom after its anchor
  * (#75). Final passes apply in order of close time, then the Proposals' relay
- * order. Steward seats change when a steward Proposal's pass is final, and a
- * suspension narrows `can()` until it ends (#102): the fold keeps `at`, the
- * relay minute it has reached, and brings the seats up to it before each
- * event. The fold is pure: no I/O, no clock, no randomness, so every device
+ * order. Steward seats
+ * change when a steward Proposal's pass is final, and a suspension narrows
+ * `can()` until it ends (#102): the fold keeps `at`, the relay minute it has
+ * reached, and brings the seats up to it before each event. An opt-in's
+ * standing value changes the same way, when a rules Proposal's pass is final,
+ * and a steward's narrowing turns it off until its off-Proposal closes
+ * (#117). The fold is pure: no I/O, no clock, no randomness, so every device
  * that folds the same records builds the same state.
  */
 import { verifyInviteToken } from '../crypto/invite';
@@ -32,20 +35,33 @@ import {
   fromBase64url,
   type GenesisBody,
   type GroupEvent,
+  type InviteToken,
   type AddProposalBody,
   isAddProposal,
-  type InviteToken,
+  isRulesProposal,
   isStewardProposal,
   type LevelBody,
+  type NarrowBody,
   parseRecord,
   type ProposalBody,
   type ProposalEventBody,
+  type RulesProposalBody,
   type Score,
   type StewardProposalBody,
   type SuspendBody,
   type VersionBody,
   type VoteBody,
 } from './event';
+import {
+  effectiveOptIns,
+  isOptIn,
+  mayProposeRules,
+  type Narrowing,
+  type OptIns,
+  rulesChange,
+  rulesChangeOf,
+  withChange,
+} from './optIns';
 import {
   type Bar,
   chosenWindow,
@@ -59,6 +75,7 @@ import {
 import {
   EMPTY_SEATS,
   isSeatNumber,
+  mayNarrow,
   mayProposeSteward,
   maySuspend,
   type ProposalTarget,
@@ -133,12 +150,13 @@ export interface Ballot {
 }
 
 /**
- * A proposed change to one Atom, or to a steward seat, with its vote.
+ * A proposed change to one Atom, a steward seat or an opt-in, with its vote.
  *
  * `target` says which: an edit of `atom`, where a winning `""` removes the
  * Atom; an add (#75), whose `atom` is its own id, the Atom it would create
- * after its anchor; or a steward change (#102), whose `atom` and `text` are
- * `""` and whose one version, under its own id, has no text. A recall's
+ * after its anchor; a steward change (#102); or a rules change to an opt-in
+ * (#117). A steward or rules Proposal's `atom` and `text` are `""`, and its
+ * one version, under its own id, has no text. A recall's
  * eligible set leaves out the steward it would remove.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
@@ -196,11 +214,17 @@ export interface IgnoredRecord {
  * Proposals, versions and ballots they made before (#77). `at` is the relay
  * minute the state stands at: `relayNow`, or the latest record's receipt when
  * that's null. `stewards` holds both seats as of `at`, and `suspensions`
- * every suspension in relay order, running or ended (#102).
+ * every suspension in relay order, running or ended (#102). `rules.optIns`
+ * holds each opt-in's standing value as of `at`: off at founding, then what
+ * the last passed rules Proposal set. `optIns` is what is in effect at `at`:
+ * off while a steward's narrowing is in force, else the standing value
+ * (`effectiveOptIn`). `narrowings` keeps every steward narrowing in relay
+ * order, in force or ended (#117).
  */
 export interface GroupState {
   readonly group: string | null;
   readonly rules: Rules;
+  readonly optIns: OptIns;
   readonly name: string;
   readonly chat: string | null;
   readonly title: string;
@@ -211,6 +235,7 @@ export interface GroupState {
   readonly at: number;
   readonly stewards: readonly Seat[];
   readonly suspensions: readonly Suspension[];
+  readonly narrowings: readonly Narrowing[];
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -243,7 +268,8 @@ interface DocumentAt {
 
 /**
  * The state the fold builds up, one event at a time. `seated` holds the ids
- * of the closed steward Proposals whose outcome the seats already show.
+ * of the closed steward Proposals whose outcome the seats already show, and
+ * `ruled` those of the closed rules Proposals the opt-ins already show.
  * `founded` is the Document genesis founded, before any pass, and `document`
  * the Document as the latest Proposal found it, kept until another closes.
  */
@@ -261,7 +287,9 @@ interface Draft {
   at: number;
   stewards: readonly Seat[];
   readonly suspensions: Suspension[];
+  readonly narrowings: Narrowing[];
   readonly seated: Set<string>;
+  readonly ruled: Set<string>;
 }
 
 /** Founds the group, unless its rules differ from the defaults (rules.ts). */
@@ -521,6 +549,32 @@ function applySteward(
   return true;
 }
 
+/**
+ * Opens a rules Proposal on an opt-in (ADR-0040, #117), when its author may
+ * propose and its target is valid now (optIns.ts). Its class comes from the
+ * standing value it would replace, which the fold records as `from`, and it
+ * runs the window its proposer chose within that class's bounds, or the
+ * class default (#106): 14 to 28 days to turn one on. Like a steward
+ * Proposal, its one version has no text.
+ */
+function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: Receipt): boolean {
+  if (!fieldsAreValid(body) || !mayProposeRules(draft, author, body.target)) return false;
+  const target = rulesChange(draft.rules.optIns, body.target.optIn, body.target.value);
+  if (target === null) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  draft.proposals.push({
+    ...opening(body, author, at, { cls, window }),
+    atom: '',
+    target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
@@ -528,6 +582,7 @@ function applyProposal(
   at: Receipt,
 ): boolean {
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
+  if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : applyEdit(draft, body, author, at);
@@ -549,9 +604,24 @@ function applySuspend(draft: Draft, body: SuspendBody, author: string, at: Recei
 }
 
 /**
- * Whether a version's text fits its Proposal: a steward Proposal has no text,
- * so it takes none (#102), and only an edit's version may be `""`, a removal;
- * an add's needs text (#75).
+ * Narrows an opt-in at once (ADR-0040, ADR-0075 §3, #117), when its author is
+ * a steward who may narrow it beside their own open off-Proposal (stewards.ts,
+ * which reads each closed Proposal's outcome at `at`). It's off until that
+ * Proposal closes.
+ */
+function applyNarrow(draft: Draft, body: NarrowBody, author: string, at: Receipt): boolean {
+  const settled = draft.proposals.map((p) => settle(p, draft.rules, draft.at));
+  const { optIn, proposal } = body;
+  if (!isOptIn(optIn) || !mayNarrow({ ...draft, proposals: settled }, author, body)) return false;
+  const { id, seq, received } = at;
+  draft.narrowings.push({ id, seq, received, by: author, optIn, proposal });
+  return true;
+}
+
+/**
+ * Whether a version's text fits its Proposal: a steward or rules Proposal has
+ * no text, so it takes none (#102, #117), and only an edit's version may be
+ * `""`, a removal; an add's needs text (#75).
  */
 function versionTextFits(proposal: OpenProposal, text: string): boolean {
   const { kind } = proposal.target;
@@ -640,7 +710,11 @@ function admits(draft: Draft, event: GroupEvent): boolean {
 
 /** Applies one verified event to the draft, or returns false to ignore it. */
 function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
-  if (!admits(draft, event)) return false;
+  return admits(draft, event) && applyAdmitted(draft, event, at);
+}
+
+/** Applies one event {@link admits} let through, or returns false to ignore it. */
+function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
   switch (event.type) {
     case 'genesis':
       return applyGenesis(draft, event.body, event.author, at);
@@ -658,6 +732,8 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyLeave(draft, event.author);
     case 'suspend':
       return applySuspend(draft, event.body, event.author, at);
+    case 'narrow':
+      return applyNarrow(draft, event.body, event.author, at);
   }
 }
 
@@ -703,6 +779,66 @@ function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): 
   return { ...proposal, final, outcome };
 }
 
+/** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
+export function closeTime(proposal: Pick<Proposal, 'closedAt' | 'deadline'>): number {
+  return proposal.closedAt ?? proposal.deadline;
+}
+
+/**
+ * The Proposals of one kind that have closed by `draft.at` and that `applied`
+ * doesn't hold yet, each marked applied, in order of close time and then
+ * relay order, with whether each passed.
+ */
+function newlyClosed(
+  draft: Draft,
+  applied: Set<string>,
+  kind: 'steward' | 'rules',
+): { proposal: OpenProposal; passed: boolean }[] {
+  const closed = draft.proposals.filter(
+    (p) => p.target.kind === kind && !applied.has(p.id) && !isOpenAt(p, draft.at),
+  );
+  // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
+  return closed
+    .sort((a, b) => closeTime(a) - closeTime(b))
+    .map((proposal) => {
+      applied.add(proposal.id);
+      const passed = settle(proposal, draft.rules, draft.at).outcome.kind === 'pass';
+      return { proposal, passed };
+    });
+}
+
+/**
+ * Brings the steward seats up to `draft.at`: applies each steward Proposal
+ * that has closed by then, once, in order of close time and then relay
+ * order, and then lets seat 2 lapse at its term end in a group too small to
+ * fill it (stewards.ts). Runs before each event, so every event finds the
+ * seats as relay time has left them.
+ */
+function advanceSeats(draft: Draft): void {
+  for (const { proposal, passed } of newlyClosed(draft, draft.seated, 'steward')) {
+    const change = stewardChangeOf(proposal);
+    if (change !== null && passed) {
+      draft.stewards = seatsAfterPass(draft, change, closeTime(proposal));
+    }
+  }
+  draft.stewards = seatsAtTermEnds(draft);
+}
+
+/**
+ * Brings the standing opt-ins up to `draft.at` (#117): each rules Proposal
+ * that has passed and closed by then sets its value, once, in order of close
+ * time and then relay order. A narrowing needs nothing here: it ends when its
+ * off-Proposal closes. Runs before each event, beside {@link advanceSeats}.
+ */
+function advanceOptIns(draft: Draft): void {
+  for (const { proposal, passed } of newlyClosed(draft, draft.ruled, 'rules')) {
+    const change = rulesChangeOf(proposal);
+    if (change !== null && passed) {
+      draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
+    }
+  }
+}
+
 /** The winning version's text once a Proposal's pass is final, else null. */
 function passedText(proposal: Proposal): string | null {
   if (!proposal.final || proposal.outcome.kind !== 'pass') return null;
@@ -720,8 +856,9 @@ function insertAfter(atoms: readonly Atom[], after: string | null, atom: Atom): 
 
 /**
  * The Atoms after one Proposal's pass, or as they were when it hasn't passed
- * or changes no Atom (a steward Proposal, #102): an edit sets its Atom's text
- * or, with `""`, removes it; an add puts its Atom after its anchor (#75).
+ * or changes no Atom (a steward or rules Proposal, #102, #117): an edit sets
+ * its Atom's text or, with `""`, removes it; an add puts its Atom after its
+ * anchor (#75).
  */
 function applyPass(
   atoms: readonly Atom[],
@@ -730,40 +867,13 @@ function applyPass(
 ): readonly Atom[] {
   const text = passedText(proposal);
   const { target } = proposal;
-  if (text === null || target.kind === 'steward') return atoms;
+  if (text === null) return atoms;
   if (target.kind === 'add') {
     return insertAfter(atoms, target.after, { id: proposal.id, documentId, text });
   }
+  if (target.kind !== 'edit') return atoms;
   if (text === '') return atoms.filter((a) => a.id !== proposal.atom);
   return atoms.map((a) => (a.id === proposal.atom ? { ...a, text } : a));
-}
-
-/** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
-export function closeTime(proposal: Pick<Proposal, 'closedAt' | 'deadline'>): number {
-  return proposal.closedAt ?? proposal.deadline;
-}
-
-/**
- * Brings the steward seats up to `draft.at`: applies each steward Proposal
- * that has closed by then, once, in order of close time and then relay
- * order, and then lets seat 2 lapse at its term end in a group too small to
- * fill it (stewards.ts). Runs before each event, so every event finds the
- * seats as relay time has left them.
- */
-function advanceSeats(draft: Draft): void {
-  const closed = draft.proposals.filter(
-    (p) => stewardChangeOf(p) !== null && !draft.seated.has(p.id) && !isOpenAt(p, draft.at),
-  );
-  // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
-  for (const proposal of closed.sort((a, b) => closeTime(a) - closeTime(b))) {
-    draft.seated.add(proposal.id);
-    const change = stewardChangeOf(proposal);
-    const passed = settle(proposal, draft.rules, draft.at).outcome.kind === 'pass';
-    if (change !== null && passed) {
-      draft.stewards = seatsAfterPass(draft, change, closeTime(proposal));
-    }
-  }
-  draft.stewards = seatsAtTermEnds(draft);
 }
 
 /**
@@ -808,7 +918,9 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     at: 0,
     stewards: EMPTY_SEATS,
     suspensions: [],
+    narrowings: [],
     seated: new Set(),
+    ruled: new Set(),
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
@@ -816,6 +928,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     // Relay time only moves on, whatever the record holds.
     draft.at = Math.max(draft.at, received);
     advanceSeats(draft);
+    advanceOptIns(draft);
     const parsed = parseRecord(bytes);
     if (parsed === null) {
       ignored.push({ seq, id: null });
@@ -828,12 +941,15 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   }
   draft.at = relayNow ?? draft.at;
   advanceSeats(draft);
+  advanceOptIns(draft);
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, relayNow));
   const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
+  const { narrowings } = draft;
   return {
     group,
     rules,
+    optIns: effectiveOptIns({ rules, proposals, narrowings, at }),
     name,
     chat,
     title,
@@ -844,6 +960,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     at,
     stewards,
     suspensions,
+    narrowings,
     ignored,
   };
 }

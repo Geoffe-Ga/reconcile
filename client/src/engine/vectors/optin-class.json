@@ -1,0 +1,1609 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "turning the chat bot on is entrenched: its deadline is received plus 14 × 1,440 minutes, and an average of 2.5 with no zeros fails it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375023,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@5",
+            "atom": "",
+            "text": "",
+            "target": {
+              "kind": "rules",
+              "optIn": "chatBot",
+              "value": {
+                "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+              },
+              "from": null
+            },
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395170,
+            "versions": [
+              {
+                "id": "@5",
+                "author": "%ana",
+                "text": ""
+              }
+            ],
+            "closedAt": 29375023,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": false
+          }
+        },
+        "optIns": {
+          "chatBot": null,
+          "frontDoor": false
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "turning the chat bot on passes at the entrenched bar and sets its webhook, and turning it off again is ordinary: received plus 7 × 1,440 minutes",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": null
+              },
+              "title": "Turn the chat bot off",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@5",
+            "class": "entrenched",
+            "closedAt": 29375023,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@5",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@10",
+            "target": {
+              "kind": "rules",
+              "optIn": "chatBot",
+              "value": null,
+              "from": {
+                "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+              }
+            },
+            "class": "ordinary",
+            "window": 7,
+            "deadline": 29385110,
+            "closedAt": null,
+            "final": false
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": {
+              "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+            },
+            "frontDoor": false
+          }
+        },
+        "optIns": {
+          "chatBot": {
+            "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+          },
+          "frontDoor": false
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "replacing one webhook with another is ordinary, so an average of 2.5 passes it and sets the new webhook",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501800000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discordapp.com/api/webhooks/1199000000000000002/rV7-second_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375043,
+      "expect": {
+        "proposals": [
+          {
+            "outcome": {
+              "kind": "pass",
+              "version": "@5",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@10",
+            "target": {
+              "kind": "rules",
+              "optIn": "chatBot",
+              "value": {
+                "webhook": "https://discordapp.com/api/webhooks/1199000000000000002/rV7-second_token"
+              },
+              "from": {
+                "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+              }
+            },
+            "class": "ordinary",
+            "deadline": 29385110,
+            "closedAt": 29375043,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@10",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": {
+              "webhook": "https://discordapp.com/api/webhooks/1199000000000000002/rV7-second_token"
+            },
+            "frontDoor": false
+          }
+        },
+        "optIns": {
+          "chatBot": {
+            "webhook": "https://discordapp.com/api/webhooks/1199000000000000002/rV7-second_token"
+          },
+          "frontDoor": false
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "opening the front door is entrenched and closing it is ordinary, so an average of 2.5 closes it again",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": true
+              },
+              "title": "Open a front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501800000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": false
+              },
+              "title": "Close the front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375043,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@5",
+            "target": {
+              "kind": "rules",
+              "optIn": "frontDoor",
+              "value": true,
+              "from": false
+            },
+            "class": "entrenched",
+            "deadline": 29395170,
+            "outcome": {
+              "kind": "pass",
+              "version": "@5",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@10",
+            "target": {
+              "kind": "rules",
+              "optIn": "frontDoor",
+              "value": false,
+              "from": true
+            },
+            "class": "ordinary",
+            "deadline": 29385110,
+            "outcome": {
+              "kind": "pass",
+              "version": "@10",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": false
+          }
+        },
+        "optIns": {
+          "chatBot": null,
+          "frontDoor": false
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "a rules Proposal that writes its own class, bar, deadline, text and from is still entrenched for 14 days, and an average of 2.5 fails it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": true,
+                "from": true
+              },
+              "title": "Open a front door",
+              "why": "Our group talked it over in the chat.",
+              "class": "ordinary",
+              "deadline": 29375011,
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              },
+              "text": "Open.\n"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375023,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@5",
+            "text": "",
+            "target": {
+              "kind": "rules",
+              "optIn": "frontDoor",
+              "value": true,
+              "from": false
+            },
+            "class": "entrenched",
+            "deadline": 29395170,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": false
+          }
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "turning the chat bot on with a voting window of 13 days is ignored, and 14 days opens it, running received plus 14 × 1,440 minutes",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat.",
+              "window": 13
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat.",
+              "window": 14
+            }
+          }
+        }
+      ],
+      "relayNow": 29375011,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@6",
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395171
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [5]
+    },
+    {
+      "name": "turning the chat bot off takes the ordinary bounds, so 15 days is ignored and 3 runs 3 × 1,440 minutes, and opening the front door may run 28 days",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": null
+              },
+              "title": "Turn the chat bot off",
+              "why": "Our group talked it over in the chat.",
+              "window": 15
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": null
+              },
+              "title": "Turn the chat bot off",
+              "why": "Our group talked it over in the chat.",
+              "window": 3
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501920000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": true
+              },
+              "title": "Open a front door",
+              "why": "Our group talked it over in the chat.",
+              "window": 28
+            }
+          }
+        }
+      ],
+      "relayNow": 29375032,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@5"
+          },
+          {
+            "id": "@11",
+            "class": "ordinary",
+            "window": 3,
+            "deadline": 29379351
+          },
+          {
+            "id": "@12",
+            "class": "entrenched",
+            "window": 28,
+            "deadline": 29415352
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 10,
+            "id": "@10"
+          }
+        ]
+      },
+      "unchangedWithout": [10]
+    }
+  ]
+}

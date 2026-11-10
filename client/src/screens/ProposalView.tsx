@@ -17,19 +17,23 @@ import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
-import { SuspendedNote } from '../app/stewards';
+import { rulesView } from '../app/optInLines';
+import { Named, SuspendedNote } from '../app/stewards';
 import { stewardView, versionDoes, type VersionView, versionViews } from '../app/versionViews';
 import { can, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import {
   isAddProposal,
+  isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
   type ProposalEventBody,
+  type RulesProposalBody,
   type StewardProposalBody,
 } from '../engine/event';
 import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
+import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import { ConsentMeter } from './ConsentMeter';
@@ -120,8 +124,14 @@ function comparisonFor(state: GroupState, atom: string | null, passed: boolean):
   return { title: messages.proposal.changes(index + 1), current: now.text };
 }
 
-/** A steward ballot shows what it decides, never a diff: it changes no section (#102). */
+/** A steward or rules ballot shows what it decides, never a diff: it changes no section (#102, #117). */
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
+
+/** True for a Proposal with text: an edit or an add (#75), not a steward or rules one (#102, #117). */
+function writesText(proposal: Proposal): boolean {
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add';
+}
 
 /** The section a Proposal changes, or null when it adds one (#75). */
 function changedAtom(proposal: Proposal): string | null {
@@ -133,9 +143,32 @@ function changedAtom(proposal: Proposal): string | null {
  * an add, whose whole text shows as added (#75), or nothing for a steward one.
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
-  return proposal.target.kind === 'steward'
-    ? STEWARD_BALLOT
-    : comparisonFor(state, changedAtom(proposal), passed);
+  return writesText(proposal)
+    ? comparisonFor(state, changedAtom(proposal), passed)
+    : STEWARD_BALLOT;
+}
+
+/** A rules ballot opens with its opt-in's warning: what the outside platform would hold (#117). */
+function OptInWarning({ optIn }: { readonly optIn: OptIn | null }) {
+  return optIn === null ? null : (
+    <p className="opt-in-warning">{messages.optIns.warnings[optIn]}</p>
+  );
+}
+
+/**
+ * "Steward <name> turned this off at once. …" on an off-Proposal while the
+ * narrowing beside it is in force (#117), so every member sees it.
+ */
+function NarrowedNote({ state, proposal }: { state: GroupState; proposal: Proposal }) {
+  const change = rulesChangeOf(proposal);
+  const narrowing = state.narrowings.find((n) => n.proposal === proposal.id);
+  if (change === null || narrowing === undefined || !isNarrowed(state, change.optIn)) return null;
+  const name = displayName(state, narrowing.by) ?? '';
+  return (
+    <p className="opt-in-narrowed">
+      <Named parts={messages.optIns.narrowedBallot} name={name} />
+    </p>
+  );
 }
 
 /** The diff legend, under the heading, whenever the versions show as diffs. */
@@ -237,8 +270,8 @@ function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposa
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
 function AddVersion({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  // A steward Proposal has no text, so it takes no versions (#102); an edit or an add does.
-  if (proposal.target.kind === 'steward' || !isOpenToVersions(props, proposal)) return null;
+  // A steward or rules Proposal has no text, so it takes no versions (#102, #117); an edit or an add does.
+  if (!writesText(proposal) || !isOpenToVersions(props, proposal)) return null;
   const option = composeOption(props.state, proposal.atom);
   if (option === 'ballot-full') return <p className="caption">{messages.proposal.ballotFull}</p>;
   const route = {
@@ -286,6 +319,8 @@ function Vote({ props, proposal, versions }: VoteProps) {
   const meters = metersFor(proposal);
   return (
     <Block title={comparison.title} className="vote">
+      <OptInWarning optIn={rulesChangeOf(proposal)?.optIn ?? null} />
+      <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} />
       {reason === null ? (
         <Ballot
@@ -419,23 +454,41 @@ function waitingSteward(
   return [{ id: '', number: 1, author, text: '', steward }];
 }
 
-/** How a waiting Proposal's one version shows: its text against the section, or a steward ballot. */
+/**
+ * A waiting rules Proposal's one version: what its ballot will decide, from
+ * the standing value now, and its opt-in for the warning. Nothing for a value
+ * the fold would refuse (#117).
+ */
+function waitingRules(state: GroupState, author: string, body: RulesProposalBody) {
+  const change = rulesChange(state.rules.optIns, body.target.optIn, body.target.value);
+  if (change === null) return { optIn: null, versions: [] };
+  const rules = rulesView(change);
+  return { optIn: change.optIn, versions: [{ id: '', number: 1, author, text: '', rules }] };
+}
+
+/** How a waiting Proposal's one version shows: its text against the section, or a steward or rules ballot. */
 function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
   const author = displayName(state, me) ?? '';
   if (isStewardProposal(body)) {
-    return { comparison: STEWARD_BALLOT, versions: waitingSteward(state, author, body) };
+    return {
+      comparison: STEWARD_BALLOT,
+      versions: waitingSteward(state, author, body),
+      optIn: null,
+    };
   }
+  if (isRulesProposal(body))
+    return { comparison: STEWARD_BALLOT, ...waitingRules(state, author, body) };
   // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
   const add = isAddProposal(body);
   const comparison = comparisonFor(state, add ? null : body.atom, false);
   const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
   const version = { id: '', number: 1, author, text: body.text };
-  return { comparison, versions: [does === null ? version : { ...version, does }] };
+  return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
 function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
-  const { comparison, versions } = waitingVersions(state, me, body);
+  const { comparison, versions, optIn } = waitingVersions(state, me, body);
   return (
     <Screen state={state}>
       <PageHeader
@@ -447,6 +500,7 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
         {body.why}
       </p>
       <Block title={comparison.title} className="vote">
+        <OptInWarning optIn={optIn} />
         <Legend comparison={comparison} />
         <VersionList versions={versions} current={comparison.current} />
       </Block>

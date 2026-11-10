@@ -22,6 +22,7 @@ import { MotionTitle, Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { formatMinute, minuteIso } from '../app/time';
+import type { RulesView } from '../app/optInLines';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
@@ -95,6 +96,15 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
   );
 }
 
+/** A rules Proposal's pass: what is now on or off (#117). */
+function RulesPassed({ rules }: { readonly rules: RulesView }) {
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{rules.passed}</p>
+    </div>
+  );
+}
+
 /**
  * A pass: its sentence, the winning text as the Document now reads, or no
  * text when it removed the section, and thanks. No numbers.
@@ -160,9 +170,9 @@ function Failed({ detail, versions }: OutcomeProps) {
 function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
   const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  // A steward vote isn't proposed again from here: Group home says when an election is due (#102).
-  // A change, a removal or an add is (#75).
-  if (leaving || proposal.target.kind === 'steward' || !can(state, me, 'propose')) return null;
+  // A steward or rules vote isn't proposed again from here (#102, #117); a change, a removal or an add is (#75).
+  const { kind } = proposal.target;
+  if (leaving || (kind !== 'edit' && kind !== 'add') || !can(state, me, 'propose')) return null;
   const busy = composeOption(state, proposal.atom) !== 'propose';
   return (
     <div className="row result-again">
@@ -202,15 +212,17 @@ function Lapsed({ props }: OutcomeProps) {
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const steward = props.versions[0]?.steward;
+  const { steward, rules } = props.versions[0] ?? {};
   if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
+  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward ballot decided. */
+/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward or rules ballot decided. */
 function VersionName({ version }: { readonly version: VersionView }) {
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
+  if (version.rules !== undefined) return <>{version.rules.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}

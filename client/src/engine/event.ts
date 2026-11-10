@@ -129,10 +129,40 @@ export interface StewardProposalBody {
   readonly link?: string;
 }
 
-/** What a `proposal` event carries: new text for an Atom, a new section (#75), or a steward seat (#102). */
-export type ProposalEventBody = ProposalBody | AddProposalBody | StewardProposalBody;
+/**
+ * An opt-in a rules Proposal sets (ADR-0040, #117), and the value it would
+ * set. Both are kept as written: the fold checks the opt-in and runs its
+ * validator on the value (optIns.ts).
+ */
+export interface RulesTarget {
+  readonly kind: 'rules';
+  readonly optIn: string;
+  readonly value: unknown;
+}
 
-/** True when a Proposal's body targets a steward seat rather than an Atom. */
+/**
+ * Turns an opt-in on or off, or replaces the chat bot's webhook (#117): a
+ * Proposal with a title, a justification, an optional discussion link and an
+ * optional voting window in whole days (#106), whose target is an opt-in.
+ * Like a steward Proposal, it carries no text, so its ballot has one version,
+ * under the Proposal's id.
+ */
+export interface RulesProposalBody {
+  readonly target: RulesTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+}
+
+/**
+ * What a `proposal` event carries: new text for an Atom, a new section (#75),
+ * a steward seat (#102), or an opt-in (#117).
+ */
+export type ProposalEventBody =
+  ProposalBody | AddProposalBody | StewardProposalBody | RulesProposalBody;
+
+/** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
   return 'target' in body && body.target.kind === 'steward';
 }
@@ -140,6 +170,11 @@ export function isStewardProposal(body: ProposalEventBody): body is StewardPropo
 /** True when a Proposal's body adds a new section (#75). */
 export function isAddProposal(body: ProposalEventBody): body is AddProposalBody {
   return 'target' in body && body.target.kind === 'add';
+}
+
+/** True when a Proposal's body targets an opt-in (#117). */
+export function isRulesProposal(body: ProposalEventBody): body is RulesProposalBody {
+  return 'target' in body && body.target.kind === 'rules';
 }
 
 /**
@@ -150,6 +185,16 @@ export function isAddProposal(body: ProposalEventBody): body is AddProposalBody 
 export interface SuspendBody {
   readonly member: string;
   readonly reason?: string;
+}
+
+/**
+ * Turns an opt-in off at once (ADR-0040, ADR-0075 §3, #117), beside the
+ * author's own open off-Proposal for it, until that Proposal closes. The fold
+ * checks that the author is a steward who may narrow it (stewards.ts).
+ */
+export interface NarrowBody {
+  readonly optIn: string;
+  readonly proposal: string;
 }
 
 /**
@@ -184,6 +229,7 @@ export interface EventBodies {
   readonly level: LevelBody;
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
+  readonly narrow: NarrowBody;
 }
 
 /** The event types this engine understands. */
@@ -367,20 +413,48 @@ function parseStewardTarget(value: unknown): StewardTarget | null {
   return { kind: 'steward', seat, member };
 }
 
-/** A steward Proposal carries `target` and no `atom`; any `text` or `window` is dropped (#102, #106). */
-function parseStewardProposal(body: Json): StewardProposalBody | null {
-  const { atom, target, title, why, link } = body;
-  const parsed = parseStewardTarget(target);
-  if (parsed === null || atom !== undefined || !isString(title) || !isString(why)) return null;
-  if (!isOptionalString(link)) return null;
-  return { target: parsed, title, why, ...(link === undefined ? {} : { link }) };
+/** A rules target's kind, opt-in and value, the value kept as written, or null for any other shape (#117). */
+function parseRulesTarget(value: unknown): RulesTarget | null {
+  if (!isObject(value) || value.kind !== 'rules' || !isString(value.optIn)) return null;
+  // JSON has no undefined, so a value that is undefined was left out.
+  return value.value === undefined
+    ? null
+    : { kind: 'rules', optIn: value.optIn, value: value.value };
 }
 
-/** A Proposal with a `target` in place of an Atom: an add (#75) or a steward seat (#102). */
+/** What every targeted Proposal carries beside its target: a title, a why and an optional link, and no `atom`. */
+function parseTargetedFields(body: Json): Omit<StewardProposalBody, 'target'> | null {
+  const { atom, title, why, link } = body;
+  if (atom !== undefined || !isString(title) || !isString(why) || !isOptionalString(link)) {
+    return null;
+  }
+  return { title, why, ...(link === undefined ? {} : { link }) };
+}
+
+/** A rules Proposal (#117): its target and fields, and the window its proposer chose, if any (#106). */
+function parseRulesProposal(body: Json, fields: Omit<StewardProposalBody, 'target'>) {
+  const target = parseRulesTarget(body.target);
+  const { window } = body;
+  if (target === null || !isOptionalNumber(window)) return null;
+  return { ...fields, target, ...(window === undefined ? {} : { window }) };
+}
+
+/**
+ * A steward (#102) or rules (#117) Proposal carries `target` and no `atom`;
+ * any `text` is dropped, and so is a steward Proposal's `window` (#106).
+ */
+function parseTargetedProposal(body: Json): StewardProposalBody | RulesProposalBody | null {
+  const fields = parseTargetedFields(body);
+  if (fields === null) return null;
+  const steward = parseStewardTarget(body.target);
+  return steward === null ? parseRulesProposal(body, fields) : { ...fields, target: steward };
+}
+
+/** A Proposal with a `target` in place of an Atom: an add (#75), a steward seat (#102) or an opt-in (#117). */
 function parseTargeted(body: Json): ProposalEventBody | null {
   return isObject(body.target) && body.target.kind === 'add'
     ? parseAddProposal(body)
-    : parseStewardProposal(body);
+    : parseTargetedProposal(body);
 }
 
 function parseProposal(body: Json): ProposalEventBody | null {
@@ -402,6 +476,11 @@ function parseSuspend(body: Json): SuspendBody | null {
   const { member, reason } = body;
   if (!isString(member) || !isOptionalString(reason)) return null;
   return { member, ...(reason === undefined ? {} : { reason }) };
+}
+
+function parseNarrow(body: Json): NarrowBody | null {
+  const { optIn, proposal } = body;
+  return isString(optIn) && isString(proposal) ? { optIn, proposal } : null;
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -456,6 +535,8 @@ function withBody(
       return { ...head, type, body: {} };
     case 'suspend':
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'narrow':
+      return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

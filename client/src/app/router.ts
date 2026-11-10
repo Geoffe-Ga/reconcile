@@ -9,6 +9,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import { isOptIn, type OptIn } from '../engine/optIns';
 import { SEATS, type SeatNumber } from '../engine/stewards';
 
 /** Where the app is. Unknown hashes read as Start. */
@@ -29,7 +30,18 @@ export type Route =
       readonly seat: SeatNumber;
       /** True for Propose recall of the seat's steward, false for Propose a steward (#102). */
       readonly recall: boolean;
+    }
+  | { readonly name: 'rules'; readonly groupId: string }
+  | {
+      readonly name: 'optIn';
+      readonly groupId: string;
+      readonly optIn: OptIn;
+      /** True for a steward's Turn off now, which also narrows it at once (#117). */
+      readonly narrow: boolean;
     };
+
+/** A route inside one group. */
+type GroupRoute = Extract<Route, { readonly groupId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -50,9 +62,15 @@ function stewardPage(groupId: string, recall: boolean, arg: string): Route {
   return seat === undefined ? START : { name: 'steward', groupId, seat, recall };
 }
 
+/** `rules/{optIn}` or, when `narrow`, `narrow/{optIn}`: the opt-in composer (#117). */
+function optInPage(groupId: string, narrow: boolean, arg: string): Route {
+  return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
+}
+
 /** The pages inside a group that take nothing after their name. */
 const BARE_PAGES: ReadonlyMap<string, (groupId: string) => Route> = new Map([
   ['doc', (groupId: string): Route => ({ name: 'document', groupId })],
+  ['rules', (groupId: string): Route => ({ name: 'rules', groupId })],
   ['add', (groupId: string): Route => ({ name: 'add', groupId, after: null })],
 ]);
 
@@ -73,12 +91,15 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
   ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
+  ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
+  ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
 ]);
 
 /**
- * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`,
+ * A page inside a group: `doc`, `rules`, `propose/{atomId}`, `p/{proposalId}`,
  * `again/{proposalId}`, `add` (a new first section), `add/{atomId}` (one after
- * that Atom), `remove/{atomId}` (#75), `steward/{seat}` or `recall/{seat}`.
+ * that Atom), `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`,
+ * `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
@@ -132,8 +153,30 @@ function idPath(id: string | null): string {
   return id === null ? '' : `/${id}`;
 }
 
-/** A route inside one group. */
-type GroupRoute = Exclude<Route, { readonly name: 'start' | 'create' | 'join' }>;
+/** A steward composer's path: `/recall/{seat}` for a recall, else `/steward/{seat}` (#102). */
+function stewardPath(route: Extract<Route, { readonly name: 'steward' }>): string {
+  const page = route.recall ? 'recall' : 'steward';
+  return `/${page}/${String(route.seat)}`;
+}
+
+/** An opt-in composer's path: `/narrow/{optIn}` for Turn off now, else `/rules/{optIn}` (#117). */
+function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
+  return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
+}
+
+/** A section composer's path (#75): proposing a change, adding a section, or removing one. */
+function sectionPath(
+  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' }>,
+): string {
+  switch (route.name) {
+    case 'propose':
+      return `/propose/${route.atomId}`;
+    case 'add':
+      return `/add${idPath(route.after)}`;
+    case 'remove':
+      return `/remove/${route.atomId}`;
+  }
+}
 
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
@@ -142,18 +185,18 @@ function groupPath(route: GroupRoute): string {
       return '';
     case 'document':
       return '/doc';
-    case 'propose':
-      return `/propose/${route.atomId}`;
+    case 'rules':
+      return '/rules';
     case 'proposal':
       return `/p/${route.proposalId}`;
     case 'again':
       return `/again/${route.proposalId}`;
-    case 'add':
-      return `/add${idPath(route.after)}`;
-    case 'remove':
-      return `/remove/${route.atomId}`;
     case 'steward':
-      return `/${route.recall ? 'recall' : 'steward'}/${String(route.seat)}`;
+      return stewardPath(route);
+    case 'optIn':
+      return optInPath(route);
+    default:
+      return sectionPath(route);
   }
 }
 

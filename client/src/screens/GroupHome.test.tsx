@@ -678,3 +678,17 @@ describe('Leave this group', () => {
     expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Cal, Co-Creator']);
   });
 });
+
+describe('GroupHome: the group’s rules (#117)', () => {
+  it('links to the rules, saying where the chat bot and the front door stand', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const door = log.rules('Ana', 'frontDoor', true);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
+    renderHome(log.state(), { me: authorOf('ben') });
+    const rules = section('Rules');
+    const link = within(rules).getByRole('link', { name: /Chat bot and front door/ });
+    expect(link).toHaveAttribute('href', `#/g/${log.group}/rules`);
+    expect(link).toHaveTextContent('Chat bot: Off · Front door: Open');
+    expect(await axeViolations()).toEqual([]);
+  });
+});

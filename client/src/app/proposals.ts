@@ -1,7 +1,8 @@
 /**
  * What the composer, the ballot and the level picker do (spec §4 and §8),
  * apart from any screen: propose, add a version, vote, and choose a level;
- * and for stewards (#102), propose a steward or a recall, and suspend.
+ * for stewards (#102), propose a steward or a recall, and suspend; and for
+ * the opt-ins (#117), propose a rules change, with a steward's narrowing.
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -19,6 +20,7 @@ import {
   type SignedEvent,
   signEvent,
 } from '../engine/event';
+import type { OptIn, OptInValue } from '../engine/optIns';
 import type { Services } from './actions';
 
 /** What the actions here use. */
@@ -309,4 +311,63 @@ export async function suspend(
   });
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();
+}
+
+/** A rules Proposal's entries: the opt-in and the value it would set, title and why trimmed. */
+export interface RulesValues {
+  readonly optIn: OptIn;
+  /** The value, already checked by the opt-in's validator (src/engine/optIns.ts). */
+  readonly value: OptInValue;
+  readonly title: string;
+  readonly why: string;
+  /** True for a steward's Turn off now: a `narrow` naming the Proposal follows it. */
+  readonly narrow: boolean;
+  /**
+   * How many whole days voting runs, already checked against the bounds of
+   * the change's class (#106). Absent, the Proposal runs the class default.
+   */
+  readonly window?: number;
+}
+
+/**
+ * Proposes setting an opt-in (ADR-0040, #117), as this device's member of
+ * `groupId`, for the voting window the proposer chose, if any. The title and
+ * why are NFC-normalized before signing. For Turn
+ * off now, a `narrow` naming the new Proposal follows it in the same store
+ * change, so the relay receives the Proposal first. Either one too large for
+ * any blob is refused before anything is queued. The fold decides whether
+ * each holds. The webhook goes only into the sealed event (spec §9).
+ */
+export async function proposeRules(
+  services: ProposalServices,
+  groupId: string,
+  values: RulesValues,
+): Promise<ProposeResult> {
+  const { optIn, value, window } = values;
+  const body = {
+    target: { kind: 'rules', optIn, value } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+    ...(window === undefined ? {} : { window }),
+  };
+  const ts = services.now();
+  const event = await signFor(services, groupId, { type: 'proposal', group: groupId, ts, body });
+  const narrowed = values.narrow
+    ? [
+        await signFor(services, groupId, {
+          type: 'narrow',
+          group: groupId,
+          ts,
+          body: { optIn, proposal: event.id },
+        }),
+      ]
+    : [];
+  const events = [event, ...narrowed];
+  if (!allFit(events)) return { outcome: 'too-large' };
+  await services.store.enqueueAll(
+    groupId,
+    events.map((signed) => signed.record),
+  );
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
 }
