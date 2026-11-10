@@ -6,11 +6,12 @@
  * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
  * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
  * windows (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
+ * And of epochs (#98): a record read from another epoch's mailbox changes nothing, not even relay time.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { authorOf, signedAs } from '../test/keys';
+import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
@@ -105,6 +106,43 @@ class Log {
     return this.add(received, member(author), { type: 'version', body: { proposal, text } });
   }
 }
+
+/** What a late event in the dissolve property acts on: the group's size, an open edit and the dissolve Proposal. */
+interface LateContext {
+  readonly count: number;
+  readonly edit: string;
+  readonly motion: string;
+}
+
+/**
+ * A key change into epoch 1, wrapped to nobody: the property's members hold
+ * no kx, so after a leave it would be valid in a group that goes on (#98).
+ */
+const LATE_ROTATE = { epoch: 1, commit: 'rotation-commit-of-this-propertyAAAAAAAAAAA', wraps: {} };
+
+/** Each kind of event the dissolve property sends late, by member `who` (mod the group's size). */
+const LATE = {
+  vote: (log, at, who, value, { count, edit }) => log.vote(at, who % count, edit, value),
+  version: (log, at, who, _value, { count, edit }) =>
+    log.version(at, who % count, edit, 'Late wording'),
+  level: (log, at, who, _value, { count }) => log.level(at, who % count, FOLLOWING),
+  join: (log, at, who, _value, { count }) =>
+    log.add(at, member(count + who), { type: 'join', body: { name: 'Late' } }),
+  proposal: (log, at) => log.propose(at, `${log.group}.1`, 'Late text'),
+  dissolve: (log, at, who, _value, { count, motion }) =>
+    log.add(at, member(who % count), { type: 'dissolve', body: { proposal: motion } }),
+  leave: (log, at, who, _value, { count }) => log.leave(at, who % count),
+  kx: (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'kx', body: { kx: testKx(member(who % count)).kx } }),
+  'key-rotate': (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'key-rotate', body: LATE_ROTATE }),
+} satisfies Record<
+  string,
+  (log: Log, at: number, who: number, value: Score, context: LateContext) => string
+>;
+
+/** The kinds of late event, for fast-check to pick from. */
+const LATE_KINDS = Object.keys(LATE) as (keyof typeof LATE)[];
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
@@ -269,6 +307,27 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('ignores any record read from another epoch’s mailbox, wherever it lands, even a late copy (#98)', () => {
+    const scenario = arbitraryLog.chain((log) =>
+      fc.record({
+        log: fc.constant(log),
+        source: fc.constantFrom(...log.records),
+        at: fc.nat({ max: log.records.length }),
+        epoch: fc.integer({ min: 1, max: 3 }),
+        late: fc.integer({ min: 0, max: 30 * DAY_MINUTES }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ log: { records, relayNow }, source, at, epoch, late }) => {
+        // No key change ever happened here, so every epoch but 0 is another mailbox's.
+        const stale = { ...source, seq: 0, received: source.received + late, epoch };
+        const state = fold([...records.slice(0, at), stale, ...records.slice(at)], relayNow);
+        expect(state.ignored).toContainEqual({ seq: 0, id: parseRecord(source.bytes)?.id ?? null });
+        expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
+      }),
+    );
+  });
+
   it('keeps an open Proposal’s eligible set and deadline whatever levels its members move to', () => {
     const change = fc.record({
       who: fc.nat({ max: 11 }),
@@ -372,37 +431,37 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     const late = fc.array(
       fc.record({
         who: fc.nat({ max: 5 }),
-        kind: fc.constantFrom('vote', 'version', 'level', 'join', 'proposal', 'dissolve'),
+        kind: fc.constantFrom(...LATE_KINDS),
         value: score,
         gap: fc.integer({ min: 0, max: 2 * WINDOW }),
       }),
       { minLength: 1, maxLength: 6 },
     );
+    const args = [fc.integer({ min: 3, max: 5 }), fc.boolean(), fc.boolean(), late] as const;
     fc.assert(
-      fc.property(fc.integer({ min: 3, max: 5 }), fc.boolean(), late, (count, wipe, events) => {
+      fc.property(...args, (count, wipe, leaveFirst, events) => {
         const log = Log.founded(count);
         const edit = log.propose(R + 10, `${log.group}.0`, 'New text');
         const target = { kind: 'dissolve' as const, wipe };
         const body = { target, title: 'Dissolve', why: 'Done.' };
         const motion = log.add(R + 11, member(0), { type: 'proposal', body });
         for (let i = 0; i < count; i += 1) log.vote(R + 12 + i, i, motion, 4);
+        // A leave just before the dissolve makes a key change due, until the dissolve ends it (#98).
+        if (leaveFirst) log.leave(R + 19, count - 1);
         log.add(R + 20, member(1), { type: 'dissolve', body: { proposal: motion } });
         const before = fold(log.records, R + 30);
         let at = R + 20;
         for (const { who, kind, value, gap } of events) {
           at += gap;
-          const author = who % count;
-          if (kind === 'vote') log.vote(at, author, edit, value);
-          if (kind === 'version') log.version(at, author, edit, 'Late wording');
-          if (kind === 'level') log.level(at, author, FOLLOWING);
-          if (kind === 'join')
-            log.add(at, member(count + who), { type: 'join', body: { name: 'Late' } });
-          if (kind === 'proposal') log.propose(at, `${log.group}.1`, 'Late text');
-          if (kind === 'dissolve')
-            log.add(at, member(author), { type: 'dissolve', body: { proposal: motion } });
+          LATE[kind](log, at, who, value, { count, edit, motion });
         }
         const after = fold(log.records, at + 3 * WINDOW);
         expect(before.dissolved).toEqual({ received: R + 20, wipe });
+        expect([before.epoch, before.rotationDue, before.former.length]).toEqual([
+          0,
+          false,
+          leaveFirst ? 1 : 0,
+        ]);
         expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
         expect(after.ignored.map((record) => record.seq)).toEqual(
           log.records.slice(-events.length).map((record) => record.seq),

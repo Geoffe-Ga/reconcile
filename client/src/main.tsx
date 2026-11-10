@@ -20,16 +20,19 @@ import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
 import { xchachaSeal } from './crypto/seal';
 import { postWebhook } from './net/discord';
+import { createPushRelay } from './net/push';
 import { createRelay } from './net/relay';
 import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
 import { passkeyOfferRecord } from './platform/passkeyOffer';
 import { requestPersistence } from './platform/persist';
+import { browserPushPort, closeWhenVisible } from './platform/pushPort';
 import { browserCredentials, webAuthn } from './platform/webauthn';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
+import { createPush } from './store/push';
 import { createSync } from './store/sync';
 
 const root = document.getElementById('root');
@@ -43,17 +46,21 @@ if (root === null) {
  * opens empty on a new device, and nothing makes keys until first run is through.
  * Each launch first wipes, or clears the ballots of, any dissolved group
  * whose time has come by this device's clock (#108). The chat bot posts only
- * for a group that turned it on by Proposal and hasn't dissolved (#119). A
- * device whose keys are locked with a passkey (#95) sweeps and syncs only
- * once the passkey unlocks them (`openDeviceLock`); the relying party is this
- * host.
+ * for a group that turned it on by Proposal and hasn't dissolved (#119).
+ * Push stays off until the person turns a group on in Settings (#99), and the
+ * app closes its notifications whenever it comes to the front. A device whose
+ * keys are locked with a passkey (#95) sweeps and syncs only once the passkey
+ * unlocks them (`openDeviceLock`); the relying party is this host.
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
   const chatBot = createChatBot({ store, post: postWebhook, notice });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot });
+  const port = browserPushPort();
+  const push = createPush({ store, relay: createPushRelay(), port });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push });
+  closeWhenVisible(port, document);
   const platform = readPlatform();
   const credentials = browserCredentials();
   const webauthn = credentials === undefined ? undefined : webAuthn(credentials);
@@ -71,6 +78,7 @@ async function start(container: HTMLElement): Promise<void> {
     share: browserShare(),
     files: browserFileTargets(),
     erase: () => eraseDevice({ sync, store }),
+    push,
     guide: guideRecord(),
     passkey: passkeyOn(keys),
   };

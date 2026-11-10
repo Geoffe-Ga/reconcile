@@ -18,6 +18,7 @@ interface TestMember {
   received: number;
   invitedBy: null;
   rightsAt: number;
+  kx: null;
 }
 
 /** Members with these names, each under a fresh key. */
@@ -30,6 +31,7 @@ function people(names: readonly string[]): TestMember[] {
     received: seq,
     invitedBy: null,
     rightsAt: seq,
+    kx: null,
   }));
 }
 

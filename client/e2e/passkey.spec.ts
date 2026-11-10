@@ -8,8 +8,9 @@
  *
  * - With PRF, Ana locks her keys from Settings after founding a group, and
  *   Ben locks his from the offer after the notice, before he joins. Then
- *   neither device's IndexedDB holds a signing key or group secret outside
- *   the vault, as raw bytes or base64url, and no group record carries one.
+ *   neither device's IndexedDB holds a signing key, encryption key (#98) or
+ *   group secret outside the vault, as raw bytes or base64url, and no group
+ *   record carries one.
  *   Ana proposes. A reload shows the unlock screen; PRF output whose flags
  *   say the user wasn't verified leaves it locked, with Try again, Restore a
  *   backup file and Erase;
@@ -202,7 +203,11 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     const canaries = [
       ...keyCanaries('Ana’s signing key', Uint8Array.from(plain.signingKey)),
       ...keyCanaries('group secret', Uint8Array.from(plain.secret)),
+      ...(plain.kxKey === null
+        ? []
+        : keyCanaries('Ana’s encryption key', Uint8Array.from(plain.kxKey))),
     ];
+    expect(plain.kxKey).toHaveLength(32);
     for (const person of [ana, ben]) {
       const raw = await rawDatabase(person.page);
       expect(raw.stores).toEqual(['groups', 'personal', 'vault']);
@@ -212,6 +217,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
       for (const fields of raw.groupFields) {
         expect(fields).not.toContain('secret');
         expect(fields).not.toContain('signingKey');
+        expect(fields).not.toContain('kxKey');
       }
     }
   });

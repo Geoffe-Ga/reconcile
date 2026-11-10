@@ -101,6 +101,9 @@ describe('fold', () => {
       narrowings: [],
       vouches: [],
       chatPosts: [],
+      epoch: 0,
+      rotations: [],
+      rotationDue: false,
       dissolved: null,
       ignored: [],
     });
@@ -206,6 +209,7 @@ describe('fold', () => {
       received: R + 1,
       invitedBy: null,
       rightsAt: R + 1,
+      kx: null,
     });
   });
 
@@ -225,6 +229,7 @@ describe('fold', () => {
       received: R + 1,
       invitedBy: null,
       rightsAt: R + 1,
+      kx: null,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);

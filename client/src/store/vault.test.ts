@@ -100,6 +100,20 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
     expect(decodeVaultKeys(Uint8Array.of(0xff, 0xfe))).toBeNull();
   });
 
+  it('carries a group’s encryption key (#98) when it has one, and reads a bad one as nothing', () => {
+    const kx = new Uint8Array(32).fill(0xc5);
+    const keys = new Map([['g', { ...keysOf(0), kxKey: kx }]]);
+
+    const decoded = decodeVaultKeys(encodeVaultKeys(keys));
+
+    expect(local(decoded?.get('g')?.kxKey ?? new Uint8Array())).toEqual(local(kx));
+    expect(
+      decodeVaultKeys(encodeVaultKeys(new Map([['g', keysOf(0)]])))?.get('g')?.kxKey,
+    ).toBeUndefined();
+    expect(decodeVaultKeys(utf8(vaultJson([{ ...entry('g'), kxKey: ZEROS.slice(2) }])))).toBeNull();
+    expect(decodeVaultKeys(utf8(vaultJson([{ ...entry('g'), kxKey: 7 }])))).toBeNull();
+  });
+
   it('reads the valid entry these tests break, so each refusal is the change’s', () => {
     expect(comparable(decodeVaultKeys(utf8(vaultJson([entry('g')]))))).toEqual(
       comparable(new Map([['g', keysOf(0)]])),

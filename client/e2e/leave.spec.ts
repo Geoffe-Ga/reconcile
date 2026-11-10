@@ -154,7 +154,7 @@ test('A tells the group a vote is open; B finds it under Needs your vote, then l
     const open = page.getByRole('button', { name: 'Leave this group' });
     await open.click();
     const dialog = page.getByRole('alertdialog', { name: 'Leave this group?' });
-    await expect(dialog).toContainText('Reconcile doesn’t change the group’s keys');
+    await expect(dialog).toContainText('When you leave, the group gets a new key');
     await expectAccessible(ben, 'Leave dialog');
     for (let i = 0; i < 3; i += 1) {
       await page.keyboard.press('Tab');

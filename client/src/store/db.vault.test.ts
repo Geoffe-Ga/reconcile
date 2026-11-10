@@ -242,6 +242,90 @@ describe('a new session on a sealed device', () => {
   });
 });
 
+describe('#98’s keys under the vault: the encryption key and each new epoch’s secret', () => {
+  const NEXT_SECRET = new Uint8Array(32).fill(0xe1);
+  const KX = new Uint8Array(32).fill(0xc5);
+  const ADOPTED = new Uint8Array(32).fill(0xe2);
+
+  it('seals a group’s encryption key with its other keys, never in its record', async () => {
+    const store = await openStore();
+    await store.addGroup({ ...ANA, kxKey: KX });
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+    const reopened = await openStore();
+    await reopened.unlock(KEY);
+
+    const canaries = [...secretsOf(ANA), ...keyCanaries('kx key', KX)];
+    expect(findCanaries(await rawDatabase(), canaries)).toEqual([]);
+    expect(local((await reopened.getGroup(ANA.groupId))?.kxKey ?? new Uint8Array())).toEqual(
+      local(KX),
+    );
+  });
+
+  it('keeps the encryption key ensureKx makes in the vault, and the first one two calls race to', async () => {
+    const store = await sealedDevice();
+
+    const kept = await store.ensureKx(ANA.groupId, KX);
+    const again = await store.ensureKx(ANA.groupId, new Uint8Array(32).fill(0x77));
+
+    expect([local(kept), local(again)]).toEqual([local(KX), local(KX)]);
+    expect(findCanaries(await rawDatabase(), keyCanaries('kx key', KX))).toEqual([]);
+    expect(local((await store.getGroup(ANA.groupId))?.kxKey ?? new Uint8Array())).toEqual(
+      local(KX),
+    );
+  });
+
+  it('seals the next epoch’s secret a pull moves to, keeping the rest of the pull', async () => {
+    const store = await sealedDevice();
+    const advance = { epoch: 1, secret: NEXT_SECRET, cursor: 0, repost: [utf8('{"again":1}')] };
+    const pull = { records: [], cursor: 7, relayNow: 3, instance: 'r', lastSyncAt: 4, advance };
+
+    await store.applyPull(ANA.groupId, pull, () => null);
+
+    expect(findCanaries(await rawDatabase(), keyCanaries('next secret', NEXT_SECRET))).toEqual([]);
+    const group = await store.getGroup(ANA.groupId);
+    expect(local(group?.secret ?? new Uint8Array())).toEqual(local(NEXT_SECRET));
+    expect([group?.epoch, group?.cursor, group?.outbox.map(text)]).toEqual([1, 0, ['{"again":1}']]);
+    expect(local(group?.signingKey ?? new Uint8Array())).toEqual(local(ANA.signingKey));
+  });
+
+  it('seals an epoch an invite carried, and ignores one that isn’t later', async () => {
+    const store = await sealedDevice();
+
+    await store.adoptEpoch(ANA.groupId, { epoch: 2, secret: ADOPTED, cursor: 5, repost: [] });
+    await store.adoptEpoch(ANA.groupId, { epoch: 1, secret: NEXT_SECRET, cursor: 9, repost: [] });
+
+    expect(findCanaries(await rawDatabase(), keyCanaries('adopted', ADOPTED))).toEqual([]);
+    const group = await store.getGroup(ANA.groupId);
+    expect([local(group?.secret ?? new Uint8Array()), group?.epoch, group?.cursor]).toEqual([
+      local(ADOPTED),
+      2,
+      5,
+    ]);
+  });
+
+  it('refuses to move a locked group to a new epoch, writing nothing', async () => {
+    (await sealedDevice()).close();
+    const store = await openStore();
+    const before = await rawDatabase();
+    const advance = { epoch: 1, secret: NEXT_SECRET, cursor: 0, repost: [] };
+
+    await expect(
+      store.applyPull(
+        ANA.groupId,
+        { records: [], cursor: 7, relayNow: 3, instance: 'r', lastSyncAt: 4, advance },
+        () => null,
+      ),
+    ).rejects.toThrow(VaultLocked);
+    await expect(store.ensureKx(ANA.groupId, KX)).rejects.toThrow(VaultLocked);
+    await expect(store.adoptEpoch(ANA.groupId, { ...advance, cursor: 1 })).rejects.toThrow(
+      VaultLocked,
+    );
+
+    expect(local(await rawDatabase())).toEqual(local(before));
+  });
+});
+
 describe('requireUnlocked: the one check before anything hands keys on', () => {
   it('passes on a device with no vault, and once this session seals or unlocks the vault', async () => {
     const plain = await openStore();

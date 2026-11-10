@@ -12,6 +12,10 @@ export interface StoredGroup {
   readonly secret: number[];
   readonly signingKey: number[];
   readonly author: string;
+  /** Its X25519 secret key (#98), or none for a group kept before #98. */
+  readonly kxKey: number[] | null;
+  /** The epoch of `secret` (#98): 0 until the group's key first changes. */
+  readonly epoch: number;
 }
 
 /** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's derivations. */
@@ -37,6 +41,8 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         groupId: string;
         secret: Uint8Array;
         signingKey: Uint8Array;
+        kxKey?: Uint8Array;
+        epoch?: number;
         me: { author: string };
       }[];
       return groups.map((group) => ({
@@ -44,6 +50,8 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         secret: Array.from(group.secret),
         signingKey: Array.from(group.signingKey),
         author: group.me.author,
+        kxKey: group.kxKey === undefined ? null : Array.from(group.kxKey),
+        epoch: group.epoch ?? 0,
       }));
     } finally {
       db.close();

@@ -8,6 +8,7 @@
  * makes and hands back the same one for the same event: property tests that
  * rebuild a log many times sign each event once.
  */
+import { kxPublicKeyOf } from '../crypto/box';
 import { sha256 } from '../crypto/hash';
 import { publicKeyOf } from '../crypto/sign';
 import { base64url, type EventDraft, signEvent, type SignedEvent } from '../engine/event';
@@ -48,4 +49,18 @@ export function signedAs(name: string, draft: EventDraft): SignedEvent {
     signed.set(key, event);
   }
   return event;
+}
+
+/** One test member's X25519 encryption keys (#98). */
+export interface TestKx {
+  /** The 32-byte secret key a device keeps as the group's `kxKey`. */
+  readonly kxKey: Uint8Array;
+  /** The base64url public key a genesis, join or `kx` event carries. */
+  readonly kx: string;
+}
+
+/** The fixed encryption keys of the test member `name`, from SHA-256("reconcile/test-kx/" + name). */
+export function testKx(name: string): TestKx {
+  const kxKey = sha256(new TextEncoder().encode(`reconcile/test-kx/${name}`));
+  return { kxKey, kx: base64url(kxPublicKeyOf(kxKey)) };
 }

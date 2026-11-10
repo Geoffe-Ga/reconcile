@@ -11,6 +11,10 @@
  *   goes to the network untouched. Nothing under `/v1`, the relay, is ever
  *   cached or answered here (spec §7), and nothing is cached at run time.
  *
+ * - **Push** (#99) shows one fixed notification, "Something new in Reconcile",
+ *   whatever the push carries (the relay's carry nothing), and a tap on it
+ *   opens the app, which syncs (`src/sw/notify.ts`).
+ *
  * It never calls `skipWaiting()` or `clients.claim()`: a new version installs
  * in the background and takes over at the next launch, once every Reconcile
  * window has closed (ADR-0057; ADR-0073 drops the update prompt).
@@ -19,6 +23,14 @@
  * `./sw.ts` starts it on the worker's global scope; the build writes the
  * precache list into that file (`client/plugins/serviceWorker.ts`).
  */
+
+import {
+  type NotifyRegistration,
+  openApp,
+  type ShownNotification,
+  showSomethingNew,
+  type WindowClients,
+} from '../sw/notify';
 
 /** What the build hands the worker: the files to keep, and a version naming them. */
 export interface Precache {
@@ -33,6 +45,11 @@ export interface WaitUntilEvent {
   waitUntil(promise: Promise<unknown>): void;
 }
 
+/** The parts of a `NotificationEvent` the worker uses: which notification was tapped. */
+export interface TapEvent extends WaitUntilEvent {
+  readonly notification: ShownNotification;
+}
+
 /** The parts of a `FetchEvent` the worker uses. */
 export interface RequestEvent extends WaitUntilEvent {
   readonly request: Request;
@@ -43,9 +60,15 @@ export interface RequestEvent extends WaitUntilEvent {
 export interface WorkerScope {
   readonly caches: CacheStorage;
   readonly location: { readonly origin: string };
+  readonly registration: NotifyRegistration;
+  readonly clients: WindowClients;
   fetch(request: Request): Promise<Response>;
-  addEventListener(type: 'install' | 'activate', listener: (event: WaitUntilEvent) => void): void;
+  addEventListener(
+    type: 'install' | 'activate' | 'push',
+    listener: (event: WaitUntilEvent) => void,
+  ): void;
   addEventListener(type: 'fetch', listener: (event: RequestEvent) => void): void;
+  addEventListener(type: 'notificationclick', listener: (event: TapEvent) => void): void;
 }
 
 /** How the worker answers a request. */
@@ -125,5 +148,12 @@ export function startServiceWorker(scope: WorkerScope, precache: Precache): void
     if (answer === 'network') return;
     const path = answer === 'app-shell' ? APP_SHELL : new URL(request.url).pathname;
     event.respondWith(fromCache(scope, precache, path, request));
+  });
+  // The push's data is never read: what shows is fixed (#99).
+  scope.addEventListener('push', (event) => {
+    event.waitUntil(showSomethingNew(scope.registration));
+  });
+  scope.addEventListener('notificationclick', (event) => {
+    event.waitUntil(openApp(event.notification, scope.clients));
   });
 }

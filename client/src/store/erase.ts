@@ -11,7 +11,11 @@
  * `sessionStorage`, and unregisters every service worker. It runs every step
  * even when one fails, and only when all have succeeded does it reload the
  * app at `/`, which opens on first run with no groups. It makes no network
- * call: nothing about an erase leaves the device.
+ * call: nothing about an erase leaves the device. That includes push (#99):
+ * a DELETE of each registration would tell the relay this phone had just
+ * erased. Unregistering the worker ends the push subscription instead, so
+ * the push service refuses the relay's next push to it, and the relay forgets
+ * that endpoint under every mailbox (#89); it drops any after 30 days anyway.
  *
  * The groups carry on for everyone else, and a backup file brings them back.
  */

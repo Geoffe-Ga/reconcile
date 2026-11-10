@@ -7,11 +7,11 @@
  * with bytes in unpadded base64url:
  *
  * ```json
- * {"format": 1, "groups": [{"groupId": "…", "secret": "…", "signingKey": "…"}]}
+ * {"format": 1, "groups": [{"groupId": "…", "secret": "…", "signingKey": "…", "kxKey": "…"}]}
  * ```
  *
- * Today that is each group's secret and signing key, the only secrets on
- * main. Later secrets (#97's relay backup key, #105's share seeds and keys,
+ * Today that is each group's secret (its current epoch's, #98), signing key
+ * and, once it has one, its X25519 encryption key (#98). Later secrets (#97's relay backup key, #105's share seeds and keys,
  * the recovery shares this device holds for others, #109) join them here
  * under a new format number, so the vault keeps covering every secret.
  * Each plaintext is zeroed once sealed or read.
@@ -25,10 +25,14 @@ export const VAULT_FORMAT = 1;
 /** The vault record's key in its object store: the device has at most one. */
 export const VAULT_ID = 'vault';
 
-/** A group's secrets: its 32-byte group secret and this membership's signing key. */
+/**
+ * A group's secrets: its 32-byte group secret, this membership's signing
+ * key, and its encryption key once it has one (#98).
+ */
 export interface GroupKeys {
   readonly secret: Uint8Array;
   readonly signingKey: Uint8Array;
+  readonly kxKey?: Uint8Array;
 }
 
 /** What the vault says in the clear: the passkey that opens it, and the salt it's asked with. */
@@ -49,10 +53,11 @@ const KEY_BYTES = 32;
 
 /** `keys` as the vault's plaintext. */
 export function encodeVaultKeys(keys: ReadonlyMap<string, GroupKeys>): Uint8Array<ArrayBuffer> {
-  const groups = [...keys].map(([groupId, { secret, signingKey }]) => ({
+  const groups = [...keys].map(([groupId, { secret, signingKey, kxKey }]) => ({
     groupId,
     secret: base64url(secret),
     signingKey: base64url(signingKey),
+    ...(kxKey === undefined ? {} : { kxKey: base64url(kxKey) }),
   }));
   return Uint8Array.from(
     new TextEncoder().encode(JSON.stringify({ format: VAULT_FORMAT, groups })),
@@ -80,7 +85,9 @@ function entryIn(value: unknown): readonly [string, GroupKeys] | null {
   if (!isObject(value) || typeof value.groupId !== 'string') return null;
   const secret = keyIn(value.secret);
   const signingKey = keyIn(value.signingKey);
-  return secret === null || signingKey === null ? null : [value.groupId, { secret, signingKey }];
+  const kxKey = value.kxKey === undefined ? undefined : keyIn(value.kxKey);
+  if (secret === null || signingKey === null || kxKey === null) return null;
+  return [value.groupId, { secret, signingKey, ...(kxKey === undefined ? {} : { kxKey }) }];
 }
 
 /** The JSON value `bytes` spell in UTF-8, or undefined when they don't. */

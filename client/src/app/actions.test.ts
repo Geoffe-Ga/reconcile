@@ -9,16 +9,25 @@ import {
   newInviteSeed,
   verifyInviteToken,
 } from '../crypto/invite';
+import { kxPublicKeyOf } from '../crypto/box';
+import { epochCommit } from '../crypto/epoch';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { xchachaSeal } from '../crypto/seal';
 import { publicKeyOf } from '../crypto/sign';
 import { DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from '../engine/capabilities';
-import { base64url, fromBase64url, type ParsedEvent, parseRecord } from '../engine/event';
+import {
+  base64url,
+  fromBase64url,
+  type ParsedEvent,
+  parseRecord,
+  signEvent,
+} from '../engine/event';
 import { fold } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
 import { type Envelope, INVITE_TTL_DAYS, openEnvelope, sealEnvelope } from '../invite/envelope';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
+import { keyChangeOf } from '../store/epochs';
 import { createSync, type Sync } from '../store/sync';
 import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -126,6 +135,8 @@ describe('createGroup', () => {
     expect(group.me.author).toBe(base64url(publicKeyOf(group.signingKey)));
     expect(group.me.author).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(group.outbox).toHaveLength(1);
+    expect(group.kxKey).toHaveLength(32);
+    const kx = base64url(kxPublicKeyOf(group.kxKey ?? new Uint8Array()));
 
     const genesis = queued(group);
     expect(genesis?.id).toBe(groupId);
@@ -142,6 +153,7 @@ describe('createGroup', () => {
         title: 'House rules',
         atoms: ['Quiet hours start at ten.\n', 'Bins go out on Tuesday.\n'],
         rules: DEFAULT_RULES,
+        kx,
       },
     });
   });
@@ -349,6 +361,7 @@ describe('makeInvite', () => {
     const envelope = envelopeAt(fake, link);
     expect(envelope).toEqual({
       groupSecret: Uint8Array.from(group.secret),
+      epoch: 0,
       preview: {
         groupName: 'Riverside Tenants',
         inviterName: 'Ana',
@@ -463,6 +476,7 @@ describe('lookupInvite', () => {
         groupId,
         preview: envelopeAt(fake, link)?.preview,
         secret: Uint8Array.from(group.secret),
+        epoch: 0,
         token: envelopeAt(fake, link)?.token,
         page: {
           records: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
@@ -529,6 +543,7 @@ describe('lookupInvite', () => {
     const channel = inviteChannelOf(seed);
     const forged = sealEnvelope(xchachaSeal, channel, {
       groupSecret: group.secret,
+      epoch: 0,
       preview: { groupName: 'g', inviterName: 'i', documentTitle: 't', excerpt: 'e' },
       token: { by: group.me.author, sig: 'A'.repeat(86) },
       entries: [{ seq: 1, received: 1, bytes: utf8('not a record') }],
@@ -599,13 +614,16 @@ describe('joinGroup', () => {
     expect(before.instance).toBe(fake.instance);
     expect(before.relayNow).toBe(fake.minute);
     expect(fold(before.log, before.relayNow).title).toBe('House rules');
+    expect(before.kxKey).toHaveLength(32);
+    expect(before.epoch ?? 0).toBe(0);
+    const kx = base64url(kxPublicKeyOf(before.kxKey ?? new Uint8Array()));
     expect(queued(before)?.event).toEqual({
       v: 1,
       type: 'join',
       group: groupId,
       author: before.me.author,
       ts: NOW,
-      body: { name: 'Ben', level: follow, token: lookup.group.token },
+      body: { name: 'Ben', level: follow, token: lookup.group.token, kx },
     });
 
     await ben.sync.syncOnce();
@@ -685,5 +703,166 @@ describe('leaveGroup', () => {
   it('refuses a group this device isn’t in', async () => {
     const ana = await device(createFakeRelay(), 'ana');
     await expect(leaveGroup(ana, 'no-such-group')).rejects.toThrow('No such group on this device.');
+  });
+});
+
+describe('encryption keys and a new group key (#98)', () => {
+  /** Ana's group, with Ben and Cal in it, every device synced. */
+  async function threeInGroup(fake: FakeRelay) {
+    const { ana, groupId } = await anaWithGroup(fake);
+    const ben = await device(fake, 'ben');
+    const cal = await device(fake, 'cal');
+    const [, , create] = LEVELS;
+    for (const [services, name] of [
+      [ben, 'Ben'],
+      [cal, 'Cal'],
+    ] as const) {
+      const lookup = await lookupInvite(services, seedOf(await linkTo(ana, groupId)));
+      if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
+      await joinGroup(services, lookup.group, name, create);
+      await services.sync.syncOnce();
+    }
+    for (const services of [ana, ben, cal]) await services.sync.syncOnce();
+    return { ana, ben, cal, groupId };
+  }
+
+  /** Cal leaves, and Ana's device writes the new key. */
+  async function calLeaves(
+    ana: Services & { sync: Sync },
+    cal: Services & { sync: Sync },
+    groupId: string,
+  ) {
+    await leaveGroup(cal, groupId);
+    await cal.sync.syncOnce();
+    await ana.sync.syncOnce();
+    expect((await stored(ana, groupId)).epoch).toBe(1);
+  }
+
+  it('makes each group its own encryption key, unrelated to its signing key or any other group’s', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const [one, two] = [await created(ana), await created(ana)];
+    const [first, second] = [await stored(ana, one), await stored(ana, two)];
+    const keys = [first.kxKey, second.kxKey, first.signingKey, second.signingKey].map((key) =>
+      base64url(key ?? new Uint8Array()),
+    );
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  it('carries the group’s current secret and epoch in an invite, and each entry’s epoch', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cal, groupId } = await threeInGroup(fake);
+    await calLeaves(ana, cal, groupId);
+    await ben.sync.syncOnce();
+    // Ben steps up a level, so the log holds a record read from epoch 1's mailbox too.
+    const [follow] = LEVELS;
+    const benGroup = await stored(ben, groupId);
+    const step = signEvent(benGroup.signingKey, {
+      type: 'level',
+      group: groupId,
+      ts: NOW,
+      body: { level: follow },
+    });
+    await ben.store.enqueue(groupId, step.record);
+    await ben.sync.syncOnce();
+    await ana.sync.syncOnce();
+    const held = await stored(ana, groupId);
+
+    const envelope = envelopeAt(fake, await linkTo(ana, groupId));
+
+    expect(envelope?.epoch).toBe(1);
+    expect(base64url(envelope?.groupSecret ?? new Uint8Array())).toBe(base64url(held.secret));
+    expect(envelope?.entries.map((entry) => entry.epoch ?? 0)).toEqual(
+      held.log.map((record) => record.epoch ?? 0),
+    );
+    expect(envelope?.entries.some((entry) => entry.epoch === 1)).toBe(true);
+  });
+
+  it('lets a newcomer join at the invite’s epoch, on the new mailbox, and fold what everyone folds', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cal, groupId } = await threeInGroup(fake);
+    await calLeaves(ana, cal, groupId);
+    const dee = await device(fake, 'dee');
+    await joinBy(dee, await linkTo(ana, groupId), 'Dee');
+    for (const services of [dee, ana, ben, dee]) await services.sync.syncOnce();
+
+    const kept = await stored(dee, groupId);
+    expect(kept.epoch).toBe(1);
+    const state = fold(kept.log, kept.relayNow);
+    expect(state.members.map((member) => member.name)).toEqual(['Ana', 'Ben', 'Dee']);
+    expect(keyChangeOf(kept, state)).toBeNull();
+    const anaState = fold((await stored(ana, groupId)).log, null);
+    expect(anaState.members.map((member) => member.name)).toEqual(['Ana', 'Ben', 'Dee']);
+  });
+
+  it('leaves someone who joins from a link made before the key changed outside, and says why', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cal, groupId } = await threeInGroup(fake);
+    const stale = await linkTo(cal, groupId);
+    await calLeaves(ana, cal, groupId);
+    await ben.sync.syncOnce();
+
+    const dee = await device(fake, 'dee');
+    await joinBy(dee, stale, 'Dee');
+    await dee.sync.syncOnce();
+    await ana.sync.syncOnce();
+
+    const kept = await stored(dee, groupId);
+    expect(keyChangeOf(kept, fold(kept.log, kept.relayNow))).toBe('missed');
+    const anaState = fold((await stored(ana, groupId)).log, null);
+    expect(anaState.members.map((member) => member.name)).toEqual(['Ana', 'Ben']);
+  });
+
+  it('brings a device that missed the new key the current one from a newer invite, checked against its commit', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cal, groupId } = await threeInGroup(fake);
+    const stale = await linkTo(cal, groupId);
+    await calLeaves(ana, cal, groupId);
+    await ben.sync.syncOnce();
+    const dee = await device(fake, 'dee');
+    await joinBy(dee, stale, 'Dee');
+    await dee.sync.syncOnce();
+
+    expect(await lookupInvite(dee, seedOf(await linkTo(ben, groupId)))).toEqual({
+      kind: 'joined',
+      groupId,
+    });
+
+    const [kept, current] = [await stored(dee, groupId), await stored(ana, groupId)];
+    expect(kept.epoch).toBe(1);
+    expect(base64url(kept.secret)).toBe(base64url(current.secret));
+    expect(keyChangeOf(kept, fold(kept.log, kept.relayNow))).toBeNull();
+    // Dee's join waited out the freeze; now it goes to the new mailbox, and everyone sees Dee.
+    for (const services of [dee, ana, ben]) await services.sync.syncOnce();
+    const anaState = fold((await stored(ana, groupId)).log, null);
+    expect(anaState.members.map((member) => member.name)).toEqual(['Ana', 'Ben', 'Dee']);
+  });
+
+  it('refuses an invite whose secret isn’t the one its epoch’s key change commits to', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cal, groupId } = await threeInGroup(fake);
+    await calLeaves(ana, cal, groupId);
+    await ben.sync.syncOnce();
+    const held = await stored(ana, groupId);
+    const state = fold(held.log, held.relayNow);
+    expect(epochCommit(groupId, 1, held.secret)).toBe(state.rotations[0]?.commit);
+    const seed = newInviteSeed();
+    const channel = inviteChannelOf(seed);
+    const forged = sealEnvelope(xchachaSeal, channel, {
+      groupSecret: new Uint8Array(32).fill(1),
+      epoch: 1,
+      preview: { groupName: 'G', inviterName: 'Ana', documentTitle: 'T', excerpt: '' },
+      token: { by: held.me.author, sig: 'A'.repeat(86) },
+      entries: held.log,
+    });
+    for (const blob of forged) await ana.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
+
+    const newcomer = await device(fake, 'dee');
+    expect(await lookupInvite(newcomer, seed)).toEqual({ kind: 'missing' });
+
+    // A member's device takes it as damaged too, and keeps its own key.
+    const before = await stored(ben, groupId);
+    expect(await lookupInvite(ben, seed)).toEqual({ kind: 'missing' });
+    expect(base64url((await stored(ben, groupId)).secret)).toBe(base64url(before.secret));
   });
 });
