@@ -4,8 +4,11 @@ import { folded, foldLogs, Logs, seatKey } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import type { Motion } from './coalition';
 import { motionsFor, resultMismatches, resultsToReport, seatIn } from './crossing';
+import { parseRecord } from './event';
 import { fold } from './fold';
+import { nudgesFor } from './nudges';
 import { DEFAULT_RULES } from './rules';
+import { wakeFor } from './wake';
 
 const R = 29_375_000;
 const WEEK = 10_080;
@@ -158,5 +161,29 @@ describe('resultMismatches', () => {
     const coalition = folded(logsNow, 'coalition').state;
     expect(resultMismatches(group, coalition, seatKey('A'))).toEqual([]);
     expect(resultMismatches(group, fold([], null), seatKey('A'))).toEqual([]);
+  });
+});
+
+describe('outside motions and push (#99)', () => {
+  it('wakes the group for the ballot that closes a motion early, as for any Proposal', () => {
+    const { logs, motion } = scene();
+    logs.vote('A', R + 200, 'ana', motion, 4);
+    const before = folded(foldLogs(logs.logs, R + 201), 'A').state;
+    logs.vote('A', R + 201, 'ben', motion, 3);
+    const last = parseRecord(logs.logs.A?.at(-1)?.bytes ?? new Uint8Array());
+    expect(last === null ? false : wakeFor(before, last.event)).toBe(true);
+    const first = parseRecord(logs.logs.A?.at(-2)?.bytes ?? new Uint8Array());
+    const opened = folded(
+      foldLogs({ ...logs.logs, A: (logs.logs.A ?? []).slice(0, -2) }, R + 199),
+      'A',
+    );
+    expect(first === null ? true : wakeFor(opened.state, first.event)).toBe(false);
+  });
+
+  it('schedules no nudges for an outside motion: it has no proposer in the group', () => {
+    const { logs, motion } = scene();
+    const group = folded(foldLogs(logs.logs, R + 100), 'A').state;
+    expect(group.proposals.some((p) => p.id === motion && !p.final)).toBe(true);
+    for (const member of ['ana', 'ben']) expect(nudgesFor(group, authorOf(member))).toEqual([]);
   });
 });

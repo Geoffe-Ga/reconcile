@@ -696,6 +696,23 @@ describe('markArchived', () => {
     expect(heard).toHaveBeenCalledWith('group-1');
   });
 
+  it('forgets this device’s push registration and posted nudges, leaving the relay’s copy to expire (#99)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const push = { endpoint: 'https://push.example/1', mailboxes: ['m'], instance: 'i', at: 1 };
+    await store.setPush('group-1', push);
+    await store.markNudged('group-1', ['p1@29010080']);
+
+    await store.markArchived('group-1', 'dissolved');
+
+    const kept = await store.getGroup('group-1');
+    expect([kept?.archived, kept?.push, kept?.nudged]).toEqual([
+      { reason: 'dissolved' },
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('keeps an archive it already holds, cleared state included', async () => {
     const store = await openStore();
     await store.addGroup(group);
@@ -889,6 +906,51 @@ describe('the chat bot’s claims (#119)', () => {
   });
 });
 
+describe('push for a group (#99)', () => {
+  const registration = {
+    endpoint: 'https://fcm.googleapis.com/fcm/send/device-1',
+    mailboxes: ['mailbox-1'],
+    instance: 'relay-1',
+    at: 29_000_010,
+  };
+
+  it('is off until the relay has taken an endpoint, then kept, and off again with null', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    expect((await store.getGroup(group.groupId))?.push).toBeUndefined();
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.setPush(group.groupId, registration);
+    const on = await store.getGroup(group.groupId);
+    await store.setPush(group.groupId, null);
+
+    expect(on?.push).toEqual(registration);
+    expect((await store.getGroup(group.groupId))?.push).toBeUndefined();
+    expect(heard).toEqual([group.groupId, group.groupId]);
+  });
+
+  it('keeps the nudges this device has posted, quietly, since no screen reads them', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.markNudged(group.groupId, ['p1@29010080', 'p1@29011520']);
+    await store.markNudged(group.groupId, ['p1@29011520']);
+
+    expect((await store.getGroup(group.groupId))?.nudged).toEqual(['p1@29011520']);
+    expect(heard).toEqual([]);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+
+    await expect(store.setPush('nope', registration)).rejects.toThrow('No such group');
+    await expect(store.markNudged('nope', [])).rejects.toThrow('No such group');
+  });
+});
+
 describe('every change', () => {
   it('runs in exactly one transaction', async () => {
     const store = await openStore();
@@ -906,6 +968,8 @@ describe('every change', () => {
           moment: 'open',
         }),
       () => store.settleChatClaim(group.groupId, 'claim-1'),
+      () => store.setPush(group.groupId, null),
+      () => store.markNudged(group.groupId, []),
       () => store.markLeaving(group.groupId, utf8('{"leave":1}')),
       () => store.purgeGroup(group.groupId),
     ];

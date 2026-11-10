@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TEST_MAILBOX, createFakeRelay } from './fakeRelay';
+import { TEST_MAILBOX, TEST_PUSH_KEY, createFakeRelay } from './fakeRelay';
 
 const mailbox = TEST_MAILBOX;
 const octets = { 'Content-Type': 'application/octet-stream' };
@@ -144,5 +144,120 @@ describe('the fake relay keeps #62’s contract', () => {
 
     await expect(fake.fetch('/v1/health')).rejects.toThrow(TypeError);
     expect(fake.requests).toEqual([]);
+  });
+});
+
+describe('the fake relay keeps #89’s push routes (#99)', () => {
+  const json = { 'Content-Type': 'application/json' };
+  const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/device-1';
+  const send = (fake: ReturnType<typeof createFakeRelay>, method: string, body: string) =>
+    fake.fetch(`/v1/push/${mailbox}`, { method, headers: json, body });
+
+  it('serves its key, and answers every push route push_unavailable once push is off', async () => {
+    const fake = createFakeRelay();
+    expect(await (await fake.fetch('/v1/push/key')).json()).toEqual({
+      vapid_public_key: TEST_PUSH_KEY,
+    });
+    expect(TEST_PUSH_KEY).toMatch(/^[A-Za-z0-9_-]{87}$/);
+
+    fake.pushKey = null;
+    for (const response of [
+      await fake.fetch('/v1/push/key'),
+      await send(fake, 'PUT', JSON.stringify({ endpoint: ENDPOINT })),
+    ]) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: 'push_unavailable' });
+    }
+    expect(fake.endpoints(mailbox)).toEqual([]);
+  });
+
+  it('registers an endpoint once, forgets it, and refuses one off the push services', async () => {
+    const fake = createFakeRelay();
+
+    expect((await send(fake, 'PUT', JSON.stringify({ endpoint: ENDPOINT }))).status).toBe(204);
+    await send(fake, 'PUT', JSON.stringify({ endpoint: ENDPOINT }));
+    expect(fake.endpoints(mailbox)).toEqual([ENDPOINT]);
+    const elsewhere = await send(fake, 'PUT', JSON.stringify({ endpoint: 'https://evil.test/x' }));
+    expect(elsewhere.status).toBe(422);
+    expect(await elsewhere.json()).toEqual({ error: 'push_endpoint_rejected' });
+    expect((await send(fake, 'DELETE', JSON.stringify({ endpoint: ENDPOINT }))).status).toBe(204);
+    expect(fake.endpoints(mailbox)).toEqual([]);
+  });
+
+  it.each([
+    ['another key', JSON.stringify({ url: ENDPOINT })],
+    ['a second key', JSON.stringify({ endpoint: ENDPOINT, group: 'Riverside' })],
+    ['a number', JSON.stringify({ endpoint: 7 })],
+    ['no JSON', 'endpoint'],
+    ['an array', JSON.stringify([ENDPOINT])],
+  ])('refuses a body with %s', async (_name, body) => {
+    const fake = createFakeRelay();
+
+    const response = await send(fake, 'PUT', body);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it('refuses a body that isn’t JSON, or is over 2,048 bytes', async () => {
+    const fake = createFakeRelay();
+    const plain = await fake.fetch(`/v1/push/${mailbox}`, {
+      method: 'PUT',
+      body: JSON.stringify({ endpoint: ENDPOINT }),
+    });
+    const long = await send(
+      fake,
+      'PUT',
+      JSON.stringify({ endpoint: `${ENDPOINT}${'x'.repeat(2048)}` }),
+    );
+
+    expect(plain.status).toBe(415);
+    expect(long.status).toBe(413);
+  });
+
+  it('keeps each nudge as asked, up to 30 days ahead and 50 a mailbox', async () => {
+    const fake = createFakeRelay({ minute: 1000 });
+    const nudge = (minute: number) =>
+      fake.fetch(`/v1/push/${mailbox}/nudge`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify({ not_before: minute }),
+      });
+
+    expect((await nudge(900)).status).toBe(204);
+    expect((await nudge(1000 + 43_200)).status).toBe(204);
+    expect(await (await nudge(1000 + 43_201)).json()).toEqual({ error: 'invalid_not_before' });
+    expect((await nudge(-1)).status).toBe(400);
+    expect(fake.nudges(mailbox)).toEqual([900, 44_200]);
+    for (let i = 0; i < 48; i += 1) await nudge(2000 + i);
+    expect(await (await nudge(5000)).json()).toEqual({ error: 'too_many_nudges' });
+    expect((await fake.fetch(`/v1/push/${mailbox}/nudge`, { method: 'GET' })).status).toBe(405);
+    expect((await fake.fetch('/v1/push/abc')).status).toBe(400);
+    expect((await fake.fetch('/v1/push/a/b/c')).status).toBe(404);
+  });
+
+  it('takes wake=1 on a blob PUT, refuses any other wake, and records a keepalive request', async () => {
+    const fake = createFakeRelay();
+    const put = (query: string, keepalive = false) =>
+      fake.fetch(`/v1/mailbox/${mailbox}${query}`, {
+        method: 'PUT',
+        headers: octets,
+        body: new Uint8Array(1024),
+        keepalive,
+      });
+
+    expect((await put('?wake=1')).status).toBe(201);
+    expect(await (await put('?wake=yes')).json()).toEqual({ error: 'invalid_wake' });
+    await put('', true);
+    expect(fake.requests.map((request) => request.keepalive)).toEqual([undefined, undefined, true]);
+  });
+
+  it('forgets every endpoint and nudge on a fresh start', async () => {
+    const fake = createFakeRelay();
+    await send(fake, 'PUT', JSON.stringify({ endpoint: ENDPOINT }));
+
+    fake.restart();
+
+    expect(fake.endpoints(mailbox)).toEqual([]);
   });
 });
