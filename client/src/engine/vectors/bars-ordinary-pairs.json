@@ -1,0 +1,47 @@
+{
+  "kind": "tally",
+  "vectors": [
+    {
+      "name": "an average of exactly 2.5 with no zeros passes the ordinary bar",
+      "eligible": 4,
+      "bar": "ordinary",
+      "versions": [{ "id": "v1", "scores": [2, 3, 2, 3] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "one 0 among 20 scorers, exactly 5%, passes the ordinary bar",
+      "eligible": 20,
+      "bar": "ordinary",
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "an average of 2.95 passes the ordinary bar",
+      "eligible": 20,
+      "bar": "ordinary",
+      "versions": [
+        { "id": "v1", "scores": [2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "at the ordinary bar, the higher average wins though one in 15 scored 0",
+      "eligible": 15,
+      "bar": "ordinary",
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] },
+        { "id": "v2", "scores": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "ordinary lapse below quorum",
+      "eligible": 10,
+      "bar": "ordinary",
+      "versions": [{ "id": "v1", "scores": [4, 4] }],
+      "expect": { "kind": "lapse" }
+    }
+  ]
+}

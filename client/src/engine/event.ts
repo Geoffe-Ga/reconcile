@@ -19,13 +19,19 @@ export const EVENT_VERSION = 1;
 /** A score on one version: 0 (strongly opposed) to 4 (strongly supportive). */
 export type Score = 0 | 1 | 2 | 3 | 4;
 
-/** Founds a group with its first Document. Carries `group: ""`, as it can't contain its own hash. */
+/**
+ * Founds a group with its first Document and its founding rules. Carries
+ * `group: ""`, as it can't contain its own hash. `rules` is kept as written:
+ * the fold checks it against `DEFAULT_RULES` (rules.ts), and a genesis without
+ * it takes every default.
+ */
 export interface GenesisBody {
   readonly name: string;
   readonly chat?: string;
   readonly founder: string;
   readonly title: string;
   readonly atoms: readonly string[];
+  readonly rules?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -193,11 +199,22 @@ function isTimestamp(value: unknown): value is number {
   return isWholeNumber(value) && value >= 0;
 }
 
+function isOptionalObject(value: unknown): value is Json | undefined {
+  return value === undefined || isObject(value);
+}
+
 function parseGenesis(body: Json): GenesisBody | null {
-  const { name, chat, founder, title, atoms } = body;
+  const { name, chat, founder, title, atoms, rules } = body;
   if (!isString(name) || !isString(founder) || !isString(title)) return null;
-  if (!isStringList(atoms) || !isOptionalString(chat)) return null;
-  return { name, founder, title, atoms, ...(chat === undefined ? {} : { chat }) };
+  if (!isStringList(atoms) || !isOptionalString(chat) || !isOptionalObject(rules)) return null;
+  return {
+    name,
+    founder,
+    title,
+    atoms,
+    ...(chat === undefined ? {} : { chat }),
+    ...(rules === undefined ? {} : { rules }),
+  };
 }
 
 function parseJoin(body: Json): JoinBody | null {

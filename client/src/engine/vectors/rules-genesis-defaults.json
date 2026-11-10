@@ -1,0 +1,248 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "rules": {
+                "bars": {
+                  "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },
+                  "entrenched": { "avgAtLeast": 3, "zerosUnderPercent": 5 }
+                },
+                "windows": {
+                  "ordinary": { "min": 3, "max": 14, "default": 7 },
+                  "entrenched": { "min": 14, "max": 28, "default": 14 }
+                },
+                "quorum": { "min": 3, "percent": 30 },
+                "vouches": 2,
+                "waitDays": 14,
+                "ballotExpiryDays": 30
+              }
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": { "name": "Ben" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": { "name": "Cal" }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375010,
+      "expect": {
+        "group": "@1",
+        "rules": {
+          "bars": {
+            "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },
+            "entrenched": { "avgAtLeast": 3, "zerosUnderPercent": 5 }
+          },
+          "windows": {
+            "ordinary": { "min": 3, "max": 14, "default": 7 },
+            "entrenched": { "min": 14, "max": 28, "default": 14 }
+          },
+          "quorum": { "min": 3, "percent": 30 },
+          "vouches": 2,
+          "waitDays": 14,
+          "ballotExpiryDays": 30
+        },
+        "proposals": [{ "id": "@4", "class": "ordinary", "deadline": 29385090, "final": false }],
+        "ignored": []
+      }
+    },
+    {
+      "name": "a genesis that writes only some rule fields takes the default for every other",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "rules": { "bars": { "entrenched": { "avgAtLeast": 3 } }, "vouches": 2 }
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": { "name": "Ben" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": { "name": "Cal" }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@1",
+        "rules": {
+          "bars": {
+            "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },
+            "entrenched": { "avgAtLeast": 3, "zerosUnderPercent": 5 }
+          },
+          "windows": {
+            "ordinary": { "min": 3, "max": 14, "default": 7 },
+            "entrenched": { "min": 14, "max": 28, "default": 14 }
+          },
+          "quorum": { "min": 3, "percent": 30 },
+          "vouches": 2,
+          "waitDays": 14,
+          "ballotExpiryDays": 30
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "a genesis with a rule this engine doesn't know still founds the group",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "rules": {
+                "bars": {
+                  "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },
+                  "entrenched": { "avgAtLeast": 3, "zerosUnderPercent": 5 }
+                },
+                "windows": {
+                  "ordinary": { "min": 3, "max": 14, "default": 7 },
+                  "entrenched": { "min": 14, "max": 28, "default": 14 }
+                },
+                "quorum": { "min": 3, "percent": 30 },
+                "vouches": 2,
+                "waitDays": 14,
+                "ballotExpiryDays": 30,
+                "stewards": { "firstElectionAt": 3 }
+              }
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": { "name": "Ben" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": { "name": "Cal" }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@1",
+        "rules": {
+          "bars": {
+            "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },
+            "entrenched": { "avgAtLeast": 3, "zerosUnderPercent": 5 }
+          },
+          "windows": {
+            "ordinary": { "min": 3, "max": 14, "default": 7 },
+            "entrenched": { "min": 14, "max": 28, "default": 14 }
+          },
+          "quorum": { "min": 3, "percent": 30 },
+          "vouches": 2,
+          "waitDays": 14,
+          "ballotExpiryDays": 30
+        },
+        "ignored": []
+      }
+    }
+  ]
+}
