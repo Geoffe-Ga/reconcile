@@ -790,7 +790,8 @@ function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps
 
 /**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
- * other open Proposals, the latest Dispatch (#112), the group's Document, the Decided list of closed ones,
+ * other open Proposals and the backup card under them (#78), the latest
+ * Dispatch (#112), the group's Document, the Decided list of closed ones,
  * its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
@@ -829,9 +830,9 @@ export function GroupHome(props: GroupHomeProps) {
       <div className="sections">
         {leads ? news : null}
         <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
-        {leads ? null : news}
         {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
         {dissolved === null ? props.backupCard : null}
+        {leads ? null : news}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
             <span className="card-link-title">

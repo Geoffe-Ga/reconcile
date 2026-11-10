@@ -94,6 +94,17 @@ describe('GroupHome: Dispatches (#112)', () => {
     expect(order().slice(0, 3)).toEqual(['Needs your vote', 'Dispatches', 'Document']);
   });
 
+  it('keeps the backup card with the open Proposals, ahead of a voter’s Dispatches (#78)', () => {
+    const { log } = group();
+    renderHome(log.state(), 'ben', { backupCard: <p>Save a backup card</p> });
+    const card = screen.getByText('Save a backup card');
+    const open = screen.getByRole('region', { name: 'Needs your vote' });
+    expect(open.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      card.compareDocumentPosition(dispatches()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('leads with Dispatches for a newcomer who can’t vote yet, whatever level they chose (#101)', () => {
     const log = groupLog({ members: ['Ben', 'Cal'], newcomers: ['Dee'] });
     log.propose('Ana');
