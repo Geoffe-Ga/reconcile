@@ -66,12 +66,12 @@ async function openDocument(person: Person): Promise<void> {
   await expect(heading(page, TITLE)).toBeVisible();
 }
 
-/** From anywhere in the group, Group home, then one open Proposal. */
+/** From anywhere in the group, Group home, then a Proposal waiting under Needs your vote (#77). */
 async function openProposal(person: Person, title: string): Promise<void> {
   const { page } = person;
   await page.getByRole('link', { name: GROUP }).click();
   await page
-    .getByRole('region', { name: 'Open Proposals' })
+    .getByRole('region', { name: 'Needs your vote' })
     .getByRole('link', { name: title })
     .click();
   await expect(heading(page, title)).toBeVisible();
