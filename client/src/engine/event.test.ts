@@ -793,3 +793,92 @@ describe('parseRecord', () => {
     expect(parseRecord(bytes)).toBeNull();
   });
 });
+
+describe('encryption keys and key changes (#98)', () => {
+  /** A 32-byte key in base64url, as `kx` and the wraps' keys are spelled. */
+  const KX = base64url(new Uint8Array(32).fill(9));
+  const COMMIT = base64url(new Uint8Array(32).fill(7));
+  const WRAP = base64url(new Uint8Array(104).fill(5));
+
+  it('keeps a genesis’s or join’s well-shaped kx, and drops any other, keeping the event', () => {
+    const genesis = { name: 'G', founder: 'A', title: 'T', atoms: [], kx: KX };
+    expect(parseEvent(json(envelope('genesis', genesis)))?.event.body).toEqual(genesis);
+    expect(parseEvent(json(envelope('join', { name: 'Ben', kx: KX })))?.event.body).toEqual({
+      name: 'Ben',
+      kx: KX,
+    });
+    for (const bad of [KX.slice(1), `${KX.slice(1)}+`, `${KX.slice(0, 42)}B`, 7, null, [KX]]) {
+      const join = parseEvent(json(envelope('join', { name: 'Ben', kx: bad })));
+      expect(join?.event.body, JSON.stringify(bad)).toEqual({ name: 'Ben' });
+      const founded = parseEvent(json(envelope('genesis', { ...genesis, kx: bad })));
+      expect(founded?.event.body, JSON.stringify(bad)).toEqual({ ...genesis, kx: undefined });
+    }
+  });
+
+  it('reads a kx as its key, dropping unknown keys', () => {
+    const parsed = parseEvent(json(envelope('kx', { kx: KX, note: 'mine' })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'kx',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { kx: KX },
+    });
+  });
+
+  it('reads a key-rotate as its epoch, commit and wraps, dropping unknown keys', () => {
+    const body = { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP }, secret: 'no' };
+    const parsed = parseEvent(json(envelope('key-rotate', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'key-rotate',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP } },
+    });
+    const top = parseEvent(json(envelope('key-rotate', { ...body, epoch: 2 ** 32 - 1 })));
+    expect(top?.event.body).toMatchObject({ epoch: 2 ** 32 - 1 });
+  });
+
+  it('refuses a wrap under any key that isn’t a member key, "__proto__" included', () => {
+    const bytes = utf8(
+      `{"v":1,"type":"key-rotate","group":"g1","author":"${ANA}","ts":1,"body":{"epoch":1,"commit":"${COMMIT}","wraps":{"__proto__":"${WRAP}"}}}`,
+    );
+    expect(parseEvent(bytes)).toBeNull();
+  });
+
+  it.each([
+    ['a kx without its key', 'kx', {}],
+    ['a kx of the wrong length', 'kx', { kx: KX.slice(1) }],
+    ['a kx with a bad last character', 'kx', { kx: `${KX.slice(0, 42)}B` }],
+    ['a numeric kx', 'kx', { kx: 7 }],
+    ['a key-rotate without an epoch', 'key-rotate', { commit: COMMIT, wraps: {} }],
+    ['a key-rotate to epoch 0', 'key-rotate', { epoch: 0, commit: COMMIT, wraps: {} }],
+    ['a key-rotate to a fractional epoch', 'key-rotate', { epoch: 1.5, commit: COMMIT, wraps: {} }],
+    ['a key-rotate past u32', 'key-rotate', { epoch: 2 ** 32, commit: COMMIT, wraps: {} }],
+    ['a key-rotate without a commit', 'key-rotate', { epoch: 1, wraps: {} }],
+    ['a key-rotate with a short commit', 'key-rotate', { epoch: 1, commit: 'abc', wraps: {} }],
+    ['a key-rotate without wraps', 'key-rotate', { epoch: 1, commit: COMMIT }],
+    [
+      'a key-rotate whose wraps are a list',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: [WRAP] },
+    ],
+    [
+      'a wrap for a malformed key',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: { ana: WRAP } },
+    ],
+    ['a numeric wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: 7 } }],
+    [
+      'a wrap that isn’t base64url',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: { [ANA]: 'a+b' } },
+    ],
+    ['an empty wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: '' } }],
+  ])('returns null for %s', (_label, type, body) => {
+    expect(parseEvent(json(envelope(type, body)))).toBeNull();
+  });
+});

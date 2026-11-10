@@ -14,7 +14,9 @@
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
  *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
- *     Atom, and `"%ana"` stands for ana's public key in base64url. `{"$base64url": [bytes]}`
+ *     Atom, and `"%ana"` stands for ana's public key in base64url. `"&ana"` stands for ana's
+ *     X25519 encryption key (#98) in base64url: the public key of the secret key
+ *     SHA-256("reconcile/vector-kx/" + name). `{"$base64url": [bytes]}`
  *     stands for those bytes in unpadded base64url, as invite.json's token signatures are
  *     written, so no high-entropy text sits in the repository.
  *   - The relay record is `publicKey ‖ signature ‖ event bytes` (spec §3), signed by the key
@@ -22,13 +24,16 @@
  *     `"%name"`) and `sig` (hex) replace those fields, and `flip: {in, at}` flips the low bit of
  *     byte `at` of the `key`, `signature` or `event`. `unsigned: true` sends the bare event
  *     bytes, as the stub era did. `elsewhere: true` makes a record of another mailbox: `@seq`
- *     can name it, but it isn't folded.
+ *     can name it, but it isn't folded. `epoch: n` marks a record read from epoch n's mailbox
+ *     (#98); a record without one was read from epoch 0's.
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
  *     deep-equal.
  * - invite.json (#73) is a fold file: joins carrying invite tokens, each signed outside @noble.
  * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
+import { kxPublicKeyOf } from '../crypto/box';
+import { sha256 } from '../crypto/hash';
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { base64url, eventId } from '../engine/event';
 import type { LogRecord } from '../engine/fold';
@@ -55,6 +60,7 @@ interface RecordOptions {
   readonly flip?: { readonly in: 'key' | 'signature' | 'event'; readonly at: number };
   readonly unsigned?: boolean;
   readonly elsewhere?: boolean;
+  readonly epoch?: number;
 }
 
 type VectorRecord = RecordOptions &
@@ -116,10 +122,20 @@ export function publicKeyNamed(name: string): string {
   return base64url(publicKeyOf(seedOf(name)));
 }
 
-/** Replaces `@n` (and `@n.i`) with the id of the record at seq n, and `%name` with name's key. */
+/** The base64url X25519 public key the vectors call `&name` (#98). */
+export function kxNamed(name: string): string {
+  return base64url(kxPublicKeyOf(sha256(encoder.encode(`reconcile/vector-kx/${name}`))));
+}
+
+/**
+ * Replaces `@n` (and `@n.i`) with the id of the record at seq n, `%name` with
+ * name's key, and `&name` with name's encryption key.
+ */
 function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
   const key = /^%(\w+)$/.exec(text);
   if (key !== null) return publicKeyNamed(String(key[1]));
+  const kx = /^&(\w+)$/.exec(text);
+  if (kx !== null) return kxNamed(String(kx[1]));
   const match = /^@(\d+)(.*)$/.exec(text);
   if (match === null) return text;
   const id = ids.get(Number(match[1]));
@@ -208,7 +224,9 @@ export function buildRecords(vector: FoldVector): VectorLog {
     const event = encoder.encode(text);
     ids.set(record.seq, eventId(event));
     const bytes = relayBytes(record, event);
-    return record.elsewhere === true ? [] : [{ seq: record.seq, received: record.received, bytes }];
+    const { seq, received, epoch } = record;
+    const read = { seq, received, bytes, ...(epoch === undefined ? {} : { epoch }) };
+    return record.elsewhere === true ? [] : [read];
   });
   return { records, ids, relayNow: vector.relayNow };
 }

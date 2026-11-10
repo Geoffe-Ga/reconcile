@@ -1,23 +1,29 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
+import { base64url } from '../crypto/base64url';
+import { kxPublicKeyOf } from '../crypto/box';
+import { epochCommit, unwrapEpochSecret } from '../crypto/epoch';
 import { deriveMailboxId, deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
 import { open, type Seal, seal, xchachaSeal } from '../crypto/seal';
 import { parseRecord } from '../engine/event';
 import type { Score, SignedEvent } from '../engine/event';
+import { LEVELS } from '../engine/capabilities';
 import { fold } from '../engine/fold';
 import type { GroupState } from '../engine/fold';
 import { createRelay } from '../net/relay';
 import type { Fetch, Relay } from '../net/relay';
-import { contains, utf8 } from '../test/bytes';
+import { contains, local, utf8 } from '../test/bytes';
 import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { authorOf, signedAs, testKeys } from '../test/keys';
+import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { manualTimers } from '../test/timers';
 import type { ChatBot } from './chatBot';
 import { openStore } from './db';
 import type { Group, Store } from './db';
-import { createSync } from './sync';
+import { eventIdOf } from './eventId';
+import { keyChangeOf } from './epochs';
+import { createSync, openRecords } from './sync';
 import type { Sync, SyncOptions } from './sync';
 
 freshIndexedDBPerTest();
@@ -64,13 +70,15 @@ function genesis(): SignedEvent {
       founder: 'Ana',
       title: 'House rules',
       atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      kx: testKx(ANA).kx,
     },
   });
 }
 
-/** `author` joins the group founded by `founding` as `name`. */
+/** `author` joins the group founded by `founding` as `name`, with their encryption key (#98). */
 function join(founding: SignedEvent, author: string, name: string): SignedEvent {
-  return signedAs(author, { type: 'join', group: founding.id, ts: TS, body: { name } });
+  const body = { name, kx: testKx(author).kx };
+  return signedAs(author, { type: 'join', group: founding.id, ts: TS, body });
 }
 
 /** Ana proposes `text` for the group's first Atom. */
@@ -110,7 +118,8 @@ async function device(name: string, relay: Relay, keys: Keys): Promise<Device> {
   const store = await openStore(name);
   const { secretKey: signingKey, author } = testKeys(name);
   const { secret } = keys;
-  await store.addGroup({ groupId: GROUP, secret, signingKey, me: { author, name } });
+  const { kxKey } = testKx(name);
+  await store.addGroup({ groupId: GROUP, secret, signingKey, kxKey, me: { author, name } });
   return attach(store, relay);
 }
 
@@ -663,5 +672,359 @@ describe('coming back online', () => {
     expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
     expect((await ana.group()).outbox).toEqual([]);
     expect(ana.sync.isReachable()).toBe(true);
+  });
+});
+
+describe('a new group key when someone leaves (#98)', () => {
+  /** Ana founds the group, carrying her encryption key. */
+  function keyedGenesis(): SignedEvent {
+    return signedAs(ANA, {
+      type: 'genesis',
+      group: '',
+      ts: TS,
+      body: {
+        name: 'Riverside Tenants',
+        founder: 'Ana',
+        title: 'House rules',
+        atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+        kx: testKx(ANA).kx,
+      },
+    });
+  }
+
+  const [FOLLOWING, , CREATING] = LEVELS;
+
+  /** `author` joins as a Co-Creator, carrying their encryption key unless `kx` is false. */
+  function keyedJoin(founding: SignedEvent, author: string, kx = true): SignedEvent {
+    const body = { name: author, level: CREATING, ...(kx ? { kx: testKx(author).kx } : {}) };
+    return signedAs(author, { type: 'join', group: founding.id, ts: TS, body });
+  }
+
+  /** A device of `name` in the group `founding` names, holding `secret` and, unless told not to, its encryption key. */
+  async function member(
+    name: string,
+    relay: Relay,
+    founding: SignedEvent,
+    secret: Uint8Array,
+    kx = true,
+  ): Promise<KeyedDevice> {
+    const store = await openStore(name);
+    const { secretKey: signingKey, author } = testKeys(name);
+    const keys = kx ? { kxKey: testKx(name).kxKey } : {};
+    await store.addGroup({
+      groupId: founding.id,
+      secret,
+      signingKey,
+      me: { author, name },
+      ...keys,
+    });
+    return keyed(store, relay, founding.id);
+  }
+
+  interface KeyedDevice {
+    readonly store: Store;
+    readonly sync: Sync;
+    group(): Promise<Group>;
+    state(): Promise<GroupState>;
+  }
+
+  function keyed(store: Store, relay: Relay, groupId: string): KeyedDevice {
+    const sync = createSync({ store, relay, seal: xchachaSeal, clock: () => TS });
+    opened.push(sync);
+    const group = async (): Promise<Group> => {
+      const found = await store.getGroup(groupId);
+      if (found === undefined) throw new Error('the group is gone');
+      return found;
+    };
+    const state = async (): Promise<GroupState> => {
+      const { log, relayNow } = await group();
+      return fold(log, relayNow);
+    };
+    return { store, sync, group, state };
+  }
+
+  /** The state two devices fold, apart from the records each left out. */
+  function comparable(state: GroupState): GroupState {
+    return { ...state, ignored: [] };
+  }
+
+  /** The event types each PUT to `mailbox` carried, opened with `secret`'s keys. */
+  function putTo(fake: FakeRelay, secret: Uint8Array): string[] {
+    const mailbox = deriveMailboxId(secret);
+    const key = deriveSealKey(secret);
+    return fake.requests
+      .filter((request) => request.method === 'PUT' && request.url.includes(mailbox))
+      .map((request) => {
+        const bytes = open(mailbox, key, request.body ?? new Uint8Array());
+        return bytes === null ? '?' : (parseRecord(bytes)?.event.type ?? '?');
+      });
+  }
+
+  /** Ana, Ben and Cal in one group, each device holding everything, with nothing queued. */
+  async function threeMembers() {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const secret = newGroupSecret();
+    const founding = keyedGenesis();
+    const ana = await member(ANA, relay, founding, secret);
+    const ben = await member(BEN, relay, founding, secret);
+    const cal = await member('cal', relay, founding, secret);
+    await ana.store.enqueue(founding.id, founding.record);
+    await ana.sync.syncOnce();
+    await ben.store.enqueue(founding.id, keyedJoin(founding, BEN).record);
+    await ben.sync.syncOnce();
+    await cal.store.enqueue(founding.id, keyedJoin(founding, 'cal').record);
+    await cal.sync.syncOnce();
+    for (const device of [ana, ben, cal]) await device.sync.syncOnce();
+    return { fake, relay, secret, founding, ana, ben, cal };
+  }
+
+  /** Cal signs a leave, queues it, and syncs: the relay has it, and Cal's device has purged the group. */
+  async function calLeaves(cal: KeyedDevice, founding: SignedEvent): Promise<void> {
+    const leave = signedAs('cal', { type: 'leave', group: founding.id, ts: TS, body: {} });
+    await cal.store.markLeaving(founding.id, leave.record);
+    await cal.sync.syncOnce();
+    expect(await cal.store.getGroup(founding.id)).toBeUndefined();
+  }
+
+  it('ends with exactly one canonical key change, every remaining device on the new mailbox, and one folded state', async () => {
+    const { fake, secret, founding, ana, ben, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+
+    // Both remaining devices see the leave at once, and each may take up the duty.
+    await Promise.all([ana.sync.syncOnce(), ben.sync.syncOnce()]);
+    await ana.sync.syncOnce();
+    await ben.sync.syncOnce();
+
+    const [a, b] = [await ana.state(), await ben.state()];
+    expect(comparable(a)).toEqual(comparable(b));
+    expect(a.epoch).toBe(1);
+    expect(a.rotations).toHaveLength(1);
+    const [rotation] = a.rotations;
+    expect(Object.keys(rotation?.wraps ?? {}).sort()).toEqual(
+      [authorOf(ANA), authorOf(BEN)].sort(),
+    );
+    const [onAna, onBen] = [await ana.group(), await ben.group()];
+    expect([onAna.epoch, onBen.epoch]).toEqual([1, 1]);
+    expect(local(onAna.secret)).toEqual(local(onBen.secret));
+    expect(local(onAna.secret)).not.toEqual(local(secret));
+    expect(epochCommit(founding.id, 1, onAna.secret)).toBe(rotation?.commit);
+    // Each reads the new mailbox from the key change's seq, and the old one no more.
+    expect(
+      [onAna.cursor, onBen.cursor].every((cursor) => cursor >= (rotation?.seq ?? Infinity)),
+    ).toBe(true);
+    const before = fake.requests.length;
+    await ana.sync.syncOnce();
+    const reads = fake.requests.slice(before).map((request) => request.url);
+    expect(reads).toEqual([
+      `/v1/mailbox/${deriveMailboxId(onAna.secret)}?after=${String(onAna.cursor)}&limit=100`,
+    ]);
+  });
+
+  it('never wraps the new secret to the member who left, nor to anyone else', async () => {
+    const { fake, founding, ana, ben, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+    await ana.sync.syncOnce();
+    await ben.sync.syncOnce();
+
+    const [rotation] = (await ana.state()).rotations;
+    const calKx = testKx('cal').kxKey;
+    for (const [member, wrap] of Object.entries(rotation?.wraps ?? {})) {
+      const place = { groupId: founding.id, epoch: 1, commit: rotation?.commit ?? '', wrap };
+      expect(unwrapEpochSecret({ ...place, member, kxKey: calKx })).toBeNull();
+      expect(unwrapEpochSecret({ ...place, member: authorOf('cal'), kxKey: calKx })).toBeNull();
+    }
+    expect(rotation).toBeDefined();
+    expect(fake.blobs(deriveMailboxId((await ana.group()).secret))).toEqual([]);
+  });
+
+  it('posts again, once, a Proposal that reached the old mailbox after the key changed, and it folds once', async () => {
+    const { fake, secret, founding, ana, ben, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+    await ana.sync.syncOnce();
+    expect((await ana.group()).epoch).toBe(1);
+
+    // Ben hasn't heard of the leave, so his Proposal goes to the old mailbox, after the key change.
+    const late = signedAs(BEN, {
+      type: 'proposal',
+      group: founding.id,
+      ts: TS,
+      body: {
+        atom: `${founding.id}.0`,
+        title: 'Later quiet hours',
+        why: 'Shift work.',
+        text: 'Quiet after 11pm.',
+      },
+    });
+    await ben.store.enqueue(founding.id, late.record);
+    await ben.sync.syncOnce();
+    await ana.sync.syncOnce();
+    await ben.sync.syncOnce();
+
+    const [a, b] = [await ana.state(), await ben.state()];
+    expect(comparable(a)).toEqual(comparable(b));
+    expect(a.proposals.map((p) => p.id)).toEqual([late.id]);
+    const newSecret = (await ana.group()).secret;
+    expect(putTo(fake, secret).filter((type) => type === 'proposal')).toHaveLength(1);
+    expect(putTo(fake, newSecret).filter((type) => type === 'proposal')).toHaveLength(1);
+    expect(a.proposals[0]?.seq).toBeGreaterThan(a.rotations[0]?.seq ?? Infinity);
+    expect((await ben.group()).outbox).toEqual([]);
+  });
+
+  it('sends only key-rotate and leave to the old mailbox while the key change is due', async () => {
+    const { fake, relay, secret, founding, ana, ben, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+    // Ben's device reads the leave, as a pass would, before any key change is posted.
+    const held = await ben.group();
+    const page = await relay.getBlobs(deriveMailboxId(secret), held.cursor);
+    const records = openRecords(
+      xchachaSeal,
+      { mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) },
+      page.records,
+    );
+    await ben.store.applyPull(
+      founding.id,
+      {
+        records,
+        cursor: page.records.at(-1)?.seq ?? held.cursor,
+        relayNow: page.now,
+        instance: page.instance,
+        lastSyncAt: TS,
+      },
+      eventIdOf,
+    );
+    expect((await ben.state()).rotationDue).toBe(true);
+    const ballot = signedAs(BEN, {
+      type: 'level',
+      group: founding.id,
+      ts: TS,
+      body: { level: FOLLOWING },
+    });
+    await ben.store.enqueue(founding.id, ballot.record);
+    const before = fake.requests.length;
+
+    await ben.sync.syncOnce();
+
+    fake.requests.splice(0, before);
+    expect(putTo(fake, secret)).toEqual(['key-rotate']);
+    expect(putTo(fake, (await ben.group()).secret)).toEqual(['level']);
+    await ana.sync.syncOnce();
+    expect(comparable(await ana.state())).toEqual(comparable(await ben.state()));
+  });
+
+  it('lets a leave through while the key change is due', async () => {
+    const { fake, relay, secret, founding, ben, cal } = await threeMembers();
+    await calLeaves(cal, founding);
+    const held = await ben.group();
+    const mailbox = deriveMailboxId(secret);
+    const page = await relay.getBlobs(mailbox, held.cursor);
+    const records = openRecords(xchachaSeal, { mailbox, key: deriveSealKey(secret) }, page.records);
+    await ben.store.applyPull(
+      founding.id,
+      {
+        records,
+        cursor: page.records.at(-1)?.seq ?? held.cursor,
+        relayNow: page.now,
+        instance: page.instance,
+        lastSyncAt: TS,
+      },
+      eventIdOf,
+    );
+    const level = signedAs(BEN, {
+      type: 'level',
+      group: founding.id,
+      ts: TS,
+      body: { level: FOLLOWING },
+    });
+    await ben.store.enqueue(founding.id, level.record);
+    const leave = signedAs(BEN, { type: 'leave', group: founding.id, ts: TS, body: {} });
+    await ben.store.markLeaving(founding.id, leave.record);
+    const before = fake.requests.length;
+
+    await ben.sync.syncOnce();
+
+    fake.requests.splice(0, before);
+    expect(putTo(fake, secret)).toEqual(['leave']);
+    expect(await ben.store.getGroup(founding.id)).toBeUndefined();
+  });
+
+  it('takes up no key change it has no wrap for, keeps reading the old mailbox, and says why', async () => {
+    const { fake, relay, secret, founding, ana, ben, cal } = await threeMembers();
+    // Cal's other device, restored from a backup: the same keys, and everything Cal had.
+    const restored = await openStore('cal-elsewhere');
+    await restored.restoreGroups([{ ...(await cal.group()), missingHistory: false }]);
+    const elsewhere = keyed(restored, relay, founding.id);
+    await calLeaves(cal, founding);
+    await ana.sync.syncOnce();
+    await ben.sync.syncOnce();
+
+    await elsewhere.sync.syncOnce();
+
+    const [group, state] = [await elsewhere.group(), await elsewhere.state()];
+    expect([group.epoch ?? 0, state.epoch]).toEqual([0, 1]);
+    expect(local(group.secret)).toEqual(local(secret));
+    expect(keyChangeOf(group, state)).toBe('left');
+    expect(fake.requests.at(-1)?.url).toContain(deriveMailboxId(secret));
+    // Ben's view is current: nothing to say.
+    expect(keyChangeOf(await ben.group(), await ben.state())).toBeNull();
+  });
+
+  it('says this device missed the new key when its member had no encryption key yet', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const secret = newGroupSecret();
+    const mailbox = deriveMailboxId(secret);
+    const founding = keyedGenesis();
+    const ana = await member(ANA, relay, founding, secret);
+    const cal = await member('cal', relay, founding, secret);
+    await ana.store.enqueue(founding.id, founding.record);
+    await ana.sync.syncOnce();
+    await cal.store.enqueue(founding.id, keyedJoin(founding, 'cal').record);
+    await cal.sync.syncOnce();
+    // Ben's device joined before #98: no key, and a join without one, then Cal leaves.
+    const ben = await member(BEN, relay, founding, secret, false);
+    const sealed = xchachaSeal.seal(
+      mailbox,
+      deriveSealKey(secret),
+      keyedJoin(founding, BEN, false).record,
+    );
+    await relay.putBlob(mailbox, sealed, 30);
+    await calLeaves(cal, founding);
+    await ana.sync.syncOnce();
+
+    await ben.sync.syncOnce();
+
+    const state = await ben.state();
+    expect(state.epoch).toBe(1);
+    expect(state.rotations[0]?.wraps).not.toHaveProperty(authorOf(BEN));
+    expect(keyChangeOf(await ben.group(), state)).toBe('missed');
+  });
+
+  it('posts kx once from a store kept before #98, and the fold records it', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const secret = newGroupSecret();
+    const founding = keyedGenesis();
+    const ana = await member(ANA, relay, founding, secret);
+    await ana.store.enqueue(founding.id, founding.record);
+    await ana.sync.syncOnce();
+    // Ben's device kept the group before #98: no encryption key, and a join without one.
+    const old = await member(BEN, relay, founding, secret, false);
+    await old.store.enqueue(founding.id, keyedJoin(founding, BEN, false).record);
+    await old.sync.syncOnce();
+    old.sync.stop();
+    old.store.close();
+    const ben = keyed(await openStore(BEN), relay, founding.id);
+
+    await ben.sync.syncOnce();
+    await ben.sync.syncOnce();
+    await ben.sync.syncOnce();
+
+    const kept = await ben.group();
+    expect(kept.kxKey).toBeDefined();
+    const mine = (await ben.state()).members.find((m) => m.author === authorOf(BEN));
+    expect(mine?.kx).toBe(base64url(kxPublicKeyOf(kept.kxKey ?? new Uint8Array())));
+    expect(putTo(fake, secret).filter((type) => type === 'kx')).toHaveLength(1);
+    expect(kept.outbox).toEqual([]);
   });
 });

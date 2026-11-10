@@ -209,6 +209,11 @@ export const messages = {
     copyFailed: 'Copying is blocked here. Select the link above and copy it yourself.',
     missingHistory:
       'Some history may be missing on this device. Open a new invite link from your group to catch up.',
+    /** When the group's key changed after this membership left on another device (#98). */
+    keyLeft: 'You left this group on another device.',
+    /** When the group's key changed and this device has no wrap that opens (#98). */
+    keyMissed:
+      'This group’s key changed and this device didn’t get the new one. Ask someone in the group for a new invite link.',
     joinDiscussion: 'Join discussion',
     discussion: 'Discussion',
     unreachable: 'Can’t reach the relay right now.',
@@ -377,7 +382,7 @@ export const messages = {
   leave: {
     open: 'Leave this group',
     title: 'Leave this group?',
-    body: 'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    body: 'Leaving removes this group from this device. Others keep what they already have. When you leave, the group gets a new key, so this device and any backup can’t read what comes next.',
     confirm: 'Leave this group',
     cancel: 'Cancel',
     failed: 'Leaving couldn’t be saved on this device. Try again.',

@@ -9,7 +9,7 @@
  * reader trusts an event only once its record verifies and its `author` is the
  * key that signed it (ADR-0006).
  */
-import { base64url } from '../crypto/base64url';
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
 import { signRecord, verifyRecord } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
@@ -41,6 +41,8 @@ export interface GenesisBody {
   readonly title: string;
   readonly atoms: readonly string[];
   readonly rules?: Readonly<Record<string, unknown>>;
+  /** The founder's X25519 public key in base64url (#98), when the genesis carries a well-shaped one. */
+  readonly kx?: string;
 }
 
 /**
@@ -53,6 +55,8 @@ export interface JoinBody {
   readonly level?: string;
   /** The inviter's token from the invite link (#73), when the join carries a well-shaped one. */
   readonly token?: InviteToken;
+  /** The joiner's X25519 public key in base64url (#98), when the join carries a well-shaped one. */
+  readonly kx?: string;
 }
 
 /**
@@ -263,6 +267,26 @@ export interface DissolveBody {
  */
 export type LeaveBody = Readonly<Record<string, never>>;
 
+/**
+ * Gives a member who has none an encryption key (#98): the X25519 public key,
+ * in base64url, that the group's new secrets are wrapped to. A device that
+ * joined before #98 posts it once; the fold keeps the first per member.
+ */
+export interface KxBody {
+  readonly kx: string;
+}
+
+/**
+ * A new group key (#98; ADR-0072 item 11): epoch `epoch`'s commit, and its
+ * secret wrapped to each member who has an encryption key, by their `author`
+ * (`crypto/epoch.ts`). The fold keeps the first valid one per epoch.
+ */
+export interface KeyRotateBody {
+  readonly epoch: number;
+  readonly commit: string;
+  readonly wraps: Readonly<Record<string, string>>;
+}
+
 /** The body each event type carries. */
 export interface EventBodies {
   readonly genesis: GenesisBody;
@@ -278,6 +302,8 @@ export interface EventBodies {
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
   readonly 'chat-thread': ChatThreadBody;
+  readonly kx: KxBody;
+  readonly 'key-rotate': KeyRotateBody;
 }
 
 /** The event types this engine understands. */
@@ -328,6 +354,12 @@ const AUTHOR = /^[A-Za-z0-9_-]{43}$/;
 
 /** A 64-byte Ed25519 signature in unpadded base64url. */
 const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
+
+/** Unpadded base64url of at least one byte: a wrap's text. */
+const BASE64URL = /^[A-Za-z0-9_-]{2,}$/;
+
+/** The largest epoch a key change names: a big-endian u32 carries it (#98). */
+const MAX_EPOCH = 0xffff_ffff;
 
 /** The id of an event: the unpadded base64url SHA-256 of its exact bytes. */
 export function eventId(bytes: Uint8Array): string {
@@ -385,12 +417,25 @@ function isAuthor(value: unknown): value is string {
   return isString(value) && AUTHOR.test(value);
 }
 
+/**
+ * 32 bytes in canonical unpadded base64url: an X25519 key or a SHA-256 digest
+ * (#98). The last character's spare bits must be zero, so each key has one spelling.
+ */
+function isKey32(value: unknown): value is string {
+  return isAuthor(value) && base64url(fromBase64url(value)) === value;
+}
+
 function isTimestamp(value: unknown): value is number {
   return isWholeNumber(value) && value >= 0;
 }
 
 function isOptionalObject(value: unknown): value is Json | undefined {
   return value === undefined || isObject(value);
+}
+
+/** A well-shaped `kx` field as `{kx}`, or nothing: a bad key never sinks the event that carries it (#98). */
+function kxField(value: unknown): { readonly kx?: string } {
+  return isKey32(value) ? { kx: value } : {};
 }
 
 function parseGenesis(body: Json): GenesisBody | null {
@@ -404,6 +449,7 @@ function parseGenesis(body: Json): GenesisBody | null {
     atoms,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
+    ...kxField(body.kx),
   };
 }
 
@@ -422,6 +468,7 @@ function parseJoin(body: Json): JoinBody | null {
     name,
     ...(level === undefined ? {} : { level }),
     ...(token === undefined ? {} : { token }),
+    ...kxField(body.kx),
   };
 }
 
@@ -541,6 +588,28 @@ function parseChatThread(body: Json): ChatThreadBody | null {
   return isString(proposal) && isString(url) ? { proposal, url } : null;
 }
 
+function parseKx(body: Json): KxBody | null {
+  return isKey32(body.kx) ? { kx: body.kx } : null;
+}
+
+/** A key change's wraps: an object from member keys to base64url wraps, or null. */
+function parseWraps(value: unknown): Record<string, string> | null {
+  if (!isObject(value)) return null;
+  const entries = Object.entries(value);
+  const valid = entries.every(
+    ([key, wrap]) => isAuthor(key) && isString(wrap) && BASE64URL.test(wrap),
+  );
+  // fromEntries defines own properties, so no key can reach a prototype.
+  return valid ? Object.fromEntries(entries as [string, string][]) : null;
+}
+
+function parseKeyRotate(body: Json): KeyRotateBody | null {
+  const { epoch, commit } = body;
+  const wraps = parseWraps(body.wraps);
+  if (!isWholeNumber(epoch) || epoch < 1 || epoch > MAX_EPOCH) return null;
+  return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -614,6 +683,18 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-thread':
       return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withKeyBody(head, type, body);
+  }
+}
+
+/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
+    case 'kx':
+      return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'key-rotate':
+      return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

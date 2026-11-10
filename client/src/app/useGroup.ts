@@ -23,6 +23,7 @@ import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
 import { shownState } from '../store/archive';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
+import { type KeyChange, keyChangeOf } from '../store/epochs';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -68,6 +69,13 @@ export interface GroupView {
    */
   leaving: boolean;
   /**
+   * Why this device can't read what the group writes now (#98): `left` when
+   * this membership left on another device, `missed` when the group's key
+   * changed and this device didn't get the new one; null while it can, and
+   * for a read-only archive (#108).
+   */
+  keyChange: KeyChange | null;
+  /**
    * Whether group home suggests a backup (#78): the group is on the device,
    * no backup file it saved or restored from holds it, nobody answered Not
    * now, and it isn't a read-only archive, which no backup carries (#108).
@@ -93,12 +101,22 @@ export function useGroup(groupId: string): GroupView {
     state,
     log: group?.log ?? NO_RECORDS,
     pending,
+    keyChange: keyChangeIn(group, state),
     ...syncStatusOf(group),
     reachable,
     me: group?.me ?? null,
     loaded,
     cleared: clearedOf(group),
   };
+}
+
+/**
+ * Why this device can't read what `group` writes now (#98), or null: always
+ * null for a read-only archive, whose home shows the archive instead (#108).
+ */
+function keyChangeIn(group: Group | undefined, state: GroupState | null): KeyChange | null {
+  if (group === undefined || state === null || group.archived !== undefined) return null;
+  return keyChangeOf(group, state);
 }
 
 /** A dissolved group's cleared archive (#108), or null for any other group, or none yet. */
