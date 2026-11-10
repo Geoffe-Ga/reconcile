@@ -45,6 +45,37 @@ describe('Settings', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers Link a new device under its heading, which opens the linking screen (#96)', async () => {
+    setup();
+
+    const link = screen.getByRole('region', { name: 'Link a new device' });
+    expect(link).toHaveTextContent(
+      'Use your groups on a laptop or a second phone. This device shows a code, the new one scans it, and both show a number for you to check before anything is sent.',
+    );
+    expect(within(link).getByRole('link', { name: 'Link a new device' })).toHaveAttribute(
+      'href',
+      '#/link-new',
+    );
+    // Linking comes after the backup and before Erase, with Notifications (#99) first.
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Notifications',
+      'Back up your groups',
+      'Restore a backup',
+      'Link a new device',
+      'Erase this device',
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says there is nothing to link on a device with no groups, and offers no link (#96)', () => {
+    setup({ hasGroups: false });
+
+    const link = screen.getByRole('region', { name: 'Link a new device' });
+    expect(link).toHaveTextContent('There are no groups on this device to link yet.');
+    expect(within(link).queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('reveals what Erase does and the press-and-hold, the only negative control, and Cancel hides them', async () => {
     const { user } = setup();
     const open = screen.getByRole('button', { name: 'Erase Reconcile from this device' });

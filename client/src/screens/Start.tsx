@@ -85,11 +85,28 @@ function RestoreSection({ onRestore }: Pick<RestoreBackupProps, 'onRestore'>) {
   );
 }
 
+/** "Have Reconcile on another device?", and Link to my other device under it (#96). */
+function LinkSection() {
+  const heading = useId();
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <h2 id={heading} className="heading-3">
+        {messages.start.linkHeading}
+      </h2>
+      <div>
+        <Link className="button button-secondary" href={routeHref({ name: 'linkThis' })}>
+          {messages.start.link}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 /**
  * Start (`#/`): every group on this device by name, each marked while its
  * leave waits for the relay (#77), Create group, a card that opens Personal
  * (#93), Join with an invite link, a field to paste one into, Restore a
- * backup (#78), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
+ * backup (#78), Link to my other device (#96), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
  * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
 export function Start({ groups, onOpenInvite, persistence = null, onRestore }: StartProps) {
@@ -143,6 +160,7 @@ export function Start({ groups, onOpenInvite, persistence = null, onRestore }: S
         </Form>
       </section>
       {onRestore === undefined ? null : <RestoreSection onRestore={onRestore} />}
+      <LinkSection />
       {persistence === null || persistence === 'granted' ? null : (
         <p className="caption">{messages.start.mayClear}</p>
       )}

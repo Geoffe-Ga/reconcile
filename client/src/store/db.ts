@@ -181,6 +181,9 @@ export interface Archive {
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
 export type BackupMark = 'saved' | 'not-now';
 
+/** Where restored groups came from: a backup file (#78), or another of the person's devices (#96). */
+export type RestoredFrom = 'backup' | 'link';
+
 /**
  * A group as a backup file carries it (#78): its keys, secret, your name, its
  * relay-ordered log and sync state, and whether some history may be missing.
@@ -350,19 +353,22 @@ export interface Store extends DraftStore, PersonalStore {
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
-   * Keep a backup file's groups and personal Documents, in one transaction
-   * (#78, #93). A group new to the device is kept as the file has it, with an
-   * empty outbox, no drafts and no chat claims (#119). For a group already
-   * here, whichever whole copy synced later stays: the file's replaces the
-   * device's only when its last sync is later, and a group this device is
-   * leaving or keeps read-only (#108) stays as it is. Either way the group is
-   * marked `saved`, since a backup file holds it. A personal Document merges
-   * by id the same way: the file's replaces the device's only when it was
+   * Keep a backup file's groups and personal Documents, or a link bundle's
+   * (#96), in one transaction (#78, #93). A group new to the device is kept
+   * as the file has it, with an empty outbox, no drafts and no chat claims
+   * (#119). For a group already here, whichever whole copy synced later
+   * stays: the file's replaces the device's only when its last sync is later,
+   * and a group this device is leaving or keeps read-only (#108) stays as it
+   * is. From a backup file, either way the group is marked `saved`, since
+   * the file holds it; from a link, no file holds it, so a new group has no
+   * mark and one already here keeps its own. A personal Document merges by
+   * id the same way: the file's replaces the device's only when it was
    * edited later (`keepsHeldCopy`). Nothing is stamped with the time now.
    */
   restoreGroups(
     groups: readonly BackedUpGroup[],
     personal?: readonly PersonalDocument[],
+    from?: RestoredFrom,
   ): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
@@ -573,10 +579,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
-    async restoreGroups(groups, personal = []) {
+    async restoreGroups(groups, personal = [], from = 'backup') {
       const tx = db.transaction([GROUPS, PERSONAL], 'readwrite');
       try {
-        await restoreInto(tx, groups, personal);
+        await restoreInto(tx, { groups, personal, from });
       } catch (error) {
         // Anything that fails takes the whole restore with it, groups and Documents alike.
         await abandon(tx);
@@ -662,19 +668,25 @@ async function abandon(tx: RestoreTransaction): Promise<void> {
 /** A transaction over both of the store's object stores, as a restore opens it. */
 type RestoreTransaction = IDBPTransaction<Schema, ['groups', 'personal'], 'readwrite'>;
 
+/** What one restore keeps: a backup file's or a link bundle's groups and Documents (#96). */
+interface Restored {
+  readonly groups: readonly BackedUpGroup[];
+  readonly personal: readonly PersonalDocument[];
+  readonly from: RestoredFrom;
+}
+
 /**
- * Puts each group and personal Document a backup holds into `tx`, keeping
- * the device's copy wherever it's the one to keep (`keptCopy`,
- * `keepsHeldCopy`).
+ * Puts each group and personal Document a backup file or a link bundle
+ * holds into `tx`, keeping the device's copy wherever it's the one to keep
+ * (`keptCopy`, `keepsHeldCopy`).
  */
 async function restoreInto(
   tx: RestoreTransaction,
-  groups: readonly BackedUpGroup[],
-  personal: readonly PersonalDocument[],
+  { groups, personal, from }: Restored,
 ): Promise<void> {
   const kept = tx.objectStore(GROUPS);
   for (const restored of groups) {
-    await kept.put(keptCopy(await kept.get(restored.groupId), restored));
+    await kept.put(keptCopy(await kept.get(restored.groupId), restored, from));
   }
   const documents = tx.objectStore(PERSONAL);
   for (const restored of personal) {
@@ -683,24 +695,36 @@ async function restoreInto(
 }
 
 /**
- * The copy of a group to keep when a backup file holds `restored` and the
- * device holds `held` (#78): the file's, with no outbox, drafts or chat
- * claims, unless the device's synced at least as late, is leaving, or is a
- * read-only archive, which a restore never brings back to life (#108).
- * Either is marked `saved`. The device's push registration and posted nudges
- * (#99) stay either way: they belong to this device, and a file never holds
- * them.
+ * The backup mark a restored group gets (#78, #96): `saved` from a backup
+ * file, which holds it; from a link, which no file holds, the mark the
+ * device's own copy had, if any.
  */
-function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
+function markFor(held: Group | undefined, from: RestoredFrom): Pick<Group, 'backup'> {
+  if (from === 'backup') return { backup: 'saved' };
+  return held?.backup === undefined ? {} : { backup: held.backup };
+}
+
+/**
+ * The copy of a group to keep when a backup file or a link bundle holds
+ * `restored` and the device holds `held` (#78, #96): the restored one, with
+ * no outbox, drafts or chat claims, unless the device's synced at least as
+ * late, is leaving, or is a read-only archive, which a restore never brings
+ * back to life (#108). Either is marked as `markFor` says. The device's push
+ * registration and posted nudges (#99) stay either way: they belong to this
+ * device, and neither a file nor a link bundle holds them, so a linked
+ * device starts with push off.
+ */
+function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: RestoredFrom): Group {
+  const mark = markFor(held, from);
   if (held !== undefined && (stays(held) || syncedSince(held, restored))) {
-    return { ...held, backup: 'saved' };
+    return { ...held, ...mark };
   }
   // A copy that comes back read-only takes no push (#108), as `markArchived` keeps none.
   const { push, nudged } = restored.archived === undefined ? (held ?? {}) : {};
   return {
     ...restored,
     outbox: [],
-    backup: 'saved',
+    ...mark,
     ...(push === undefined ? {} : { push }),
     ...(nudged === undefined ? {} : { nudged }),
   };

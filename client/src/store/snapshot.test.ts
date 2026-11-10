@@ -26,7 +26,9 @@ import {
   exportGroups,
   importGroups,
   MAX_BACKUP_BYTES,
+  restoreSnapshot,
   SNAPSHOT_FORMAT,
+  takeSnapshot,
 } from './snapshot';
 
 freshIndexedDBPerTest();
@@ -245,6 +247,45 @@ describe('exportGroups and importGroups', () => {
 
     expect(groupIds).toEqual([]);
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toBe(0);
+  });
+});
+
+describe('takeSnapshot and restoreSnapshot, without the passphrase (#96)', () => {
+  it('carry exactly what a backup file’s plaintext holds, and bring it back unmarked', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+
+    const { plaintext, groupIds } = await takeSnapshot(device);
+    expect(groupIds).toEqual([group.groupId]);
+    expect(text(plaintext)).toBe(text(await snapshotOf(device)));
+
+    const second = await openStore('ana-laptop');
+    expect(await restoreSnapshot(second, plaintext, 'link')).toBe(1);
+    const [held] = await second.listGroups();
+    expect(held?.backup).toBeUndefined();
+    expect(held?.me).toEqual({ author: group.author, name: CANARY.founder });
+    expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
+  });
+
+  it('refuse a plaintext that doesn’t check out, and write nothing', async () => {
+    const second = await otherDevice();
+    const before = await dump(second);
+
+    await expect(
+      restoreSnapshot(second, utf8('{"format":1,"groups":[{}]}'), 'link'),
+    ).rejects.toThrow(BackupUnreadable);
+    expect(await dump(second)).toEqual(before);
+  });
+
+  it('mark a backup file’s groups as saved, as importGroups does', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const { plaintext } = await takeSnapshot(device);
+    const second = await openStore('second');
+
+    await restoreSnapshot(second, plaintext, 'backup');
+
+    expect((await second.listGroups()).map((held) => held.backup)).toEqual(['saved']);
   });
 });
 
