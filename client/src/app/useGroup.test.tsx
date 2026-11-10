@@ -188,6 +188,7 @@ describe('useGroup', () => {
       me: null,
       missingHistory: false,
       leaving: false,
+      suggestBackup: false,
       loaded: true,
     });
   });

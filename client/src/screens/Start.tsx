@@ -3,6 +3,7 @@ import { Button, Form, Link } from 'react-aria-components';
 
 import { parseInviteLink } from '../app/invite';
 import { messages } from '../app/messages';
+import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
 import type { Persistence } from '../platform/persist';
@@ -24,6 +25,8 @@ export interface StartProps {
   readonly onOpenInvite: (seed: Uint8Array) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
+  /** Restores a backup file (#78); without it, Start offers no Restore. */
+  readonly onRestore?: RestoreBackupProps['onRestore'];
 }
 
 function GroupItem({ group }: { readonly group: StartGroup }) {
@@ -52,14 +55,27 @@ function checkInvite(text: string): string | null {
   return parseInviteLink(text) === null ? messages.join.badLink : null;
 }
 
+/** "Have a backup file?", and Restore a backup under it (#78). */
+function RestoreSection({ onRestore }: Pick<RestoreBackupProps, 'onRestore'>) {
+  const heading = useId();
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <h2 id={heading} className="heading-3">
+        {messages.start.restoreHeading}
+      </h2>
+      <RestoreBackup onRestore={onRestore} />
+    </section>
+  );
+}
+
 /**
  * Start (`#/`): every group on this device by name, each marked while its
- * leave waits for the relay (#77), Create group, and Join with an invite
- * link, a field to paste one into. The app reads the clipboard only through
- * that paste. When the browser may clear the app's data, one quiet line says
- * so (ADR-0029).
+ * leave waits for the relay (#77), Create group, Join with an invite link, a
+ * field to paste one into, Restore a backup (#78), and a quiet link to
+ * Settings. The app reads the clipboard only through that paste. When the
+ * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
-export function Start({ groups, onOpenInvite, persistence = null }: StartProps) {
+export function Start({ groups, onOpenInvite, persistence = null, onRestore }: StartProps) {
   const inviteHeading = useId();
 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -108,9 +124,15 @@ export function Start({ groups, onOpenInvite, persistence = null }: StartProps) 
           </Button>
         </Form>
       </section>
+      {onRestore === undefined ? null : <RestoreSection onRestore={onRestore} />}
       {persistence === null || persistence === 'granted' ? null : (
         <p className="caption">{messages.start.mayClear}</p>
       )}
+      <div>
+        <Link className="forward-link" href={routeHref({ name: 'settings' })}>
+          {messages.start.settings}
+        </Link>
+      </div>
     </main>
   );
 }

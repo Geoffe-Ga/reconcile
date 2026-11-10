@@ -1,0 +1,204 @@
+/**
+ * What the store does for a backup (#78): restoring groups from a file in one
+ * transaction, keeping whichever whole copy synced later, and marking groups
+ * as in a backup, or the backup card as answered.
+ */
+import { IDBDatabase as FakeIDBDatabase } from 'fake-indexeddb';
+import { describe, expect, it, vi } from 'vitest';
+
+import { local, text, utf8 } from '../test/bytes';
+import { freshIndexedDBPerTest } from '../test/idb';
+import { type BackedUpGroup, DATABASE_NAME, type Group, type NewGroup, openStore } from './db';
+
+freshIndexedDBPerTest();
+
+const ana: NewGroup = {
+  groupId: 'group-1',
+  secret: new Uint8Array(32).fill(9),
+  signingKey: new Uint8Array(32).fill(7),
+  me: { author: 'author-ana', name: 'Ana' },
+};
+
+/** A test's event id: the bytes as text. */
+const idOf = (bytes: Uint8Array): string => text(bytes);
+
+/** A backed-up copy of `ana`'s group, synced at `lastSyncAt`. */
+function copy(lastSyncAt: number | null, overrides: Partial<BackedUpGroup> = {}): BackedUpGroup {
+  return {
+    ...ana,
+    log: [{ seq: 3, received: 29_000_003, bytes: utf8('{"from":"file"}') }],
+    cursor: 5,
+    relayNow: 29_000_010,
+    instance: 'relay-1',
+    lastSyncAt,
+    missingHistory: false,
+    ...overrides,
+  };
+}
+
+/** A stored group with its bytes in the test's realm, so `toEqual` can compare it. */
+function comparable(group: Group | undefined) {
+  if (group === undefined) return undefined;
+  return {
+    ...group,
+    secret: local(group.secret),
+    signingKey: local(group.signingKey),
+    log: group.log.map((record) => ({ ...record, bytes: text(record.bytes) })),
+    outbox: group.outbox.map(text),
+  };
+}
+
+/**
+ * A device holding `ana`'s group, last synced at `lastSyncAt`, with an unsent
+ * event, a chat bot claim (#119) and a draft.
+ */
+async function deviceWithGroup(lastSyncAt: number) {
+  const store = await openStore();
+  await store.addGroup(ana);
+  const pull = {
+    records: [{ seq: 1, received: 29_000_001, bytes: utf8('{"from":"device"}') }],
+    cursor: 1,
+    relayNow: 29_000_002,
+    instance: 'relay-1',
+    lastSyncAt,
+  };
+  await store.applyPull(ana.groupId, pull, idOf);
+  await store.enqueue(ana.groupId, utf8('{"unsent":1}'));
+  const claim = { id: 'claim-1', proposal: 'proposal-1', moment: 'open' } as const;
+  await store.claimChat(ana.groupId, utf8('{"claim":1}'), claim);
+  await store.writeDraft(ana.groupId, 'atom-1', { title: 'T', why: 'W', text: 'X', link: '' });
+  return store;
+}
+
+describe('restoreGroups', () => {
+  it('keeps a group new to the device exactly as the file has it, with no outbox or drafts, marked as saved', async () => {
+    const store = await openStore();
+
+    await store.restoreGroups([copy(1_000, { missingHistory: true })]);
+
+    expect(comparable(await store.getGroup(ana.groupId))).toEqual({
+      ...comparable({ ...copy(1_000), outbox: [] }),
+      missingHistory: true,
+      backup: 'saved',
+    });
+  });
+
+  it('never stamps a restored group with the time, so a later sync can still see the gap', async () => {
+    const store = await openStore();
+
+    await store.restoreGroups([copy(null), { ...copy(5), groupId: 'group-2' }]);
+
+    expect((await store.getGroup(ana.groupId))?.lastSyncAt).toBeNull();
+    expect((await store.getGroup('group-2'))?.lastSyncAt).toBe(5);
+  });
+
+  it('replaces a group already here with the file’s whole copy when the file’s synced later, its outbox, drafts and chat claims gone', async () => {
+    const store = await deviceWithGroup(1_000);
+
+    await store.restoreGroups([copy(2_000)]);
+
+    expect(comparable(await store.getGroup(ana.groupId))).toEqual(
+      comparable({ ...copy(2_000), outbox: [], backup: 'saved' }),
+    );
+  });
+
+  it.each([
+    ['synced later', 3_000],
+    ['synced at the same time', 2_000],
+  ])('keeps the device’s whole copy when it %s, marked as saved', async (_when, deviceSync) => {
+    const store = await deviceWithGroup(deviceSync);
+    const before = comparable(await store.getGroup(ana.groupId));
+
+    await store.restoreGroups([copy(2_000)]);
+
+    expect(comparable(await store.getGroup(ana.groupId))).toEqual({ ...before, backup: 'saved' });
+  });
+
+  it('keeps a device copy over a file copy that never synced', async () => {
+    const store = await deviceWithGroup(1);
+    const before = comparable(await store.getGroup(ana.groupId));
+
+    await store.restoreGroups([copy(null)]);
+
+    expect(comparable(await store.getGroup(ana.groupId))).toEqual({ ...before, backup: 'saved' });
+  });
+
+  it('keeps a group this device is leaving as it is, whatever the file holds', async () => {
+    const store = await deviceWithGroup(1_000);
+    await store.markLeaving(ana.groupId, utf8('{"leave":1}'));
+    const before = comparable(await store.getGroup(ana.groupId));
+
+    await store.restoreGroups([copy(9_000)]);
+
+    expect(comparable(await store.getGroup(ana.groupId))).toEqual({ ...before, backup: 'saved' });
+  });
+
+  it('writes every group in one transaction, then tells subscribers which changed', async () => {
+    const store = await openStore();
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+    const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+
+    await store.restoreGroups([copy(1), { ...copy(2), groupId: 'group-2' }]);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[1]).toBe('readwrite');
+    expect(heard).toEqual([ana.groupId, 'group-2']);
+    transaction.mockRestore();
+  });
+});
+
+describe('markBackup', () => {
+  it('marks each group still here, in one transaction, and tells subscribers', async () => {
+    const store = await openStore();
+    await store.addGroup(ana);
+    await store.addGroup({ ...ana, groupId: 'group-2' });
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+    const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+
+    await store.markBackup([ana.groupId, 'gone'], 'saved');
+    await store.markBackup(['group-2'], 'not-now');
+
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect((await store.getGroup(ana.groupId))?.backup).toBe('saved');
+    expect((await store.getGroup('group-2'))?.backup).toBe('not-now');
+    expect(await store.getGroup('gone')).toBeUndefined();
+    expect(heard).toEqual([ana.groupId, 'group-2']);
+    transaction.mockRestore();
+  });
+
+  it('leaves a new group unmarked', async () => {
+    const store = await openStore();
+
+    const added = await store.addGroup(ana);
+
+    expect(added.backup).toBeUndefined();
+    expect((await store.getGroup(ana.groupId))?.backup).toBeUndefined();
+  });
+});
+
+describe('the store’s database', () => {
+  it('is named reconcile', () => {
+    expect(DATABASE_NAME).toBe('reconcile');
+  });
+
+  it('closes when another tab deletes it, so the delete never waits on this one', async () => {
+    const store = await openStore();
+    await store.addGroup(ana);
+
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DATABASE_NAME);
+      request.onsuccess = () => {
+        resolve();
+      };
+      request.onerror = () => {
+        reject(new Error('The delete failed.'));
+      };
+    });
+
+    const reopened = await openStore();
+    expect(await reopened.listGroups()).toEqual([]);
+    reopened.close();
+  });
+});

@@ -37,6 +37,8 @@ export const messages = {
     settingUp: 'Saved on this device. Waiting for the relay.',
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
     leaving: 'Leaving…',
+    restoreHeading: 'Have a backup file?',
+    settings: 'Settings',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -675,5 +677,67 @@ export const messages = {
     levelsWait: 'Voting and proposing start once you have a vote. Until then, you read and follow.',
     /** On a Proposal that opened before this member's vote arrived. */
     noVoteYet: 'You didn’t have a vote yet when this opened.',
+  },
+  // Settings (#78): save and restore a backup, and Erase (ADR-0046 as cut by ADR-0073).
+  settings: {
+    pageTitle: 'Settings',
+    title: 'Settings',
+    backupHeading: 'Back up your groups',
+    restoreHeading: 'Restore a backup',
+    eraseHeading: 'Erase this device',
+  },
+  backup: {
+    lede: 'One file holds every group on this device, with the keys and the name you use in each. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
+    passphrase: 'Passphrase',
+    passphraseHint: 'At least 8 characters. Nobody can recover this passphrase for you.',
+    passphraseShort: 'Use at least 8 characters.',
+    confirm: 'Passphrase again',
+    confirmMismatch: 'The two passphrases don’t match.',
+    make: 'Make a backup file',
+    making: 'Locking your backup with your passphrase…',
+    makeFailed: 'The backup file couldn’t be made. Try again.',
+    ready: 'Your backup file is ready. Without the passphrase, nothing in it can be read.',
+    save: 'Save the file',
+    saved: 'Saved. Keep the file and the passphrase in different places.',
+    cancelled: 'The file wasn’t saved. Save the file to try again.',
+    none: 'There are no groups on this device to back up yet.',
+  },
+  restore: {
+    lede: 'Bring back the groups in a backup file you saved. On a second device, they vote as you.',
+    choose: 'Choose backup file',
+    chosen: 'Backup file:',
+    passphrase: 'Its passphrase',
+    passphraseMissing: 'Enter the passphrase this backup was saved with.',
+    submit: 'Restore',
+    restoring: 'Opening your backup…',
+    restored: (groups: number) => {
+      if (groups === 0) return 'This backup holds no groups.';
+      return groups === 1
+        ? '1 group is back on this device.'
+        : `${count(groups)} groups are back on this device.`;
+    },
+    failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
+  },
+  erase: {
+    open: 'Erase Reconcile from this device',
+    body: 'This erases Reconcile’s data on this device. Your groups carry on for everyone else, and a backup file you saved can bring them back here.',
+    hold: 'Hold to erase',
+    released: 'You let go early, so nothing was erased.',
+    erasing: 'Erasing…',
+    failed: 'Some of Reconcile’s data couldn’t be erased. Reload Reconcile, then try again.',
+    cancel: 'Cancel',
+  },
+  /** Press and hold (#78): what the button's live region says while it's held. */
+  hold: {
+    hint: (seconds: number) =>
+      `Press and hold for ${count(seconds)} seconds. On a keyboard, hold Space or Enter.`,
+    holding: (left: number) =>
+      left === 1 ? 'Keep holding: 1 second left.' : `Keep holding: ${count(left)} seconds left.`,
+  },
+  /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
+  backupCard: {
+    body: 'Save a backup so you can get this group back if you lose your phone.',
+    save: 'Save a backup',
+    notNow: 'Not now',
   },
 } as const;

@@ -12,8 +12,9 @@
  *    won't open), and appends each event the log doesn't hold yet;
  * 3. saves the cursor, the relay's time and instance, and when it synced;
  * 4. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
- *    only while the group has its bot on. Nothing the bot does, or fails to
- *    do, changes whether the pass succeeded.
+ *    only while the group has its bot on, and never once the loop is halted
+ *    (#78). Nothing the bot does, or fails to do, changes whether the pass
+ *    succeeded.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -22,6 +23,10 @@
  * A group this device is leaving (#77) goes once the relay returns a seq for
  * its leave: the pass purges it from the store and reads nothing more for it.
  * Until then it stays, leaving, through failures and reloads.
+ *
+ * Erase halts the loop for good before it closes the store (#78): no new pass
+ * starts, a pass already running stops before its next group, and `halt`
+ * resolves once it has, so no request starts after that.
  *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
@@ -184,6 +189,12 @@ export interface Sync extends Poller {
   isReachable(): boolean;
   /** Hear when {@link Sync.isReachable} changes; returns the way to stop. */
   subscribe(listener: () => void): () => void;
+  /**
+   * Stop for good (#78): no pass starts again, even on `start`, and a pass
+   * already running stops before its next group, running no chat bot for the
+   * group it finishes. Resolves once it has.
+   */
+  halt(): Promise<void>;
 }
 
 /** A sync loop over `options.store`; call `start()` to begin polling. */
@@ -192,6 +203,7 @@ export function createSync(options: SyncOptions): Sync {
   const { chatBot } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
+  let halted = false;
   let inFlight: Promise<boolean> | null = null;
 
   /**
@@ -231,13 +243,15 @@ export function createSync(options: SyncOptions): Sync {
       lastSyncAt: clock(),
     };
     await store.applyPull(group.groupId, pull, idOf);
-    await chatBot?.run(group.groupId).catch(() => undefined);
+    // Once halted (Erase, #78), the bot neither claims nor posts.
+    if (!halted) await chatBot?.run(group.groupId).catch(() => undefined);
   }
 
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
       for (const group of await store.listGroups()) {
+        if (halted) break;
         ok = (await syncGroup(group).then(succeeded, failed)) && ok;
       }
     } catch {
@@ -253,6 +267,7 @@ export function createSync(options: SyncOptions): Sync {
   }
 
   function syncOnce(): Promise<boolean> {
+    if (halted) return Promise.resolve(false);
     inFlight ??= pass().finally(() => {
       inFlight = null;
     });
@@ -261,7 +276,17 @@ export function createSync(options: SyncOptions): Sync {
 
   const poller = createPoller(syncOnce, options.timers);
   return {
-    ...poller,
+    start() {
+      if (!halted) poller.start();
+    },
+    stop() {
+      poller.stop();
+    },
+    async halt() {
+      halted = true;
+      poller.stop();
+      await inFlight;
+    },
     syncOnce,
     isReachable: () => reachable,
     subscribe(listener) {
