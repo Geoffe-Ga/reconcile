@@ -3,14 +3,20 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ComposeOutcome } from '../app/compose';
-import { addDraft, type ProposalValues, removalDraft, type VersionValues } from '../app/proposals';
+import {
+  addDraft,
+  againDraft,
+  type ProposalValues,
+  removalDraft,
+  type VersionValues,
+} from '../app/proposals';
 import { LEVELS } from '../engine/capabilities';
-import type { GroupState } from '../engine/fold';
+import type { GroupState, Proposal } from '../engine/fold';
 import type { Draft } from '../store/drafts';
 import { axeViolations } from '../test/axe';
 import { memoryDrafts } from '../test/drafts';
 import { authorOf } from '../test/keys';
-import { groupLog } from '../test/votes';
+import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { AddSection, RemoveSection } from './SectionComposer';
 
 type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
@@ -41,6 +47,7 @@ interface AddOptions {
   readonly me?: string;
   readonly onPropose?: OnPropose;
   readonly drafts?: Readonly<Record<string, Draft>>;
+  readonly again?: Proposal;
 }
 
 /** Renders Add a section after Atom `after` (default: at the start) and waits for its heading. */
@@ -57,6 +64,7 @@ async function addSection(options: AddOptions = {}) {
       after={afterId}
       drafts={memory.drafts}
       onPropose={onPropose}
+      {...(options.again === undefined ? {} : { again: options.again })}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
@@ -69,6 +77,7 @@ interface RemoveOptions {
   readonly me?: string;
   readonly onPropose?: OnPropose;
   readonly onAddVersion?: OnAddVersion;
+  readonly again?: Proposal;
 }
 
 /** Renders Propose removing this section for Atom `atom` (default: the second). */
@@ -88,6 +97,7 @@ async function removeSection(options: RemoveOptions = {}) {
       drafts={memory.drafts}
       onPropose={onPropose}
       onAddVersion={onAddVersion}
+      {...(options.again === undefined ? {} : { again: options.again })}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
@@ -355,5 +365,74 @@ describe('RemoveSection', () => {
       screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('Proposing an add or a removal again (#74)', () => {
+  /** Ana's add after section 1 and her removal of section 2, Ben's versions on each, and no ballots: both lapse. */
+  function lapsedBoth() {
+    const log = groupLog({ chat: CHAT });
+    const add = log.addSection('ana', `${log.group}.0`, { title: 'Guests', why: 'They visit.' });
+    log.version('ben', add, 'Guests leave by midnight.\n');
+    const removal = log.propose('ana', { atom: 1, title: 'No bins rule', text: '' });
+    log.version('ben', removal, 'Bins go out on Monday.\n');
+    const state = log.state(deadlineOf(START_MINUTE));
+    const find = (id: string) => {
+      const proposal = state.proposals.find((candidate) => candidate.id === id);
+      if (proposal === undefined) throw new Error('Expected the Proposal.');
+      return proposal;
+    };
+    return { state, add: find(add), removal: find(removal) };
+  }
+
+  it('starts an add from the lapsed one, keeps its draft under it, and carries its versions', async () => {
+    const { state, add } = lapsedBoth();
+    const { user, onPropose, afterId, memory } = await addSection({ state, after: 0, again: add });
+    expect(screen.getByRole('heading', { level: 1, name: 'Propose again' })).toBeVisible();
+    expect(box('Title')).toHaveValue('Guests');
+    expect(box('Section text')).toHaveValue('Guests leave by 11pm.\n');
+    expect(screen.getByRole('region', { name: 'Also on the ballot' })).toHaveTextContent(
+      'Guests leave by midnight.',
+    );
+    expect(memory.drafts.load).toHaveBeenCalledWith(againDraft(add.id));
+    expect(await axeViolations()).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      target: { kind: 'add', after: afterId },
+      title: 'Guests',
+      why: 'They visit.',
+      text: 'Guests leave by 11pm.\n',
+      link: CHAT,
+      again: add.id,
+      versions: ['Guests leave by midnight.\n'],
+    });
+  });
+
+  it('starts a removal from the lapsed one, with its rewording carried onto the ballot', async () => {
+    const { state, removal } = lapsedBoth();
+    const { user, onPropose, atomId } = await removeSection({ state, again: removal });
+    expect(screen.getByRole('heading', { level: 1, name: 'Propose again' })).toBeVisible();
+    expect(box('Title')).toHaveValue('No bins rule');
+    expect(
+      screen.getByRole('region', { name: 'Section 2 now reads' }).querySelector('del'),
+    ).toHaveTextContent('Bins go out on Tuesday.');
+    await user.click(screen.getByRole('button', { name: 'Propose removing it' }));
+    expect(onPropose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        atom: atomId,
+        text: '',
+        again: removal.id,
+        versions: ['Bins go out on Monday.\n'],
+      }),
+    );
+  });
+
+  it('starts fresh when the Proposal it names hasn’t lapsed', async () => {
+    const log = groupLog();
+    const add = log.addSection('ana', null);
+    const open = log.state().proposals.find((proposal) => proposal.id === add);
+    await addSection({ state: log.state(), ...(open === undefined ? {} : { again: open }) });
+    expect(screen.getByRole('heading', { level: 1, name: 'Add a section' })).toBeVisible();
+    expect(box('Title')).toHaveValue('');
   });
 });

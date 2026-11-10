@@ -37,7 +37,16 @@ export type ProposalValues = ProposalPlace & {
   readonly text: string;
   /** The discussion link, already checked to be http(s), or null. */
   readonly link: string | null;
+  /** Proposing a lapsed Proposal again (#74): that Proposal's id, whose draft this was written in. */
+  readonly again?: string;
+  /** The texts of the other versions to put on its ballot after it, as typed, in order. */
+  readonly versions?: readonly string[];
 };
+
+/** The draft target a lapsed Proposal is proposed again from: apart from its Atom's own draft. */
+export function againDraft(proposalId: string): string {
+  return `again:${proposalId}`;
+}
 
 /** The draft key of a removal of Atom `atom`, apart from any change drafted for it (#75). */
 export function removalDraft(atom: string): string {
@@ -50,10 +59,12 @@ export function addDraft(after: string | null): string {
 }
 
 /**
- * The private draft a Proposal is written in (spec §8): its Atom's for a
- * change, the removal's when its text is blank, or the add's for its spot.
+ * The private draft a Proposal is written in (spec §8): the lapsed
+ * Proposal's when proposing again, else its Atom's for a change, the
+ * removal's when its text is blank, or the add's for its spot.
  */
 function draftOf(values: ProposalValues, text: string): string {
+  if (values.again !== undefined) return againDraft(values.again);
   if ('target' in values) return addDraft(values.target.after);
   return text === '' ? removalDraft(values.atom) : values.atom;
 }
@@ -93,6 +104,21 @@ async function signFor(
   return signEvent(group.signingKey, draft);
 }
 
+/** One `version` of `proposal`, its text normalized as Atom text, signed by this device's member. */
+function signVersion(
+  services: ProposalServices,
+  groupId: string,
+  values: VersionValues,
+): Promise<SignedEvent> {
+  const body = { proposal: values.proposal, text: normalizeAtomText(values.text) };
+  return signFor(services, groupId, { type: 'version', group: groupId, ts: services.now(), body });
+}
+
+/** True when every record fits in a blob. */
+function allFit(events: readonly SignedEvent[]): boolean {
+  return events.every((event) => event.record.length <= MAX_PLAINTEXT_BYTES);
+}
+
 /**
  * Proposes new text for one Atom, its removal (blank text), or a new section
  * (#75), as this device's member of `groupId`. Every value is NFC-normalized
@@ -100,13 +126,17 @@ async function signFor(
  * (spec §4). Queuing the Proposal clears the private draft it was written in
  * in the same change. A Proposal whose record is too large for any blob is
  * refused before anything is queued, and its draft kept.
+ *
+ * Proposed again (#74), it carries the lapsed Proposal's other versions: one
+ * `version` of the new Proposal for each, queued after it in the same change,
+ * which clears the draft kept under {@link againDraft} instead.
  */
 export async function propose(
   services: ProposalServices,
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { title, why, link } = values;
+  const { title, why, link, versions = [] } = values;
   const text = normalizeAtomText(values.text);
   const place = 'target' in values ? { target: values.target } : { atom: values.atom };
   const body = {
@@ -122,8 +152,18 @@ export async function propose(
     ts: services.now(),
     body,
   });
-  if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, draftOf(values, text));
+  const others = await Promise.all(
+    versions.map((version) =>
+      signVersion(services, groupId, { proposal: event.id, text: version }),
+    ),
+  );
+  const events = [event, ...others];
+  if (!allFit(events)) return { outcome: 'too-large' };
+  await services.store.enqueueAll(
+    groupId,
+    events.map((signed) => signed.record),
+    draftOf(values, text),
+  );
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
 }
@@ -143,16 +183,11 @@ export async function addVersion(
   groupId: string,
   values: VersionValues,
 ): Promise<AddVersionResult> {
-  const { proposal } = values;
-  const body = { proposal, text: normalizeAtomText(values.text) };
-  const event = await signFor(services, groupId, {
-    type: 'version',
-    group: groupId,
-    ts: services.now(),
-    body,
-  });
-  if (event.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, body.text === '' ? undefined : proposal);
+  const event = await signVersion(services, groupId, values);
+  if (!allFit([event])) return { outcome: 'too-large' };
+  // A removal (blank text) is written in no draft, so it leaves the Proposal's own alone.
+  const draft = normalizeAtomText(values.text) === '' ? undefined : values.proposal;
+  await services.store.enqueue(groupId, event.record, draft);
   void services.sync.syncOnce();
   return { outcome: 'added', versionId: event.id };
 }

@@ -38,13 +38,32 @@ def test_the_size_cap_can_be_set() -> None:
     assert settings.max_db_bytes == 4096
 
 
+def test_the_mailbox_cap_defaults_to_sixty_four_mebibytes() -> None:
+    """Without RECONCILE_RELAY_MAX_MAILBOX_BYTES each mailbox holds 64 MiB (#141)."""
+    settings = Settings.from_env({"RECONCILE_RELAY_DB": "relay.db"})
+
+    assert settings.max_mailbox_bytes == 67_108_864
+    assert Settings(db_path=Path("relay.db")).max_mailbox_bytes == 67_108_864
+
+
+def test_the_mailbox_cap_can_be_set() -> None:
+    """RECONCILE_RELAY_MAX_MAILBOX_BYTES sets the cap in bytes, apart from the other."""
+    settings = Settings.from_env(
+        {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_MAX_MAILBOX_BYTES": "8192"}
+    )
+
+    assert settings.max_mailbox_bytes == 8192
+    assert settings.max_db_bytes == 1_073_741_824
+
+
+@pytest.mark.parametrize(
+    "variable", ["RECONCILE_RELAY_MAX_DB_BYTES", "RECONCILE_RELAY_MAX_MAILBOX_BYTES"]
+)
 @pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "1e9", "lots", "٣"])
-def test_a_bad_size_cap_is_refused(value: str) -> None:
-    """The cap must be a positive whole number of bytes."""
-    with pytest.raises(SettingsError, match="RECONCILE_RELAY_MAX_DB_BYTES"):
-        Settings.from_env(
-            {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_MAX_DB_BYTES": value}
-        )
+def test_a_bad_size_cap_is_refused(variable: str, value: str) -> None:
+    """Each cap must be a positive whole number of bytes, and the error names it."""
+    with pytest.raises(SettingsError, match=f"^{variable} must be a positive"):
+        Settings.from_env({"RECONCILE_RELAY_DB": "relay.db", variable: value})
 
 
 def test_from_env_reads_the_process_environment(

@@ -7,10 +7,12 @@ import { fold } from '../engine/fold';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { deadlineOf } from '../test/votes';
 import { createGroup } from './actions';
 import {
   addDraft,
   addVersion,
+  againDraft,
   castBallot,
   chooseLevel,
   propose,
@@ -215,6 +217,70 @@ describe('propose', () => {
     expect(await propose(device.services, groupId, values)).toEqual({
       outcome: 'too-large',
     });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
+describe('propose, again', () => {
+  const values = (atom: string): ProposalValues => ({
+    atom,
+    title: 'Quiet hours',
+    why: 'Why not.',
+    text: 'Quiet after 10pm.',
+    link: null,
+    again: 'lapsed-proposal',
+    versions: ['Quiet after midnight.', 'Quiet after eleven.'],
+  });
+
+  it('queues the proposal, then one version of it per other text, and clears the again draft', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const draft = { title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: '' };
+    await device.services.store.writeDraft(groupId, againDraft('lapsed-proposal'), draft);
+    await device.services.store.writeDraft(groupId, atom, draft);
+
+    const result = await propose(device.services, groupId, values(atom));
+
+    if (result.outcome !== 'proposed') throw new Error('Expected a Proposal.');
+    const queued = await outbox(device, groupId);
+    expect(queued.map((event) => event?.type)).toEqual(['proposal', 'version', 'version']);
+    expect(queued.slice(1).map((event) => event?.body)).toEqual([
+      { proposal: result.proposalId, text: 'Quiet after midnight.\n' },
+      { proposal: result.proposalId, text: 'Quiet after eleven.\n' },
+    ]);
+    const store = device.services.store;
+    expect(await store.readDraft(groupId, againDraft('lapsed-proposal'))).toBeUndefined();
+    expect(await store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('folds as a fresh Proposal with every version, and its own 7-day window', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.minute += 20_000;
+    const received = fake.minute;
+    const result = await propose(device.services, groupId, values(atom));
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    const [proposal] = state.proposals;
+    expect(proposal?.id).toBe(result.outcome === 'proposed' ? result.proposalId : '');
+    expect(proposal?.received).toBe(received);
+    expect(proposal?.deadline).toBe(deadlineOf(received));
+    expect(proposal?.versions.map((version) => version.text)).toEqual([
+      'Quiet after 10pm.\n',
+      'Quiet after midnight.\n',
+      'Quiet after eleven.\n',
+    ]);
+    expect(state.ignored).toEqual([]);
+  });
+
+  it('queues nothing when any version is too large for a blob', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const big = { ...values(atom), versions: ['Short.', 'x'.repeat(70_000)] };
+    expect(await propose(device.services, groupId, big)).toEqual({ outcome: 'too-large' });
     expect(await outbox(device, groupId)).toEqual([]);
   });
 });

@@ -1,11 +1,16 @@
 import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 
-import { type ComposeOutcome, textCheck, useSend } from '../app/compose';
+import { againStartOf, type ComposeOutcome, lapsed, textCheck, useSend } from '../app/compose';
 import { latestLink } from '../app/latestLink';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
-import type { ProposalPlace, ProposalValues, VersionValues } from '../app/proposals';
+import {
+  againDraft,
+  type ProposalPlace,
+  type ProposalValues,
+  type VersionValues,
+} from '../app/proposals';
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
@@ -34,6 +39,8 @@ export interface ComposerProps {
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
   /** Queues a version of the section's open Proposal, clearing its draft as it does. */
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
+  /** A lapsed Proposal to propose again on this section (#74), from the `again` route. */
+  readonly again?: Proposal;
 }
 
 /** Limits count code points after NFC (spec §4), never UTF-16 units as `maxLength` does. */
@@ -91,6 +98,13 @@ function toValues(draft: Draft, place: ProposalPlace): ProposalValues {
 /** Where a new composer starts: a blank title and why, the section's text, the latest link. */
 function startOf(state: GroupState, atom: Atom): Draft {
   return { title: '', why: '', text: atom.text, link: latestLink(state) ?? '' };
+}
+
+/** The entries as the Proposal takes them, and, proposing again, the other versions' texts too. */
+function valuesOf(draft: Draft, place: ProposalPlace, again: Proposal | undefined): ProposalValues {
+  const values = toValues(draft, place);
+  if (again === undefined) return values;
+  return { ...values, again: again.id, versions: again.versions.slice(1).map((v) => v.text) };
 }
 
 /** Where a new version starts: the text it rewords. A version keeps only its text. */
@@ -195,6 +209,46 @@ function Fields({ values, text, onChange }: FieldsProps) {
   );
 }
 
+/** One of the lapsed Proposal's other versions, as it will go on the new ballot. */
+function OtherVersion({ number, text }: { readonly number: number; readonly text: string }) {
+  const heading = useId();
+  return (
+    <section className="text-block" aria-labelledby={heading}>
+      <h3 id={heading} className="version-heading">
+        {messages.ballot.version(number)}
+      </h3>
+      {text === '' ? (
+        <p className="version-does">{messages.proposal.removes}</p>
+      ) : (
+        <AtomText text={text} className="atom-card" />
+      )}
+    </section>
+  );
+}
+
+/** "Also on the ballot": the versions after the first, which proposing again carries over. */
+function OtherVersions({ again }: { readonly again: Proposal | undefined }) {
+  const heading = useId();
+  const others = again?.versions.slice(1) ?? [];
+  if (others.length === 0) return null;
+  return (
+    <section className="text-block" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow">
+        {messages.composer.againVersions}
+      </h2>
+      <p className="caption">{messages.composer.againVersionsHint}</p>
+      {others.map((version, index) => (
+        <OtherVersion key={version.id} number={index + 2} text={version.text} />
+      ))}
+    </section>
+  );
+}
+
+/** Proposing again (#74): the line that says this repeats a lapsed Proposal, or nothing. */
+export function AgainLede({ again }: { readonly again: Proposal | undefined }) {
+  return again === undefined ? null : <p className="lede">{messages.composer.againLede}</p>;
+}
+
 /** The words of a Proposal's form: its heading, the tab's title and its button. */
 export interface FormWords {
   readonly title: string;
@@ -218,12 +272,15 @@ export interface ProposalFormProps {
   readonly intro: ReactNode;
   /** The text field, or null for a removal. */
   readonly text: TextEntry | null;
+  /** The lapsed Proposal this proposes again (#74), whose other versions it carries, or undefined. */
+  readonly again: Proposal | undefined;
 }
 
 /**
  * A Proposal's form: a title, a why, the text (unless it removes a section)
  * and a discussion link, kept as a private draft until it is proposed, with
- * Discard draft once it has changed. Submitting queues one `proposal`.
+ * Discard draft once it has changed. Submitting queues one `proposal`, and
+ * proposing again, one `version` for each of the lapsed Proposal's others.
  */
 export function ProposalForm(props: ProposalFormProps) {
   const { state, place, drafts, onPropose, words } = props;
@@ -236,7 +293,7 @@ export function ProposalForm(props: ProposalFormProps) {
   if (values === null) return null;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void run(toValues(values, place));
+    void run(valuesOf(values, place, props.again));
   };
   const change = (next: Draft) => {
     setSaid('');
@@ -255,6 +312,7 @@ export function ProposalForm(props: ProposalFormProps) {
       {draft.restored ? <p className="draft-note">{messages.composer.draftRestored}</p> : null}
       <Form ref={form} className="form" onSubmit={submit} validationErrors={refused}>
         <Fields values={values} text={props.text} onChange={change} />
+        <OtherVersions again={props.again} />
         <p className="caption">{messages.composer.visibility}</p>
         {failed ? (
           <p role="alert" className="form-error">
@@ -441,23 +499,36 @@ interface ChangeFormProps {
   readonly section: Section;
   readonly drafts: GroupDrafts;
   readonly onPropose: ComposerProps['onPropose'];
+  /** The lapsed Proposal this proposes again, or undefined for a new one. */
+  readonly again: Proposal | undefined;
 }
 
-/** "Propose a change": new text for one section, beside the section as it reads now. */
-function ChangeForm({ state, section, drafts, onPropose }: ChangeFormProps) {
+/**
+ * "Propose a change": new text for one section, beside the section as it
+ * reads now. Proposing again (#74), it starts from the lapsed Proposal, and
+ * its draft is kept under that Proposal, apart from the section's.
+ */
+function ChangeForm({ state, section, drafts, onPropose, again }: ChangeFormProps) {
   const { atom, number } = section;
   const { composer } = messages;
+  const title = again === undefined ? composer.title : composer.againTitle;
   return (
     <ProposalForm
       state={state}
       place={{ atom: atom.id }}
-      draftKey={atom.id}
-      start={startOf(state, atom)}
+      draftKey={again === undefined ? atom.id : againDraft(again.id)}
+      start={again === undefined ? startOf(state, atom) : againStartOf(state, again)}
       drafts={drafts}
       onPropose={onPropose}
-      words={{ title: composer.title, pageTitle: composer.pageTitle, submit: composer.submit }}
-      intro={<CurrentText atom={atom} section={number} />}
+      words={{ title, pageTitle: composer.pageTitle, submit: composer.submit }}
+      intro={
+        <>
+          <AgainLede again={again} />
+          <CurrentText atom={atom} section={number} />
+        </>
+      }
       text={{ label: composer.textLabel, hint: composer.textHint, validate: textCheck(atom.text) }}
+      again={again}
     />
   );
 }
@@ -473,6 +544,10 @@ function ChangeForm({ state, section, drafts, onPropose }: ChangeFormProps) {
  * does for the fold. What is typed is kept as a private draft on this device
  * until it is sent or discarded. Only someone who may propose sees a form
  * (`can()`).
+ *
+ * Proposing a lapsed Proposal again (#74) is the same form, starting from its
+ * title, why, text and link, with its other versions carried onto the new
+ * ballot. Its draft is kept under that Proposal, apart from the section's.
  */
 export function Composer(props: ComposerProps) {
   const { state, me, atomId, drafts } = props;
@@ -487,13 +562,15 @@ export function Composer(props: ComposerProps) {
     );
   }
   if (what.kind === 'change') {
+    const again = lapsed(props.again);
     return (
       <ChangeForm
-        key={atomId}
+        key={again?.id ?? atomId}
         state={state}
         section={what.section}
         drafts={drafts}
         onPropose={props.onPropose}
+        again={again}
       />
     );
   }

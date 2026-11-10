@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { authorOf, signedAs } from '../test/keys';
 import { can, DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from './capabilities';
 import type { EventDraft, ProposalBody, VoteBody } from './event';
-import { fold, type LogRecord, NOTE_MAX, TITLE_MAX, VOTE_WINDOW_MINUTES, WHY_MAX } from './fold';
+import { fold, type LogRecord, NOTE_MAX, proposalTally, TITLE_MAX, WHY_MAX } from './fold';
+import { DEFAULT_RULES, defaultWindowMinutes } from './rules';
 
 const R = 29_375_000;
+/** How long an ordinary vote runs when no one chooses, in relay minutes. */
+const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 
 /** Builds a relay-ordered log of events, one seq per event, each signed by its author's test key. */
 class TestLog {
@@ -47,6 +50,12 @@ class TestLog {
     const ts = received * 60_000;
     return this.add(received, author, { type: 'vote', group: this.group, ts, body });
   }
+
+  version(received: number, author: string, proposal: string, text: string): string {
+    const ts = received * 60_000;
+    const body = { proposal, text };
+    return this.add(received, author, { type: 'version', group: this.group, ts, body });
+  }
 }
 
 /** A group of ana (founder), ben and cal, with one Proposal by ana at R + 10. */
@@ -62,8 +71,7 @@ function threeMembersAndAProposal(body: Partial<ProposalBody> = {}): {
 }
 
 describe('fold constants', () => {
-  it('pins the vote window and the text caps', () => {
-    expect(VOTE_WINDOW_MINUTES).toBe(10_080);
+  it('pins the text caps', () => {
     expect(TITLE_MAX).toBe(120);
     expect(WHY_MAX).toBe(2_000);
     expect(NOTE_MAX).toBe(280);
@@ -74,6 +82,7 @@ describe('fold', () => {
   it('folds an empty log to an empty group', () => {
     expect(fold([], null)).toEqual({
       group: null,
+      rules: DEFAULT_RULES,
       name: '',
       chat: null,
       title: '',
@@ -161,7 +170,7 @@ describe('fold', () => {
     ]);
   });
 
-  it('carries a Proposal’s fields, its one version and its deadline', () => {
+  it('carries a Proposal’s fields, its class, its one version and its deadline', () => {
     const { log, proposal } = threeMembersAndAProposal({ link: 'https://chat.example/p' });
     expect(fold(log.records, R + 10).proposals).toEqual([
       {
@@ -175,13 +184,14 @@ describe('fold', () => {
         why: 'W',
         text: 'New',
         link: 'https://chat.example/p',
+        class: 'ordinary',
         deadline: R + 10 + 10_080,
         eligible: ['ana', 'ben', 'cal'].map(authorOf),
         versions: [{ id: proposal, author: authorOf('ana'), text: 'New' }],
         ballots: [],
         closedAt: null,
         final: false,
-        outcome: { kind: 'lapse' },
+        outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
       },
     ]);
   });
@@ -249,7 +259,7 @@ describe('fold', () => {
 
   it('accepts a ballot one minute before the deadline and ignores one at the deadline', () => {
     const { log, proposal } = threeMembersAndAProposal();
-    const deadline = R + 10 + VOTE_WINDOW_MINUTES;
+    const deadline = R + 10 + WINDOW;
     log.vote(deadline - 1, 'ben', { proposal, scores: { [proposal]: 4 } });
     log.vote(deadline, 'cal', { proposal, scores: { [proposal]: 4 } });
     const state = fold(log.records, deadline);
@@ -261,7 +271,35 @@ describe('fold', () => {
     const { log, proposal } = threeMembersAndAProposal();
     log.vote(R + 20, 'ana', { proposal, scores: { [proposal]: 4 } });
     const copy = log.records.map((r) => ({ ...r, bytes: r.bytes.slice() }));
-    fold(log.records, R + 20 + VOTE_WINDOW_MINUTES);
+    fold(log.records, R + 20 + WINDOW);
     expect(log.records).toEqual(copy);
+  });
+});
+
+describe('proposalTally', () => {
+  it('tallies each version’s latest scores, in ballot order, as the fold settles the outcome', () => {
+    const { log, proposal } = threeMembersAndAProposal();
+    const second = log.version(R + 11, 'ana', proposal, 'Other');
+    log.vote(R + 20, 'ana', { proposal, scores: { [proposal]: 4, [second]: 1 } });
+    log.vote(R + 21, 'ben', { proposal, scores: { [proposal]: 0, [second]: 3 }, note: 'No.' });
+    log.vote(R + 22, 'ben', { proposal, scores: { [proposal]: 2, [second]: 3 } });
+    const open = fold(log.records, R + 30).proposals[0];
+    if (open === undefined) throw new Error('Expected the Proposal.');
+    const detail = proposalTally(open);
+    expect(detail.bar).toEqual(DEFAULT_RULES.bars.ordinary);
+    expect(
+      detail.versions.map(({ id, scorers, sum, zeros, quorum }) => ({
+        id,
+        scorers,
+        sum,
+        zeros,
+        quorum,
+      })),
+    ).toEqual([
+      { id: proposal, scorers: 2, sum: 6, zeros: 0, quorum: 3 },
+      { id: second, scorers: 2, sum: 4, zeros: 0, quorum: 3 },
+    ]);
+    expect(detail.outcome).toEqual(open.outcome);
+    expect(detail.outcome).toEqual({ kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary });
   });
 });

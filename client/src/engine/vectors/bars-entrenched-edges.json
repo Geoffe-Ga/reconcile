@@ -1,0 +1,84 @@
+{
+  "kind": "tally",
+  "vectors": [
+    {
+      "name": "entrenched pass at an average of exactly 3.0",
+      "eligible": 4,
+      "bar": "entrenched",
+      "versions": [{ "id": "v1", "scores": [3, 3, 3, 3] }],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "entrenched fail just below an average of 3.0",
+      "eligible": 20,
+      "bar": "entrenched",
+      "versions": [
+        { "id": "v1", "scores": [2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "fail" }
+    },
+    {
+      "name": "entrenched fail at exactly 5% zeros",
+      "eligible": 20,
+      "bar": "entrenched",
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] }
+      ],
+      "expect": { "kind": "fail" }
+    },
+    {
+      "name": "entrenched pass with 21 scorers and one 0",
+      "eligible": 21,
+      "bar": "entrenched",
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] }
+      ],
+      "expect": { "kind": "pass", "version": "v1" }
+    },
+    {
+      "name": "an average of exactly 2.5 with no zeros fails the entrenched bar",
+      "eligible": 4,
+      "bar": "entrenched",
+      "versions": [{ "id": "v1", "scores": [2, 3, 2, 3] }],
+      "expect": { "kind": "fail" }
+    },
+    {
+      "name": "entrenched lapse below quorum",
+      "eligible": 10,
+      "bar": "entrenched",
+      "versions": [{ "id": "v1", "scores": [4, 4] }],
+      "expect": { "kind": "lapse" }
+    },
+    {
+      "name": "at 11 eligible, 3 entrenched scorers lapse and 4 meet quorum",
+      "eligible": 11,
+      "bar": "entrenched",
+      "versions": [
+        { "id": "v1", "scores": [4, 4, 4] },
+        { "id": "v2", "scores": [3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v2" }
+    },
+    {
+      "name": "at the entrenched bar, a version under 5% zeros beats a higher average with more",
+      "eligible": 15,
+      "bar": "entrenched",
+      "versions": [
+        { "id": "v1", "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] },
+        { "id": "v2", "scores": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "v2" }
+    },
+    {
+      "name": "a three-way tie at the entrenched bar goes to the earliest version",
+      "eligible": 3,
+      "bar": "entrenched",
+      "versions": [
+        { "id": "first", "scores": [3, 4, 4] },
+        { "id": "second", "scores": [4, 3, 4] },
+        { "id": "third", "scores": [4, 4, 3] }
+      ],
+      "expect": { "kind": "pass", "version": "first" }
+    }
+  ]
+}

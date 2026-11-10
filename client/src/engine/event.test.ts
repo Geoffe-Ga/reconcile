@@ -197,6 +197,12 @@ describe('parseEvent', () => {
     expect(level?.event.body).toEqual({ level: 'steward' });
   });
 
+  it('keeps a genesis’s rules as written, so the fold checks them against the defaults', () => {
+    const rules = { bars: { entrenched: { avgAtLeast: 1 } }, unknown: ['kept'] };
+    const body = { name: 'G', founder: 'A', title: 'T', atoms: [], rules };
+    expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual(body);
+  });
+
   it('keeps a join’s level as written, known or not, so the fold decides', () => {
     for (const level of [...LEVELS, 'admin', '']) {
       const parsed = parseEvent(json(envelope('join', { name: 'Ben', level })));
@@ -274,6 +280,21 @@ describe('parseEvent', () => {
       'genesis with a null chat',
       'genesis',
       { name: 'G', chat: null, founder: 'A', title: 'T', atoms: [] },
+    ],
+    [
+      'genesis with null rules',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: null },
+    ],
+    [
+      'genesis with a list of rules',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: [] },
+    ],
+    [
+      'genesis with rules as text',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: 'defaults' },
     ],
     ['genesis without a founder', 'genesis', { name: 'G', title: 'T', atoms: [] }],
     ['genesis without a name', 'genesis', { founder: 'A', title: 'T', atoms: [] }],

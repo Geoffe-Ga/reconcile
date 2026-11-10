@@ -6,7 +6,9 @@
  * because Vite's own JSON loader refuses the lone-surrogate escapes atom-text.json needs.
  * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
  *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, versions, expect}`.
+ * - A tally vector is `{name, eligible, bar?, versions, expect}`. `bar` names a class whose
+ *   bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
+ *   `expect` with that bar added.
  * - A fold vector is `{name, records, relayNow, expect, unchangedWithout?}`.
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
@@ -29,11 +31,17 @@ import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { concat, fromHex } from '../test/bytes';
 import { base64url, eventId } from './event';
 import { fold, type LogRecord } from './fold';
+import { DEFAULT_RULES, type ProposalClass } from './rules';
 import { tally, type TallyInput, type TallyOutcome } from './tally';
 
-interface TallyVector extends TallyInput {
+/** `Omit` applied to each member of a union, so each outcome kind keeps its own fields. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+interface TallyVector extends Omit<TallyInput, 'bar'> {
   readonly name: string;
-  readonly expect: TallyOutcome;
+  readonly bar?: ProposalClass;
+  /** The outcome without its bar, which the runner adds. */
+  readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
 }
 
 /** How a vector record departs from a plain record signed by its author. */
@@ -186,12 +194,18 @@ describe('vector files', () => {
   it('are the keys, then tally, fold or atom-text files', () => {
     expect(Object.keys(FILES).sort()).toEqual([
       './vectors/atom-text.json',
+      './vectors/bars-entrenched-edges.json',
+      './vectors/bars-ordinary-pairs.json',
       './vectors/fold.json',
       './vectors/keys.json',
       './vectors/levels-capabilities.json',
       './vectors/levels-eligible-count.json',
       './vectors/levels-step-down.json',
       './vectors/levels-step-up-after-open.json',
+      './vectors/rules-class-forged.json',
+      './vectors/rules-genesis-defaults.json',
+      './vectors/rules-genesis-differs.json',
+      './vectors/rules-genesis-missing.json',
       './vectors/sections-add.json',
       './vectors/sections-anchor-removed.json',
       './vectors/sections-pass-order.json',
@@ -207,8 +221,14 @@ describe('vector files', () => {
     ]);
     expect(Object.values(FILES).map((file) => file.kind)).toEqual([
       'atom-text',
+      'tally',
+      'tally',
       'fold',
       'keys',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -266,6 +286,12 @@ describe('vector files', () => {
     'at 11 eligible, 4 scorers meet quorum',
     'at 15 eligible, 4 scorers lapse',
     'at 15 eligible, 5 scorers meet quorum',
+    'entrenched pass at an average of exactly 3.0',
+    'entrenched fail at exactly 5% zeros',
+    'entrenched pass with 21 scorers and one 0',
+    'an average of exactly 2.5 with no zeros fails the entrenched bar',
+    'an average of exactly 2.5 with no zeros passes the ordinary bar',
+    'entrenched lapse below quorum',
   ])('include the tally vector "%s"', (name) => {
     expect(tallyVectors.map((vector) => vector.name)).toContain(name);
   });
@@ -335,6 +361,11 @@ describe('vector files', () => {
     'sections-anchor-removed: the Atoms are [A, B, C]; P1 adds D after B and P2 removes B; P2 closes early, before P1 reaches its deadline, so the Document ends as [A, C, D]',
     'passes apply in order of close time, not relay order: of two adds on one anchor, the one that closes later ends directly after it',
     "adds that close in the same minute apply in their Proposals' relay order, whatever order their closing ballots came in",
+    'a genesis without rules folds with DEFAULT_RULES',
+    "a Proposal's class is ordinary and its deadline is its received plus 7 × 1,440 minutes",
+    'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
+    'a genesis whose entrenched avgAtLeast is 1 forms no group',
+    'a Proposal that writes its own class, bar and deadline is still ordinary: 7 days, and a 2.5 average passes',
   ])('include the fold vector "%s"', (name) => {
     expect(foldVectors.map((vector) => vector.name)).toContain(name);
   });
@@ -342,7 +373,9 @@ describe('vector files', () => {
 
 describe('tally vectors', () => {
   it.each(tallyVectors.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    expect(tally(vector)).toEqual(vector.expect);
+    const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
+    const { eligible, versions } = vector;
+    expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
   });
 });
 

@@ -10,6 +10,10 @@ ADR-0019 allows it, endpoints and wake minutes, and nothing else:
 
 Neither holds a push key (no payload is sent), a timestamp or a counter.
 Adding a column needs an ADR.
+
+Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
+blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
+bytes reads that index alone and never a blob.
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ CREATE TABLE IF NOT EXISTS blobs (
 );
 CREATE INDEX IF NOT EXISTS blobs_by_mailbox ON blobs (mailbox, seq);
 CREATE INDEX IF NOT EXISTS blobs_by_expiry ON blobs (expiry);
+CREATE INDEX IF NOT EXISTS blobs_by_mailbox_size
+    ON blobs (mailbox, expiry, length(blob));
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -54,6 +60,12 @@ CREATE TABLE IF NOT EXISTS nudges (
     PRIMARY KEY (mailbox, due)
 ) WITHOUT ROWID;
 """
+
+# A mailbox's unexpired bytes. SQLite reads each length from
+# blobs_by_mailbox_size and never seeks the row that holds the blob.
+MAILBOX_BYTES_SQL = (
+    "SELECT coalesce(sum(length(blob)), 0) FROM blobs WHERE mailbox = ? AND expiry > ?"
+)
 
 
 def minute_of(unix_seconds: float) -> int:
@@ -118,6 +130,14 @@ class BlobStore:
             (mailbox, after, today, limit),
         ).fetchall()
         return [Record(seq, received, blob) for seq, received, blob in rows]
+
+    def mailbox_bytes(self, mailbox: str, *, today: int) -> int:
+        """Return the bytes of ``mailbox``'s unexpired blobs, as a GET counts them.
+
+        A blob stops counting on its expiry day, before the purge deletes it.
+        """
+        (used,) = self._db.execute(MAILBOX_BYTES_SQL, (mailbox, today)).fetchone()
+        return int(used)
 
     def delete_expired(self, today: int) -> int:
         """Delete every expired row; return how many.

@@ -17,7 +17,8 @@ export type Route =
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
   | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
-  | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string };
+  | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
+  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -38,14 +39,15 @@ const ID_PAGES: ReadonlyMap<string, readonly [RegExp, (groupId: string, id: stri
   new Map([
     ['propose', [ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId })]],
     ['p', [ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId })]],
+    ['again', [ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId })]],
     ['add', [ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after })]],
     ['remove', [ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId })]],
   ]);
 
 /**
- * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`, `add`
- * (a new first section), `add/{atomId}` (one after that Atom) or
- * `remove/{atomId}` (#75).
+ * A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `add` (a new first section), `add/{atomId}` (one after
+ * that Atom) or `remove/{atomId}` (#75).
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
@@ -88,6 +90,29 @@ function idPath(id: string | null): string {
   return id === null ? '' : `/${id}`;
 }
 
+/** A route inside one group. */
+type GroupRoute = Exclude<Route, { readonly name: 'start' | 'create' | 'join' }>;
+
+/** The path of a page inside a group, after `#/g/{groupId}`. */
+function groupPath(route: GroupRoute): string {
+  switch (route.name) {
+    case 'group':
+      return '';
+    case 'document':
+      return '/doc';
+    case 'propose':
+      return `/propose/${route.atomId}`;
+    case 'proposal':
+      return `/p/${route.proposalId}`;
+    case 'again':
+      return `/again/${route.proposalId}`;
+    case 'add':
+      return `/add${idPath(route.after)}`;
+    case 'remove':
+      return `/remove/${route.atomId}`;
+  }
+}
+
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
   switch (route.name) {
@@ -97,18 +122,8 @@ export function routeHref(route: Route): string {
       return '#/create';
     case 'join':
       return `#/join${idPath(route.payload)}`;
-    case 'group':
-      return `#/g/${route.groupId}`;
-    case 'document':
-      return `#/g/${route.groupId}/doc`;
-    case 'propose':
-      return `#/g/${route.groupId}/propose/${route.atomId}`;
-    case 'proposal':
-      return `#/g/${route.groupId}/p/${route.proposalId}`;
-    case 'add':
-      return `#/g/${route.groupId}/add${idPath(route.after)}`;
-    case 'remove':
-      return `#/g/${route.groupId}/remove/${route.atomId}`;
+    default:
+      return `#/g/${route.groupId}${groupPath(route)}`;
   }
 }
 

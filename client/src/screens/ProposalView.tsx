@@ -18,8 +18,11 @@ import { versionDoes, type VersionView, versionViews } from '../app/versionViews
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import { type ParsedEvent, type ProposalBody, targetOf } from '../engine/event';
-import type { GroupState, Proposal } from '../engine/fold';
+import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
+import type { OwnBallot } from '../engine/ownBallot';
+import { ConsentMeter } from './ConsentMeter';
+import { ResultView } from './ResultView';
 
 /** Props for {@link ProposalView}. */
 export interface ProposalViewProps {
@@ -35,8 +38,12 @@ export interface ProposalViewProps {
   readonly reachable: boolean;
   /** The relay's minute now, as this device estimates it. */
   readonly now: number;
+  /** Where this member's own ballot stands once it closes: a late one is named to them alone. */
+  readonly own: OwnBallot;
   /** Queues this member's ballot, a score for every version; rejects when it couldn't be saved. */
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
+  /** Opens the composer to propose this Proposal again, once it has lapsed. */
+  readonly onProposeAgain: () => void;
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -73,37 +80,6 @@ function Screen({ state, wide = false, children }: ScreenProps) {
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
       {children}
     </main>
-  );
-}
-
-/** A pass's sentence: it names the winning version when there were several, and says when it removed the section. */
-function passSentence(versions: number, winner: number, removed: boolean): string {
-  const { proposal } = messages;
-  if (removed) return versions > 1 ? proposal.passedVersionRemoval(winner) : proposal.passedRemoval;
-  return versions > 1 ? proposal.passedVersion(winner) : proposal.passed;
-}
-
-/**
- * The outcome sentence, first on a closed Proposal; a pass also names its
- * version and shows the new text, or says the section is gone (#75).
- */
-function Outcome({ proposal }: { readonly proposal: Proposal }) {
-  const { outcome, versions } = proposal;
-  if (outcome.kind === 'pass') {
-    const index = versions.findIndex((version) => version.id === outcome.version);
-    const text = versions[index]?.text ?? '';
-    return (
-      <Block title={messages.proposal.result} className="outcome">
-        <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
-        {text === '' ? null : <AtomText text={text} className="atom-card" />}
-      </Block>
-    );
-  }
-  const sentence = outcome.kind === 'fail' ? messages.proposal.failed : messages.proposal.lapsed;
-  return (
-    <Block title={messages.proposal.result} className="outcome">
-      <p className="outcome-sentence">{sentence}</p>
-    </Block>
   );
 }
 
@@ -216,6 +192,21 @@ interface VoteProps {
   readonly versions: readonly VersionView[];
 }
 
+/**
+ * Each version's consent meter while the vote is open, from the engine's
+ * tally of the ballots so far, and nothing once it has closed: the result
+ * gives the totals then.
+ */
+function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
+  const detail = proposal.final ? null : proposalTally(proposal);
+  return function MeterFor(version) {
+    const tallied = detail?.versions.find((candidate) => candidate.id === version.id);
+    return detail === null || tallied === undefined ? null : (
+      <ConsentMeter number={version.number} tally={tallied} bar={detail.bar} />
+    );
+  };
+}
+
 /** The versions, each with its own pills for someone who can vote on them, then "Add your version". */
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
@@ -223,6 +214,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
   const comparison = comparisonFor(state, changedAtom(proposal), passed);
   const reason = whyNoVote(props, proposal);
   const mine = myBallot(props, proposal);
+  const meters = metersFor(proposal);
   return (
     <Block title={comparison.title} className="vote">
       <Legend comparison={comparison} />
@@ -238,10 +230,13 @@ function Vote({ props, proposal, versions }: VoteProps) {
           pending={mine.pending}
           reachable={reachable}
           onVote={onVote}
+          below={meters}
         />
       ) : (
         <>
-          <VersionList versions={versions} current={comparison.current} />
+          <VersionList versions={versions} current={comparison.current}>
+            {meters}
+          </VersionList>
           <NoVote state={state} me={me} reason={reason} />
         </>
       )}
@@ -303,7 +298,15 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         title={proposal.title}
         pageTitle={pageTitle}
       />
-      {proposal.final ? <Outcome proposal={proposal} /> : null}
+      {proposal.final ? (
+        <ResultView
+          state={state}
+          proposal={proposal}
+          me={props.me}
+          own={props.own}
+          onProposeAgain={props.onProposeAgain}
+        />
+      ) : null}
       <div className="stack">
         <Byline state={state} proposal={proposal} now={now} />
         <p className="lede" dir="auto">
@@ -371,8 +374,8 @@ function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
  * side, each a word diff of the section's source with its own score pills,
  * and Add your version while the ballot has room. Who may vote, and whether
  * voting is still open, come from engine state and `can()`, never from level
- * names. Once it closes, the outcome sentence comes first, naming the winning
- * version when there were several.
+ * names. While it's open, each version has a consent meter. Once it closes,
+ * the result comes first: the outcome sentence, totals and ballots.
  */
 export function ProposalView(props: ProposalViewProps) {
   const { state, proposalId, pending, reachable } = props;

@@ -154,6 +154,12 @@ export const messages = {
       'Your draft stays on this device until you add it. Then everyone in your group sees your version and that you wrote it.',
     versionSubmit: 'Add your version',
     versionFailed: 'Your version couldn’t be saved on this device. Try again.',
+    againTitle: 'Propose again',
+    againLede:
+      'This opens a new vote on the same wording, with a fresh window. Change anything you like first.',
+    againVersions: 'Also on the ballot',
+    againVersionsHint:
+      'These versions go on the new ballot after yours. Your group sees that you added them.',
     fullTitle: 'This ballot is full',
     full: 'This ballot already has three versions.',
     addPageTitle: 'Add a section',
@@ -197,15 +203,6 @@ export const messages = {
     addVersion: 'Add your version',
     ballotFull: 'This ballot already has three versions.',
     yourVersion: 'Your version',
-    result: 'Result',
-    passed: 'This passed. The Document now reads:',
-    passedVersion: (version: number) =>
-      `Version ${String(version)} passed. The Document now reads:`,
-    passedRemoval: 'This passed. The Document no longer has this section.',
-    passedVersionRemoval: (version: number) =>
-      `Version ${String(version)} passed. The Document no longer has this section.`,
-    failed: 'This didn’t pass.',
-    lapsed: 'Not enough people weighed in. This isn’t a no.',
     joinedAfter: 'You joined after this opened, so you can’t vote on it.',
     notVotingLevel: 'You weren’t at a voting level when this opened, so you can’t vote on it.',
     missingTitle: 'This Proposal isn’t on this device',
@@ -221,12 +218,87 @@ export const messages = {
     scoreMissing: 'Choose a score from 0 to 4.',
     noteLabel: 'Note (optional)',
     reasonLabel: 'Your reason for a 0',
+    betterLabel: 'What would make this a 3 for you?',
     noteMissing: 'Add your reason for the 0.',
     noteTooLong: (max: number) => `Keep the note to ${count(max)} characters or fewer.`,
     submit: 'Send your vote',
     update: 'Update your vote',
     closed: 'Voting has closed, so this ballot can’t change.',
     failed: 'Your vote couldn’t be saved on this device. Try again.',
+  },
+  meter: {
+    /** The meter's eyebrow, over each version's two bars while the vote is open. */
+    title: 'So far',
+    label: (version: number) => `How version ${String(version)} stands so far`,
+    average: 'Average',
+    zeros: 'Zeros',
+    /** The line the average must reach, from the bar, such as "needs 2.5". */
+    averageLine: (line: string) => `needs ${line}`,
+    /** The share of zeros it must stay under, from the bar, such as "under 8%". */
+    zeroLine: (line: string) => `under ${line}`,
+    percent: (percent: number) => `${count(percent)}%`,
+    /** A bar's value, then how it stands against its line: "1.9 · Short by 0.1". */
+    reading: (value: string, standing: string) => `${value} · ${standing}`,
+    passes: 'Passes',
+    short: (gap: string) => `Short by ${gap}`,
+    tooManyZeros: (zeros: number, scorers: number) =>
+      `Too many zeros: ${count(zeros)} of ${count(scorers)}`,
+    noScores: 'No scores yet',
+    scoredBy: (scorers: number, quorum: number) =>
+      `Scored by ${count(scorers)} · needs ${count(quorum)}`,
+  },
+  result: {
+    title: 'Result',
+    passed: 'This passed. The Document now reads:',
+    passedVersion: (version: number) =>
+      `Version ${String(version)} passed. The Document now reads:`,
+    passedRemoval: 'This passed. The Document no longer has this section.',
+    passedVersionRemoval: (version: number) =>
+      `Version ${String(version)} passed. The Document no longer has this section.`,
+    failed: 'This didn’t pass.',
+    failedVersions: 'No version passed.',
+    lapsed: 'Not enough people weighed in. This isn’t a no.',
+    /** Before the names of the winning version's author, and the proposer if someone else. */
+    thanks: 'Thank you,',
+    and: 'and',
+    end: '.',
+    late: 'Your vote arrived after voting closed and wasn’t counted.',
+    proposeAgain: 'Propose again',
+    busy: 'This section has an open Proposal now. You can propose this again once it closes.',
+    /** A version's unmet condition, such as "Version 2: too many zeros: 2 of 12." */
+    unmet: (version: number, condition: string) => `Version ${String(version)}: ${condition}`,
+    belowQuorum: (scorers: number, quorum: number) =>
+      `Scored by ${count(scorers)}, but it needed ${count(quorum)}.`,
+    shortOf: (average: string, line: string, gap: string) =>
+      `Its average was ${average}, short of ${line} by ${gap}.`,
+    tooManyZeros: (zeros: number, scorers: number) =>
+      `Too many zeros: ${count(zeros)} of ${count(scorers)}.`,
+    totals: 'Totals',
+    /** One version's totals, such as "Scored by 5 · average 2.6 · 1 zero". */
+    totalsLine: (scorers: number, average: string, zeros: number) =>
+      `Scored by ${count(scorers)} · average ${average} · ${
+        zeros === 0 ? 'no zeros' : zeros === 1 ? '1 zero' : `${count(zeros)} zeros`
+      }`,
+    noScores: 'Nobody scored it.',
+    ballots: (n: number) =>
+      n === 1 ? 'Individual ballots (1)' : `Individual ballots (${count(n)})`,
+    noBallots: 'Nobody voted.',
+    /** A score with its label, such as "3 · Supportive". */
+    scored: (score: number, label: string) => `${String(score)} · ${label}`,
+    /** One score on a ballot of several versions, such as "Version 1: 3 · Supportive". */
+    scoreOn: (version: number, score: string) => `Version ${String(version)}: ${score}`,
+    unscored: (version: number) => `Version ${String(version)}: not scored`,
+    /** "Voting ran <start> – <end>.", its two times each in a `<time>` element. */
+    ranFrom: 'Voting ran',
+    ranTo: '–',
+    ranEnd: '.',
+    ranEarlyEnd: ', when everyone had voted.',
+  },
+  decided: {
+    title: 'Decided',
+    empty: 'Nothing decided yet.',
+    /** Each outcome as the Decided list names it. */
+    outcomes: { pass: 'Passed', fail: 'Didn’t pass', lapse: 'Lapsed' },
   },
   send: {
     sending: 'Sending…',

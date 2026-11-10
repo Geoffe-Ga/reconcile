@@ -8,10 +8,10 @@
 import { type SyntheticEvent, useId } from 'react';
 import { Button, Form } from 'react-aria-components';
 
-import { textCheck, useSend } from '../app/compose';
+import { againStartOf, lapsed, textCheck, useSend } from '../app/compose';
 import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
-import { addDraft, removalDraft, type VersionValues } from '../app/proposals';
+import { addDraft, againDraft, removalDraft, type VersionValues } from '../app/proposals';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
@@ -19,7 +19,7 @@ import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { GroupDrafts } from '../store/drafts';
-import { type ComposerProps, CurrentText, ProposalForm, Unavailable } from './Composer';
+import { AgainLede, type ComposerProps, CurrentText, ProposalForm, Unavailable } from './Composer';
 
 /** Props for {@link AddSection}. */
 export interface AddSectionProps {
@@ -29,11 +29,24 @@ export interface AddSectionProps {
   readonly after: string | null;
   readonly drafts: GroupDrafts;
   readonly onPropose: ComposerProps['onPropose'];
+  /** A lapsed add to propose again (#74), from the `again` route. */
+  readonly again?: Proposal;
 }
 
-/** A new section's draft starts with a blank title, why and text, and the group's latest link. */
-function addStart(state: GroupState) {
+/** A blank title, why and text, and the group's latest link: where a new add or removal starts. */
+function blankStart(state: GroupState) {
   return { title: '', why: '', text: '', link: latestLink(state) ?? '' };
+}
+
+/** How a form starts, and the draft it's kept in: fresh, or proposing a lapsed one again (#74). */
+function formStart(state: GroupState, draftKey: string, again: Proposal | undefined) {
+  if (again === undefined) return { draftKey, start: blankStart(state) };
+  return { draftKey: againDraft(again.id), start: againStartOf(state, again) };
+}
+
+/** A form's words; its heading reads Propose again when it repeats a lapsed Proposal. */
+function formWords(title: string, pageTitle: string, submit: string, again: Proposal | undefined) {
+  return { title: again === undefined ? title : messages.composer.againTitle, pageTitle, submit };
 }
 
 /** Where the new section goes, and the section it follows as it reads now. */
@@ -53,8 +66,9 @@ function AddIntro({ anchor }: { readonly anchor: { atom: Atom; number: number } 
  * Atom): a title, a why, the new section's text, starting empty, and a
  * discussion link. Submitting queues one add Proposal, which the fold places
  * after its anchor once it passes, or at the end if the anchor is gone by then.
+ * Proposing a lapsed add again (#74) starts from it and carries its versions.
  */
-export function AddSection({ state, me, after, drafts, onPropose }: AddSectionProps) {
+export function AddSection({ state, me, after, drafts, onPropose, ...props }: AddSectionProps) {
   const index = after === null ? -1 : state.atoms.findIndex((atom) => atom.id === after);
   const atom = state.atoms[index];
   const { composer } = messages;
@@ -67,21 +81,25 @@ export function AddSection({ state, me, after, drafts, onPropose }: AddSectionPr
     );
   }
   const anchor = atom === undefined ? null : { atom, number: index + 1 };
+  const again = lapsed(props.again);
+  const { draftKey, start } = formStart(state, addDraft(after), again);
   return (
     <ProposalForm
-      key={addDraft(after)}
+      key={draftKey}
       state={state}
       place={{ target: { kind: 'add', after } }}
-      draftKey={addDraft(after)}
-      start={addStart(state)}
+      draftKey={draftKey}
+      start={start}
       drafts={drafts}
       onPropose={onPropose}
-      words={{
-        title: composer.addTitle,
-        pageTitle: composer.addPageTitle,
-        submit: composer.addSubmit,
-      }}
-      intro={<AddIntro anchor={anchor} />}
+      words={formWords(composer.addTitle, composer.addPageTitle, composer.addSubmit, again)}
+      intro={
+        <>
+          <AgainLede again={again} />
+          <AddIntro anchor={anchor} />
+        </>
+      }
+      again={again}
       text={{
         label: composer.addTextLabel,
         hint: composer.addTextHint,
@@ -113,6 +131,8 @@ export interface RemoveSectionProps {
   readonly drafts: GroupDrafts;
   readonly onPropose: ComposerProps['onPropose'];
   readonly onAddVersion: ComposerProps['onAddVersion'];
+  /** A lapsed removal to propose again (#74), from the `again` route. */
+  readonly again?: Proposal;
 }
 
 interface RemovalVersionProps {
@@ -204,27 +224,32 @@ export function RemoveSection(props: RemoveSectionProps) {
       />
     );
   }
+  const again = lapsed(props.again);
+  const { draftKey, start } = formStart(state, removalDraft(atomId), again);
   return (
     <ProposalForm
-      key={removalDraft(atomId)}
+      key={draftKey}
       state={state}
       place={{ atom: atomId }}
-      draftKey={removalDraft(atomId)}
-      start={{ title: '', why: '', text: '', link: latestLink(state) ?? '' }}
+      draftKey={draftKey}
+      start={start}
       drafts={drafts}
       onPropose={props.onPropose}
-      words={{
-        title: composer.removeTitle,
-        pageTitle: composer.removePageTitle,
-        submit: composer.removeSubmit,
-      }}
+      words={formWords(
+        composer.removeTitle,
+        composer.removePageTitle,
+        composer.removeSubmit,
+        again,
+      )}
       intro={
         <>
+          <AgainLede again={again} />
           <p className="lede">{composer.removeLede}</p>
           <StruckSection atom={atom} section={index + 1} />
         </>
       }
       text={null}
+      again={again}
     />
   );
 }

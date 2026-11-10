@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { LEVELS } from '../engine/capabilities';
 import { messages } from './messages';
 
-/** Every string in the catalog, with functions called on a sample argument. */
+/** Every string in the catalog, with functions called on sample arguments, one per parameter. */
 function allStrings(node: unknown, path = 'messages'): [string, string][] {
   if (typeof node === 'string') return [[path, node]];
   if (typeof node === 'function') {
-    const result: unknown = (node as (arg: string) => unknown)('Sample');
+    const samples = Array.from({ length: (node as () => unknown).length }, () => 'Sample');
+    const result: unknown = (node as (...args: string[]) => unknown)(...samples);
     return allStrings(result, `${path}()`);
   }
   return Object.entries(node as Record<string, unknown>).flatMap(([key, value]) =>

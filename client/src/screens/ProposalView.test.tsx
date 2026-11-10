@@ -12,6 +12,7 @@ import {
   type Score,
 } from '../engine/event';
 import type { GroupState } from '../engine/fold';
+import type { OwnBallot } from '../engine/ownBallot';
 import { axeViolations } from '../test/axe';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
@@ -28,6 +29,7 @@ interface Setup {
   readonly now?: number;
   readonly pending?: readonly ParsedEvent[];
   readonly reachable?: boolean;
+  readonly own?: OwnBallot;
 }
 
 function setup({
@@ -37,8 +39,10 @@ function setup({
   now,
   pending = [],
   reachable = true,
+  own = 'none',
 }: Setup) {
   const onVote = vi.fn<OnVote>(() => Promise.resolve());
+  const onProposeAgain = vi.fn();
   const props: ProposalViewProps = {
     state,
     me,
@@ -46,13 +50,15 @@ function setup({
     pending,
     reachable,
     now: now ?? START_MINUTE + 60,
+    own,
     onVote,
+    onProposeAgain,
   };
   const view = render(<ProposalView {...props} />);
   const rerender = (next: Partial<ProposalViewProps>) => {
     view.rerender(<ProposalView {...props} {...next} />);
   };
-  return { user: userEvent.setup(), onVote, rerender };
+  return { user: userEvent.setup(), onVote, onProposeAgain, rerender };
 }
 
 /** An event as `useGroup` lists it while it waits in the outbox. */
@@ -307,8 +313,11 @@ describe('ProposalView', () => {
     const ballot = screen.getByRole('region', { name: 'On the ballot' });
     expect(ballot.querySelector('.word-diff')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
-    expect(screen.getByText('Voting closed')).toBeVisible();
-    expect(screen.getByText(formatMinute(START_MINUTE + 30)).tagName).toBe('TIME');
+    const countdown = screen.getByText('Voting closed').closest('.countdown');
+    expect(countdown).toBeVisible();
+    expect(
+      within(countdown as HTMLElement).getByText(formatMinute(START_MINUTE + 30)).tagName,
+    ).toBe('TIME');
     expect(screen.getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
     for (const radio of radios()) expect(radio).toBeDisabled();
     expect(await axeViolations()).toEqual([]);
@@ -615,18 +624,22 @@ describe('ProposalView, adding and removing sections', () => {
     expect(state.atoms).toEqual([]);
     const { rerender } = setup({ state, proposalId: alone });
     const result = screen.getByRole('region', { name: 'Result' });
-    expect(
-      within(result)
-        .getAllByRole('paragraph')
-        .map((p) => p.textContent),
-    ).toEqual(['This passed. The Document no longer has this section.']);
+    expect(result.querySelector('.outcome-sentence')).toHaveTextContent(
+      /^This passed\. The Document no longer has this section\.$/,
+    );
+    expect(result.querySelector('.atom-card')).toBeNull();
+    expect(within(result).getByText('Thank you,', { exact: false })).toHaveTextContent(
+      'Thank you, Ana.',
+    );
     const onBallot = screen.getByRole('region', { name: 'On the ballot' });
     expect(within(onBallot).getByText('Removes this section')).toBeVisible();
     expect(onBallot.querySelector('.atom-card')).toBeNull();
     rerender({ proposalId: shared });
-    expect(screen.getByRole('region', { name: 'Result' })).toHaveTextContent(
-      /^ResultVersion 2 passed\. The Document no longer has this section\.$/,
+    const shown = screen.getByRole('region', { name: 'Result' });
+    expect(shown.querySelector('.outcome-sentence')).toHaveTextContent(
+      /^Version 2 passed\. The Document no longer has this section\.$/,
     );
+    expect(shown.querySelector('.atom-card')).toBeNull();
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -643,6 +656,70 @@ describe('ProposalView, adding and removing sections', () => {
     const block = screen.getByRole('region', { name: 'New section' });
     expect(within(block).getByText('Adds a section at the start')).toBeVisible();
     expect(side(block, 'ins')).toBe('Quiet after 11pm.');
+  });
+});
+
+describe('ProposalView, the consent meter and the result', () => {
+  const meter = (n: number) =>
+    screen.getByRole('group', { name: `How version ${String(n)} stands so far` });
+
+  it('shows each version’s consent meter on an open ballot, live from the ballots so far', async () => {
+    const { log, proposalId, ids } = versionsVote(2);
+    const [first = '', second = ''] = ids;
+    log.ballot('ana', proposalId, { [first]: 4, [second]: 0 }, 'Too late.');
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    const one = within(screen.getByRole('region', { name: 'Version 1 · Ana' }));
+    expect(one.getByRole('group', { name: 'How version 1 stands so far' })).toBe(meter(1));
+    const [average1] = within(meter(1)).getAllByRole('meter');
+    expect(average1).toHaveAttribute('aria-valuetext', '4.0 · Passes');
+    expect(meter(1)).toHaveTextContent('Scored by 1 · needs 3');
+    const [, zeros2] = within(meter(2)).getAllByRole('meter');
+    expect(zeros2).toHaveAttribute('aria-valuetext', '100% · Too many zeros: 1 of 1');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the meters to someone who can’t vote, too', () => {
+    const { log, proposalId } = openVote();
+    log.join('Cy');
+    setup({ state: log.state(), proposalId, me: authorOf('cy') });
+    expect(radios()).toEqual([]);
+    expect(meter(1)).toHaveTextContent('No scores yet');
+  });
+
+  it('shows no meter once the vote has closed, and leads with the result instead', () => {
+    const { log, proposalId } = openVote();
+    log.vote('ana', proposalId, 3);
+    log.vote('ben', proposalId, 4);
+    setup({ state: log.state(), proposalId });
+    expect(screen.queryByRole('group', { name: /stands so far/ })).not.toBeInTheDocument();
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText('Thank you,', { exact: false })).toHaveTextContent(
+      'Thank you, Ana.',
+    );
+    expect(within(result).getByRole('list', { name: 'Totals' })).toHaveTextContent(
+      'Scored by 2 · average 3.5 · no zeros',
+    );
+  });
+
+  it('tells this member when their ballot reached the relay too late to count', () => {
+    const { log, proposalId } = openVote();
+    const deadline = deadlineOf(START_MINUTE);
+    setup({ state: log.state(deadline), proposalId, now: deadline, own: 'late' });
+    expect(
+      screen.getByText('Your vote arrived after voting closed and wasn’t counted.'),
+    ).toBeVisible();
+  });
+
+  it('proposes a lapsed Proposal again from its result', async () => {
+    const { log, proposalId } = openVote();
+    const deadline = deadlineOf(START_MINUTE);
+    const { user, onProposeAgain } = setup({
+      state: log.state(deadline),
+      proposalId,
+      now: deadline,
+    });
+    await user.click(screen.getByRole('button', { name: 'Propose again' }));
+    expect(onProposeAgain).toHaveBeenCalledTimes(1);
   });
 });
 

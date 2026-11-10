@@ -5,11 +5,29 @@
 import { useRef, useState } from 'react';
 
 import { normalizeAtomText } from '../engine/atomText';
+import type { GroupState, Proposal } from '../engine/fold';
+import type { Draft } from '../store/drafts';
+import { latestLink } from './latestLink';
 import { messages } from './messages';
 import type { DraftState } from './useDraft';
 
 /** How sending went: `proposed` and `added` move on to the Proposal; the others stay on the form. */
 export type ComposeOutcome = 'proposed' | 'added' | 'too-large' | 'failed';
+
+/** `again` when its vote lapsed, which Propose again repeats (ADR-0069), else undefined. */
+export function lapsed(again: Proposal | undefined): Proposal | undefined {
+  return again?.final === true && again.outcome.kind === 'lapse' ? again : undefined;
+}
+
+/** Where proposing again starts: the lapsed Proposal's title, why, text and link. */
+export function againStartOf(state: GroupState, again: Proposal): Draft {
+  return {
+    title: again.title,
+    why: again.why,
+    text: again.text,
+    link: again.link ?? latestLink(state) ?? '',
+  };
+}
 
 /** Refuses blank text, and text that normalizes to the section's own (spec §4). */
 export function textCheck(current: string, missing: string = messages.composer.textMissing) {

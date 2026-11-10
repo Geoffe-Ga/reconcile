@@ -10,9 +10,17 @@ keep the receipt minutes honest, which #63's deadline rule relies on:
 
 - A GET reads the clock before it selects, so every record it leaves out
   has ``received`` >= the ``now`` it returns.
-- A PUT reads the clock only after its whole body has arrived, with no
-  ``await`` between that and the insert, so a slow upload can't be stamped
-  earlier than a GET that ran while it was still arriving.
+- A PUT stamps its record with a clock read taken only after its whole body
+  has arrived, with no ``await`` between that and the insert, so a slow
+  upload can't be stamped earlier than a GET that ran while it was still
+  arriving.
+
+Storage caps. A blob PUT gets 507 ``storage_full`` once the database and its
+WAL pass ``max_db_bytes``, and 507 ``mailbox_full`` when it would take its
+mailbox's unexpired blobs past ``max_mailbox_bytes`` (#141). Both are checked
+on the declared length, before the body is read. The mailbox cap is checked
+again just before the insert, with no ``await`` between, so uploads that were
+in flight together can't carry a mailbox past it.
 
 Push (#89, ``reconcile.relay.push``). With a VAPID key set, devices register
 push endpoints and schedule nudges under ``/v1/push/``, a blob PUT with
@@ -179,14 +187,26 @@ class _Mailboxes:
         _check_media_type(request.headers, OCTET_STREAM)
         length = _blob_length(request.headers)
         _check_space(self.store, self.settings)
+        self._check_room(mailbox, length, self.clock())
         blob = await _read_body(request, length)
         now = self.clock()  # only after the body: see the module docstring
+        self._check_room(mailbox, length, now)  # another PUT may have landed
         seq = self.store.append(
             mailbox, blob, received=minute_of(now), expiry=day_of(now) + ttl_days + 1
         )
         if wake and self.wakes:
             self.store.add_wake(mailbox, minute_of(now), today=day_of(now))
         return JSONResponse({"seq": seq}, status_code=201)
+
+    def _check_room(self, mailbox: str, length: int, now: float) -> None:
+        """507 ``mailbox_full`` if ``length`` more bytes would pass the mailbox cap.
+
+        Only blobs unexpired at ``now`` count, so a mailbox makes room as its
+        blobs expire. The body is constant: it never names the mailbox.
+        """
+        used = self.store.mailbox_bytes(mailbox, today=day_of(now))
+        if used + length > self.settings.max_mailbox_bytes:
+            raise RelayError(507, "mailbox_full")
 
     async def get(self, mailbox: str, request: Request) -> JSONResponse:
         """Return unexpired records after a seq, ascending, with ``now``."""

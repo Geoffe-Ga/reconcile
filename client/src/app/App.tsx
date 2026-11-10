@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
+import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DocumentView } from '../screens/DocumentView';
@@ -207,6 +208,20 @@ function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
   );
 }
 
+/**
+ * Propose again (#74): the composer for what the lapsed Proposal targets,
+ * starting from it. A change opens the composer on its section, a removal the
+ * removal composer, and an add Add a section at its spot (#75).
+ */
+function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
+  const again = props.state.proposals.find((proposal) => proposal.id === againId);
+  if (again === undefined) return <Composer {...props} atomId="" />;
+  const { target } = again;
+  if (target.kind === 'add') return <AddSection {...props} after={target.after} again={again} />;
+  if (again.text === '') return <RemoveSection {...props} atomId={again.atom} again={again} />;
+  return <Composer {...props} atomId={again.atom} again={again} />;
+}
+
 interface ProposalScreenProps extends GroupScreenProps {
   readonly proposalId: string;
 }
@@ -219,6 +234,9 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const author = group.me.author;
         const onVote = (scores: Scores, note: string) =>
           castBallot(services, groupId, { proposal: proposalId, scores, note });
+        const onProposeAgain = () => {
+          navigate({ name: 'again', groupId, proposalId });
+        };
         return (
           <ProposalView
             state={group.state}
@@ -227,12 +245,31 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             pending={group.pending}
             reachable={group.reachable}
             now={relayMinuteNow(group, deviceNow)}
+            own={ownBallot(group.state, group.log, proposalId, author)}
             onVote={onVote}
+            onProposeAgain={onProposeAgain}
           />
         );
       }}
     </GroupGate>
   );
+}
+
+/** A route that opens a composer. */
+type ComposeRoute = Extract<Route, { readonly name: 'propose' | 'add' | 'remove' | 'again' }>;
+
+/** The composer a route opens, given what every composer is handed. */
+function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
+  switch (route.name) {
+    case 'propose':
+      return (props) => <Composer {...props} atomId={route.atomId} />;
+    case 'add':
+      return (props) => <AddSection {...props} after={route.after} />;
+    case 'remove':
+      return (props) => <RemoveSection {...props} atomId={route.atomId} />;
+    case 'again':
+      return (props) => <ProposeAgain {...props} againId={route.proposalId} />;
+  }
 }
 
 interface ScreenProps {
@@ -271,27 +308,15 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
       return <GroupScreen services={services} groupId={route.groupId} />;
     case 'document':
       return <DocumentScreen services={services} groupId={route.groupId} />;
-    case 'propose':
-      return (
-        <ComposeScreen services={services} groupId={route.groupId}>
-          {(props) => <Composer {...props} atomId={route.atomId} />}
-        </ComposeScreen>
-      );
-    case 'add':
-      return (
-        <ComposeScreen services={services} groupId={route.groupId}>
-          {(props) => <AddSection {...props} after={route.after} />}
-        </ComposeScreen>
-      );
-    case 'remove':
-      return (
-        <ComposeScreen services={services} groupId={route.groupId}>
-          {(props) => <RemoveSection {...props} atomId={route.atomId} />}
-        </ComposeScreen>
-      );
     case 'proposal':
       return (
         <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />
+      );
+    default:
+      return (
+        <ComposeScreen services={services} groupId={route.groupId}>
+          {composerFor(route)}
+        </ComposeScreen>
       );
   }
 }

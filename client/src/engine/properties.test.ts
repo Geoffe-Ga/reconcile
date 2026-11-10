@@ -3,7 +3,8 @@
  * records builds the same state, the Document changes only on a final pass, a level change
  * never reaches back into a Proposal that's already open, an Atom never has two open
  * Proposals or a ballot more than three versions, and adds and removals (#75) only ever add
- * or take out whole Atoms.
+ * or take out whole Atoms. And of the bars (#94): the entrenched bar is never easier than
+ * the ordinary one, and neither depends on the order ballots arrive in.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -12,9 +13,13 @@ import { signedAs } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
-import { fold, type LogRecord, VOTE_WINDOW_MINUTES } from './fold';
+import { fold, type LogRecord } from './fold';
+import { type Bar, DEFAULT_RULES, defaultWindowMinutes } from './rules';
+import { tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
+/** How long an ordinary vote runs when no one chooses, in relay minutes. */
+const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 const encoder = new TextEncoder();
 
 /** Member `i`'s test key name. Member 0 founds the group. */
@@ -90,8 +95,8 @@ class Log {
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
-  fc.integer({ min: 0, max: VOTE_WINDOW_MINUTES + 100 }),
-  fc.integer({ min: VOTE_WINDOW_MINUTES + 19, max: VOTE_WINDOW_MINUTES + 21 }),
+  fc.integer({ min: 0, max: WINDOW + 100 }),
+  fc.integer({ min: WINDOW + 19, max: WINDOW + 21 }),
 );
 
 /** A group size, and for each member a score (0–4) or no ballot. */
@@ -293,6 +298,20 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
+    fc.assert(
+      fc.property(arbitraryLog, ({ records, relayNow }) => {
+        const { proposals, rules } = fold(records, relayNow);
+        for (const p of proposals) {
+          // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
+          expect(p.class).toBe('ordinary');
+          expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
+          expect(p.outcome.bar).toEqual(rules.bars[p.class]);
+        }
+      }),
+    );
+  });
+
   it('changes only the target Atom on a final pass, removing it for "", and no Atom on a fail or lapse', () => {
     const scenario = fc.record({
       atoms: fc.array(fc.string({ unit: 'grapheme', maxLength: 12 }), {
@@ -425,3 +444,87 @@ const arbitraryLog = fc
     }
     return { records: log.records, relayNow: after === null ? null : received + after };
   });
+
+/**
+ * A ballot set: each voter's row scores some of up to three versions (null: not scored), and the
+ * eligible count is at least the number of voters.
+ */
+const ballotSet = fc
+  .record({
+    versions: fc.integer({ min: 1, max: VERSIONS_MAX }),
+    rows: fc.array(fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }), {
+      maxLength: 30,
+    }),
+    absent: fc.nat({ max: 30 }),
+  })
+  .map(({ versions, rows, absent }) => ({
+    eligible: rows.length + absent,
+    rows: rows.map((row) => row.slice(0, versions)),
+    versions,
+  }));
+
+type Rows = readonly (readonly (Score | null)[])[];
+
+/** The tally input for `rows`: version `v` gets each row's score for it, in row order. */
+function ballots(eligible: number, versions: number, rows: Rows): Omit<TallyInput, 'bar'> {
+  return {
+    eligible,
+    versions: Array.from({ length: versions }, (_, v) => ({
+      id: `v${String(v)}`,
+      scores: rows.flatMap((row) => {
+        const value = row[v];
+        return value === null || value === undefined ? [] : [value];
+      }),
+    })),
+  };
+}
+
+const { ordinary: ORDINARY, entrenched: ENTRENCHED } = DEFAULT_RULES.bars;
+
+describe('properties of the bars', () => {
+  it('passes a ballot set at the ordinary bar whenever it passes at the entrenched bar', () => {
+    fc.assert(
+      fc.property(ballotSet, ({ eligible, versions, rows }) => {
+        const input = ballots(eligible, versions, rows);
+        if (tally({ ...input, bar: ENTRENCHED }).kind === 'pass') {
+          expect(tally({ ...input, bar: ORDINARY }).kind).toBe('pass');
+        }
+        // Version by version, too: no single version clears the higher bar and misses the lower.
+        for (const version of input.versions) {
+          const alone = { eligible, versions: [version] };
+          if (tally({ ...alone, bar: ENTRENCHED }).kind === 'pass') {
+            expect(tally({ ...alone, bar: ORDINARY }).kind).toBe('pass');
+          }
+        }
+      }),
+    );
+  });
+
+  it('reaches the same outcome at either bar whatever order the ballots arrive in', () => {
+    const scenario = ballotSet.chain((set) =>
+      fc.record({
+        set: fc.constant(set),
+        shuffled: fc.shuffledSubarray([...set.rows], { minLength: set.rows.length }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ set: { eligible, versions, rows }, shuffled }) => {
+        for (const bar of [ORDINARY, ENTRENCHED] satisfies Bar[]) {
+          const first = tally({ ...ballots(eligible, versions, rows), bar });
+          const second = tally({ ...ballots(eligible, versions, shuffled), bar });
+          expect(second).toEqual(first);
+        }
+      }),
+    );
+  });
+
+  it('lapses at one bar exactly when it lapses at the other: quorum doesn’t depend on the bar', () => {
+    fc.assert(
+      fc.property(ballotSet, ({ eligible, versions, rows }) => {
+        const input = ballots(eligible, versions, rows);
+        const lapses = (bar: Bar) => tally({ ...input, bar }).kind === 'lapse';
+        expect(lapses(ENTRENCHED)).toBe(lapses(ORDINARY));
+      }),
+    );
+  });
+});

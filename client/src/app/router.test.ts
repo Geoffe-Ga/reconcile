@@ -28,6 +28,7 @@ describe('parseRoute', () => {
     [`#/g/${GROUP}/add/${PROPOSAL}`, { name: 'add', groupId: GROUP, after: PROPOSAL }],
     [`#/g/${GROUP}/remove/${ATOM}`, { name: 'remove', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/remove/${PROPOSAL}`, { name: 'remove', groupId: GROUP, atomId: PROPOSAL }],
+    [`#/g/${GROUP}/again/${PROPOSAL}`, { name: 'again', groupId: GROUP, proposalId: PROPOSAL }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -47,6 +48,9 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/p`,
     `#/g/${GROUP}/p/${ATOM}`,
     `#/g/${GROUP}/p/${PROPOSAL}/extra`,
+    `#/g/${GROUP}/again`,
+    `#/g/${GROUP}/again/${ATOM}`,
+    `#/g/${GROUP}/again/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
     `#/g/${GROUP}/add/`,
     `#/g/${GROUP}/add/has space`,
@@ -77,6 +81,7 @@ describe('routeHref', () => {
     [{ name: 'add', groupId: GROUP, after: null }, `#/g/${GROUP}/add`],
     [{ name: 'add', groupId: GROUP, after: ATOM }, `#/g/${GROUP}/add/${ATOM}`],
     [{ name: 'remove', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/remove/${ATOM}`],
+    [{ name: 'again', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/again/${PROPOSAL}`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);
