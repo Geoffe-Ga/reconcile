@@ -63,11 +63,11 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   await expectAccessible(person, 'Document view');
 }
 
-/** From the Document view, back to Group home, then into the open Proposal. */
+/** From the Document view, back to Group home, then into the Proposal waiting under Needs your vote. */
 async function openProposal(person: Person): Promise<void> {
   const { page } = person;
   await page.getByRole('link', { name: GROUP }).click();
-  const open = page.getByRole('region', { name: 'Open Proposals' });
+  const open = page.getByRole('region', { name: 'Needs your vote' });
   await open.getByRole('link', { name: PROPOSAL }).click();
   await expect(heading(page, PROPOSAL)).toBeVisible();
   await expect(page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();

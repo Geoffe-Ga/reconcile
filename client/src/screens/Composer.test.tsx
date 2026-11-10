@@ -42,11 +42,14 @@ interface Setup {
   readonly drafts?: GroupDrafts;
   /** The Proposal being proposed again, from the `again` route. */
   readonly again?: Proposal;
+  /** Whether this device's leave waits for the relay (#77). */
+  readonly leaving?: boolean;
 }
 
 /** Renders the composer and waits for its draft to be read. */
 async function setup(options: Setup = {}) {
   const { state, atom = 0, me = authorOf('ana'), onPropose, onAddVersion, drafts, again } = options;
+  const { leaving } = options;
   const group = state ?? groupLog({ chat: 'https://chat.example.org/riverside' }).state();
   const propose = vi.fn<OnPropose>(onPropose ?? (() => Promise.resolve('proposed')));
   const add = vi.fn<OnAddVersion>(onAddVersion ?? (() => Promise.resolve('added')));
@@ -62,6 +65,7 @@ async function setup(options: Setup = {}) {
       onPropose={propose}
       onAddVersion={add}
       {...(again === undefined ? {} : { again })}
+      leaving={leaving === true}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
@@ -326,6 +330,16 @@ describe('Composer', () => {
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(drafts.load).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no composer to someone whose leave waits for the relay', async () => {
+    await setup({ leaving: true });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'You’re leaving this group' }),
+    ).toBeVisible();
+    expect(screen.getByText('You can’t propose changes in a group you’re leaving.')).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
   });
 

@@ -1,0 +1,506 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "leave-eligible-after: the leaver isn't eligible on a Proposal opened after the leave, so the 3 who stay close it early",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "It suits us better.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 0
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500600000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375014,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "level": "co-creator",
+            "seq": 1
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "level": "collaborator",
+            "seq": 3
+          },
+          {
+            "author": "%dee",
+            "name": "Dee",
+            "level": "collaborator",
+            "seq": 4
+          }
+        ],
+        "former": [
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "collaborator",
+            "seq": 2
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@6",
+            "eligible": ["%ana", "%cal", "%dee"],
+            "closedAt": 29375014,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@6"
+            }
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "leave-proposal-tallies: the leaver's open Proposal and their version on another stay on the ballot, tally and pass at the deadline",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "It suits us better.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@5",
+              "text": "Quiet after 9pm."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Bin day",
+              "why": "It suits us better.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2,
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500600000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2,
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 2,
+                "@6": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29385092,
+      "expect": {
+        "former": [
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "level": "co-creator",
+            "seq": 2
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "Quiet after 9pm."
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "Bins out on Monday."
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@5",
+            "eligible": ["%ana", "%ben", "%cal", "%dee"],
+            "versions": [
+              {
+                "id": "@5",
+                "author": "%ana",
+                "text": "Quiet after 10pm."
+              },
+              {
+                "id": "@6",
+                "author": "%ben",
+                "text": "Quiet after 9pm."
+              }
+            ],
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@6"
+            }
+          },
+          {
+            "id": "@7",
+            "author": "%ben",
+            "eligible": ["%ana", "%ben", "%cal", "%dee"],
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@7"
+            }
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

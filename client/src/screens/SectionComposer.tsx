@@ -8,15 +8,13 @@
 import { type SyntheticEvent, useId } from 'react';
 import { Button, Form } from 'react-aria-components';
 
-import { againStartOf, lapsed, textCheck, useSend } from '../app/compose';
+import { againStartOf, lapsed, textCheck, useSend, whyNoForm } from '../app/compose';
 import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
 import { addDraft, againDraft, removalDraft, type VersionValues } from '../app/proposals';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
-import { suspendedLine } from '../app/stewardLines';
 import { holdsRemoval } from '../app/versionViews';
-import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { GroupDrafts } from '../store/drafts';
@@ -34,6 +32,8 @@ export interface AddSectionProps {
   readonly onPropose: ComposerProps['onPropose'];
   /** A lapsed add to propose again (#74), from the `again` route. */
   readonly again?: Proposal;
+  /** Whether this device's leave waits for the relay (#77): then it shows no form. */
+  readonly leaving?: boolean;
 }
 
 /** A blank title, why and text, and the group's latest link: where a new add or removal starts. */
@@ -86,11 +86,8 @@ export function AddSection({
   if (after !== null && atom === undefined) {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
-  if (!can(state, me, 'propose')) {
-    // A suspended member reads until when, rather than that their level can't propose (#102).
-    const text = suspendedLine(state, me) ?? composer.notAllowed;
-    return <Unavailable state={state} title={composer.notAllowedTitle} text={text} />;
-  }
+  const refused = whyNoForm({ state, me, ...props });
+  if (refused !== null) return <Unavailable state={state} {...refused} />;
   const anchor = atom === undefined ? null : { atom, number: index + 1 };
   const again = lapsed(props.again);
   const { draftKey, start } = formStart(state, addDraft(after), again);
@@ -147,6 +144,8 @@ export interface RemoveSectionProps {
   readonly onAddVersion: ComposerProps['onAddVersion'];
   /** A lapsed removal to propose again (#74), from the `again` route. */
   readonly again?: Proposal;
+  /** Whether this device's leave waits for the relay (#77): then it shows no form. */
+  readonly leaving?: boolean;
 }
 
 interface RemovalVersionProps {
@@ -196,15 +195,12 @@ function RemovalVersion({ state, atom, section, proposal, onAddVersion }: Remova
 }
 
 /** Why there's no removal to write for a section in the Document, or null when there is one. */
-function unavailable(state: GroupState, me: string, atomId: string) {
+function unavailable(props: RemoveSectionProps) {
+  const { state, atomId } = props;
   const { composer } = messages;
   const open = openProposalOn(state, atomId);
-  if (!can(state, me, 'propose')) {
-    return {
-      title: composer.notAllowedTitle,
-      text: suspendedLine(state, me) ?? composer.notAllowed,
-    };
-  }
+  const refused = whyNoForm(props);
+  if (refused !== null) return refused;
   if (composeOption(state, atomId) === 'ballot-full') {
     return { title: composer.fullTitle, text: composer.full };
   }
@@ -220,14 +216,14 @@ function unavailable(state: GroupState, me: string, atomId: string) {
  * same screen without title and why adds `""` to its ballot as a version.
  */
 export function RemoveSection(props: RemoveSectionProps) {
-  const { state, me, atomId, drafts } = props;
+  const { state, atomId, drafts } = props;
   const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
   const atom = state.atoms[index];
   const { composer } = messages;
   if (atom === undefined) {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
-  const reason = unavailable(state, me, atomId);
+  const reason = unavailable(props);
   if (reason !== null) return <Unavailable state={state} title={reason.title} text={reason.text} />;
   const open = openProposalOn(state, atomId);
   if (open !== undefined) {

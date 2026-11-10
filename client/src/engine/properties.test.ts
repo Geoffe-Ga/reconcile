@@ -1,11 +1,12 @@
 /**
  * Properties of the fold (fast-check): every device that folds the same relay
  * records builds the same state, the Document changes only on a final pass, a level change
- * never reaches back into a Proposal that's already open, an Atom never has two open
- * Proposals or a ballot more than three versions, and adds and removals (#75) only ever add
- * or take out whole Atoms. And of the bars (#94): the entrenched bar is never easier than
- * the ordinary one, and neither depends on the order ballots arrive in. And of windows
- * (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
+ * or a leave never reaches back into a Proposal that's already open, a member who has left
+ * acts no more, an Atom never has two open Proposals or a ballot more than three versions,
+ * and adds and removals (#75) only ever add or take out whole Atoms. And of the bars (#94):
+ * the entrenched bar is never easier than the ordinary one, and neither depends on the order
+ * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
+ * allows, and runs exactly that long.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -19,6 +20,7 @@ import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow
 import { tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
+const [FOLLOWING, , CREATING] = LEVELS;
 /** How long an ordinary vote runs when no one chooses, in relay minutes. */
 const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 const encoder = new TextEncoder();
@@ -68,6 +70,10 @@ class Log {
   addSection(received: number, after: string | null, text: string): string {
     const body = { target: { kind: 'add', after } as const, title: 'T', why: 'W', text };
     return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  leave(received: number, who: number): string {
+    return this.add(received, member(who), { type: 'leave', body: {} });
   }
 
   level(received: number, who: number, level: string): string {
@@ -296,6 +302,78 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
           return { eligible: p.eligible, deadline: p.deadline, final: p.final };
         };
         expect(opened(after)).toEqual(opened([]));
+      }),
+    );
+  });
+
+  it('keeps an open Proposal’s eligible set, ballots and outcome whoever leaves after it opens', () => {
+    const scenario = electorate.chain(({ count, ballots }) =>
+      fc.record({
+        count: fc.constant(count),
+        ballots: fc.constant(ballots),
+        leavers: fc.uniqueArray(fc.nat({ max: count - 1 }), { maxLength: count }),
+        relayNow: minutesAfterR,
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ count, ballots, leavers, relayNow }) => {
+        const folded = (leaves: readonly number[]) => {
+          const log = Log.founded(count);
+          const id = log.propose(R + 20, `${log.group}.0`, 'New text');
+          ballots.forEach(({ voter, value }, i) => log.vote(R + 30 + i, voter, id, value));
+          leaves.forEach((who, i) => log.leave(R + 60 + i, who));
+          return fold(log.records, R + 20 + relayNow);
+        };
+        const left = folded(leavers);
+        const {
+          eligible,
+          deadline,
+          ballots: counted,
+          closedAt,
+          final,
+          outcome,
+        } = left.proposals[0] ?? {};
+        const stayed = folded([]).proposals[0];
+        expect({ eligible, deadline, ballots: counted, closedAt, final, outcome }).toEqual({
+          eligible: stayed?.eligible,
+          deadline: stayed?.deadline,
+          ballots: stayed?.ballots,
+          closedAt: stayed?.closedAt,
+          final: stayed?.final,
+          outcome: stayed?.outcome,
+        });
+        expect(left.members.length + left.former.length).toBe(count);
+        expect(left.former.map((m) => m.author)).toEqual(
+          leavers.map((who) => folded([]).members[who]?.author),
+        );
+      }),
+    );
+  });
+
+  it('ignores every ballot, version, level and join a member sends after they leave', () => {
+    const scenario = fc.record({
+      count: fc.integer({ min: 2, max: 8 }),
+      who: fc.nat({ max: 7 }),
+      value: score,
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, who, value }) => {
+        const leaver = 1 + (who % (count - 1));
+        const log = Log.founded(count);
+        // A Co-Creator, so their version would join the ballot had they stayed.
+        log.level(R + 15, leaver, CREATING);
+        const id = log.propose(R + 20, `${log.group}.0`, 'New text');
+        log.leave(R + 21, leaver);
+        const before = fold(log.records, R + 100);
+        log.vote(R + 22, leaver, id, value);
+        log.version(R + 23, leaver, id, 'Their wording');
+        log.level(R + 24, leaver, FOLLOWING);
+        log.add(R + 25, member(leaver), { type: 'join', body: { name: 'Back again' } });
+        const after = fold(log.records, R + 100);
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        expect(after.ignored.map((record) => record.seq)).toEqual(
+          log.records.slice(-4).map((record) => record.seq),
+        );
       }),
     );
   });

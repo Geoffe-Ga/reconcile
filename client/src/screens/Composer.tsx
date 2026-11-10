@@ -1,7 +1,14 @@
 import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 
-import { againStartOf, type ComposeOutcome, lapsed, textCheck, useSend } from '../app/compose';
+import {
+  againStartOf,
+  type ComposeOutcome,
+  lapsed,
+  textCheck,
+  useSend,
+  whyNoForm,
+} from '../app/compose';
 import { latestLink } from '../app/latestLink';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
@@ -11,7 +18,6 @@ import {
   type ProposalValues,
   type VersionValues,
 } from '../app/proposals';
-import { suspendedLine } from '../app/stewardLines';
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
@@ -19,7 +25,6 @@ import { useDraft } from '../app/useDraft';
 import { versionDoes } from '../app/versionViews';
 import { WindowField } from '../app/WindowField';
 import { normalizeAtomText } from '../engine/atomText';
-import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import { type ProposalClass, targetClass } from '../engine/rules';
@@ -46,6 +51,8 @@ export interface ComposerProps {
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
   /** A lapsed Proposal to propose again on this section (#74), from the `again` route. */
   readonly again?: Proposal;
+  /** Whether this device's leave waits for the relay (#77): then it shows no form. */
+  readonly leaving?: boolean;
 }
 
 /** Limits count code points after NFC (spec §4), never UTF-16 units as `maxLength` does. */
@@ -590,24 +597,21 @@ function ChangeForm({ state, section, drafts, now, onPropose, again }: ChangeFor
  * `version`, which runs in its Proposal's window. A full ballot takes no
  * more. `composeOption` decides which, as it does for the fold. What is typed
  * is kept as a private draft on this device until it is sent or discarded.
- * Only someone who may propose sees a form (`can()`).
+ * Only someone who may propose, and isn't leaving, sees a form (`can()`).
  *
  * Proposing a lapsed Proposal again (#74) is the same form, starting from its
  * title, why, text and link, with its other versions carried onto the new
  * ballot. Its draft is kept under that Proposal, apart from the section's.
  */
 export function Composer(props: ComposerProps) {
-  const { state, me, atomId, drafts } = props;
+  const { state, atomId, drafts } = props;
   const what = composing(state, atomId);
   const { composer } = messages;
   if (what.kind === 'missing') {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
-  if (!can(state, me, 'propose')) {
-    // A suspended member reads until when, rather than that their level can't propose (#102).
-    const text = suspendedLine(state, me) ?? composer.notAllowed;
-    return <Unavailable state={state} title={composer.notAllowedTitle} text={text} />;
-  }
+  const refused = whyNoForm(props);
+  if (refused !== null) return <Unavailable state={state} {...refused} />;
   if (what.kind === 'change') {
     const again = lapsed(props.again);
     return (

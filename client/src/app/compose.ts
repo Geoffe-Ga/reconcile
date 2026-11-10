@@ -5,14 +5,38 @@
 import { useRef, useState } from 'react';
 
 import { normalizeAtomText } from '../engine/atomText';
+import { can } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
 import type { Draft } from '../store/drafts';
 import { latestLink } from './latestLink';
 import { messages } from './messages';
+import { suspendedLine } from './stewardLines';
 import type { DraftState } from './useDraft';
 
 /** How sending went: `proposed` and `added` move on to the Proposal; the others stay on the form. */
 export type ComposeOutcome = 'proposed' | 'added' | 'too-large' | 'failed';
+
+/** Who a composer is for: the group, this member, and whether their leave waits for the relay. */
+export interface Composing {
+  readonly state: GroupState;
+  readonly me: string;
+  readonly leaving?: boolean;
+}
+
+/**
+ * Why this member gets no form, or null when they get one: their leave waits
+ * for the relay (#77), or they may not propose, and a suspended member reads
+ * until when rather than that their level can't propose (#102).
+ */
+export function whyNoForm(
+  props: Composing,
+): { readonly title: string; readonly text: string } | null {
+  const { state, me } = props;
+  const { composer, leave } = messages;
+  if (props.leaving === true) return { title: leave.noProposingTitle, text: leave.noProposing };
+  if (can(state, me, 'propose')) return null;
+  return { title: composer.notAllowedTitle, text: suspendedLine(state, me) ?? composer.notAllowed };
+}
 
 /** `again` when its vote lapsed, which Propose again repeats (ADR-0069), else undefined. */
 export function lapsed(again: Proposal | undefined): Proposal | undefined {

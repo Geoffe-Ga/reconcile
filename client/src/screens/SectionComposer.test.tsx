@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ComposeOutcome } from '../app/compose';
+import { messages } from '../app/messages';
 import {
   addDraft,
   againDraft,
@@ -407,6 +408,45 @@ describe('RemoveSection', () => {
       screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('Adding or removing while a leave waits for the relay (#77)', () => {
+  it('shows no add or removal form, and says why', async () => {
+    const state = groupLog().state();
+    const memory = memoryDrafts();
+    const { unmount } = render(
+      <AddSection
+        state={state}
+        me={authorOf('ana')}
+        after={null}
+        drafts={memory.drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        leaving
+      />,
+    );
+    const title = messages.leave.noProposingTitle;
+    expect(screen.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    unmount();
+    render(
+      <RemoveSection
+        state={state}
+        me={authorOf('ana')}
+        atomId={`${state.group ?? ''}.0`}
+        drafts={memory.drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={vi.fn()}
+        leaving
+      />,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: title })).toBeVisible();
+    expect(screen.getByText(messages.leave.noProposing)).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(memory.drafts.load).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
   });
 });
 

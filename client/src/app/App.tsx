@@ -28,6 +28,7 @@ import {
   type CreateGroupValues,
   type FoundGroup,
   joinGroup,
+  leaveGroup,
   lookupInvite,
 } from './actions';
 import { type Invite, inviteLink } from './invite';
@@ -45,6 +46,7 @@ import {
 } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
+import { shareOrCopy, type TellKind, tellPayload } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
@@ -144,7 +146,13 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           now={relayMinuteNow(group, deviceNow)}
           sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
           pending={group.pending}
+          leaving={group.leaving}
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
+          onLeave={async () => {
+            await leaveGroup(services, groupId);
+            // Back to Your groups, where the group reads Leaving… until the relay has the leave.
+            replaceRoute({ name: 'start' });
+          }}
           onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
         />
       )}
@@ -164,7 +172,7 @@ function DocumentScreen({ services, groupId }: GroupScreenProps) {
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => (
+      {({ state, me, leaving }) => (
         <DocumentView
           state={state}
           me={me.author}
@@ -172,6 +180,7 @@ function DocumentScreen({ services, groupId }: GroupScreenProps) {
           onAdd={openAdd}
           onRemove={openRemove}
           copyText={services.copyText}
+          leaving={leaving}
         />
       )}
     </GroupGate>
@@ -185,6 +194,8 @@ interface ComposeProps {
   readonly drafts: GroupDrafts;
   /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
   readonly now: number;
+  /** Whether this device's leave waits for the relay (#77): then composers show no form. */
+  readonly leaving: boolean;
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
 }
@@ -204,7 +215,7 @@ function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
   const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => {
+      {({ state, me, leaving }) => {
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
           const result = await propose(services, groupId, values);
           if (result.outcome === 'too-large') return result.outcome;
@@ -219,7 +230,15 @@ function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
           replaceRoute({ name: 'proposal', groupId, proposalId: values.proposal });
           return result.outcome;
         };
-        return children({ state, me: me.author, drafts, now: deviceNow, onPropose, onAddVersion });
+        return children({
+          state,
+          me: me.author,
+          drafts,
+          now: deviceNow,
+          leaving,
+          onPropose,
+          onAddVersion,
+        });
       }}
     </GroupGate>
   );
@@ -254,6 +273,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const onProposeAgain = () => {
           navigate({ name: 'again', groupId, proposalId });
         };
+        const onTell = (kind: TellKind, deadline: number) =>
+          shareOrCopy(tellPayload(kind, deadline, services.origin), services);
         return (
           <ProposalView
             state={group.state}
@@ -263,8 +284,10 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             reachable={group.reachable}
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
+            leaving={group.leaving}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
+            onTell={onTell}
           />
         );
       }}

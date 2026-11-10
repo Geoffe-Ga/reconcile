@@ -14,6 +14,8 @@ const [FOLLOWING, VOTING] = LEVELS;
 
 /** What the Document view reports, and its clipboard. */
 interface Handlers {
+  /** Whether this device's leave waits for the relay (#77). */
+  readonly leaving?: boolean;
   readonly onPropose?: (atomId: string) => void;
   readonly onAdd?: (after: string | null) => void;
   readonly onRemove?: (atomId: string) => void;
@@ -35,6 +37,7 @@ function view(
       onAdd={handlers.onAdd ?? vi.fn()}
       onRemove={handlers.onRemove ?? vi.fn()}
       copyText={handlers.copyText ?? vi.fn(() => Promise.resolve())}
+      leaving={handlers.leaving ?? false}
     />,
   );
 }
@@ -325,6 +328,20 @@ describe('DocumentView', () => {
       ),
     ).toBeVisible();
     expect(screen.getByRole('status')).not.toHaveTextContent('Copied');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Propose or Add your version, and no level note, while the leave waits for the relay', async () => {
+    const log = groupLog();
+    log.propose('ana', { atom: 1 });
+    view(log.state(), authorOf('ana'), vi.fn(), { leaving: true });
+    expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
+    // Copying is reading, and how someone who leaves carries the Document into a fresh group (#75).
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Copy as Markdown',
+    ]);
+    expect(screen.queryByText(/Choose Co-Creator|Choose Collaborator/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
   });
 });

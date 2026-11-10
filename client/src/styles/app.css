@@ -920,3 +920,37 @@ a[data-focus-visible] {
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
+
+/* Coming back and leaving (#77) ------------------------------------------- */
+
+/* "Leaving…" on Start, under the group's name, while its leave waits for the relay. */
+.leaving-tag {
+  color: var(--body);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+/* Group home's note while the leave waits: read only, in words. It sits in
+ * .page-top's one grid cell under the header, spaced as the relay notice is. */
+.leaving-note {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-4);
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* Tell your group: the button, what it shares, and how it went. */
+.tell {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.tell .caption {
+  max-width: 34em;
+}

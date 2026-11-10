@@ -26,6 +26,8 @@ export interface DocumentViewProps {
   readonly onRemove: (atomId: string) => void;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
+  /** Whether this device's leave waits for the relay (#77): then nobody proposes from here. */
+  readonly leaving?: boolean;
 }
 
 /**
@@ -228,12 +230,13 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
  * change (or Add your version while the section's Proposal is open), Propose
  * removing this section, and Add a section here in each gap (#75). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
- * anyone else reads why, and where to change their level (ADR-0021). Copy as
- * Markdown is for everyone who can read it.
+ * anyone else reads why, and where to change their level (ADR-0021). While
+ * this member is leaving, the Document only reads. Copy as Markdown is for
+ * everyone who can read it.
  */
 export function DocumentView(props: DocumentViewProps) {
-  const { state, me, copyText } = props;
-  const proposes = can(state, me, 'propose');
+  const { state, me, copyText, leaving = false } = props;
+  const proposes = !leaving && can(state, me, 'propose');
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
@@ -242,7 +245,7 @@ export function DocumentView(props: DocumentViewProps) {
         title={state.title}
         pageTitle={messages.document.pageTitle}
       />
-      {proposes ? null : <LevelNote state={state} me={me} />}
+      {proposes || leaving ? null : <LevelNote state={state} me={me} />}
       <Sections state={state} proposes={proposes} handlers={props} />
       {state.atoms.length === 0 ? null : <CopyMarkdown atoms={state.atoms} copyText={copyText} />}
     </main>

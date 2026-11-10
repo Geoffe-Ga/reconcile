@@ -201,7 +201,8 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     await expect(page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
     await vote(ana, '4 · Strongly supportive');
 
-    const open = ben.page.getByRole('region', { name: 'Open Proposals' });
+    // Ben hasn't scored it yet, so Group home lists it under Needs your vote (#77).
+    const open = ben.page.getByRole('region', { name: 'Needs your vote' });
     await open.getByRole('link', { name: words.proposal }).click();
     await expect(heading(ben.page, words.proposal)).toBeVisible();
     await vote(ben, '3 · Supportive', words.note);
