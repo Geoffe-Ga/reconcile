@@ -1,17 +1,24 @@
 /**
  * Properties of the fold (fast-check): every device that folds the same relay
- * records builds the same state, the Document changes only on a final pass,
- * and a level change never reaches back into a Proposal that's already open.
+ * records builds the same state, the Document changes only on a final pass, a level change
+ * never reaches back into a Proposal that's already open, and an Atom never has two open
+ * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
+ * never easier than the ordinary one, and neither depends on the order ballots arrive in.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { signedAs } from '../test/keys';
 import { LEVELS } from './capabilities';
+import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
-import { fold, type LogRecord, VOTE_WINDOW_MINUTES } from './fold';
+import { fold, type LogRecord } from './fold';
+import { type Bar, DEFAULT_RULES, defaultWindowMinutes } from './rules';
+import { tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
+/** How long an ordinary vote runs when no one chooses, in relay minutes. */
+const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 const encoder = new TextEncoder();
 
 /** Member `i`'s test key name. Member 0 founds the group. */
@@ -59,16 +66,30 @@ class Log {
   }
 
   vote(received: number, voter: number, proposal: string, value: Score): string {
-    const note = value === 0 ? { note: 'A reason.' } : {};
-    const body = { proposal, scores: { [proposal]: value }, ...note };
+    return this.ballot(received, voter, proposal, { [proposal]: value });
+  }
+
+  /** A ballot scoring each version it names, with a reason whenever it gives a 0. */
+  ballot(
+    received: number,
+    voter: number,
+    proposal: string,
+    scores: Readonly<Record<string, Score>>,
+  ): string {
+    const note = Object.values(scores).includes(0) ? { note: 'A reason.' } : {};
+    const body = { proposal, scores, ...note };
     return this.add(received, member(voter), { type: 'vote', body });
+  }
+
+  version(received: number, author: number, proposal: string, text: string): string {
+    return this.add(received, member(author), { type: 'version', body: { proposal, text } });
   }
 }
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
-  fc.integer({ min: 0, max: VOTE_WINDOW_MINUTES + 100 }),
-  fc.integer({ min: VOTE_WINDOW_MINUTES + 19, max: VOTE_WINDOW_MINUTES + 21 }),
+  fc.integer({ min: 0, max: WINDOW + 100 }),
+  fc.integer({ min: WINDOW + 19, max: WINDOW + 21 }),
 );
 
 /** A group size, and for each member a score (0–4) or no ballot. */
@@ -114,6 +135,77 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
           };
         };
         expect(outcomeOf(second)).toEqual(outcomeOf(first));
+      }),
+    );
+  });
+
+  it('reaches the same outcome whatever order distinct voters’ ballots on several versions arrive in', () => {
+    const scenario = fc
+      .record({
+        versions: fc.integer({ min: 1, max: VERSIONS_MAX }),
+        voters: fc.array(
+          fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }),
+          {
+            minLength: 1,
+            maxLength: 10,
+          },
+        ),
+      })
+      .chain(({ versions, voters }) => {
+        const ballots = voters.flatMap((row, voter) => {
+          const scored = row
+            .slice(0, versions)
+            .flatMap((value, v) => (value === null ? [] : [{ v, value }]));
+          return scored.length === 0 ? [] : [{ voter, scored }];
+        });
+        return fc.record({
+          count: fc.constant(voters.length),
+          versions: fc.constant(versions),
+          first: fc.constant(ballots),
+          second: fc.shuffledSubarray(ballots, { minLength: ballots.length }),
+          relayNow: fc.option(minutesAfterR, { nil: null }),
+        });
+      });
+    type Row = { voter: number; scored: { v: number; value: Score }[] };
+    fc.assert(
+      fc.property(scenario, ({ count, versions, first, second, relayNow }) => {
+        const now = relayNow === null ? null : R + relayNow;
+        const outcomeOf = (order: readonly Row[]) => {
+          const log = Log.founded(count);
+          const proposal = log.propose(R + 20, `${log.group}.0`, 'Version 1');
+          const ids = [proposal];
+          for (let v = 1; v < versions; v += 1) {
+            ids.push(log.version(R + 20 + v, v % count, proposal, `Version ${String(v + 1)}`));
+          }
+          order.forEach(({ voter, scored }, i) => {
+            const scores = Object.fromEntries(scored.map(({ v, value }) => [ids[v] ?? '', value]));
+            log.ballot(R + 30 + i, voter, proposal, scores);
+          });
+          const state = fold(log.records, now);
+          const p = state.proposals[0];
+          return {
+            outcome: p?.outcome,
+            final: p?.final,
+            closedAt: p?.closedAt,
+            atoms: state.atoms,
+          };
+        };
+        expect(outcomeOf(second)).toEqual(outcomeOf(first));
+      }),
+    );
+  });
+
+  it('never has two open Proposals on one Atom, nor more than three versions on a ballot', () => {
+    fc.assert(
+      fc.property(arbitraryLog, ({ records, relayNow }) => {
+        const { proposals } = fold(records, relayNow);
+        proposals.forEach((later, i) => {
+          expect(later.versions.length).toBeLessThanOrEqual(VERSIONS_MAX);
+          for (const earlier of proposals.slice(0, i)) {
+            if (earlier.atom !== later.atom) continue;
+            expect(later.received).toBeGreaterThanOrEqual(earlier.closedAt ?? earlier.deadline);
+          }
+        });
       }),
     );
   });
@@ -182,6 +274,20 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
+    fc.assert(
+      fc.property(arbitraryLog, ({ records, relayNow }) => {
+        const { proposals, rules } = fold(records, relayNow);
+        for (const p of proposals) {
+          // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
+          expect(p.class).toBe('ordinary');
+          expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
+          expect(p.outcome.bar).toEqual(rules.bars[p.class]);
+        }
+      }),
+    );
+  });
+
   it('changes only the target Atom on a final pass, and no Atom on a fail or lapse', () => {
     const scenario = fc.record({
       atoms: fc.array(fc.string({ unit: 'grapheme', maxLength: 12 }), {
@@ -217,11 +323,20 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
 
 /**
  * One step of a random log, after a wait: a join, a level change (to a known level or not), a
- * Proposal, a ballot, a repeat, garbage, or a forged copy of an earlier record with one byte
- * changed.
+ * Proposal, a version, a ballot, a repeat, garbage, or a forged copy of an earlier record with
+ * one byte changed.
  */
 const step = fc.record({
-  kind: fc.constantFrom('join', 'level', 'propose', 'vote', 'repeat', 'garbage', 'forge'),
+  kind: fc.constantFrom(
+    'join',
+    'level',
+    'propose',
+    'version',
+    'vote',
+    'repeat',
+    'garbage',
+    'forge',
+  ),
   who: fc.integer({ min: 0, max: 5 }),
   target: fc.integer({ min: 0, max: 3 }),
   level: fc.constantFrom<string>(...LEVELS, 'admin'),
@@ -240,29 +355,40 @@ function copyOf(log: Log, s: Step): Uint8Array {
   return forged;
 }
 
+/** What one kind of step appends to the log at relay minute `received`. */
+type StepWriter = (log: Log, proposals: string[], s: Step, received: number) => void;
+
+/** One record that isn't a fresh event: a repeat or forgery of an earlier record, or garbage. */
+function rawRecord(bytes: (log: Log, s: Step) => Uint8Array): StepWriter {
+  return (log, _proposals, s, received) => {
+    log.records.push({ seq: log.records.length + 1, received, bytes: bytes(log, s) });
+  };
+}
+
+const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
+  join: (log, _proposals, s, received) => {
+    log.add(received, member(s.who), { type: 'join', body: { name: 'N' } });
+  },
+  level: (log, _proposals, s, received) => {
+    log.level(received, s.who, s.level);
+  },
+  propose: (log, proposals, s, received) => {
+    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));
+  },
+  version: (log, proposals, s, received) => {
+    log.version(received, s.who, proposals[s.target] ?? 'unknown', `V${String(s.score)}`);
+  },
+  vote: (log, proposals, s, received) => {
+    log.vote(received, s.who, proposals[s.target] ?? 'unknown', s.score);
+  },
+  repeat: rawRecord(copyOf),
+  forge: rawRecord(copyOf),
+  garbage: rawRecord(() => encoder.encode('{')),
+};
+
 /** Appends one random step to the log at relay minute `received`. */
 function applyStep(log: Log, proposals: string[], s: Step, received: number): void {
-  const seq = log.records.length + 1;
-  switch (s.kind) {
-    case 'join':
-      log.add(received, member(s.who), { type: 'join', body: { name: 'N' } });
-      break;
-    case 'level':
-      log.level(received, s.who, s.level);
-      break;
-    case 'propose':
-      proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));
-      break;
-    case 'vote':
-      log.vote(received, s.who, proposals[s.target] ?? 'unknown', s.score);
-      break;
-    case 'repeat':
-    case 'forge':
-      log.records.push({ seq, received, bytes: copyOf(log, s) });
-      break;
-    case 'garbage':
-      log.records.push({ seq, received, bytes: encoder.encode('{') });
-  }
+  STEP_WRITERS[s.kind](log, proposals, s, received);
 }
 
 /** A random log of valid and invalid events, plus a relay time to fold it at. */
@@ -281,3 +407,87 @@ const arbitraryLog = fc
     }
     return { records: log.records, relayNow: after === null ? null : received + after };
   });
+
+/**
+ * A ballot set: each voter's row scores some of up to three versions (null: not scored), and the
+ * eligible count is at least the number of voters.
+ */
+const ballotSet = fc
+  .record({
+    versions: fc.integer({ min: 1, max: VERSIONS_MAX }),
+    rows: fc.array(fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }), {
+      maxLength: 30,
+    }),
+    absent: fc.nat({ max: 30 }),
+  })
+  .map(({ versions, rows, absent }) => ({
+    eligible: rows.length + absent,
+    rows: rows.map((row) => row.slice(0, versions)),
+    versions,
+  }));
+
+type Rows = readonly (readonly (Score | null)[])[];
+
+/** The tally input for `rows`: version `v` gets each row's score for it, in row order. */
+function ballots(eligible: number, versions: number, rows: Rows): Omit<TallyInput, 'bar'> {
+  return {
+    eligible,
+    versions: Array.from({ length: versions }, (_, v) => ({
+      id: `v${String(v)}`,
+      scores: rows.flatMap((row) => {
+        const value = row[v];
+        return value === null || value === undefined ? [] : [value];
+      }),
+    })),
+  };
+}
+
+const { ordinary: ORDINARY, entrenched: ENTRENCHED } = DEFAULT_RULES.bars;
+
+describe('properties of the bars', () => {
+  it('passes a ballot set at the ordinary bar whenever it passes at the entrenched bar', () => {
+    fc.assert(
+      fc.property(ballotSet, ({ eligible, versions, rows }) => {
+        const input = ballots(eligible, versions, rows);
+        if (tally({ ...input, bar: ENTRENCHED }).kind === 'pass') {
+          expect(tally({ ...input, bar: ORDINARY }).kind).toBe('pass');
+        }
+        // Version by version, too: no single version clears the higher bar and misses the lower.
+        for (const version of input.versions) {
+          const alone = { eligible, versions: [version] };
+          if (tally({ ...alone, bar: ENTRENCHED }).kind === 'pass') {
+            expect(tally({ ...alone, bar: ORDINARY }).kind).toBe('pass');
+          }
+        }
+      }),
+    );
+  });
+
+  it('reaches the same outcome at either bar whatever order the ballots arrive in', () => {
+    const scenario = ballotSet.chain((set) =>
+      fc.record({
+        set: fc.constant(set),
+        shuffled: fc.shuffledSubarray([...set.rows], { minLength: set.rows.length }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ set: { eligible, versions, rows }, shuffled }) => {
+        for (const bar of [ORDINARY, ENTRENCHED] satisfies Bar[]) {
+          const first = tally({ ...ballots(eligible, versions, rows), bar });
+          const second = tally({ ...ballots(eligible, versions, shuffled), bar });
+          expect(second).toEqual(first);
+        }
+      }),
+    );
+  });
+
+  it('lapses at one bar exactly when it lapses at the other: quorum doesn’t depend on the bar', () => {
+    fc.assert(
+      fc.property(ballotSet, ({ eligible, versions, rows }) => {
+        const input = ballots(eligible, versions, rows);
+        const lapses = (bar: Bar) => tally({ ...input, bar }).kind === 'lapse';
+        expect(lapses(ENTRENCHED)).toBe(lapses(ORDINARY));
+      }),
+    );
+  });
+});

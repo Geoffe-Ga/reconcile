@@ -1,12 +1,13 @@
 /**
  * Private drafts (ADR-0073; docs/spec/phase-1-spec.md §7 and §8): a Proposal
- * someone is still writing, kept on this device only.
+ * or a version someone is still writing, kept on this device only.
  *
- * A group holds at most one draft per target (for now, the Atom a Proposal
- * would change). Drafts live inside the group's own record, so whatever
+ * A group holds at most one draft per target: the Atom a Proposal would
+ * change, or the open Proposal a version would join (#72), whose text is all
+ * a version keeps. Drafts live inside the group's own record, so whatever
  * removes the group from the device, such as Leave or Erase, removes its
  * drafts with it. Nothing here touches the network: a draft reaches the relay
- * only as the Proposal it becomes, and that Proposal's queuing clears it.
+ * only as the Proposal or version it becomes, and queuing that clears it.
  */
 
 /** What someone has typed into the composer so far, as typed. */

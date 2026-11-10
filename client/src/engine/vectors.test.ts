@@ -6,7 +6,9 @@
  * because Vite's own JSON loader refuses the lone-surrogate escapes atom-text.json needs.
  * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
  *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, versions, expect}`.
+ * - A tally vector is `{name, eligible, bar?, versions, expect}`. `bar` names a class whose
+ *   bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
+ *   `expect` with that bar added.
  * - A fold vector is `{name, records, relayNow, expect, unchangedWithout?}`.
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
@@ -29,11 +31,17 @@ import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { concat, fromHex } from '../test/bytes';
 import { base64url, eventId } from './event';
 import { fold, type LogRecord } from './fold';
+import { DEFAULT_RULES, type ProposalClass } from './rules';
 import { tally, type TallyInput, type TallyOutcome } from './tally';
 
-interface TallyVector extends TallyInput {
+/** `Omit` applied to each member of a union, so each outcome kind keeps its own fields. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+interface TallyVector extends Omit<TallyInput, 'bar'> {
   readonly name: string;
-  readonly expect: TallyOutcome;
+  readonly bar?: ProposalClass;
+  /** The outcome without its bar, which the runner adds. */
+  readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
 }
 
 /** How a vector record departs from a plain record signed by its author. */
@@ -186,18 +194,31 @@ describe('vector files', () => {
   it('are the keys, then tally, fold or atom-text files', () => {
     expect(Object.keys(FILES).sort()).toEqual([
       './vectors/atom-text.json',
+      './vectors/bars-entrenched-edges.json',
+      './vectors/bars-ordinary-pairs.json',
       './vectors/fold.json',
       './vectors/keys.json',
       './vectors/levels-capabilities.json',
       './vectors/levels-eligible-count.json',
       './vectors/levels-step-down.json',
       './vectors/levels-step-up-after-open.json',
+      './vectors/rules-class-forged.json',
+      './vectors/rules-genesis-defaults.json',
+      './vectors/rules-genesis-differs.json',
+      './vectors/rules-genesis-missing.json',
       './vectors/signatures.json',
       './vectors/tally.json',
       './vectors/time.json',
+      './vectors/versions-ballot.json',
+      './vectors/versions-early-close.json',
+      './vectors/versions-late-low-quorum.json',
+      './vectors/versions-one-open.json',
+      './vectors/versions-tie.json',
     ]);
     expect(Object.values(FILES).map((file) => file.kind)).toEqual([
       'atom-text',
+      'tally',
+      'tally',
       'fold',
       'keys',
       'fold',
@@ -205,13 +226,33 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'tally',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
     ]);
   });
 
-  it('name six keys, each derived as a second implementation (WebCrypto) derives it', async () => {
-    expect([...SEEDS.keys()]).toEqual(['ana', 'ben', 'cal', 'dee', 'kim', 'zed']);
+  it('name ten keys, each derived as a second implementation (WebCrypto) derives it', async () => {
+    expect([...SEEDS.keys()]).toEqual([
+      'ana',
+      'ben',
+      'cal',
+      'dee',
+      'kim',
+      'zed',
+      'eve',
+      'fay',
+      'gus',
+      'hal',
+    ]);
     for (const [name, seed] of SEEDS) {
       const pkcs8 = concat(fromHex('302e020100300506032b657004220420'), seed);
       const key = await crypto.subtle.importKey('pkcs8', pkcs8, 'Ed25519', true, ['sign']);
@@ -237,6 +278,12 @@ describe('vector files', () => {
     'at 11 eligible, 4 scorers meet quorum',
     'at 15 eligible, 4 scorers lapse',
     'at 15 eligible, 5 scorers meet quorum',
+    'entrenched pass at an average of exactly 3.0',
+    'entrenched fail at exactly 5% zeros',
+    'entrenched pass with 21 scorers and one 0',
+    'an average of exactly 2.5 with no zeros fails the entrenched bar',
+    'an average of exactly 2.5 with no zeros passes the ordinary bar',
+    'entrenched lapse below quorum',
   ])('include the tally vector "%s"', (name) => {
     expect(tallyVectors.map((vector) => vector.name)).toContain(name);
   });
@@ -275,6 +322,29 @@ describe('vector files', () => {
     "someone in a Proposal's eligible set who steps down and back up before its deadline can still vote on it",
     "in a group of 5 with 2 Members, a Proposal's eligible count is 3 and its quorum is 3, so 2 ballots lapse at the deadline",
     "in a group of 5 with 2 Members, the 3 voting members' ballots meet quorum and close the vote early",
+    'passes that close in the same minute apply in the relay order of their Proposals',
+    "a version joins the open Proposal's ballot under its own event id, in relay order",
+    'a fourth version is ignored, and the ballot keeps the first three',
+    'a version received a minute before the deadline joins the ballot, and one received at the deadline is ignored',
+    'a version received after an early close is ignored, even in the same minute',
+    'a version needs an author who holds propose, so not a Collaborator, and a Proposal to join',
+    'a ballot that names a version not yet on its Proposal is ignored, and stays ignored once the version arrives',
+    "a voter's latest ballot replaces their earlier one in full, so a version it leaves out loses their score",
+    "when both versions pass, the one with the higher average becomes the Atom's text",
+    'a version added after the others had scored keeps the vote open until every voter has scored it too',
+    "every voter's score for version 1 doesn't close the vote while one of them hasn't scored version 2",
+    'a second Proposal on an Atom whose first is still open is ignored, and so are its ballots',
+    "a Proposal on another Atom opens while the first Atom's is still open",
+    'a second Proposal on the same Atom opens once the first has closed early, even in the same minute',
+    "a second Proposal on the same Atom is ignored a minute before the first one's deadline, and opens at it",
+    "a late version scored 4 by only 2 of 10 eligible members can't win, because it never reaches quorum",
+    'a three-version tie goes to the earliest version',
+    'a tie between later versions goes to the one the relay received first, whatever their ts',
+    'a genesis without rules folds with DEFAULT_RULES',
+    "a Proposal's class is ordinary and its deadline is its received plus 7 × 1,440 minutes",
+    'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
+    'a genesis whose entrenched avgAtLeast is 1 forms no group',
+    'a Proposal that writes its own class, bar and deadline is still ordinary: 7 days, and a 2.5 average passes',
   ])('include the fold vector "%s"', (name) => {
     expect(foldVectors.map((vector) => vector.name)).toContain(name);
   });
@@ -282,7 +352,9 @@ describe('vector files', () => {
 
 describe('tally vectors', () => {
   it.each(tallyVectors.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    expect(tally(vector)).toEqual(vector.expect);
+    const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
+    const { eligible, versions } = vector;
+    expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
   });
 });
 

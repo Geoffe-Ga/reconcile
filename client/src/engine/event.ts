@@ -19,13 +19,19 @@ export const EVENT_VERSION = 1;
 /** A score on one version: 0 (strongly opposed) to 4 (strongly supportive). */
 export type Score = 0 | 1 | 2 | 3 | 4;
 
-/** Founds a group with its first Document. Carries `group: ""`, as it can't contain its own hash. */
+/**
+ * Founds a group with its first Document and its founding rules. Carries
+ * `group: ""`, as it can't contain its own hash. `rules` is kept as written:
+ * the fold checks it against `DEFAULT_RULES` (rules.ts), and a genesis without
+ * it takes every default.
+ */
 export interface GenesisBody {
   readonly name: string;
   readonly chat?: string;
   readonly founder: string;
   readonly title: string;
   readonly atoms: readonly string[];
+  readonly rules?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -52,6 +58,15 @@ export interface ProposalBody {
   readonly link?: string;
 }
 
+/**
+ * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
+ * its event id; the Proposal's own text is version 1, under the Proposal's id.
+ */
+export interface VersionBody {
+  readonly proposal: string;
+  readonly text: string;
+}
+
 /** Scores the versions of one Proposal, keyed by version id, with one optional note. */
 export interface VoteBody {
   readonly proposal: string;
@@ -64,6 +79,7 @@ export interface EventBodies {
   readonly genesis: GenesisBody;
   readonly join: JoinBody;
   readonly proposal: ProposalBody;
+  readonly version: VersionBody;
   readonly vote: VoteBody;
   readonly level: LevelBody;
 }
@@ -183,11 +199,22 @@ function isTimestamp(value: unknown): value is number {
   return isWholeNumber(value) && value >= 0;
 }
 
+function isOptionalObject(value: unknown): value is Json | undefined {
+  return value === undefined || isObject(value);
+}
+
 function parseGenesis(body: Json): GenesisBody | null {
-  const { name, chat, founder, title, atoms } = body;
+  const { name, chat, founder, title, atoms, rules } = body;
   if (!isString(name) || !isString(founder) || !isString(title)) return null;
-  if (!isStringList(atoms) || !isOptionalString(chat)) return null;
-  return { name, founder, title, atoms, ...(chat === undefined ? {} : { chat }) };
+  if (!isStringList(atoms) || !isOptionalString(chat) || !isOptionalObject(rules)) return null;
+  return {
+    name,
+    founder,
+    title,
+    atoms,
+    ...(chat === undefined ? {} : { chat }),
+    ...(rules === undefined ? {} : { rules }),
+  };
 }
 
 function parseJoin(body: Json): JoinBody | null {
@@ -205,6 +232,11 @@ function parseProposal(body: Json): ProposalBody | null {
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
   if (!isOptionalString(link)) return null;
   return { atom, title, why, text, ...(link === undefined ? {} : { link }) };
+}
+
+function parseVersion(body: Json): VersionBody | null {
+  const { proposal, text } = body;
+  return isString(proposal) && isString(text) ? { proposal, text } : null;
 }
 
 function parseScores(value: unknown): Record<string, Score> | null {
@@ -244,6 +276,8 @@ function withBody(
       return attach(parseJoin(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'proposal':
       return attach(parseProposal(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'version':
+      return attach(parseVersion(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'vote':
       return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'level':

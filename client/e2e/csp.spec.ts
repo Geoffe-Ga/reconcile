@@ -2,14 +2,13 @@
  * The service worker under the deploy CSP (#76): the production build,
  * served by `vite preview` with deploy/Caddyfile's policy, registers `/sw.js`
  * and reaches `navigator.serviceWorker.ready` with no `securitypolicyviolation`
- * event and no CSP error on the console. The worker, the manifest and the app
- * all come from the app's own origin.
+ * event (the `openProfile` fixture fails on any) and no CSP error on the
+ * console. The worker, the manifest and the app all come from the app's own
+ * origin.
  */
 import { readFileSync } from 'node:fs';
 
-import { expect, test } from '@playwright/test';
-
-import { acceptNotice, heading, watchCspViolations } from './helpers';
+import { acceptNotice, expect, heading, test } from './support';
 
 /** The Caddyfile's one Content-Security-Policy value, as deploy/check.sh reads it. */
 function deployCsp(): string {
@@ -24,11 +23,11 @@ function deployCsp(): string {
 const CSP_CONSOLE = /Content[ -]Security[ -]Policy|Refused to/i;
 
 test('reaches a ready service worker under the deploy CSP, with no violation', async ({
-  page,
-  context,
+  openProfile,
 }) => {
   const csp = deployCsp();
-  const violations = await watchCspViolations(context);
+  const ana = await openProfile('Ana');
+  const { page } = ana;
   const cspErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error' && CSP_CONSOLE.test(message.text())) {
@@ -38,7 +37,7 @@ test('reaches a ready service worker under the deploy CSP, with no violation', a
 
   const response = await page.goto('/');
   expect(response?.headers()['content-security-policy']).toBe(csp);
-  await acceptNotice(page);
+  await acceptNotice(ana);
   await expect(heading(page, 'Your groups')).toBeVisible();
 
   const scope = await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
@@ -59,8 +58,5 @@ test('reaches a ready service worker under the deploy CSP, with no violation', a
   expect(await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toBe(
     new URL('/sw.js', page.url()).href,
   );
-
-  await page.evaluate(() => undefined);
-  expect(violations, 'securitypolicyviolation events').toEqual([]);
   expect(cspErrors, 'CSP errors on the console').toEqual([]);
 });

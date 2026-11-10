@@ -3,7 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createGroup } from '../app/actions';
-import { propose, type ProposalValues } from '../app/proposals';
+import { addVersion, propose, type ProposalValues, type VersionValues } from '../app/proposals';
 import { fold, type GroupState } from '../engine/fold';
 import type { Draft, GroupDrafts } from '../store/drafts';
 import { groupDrafts } from '../store/drafts';
@@ -19,6 +19,7 @@ import { Composer, type ComposeOutcome } from './Composer';
 freshIndexedDBPerTest();
 
 type OnPropose = (values: ProposalValues) => Promise<ComposeOutcome>;
+type OnAddVersion = (values: VersionValues) => Promise<ComposeOutcome>;
 
 const HINT =
   '**bold**, *italic*, # heading, - list, [link](https://…). End a line with \\ for a line break.';
@@ -28,13 +29,16 @@ interface Setup {
   readonly atom?: number;
   readonly me?: string;
   readonly onPropose?: OnPropose;
+  readonly onAddVersion?: OnAddVersion;
   readonly drafts?: GroupDrafts;
 }
 
 /** Renders the composer and waits for its draft to be read. */
-async function setup({ state, atom = 0, me = authorOf('ana'), onPropose, drafts }: Setup = {}) {
+async function setup(options: Setup = {}) {
+  const { state, atom = 0, me = authorOf('ana'), onPropose, onAddVersion, drafts } = options;
   const group = state ?? groupLog({ chat: 'https://chat.example.org/riverside' }).state();
   const propose = vi.fn<OnPropose>(onPropose ?? (() => Promise.resolve('proposed')));
+  const add = vi.fn<OnAddVersion>(onAddVersion ?? (() => Promise.resolve('added')));
   const memory = memoryDrafts();
   const atomId = `${group.group ?? ''}.${String(atom)}`;
   const view = render(
@@ -44,10 +48,19 @@ async function setup({ state, atom = 0, me = authorOf('ana'), onPropose, drafts 
       atomId={atomId}
       drafts={drafts ?? memory.drafts}
       onPropose={propose}
+      onAddVersion={add}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
-  return { user: userEvent.setup(), onPropose: propose, state: group, atomId, memory, view };
+  return {
+    user: userEvent.setup(),
+    onPropose: propose,
+    onAddVersion: add,
+    state: group,
+    atomId,
+    memory,
+    view,
+  };
 }
 
 const box = (name: string) => screen.getByRole('textbox', { name });
@@ -118,10 +131,11 @@ describe('Composer', () => {
   });
 
   it('prefills the link of the latest Proposal that carries one', async () => {
-    const log = groupLog({ chat: 'https://chat.example.org/riverside' });
+    const atoms = ['Quiet hours start at ten.', 'Bins go out on Tuesday.', 'Guests welcome.'];
+    const log = groupLog({ chat: 'https://chat.example.org/riverside', atoms });
     log.propose('ana', { link: 'https://chat.example.org/quiet-hours' });
     log.propose('ben', { atom: 1 });
-    await setup({ state: log.state() });
+    await setup({ state: log.state(), atom: 2 });
     expect(box('Discussion link (optional)')).toHaveValue('https://chat.example.org/quiet-hours');
   });
 
@@ -289,6 +303,7 @@ describe('Composer', () => {
         atomId="missing.0"
         drafts={drafts}
         onPropose={vi.fn()}
+        onAddVersion={vi.fn()}
       />,
     );
     expect(
@@ -305,6 +320,141 @@ describe('Composer', () => {
       screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+/** Ana's open Proposal on section 1 of Ana and Ben's group, with any further versions. */
+function busy(...versions: readonly string[]) {
+  const log = groupLog({ chat: 'https://chat.example.org/riverside' });
+  const proposal = log.propose('ana', { title: 'Later quiet hours', text: 'Quiet after 11pm.\n' });
+  for (const text of versions) log.version('ben', proposal, text);
+  return { state: log.state(), proposal };
+}
+
+const addSubmit = () => screen.getByRole('button', { name: 'Add your version' });
+
+describe('Composer, adding a version', () => {
+  it('becomes “Add your version” on a busy section: the text alone, prefilled with the section', async () => {
+    const { state, proposal } = busy();
+    await setup({ state });
+    expect(screen.getByRole('heading', { level: 1, name: 'Add your version' })).toBeVisible();
+    expect(document.title).toBe('Add your version · Reconcile');
+    expect(
+      screen.getByText(
+        'This section already has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Section 1 now reads' })).toHaveTextContent(
+      'Quiet hours start at ten.',
+    );
+    expect(box('Your version')).toHaveValue('Quiet hours start at ten.');
+    expect(box('Your version')).toBeRequired();
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this replaces the section. ${HINT}`,
+    );
+    for (const label of ['Title', 'Why', 'New text', 'Discussion link (optional)']) {
+      expect(screen.queryByRole('textbox', { name: label })).not.toBeInTheDocument();
+    }
+    expect(
+      screen.getByText(
+        'Your draft stays on this device until you add it. Then everyone in your group sees your version and that you wrote it.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Later quiet hours' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/p/${proposal}`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the version for the open Proposal, as typed', async () => {
+    const { state, proposal } = busy();
+    const { user, onAddVersion, onPropose } = await setup({ state });
+    await replace(user, 'Your version', 'Quiet after midnight.');
+    await user.click(addSubmit());
+    expect(onAddVersion).toHaveBeenCalledWith({ proposal, text: 'Quiet after midnight.' });
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(addSubmit()).toBeDisabled();
+  });
+
+  it.each([
+    ['blank text', '  \n', 'Write your version of this section.'],
+    [
+      'the section’s own text',
+      'Quiet hours start at ten.  \n',
+      'This reads the same as the section does now. Change it to propose something new.',
+    ],
+    [
+      'the Proposal’s own version',
+      'Quiet after 11pm.',
+      'This reads the same as a version already on the ballot. Change it to add something new.',
+    ],
+    [
+      'a version added since',
+      'Quiet after midnight.\r\n',
+      'This reads the same as a version already on the ballot. Change it to add something new.',
+    ],
+  ])('blocks %s, with the reason tied to the field', async (_label, text, reason) => {
+    const { state } = busy('Quiet after midnight.\n');
+    const { user, onAddVersion } = await setup({ state });
+    await replace(user, 'Your version', text);
+    await user.click(addSubmit());
+    expect(onAddVersion).not.toHaveBeenCalled();
+    expect(box('Your version')).toHaveAttribute('aria-invalid', 'true');
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this replaces the section. ${reason} ${HINT}`,
+    );
+  });
+
+  it('ties a too-large version to its text, and says so when it couldn’t be saved', async () => {
+    const outcomes: ComposeOutcome[] = ['too-large'];
+    const onAddVersion = vi.fn<OnAddVersion>(() =>
+      outcomes.length > 0
+        ? Promise.resolve(outcomes.shift() ?? 'failed')
+        : Promise.reject(new Error('quota')),
+    );
+    const { state } = busy();
+    const { user } = await setup({ state, onAddVersion });
+    await replace(user, 'Your version', 'Quiet after midnight.');
+    await user.click(addSubmit());
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this replaces the section. This is too long to send. Shorten it, then try again. ${HINT}`,
+    );
+    await replace(user, 'Your version', 'Quiet after half past eleven.');
+    await user.click(addSubmit());
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your version couldn’t be saved on this device. Try again.',
+    );
+    expect(addSubmit()).toBeEnabled();
+  });
+
+  it('says the ballot is full once it holds three versions, with no form', async () => {
+    const { state } = busy('Quiet after midnight.\n', 'Quiet after 10pm.\n');
+    const { memory } = await setup({ state });
+    expect(screen.getByRole('heading', { level: 1, name: 'This ballot is full' })).toBeVisible();
+    expect(screen.getByText('This ballot already has three versions.')).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(memory.drafts.load).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps the version’s draft under its Proposal, apart from the section’s own draft', async () => {
+    const { state, proposal } = busy();
+    const atomDraft = { title: 'Mine', why: 'Mine.', text: 'Quiet after 9pm.', link: '' };
+    const memory = memoryDrafts({ [`${state.group ?? ''}.0`]: atomDraft });
+    const { user } = await setup({ state, drafts: memory.drafts });
+    expect(box('Your version')).toHaveValue('Quiet hours start at ten.');
+    await replace(user, 'Your version', 'Quiet after midnight.');
+    await waitFor(() => {
+      expect(memory.shelf.get(proposal)).toEqual({
+        title: '',
+        why: '',
+        text: 'Quiet after midnight.',
+        link: '',
+      });
+    });
+    expect(memory.shelf.get(`${state.group ?? ''}.0`)).toEqual(atomDraft);
+    expect(memory.drafts.load).toHaveBeenCalledWith(proposal);
   });
 });
 
@@ -340,13 +490,20 @@ describe('Composer drafts, against fake IndexedDB', () => {
       (await propose(ana.services, groupId, values)).outcome;
     const open = async () => {
       const view = render(
-        <Composer state={state} me={me} atomId={atomId} drafts={drafts} onPropose={onPropose} />,
+        <Composer
+          state={state}
+          me={me}
+          atomId={atomId}
+          drafts={drafts}
+          onPropose={onPropose}
+          onAddVersion={vi.fn()}
+        />,
       );
       await screen.findByRole('textbox', { name: 'Title' });
       return view;
     };
     const stored = () => ana.services.store.readDraft(groupId, atomId);
-    return { open, stored, store: ana.services.store, groupId, fake };
+    return { open, stored, store: ana.services.store, groupId, fake, services: ana.services };
   }
 
   const TYPED: Draft = {
@@ -417,6 +574,60 @@ describe('Composer drafts, against fake IndexedDB', () => {
     expect(box('Title')).toHaveValue('');
     expect(box('New text')).toHaveValue('Quiet hours start at ten.\n');
     expect(screen.queryByText(/Your draft is back/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a version’s draft under its Proposal, and clears it once the version is queued', async () => {
+    const { store, groupId, fake, services } = await device();
+    const atomId = `${groupId}.0`;
+    const proposed = await propose(services, groupId, {
+      atom: atomId,
+      title: 'Later quiet hours',
+      why: 'Weekends run late.',
+      text: 'Quiet after 11pm.',
+      link: null,
+    });
+    if (proposed.outcome !== 'proposed') throw new Error('Expected a Proposal.');
+    await services.sync.syncOnce();
+    const group = await store.getGroup(groupId);
+    if (group === undefined) throw new Error('Expected the group.');
+    const state = fold(group.log, group.relayNow);
+    const drafts = groupDrafts(store, groupId);
+    const onAddVersion = async (values: VersionValues): Promise<ComposeOutcome> =>
+      (await addVersion(services, groupId, values)).outcome;
+    const open = async () => {
+      const view = render(
+        <Composer
+          state={state}
+          me={group.me.author}
+          atomId={atomId}
+          drafts={drafts}
+          onPropose={vi.fn()}
+          onAddVersion={onAddVersion}
+        />,
+      );
+      await screen.findByRole('textbox', { name: 'Your version' });
+      return view;
+    };
+    const user = userEvent.setup();
+    const first = await open();
+    await replace(user, 'Your version', 'Quiet after midnight.');
+    await waitFor(async () => {
+      expect((await store.readDraft(groupId, proposed.proposalId))?.text).toBe(
+        'Quiet after midnight.',
+      );
+    });
+    first.unmount();
+
+    const second = await open();
+    expect(box('Your version')).toHaveValue('Quiet after midnight.');
+    expect(screen.getByText('Your draft is back. It’s saved on this device only.')).toBeVisible();
+    fake.offline = true;
+    await user.click(addSubmit());
+    await waitFor(async () => {
+      expect((await store.getGroup(groupId))?.outbox).toHaveLength(1);
+    });
+    second.unmount();
+    expect(await store.readDraft(groupId, proposed.proposalId)).toBeUndefined();
   });
 
   it('discards the draft: gone from the device, and the form starts over', async () => {

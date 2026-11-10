@@ -7,7 +7,11 @@ import { latestLink } from './latestLink';
 
 const MINUTE = 29_000_000;
 
-/** Folds a group whose genesis carries `chat`, then one Proposal per entry of `links`. */
+/**
+ * Folds a group whose genesis carries `chat`, then one Proposal per entry of
+ * `links`, each on a section of its own, since a section takes one open
+ * Proposal at a time.
+ */
 function groupWith(chat: string | undefined, links: readonly (string | undefined)[]) {
   const records: LogRecord[] = [];
   const add = (draft: EventDraft): string => {
@@ -19,13 +23,16 @@ function groupWith(chat: string | undefined, links: readonly (string | undefined
     name: 'Riverside Tenants',
     founder: 'Ana',
     title: 'House rules',
-    atoms: ['Quiet hours start at ten.'],
+    atoms: [
+      'Quiet hours start at ten.',
+      ...links.map((_, index) => `Section ${String(index + 2)}.`),
+    ],
     ...(chat === undefined ? {} : { chat }),
   };
   const group = add({ type: 'genesis', group: '', ts: 0, body });
   links.forEach((link, index) => {
     const proposal = {
-      atom: `${group}.0`,
+      atom: `${group}.${String(index)}`,
       title: `Proposal ${String(index + 1)}`,
       why: 'Why not.',
       text: 'New text.',

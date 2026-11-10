@@ -8,7 +8,7 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { createGroup } from './actions';
-import { castBallot, chooseLevel, propose, type ProposalValues } from './proposals';
+import { addVersion, castBallot, chooseLevel, propose, type ProposalValues } from './proposals';
 
 freshIndexedDBPerTest();
 
@@ -165,6 +165,79 @@ describe('propose', () => {
   });
 });
 
+describe('addVersion', () => {
+  /** A founded group with Ana's Proposal on its first Atom, sent to the relay. */
+  async function proposed(fake: FakeRelay) {
+    const founding = await founded(fake);
+    const { device, groupId, atom } = founding;
+    const values = { atom, title: 'Quiet hours', why: 'Why not.', text: 'Quiet.', link: null };
+    const result = await propose(device.services, groupId, values);
+    if (result.outcome !== 'proposed') throw new Error('Expected a Proposal.');
+    await device.services.sync.syncOnce();
+    return { ...founding, proposal: result.proposalId };
+  }
+
+  it('queues one version, its text normalized as Atom text, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author, proposal } = await proposed(fake);
+    fake.offline = true;
+    const result = await addVersion(device.services, groupId, {
+      proposal,
+      text: 'Cafe\u0301 quiet  \r\nafter midnight.',
+    });
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      expect.objectContaining({
+        type: 'version',
+        group: groupId,
+        author,
+        body: { proposal, text: 'Caf\u00e9 quiet\nafter midnight.\n' },
+      }),
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    expect(result).toEqual({
+      outcome: 'added',
+      versionId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
+    });
+  });
+
+  it('sends the version, which the fold puts on the ballot as version 2', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, proposal } = await proposed(fake);
+    const result = await addVersion(device.services, groupId, { proposal, text: 'Later.' });
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(state.proposals[0]?.versions.map((v) => v.id)).toEqual([
+      proposal,
+      result.outcome === 'added' ? result.versionId : '',
+    ]);
+  });
+
+  it('clears the draft kept for its Proposal in the same change, and no other', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom, proposal } = await proposed(fake);
+    const draft = { title: '', why: '', text: 'Later.', link: '' };
+    await device.services.store.writeDraft(groupId, proposal, draft);
+    await device.services.store.writeDraft(groupId, atom, draft);
+    await addVersion(device.services, groupId, { proposal, text: draft.text });
+    expect(await device.services.store.readDraft(groupId, proposal)).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('refuses a version too large for any blob, queues nothing and keeps its draft', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, proposal } = await proposed(fake);
+    const draft = { title: '', why: '', text: 'x'.repeat(70_000), link: '' };
+    await device.services.store.writeDraft(groupId, proposal, draft);
+    expect(await addVersion(device.services, groupId, { proposal, text: draft.text })).toEqual({
+      outcome: 'too-large',
+    });
+    expect(await outbox(device, groupId)).toEqual([]);
+    expect(await device.services.store.readDraft(groupId, proposal)).toEqual(draft);
+  });
+});
+
 describe('castBallot', () => {
   it('queues a ballot scoring the Proposal, with its note trimmed and normalized', async () => {
     const fake = createFakeRelay();
@@ -172,7 +245,7 @@ describe('castBallot', () => {
     fake.offline = true;
     await castBallot(device.services, groupId, {
       proposal: 'proposal-1',
-      score: 0,
+      scores: { 'proposal-1': 0 },
       note: '  Too early for the café.  ',
     });
     expect(await outbox(device, groupId)).toEqual([
@@ -188,13 +261,29 @@ describe('castBallot', () => {
     ]);
   });
 
+  it('scores every version it is given, by version id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    fake.offline = true;
+    await castBallot(device.services, groupId, {
+      proposal: 'proposal-1',
+      scores: { 'proposal-1': 2, 'version-2': 4, 'version-3': 1 },
+      note: '',
+    });
+    const [vote] = await outbox(device, groupId);
+    expect(vote?.body).toEqual({
+      proposal: 'proposal-1',
+      scores: { 'proposal-1': 2, 'version-2': 4, 'version-3': 1 },
+    });
+  });
+
   it('leaves a blank note out', async () => {
     const fake = createFakeRelay();
     const { device, groupId } = await founded(fake);
     fake.offline = true;
     await castBallot(device.services, groupId, {
       proposal: 'proposal-1',
-      score: 4,
+      scores: { 'proposal-1': 4 },
       note: '  \n ',
     });
     const [vote] = await outbox(device, groupId);

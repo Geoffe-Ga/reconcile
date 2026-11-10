@@ -6,6 +6,8 @@
 #   2. PUT a random 1,024-byte blob, ttl_days=1, to a random 43-character
 #      mailbox: 201 and a seq.
 #   3. GET that mailbox after seq-1: the same bytes come back.
+#   4. GET /v1/push/key answers the VAPID public key: 87 base64url
+#      characters, so push is on (#89).
 # The blob expires within two days and nobody else knows the mailbox id.
 # On failure it names the step and the HTTP status (000: no response), and
 # exits 1.
@@ -16,7 +18,7 @@
 
 set -euo pipefail
 
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
 
 case "${1:-}" in
     --help) usage; exit 0 ;;
@@ -76,4 +78,9 @@ request get GET "/v1/mailbox/$mailbox?after=$((seq - 1))&limit=1"
 [[ "$status" == 200 ]] || fail get "$status" "$(body)"
 [[ "$(body)" == *"{\"seq\":$seq,"*"\"data\":\"$expected\"}"* ]] ||
     fail get "$status" "the blob that came back differs from the one sent"
-echo ' · get matches · PASS'
+printf ' · get matches'
+
+request push GET /v1/push/key
+[[ "$status" == 200 && "$(body)" =~ ^\{\"vapid_public_key\":\"[A-Za-z0-9_-]{87}\"\}$ ]] ||
+    fail push "$status" "$(body)"
+echo ' · push key · PASS'

@@ -10,7 +10,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { acceptNotice, heading } from './helpers';
+import { acceptNotice, heading } from './support';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -25,7 +25,7 @@ test('one submit click acts when its blur shows or clears a field error', async 
 
   await test.step('Create group: the click that shows the chat link’s error submits', async () => {
     await page.goto('/#/create');
-    await acceptNotice(page);
+    await acceptNotice({ name: 'Ana', page });
     await expect(heading(page, 'Create a group')).toBeVisible();
     await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
     await page.getByRole('textbox', { name: 'Your name' }).fill('Ana');

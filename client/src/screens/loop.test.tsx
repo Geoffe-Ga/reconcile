@@ -7,7 +7,7 @@ import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { VOTE_WINDOW_MINUTES } from '../engine/fold';
+import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -105,7 +105,7 @@ describe('propose, vote, and see the Update', () => {
     // Let the pass that sent the ballot finish reading back before relay time moves on.
     await sync(ana);
 
-    fake.minute += VOTE_WINDOW_MINUTES;
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
     await sync(ana);
     expect(await within(a).findByRole('region', { name: 'Result' })).toHaveTextContent(
       'Not enough people weighed in. This isn’t a no.',

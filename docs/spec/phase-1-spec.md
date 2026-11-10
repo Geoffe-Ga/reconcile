@@ -72,11 +72,12 @@ Protective features are real but quiet. Nothing in the UI suggests the app is fo
 
 | Constant | Value | Source |
 |---|---|---|
-| Vote window | 7 days (10,080 relay minutes) from the relay's receipt of the Proposal. The author's `ts` plays no part | ADR-0073 |
+| Vote window | The default window of the Proposal's class, from the relay's receipt of the Proposal: 7 days (10,080 relay minutes) for an ordinary change, 14 days (20,160) for an entrenched one. The author's `ts` plays no part | ADR-0073, ADR-0074 (#94) |
 | Window bounds | Ordinary votes 3–14 days (default 7), entrenched votes 14–28 (default 14). The proposer's choice arrives in #106 | ADR-0074 |
 | Early close | Once every eligible member's latest ballot scores every version | ADR-0073 |
 | Quorum, per version | min(eligible, max(3, ⌈0.3 × eligible⌉)) scorers | ADR-0073 |
-| Pass (consent floor) | An average of at least 2.0, with fewer than 10% of the version's scorers giving a 0 | [ADR-0002](../adr/0002-consent-floor-vote-rule.md) |
+| Pass (consent floor) | An average of at least 2.0, with fewer than 10% of the version's scorers giving a 0: the ordinary bar | [ADR-0002](../adr/0002-consent-floor-vote-rule.md) |
+| Entrenched bar | An average of at least 3.0, with fewer than 5% of the version's scorers giving a 0 | [ADR-0015](../adr/0015-anti-capture.md) §2 (#94) |
 | Versions per ballot | At most 3 | [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md), ADR-0073 |
 | Text caps | Title 120, justification 2,000 and note 280 Unicode code points, counted after NFC | [ADR-0072](../adr/0072-protocol-details-for-decomposition.md) item 4 |
 | Blob sizes | Exactly 1, 4, 16 or 64 KiB (1,024, 4,096, 16,384 or 65,536 bytes) | [ADR-0019](../adr/0019-sealed-sender-relay.md), ADR-0073 |
@@ -128,7 +129,7 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 
 ### The fold
 
-`fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group id (`group`, its genesis id, or null before one), the group's name and chat link, the Document title, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
+`fold(records, relayNow)` turns a mailbox's records, in relay order, into one `GroupState`: the group id (`group`, its genesis id, or null before one), the founding rules (`rules`, §11), the group's name and chat link, the Document title, members, Atoms, Proposals with their versions and ballots, outcomes, and `ignored` (#63, #69). For each record, the fold:
 
 1. verifies the signature before it parses the event, and requires `author` to equal the record's key. A record that fails lands in `ignored` with `id: null` and claims no event id, so a forged copy of a real event never shadows it;
 2. drops a repeated event id, so the first copy keeps its seq and receipt time;
@@ -140,11 +141,11 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 
 | Type | Body | Valid when | Built by |
 |---|---|---|---|
-| `genesis` | `{name, chat?, founder, title, atoms}`: the group name, an optional chat link, the founder's name, the Document title and its Atoms | it is the first valid event in the mailbox | #63 |
+| `genesis` | `{name, chat?, founder, title, atoms, rules?}`: the group name, an optional chat link, the founder's name, the Document title, its Atoms and its founding rules (§11). Create group writes `rules: DEFAULT_RULES` | it is the first valid event in the mailbox, and `rules`, when present, is an object whose every field this engine knows equals its default (§11) | #63 (the rules: #94) |
 | `join` | `{name, level?, token?}`: the joiner's name, their involvement level (Collaborator when missing), and the inviter's token | the author isn't a member yet, and `level`, when present, is one of `LEVELS` | #63 (the level: #90; the token: #73) |
 | `level` | `{level}`: the involvement level the author moves to | the author is a member, and `level` is one of `LEVELS` other than the one they hold | #90 |
 | `proposal` | `{atom, title, why, text, link?}`: the target Atom (an add carries `target` instead, #75), the title, the justification, the proposed text and an optional discussion link | the author holds `propose`, the Atom exists and has no open Proposal (#72), the title is 1–120 code points, and the justification is at most 2,000 | #63 |
-| `version` | `{proposal, text}` | the author holds `propose`, and the Proposal is open with fewer than 3 versions | #72 |
+| `version` | `{proposal, text}`: the Proposal it joins, and its text, normalized as Atom text before signing | the author holds `propose`, and the Proposal is open (received before its deadline and before any early close) with fewer than 3 versions | #72 |
 | `vote` | `{proposal, scores, note?}`: a score from 0 to 4 for each version it names (at least one), and one note | the author is eligible and holds `vote`, every score names a version already on the Proposal, the note is at most 280 code points and isn't blank when any score is 0, and the relay received the ballot before the deadline and before any early close | #63 |
 | `leave` | `{}` | the author is a member | #77 |
 
@@ -152,12 +153,13 @@ The founder becomes a member at genesis, as a Co-Creator. Genesis Atoms get the 
 
 ### Proposals and ballots
 
-- **Versions** ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md), #72). A Proposal's own text is version 1, and its id is the Proposal's id. A `version` event's id is its own event id. Versions keep relay order. An Atom has at most one open Proposal, so new wording joins it as a version.
+- **Versions** ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md), [ADR-0047](../adr/0047-ballot-cap-quorum-reproposals.md), #72). A Proposal's own text is version 1, and its id is the Proposal's id. A `version` event's id is its own event id. Versions keep relay order, which the winner's tie rule uses, whatever their `ts`. A ballot holds at most 3 versions (`VERSIONS_MAX`).
+- **One open Proposal per Atom** (ADR-0073, #72). A Proposal is open from its receipt until its deadline or its early close, whichever comes first, both in relay order: an event received in the minute of an early close, after the ballot that closed it, finds it closed. The fold ignores a `proposal` on an Atom that has an open one, and new wording joins that one as a version instead. `composeOption(state, atomId)` (`client/src/engine/composeOption.ts`) gives the screens the same rule over folded state: `'propose'` when nothing is open on the Atom, `'add-version'` while its open ballot has room, and `'ballot-full'` at 3 versions. It and the fold share `optionFor`, so the composer never offers what the fold would ignore.
 - **Targets** (#75). An edit names an `atom`. An add carries `target: {kind: "add", after: <atom id> | null}` instead, and the new Atom's id is the Proposal's id. An edit whose version text is `""` removes the Atom, and the fold then ignores later Proposals on it.
 - **Eligibility** ([ADR-0015](../adr/0015-anti-capture.md), #77, #90). The eligible voters are the members at the Proposal's place in relay order for whom `wouldVote` holds: people who joined before it and hadn't left, at a level that grants `vote`. A later join, leave or level change never changes an open Proposal's eligible set, quorum or early close. A ballot also needs `vote` when the relay receives it, so someone who steps down to Member can't vote until they step back up, while the vote is open.
-- **Deadline.** The Proposal's `received` plus 10,080 minutes.
-- **Ballots.** A voter's latest valid ballot replaces their earlier one in full. A ballot that names a version not yet on the Proposal is ignored, and so is a ballot received after the deadline or the close. An ignored ballot never replaces the voter's earlier one.
-- **Close.** A Proposal closes early at the first ballot after which every eligible member's latest ballot scores every version; `closedAt` is that ballot's `received`. Otherwise it closes once `relayNow` reaches the deadline. A new version restarts the wait for an early close.
+- **Class and deadline** (#94). `targetClass(state, body)` in `client/src/engine/rules.ts` gives a Proposal its class, `ordinary` or `entrenched`, from the state when it opens. It never reads a field the proposer writes, so nobody can understate a change. The Proposal keeps it as `class`, and its deadline is its `received` plus `windows[class].default` × 1,440 minutes: 10,080 for an ordinary change. Its versions are tallied at `rules.bars[class]` (§5). Every target is ordinary until entrenched sections (#116), removal (#115), widening an opt-in (#117) and dissolution (#108) each add their case to `targetClass`.
+- **Ballots.** A ballot scores versions by version id. A voter's latest valid ballot replaces their earlier one in full, so a version it leaves out loses that voter's score. A ballot that names a version not yet on the Proposal, in relay order, is ignored, even once that version arrives, and so is a ballot received after the deadline or the close. An ignored ballot never replaces the voter's earlier one.
+- **Close.** A Proposal closes early at the first ballot after which every eligible member's latest ballot scores every version; `closedAt` is that ballot's `received`. Otherwise it closes once `relayNow` reaches the deadline. A new version restarts the wait for an early close: it closes only once every eligible member's latest ballot scores the new version too.
 - **Apply.** Only a closed Proposal's outcome is final. A final pass sets the target Atom's text, or adds or removes the Atom. Final passes apply in order of close time (`closedAt`, or else the deadline), with ties broken by the Proposal's relay order, so every device builds the same Document.
 - **Leave** (#77). After `leave`, `can()` refuses the author everything, so the fold ignores their later events. Ballots received before the leave still count, and the leaver's Proposals and versions stay on the ballot.
 
@@ -180,10 +182,12 @@ The founder becomes a member at genesis, as a Co-Creator. Genesis Atoms get the 
 
 ## 5. Tally
 
-`tally({eligible, versions: [{id, scores}]})` returns `pass` with the winning version, `fail` or `lapse` (#63). It uses integers only: no floats, division or rounding. For each version, `n` is its number of scorers, `sum` their total, and `zeros` the number of 0s.
+`tally({eligible, versions: [{id, scores}], bar})` returns `pass` with the winning version, `fail` or `lapse`, each carrying the `bar` it was tallied at (#63, #94). The bar is the Proposal's class's, `rules.bars[class]` (§4). It uses integers only: no floats, division or rounding. For each version, `n` is its number of scorers, `sum` their total, and `zeros` the number of 0s.
 
-1. **Quorum** (ADR-0073). A version is at quorum when `n ≥ 1`, `n ≥ min(eligible, 3)` and `10·n ≥ 3·eligible`. That equals min(eligible, max(3, ⌈0.3 × eligible⌉)) scorers. Each version needs its own quorum.
-2. **Pass** (ADR-0002). A version at quorum passes when `sum ≥ 2·n` and `10·zeros < n`.
+1. **Quorum** (ADR-0073, `rules.quorum`). A version is at quorum when `n ≥ 1`, `n ≥ min(eligible, 3)` and `100·n ≥ 30·eligible`. That equals min(eligible, max(3, ⌈0.3 × eligible⌉)) scorers. Each version needs its own quorum, at every bar.
+2. **Pass.** A version at quorum passes its bar `{avgAtLeast, zerosUnderPercent}` when `sum ≥ avgAtLeast·n` and `100·zeros < zerosUnderPercent·n`:
+   - the ordinary bar, the consent floor (ADR-0002), is `{2, 10}`: `sum ≥ 2·n` and `10·zeros < n`;
+   - the entrenched bar (ADR-0015 §2) is `{3, 5}`: `sum ≥ 3·n` and `20·zeros < n`.
 3. **Winner** (ADR-0004). Among passing versions, the higher average wins (compare `sumA·nB` with `sumB·nA`), then fewer zeros, then the earlier version.
 4. **Outcome.** If no version is at quorum, the vote lapses. If some are at quorum and none passes, it fails.
 
@@ -193,11 +197,14 @@ The vectors in `client/src/engine/vectors/` pin the edges:
 - a 2-member group passes with 2 of 2 ballots;
 - at 11 eligible, 3 scorers lapse and 4 meet quorum; at 15 eligible, 4 lapse and 5 meet it;
 - a three-way tie goes to the earliest version;
-- a late version that only 2 of 10 eligible members score can't win, because it never reaches quorum (#72).
+- a late version that only 2 of 10 eligible members score can't win, because it never reaches quorum (#72);
+- at the entrenched bar (#94, `bars-entrenched-edges.json`), an average of exactly 3.0 passes and 2.95 fails; one 0 among 20 scorers (exactly 5%) fails and one among 21 passes; an average of exactly 2.5 with no zeros fails, and passes the ordinary bar (`bars-ordinary-pairs.json`); a vote below quorum lapses; and a version under 5% zeros beats a higher average with more.
 
-A lapse reads "Not enough people weighed in. This isn't a no." ([ADR-0069](../adr/0069-lapses-celebration-relational-pilot.md)), and Propose again starts a fresh Proposal with a fresh window (#74). The engine exposes each version's scorers, sum, zeros and quorum, and its pass flags, so the consent meter reads them live and `src/app` holds no threshold numbers (#74).
+Every ballot set that passes the entrenched bar passes the ordinary one, and neither outcome depends on the order ballots arrive in (`properties.test.ts`).
 
-Restored (§11): the entrenched bar (#94), removal's own bar (#115), and priority votes (#107).
+A lapse reads "Not enough people weighed in. This isn't a no." ([ADR-0069](../adr/0069-lapses-celebration-relational-pilot.md)), and Propose again starts a fresh Proposal with a fresh window (#74). The engine exposes each version's scorers, sum, zeros and quorum, and its pass flags, so the consent meter reads them live (#74). Each outcome carries its bar, so the meter draws the Proposal's own lines and `src/app` holds no threshold numbers.
+
+Restored (§11): removal's own bar (#115), and priority votes (#107).
 
 ---
 
@@ -207,17 +214,26 @@ Restored (§11): the entrenched bar (#94), removal's own bar (#115), and priorit
 
 | Method | Path | What it does |
 |---|---|---|
-| `PUT` | `/v1/mailbox/{id}?ttl_days=N` | Stores one raw `application/octet-stream` blob and returns `201 {"seq": n}` |
+| `PUT` | `/v1/mailbox/{id}?ttl_days=N&wake=1` | Stores one raw `application/octet-stream` blob and returns `201 {"seq": n}`. `wake=1` (optional) asks for a push |
 | `GET` | `/v1/mailbox/{id}?after=S&limit=L` | Returns `{"records": [{"seq", "received", "data"}], "now", "instance"}` |
 | `GET` | `/v1/health` | Returns `{"status": "ok"}` |
+| `GET` | `/v1/push/key` | Returns `{"vapid_public_key": k}`: the relay's P-256 point, uncompressed, as 87 unpadded base64url characters (#89) |
+| `PUT` | `/v1/push/{id}` | `{"endpoint": url}` registers a push endpoint under the mailbox for 30 days, or refreshes it, and returns `204` |
+| `DELETE` | `/v1/push/{id}` | `{"endpoint": url}` forgets it, and always returns `204` |
+| `POST` | `/v1/push/{id}/nudge` | `{"not_before": minute}` schedules a wake in that relay minute, or now if it has passed, and returns `204` |
 
 - **PUT.** The id matches `^[A-Za-z0-9_-]{43}$`, the body is exactly 1,024, 4,096, 16,384 or 65,536 bytes, and `ttl_days` is 1–30. `Content-Length` is required and at most 65,536, and the relay checks it before reading. Anything else gets a 4xx and stores nothing. Once the database and its WAL pass `RECONCILE_RELAY_MAX_DB_BYTES` (default 1 GiB), a PUT gets `507 {"error": "storage_full"}`.
 - **GET.** `after` is at least 0 (default 0), and `limit` is 1–100 (default 100). Records come in ascending seq order, after `after`, unexpired, with `data` in standard base64. An unknown mailbox returns an empty list, never a 404. The relay reads `now` before it selects, so every record a response leaves out has `received` ≥ `now`.
 - **Order and time.** `received` and `now` are relay minutes, ⌊Unix seconds / 60⌋. `seq` only grows, even after a purge empties a mailbox. `instance` is 16 random bytes made with the database, so a client can tell when it meets a fresh relay. The relay is trusted for this order and time (ADR-0073), and for nothing else.
-- **Storage.** One table, `blobs(mailbox, seq, blob, received, expiry)`, plus a `meta` row for `instance`. `expiry` is the UTC day of receipt plus `ttl_days` plus 1, and a row expires once today reaches it. A GET skips expired rows, and a daily purge deletes them. Any new column needs an ADR.
-- **Never.** Errors are a constant `{"error": "<code>"}` that never echoes input. There are no docs routes, no debug route, no CORS (the app and relay share one origin) and no request logs. The outermost ASGI middleware sets `scope["client"]` to `None` and deletes forwarding headers before routing. Uvicorn runs one worker with `--no-access-log --no-proxy-headers --no-server-header`.
+- **Storage.** One table, `blobs(mailbox, seq, blob, received, expiry)`, plus a `meta` row for `instance`. `expiry` is the UTC day of receipt plus `ttl_days` plus 1, and a row expires once today reaches it. A GET skips expired rows, and a daily purge deletes them. Push adds two tables (#89): `push_subs(mailbox, endpoint, expiry)` and `nudges(mailbox, due)`, both `WITHOUT ROWID`, keyed on all but `expiry`, with no push keys, timestamps or counters. Any new column needs an ADR.
+- **Push** (#89, [ADR-0012](../adr/0012-content-free-push.md)). It is on only when `RECONCILE_RELAY_VAPID_KEY` names a PEM P-256 private key, which deploy.sh makes once on the VM ([`deploy/README.md`](../../deploy/README.md)). `RECONCILE_RELAY_VAPID_SUBJECT` must then be `https://<domain>` or `mailto:<address>`, never `localhost` or an IP address, or the relay won't start. Without a key, every push route returns `404 {"error": "push_unavailable"}` and `wake` does nothing.
+  - **Requests.** The push routes take `application/json` (else 415) with a declared `Content-Length` of at most 2,048 bytes, checked before reading. A body is one UTF-8 object holding exactly its one key, of its type, with no duplicate key (else `400 invalid_request`). Mailbox ids are checked as for a blob. A push PUT or nudge gets the blob PUT's 507; a DELETE doesn't. `wake` is `1` or absent (else `400 invalid_wake`, checked before the body).
+  - **Endpoints.** At most 1,024 bytes of printable ASCII: `https`, no userinfo, fragment, backslash or space, port absent or 443, and a lower-case host that is `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `web.push.apple.com`, or under `push.apple.com` or `notify.windows.com`. Every failure gets the same `422 {"error": "push_endpoint_rejected"}` and stores nothing. `expiry` follows the blob rule with 30 days, and a re-PUT refreshes it. A mailbox holds at most 100 endpoints; the 101st evicts the one expiring soonest, never itself.
+  - **Nudges.** `not_before` is a relay minute from 0 to now + 43,200 (else `400 invalid_not_before`). A mailbox holds at most 50 pending nudges (else `429 too_many_nudges`), and a repeated minute is no new one. `wake=1` adds a nudge due in the blob's own `received` minute once the blob is stored, past the cap, and only if the mailbox has a live endpoint to wake.
+  - **Sending.** Every 15 s the relay takes and deletes the due nudges, then sends one empty POST to each live endpoint of those mailboxes, each endpoint once however many of its mailboxes are due. The headers are exactly `TTL: 86400`, `Urgency: normal`, `Topic: reconcile` and RFC 8292's VAPID `Authorization` (`aud` the endpoint's origin, `exp` 12 hours on, `sub` the subject), over `httpx2` with no redirects, no cookies, no environment, 5 s to connect and 10 s in all. 201 or 202 succeeds, 404 or 410 deletes the endpoint from every mailbox, and anything else, an exception included, keeps it with no retry. Nothing is logged. The daily purge deletes expired endpoints, and nudges left more than a day overdue.
+- **Never.** Errors are a constant `{"error": "<code>"}` that never echoes input. There are no docs routes, no debug route, no CORS (the app and relay share one origin) and no request logs. The outermost ASGI middleware sets `scope["client"]` to `None` and deletes forwarding headers before routing. Uvicorn runs one worker with `--no-access-log --no-proxy-headers --no-server-header`. The relay's only outbound requests are pushes.
 
-Restored routes: Web Push under `/v1/push/` (#89), and the relay backup at `/v1/backup/{id}` (#97). Each issue adds its rows to this table.
+Restored routes still to come: the relay backup at `/v1/backup/{id}` (#97), which adds its rows to this table.
 
 ---
 
@@ -271,10 +287,14 @@ Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.m
    - Its `validateLink` is `safeHref`: `new URL(href)` with no base, so a relative link fails, allowing only `http:`, `https:` and `mailto:`. The chat-link check is the same function without `mailto:`.
    - A token walker builds React elements from an allowlist: p, h2–h6 (an Atom's `#` moves down one level, clamped at h6), em, strong, ul, ol, li, a, blockquote, code, pre, br and hr. Links re-check their href and open in a new tab with `rel="noopener noreferrer"`; a link's title is dropped. Any other token, or any error, shows the Atom's source as plain text instead. Nothing is ever parsed as HTML: ESLint bans `dangerouslySetInnerHTML` and the other raw-HTML sinks across `src/`.
 7. **Composer** (#66, #70, #72, #74). A title (at most 120), a why (at most 2,000), the new text in Write and Preview tabs, and a discussion link prefilled with the latest one. Limits count code points with `nfcLength`. On a lapsed Proposal, Propose again opens a fresh composer with the same target, title, why, link and version texts.
+   - **Add your version** (#72). The same route, on an Atom whose Proposal is open (`composeOption` says `'add-version'`), is a text-only composer: "Add your version", a line saying the wording joins the open Proposal's ballot, the section as it reads now, and "Your version" in Write and Preview tabs, prefilled with the section's text. Its back link goes to the Proposal. Blank text, text that normalizes to the section's current text, and text that normalizes to a version already on the ballot ("This reads the same as a version already on the ballot. Change it to add something new.") are refused with a message tied to the field. Submitting queues one `version` (`addVersion` in `client/src/app/proposals.ts`) and replaces the composer with the Proposal. On a full ballot the route says "This ballot already has three versions." and shows no form.
    - **Write and Preview** (#70) are React Aria Tabs over a plain textarea, with no editor library or toolbar (ADR-0073). Preview renders the normalized text through `<AtomText>`. One hint line sits under the textarea: "\*\*bold\*\*, \*italic\*, # heading, - list, [link](https://…). End a line with \\ for a line break." Blank text, and text that normalizes to the section's current text, are refused with a message tied to the field.
-   - **The draft** (#70) holds the title, why, text and link. It is private to this device: one per group and target, saved about 500 ms after typing stops (and when the composer closes), and kept inside the group's own IndexedDB record, so Leave and Erase delete it with the group. It is never sent, and the backup file (#78) leaves it out, since drafts stay on one device (ADR-0073). Queuing the Proposal clears it in the same store change, and so does Discard draft. Reopening the composer brings it back with "Your draft is back. It's saved on this device only."
+   - **The draft** (#70) holds the title, why, text and link. It is private to this device: one per group and target (the Atom for a Proposal, the Proposal for a version, #72), saved about 500 ms after typing stops (and when the composer closes), and kept inside the group's own IndexedDB record, so Leave and Erase delete it with the group. It is never sent, and the backup file (#78) leaves it out, since drafts stay on one device (ADR-0073). Queuing the Proposal clears it in the same store change, and so does Discard draft. Reopening the composer brings it back with "Your draft is back. It's saved on this device only."
 8. **Proposal and ballot** (#66, #72, #74, #77).
-   - The title and why, then each version as a word diff against the current text, with its own five score pills, "0 · Strongly opposed" through "4 · Strongly supportive".
+   - The title and why, then, under "Changes to section N", each version as a card: "Version N · <author's name>", its word diff against the current text, "How it will read", and its own five score pills, "0 · Strongly opposed" through "4 · Strongly supportive", in a React Aria RadioGroup labelled "Score for version N" (#72). A ballot needs a score for every version. Phones stack the cards; a Proposal with several versions takes the app shell's width, and its cards sit in equal columns, two from 40rem and three from 60rem, while its running text keeps the reading column.
+   - A voter whose latest ballot is missing a version, while the vote is open, reads "A new version was added. Score it to update your ballot.", with their earlier scores and note prefilled.
+   - While the vote is open, someone who holds `propose` sees Add your version, or "This ballot already has three versions." Their own version still in the outbox shows under "Your version" with its send status.
+   - Once a pass has changed the section, the cards sit under "On the ballot" and show each version as it reads, with no diff. A pass with several versions on its ballot names the winner: "Version N passed. The Document now reads:".
    - **The word diff** (#70) is jsdiff's `diffWordsWithSpace` on the Atom source as signed, never on rendered HTML, so link targets show. `<WordDiff>` sets it in Newsreader with its line breaks kept: additions underlined on `primary-soft`, deletions struck through on `negative-soft`, each preceded by a visually hidden "added" or "removed". A rewrite past 1,000 word edits shows as the old text removed and the new text added. Under it, "How it will read" (a React Aria Disclosure) shows the proposed text through `<AtomText>`, and a passed Proposal's result shows its new text the same way.
    - One note per ballot. It's required when any score is 0, and labelled "What would make this a 3 for you?" when the person gives a 1 and no 0.
    - A countdown with the absolute deadline in a `<time>` element, Join discussion (the Proposal's own link, or else the group's latest), and a consent meter for each version.
@@ -350,7 +370,7 @@ ADR-0074 brings these back at the depth it sets, and ADR-0075 adds safeguards to
 | Proposals (2) | Nothing beyond the foundation: private drafts with Preview, word diffs, and up to 3 versions on one ballot | #70, #72 |
 | Discussion bridge (4) | Ready-made messages for each moment; a Discord bot that posts content-free nudges; a Discord thread per Proposal with a join button; the bot turned on and off by Proposal | #113, #119, #123, #117 |
 | Voting (3) | A window the proposer sets within the class's bounds; priority votes over 2–7 options | #106, #107 |
-| Notifications and followers (3) | Opt-in, content-free Web Push, "closing soon" included; Members as followers; Dispatches sent by a Co-Creator or carried by a passed Proposal | #89, #99, #112 |
+| Notifications and followers (3) | Opt-in, content-free Web Push, "closing soon" included: the relay's push routes, wakes and nudges (#89, §6) and the app's switch per group (#99); Members as followers; Dispatches sent by a Co-Creator or carried by a passed Proposal | #89, #99, #112 |
 | Coalitions (4) | Reconciling two or more groups by a vote in each; a coalition mission statement decided group by group; front doors; coalition followers; an encrypted coalition room; nesting up to 3 levels; Dispatches that rise by vote | #100, #114, #120, #121, #124, #125, #122, #126, #127 |
 | Privacy and safety (3) | Per-member encryption keys and a new group key on leave or removal; weekly mailboxes; ballots and notes that expire 30 days after a decision | #98, #110, #111 |
 
@@ -360,10 +380,27 @@ These come from ADR-0074's "Rules this needs":
 
 - **Windows** (#94, #106). Ordinary votes run 3–14 days (default 7) and entrenched votes 14–28 (default 14). The deadline is fixed in relay time when the Proposal opens, and early close still applies.
 - **Bars** (ADR-0015, #94). Entrenched sections, dissolution and widening an opt-in pass at an average of at least 3.0 with under 5% zeros. Removal has its own bar (below).
-- **Rules are fixed at genesis** with ADR-0067's Fellowship defaults (#94). The one exception is the opt-ins that [ADR-0040](../adr/0040-group-opt-ins-are-governed.md) governs, the chat bot and the front door: a rules Proposal widens them at the entrenched bar and narrows them at the ordinary bar (#117).
+- **Rules are fixed at genesis** with ADR-0067's Fellowship defaults (#94, below). The one exception is the opt-ins that [ADR-0040](../adr/0040-group-opt-ins-are-governed.md) governs, the chat bot and the front door: a rules Proposal widens them at the entrenched bar and narrows them at the ordinary bar (#117).
 - **Coalitions form by private, group-to-group invitation,** with no public index, and nest up to 3 levels (#100, #122).
 - **One more network destination:** a Discord webhook, only for a group that turned its bot on by Proposal. The URL lives only in the encrypted group state (#119).
 - **Recovery uses a random backup key,** and contacts hold Shamir shares of it (#97, #109).
+
+### Founding rules
+
+#94 builds them in `client/src/engine/rules.ts` ([ADR-0051](../adr/0051-dissolution-and-rule-classes.md), [ADR-0067](../adr/0067-genesis-templates.md), ADR-0074). `DEFAULT_RULES` holds whole numbers only, and `RULE_CLASS` gives each field its ADR-0051 class:
+
+| Field | Default | Class |
+|---|---|---|
+| `bars` | ordinary `{avgAtLeast: 2, zerosUnderPercent: 10}`, entrenched `{avgAtLeast: 3, zerosUnderPercent: 5}` | entrenched |
+| `windows` (days) | ordinary `{min: 3, max: 14, default: 7}`, entrenched `{min: 14, max: 28, default: 14}` | ordinary |
+| `quorum` | `{min: 3, percent: 30}` | entrenched |
+| `vouches` | 2 (#101) | ordinary |
+| `waitDays` | 14 (#101) | ordinary |
+| `ballotExpiryDays` | 30 (#111) | ordinary |
+
+- **Genesis.** Create group writes `rules: DEFAULT_RULES` into genesis, and the fold keeps the result in `state.rules`. A missing field, at any depth, takes its default, so a genesis without `rules` (every one before #94) still founds its group. A field that differs from its default (the text `"2"` differs from the number 2) makes the genesis invalid: the MVP sets no rule but the defaults, so a hand-made genesis can't lower a bar, and a later change to a default must keep accepting the old value. A field this engine doesn't know is left out of `state.rules`, so a newer device's genesis still founds the group, and the engine that knows the field checks it.
+- **Classes.** `targetClass` gives each Proposal its class when it opens (§4), and the class picks its bar (§5) and its default window. #106 lets the proposer choose a window within `windows[class]`.
+- **Later fields.** #102 adds the steward and suspension rules and #117 the opt-ins, each with its class. #115 adds removal's bar.
 
 ### ADR-0075's safeguards
 
@@ -374,7 +411,7 @@ These come from ADR-0074's "Rules this needs":
   - "Voting members" means the people who hold voting rights, whatever level they chose, counted by #101's `votingRightsCount`. The bootstrap and the steward thresholds both use it.
   - **Steward seats** (#102): 1 seat under 6 voting members and 2 from 6, with staggered 6-month terms ([ADR-0049](../adr/0049-stewards-and-removal.md)). That's the Fellowship default. A Circle keeps 1 seat until it reaches 10 voting members (ADR-0067, ADR-0072 item 8), but Circles stay deferred (§12), so every MVP group gets the Fellowship seats.
 - **Opt-ins** (§3, §5; #117, #121). A steward's narrowing is valid only beside the same steward's open off-Proposal, and lasts until that Proposal closes. `isWider` compares only what outsiders can see or reach, so replacing a webhook or rotating a front door's keys is an ordinary change.
-- **Push** (§2; #89, #99, #110). Push is off by default, with one switch per group. The switch's disclosure says that whoever runs the relay can see that one phone is in each group where push is on. This is an accepted risk, and #130 revisits it.
+- **Push** (§2; #89, #99, #110). Push is off by default, with one switch per group. The switch's disclosure says that whoever runs the relay can see that one phone is in each group where push is on. The relay keeps each opted-in mailbox's endpoints and due minutes for at most 30 days, and nothing else about push (#89, §6). This is an accepted risk, and #130 revisits it.
 - **Recovery** (§4; #78, #96, #97, #109, #118).
   - The random backup key travels in the backup file and in the second-device link bundle, so a restored or linked device keeps the relay backup fresh.
   - The 72-hour wait runs on each contact's device, in relay time from the relay's receipt of that contact's alert.

@@ -6,3 +6,12 @@
 fastapi==0.162.2
 starlette==1.10.0
 uvicorn==0.54.0
+
+# Web Push (#89). py-vapid signs each push (RFC 8292); httpx2 sends it, and is
+# also what Starlette's TestClient runs on. cryptography loads the VAPID key,
+# and is pinned because reconcile/relay imports it directly. No pywebpush:
+# pushes carry no payload, so there is nothing to encrypt (ADR-0028's
+# amendment). stubs/py_vapid types the part of py-vapid the relay uses.
+py-vapid==1.9.6
+httpx2==2.16.0
+cryptography==50.0.2

@@ -6,7 +6,8 @@
  */
 import { type Level, LEVELS } from '../engine/capabilities';
 import type { EventDraft, Score } from '../engine/event';
-import { fold, type GroupState, type LogRecord, VOTE_WINDOW_MINUTES } from '../engine/fold';
+import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { signedAs } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
@@ -38,6 +39,15 @@ export interface LogBuilder {
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
+  /** Adds a version of `proposal` by `name`, returning its id. */
+  version(name: string, proposal: string, text: string): string;
+  /** Adds `name`'s ballot on `proposal`, scoring each version it names. */
+  ballot(
+    name: string,
+    proposal: string,
+    scores: Readonly<Record<string, Score>>,
+    note?: string,
+  ): void;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -101,11 +111,13 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },
     vote(name: string, proposal: string, score: Score, note?: string) {
-      const vote = {
-        proposal,
-        scores: { [proposal]: score },
-        ...(note === undefined ? {} : { note }),
-      };
+      log.ballot(name, proposal, { [proposal]: score }, note);
+    },
+    version(name: string, proposal: string, text: string) {
+      return add(name, { type: 'version', group, ts: 0, body: { proposal, text } });
+    },
+    ballot(name: string, proposal: string, scores: Readonly<Record<string, Score>>, note?: string) {
+      const vote = { proposal, scores, ...(note === undefined ? {} : { note }) };
       add(name, { type: 'vote', group, ts: 0, body: vote });
     },
     state(relayNow?: number) {
@@ -116,7 +128,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
   return log;
 }
 
-/** The relay minute a Proposal received at `received` closes at. */
+/** The relay minute an ordinary Proposal received at `received` closes at. */
 export function deadlineOf(received: number): number {
-  return received + VOTE_WINDOW_MINUTES;
+  return received + defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 }

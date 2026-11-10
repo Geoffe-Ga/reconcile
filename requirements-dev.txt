@@ -12,8 +12,7 @@ pytest-mock==3.17.0
 pytest-asyncio==1.4.1.post1
 pytest-timeout==2.4.0
 pytest-xdist==3.8.0
-# Starlette's TestClient (it deprecates plain httpx in favour of httpx2)
-httpx2==2.16.0
+# Starlette's TestClient runs on httpx2, now a runtime pin in requirements.txt.
 
 # Lint, format (ruff does both), types, docstrings
 ruff==0.17.4

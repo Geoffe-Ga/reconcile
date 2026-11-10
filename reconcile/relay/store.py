@@ -1,7 +1,15 @@
-"""The relay's SQLite store: one table of blobs and one ``meta`` row.
+"""The relay's SQLite store: blobs, one ``meta`` row, and push's two tables.
 
-Each row holds only the mailbox id, its seq, the opaque blob, the minute it
-was received and the UTC day it expires. Adding a column needs an ADR.
+Each blob row holds only the mailbox id, its seq, the opaque blob, the minute
+it was received and the UTC day it expires. Push (#89, ADR-0012) adds what
+ADR-0019 allows it, endpoints and wake minutes, and nothing else:
+
+- ``push_subs``: a mailbox's push endpoints, each with its expiry day.
+- ``nudges``: the minutes a mailbox is due a wake. The key collapses wakes
+  in one minute into one row.
+
+Neither holds a push key (no payload is sent), a timestamp or a counter.
+Adding a column needs an ADR.
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ if TYPE_CHECKING:
 
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_DAY = 86_400
+MINUTES_PER_DAY = SECONDS_PER_DAY // SECONDS_PER_MINUTE
 INSTANCE_BYTES = 16
 
 _SCHEMA = """
@@ -33,6 +42,17 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS push_subs (
+    mailbox TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    expiry INTEGER NOT NULL,
+    PRIMARY KEY (mailbox, endpoint)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS nudges (
+    mailbox TEXT NOT NULL,
+    due INTEGER NOT NULL,
+    PRIMARY KEY (mailbox, due)
+) WITHOUT ROWID;
 """
 
 
@@ -100,10 +120,104 @@ class BlobStore:
         return [Record(seq, received, blob) for seq, received, blob in rows]
 
     def delete_expired(self, today: int) -> int:
-        """Delete every row whose expiry day has come; return how many."""
-        return self._db.execute(
-            "DELETE FROM blobs WHERE expiry <= ?", (today,)
-        ).rowcount
+        """Delete every expired row; return how many.
+
+        Blobs and push subscriptions go once their expiry day has come. A
+        nudge due before yesterday began was never taken by the tick (push
+        was off), so it goes too.
+        """
+        return (
+            self._db.execute("DELETE FROM blobs WHERE expiry <= ?", (today,)).rowcount
+            + self._db.execute(
+                "DELETE FROM push_subs WHERE expiry <= ?", (today,)
+            ).rowcount
+            + self._db.execute(
+                "DELETE FROM nudges WHERE due < ?", ((today - 1) * MINUTES_PER_DAY,)
+            ).rowcount
+        )
+
+    def subscribe(self, mailbox: str, endpoint: str, *, expiry: int, keep: int) -> None:
+        """Store or refresh ``endpoint`` under ``mailbox``, keeping at most ``keep``.
+
+        Past ``keep``, the rows expiring soonest go first, never the one just
+        stored. Ties go by endpoint, since there is no timestamp to break them.
+        """
+        self._db.execute(
+            "INSERT INTO push_subs (mailbox, endpoint, expiry) VALUES (?, ?, ?)"
+            " ON CONFLICT (mailbox, endpoint) DO UPDATE SET expiry = excluded.expiry",
+            (mailbox, endpoint, expiry),
+        )
+        (count,) = self._db.execute(
+            "SELECT count(*) FROM push_subs WHERE mailbox = ?", (mailbox,)
+        ).fetchone()
+        if count > keep:
+            self._db.execute(
+                "DELETE FROM push_subs WHERE mailbox = ? AND endpoint IN"
+                " (SELECT endpoint FROM push_subs WHERE mailbox = ? AND endpoint != ?"
+                " ORDER BY expiry, endpoint LIMIT ?)",
+                (mailbox, mailbox, endpoint, count - keep),
+            )
+
+    def unsubscribe(self, mailbox: str, endpoint: str) -> None:
+        """Forget ``endpoint`` under ``mailbox``, if it's there."""
+        self._db.execute(
+            "DELETE FROM push_subs WHERE mailbox = ? AND endpoint = ?",
+            (mailbox, endpoint),
+        )
+
+    def forget_endpoint(self, endpoint: str) -> None:
+        """Forget ``endpoint`` under every mailbox: its subscription is gone."""
+        self._db.execute("DELETE FROM push_subs WHERE endpoint = ?", (endpoint,))
+
+    def add_nudge(self, mailbox: str, due: int, *, limit: int) -> bool:
+        """Schedule a wake of ``mailbox`` in minute ``due``.
+
+        Returns False, storing nothing, when that would make more than
+        ``limit`` pending nudges. A minute already pending is no new nudge.
+        """
+        if self._db.execute(
+            "SELECT 1 FROM nudges WHERE mailbox = ? AND due = ?", (mailbox, due)
+        ).fetchone():
+            return True
+        (count,) = self._db.execute(
+            "SELECT count(*) FROM nudges WHERE mailbox = ?", (mailbox,)
+        ).fetchone()
+        if count >= limit:
+            return False
+        self._db.execute(
+            "INSERT INTO nudges (mailbox, due) VALUES (?, ?)", (mailbox, due)
+        )
+        return True
+
+    def add_wake(self, mailbox: str, due: int, *, today: int) -> None:
+        """Wake ``mailbox`` in minute ``due``, if it has a live endpoint to wake.
+
+        With none, nothing is stored, so no row says which blob mattered.
+        """
+        self._db.execute(
+            "INSERT OR IGNORE INTO nudges (mailbox, due) SELECT ?, ?"
+            " WHERE EXISTS (SELECT 1 FROM push_subs WHERE mailbox = ? AND expiry > ?)",
+            (mailbox, due, mailbox, today),
+        )
+
+    def take_due_nudges(self, minute: int) -> list[str]:
+        """Delete every nudge due by ``minute``; return their mailboxes, once each."""
+        rows = self._db.execute(
+            "DELETE FROM nudges WHERE due <= ? RETURNING mailbox", (minute,)
+        ).fetchall()
+        return list(dict.fromkeys(mailbox for (mailbox,) in rows))
+
+    def live_endpoints(self, mailboxes: list[str], *, today: int) -> list[str]:
+        """The unexpired endpoints of ``mailboxes``, each once, in a stable order."""
+        found: dict[str, None] = {}
+        for mailbox in mailboxes:
+            rows = self._db.execute(
+                "SELECT endpoint FROM push_subs WHERE mailbox = ? AND expiry > ?"
+                " ORDER BY endpoint",
+                (mailbox, today),
+            )
+            found.update(dict.fromkeys(endpoint for (endpoint,) in rows))
+        return list(found)
 
     def checkpoint(self) -> None:
         """Copy the WAL into the main file and truncate the WAL to zero bytes."""

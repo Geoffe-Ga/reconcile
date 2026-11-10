@@ -83,8 +83,8 @@ export interface Store extends DraftStore {
   addGroup(group: NewGroup): Promise<Group>;
   /**
    * Queue a signed record for the relay, after the ones already queued. A
-   * Proposal names the `draft` target it came from, and that draft goes in the
-   * same change, so a queued Proposal never leaves its draft behind.
+   * Proposal or version names the `draft` target it came from, and that draft
+   * goes in the same change, so a queued one never leaves its draft behind.
    *
    * @throws {PayloadTooLarge} when the record can't fit in any blob.
    */

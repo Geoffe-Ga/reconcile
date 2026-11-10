@@ -12,9 +12,12 @@
 #      It never touches /var/lib/reconcile, where the database lives;
 #   3. installs requirements.txt into /opt/reconcile/venv and validates the
 #      Caddyfile with the VM's Caddy, then, with sudo, installs the units, the
-#      Caddyfile at /etc/caddy/Caddyfile and a caddy.service drop-in that
-#      sets RECONCILE_SITE;
-#   4. restarts caddy and reconcile-relay (`admin off` disables `caddy
+#      Caddyfile at /etc/caddy/Caddyfile, a caddy.service drop-in that sets
+#      RECONCILE_SITE and a reconcile-relay.service drop-in that sets the
+#      push subject to https://$RECONCILE_SITE;
+#   4. makes the relay's VAPID key, /var/lib/reconcile/vapid.pem, if there
+#      isn't one: once, as the reconcile user, never overwritten or copied;
+#   5. restarts caddy and reconcile-relay (`admin off` disables `caddy
 #      reload`), enables the purge timer, and runs deploy/smoke.sh against
 #      https://$RECONCILE_SITE.
 # It exits non-zero if any step or the smoke test fails.
@@ -36,7 +39,7 @@ READY_SECONDS=120
 
 case "${1:-}" in
     "") ;;
-    --help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Error: Unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -94,9 +97,11 @@ host="$RECONCILE_DEPLOY_HOST"
 site="$RECONCILE_SITE"
 
 # run_on_vm SUDO FUNCTION ARGS...: run FUNCTION from this file on the VM,
-# under sudo when SUDO is "sudo". The function travels base64-encoded and is
-# read by bash from a pipe, so the VM's login shell never parses it, and
-# sudo can still ask for a password on the terminal (ssh -t).
+# under sudo when SUDO is "sudo". The function travels base64-encoded, with
+# the helpers in VM_HELPERS, and is read by bash from a pipe, so the VM's
+# login shell never parses it, and sudo can still ask for a password on the
+# terminal (ssh -t).
+VM_HELPERS=(make_vapid_key)
 run_on_vm() {
     local sudo=$1 fn=$2 encoded arg args=""
     local ssh=(ssh)
@@ -108,7 +113,8 @@ run_on_vm() {
     if [[ -n "$sudo" ]]; then
         ssh+=(-t)
     fi
-    encoded="$( { declare -f "$fn"; echo "$fn \"\$@\""; } | base64 | tr -d '\n')"
+    encoded="$( { declare -f "${VM_HELPERS[@]}" "$fn"; echo "$fn \"\$@\""; } |
+        base64 | tr -d '\n')"
     "${ssh[@]}" "$host" "printf %s $encoded | base64 -d | ${sudo:+$sudo }bash -s --$args"
 }
 
@@ -126,7 +132,24 @@ prepare_on_vm() {
     }
 }
 
-# On the VM, as root: install the units and the Caddyfile, then restart.
+# On the VM, as root: make the relay's VAPID key unless there is one. Every
+# device's push subscription is bound to it, so it is made once, as the
+# reconcile user with umask 077, and never overwritten or copied anywhere.
+# openssl writes it beside the real name, and ln, which refuses to replace a
+# file, puts it in place, so a failed run leaves no half-made key behind.
+make_vapid_key() {
+    local dir=$1 user=$2
+    [[ -e "$dir/vapid.pem" ]] && return 0
+    # The umask is set inside, after runuser's PAM session could reset it.
+    runuser -u "$user" -- bash -c "set -euo pipefail
+        umask 077
+        openssl ecparam -name prime256v1 -genkey -noout -out \"\$1/vapid.pem.new\"
+        ln \"\$1/vapid.pem.new\" \"\$1/vapid.pem\"
+        rm \"\$1/vapid.pem.new\"" make_vapid_key "$dir"
+}
+
+# On the VM, as root: install the units and the Caddyfile, make the VAPID
+# key if it's missing, then restart.
 install_on_vm() {
     set -euo pipefail
     local src=$1 site=$2 unit
@@ -135,9 +158,17 @@ install_on_vm() {
         install -m 0644 "$src/deploy/$unit" "/etc/systemd/system/$unit"
     done
     install -m 0644 "$src/deploy/Caddyfile" /etc/caddy/Caddyfile
-    install -d -m 0755 /etc/systemd/system/caddy.service.d
+    install -d -m 0755 /etc/systemd/system/caddy.service.d \
+        /etc/systemd/system/reconcile-relay.service.d
     printf '[Service]\nEnvironment=RECONCILE_SITE=%s\n' "$site" \
         > /etc/systemd/system/caddy.service.d/reconcile.conf
+    printf '[Service]\nEnvironment=RECONCILE_RELAY_VAPID_SUBJECT=https://%s\n' "$site" \
+        > /etc/systemd/system/reconcile-relay.service.d/reconcile.conf
+    # systemd makes /var/lib/reconcile (StateDirectory=) on the relay's first
+    # start; the first deploy needs it sooner, with the same owner and mode.
+    [[ -d /var/lib/reconcile ]] ||
+        install -d -m 0755 -o reconcile -g reconcile /var/lib/reconcile
+    make_vapid_key /var/lib/reconcile reconcile
     systemctl daemon-reload
     systemctl enable --quiet reconcile-relay.service reconcile-purge.timer
     systemctl restart caddy.service reconcile-relay.service

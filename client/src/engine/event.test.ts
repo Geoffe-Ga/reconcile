@@ -124,6 +124,21 @@ describe('createEvent', () => {
     expect(parseEvent(bytes)).toEqual({ event: { v: 1, ...vote }, id });
   });
 
+  it('NFC-normalizes a version’s text, and round-trips it with the same id', () => {
+    const version: EventInput = {
+      type: 'version',
+      group: 'g1',
+      author: BEN,
+      ts: 6,
+      body: { proposal: 'p1', text: 'Café closes at 11.\n' },
+    };
+    const { bytes, id } = createEvent(version);
+    expect(parseEvent(bytes)).toEqual({
+      event: { v: 1, ...version, body: { proposal: 'p1', text: 'Café closes at 11.\n' } },
+      id,
+    });
+  });
+
   it('round-trips any valid event (property)', () => {
     const text = fc.string({ unit: 'grapheme', maxLength: 20 });
     const input = fc.record({
@@ -182,6 +197,12 @@ describe('parseEvent', () => {
     expect(level?.event.body).toEqual({ level: 'steward' });
   });
 
+  it('keeps a genesis’s rules as written, so the fold checks them against the defaults', () => {
+    const rules = { bars: { entrenched: { avgAtLeast: 1 } }, unknown: ['kept'] };
+    const body = { name: 'G', founder: 'A', title: 'T', atoms: [], rules };
+    expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual(body);
+  });
+
   it('keeps a join’s level as written, known or not, so the fold decides', () => {
     for (const level of [...LEVELS, 'admin', '']) {
       const parsed = parseEvent(json(envelope('join', { name: 'Ben', level })));
@@ -203,6 +224,7 @@ describe('parseEvent', () => {
     ['join', { name: 'Ben' }],
     ['proposal', { atom: 'a', title: 't', why: 'w', text: 'x' }],
     ['vote', { proposal: 'p', scores: {} }],
+    ['version', { proposal: 'p', text: 'x' }],
   ])('leaves an absent optional field absent on a %s', (type, body) => {
     const parsed = parseEvent(json(envelope(type, body)));
     expect(Object.keys(parsed?.event.body ?? { missing: true })).toEqual(Object.keys(body));
@@ -259,6 +281,21 @@ describe('parseEvent', () => {
       'genesis',
       { name: 'G', chat: null, founder: 'A', title: 'T', atoms: [] },
     ],
+    [
+      'genesis with null rules',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: null },
+    ],
+    [
+      'genesis with a list of rules',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: [] },
+    ],
+    [
+      'genesis with rules as text',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: 'defaults' },
+    ],
     ['genesis without a founder', 'genesis', { name: 'G', title: 'T', atoms: [] }],
     ['genesis without a name', 'genesis', { founder: 'A', title: 'T', atoms: [] }],
     ['genesis without a title', 'genesis', { name: 'G', founder: 'A', atoms: [] }],
@@ -284,6 +321,10 @@ describe('parseEvent', () => {
     ['vote with a fractional score', 'vote', { proposal: 'p', scores: { p: 2.5 } }],
     ['vote with a string score', 'vote', { proposal: 'p', scores: { p: '3' } }],
     ['vote with a numeric note', 'vote', { proposal: 'p', scores: { p: 3 }, note: 3 }],
+    ['version without a proposal', 'version', { text: 'x' }],
+    ['version without text', 'version', { proposal: 'p' }],
+    ['version with a numeric proposal', 'version', { proposal: 1, text: 'x' }],
+    ['version with null text', 'version', { proposal: 'p', text: null }],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -311,6 +352,20 @@ describe('parseEvent', () => {
     const scores = parsed?.type === 'vote' ? parsed.body.scores : {};
     expect(Object.getPrototypeOf(scores)).toBe(Object.prototype);
     expect(Object.entries(scores)).toEqual([['__proto__', 3]]);
+  });
+
+  it('reads a version as its Proposal and text, dropping unknown keys', () => {
+    const version = parseEvent(
+      json(envelope('version', { proposal: 'p1', text: 'Quiet after 11pm.\n', title: 'no' })),
+    );
+    expect(version?.event).toEqual({
+      v: 1,
+      type: 'version',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', text: 'Quiet after 11pm.\n' },
+    });
   });
 
   it('keeps optional proposal and vote fields', () => {

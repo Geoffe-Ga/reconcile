@@ -5,18 +5,25 @@
  * shows Create group, Join or the pilot notice, and IndexedDB holds no
  * records. An invite link still shows its preview, and leaves the address bar.
  */
-import { type Browser, expect, type Page, test } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import {
   acceptNotice,
+  expect,
   expectAccessible,
   foundGroup,
-  GROUP,
   heading,
+  type NewGroup,
   storedRecords,
-  TITLE,
-  watchCspViolations,
-} from './helpers';
+  test,
+} from './support';
+
+const GROUP: NewGroup = {
+  name: 'Riverside Tenants',
+  title: 'House rules',
+  atoms: ['Quiet hours start at 10pm.'],
+  founder: 'Ana',
+};
 
 const ios = (browser: string): string =>
   `Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser}`;
@@ -39,21 +46,10 @@ test.beforeAll(async ({ browser }) => {
   const desktop = await browser.newContext();
   const page = await desktop.newPage();
   await page.goto('/');
-  await acceptNotice(page);
-  inviteLink = await foundGroup(page, 'Ana');
+  await acceptNotice({ name: 'Ana', page });
+  inviteLink = await foundGroup(page, GROUP);
   await desktop.close();
 });
-
-/** Opens an iPhone profile with `userAgent`; the caller closes it. */
-async function iphone(browser: Browser, userAgent: string) {
-  const context = await browser.newContext({
-    userAgent,
-    viewport: { width: 390, height: 844 },
-    hasTouch: true,
-  });
-  const violations = await watchCspViolations(context);
-  return { context, page: await context.newPage(), violations };
-}
 
 /** Nothing here makes keys or records anything. */
 async function expectNothingMade(page: Page): Promise<void> {
@@ -65,9 +61,27 @@ async function expectNothingMade(page: Page): Promise<void> {
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
 }
 
+/** The guide, with the invite's preview and its link to copy. */
+async function expectInviteGuide(page: Page): Promise<void> {
+  await expect(heading(page, 'Add Reconcile to your Home Screen')).toBeVisible();
+  const preview = page.getByRole('region', { name: GROUP.name });
+  await expect(preview.getByText(GROUP.title)).toBeVisible();
+  await expect(preview.getByRole('textbox', { name: 'Your invite link' })).toHaveValue(inviteLink);
+  await expect(preview.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
+  // The invite's secret has left the address bar.
+  expect(page.url()).toBe(new URL('/', inviteLink).href);
+}
+
 for (const [name, userAgent] of Object.entries(IPHONES)) {
-  test(`an iPhone in ${name} gets the install guide and Copy, and no keys`, async ({ browser }) => {
-    const { context, page, violations } = await iphone(browser, userAgent);
+  test(`an iPhone in ${name} gets the install guide and Copy, and no keys`, async ({
+    openProfile,
+  }) => {
+    const phone = await openProfile(name, {
+      userAgent,
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+    });
+    const { page } = phone;
 
     await test.step('a plain visit', async () => {
       await page.goto('/');
@@ -77,30 +91,18 @@ for (const [name, userAgent] of Object.entries(IPHONES)) {
     });
 
     await test.step('an invite link, opened in a new page', async () => {
-      const invited = await context.newPage();
+      const invited = await page.context().newPage();
       await invited.goto(inviteLink);
-      await expect(heading(invited, 'Add Reconcile to your Home Screen')).toBeVisible();
-      const preview = invited.getByRole('region', { name: GROUP });
-      await expect(preview.getByText(TITLE)).toBeVisible();
-      await expect(preview.getByRole('textbox', { name: 'Your invite link' })).toHaveValue(
-        inviteLink,
-      );
-      await expect(preview.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
-      // The invite's secret has left the address bar.
-      expect(invited.url()).toBe(new URL('/', inviteLink).href);
-      await expectAccessible(invited, `the install guide in ${name}`);
+      await expectInviteGuide(invited);
+      await expectAccessible({ name, page: invited }, 'install guide');
       await expectNothingMade(invited);
+      await invited.close();
     });
 
     await test.step('an invite link opened in the guide’s own window', async () => {
       await page.goto(inviteLink);
-      await expect(page.getByRole('region', { name: GROUP }).getByText(TITLE)).toBeVisible();
-      expect(page.url()).toBe(new URL('/', inviteLink).href);
+      await expectInviteGuide(page);
       await expectNothingMade(page);
     });
-
-    for (const open of context.pages()) await open.evaluate(() => undefined);
-    expect(violations, 'CSP violations').toEqual([]);
-    await context.close();
   });
 }
