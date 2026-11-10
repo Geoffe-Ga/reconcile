@@ -173,10 +173,15 @@ The governance engine is TypeScript only ([ADR-0073](docs/adr/0073-mvp-scope.md)
 ```ts
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
+import { DEFAULT_RULES } from './rules';
 import { tally } from './tally';
 
 it("doesn't let ballot order change a Proposal's outcome", () => {
-  const ballot = (scores: number[]) => ({ eligible: scores.length, versions: [{ id: 'v1', scores }] });
+  const ballot = (scores: number[]) => ({
+    eligible: scores.length,
+    versions: [{ id: 'v1', scores }],
+    bar: DEFAULT_RULES.bars.ordinary,
+  });
   fc.assert(
     fc.property(fc.array(fc.integer({ min: 0, max: 4 }), { minLength: 1 }), (scores) => {
       expect(tally(ballot(scores))).toEqual(tally(ballot([...scores].reverse())));
