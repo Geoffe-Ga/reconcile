@@ -24,6 +24,7 @@ function setup(props: Partial<SettingsProps> = {}) {
       onCreate: vi.fn(() => Promise.resolve(Uint8Array.of(1))),
       onProtect: vi.fn(() => Promise.resolve('protected' as const)),
     },
+    relayBackup: { kind: 'off' },
     ...props,
   };
   render(<Settings {...all} />);
@@ -62,6 +63,7 @@ describe('Settings', () => {
       'Notifications',
       'Back up your groups',
       'Restore a backup',
+      'Link a new device',
       'Lock with a passkey',
       'Erase this device',
     ]);
@@ -100,6 +102,38 @@ describe('Settings', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers Link a new device under its heading, which opens the linking screen (#96)', async () => {
+    setup();
+
+    const link = screen.getByRole('region', { name: 'Link a new device' });
+    expect(link).toHaveTextContent(
+      'Use your groups on a laptop or a second phone. This device shows a code, the new one scans it, and both show a number for you to check before anything is sent.',
+    );
+    expect(within(link).getByRole('link', { name: 'Link a new device' })).toHaveAttribute(
+      'href',
+      '#/link-new',
+    );
+    // Linking comes after the backup and before the passkey (#95) and Erase, with Notifications (#99) first.
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Notifications',
+      'Back up your groups',
+      'Restore a backup',
+      'Link a new device',
+      'Lock with a passkey',
+      'Erase this device',
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says there is nothing to link on a device with no groups, and offers no link (#96)', () => {
+    setup({ hasGroups: false });
+
+    const link = screen.getByRole('region', { name: 'Link a new device' });
+    expect(link).toHaveTextContent('There are no groups on this device to link yet.');
+    expect(within(link).queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('reveals what Erase does and the press-and-hold, the only negative control, and Cancel hides them', async () => {
     const { user } = setup();
     const open = screen.getByRole('button', { name: 'Erase Reconcile from this device' });
@@ -129,6 +163,37 @@ describe('Settings', () => {
 
     expect(onErase).not.toHaveBeenCalled();
     expect(screen.getByText('You let go early, so nothing was erased.')).toBeVisible();
+  });
+});
+
+describe('Settings’ relay backup line (#97)', () => {
+  // Tue 10 Nov 2026, 15:00 UTC: the same day in every time zone from UTC−9 to UTC+8.
+  const AT = Date.UTC(2026, 10, 10, 15);
+
+  it('says nothing of a relay backup while the device keeps none', () => {
+    setup({ relayBackup: { kind: 'off' } });
+
+    // Scoped to the backup: Notifications' disclosure speaks of the relay too (#99).
+    const section = screen.getByRole('region', { name: 'Back up your groups' });
+    expect(within(section).queryByText(/relay/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ kind: 'saved', at: AT } as const, 'Backed up to the relay Tue 10 Nov.'],
+    [
+      { kind: 'too-large' } as const,
+      'Your groups are too large for the relay backup. Save a backup file instead.',
+    ],
+    [
+      { kind: 'waiting' } as const,
+      'Your groups will be backed up to the relay the next time Reconcile syncs.',
+    ],
+  ])('says where the relay backup stands: %o', async (relayBackup, words) => {
+    setup({ relayBackup });
+
+    const section = screen.getByRole('region', { name: 'Back up your groups' });
+    expect(within(section).getByText(words)).toHaveAttribute('role', 'status');
+    expect(await axeViolations()).toEqual([]);
   });
 });
 

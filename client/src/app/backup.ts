@@ -7,7 +7,10 @@
  * it hands the file to the share sheet or downloads it (`share.ts`), and only
  * once it's saved are its groups marked, so group home stops suggesting a
  * backup for them. Restoring checks the whole file before it writes anything,
- * then syncs at once, so the restored groups catch up with the relay.
+ * then syncs at once, so the restored groups catch up with the relay. The file
+ * carries the device's relay backup key (#97), and a device restored from it
+ * keeps the key if it has none, so its first complete sync pass refreshes the
+ * relay backup.
  */
 import type { Store } from '../store/db';
 import { exportGroups, importGroups } from '../store/snapshot';
@@ -42,7 +45,10 @@ export function passphraseProblem(passphrase: string): string | null {
  */
 export async function makeBackup(
   services: {
-    readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'requireUnlocked'>;
+    readonly store: Pick<
+      Store,
+      'listGroups' | 'listPersonal' | 'getRelayBackup' | 'requireUnlocked'
+    >;
     readonly now: () => number;
   },
   passphrase: string,
@@ -69,7 +75,10 @@ export async function saveBackup(
  * @throws {BackupUnreadable} when it doesn't open or doesn't check out; nothing is written then.
  */
 export async function restoreBackup(
-  services: { readonly store: Pick<Store, 'restoreGroups'>; readonly sync: Pick<Sync, 'syncOnce'> },
+  services: {
+    readonly store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>;
+    readonly sync: Pick<Sync, 'syncOnce'>;
+  },
   bytes: Uint8Array,
   passphrase: string,
 ): Promise<number> {

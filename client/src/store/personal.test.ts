@@ -194,9 +194,14 @@ describe('personal Documents in the store', () => {
     expect(await store.listPersonal()).toEqual([]);
     store.close();
     const upgraded = await openDB(DATABASE_NAME);
-    expect([...upgraded.objectStoreNames].sort()).toEqual(['groups', 'personal', 'vault']);
-    // Version 5 adds the passkey vault (#95) after #93's version 4.
-    expect(upgraded.version).toBe(5);
+    expect([...upgraded.objectStoreNames].sort()).toEqual([
+      'device',
+      'groups',
+      'personal',
+      'vault',
+    ]);
+    // Version 5 adds #97's device store after #93's version 4, and version 6 the passkey vault (#95).
+    expect(upgraded.version).toBe(6);
     upgraded.close();
   });
 });

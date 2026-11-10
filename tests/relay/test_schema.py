@@ -2,7 +2,9 @@
 
 #89 adds the two push tables ADR-0012 and ADR-0019 allow ("push adds
 endpoints and wake minutes, nothing else"): no push keys, since no payload is
-sent, and no timestamps or counters.
+sent, and no timestamps or counters. #97 adds ``backups``, as ADR-0043 §3 and
+ADR-0072 items 13 and 14 allow: an id, a padded blob and an expiry day, with
+no receipt time and no rowid to count with.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ BLOB_COLUMNS = [
 ]
 PUSH_SUB_COLUMNS = [("mailbox", "TEXT"), ("endpoint", "TEXT"), ("expiry", "INTEGER")]
 NUDGE_COLUMNS = [("mailbox", "TEXT"), ("due", "INTEGER")]
+BACKUP_COLUMNS = [("id", "TEXT"), ("blob", "BLOB"), ("expiry", "INTEGER")]
 
 
 @pytest.fixture
@@ -62,7 +65,7 @@ def test_seq_is_an_autoincrement_primary_key(db: sqlite3.Connection) -> None:
     assert "INTEGER PRIMARY KEY AUTOINCREMENT" in " ".join(sql.split())
 
 
-def test_the_only_tables_are_blobs_meta_push_and_sqlite_sequence(
+def test_the_only_tables_are_blobs_meta_push_backups_and_sqlite_sequence(
     db: sqlite3.Connection,
 ) -> None:
     """There is no other table to grow a list of people in."""
@@ -71,7 +74,14 @@ def test_the_only_tables_are_blobs_meta_push_and_sqlite_sequence(
         for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
 
-    assert tables == {"blobs", "meta", "sqlite_sequence", "push_subs", "nudges"}
+    assert tables == {
+        "blobs",
+        "meta",
+        "sqlite_sequence",
+        "push_subs",
+        "nudges",
+        "backups",
+    }
 
 
 @pytest.mark.parametrize(
@@ -105,6 +115,37 @@ def test_the_push_tables_have_no_extra_index(db: sqlite3.Connection) -> None:
     for table in ("push_subs", "nudges"):
         origins = [row[3] for row in db.execute(f"PRAGMA index_list({table})")]
         assert origins == ["pk"], table
+
+
+def test_backups_has_exactly_its_three_columns(db: sqlite3.Connection) -> None:
+    """An id, a blob and an expiry day (#97): no receipt time, no rowid.
+
+    The id is the primary key, so a later PUT replaces the row. WITHOUT
+    ROWID leaves no hidden counter that would order backups by when each
+    first arrived. Adding a column fails here until an ADR allows it.
+    """
+    info = list(db.execute("PRAGMA table_info(backups)"))
+    (sql,) = db.execute(
+        "SELECT sql FROM sqlite_master WHERE name = 'backups'"
+    ).fetchone()
+
+    assert [(row[1], row[2]) for row in info] == BACKUP_COLUMNS
+    assert [row[1] for row in info if row[5]] == ["id"]
+    assert all(row[3] for row in info), "every column is NOT NULL"
+    assert " ".join(sql.split()).endswith("WITHOUT ROWID")
+
+
+def test_backups_is_indexed_by_its_key_and_expiry_alone(
+    db: sqlite3.Connection,
+) -> None:
+    """The purge walks expiry without reading a blob; nothing else is indexed."""
+    indexes = {
+        name: (origin, [row[2] for row in db.execute(f"PRAGMA index_info('{name}')")])
+        for (_, name, _, origin, _) in db.execute("PRAGMA index_list(backups)")
+    }
+
+    assert sorted(origin for origin, _ in indexes.values()) == ["c", "pk"]
+    assert ["expiry"] in [columns for _, columns in indexes.values()]
 
 
 def test_meta_holds_only_the_instance(db: sqlite3.Connection) -> None:
