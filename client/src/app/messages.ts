@@ -32,10 +32,71 @@ export const messages = {
     inviteHeading: 'Have an invite link?',
     inviteLabel: 'Invite link',
     inviteHint: 'Paste the link someone in your group sent you.',
-    inviteInvalid: 'This isn’t a whole invite link. Copy all of it and paste it again.',
-    openInvite: 'Open invite',
+    openInvite: 'Join with an invite link',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
+    mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
+  },
+  install: {
+    pageTitle: 'Add to Home Screen',
+    title: 'Add Reconcile to your Home Screen',
+    otherApp: 'If you opened this inside another app, open it in Safari first.',
+    steps: ['Tap Share, or tap ••• and then Share.', 'Choose Add to Home Screen, then tap Add.'],
+    open: 'Open Reconcile from your Home Screen.',
+    openToJoin: 'Open Reconcile from your Home Screen and tap Join with an invite link.',
+    why: 'Safari can clear a website’s data after a week without a visit, so on iPhone and iPad Reconcile runs from your Home Screen.',
+    inviteHeading: 'Your invite',
+    inviteLabel: 'Your invite link',
+    inviteHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
+    copyInvite: 'Copy invite link',
+    appLabel: 'Reconcile’s address',
+    appHint: 'To open Reconcile in Safari, copy this and paste it into Safari’s address bar.',
+    copyApp: 'Copy link',
+    copied: 'Copied.',
+  },
+  // The pilot notice (ADR-0056). "Sealed" and "can’t read" hold because every
+  // blob is sealed before it leaves the device (#71, spec §3).
+  notice: {
+    pageTitle: 'Before you start',
+    eyebrow: 'Reconcile pilot',
+    title: 'Before you start',
+    lede: 'You’re helping a few groups try out Reconcile. Here’s what that means for you.',
+    accept: 'I understand',
+    topics: [
+      {
+        heading: 'What’s stored',
+        lines: [
+          'Your groups live on this device: their Documents, Proposals and votes, the name you use in each group, and the keys that let you take part. There are no accounts.',
+          'Messages between your group’s devices pass through Reconcile’s relay, which keeps them for 30 days. Each one is sealed on your device before it’s sent.',
+        ],
+        list: [],
+      },
+      {
+        heading: 'What the relay can see',
+        lines: ['Whoever runs the relay can’t read what your group writes. They can see:'],
+        list: [
+          'your device’s IP address while it’s connected, though the relay doesn’t log it',
+          'when messages arrive',
+          'each message’s size class, one of four sizes',
+          'which mailboxes your device checks',
+        ],
+      },
+      {
+        heading: 'Data can be lost',
+        lines: [
+          'A lost or reset phone, cleared browser data or a bug can lose your groups on this device. Your group keeps its own copies, and a new invite link brings you back in.',
+        ],
+        list: [],
+      },
+      {
+        heading: 'This is a test',
+        lines: [
+          'Reconcile is new and will change as we learn. It hasn’t had an outside security review yet, so keep anything sensitive out of it for now.',
+          'If something goes wrong, tell the person who invited you.',
+        ],
+        list: [],
+      },
+    ],
   },
   create: {
     pageTitle: 'Create a group',

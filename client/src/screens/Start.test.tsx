@@ -41,35 +41,67 @@ describe('Start', () => {
     );
   });
 
-  it('opens a pasted invite link', async () => {
+  it('opens a pasted invite link, trimmed, from Join with an invite link', async () => {
     const user = userEvent.setup();
     const onOpenInvite = vi.fn();
     const invite = { secret: newGroupSecret() };
     render(<Start groups={[]} onOpenInvite={onOpenInvite} />);
 
     await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
-    await user.paste(inviteLink('https://reconcile.example', invite));
-    await user.click(screen.getByRole('button', { name: 'Open invite' }));
+    await user.paste(`  ${inviteLink('https://reconcile.example', invite)}\n`);
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
 
     expect(onOpenInvite).toHaveBeenCalledTimes(1);
     expect(onOpenInvite.mock.calls[0]?.[0]).toMatchObject({ secret: invite.secret });
   });
 
-  it('refuses text that isn’t an invite link, without repeating it back', async () => {
+  it('never reads the clipboard on its own', async () => {
+    const user = userEvent.setup();
+    const readText = vi.spyOn(navigator.clipboard, 'readText');
+    const read = vi.spyOn(navigator.clipboard, 'read');
+    render(<Start groups={[]} onOpenInvite={vi.fn()} />);
+    await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    expect(readText).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('says a malformed link has expired or is damaged, without repeating it back', async () => {
     const user = userEvent.setup();
     const onOpenInvite = vi.fn();
     render(<Start groups={GROUPS} onOpenInvite={onOpenInvite} />);
 
     const field = screen.getByRole('textbox', { name: 'Invite link' });
     await user.type(field, 'https://example.org/#/join/not-a-real-payload');
-    await user.click(screen.getByRole('button', { name: 'Open invite' }));
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
 
     expect(onOpenInvite).not.toHaveBeenCalled();
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(field).toHaveAccessibleDescription(
-      'Paste the link someone in your group sent you. This isn’t a whole invite link. Copy all of it and paste it again.',
+      'Paste the link someone in your group sent you. This invite link has expired or is damaged. Ask someone in your group for a new one.',
     );
     expect(document.body).not.toHaveTextContent('not-a-real-payload');
     expect(await axeViolations()).toEqual([]);
   });
+
+  it.each(['denied', 'unavailable'] as const)(
+    'says quietly that the browser may clear its data when persistence is %s',
+    async (persistence) => {
+      render(<Start groups={[]} onOpenInvite={vi.fn()} persistence={persistence} />);
+      expect(
+        screen.getByText(
+          'This browser may clear Reconcile’s data if the device runs low on space.',
+        ),
+      ).toBeVisible();
+      expect(await axeViolations()).toEqual([]);
+    },
+  );
+
+  it.each(['granted', null] as const)(
+    'says nothing about storage when persistence is %s',
+    (persistence) => {
+      render(<Start groups={[]} onOpenInvite={vi.fn()} persistence={persistence} />);
+      expect(screen.queryByText(/may clear Reconcile’s data/)).not.toBeInTheDocument();
+    },
+  );
 });

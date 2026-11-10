@@ -11,7 +11,15 @@
  */
 import { type Locator, type Page } from '@playwright/test';
 
-import { expect, expectAccessible, heading, type Person, pick, test } from './support/fixtures';
+import {
+  acceptNotice,
+  expect,
+  expectAccessible,
+  heading,
+  type Person,
+  pick,
+  test,
+} from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -82,6 +90,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
   await test.step('A creates a group, and B joins it as a Co-Creator', async () => {
     const { page } = ana;
     await page.goto('/#/create');
+    await acceptNotice(ana);
     await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
     await page.getByRole('textbox', { name: 'Your name' }).fill(ana.name);
     await page.getByRole('textbox', { name: 'Document title' }).fill(TITLE);
@@ -93,6 +102,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
     const invite = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
 
     await ben.page.goto(invite);
+    await acceptNotice(ben);
     await expect(heading(ben.page, GROUP)).toBeVisible();
     await ben.page.getByRole('textbox', { name: 'Your name' }).fill(ben.name);
     // Adding a version is proposing, which only the creating level holds.

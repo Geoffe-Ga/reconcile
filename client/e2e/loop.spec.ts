@@ -11,7 +11,15 @@
  */
 import { type Locator, type Page } from '@playwright/test';
 
-import { expect, expectAccessible, heading, type Person, pick, test } from './support/fixtures';
+import {
+  acceptNotice,
+  expect,
+  expectAccessible,
+  heading,
+  type Person,
+  pick,
+  test,
+} from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const CHAT = 'https://chat.example.org/riverside';
@@ -118,6 +126,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
   await test.step('A creates a group', async () => {
     const { page } = ana;
     await page.goto('/');
+    await acceptNotice(ana);
     await expect(heading(page, 'Your groups')).toBeVisible();
     await expectAccessible(ana, 'Start');
     await page.getByRole('link', { name: 'Create group' }).click();
@@ -146,14 +155,16 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
   await test.step('B joins from the link in A’s invite field, and C as a Co-Creator', async () => {
     // B opens the link itself.
     await ben.page.goto(inviteLink);
+    await acceptNotice(ben);
     await join(ben);
 
     // C pastes it on Start, in the dark theme.
     await cal.page.goto('/');
+    await acceptNotice(cal);
     await expect(heading(cal.page, 'Your groups')).toBeVisible();
     await expectAccessible(cal, 'Start');
     await cal.page.getByRole('textbox', { name: 'Invite link' }).fill(inviteLink);
-    await cal.page.getByRole('button', { name: 'Open invite' }).click();
+    await cal.page.getByRole('button', { name: 'Join with an invite link' }).click();
     // C will open the composer, which only the creating level holds.
     await join(cal, 'Co-Creator');
   });
