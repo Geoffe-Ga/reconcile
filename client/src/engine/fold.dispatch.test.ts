@@ -103,9 +103,10 @@ describe('Dispatches in the fold (#112)', () => {
         const opened = log.minute;
         const proposal = log.propose('Ana', { dispatch: { title: 'Updated', text: '' } });
         for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, proposal, 4);
-        for (const offset of [...picked].sort((a, b) => a - b)) {
+        // Each title is its own, so two Dispatches in one minute are two events, not one repeated.
+        for (const [index, offset] of [...picked].sort((a, b) => a - b).entries()) {
           log.minute = opened + offset;
-          log.dispatch('Ben', { title: `At ${String(offset)}`, text: '' });
+          log.dispatch('Ben', { title: `At ${String(offset)}, #${String(index)}`, text: '' });
         }
         const deadline = deadlineOf(opened);
         const state = log.state(deadline + 50);

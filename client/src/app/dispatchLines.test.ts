@@ -11,8 +11,8 @@ describe('senderOf (#112)', () => {
     const proposal = log.propose('Ana', { title: 'Share the tools' });
     log.leave('Cal');
     const state = log.state();
-    expect(senderOf(state, authorOf('ana'))).toEqual({ kind: 'member', name: 'Ana' });
-    expect(senderOf(state, authorOf('cal'))).toEqual({ kind: 'member', name: 'Cal' });
+    expect(senderOf(state, authorOf('ana'))).toEqual({ kind: 'person', name: 'Ana' });
+    expect(senderOf(state, authorOf('cal'))).toEqual({ kind: 'person', name: 'Cal' });
     expect(senderOf(state, { proposal })).toEqual({
       kind: 'proposal',
       id: proposal,
@@ -22,7 +22,7 @@ describe('senderOf (#112)', () => {
 
   it('names nobody it doesn’t know, rather than failing', () => {
     const state = groupLog().state();
-    expect(senderOf(state, authorOf('zed'))).toEqual({ kind: 'member', name: '' });
+    expect(senderOf(state, authorOf('zed'))).toEqual({ kind: 'person', name: '' });
     expect(senderOf(state, { proposal: 'gone' })).toEqual({
       kind: 'proposal',
       id: 'gone',

@@ -8,9 +8,9 @@ import type { DispatchSender } from '../engine/dispatches';
 import type { GroupState } from '../engine/fold';
 import { displayName } from '../engine/names';
 
-/** Who a Dispatch came from, as its card names them: a member by name, or a Proposal by title. */
+/** Who a Dispatch came from, as its card names them: a person by name, or a Proposal by title. */
 export type Sender =
-  | { readonly kind: 'member'; readonly name: string }
+  | { readonly kind: 'person'; readonly name: string }
   | { readonly kind: 'proposal'; readonly id: string; readonly title: string };
 
 /**
@@ -18,7 +18,7 @@ export type Sender =
  * too), or the Proposal that carried it, by its title.
  */
 export function senderOf(state: GroupState, by: DispatchSender): Sender {
-  if (typeof by === 'string') return { kind: 'member', name: displayName(state, by) ?? '' };
+  if (typeof by === 'string') return { kind: 'person', name: displayName(state, by) ?? '' };
   const title = state.proposals.find((proposal) => proposal.id === by.proposal)?.title ?? '';
   return { kind: 'proposal', id: by.proposal, title };
 }

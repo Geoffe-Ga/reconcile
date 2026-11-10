@@ -25,7 +25,7 @@ export type DispatchHeadingLevel = 2 | 3;
 function SenderLine({ state, dispatch }: { state: GroupState; dispatch: Dispatch }) {
   const sender = senderOf(state, dispatch.by);
   const { from, fromProposal } = messages.dispatches;
-  if (sender.kind === 'member') {
+  if (sender.kind === 'person') {
     return (
       <span>
         <Named parts={from} name={sender.name} />
