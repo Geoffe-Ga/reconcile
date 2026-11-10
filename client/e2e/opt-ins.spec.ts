@@ -82,6 +82,7 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     await page.getByRole('textbox', { name: 'Document text' }).fill('Quiet hours start at 10pm.');
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
     const invite = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
     await join(ben, invite);
     await join(cal, invite);

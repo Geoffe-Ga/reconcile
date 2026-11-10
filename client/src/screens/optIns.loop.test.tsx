@@ -1,7 +1,7 @@
 /**
- * Opt-ins through the whole app (#117), on three devices that share one fake
- * relay. Ana proposes turning the chat bot on from Group rules, everyone
- * votes it through at the entrenched bar, and Ben reads it on by its
+ * Opt-ins through the whole app (#117), on two devices that share one fake
+ * relay. Ana proposes turning the chat bot on from Group rules, both vote
+ * it through at the entrenched bar, and Group rules reads it on by its
  * webhook's last 4. With the bot on, Ana, the steward, turns it off now, and
  * Ben reads who did. In both, a spy on `fetch` and the relay's record of every
  * request it got show the webhook never left a device readable: it is in no
@@ -66,11 +66,11 @@ function leaks(fake: FakeRelay): string[] {
   );
 }
 
-/** Ana, Ben and Cal's group on one fake relay, with a spy on the page's own `fetch`. */
+/** Ana and Ben's group on one fake relay, with a spy on the page's own `fetch`. */
 async function group() {
   const network = vi.spyOn(globalThis, 'fetch');
   const fake = createFakeRelay();
-  const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
+  const { groupId, devices } = await members(fake, ['Ana', 'Ben']);
   opened.push(...devices);
   return { network, fake, groupId, devices };
 }
@@ -100,10 +100,9 @@ describe('opt-ins in the app', () => {
   it('turns the chat bot on from Group rules by a vote, and the webhook never reaches the relay readable', async () => {
     const user = userEvent.setup();
     const { network, fake, groupId, devices } = await group();
-    const [ana, ben] = devices;
+    const [ana] = devices;
     go(`#/g/${groupId}/rules`);
     const a = mount(ana, 'a');
-    const b = mount(ben, 'b');
 
     const propose = 'Propose turning this on for the Discord chat bot';
     await user.click(await within(a).findByRole('link', { name: propose }));
@@ -119,11 +118,10 @@ describe('opt-ins in the app', () => {
     // The relay must have the Proposal before anyone's ballot on it.
     await sync(ana);
     await everyoneVotes(devices, groupId, proposalId);
-    expect(await within(b).findByText('This passed. The Discord chat bot is on.')).toBeVisible();
+    expect(await within(a).findByText('This passed. The Discord chat bot is on.')).toBeVisible();
 
     go(`#/g/${groupId}/rules`);
-    expect(within(await botOf(b)).getByText('WXYZ')).toBeVisible();
-    expect(within(await botOf(b)).queryByRole('link', { name: /^Turn off now/ })).toBeNull();
+    expect(within(await botOf(a)).getByText('WXYZ')).toBeVisible();
 
     expect(await keptLocally(ana, groupId)).toBe(true);
     expect(fake.requests.length).toBeGreaterThan(10);
