@@ -139,7 +139,7 @@ export interface NewGroup {
 
 /**
  * From Start, founds `group`, waits for Group home (its genesis is back from
- * the relay), and returns its invite link.
+ * the relay), presses Copy invite link, and returns the link it made (#73).
  */
 export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
   await page.getByRole('link', { name: 'Create group' }).click();
@@ -149,7 +149,10 @@ export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
   await page.getByRole('textbox', { name: 'Document text' }).fill(group.atoms.join('\n\n'));
   await page.getByRole('button', { name: 'Create group' }).click();
   await expect(heading(page, group.name)).toBeVisible();
-  return page.getByRole('textbox', { name: 'Invite link' }).inputValue();
+  await page.getByRole('button', { name: 'Copy invite link' }).click();
+  const link = page.getByRole('textbox', { name: 'Invite link' });
+  await expect(link).toHaveValue(/#join\/[\w-]{43}$/);
+  return link.inputValue();
 }
 
 /** The number of records in every IndexedDB database the page's origin holds. */

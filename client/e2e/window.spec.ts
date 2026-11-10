@@ -47,6 +47,7 @@ test('A proposes with a 10-day window, and both profiles fold its 10-day deadlin
     await page.getByRole('textbox', { name: 'Document text' }).fill(ATOM);
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
     const invite = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
 
     await ben.page.goto(invite);

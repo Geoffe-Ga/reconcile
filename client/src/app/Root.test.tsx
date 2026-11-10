@@ -15,8 +15,7 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { createGroup } from './actions';
-import { inviteLink } from './invite';
+import { createGroup, makeInvite } from './actions';
 import { messages } from './messages';
 import { Root } from './Root';
 
@@ -70,10 +69,9 @@ async function anasGroup(fake: FakeRelay): Promise<string> {
   const result = await createGroup(ana.services, values);
   if (result.outcome !== 'created') throw new Error('Expected a group.');
   await ana.services.sync.syncOnce();
-  const group = await ana.services.store.getGroup(result.groupId);
-  if (group === undefined) throw new Error('Expected the group.');
+  const link = await makeInvite(ana.services, result.groupId, ana.services.origin);
   keysMade.mockClear();
-  return inviteLink(ana.services.origin, { secret: group.secret });
+  return link;
 }
 
 function memoryNotice(): NoticeRecord {

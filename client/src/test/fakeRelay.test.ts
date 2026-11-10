@@ -100,6 +100,44 @@ describe('the fake relay keeps #62’s contract', () => {
     expect(fake.instance).toMatch(/^[A-Za-z0-9_-]{22}$/);
   });
 
+  it('keeps a blob through the UTC day after its ttl, as the relay rounds up, and not a day more', async () => {
+    // Minute 1,440 × 20,000 starts a UTC day; the blob arrives an hour into it.
+    const day = 1440 * 20_000;
+    const fake = createFakeRelay({ minute: day + 60 });
+    const put = (ttl: number) =>
+      fake.fetch(`/v1/mailbox/${mailbox}?ttl_days=${String(ttl)}`, {
+        method: 'PUT',
+        headers: octets,
+        body: new Uint8Array(1024),
+      });
+    await put(1);
+    await put(30);
+
+    fake.minute = day + 2 * 1440 - 1;
+    expect(fake.blobs(mailbox)).toHaveLength(2);
+    fake.minute = day + 2 * 1440;
+    expect(fake.blobs(mailbox)).toHaveLength(1);
+    const response = await fake.fetch(`/v1/mailbox/${mailbox}`);
+    expect((await response.json()) as { records: { seq: number }[] }).toMatchObject({
+      records: [{ seq: 2 }],
+    });
+  });
+
+  it('drops a mailbox’s oldest blobs, as a purge would', async () => {
+    const fake = createFakeRelay();
+    for (const fill of [1, 2, 3]) {
+      await fake.fetch(`/v1/mailbox/${mailbox}`, {
+        method: 'PUT',
+        headers: octets,
+        body: new Uint8Array(1024).fill(fill),
+      });
+    }
+
+    fake.drop(mailbox, 2);
+
+    expect(fake.blobs(mailbox).map((blob) => blob[0])).toEqual([3]);
+  });
+
   it('records requests as they reach it, and none while offline', async () => {
     const fake = createFakeRelay();
     fake.offline = true;

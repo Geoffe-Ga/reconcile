@@ -72,6 +72,7 @@ test('a steward suspends Kim, everyone sees it, and Ben proposes himself for sea
     await page.getByRole('textbox', { name: 'Document text' }).fill('Quiet hours start at 10pm.');
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
     const invite = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
     await join(ben, invite, 'Co-Creator');
     await join(kim, invite);

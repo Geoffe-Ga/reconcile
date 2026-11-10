@@ -203,6 +203,25 @@ describe('parseEvent', () => {
     expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual(body);
   });
 
+  it('keeps a well-shaped invite token on a join, and drops any other, keeping the join', () => {
+    const token = { by: ANA, sig: 'S'.repeat(86) };
+    const kept = parseEvent(json(envelope('join', { name: 'Ben', token })));
+    expect(kept?.event.body).toEqual({ name: 'Ben', token });
+    for (const bad of [
+      { by: ANA, sig: 'S'.repeat(85) },
+      { by: ANA, sig: `${'S'.repeat(85)}+` },
+      { by: ANA.slice(1), sig: token.sig },
+      { by: ANA, sig: 7 },
+      { by: ANA },
+      [ANA, token.sig],
+      null,
+      'Ana sent me',
+    ]) {
+      const parsed = parseEvent(json(envelope('join', { name: 'Ben', token: bad })));
+      expect(parsed?.event.body, JSON.stringify(bad)).toEqual({ name: 'Ben' });
+    }
+  });
+
   it('keeps a join’s level as written, known or not, so the fold decides', () => {
     for (const level of [...LEVELS, 'admin', '']) {
       const parsed = parseEvent(json(envelope('join', { name: 'Ben', level })));
