@@ -15,3 +15,4 @@ package-lock.json
 # \u escape, so a combining mark, an NBSP or a lone surrogate stays visible and no
 # editor can normalize it away. Prettier would rewrite the escapes as literals.
 src/engine/vectors/atom-text.json
+test-results

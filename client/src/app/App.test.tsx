@@ -45,7 +45,7 @@ async function existingGroup(owner: TestDevice): Promise<string> {
 async function linkFor(owner: TestDevice, groupId: string, origin: string): Promise<string> {
   const group = await owner.services.store.getGroup(groupId);
   if (group === undefined) throw new Error('Expected the group.');
-  return inviteLink(origin, { mailbox: group.mailbox, secret: group.secret });
+  return inviteLink(origin, { secret: group.secret });
 }
 
 function at(hash: string): void {

@@ -4,11 +4,13 @@
  * Each action signs one event with the engine, keeps its record in the
  * store's outbox, and asks the sync loop to send it at once. Create group and
  * Join each make a fresh keypair for that one group (ADR-0009), kept only with
- * its records. Folded state still comes only from relay records, so a new
- * group shows once its genesis is back from the relay.
+ * its records. Create group also makes the group secret, which the mailbox
+ * id and seal key derive from (spec §3). Folded state still comes only from
+ * relay records, so a new group shows once its genesis is back from the relay.
  */
+import { newGroupSecret } from '../crypto/groupKeys';
+import { MAX_RECORD_BYTES } from '../crypto/record';
 import type { Seal } from '../crypto/seal';
-import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
@@ -18,8 +20,8 @@ import { DEFAULT_RULES } from '../engine/rules';
 import type { Relay } from '../net/relay';
 import type { Store } from '../store/db';
 import { eventIdOf } from '../store/eventId';
-import type { Sync } from '../store/sync';
-import { type Invite, newInvite } from './invite';
+import { channelOf, openRecords, type Sync } from '../store/sync';
+import type { Invite } from './invite';
 
 /** What the actions work with. */
 export interface Services {
@@ -29,7 +31,7 @@ export interface Services {
   readonly sync: Pick<Sync, 'syncOnce'>;
   /** The relay, which Join reads before the group is on the device. */
   readonly relay: Relay;
-  /** The seal for blobs (the stub until #71). */
+  /** The seal for blobs: `xchachaSeal` in the app. */
   readonly seal: Seal;
   /** The device clock in milliseconds: an event's display-only `ts`. */
   readonly now: () => number;
@@ -49,18 +51,18 @@ export type CreateResult =
   { readonly outcome: 'created'; readonly groupId: string } | { readonly outcome: 'too-large' };
 
 /**
- * Founds a group: fresh keys, a signed genesis carrying the Document's
- * sections (split at blank lines, each normalized as Atom text) and the
- * founding rules, and the group kept under the genesis id, which is the group
- * id (spec §4). Every group is founded with `DEFAULT_RULES` (ADR-0074). A
- * genesis whose record is too large for one blob is refused before anything
- * is kept.
+ * Founds a group: a fresh secret and keys, a signed genesis carrying the
+ * Document's sections (split at blank lines, each normalized as Atom text)
+ * and the founding rules, and the group kept under the genesis id, which is
+ * the group id (spec §4). Every group is founded with `DEFAULT_RULES`
+ * (ADR-0074). A genesis whose record is over 64,000 bytes is refused before
+ * anything is kept.
  */
 export async function createGroup(
   services: Services,
   values: CreateGroupValues,
 ): Promise<CreateResult> {
-  const { mailbox, secret } = newInvite();
+  const secret = newGroupSecret();
   const keys = newSigningKeys();
   const { groupName: name, yourName: founder, chat, title, text } = values;
   const body = {
@@ -77,10 +79,10 @@ export async function createGroup(
     ts: services.now(),
     body,
   });
-  if (genesis.record.length > MAX_PLAINTEXT_BYTES) return { outcome: 'too-large' };
+  if (genesis.record.length > MAX_RECORD_BYTES) return { outcome: 'too-large' };
   const groupId = genesis.id;
   const me = { author: base64url(keys.publicKey), name: founder };
-  await services.store.addGroup({ groupId, mailbox, secret, signingKey: keys.secretKey, me });
+  await services.store.addGroup({ groupId, secret, signingKey: keys.secretKey, me });
   await services.store.enqueue(groupId, genesis.record);
   void services.sync.syncOnce();
   return { outcome: 'created', groupId };
@@ -108,21 +110,18 @@ export type InviteLookup =
   | { readonly kind: 'offline' };
 
 /**
- * Reads an invite's mailbox and folds it to find the group. Only the mailbox
- * id goes to the relay; the secret stays on the device.
+ * Reads the mailbox the invite's secret derives, and folds it to find the
+ * group. Only the mailbox id goes to the relay; the secret stays on the device.
  */
 export async function lookupInvite(services: Services, invite: Invite): Promise<InviteLookup> {
-  const { mailbox, secret } = invite;
+  const channel = channelOf(invite.secret);
   let page;
   try {
-    page = await services.relay.getBlobs(mailbox, 0);
+    page = await services.relay.getBlobs(channel.mailbox, 0);
   } catch {
     return { kind: 'offline' };
   }
-  const records = page.records.flatMap(({ seq, received, data }) => {
-    const bytes = services.seal.open(mailbox, secret, data);
-    return bytes === null ? [] : [{ seq, received, bytes }];
-  });
+  const records = openRecords(services.seal, channel, page.records);
   const state = fold(records, page.now);
   if (state.group === null) return { kind: 'missing' };
   const groupId = state.group;
@@ -159,9 +158,9 @@ export async function joinGroup(
     ts: services.now(),
     body: { name, level },
   });
-  const { mailbox, secret } = invite;
+  const { secret } = invite;
   const me = { author: base64url(keys.publicKey), name };
-  await services.store.addGroup({ groupId, mailbox, secret, signingKey: keys.secretKey, me });
+  await services.store.addGroup({ groupId, secret, signingKey: keys.secretKey, me });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };
   await services.store.applyPull(groupId, pull, eventIdOf);
   await services.store.enqueue(groupId, join.record);

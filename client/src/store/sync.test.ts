@@ -1,12 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
-import { stubSeal } from '../crypto/stubSeal';
-import { base64url, parseRecord } from '../engine/event';
+import { deriveMailboxId, deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
+import { open, type Seal, seal, xchachaSeal } from '../crypto/seal';
+import { parseRecord } from '../engine/event';
 import type { Score, SignedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import type { GroupState } from '../engine/fold';
 import { createRelay } from '../net/relay';
 import type { Fetch, Relay } from '../net/relay';
+import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -15,7 +17,7 @@ import { manualTimers } from '../test/timers';
 import { openStore } from './db';
 import type { Group, Store } from './db';
 import { createSync } from './sync';
-import type { Sync } from './sync';
+import type { Sync, SyncOptions } from './sync';
 
 freshIndexedDBPerTest();
 
@@ -24,7 +26,6 @@ const TS = 1_762_650_000_000;
 /** Test key names: each signs with its own fixed key. */
 const ANA = 'ana';
 const BEN = 'ben';
-const secret = new Uint8Array(32).fill(9);
 const opened: Sync[] = [];
 
 afterEach(() => {
@@ -33,9 +34,22 @@ afterEach(() => {
   }
 });
 
-/** A fresh random mailbox id, so runs against a real relay never share one. */
-function newMailbox(): string {
-  return base64url(crypto.getRandomValues(new Uint8Array(32)));
+/** A group's secret, with the mailbox id and seal key it derives. */
+interface Keys {
+  readonly secret: Uint8Array;
+  readonly mailbox: string;
+  readonly key: Uint8Array;
+}
+
+/** A fresh group secret, so runs against a real relay never share a mailbox. */
+function newKeys(): Keys {
+  const secret = newGroupSecret();
+  return { secret, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+}
+
+/** `record` sealed for the group with `keys`, as a device would post it. */
+function sealedFor(keys: Keys, record: Uint8Array): Uint8Array<ArrayBuffer> {
+  return seal(keys.mailbox, keys.key, record);
 }
 
 /** Ana founds the group with a two-Atom Document. */
@@ -90,11 +104,12 @@ interface Device {
   state: () => Promise<GroupState>;
 }
 
-/** A device in the group, with its own store, syncing through `relay`. */
-async function device(name: string, relay: Relay, mailbox: string): Promise<Device> {
+/** A device in the group whose secret `keys` holds, with its own store, syncing through `relay`. */
+async function device(name: string, relay: Relay, keys: Keys): Promise<Device> {
   const store = await openStore(name);
   const { secretKey: signingKey, author } = testKeys(name);
-  await store.addGroup({ groupId: GROUP, mailbox, secret, signingKey, me: { author, name } });
+  const { secret } = keys;
+  await store.addGroup({ groupId: GROUP, secret, signingKey, me: { author, name } });
   return attach(store, relay);
 }
 
@@ -104,7 +119,7 @@ async function reopen(name: string, relay: Relay): Promise<Device> {
 }
 
 function attach(store: Store, relay: Relay): Device {
-  const sync = createSync({ store, relay, clock: () => TS });
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: () => TS });
   opened.push(sync);
   const group = async (): Promise<Group> => {
     const found = await store.getGroup(GROUP);
@@ -141,14 +156,14 @@ function labels(items: readonly (Uint8Array | { readonly bytes: Uint8Array })[])
   });
 }
 
-/** The events a fake relay's PUTs carried, opened from their blobs. */
-function posted(fake: FakeRelay): string[] {
+/** The events a fake relay's PUTs carried, opened from their blobs with the group's keys. */
+function posted(fake: FakeRelay, keys: Keys): string[] {
   return labels(
     fake.requests
       .filter((request) => request.method === 'PUT')
       .map(
         (request) =>
-          stubSeal.open('', secret, request.body ?? new Uint8Array()) ?? new Uint8Array(),
+          open(keys.mailbox, keys.key, request.body ?? new Uint8Array()) ?? new Uint8Array(),
       ),
   );
 }
@@ -156,9 +171,9 @@ function posted(fake: FakeRelay): string[] {
 describe('two devices on one mailbox', () => {
   it('fold the same state when they post interleaved events', async () => {
     const relay = relayUnderTest();
-    const mailbox = newMailbox();
-    const ana = await device('ana', relay, mailbox);
-    const ben = await device('ben', relay, mailbox);
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
+    const ben = await device('ben', relay, keys);
     const founding = genesis();
     const quietLater = proposal(founding, 'Quiet after 11pm.');
 
@@ -188,7 +203,7 @@ describe('two devices on one mailbox', () => {
 describe('a sync pass', () => {
   it('posts each event sealed in a padded blob, kept 30 days', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     await ana.store.enqueue(GROUP, genesis().record);
 
     await ana.sync.syncOnce();
@@ -198,9 +213,33 @@ describe('a sync pass', () => {
     expect(put?.body?.length).toBe(1024);
   });
 
+  it('posts to the mailbox the secret derives, sealed under the key it derives, and nothing readable', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), keys);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+
+    await ana.sync.syncOnce();
+
+    const [put] = fake.requests;
+    expect(put?.url).toBe(`/v1/mailbox/${keys.mailbox}?ttl_days=30`);
+    const blob = put?.body ?? new Uint8Array();
+    expect(open(keys.mailbox, keys.key, blob)).toEqual(founding.record);
+    const readable = [
+      founding.bytes,
+      founding.record.subarray(0, 32),
+      keys.secret,
+      keys.key,
+      utf8('Riverside Tenants'),
+      utf8(authorOf(ANA)),
+    ];
+    for (const bytes of readable) expect(contains(blob, bytes)).toBe(false);
+  });
+
   it('saves the cursor, relay time, instance and time of the sync', async () => {
     const fake = createFakeRelay({ minute: 29_000_123 });
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     await ana.store.enqueue(GROUP, genesis().record);
 
     expect(await ana.sync.syncOnce()).toBe(true);
@@ -218,7 +257,8 @@ describe('a sync pass', () => {
     const relay = createRelay({ fetch: fake.fetch });
     fake.offline = true;
     const founding = genesis();
-    const before = await device('ana', relay, newMailbox());
+    const keys = newKeys();
+    const before = await device('ana', relay, keys);
     for (const event of [founding, join(founding, BEN, 'Ben'), join(founding, 'cy', 'Cy')]) {
       await before.store.enqueue(GROUP, event.record);
     }
@@ -233,7 +273,7 @@ describe('a sync pass', () => {
 
     const expected = ['genesis:Riverside Tenants', 'join:Ben', 'join:Cy'];
     expect(queued).toEqual(expected);
-    expect(posted(fake)).toEqual(expected);
+    expect(posted(fake, keys)).toEqual(expected);
     const group = await after.group();
     expect(group.outbox).toEqual([]);
     expect(labels(group.log)).toEqual(expected);
@@ -243,7 +283,7 @@ describe('a sync pass', () => {
   it('brings every group and its Document back from IndexedDB with the network off', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
-    const before = await device('ana', relay, newMailbox());
+    const before = await device('ana', relay, newKeys());
     await before.store.enqueue(GROUP, genesis().record);
     await before.sync.syncOnce();
     before.store.close();
@@ -269,7 +309,8 @@ describe('a sync pass', () => {
       refuse && init?.method === 'PUT'
         ? Promise.resolve(Response.json({ error: 'storage_full' }, { status: 507 }))
         : fake.fetch(input, init);
-    const ana = await device('ana', createRelay({ fetch: refusing }), newMailbox());
+    const keys = newKeys();
+    const ana = await device('ana', createRelay({ fetch: refusing }), keys);
     const founding = genesis();
     for (const event of [founding, join(founding, BEN, 'Ben')]) {
       await ana.store.enqueue(GROUP, event.record);
@@ -282,17 +323,17 @@ describe('a sync pass', () => {
 
     expect(refused).toBe(false);
     expect(kept).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
-    expect(posted(fake)).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
     expect((await ana.group()).outbox).toEqual([]);
   });
 
   it('skips a blob that will not open, and reads past it', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
-    const mailbox = newMailbox();
-    const ana = await device('ana', relay, mailbox);
-    await relay.putBlob(mailbox, new Uint8Array(1024).fill(1));
-    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, genesis().record));
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
+    await relay.putBlob(keys.mailbox, new Uint8Array(1024).fill(1));
+    await relay.putBlob(keys.mailbox, sealedFor(keys, genesis().record));
 
     await ana.sync.syncOnce();
 
@@ -302,12 +343,43 @@ describe('a sync pass', () => {
     expect((await ana.state()).title).toBe('House rules');
   });
 
+  it('skips blobs that fail to open between good ones: the next good one folds, and the cursor moves past', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const keys = newKeys();
+    const other = newKeys();
+    const ana = await device('ana', relay, keys);
+    const founding = genesis();
+    const tampered = sealedFor(keys, join(founding, 'cy', 'Cy').record);
+    tampered[500] = (tampered[500] ?? 0) ^ 0x01;
+    await relay.putBlob(keys.mailbox, sealedFor(keys, founding.record));
+    await relay.putBlob(keys.mailbox, tampered);
+    await relay.putBlob(
+      keys.mailbox,
+      seal(keys.mailbox, other.key, join(founding, 'di', 'Di').record),
+    );
+    await relay.putBlob(
+      keys.mailbox,
+      seal(other.mailbox, keys.key, join(founding, 'eve', 'Eve').record),
+    );
+    await relay.putBlob(keys.mailbox, sealedFor(keys, join(founding, BEN, 'Ben').record));
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+
+    const group = await ana.group();
+    expect(group.log.map((record) => record.seq)).toEqual([1, 5]);
+    expect(group.cursor).toBe(5);
+    const state = await ana.state();
+    expect(state.members.map((member) => member.name)).toEqual(['Ana', 'Ben']);
+    expect(state.ignored).toEqual([]);
+  });
+
   it('skips a blob that opens to something that is not an event', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
-    const mailbox = newMailbox();
-    const ana = await device('ana', relay, mailbox);
-    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, new Uint8Array([123, 125])));
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
+    await relay.putBlob(keys.mailbox, sealedFor(keys, new Uint8Array([123, 125])));
 
     await ana.sync.syncOnce();
 
@@ -317,13 +389,13 @@ describe('a sync pass', () => {
   it('keeps no record that fails to verify, so a forged copy can’t shadow the real one', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
-    const mailbox = newMailbox();
-    const ana = await device('ana', relay, mailbox);
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
     const real = genesis();
     const forged = Uint8Array.from(real.record);
     forged[33] = (forged[33] ?? 0) ^ 0x01;
-    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, forged));
-    await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, real.record));
+    await relay.putBlob(keys.mailbox, sealedFor(keys, forged));
+    await relay.putBlob(keys.mailbox, sealedFor(keys, real.record));
 
     await ana.sync.syncOnce();
 
@@ -334,10 +406,10 @@ describe('a sync pass', () => {
   it('appends an event once, however many times it was posted', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
-    const mailbox = newMailbox();
-    const ana = await device('ana', relay, mailbox);
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
     for (let i = 0; i < 2; i += 1) {
-      await relay.putBlob(mailbox, stubSeal.seal(mailbox, secret, genesis().record));
+      await relay.putBlob(keys.mailbox, sealedFor(keys, genesis().record));
     }
 
     await ana.sync.syncOnce();
@@ -348,14 +420,19 @@ describe('a sync pass', () => {
 
   it('goes on to the next group when one fails', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const broken = newKeys();
+    const refusing: Fetch = (input, init) =>
+      typeof input === 'string' && input.includes(broken.mailbox)
+        ? Promise.resolve(Response.json({ error: 'storage_full' }, { status: 507 }))
+        : fake.fetch(input, init);
+    const ana = await device('ana', createRelay({ fetch: refusing }), newKeys());
     await ana.store.addGroup({
       groupId: 'broken',
-      mailbox: 'not-a-mailbox',
-      secret,
+      secret: broken.secret,
       signingKey: testKeys(ANA).secretKey,
       me: { author: authorOf(ANA), name: 'Ana' },
     });
+    await ana.store.enqueue('broken', genesis().record);
     await ana.store.enqueue(GROUP, genesis().record);
 
     const ok = await ana.sync.syncOnce();
@@ -366,18 +443,19 @@ describe('a sync pass', () => {
 
   it('shares one pass between callers that ask at the same time', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const keys = newKeys();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), keys);
     await ana.store.enqueue(GROUP, genesis().record);
 
     const results = await Promise.all([ana.sync.syncOnce(), ana.sync.syncOnce()]);
 
     expect(results).toEqual([true, true]);
-    expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
   });
 
   it('fails without throwing when the store itself fails', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     vi.spyOn(ana.store, 'listGroups').mockRejectedValue(new Error('closed'));
 
     expect(await ana.sync.syncOnce()).toBe(false);
@@ -388,9 +466,9 @@ describe('a new relay instance', () => {
   it('resets the cursor, re-posts the outbox, and reads the fresh relay from the start', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
-    const mailbox = newMailbox();
-    const ana = await device('ana', relay, mailbox);
-    const ben = await device('ben', relay, mailbox);
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
+    const ben = await device('ben', relay, keys);
     const founding = genesis();
     for (const event of [founding, join(founding, 'cy', 'Cy'), join(founding, 'di', 'Di')]) {
       await ana.store.enqueue(GROUP, event.record);
@@ -412,6 +490,7 @@ describe('a new relay instance', () => {
     ana.sync = createSync({
       store: ana.store,
       relay: createRelay({ fetch: enqueueDuringFirstGet }),
+      seal: xchachaSeal,
     });
 
     await ana.sync.syncOnce();
@@ -432,7 +511,7 @@ describe('a new relay instance', () => {
 
   it('folds no event twice when the new instance still holds the old blobs', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     const founding = genesis();
     await ana.store.enqueue(GROUP, founding.record);
     await ana.store.enqueue(GROUP, join(founding, BEN, 'Ben').record);
@@ -451,10 +530,16 @@ describe('a new relay instance', () => {
   });
 });
 
+describe('createSync', () => {
+  it('takes the seal as a required option, so no caller can forget it and post plaintext', () => {
+    expectTypeOf<Pick<SyncOptions, 'seal'>>().toEqualTypeOf<{ seal: Seal }>();
+  });
+});
+
 describe('reachability', () => {
   it('turns false while passes fail and true once one succeeds, telling subscribers', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     const heard: boolean[] = [];
     const unsubscribe = ana.sync.subscribe(() => heard.push(ana.sync.isReachable()));
 
@@ -476,7 +561,8 @@ describe('reachability', () => {
 describe('polling', () => {
   it('runs a pass at once when started, and stops when asked', async () => {
     const fake = createFakeRelay();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newMailbox());
+    const keys = newKeys();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), keys);
     await ana.store.enqueue(GROUP, genesis().record);
 
     ana.sync.start();
@@ -485,7 +571,7 @@ describe('polling', () => {
     });
     ana.sync.stop();
 
-    expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
   });
 });
 
@@ -494,8 +580,15 @@ describe('coming back online', () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
     const clock = manualTimers();
-    const ana = await device('ana', relay, newMailbox());
-    ana.sync = createSync({ store: ana.store, relay, clock: () => TS, timers: clock.timers });
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
+    ana.sync = createSync({
+      store: ana.store,
+      relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+      timers: clock.timers,
+    });
     opened.push(ana.sync);
     await ana.store.enqueue(GROUP, genesis().record);
     fake.offline = true;
@@ -510,7 +603,7 @@ describe('coming back online', () => {
       expect(clock.waits()).toEqual([3000]);
     });
 
-    expect(posted(fake)).toEqual(['genesis:Riverside Tenants']);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
     expect((await ana.group()).outbox).toEqual([]);
     expect(ana.sync.isReachable()).toBe(true);
   });

@@ -66,7 +66,7 @@ async function joinFrom(
 ): Promise<void> {
   const group = await founder.services.store.getGroup(groupId);
   if (group === undefined) throw new Error('Expected the group.');
-  const invite = { mailbox: group.mailbox, secret: group.secret };
+  const invite = { secret: group.secret };
   const found = await lookupInvite(device.services, invite);
   if (found.kind !== 'found') throw new Error('Expected the invite to open.');
   await joinGroup(device.services, invite, found.group, name, level);

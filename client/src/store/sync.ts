@@ -6,10 +6,15 @@
  * back online the wait resets and a pass runs at once, so an event saved
  * offline doesn't sit out the backoff. Each pass, for each group:
  *
- * 1. posts the outbox in order, removing an entry only once the relay accepts it;
+ * 1. posts the outbox in order, each record sealed for the group's mailbox,
+ *    removing an entry only once the relay accepts it;
  * 2. reads every record after the cursor, opens each blob (skipping one that
  *    won't open), and appends each event the log doesn't hold yet;
  * 3. saves the cursor, the relay's time and instance, and when it synced.
+ *
+ * The mailbox id and seal key are derived from the group's secret on each
+ * pass (spec §3); the store keeps only the secret. The cursor moves past a
+ * blob that won't open, so one bad blob never stalls a group.
  *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
@@ -17,7 +22,7 @@
  * log alone, so an event still in the outbox is pending and never folded.
  */
 
-import { stubSeal } from '../crypto/stubSeal';
+import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
@@ -148,8 +153,11 @@ export interface SyncOptions {
   store: Store;
   /** The relay (default: `/v1` on the same origin). */
   relay?: Relay;
-  /** The seal for blobs (default: the stub, until #71). */
-  seal?: Seal;
+  /**
+   * The seal for blobs: `xchachaSeal` in the app. It has no default, so no
+   * caller can forget it and send something the relay could read (#151).
+   */
+  seal: Seal;
   /** An event's id, for dedupe (default: the engine's, via `parseEvent`). */
   idOf?: EventIdOf;
   /** The device clock in milliseconds, for `lastSyncAt` (default: `Date.now`). */
@@ -170,46 +178,33 @@ export interface Sync extends Poller {
 
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
-  const {
-    store,
-    relay = createRelay(),
-    seal = stubSeal,
-    idOf = eventIdOf,
-    clock = Date.now,
-  } = options;
+  const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let inFlight: Promise<boolean> | null = null;
 
   /** Post the group's current outbox in order; an entry leaves only once the relay accepts it. */
-  async function postOutbox({ groupId, mailbox, secret }: Group): Promise<void> {
+  async function postOutbox(groupId: string, { mailbox, key }: Channel): Promise<void> {
     const outbox = (await store.getGroup(groupId))?.outbox ?? [];
     for (const bytes of outbox) {
-      await relay.putBlob(mailbox, seal.seal(mailbox, secret, bytes), GROUP_TTL_DAYS);
+      await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS);
       await store.markSent(groupId, bytes);
     }
   }
 
-  /** The records that open, as log records. */
-  function openAll(group: Group, records: RelayRecord[]): LogRecord[] {
-    return records.flatMap(({ seq, received, data }) => {
-      const bytes = seal.open(group.mailbox, group.secret, data);
-      return bytes === null ? [] : [{ seq, received, bytes }];
-    });
-  }
-
   async function syncGroup(group: Group): Promise<void> {
-    await postOutbox(group);
+    const channel = channelOf(group.secret);
+    await postOutbox(group.groupId, channel);
     let after = group.cursor;
-    let page = await relay.getBlobs(group.mailbox, after);
+    let page = await relay.getBlobs(channel.mailbox, after);
     if (group.instance !== null && page.instance !== group.instance) {
       await store.resetCursor(group.groupId, page.instance);
-      await postOutbox(group);
+      await postOutbox(group.groupId, channel);
       after = 0;
-      page = await relay.getBlobs(group.mailbox, after);
+      page = await relay.getBlobs(channel.mailbox, after);
     }
     const pull: Pull = {
-      records: openAll(group, page.records),
+      records: openRecords(seal, channel, page.records),
       cursor: page.records[page.records.length - 1]?.seq ?? after,
       relayNow: page.now,
       instance: page.instance,
@@ -253,6 +248,31 @@ export function createSync(options: SyncOptions): Sync {
       return () => listeners.delete(listener);
     },
   };
+}
+
+/** Where a group's blobs go and the key they're sealed under, both derived from its secret. */
+export interface Channel {
+  /** The group's mailbox id at the relay. */
+  readonly mailbox: string;
+  /** The key its blobs are sealed under. */
+  readonly key: Uint8Array;
+}
+
+/** The mailbox id and seal key that `secret` derives (spec §3). */
+export function channelOf(secret: Uint8Array): Channel {
+  return { mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+}
+
+/** The relay records whose blobs open on `channel`, as log records; the rest are skipped. */
+export function openRecords(
+  seal: Seal,
+  { mailbox, key }: Channel,
+  records: readonly RelayRecord[],
+): LogRecord[] {
+  return records.flatMap(({ seq, received, data }) => {
+    const bytes = seal.open(mailbox, key, data);
+    return bytes === null ? [] : [{ seq, received, bytes }];
+  });
 }
 
 const succeeded = (): boolean => true;

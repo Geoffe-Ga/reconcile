@@ -5,7 +5,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { text, utf8 } from '../test/bytes';
-import { TEST_MAILBOX } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { type NewGroup, openStore } from './db';
 import { type Draft, draftIn, groupDrafts, isDraft, withDraft } from './drafts';
@@ -14,7 +13,6 @@ freshIndexedDBPerTest();
 
 const group: NewGroup = {
   groupId: 'group-1',
-  mailbox: TEST_MAILBOX,
   secret: new Uint8Array(32).fill(9),
   signingKey: new Uint8Array(32).fill(7),
   me: { author: 'author-ana', name: 'Ana' },

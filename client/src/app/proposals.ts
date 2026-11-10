@@ -8,7 +8,7 @@
  * state still comes only from relay records: a Proposal appears, and a ballot
  * counts, once the relay has ordered and timed it.
  */
-import { MAX_PLAINTEXT_BYTES } from '../crypto/seal';
+import { MAX_RECORD_BYTES } from '../crypto/record';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
 import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
@@ -83,9 +83,9 @@ function signVersion(
   return signFor(services, groupId, { type: 'version', group: groupId, ts: services.now(), body });
 }
 
-/** True when every record fits in a blob. */
+/** True when no record is over 64,000 bytes, so each fits in a blob and an invite chunk. */
 function allFit(events: readonly SignedEvent[]): boolean {
-  return events.every((event) => event.record.length <= MAX_PLAINTEXT_BYTES);
+  return events.every((event) => event.record.length <= MAX_RECORD_BYTES);
 }
 
 /**
@@ -93,8 +93,8 @@ function allFit(events: readonly SignedEvent[]): boolean {
  * value is NFC-normalized before the event is signed, and the text goes
  * through `normalizeAtomText` (spec §4). Queuing the Proposal clears the
  * private draft it was written in, keyed by its Atom, in the same change. A
- * Proposal whose record is too large for any blob is refused before anything
- * is queued, and its draft kept.
+ * Proposal whose record is over 64,000 bytes is refused before anything is
+ * queued, and its draft kept.
  *
  * Proposed again (#74), it carries the lapsed Proposal's other versions: one
  * `version` of the new Proposal for each, queued after it in the same change,
@@ -140,8 +140,8 @@ export async function propose(
  * Adds a version to an open Proposal's ballot (ADR-0004), as this device's
  * member of `groupId`. The text goes through `normalizeAtomText` before it is
  * signed. Queuing it clears the private draft kept for that Proposal in the
- * same change. A version too large for any blob is refused before anything is
- * queued, and its draft kept. The fold decides whether it joins the ballot:
+ * same change. A version whose record is over 64,000 bytes is refused before
+ * anything is queued, and its draft kept. The fold decides whether it joins the ballot:
  * it ignores one that arrives after the close or past the third.
  */
 export async function addVersion(

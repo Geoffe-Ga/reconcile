@@ -11,7 +11,7 @@
  */
 import { type Locator, type Page } from '@playwright/test';
 
-import { expect, expectAccessible, heading, type Person, pick, test } from './support';
+import { expect, expectAccessible, heading, type Person, pick, test } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const CHAT = 'https://chat.example.org/riverside';
@@ -139,7 +139,8 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     const field = page.getByRole('textbox', { name: 'Invite link' });
     await expect(field).toHaveAttribute('readonly', '');
     inviteLink = await field.inputValue();
-    expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/join\/[\w-]{43}\.[\w-]{43}$/);
+    // The tracer link carries only the group secret; the joiner derives the mailbox.
+    expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/join\/[\w-]{43}$/);
   });
 
   await test.step('B joins from the link in A’s invite field, and C as a Co-Creator', async () => {

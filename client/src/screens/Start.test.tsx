@@ -2,7 +2,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { inviteLink, newInvite } from '../app/invite';
+import { inviteLink } from '../app/invite';
+import { newGroupSecret } from '../crypto/groupKeys';
 import { axeViolations } from '../test/axe';
 import { Start, type StartGroup } from './Start';
 
@@ -43,7 +44,7 @@ describe('Start', () => {
   it('opens a pasted invite link', async () => {
     const user = userEvent.setup();
     const onOpenInvite = vi.fn();
-    const invite = newInvite();
+    const invite = { secret: newGroupSecret() };
     render(<Start groups={[]} onOpenInvite={onOpenInvite} />);
 
     await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
@@ -51,7 +52,7 @@ describe('Start', () => {
     await user.click(screen.getByRole('button', { name: 'Open invite' }));
 
     expect(onOpenInvite).toHaveBeenCalledTimes(1);
-    expect(onOpenInvite.mock.calls[0]?.[0]).toMatchObject({ mailbox: invite.mailbox });
+    expect(onOpenInvite.mock.calls[0]?.[0]).toMatchObject({ secret: invite.secret });
   });
 
   it('refuses text that isn’t an invite link, without repeating it back', async () => {
