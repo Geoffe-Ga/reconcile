@@ -28,7 +28,8 @@
  *     (#98); a record without one was read from epoch 0's.
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
- *     deep-equal.
+ *     deep-equal. `unchangedExcept` names any other fields left out of that comparison, as a
+ *     `recovery-share` (#109) is kept in `recoveryShares` and changes nothing else.
  * - invite.json (#73) is a fold file: joins carrying invite tokens, each signed outside @noble.
  * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
@@ -76,6 +77,7 @@ export interface FoldVector {
   readonly relayNow: number | null;
   readonly expect: object;
   readonly unchangedWithout?: readonly number[];
+  readonly unchangedExcept?: readonly string[];
 }
 
 /** One vector file, by its `kind`. */

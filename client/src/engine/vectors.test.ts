@@ -52,6 +52,7 @@ describe('vector files', () => {
       'optin-class.json',
       'optin-ignored.json',
       'optin-narrow.json',
+      'recovery-share.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -103,6 +104,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -318,6 +320,9 @@ describe('vector files', () => {
     'after the group turns an off-Proposal down, a narrow 30 × 1,440 minutes later is ignored and one a minute after that holds',
     'a narrow from a steward facing an open recall is ignored',
     "a steward closes the front door at once the same way, and the chat bot isn't touched",
+    'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
     "dissolve-terminal: Ana, Ben and Cy pass a dissolve with three 4s, which closes it early at 30,000,000; Ana's dissolve at 30,000,001 ends the group, so Ben's ballot on the other open Proposal at 30,000,002 and a join at 30,000,003 are ignored, and that Proposal has no outcome",
     'dissolve-bar: a dissolve Proposal averaging exactly 2.5 with no zeros fails, because it is entrenched, so a dissolve naming it is ignored and the group goes on',
     'dissolve-open: a dissolve naming a dissolve Proposal that is still open is ignored, and the ballot that closes it still counts',
@@ -380,6 +385,13 @@ describe('fold vectors', () => {
     expect(state).toMatchObject(resolve(vector.expect, ids) as object);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
-    expect({ ...fold(kept, vector.relayNow), ignored: [] }).toEqual({ ...state, ignored: [] });
+    // `ignored` always differs, and so may whatever `unchangedExcept` names (#109's recoveryShares).
+    const apart = (folded: object): object =>
+      Object.fromEntries(
+        Object.entries(folded).filter(
+          ([key]) => key !== 'ignored' && !(vector.unchangedExcept ?? []).includes(key),
+        ),
+      );
+    expect(apart(fold(kept, vector.relayNow))).toEqual(apart(state));
   });
 });

@@ -277,6 +277,17 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
+ * `box` is the share sealed to the contact's encryption key
+ * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
+ * the rest of the group sees only that the author sent one. The fold keeps
+ * it from any current member and changes nothing else.
+ */
+export interface RecoveryShareBody {
+  readonly box: string;
+}
+
 /** The body each event type carries. */
 export interface EventBodies {
   readonly genesis: GenesisBody;
@@ -293,6 +304,7 @@ export interface EventBodies {
   readonly 'chat-posted': ChatPostedBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'recovery-share': RecoveryShareBody;
 }
 
 /** The event types this engine understands. */
@@ -594,6 +606,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseRecoveryShare(body: Json): RecoveryShareBody | null {
+  return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -670,13 +686,15 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
   }
 }
 
-/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+/** {@link withBody} for #98's types, `kx` and `key-rotate`, and #109's `recovery-share`. */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'kx':
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-share':
+      return attach(parseRecoveryShare(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

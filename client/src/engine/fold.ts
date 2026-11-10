@@ -57,6 +57,7 @@ import {
   parseRecord,
   type ProposalBody,
   type ProposalEventBody,
+  type RecoveryShareBody,
   type RulesProposalBody,
   type Score,
   type StewardProposalBody,
@@ -164,6 +165,20 @@ export interface Rotation {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * A recovery share as the log carries it (#109): the event's id, where it
+ * sits in relay order, who sent it, and its box, unopened. The fold never
+ * reads the box; each device tries to open it (`store/recovery.ts`), and
+ * only the contact it was sealed to can.
+ */
+export interface SealedShare {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly by: string;
+  readonly box: string;
+}
+
 /** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
 export interface Atom {
   readonly id: string;
@@ -269,7 +284,9 @@ export interface IgnoredRecord {
  * the group dissolves, after which no key change can land. `dissolved` is
  * when the group dissolved, and whether its vote chose to wipe every copy, or
  * null while it goes on (#108). Once it has dissolved, `at` stays at that
- * receipt whatever the relay's `now`.
+ * receipt whatever the relay's `now`. `recoveryShares` holds every
+ * `recovery-share` a current member sent, in relay order, boxes unopened
+ * (#109): they govern nothing, so no other field reads them.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -292,6 +309,7 @@ export interface GroupState {
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
   readonly dissolved: Dissolution | null;
+  readonly recoveryShares: readonly SealedShare[];
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -342,6 +360,7 @@ interface Draft {
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
   dissolved: Dissolution | null;
+  readonly recoveryShares: SealedShare[];
 }
 
 /** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
@@ -789,10 +808,12 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
  * from someone who isn't suspended. After a `dissolve` the fold ignores every
  * event, a second `dissolve` included (#108). It ignores a suspended member's
  * events until the suspension ends (ADR-0016), except their `leave`, since
- * exit is always possible (ADR-0010, #77).
+ * exit is always possible (ADR-0010, #77), and their `recovery-share`, which
+ * governs nothing (#109).
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
-  const free = event.type === 'leave' || !isSuspended(draft, event.author);
+  const ungoverned = event.type === 'leave' || event.type === 'recovery-share';
+  const free = ungoverned || !isSuspended(draft, event.author);
   return draft.dissolved === null && event.v === EVENT_VERSION && inGroup(draft, event) && free;
 }
 
@@ -836,11 +857,15 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 
 /**
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
- * `vouch` (#101), `chat-posted` (#119), and `kx` and `key-rotate` (#98).
+ * `vouch` (#101), `chat-posted` (#119), `kx` and `key-rotate` (#98), and
+ * `recovery-share` (#109).
  */
 type LaterEvent = Extract<
   GroupEvent,
-  { readonly type: 'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'kx' | 'key-rotate' }
+  {
+    readonly type:
+      'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'kx' | 'key-rotate' | 'recovery-share';
+  }
 >;
 
 /**
@@ -861,6 +886,8 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
       return applyKeyRotate(draft, event.body, event.author, at);
+    case 'recovery-share':
+      return applyRecoveryShare(draft, event.body, event.author, at);
     default:
       return applyProposalEvent(draft, event, at);
   }
@@ -886,6 +913,21 @@ function applyKx(draft: Draft, body: KxBody, author: string): boolean {
   const kx = usableKx(body.kx);
   if (member === undefined || member.kx !== null || kx === null) return false;
   draft.members[index] = { ...member, kx };
+  return true;
+}
+
+/**
+ * Keeps a recovery share (#109) from any current member, its box unopened.
+ * It changes nothing else: no Atom, Proposal, member or seat reads it.
+ */
+function applyRecoveryShare(
+  draft: Draft,
+  body: RecoveryShareBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!draft.members.some((m) => m.author === author)) return false;
+  draft.recoveryShares.push({ ...at, by: author, box: body.box });
   return true;
 }
 
@@ -1088,6 +1130,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     seated: new Set(),
     ruled: new Set(),
     dissolved: null,
+    recoveryShares: [],
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
@@ -1123,6 +1166,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     rotations,
     rotationDue,
     dissolved: draft.dissolved,
+    recoveryShares: draft.recoveryShares,
     ignored,
   };
 }
