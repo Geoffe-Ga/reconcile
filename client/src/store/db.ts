@@ -19,7 +19,9 @@
  * groups (`./personal.ts`), and a backup file brings them back in that same
  * transaction. A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay.
+ * cleared while its outcomes stay. The relay backup's key and state (#97) are
+ * one record in a store of their own, in no group, so no group's record ever
+ * holds the key.
  */
 
 import { openDB } from 'idb';
@@ -250,11 +252,59 @@ export interface Pull {
   advance?: EpochAdvance;
 }
 
+/**
+ * The relay backup on this device (#97): the random backup key, and what the
+ * last upload held. It belongs to the device, not to any group.
+ */
+export interface RelayBackupState {
+  /** The 32-byte backup key. The relay's id and seal key derive from it (`crypto/relayBackup.ts`). */
+  readonly key: Uint8Array;
+  /** The SHA-256, in hex, of what the last upload held, or null before one. */
+  readonly digest: string | null;
+  /** The relay's UTC day of the last daily check, or null before one. */
+  readonly checkedDay: number | null;
+  /** When the last upload succeeded, in device milliseconds, or null before one. */
+  readonly uploadedAt: number | null;
+  /** Whether the last try found the groups too large for the largest backup. */
+  readonly tooLarge: boolean;
+}
+
+/** What a relay backup update may change: everything but the key. */
+export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
+
+/**
+ * What {@link Store.subscribe}'s listeners hear when the relay backup's state
+ * changes: never a group id, which is 43 base64url characters.
+ */
+export const RELAY_BACKUP_CHANGED = 'relay-backup';
+
+/** The relay backup's one device-wide record (#97). */
+export interface RelayBackupStore {
+  /** The relay backup's state, or undefined while the device keeps none. */
+  getRelayBackup(): Promise<RelayBackupState | undefined>;
+  /**
+   * Keep `key` as the backup key, with nothing uploaded or checked yet, in
+   * place of any earlier one. Returns the state it replaced, if any.
+   */
+  setRelayBackupKey(key: Uint8Array): Promise<RelayBackupState | undefined>;
+  /**
+   * Keep `key` as the backup key only when the device holds none, as a
+   * restored backup file's key is (#97, ADR-0075 §4). Returns whether it did.
+   */
+  adoptRelayBackupKey(key: Uint8Array): Promise<boolean>;
+  /**
+   * Apply `update` in one transaction, only while the backup key is still
+   * `key`, so an upload that finishes after a new key was made can't record
+   * itself against it. Returns whether it applied.
+   */
+  updateRelayBackup(key: Uint8Array, update: RelayBackupUpdate): Promise<boolean>;
+}
+
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups, and its personal Documents (#93). */
-export interface Store extends DraftStore, PersonalStore {
+/** The device's groups, its personal Documents (#93), and its relay backup's state (#97). */
+export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -384,7 +434,10 @@ export interface Store extends DraftStore, PersonalStore {
   markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
-  /** Hear which group changed after each change; returns the way to stop. */
+  /**
+   * Hear which group changed after each change, or {@link RELAY_BACKUP_CHANGED}
+   * when the relay backup's state did; returns the way to stop.
+   */
   subscribe(listener: (groupId: string) => void): () => void;
   /** Close the database. */
   close(): void;
@@ -393,27 +446,33 @@ export interface Store extends DraftStore, PersonalStore {
 interface Schema extends DBSchema {
   groups: { key: string; value: Group };
   personal: { key: string; value: PersonalDocument };
+  device: { key: string; value: RelayBackupState };
 }
 
 /**
- * The schema version. Version 4 adds the personal store (#93) and deletes
- * nothing. Version 3 holds a real group secret, from which the mailbox id and
- * seal key derive (#71); version 2 held signed records (#69) and version 1
- * the stub era's unsigned data. That older data, whose relay blobs anyone
- * could read, is deleted on upgrade, with no migration. A dissolved group's
- * `archived` mark (#108) is an optional field of its record, so it needed no
- * version of its own: a version 3 group that holds one keeps it through the
- * upgrade. So are a group's encryption key and epoch and each record's epoch
- * (#98): a group or record without one reads as epoch 0.
+ * The schema version. Version 5 adds the device store, which holds the relay
+ * backup's state (#97), and version 4 the personal store (#93); neither
+ * deletes anything. Version 3 holds a real group secret, from which the
+ * mailbox id and seal key derive (#71); version 2 held signed records (#69)
+ * and version 1 the stub era's unsigned data. That older data, whose relay
+ * blobs anyone could read, is deleted on upgrade, with no migration. A
+ * dissolved group's `archived` mark (#108) is an optional field of its
+ * record, so it needed no version of its own: a version 3 group that holds
+ * one keeps it through the upgrade. So are a group's encryption key and
+ * epoch and each record's epoch (#98): a group or record without one reads
+ * as epoch 0.
  */
-const VERSION = 4;
+const VERSION = 5;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
+const DEVICE = 'device';
+/** The device store's one key: the relay backup's record. */
+const RELAY_BACKUP = 'relay-backup';
 
 /**
  * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
- * version 3 are deleted, and the personal store is added beside whatever
- * groups version 3 kept.
+ * version 3 are deleted, and the personal store, then the device store, are
+ * added beside whatever groups version 3 kept.
  */
 function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
   if (oldVersion < 3) {
@@ -421,6 +480,7 @@ function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
     database.createObjectStore(GROUPS, { keyPath: 'groupId' });
   }
   if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
+  if (oldVersion < 5) database.createObjectStore(DEVICE);
 }
 
 /** The IndexedDB database the app keeps its groups in. */
@@ -624,6 +684,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await db.put(PERSONAL, document);
     },
     deletePersonal: (id) => db.delete(PERSONAL, id),
+    ...relayBackupStore(db, () => {
+      notify(RELAY_BACKUP_CHANGED);
+    }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -635,6 +698,44 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     },
     close: () => {
       db.close();
+    },
+  };
+}
+
+/** The relay backup's record in `db`'s device store (#97), telling `changed` after each write. */
+function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayBackupStore {
+  /** Writes `next(held)` in one transaction, unless it's undefined; returns the state held before. */
+  const write = async (
+    next: (held: RelayBackupState | undefined) => RelayBackupState | undefined,
+  ): Promise<{ held: RelayBackupState | undefined; wrote: boolean }> => {
+    const tx = db.transaction(DEVICE, 'readwrite');
+    const held = await tx.store.get(RELAY_BACKUP);
+    const state = next(held);
+    if (state !== undefined) await tx.store.put(state, RELAY_BACKUP);
+    await tx.done;
+    if (state !== undefined) changed();
+    return { held, wrote: state !== undefined };
+  };
+  const fresh = (key: Uint8Array): RelayBackupState => ({
+    key: Uint8Array.from(key),
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+  });
+  return {
+    getRelayBackup: () => db.get(DEVICE, RELAY_BACKUP),
+    async setRelayBackupKey(key) {
+      return (await write(() => fresh(key))).held;
+    },
+    async adoptRelayBackupKey(key) {
+      return (await write((held) => (held === undefined ? fresh(key) : undefined))).wrote;
+    },
+    async updateRelayBackup(key, update) {
+      const result = await write((held) =>
+        held !== undefined && sameBytes(held.key, key) ? { ...held, ...update } : undefined,
+      );
+      return result.wrote;
     },
   };
 }

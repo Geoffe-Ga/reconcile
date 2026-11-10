@@ -648,7 +648,9 @@ describe('the code', () => {
         store: {
           listGroups: () => Promise.resolve([]),
           listPersonal: () => Promise.resolve([]),
+          getRelayBackup: () => Promise.resolve(undefined),
           restoreGroups: () => Promise.resolve(),
+          adoptRelayBackupKey: () => Promise.resolve(false),
         },
         now: () => clock,
       },

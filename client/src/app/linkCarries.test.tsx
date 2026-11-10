@@ -12,6 +12,9 @@
  * - **Personal Documents (#93)** travel in the bundle.
  * - **Push (#99).** A registration belongs to one device, so the laptop starts
  *   with push off, and its own switch in Settings registers its own endpoint.
+ * - **The relay backup (#97).** Its key rides in the bundle, and the laptop
+ *   keeps it unless it holds one of its own, so its first complete pass keeps
+ *   the same backup fresh.
  */
 import { waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -19,12 +22,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { kxPublicKeyOf } from '../crypto/box';
 import { base64url } from '../crypto/base64url';
+import { backupIdFor } from '../crypto/relayBackup';
 import { parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
-import type { Group } from '../store/db';
+import { type Group, openStore } from '../store/db';
 import { eventIdOf } from '../store/eventId';
 import { mailboxAt } from '../store/mailbox';
 import type { PersonalDocument } from '../store/personal';
+import { startRelayBackup } from '../store/relayBackup';
 import type { TestDevice } from '../test/appServices';
 import { local } from '../test/bytes';
 import { fakeEndpoint } from '../test/fakePush';
@@ -255,5 +260,58 @@ describe('push on a linked device (#96, #99)', () => {
     expect((await held(laptop, groupId)).push?.endpoint).toBe(laptopEndpoint);
     expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1), laptopEndpoint]);
     expect((await held(phone, groupId)).push).toEqual(phonePush);
+  });
+});
+
+/** The backup PUTs the fake relay took for `id`. */
+function backupPuts(fake: FakeRelay, id: string): number {
+  return fake.requests.filter(
+    (request) => request.method === 'PUT' && request.url === `/v1/backup/${id}`,
+  ).length;
+}
+
+/** The relay backup key `device` keeps. */
+async function backupKeyOf(device: TestDevice): Promise<Uint8Array> {
+  const state = await device.services.store.getRelayBackup();
+  if (state === undefined) throw new Error('Expected a relay backup key.');
+  return local(state.key);
+}
+
+describe('the relay backup key in a link (#96, #97)', () => {
+  it('gives the laptop the phone’s key, whose first complete pass keeps the same backup fresh', async () => {
+    const fake = createFakeRelay();
+    const { phone } = await phoneIn(fake, ['Ana']);
+    await startRelayBackup(phone.services);
+    const key = await backupKeyOf(phone);
+    const id = backupIdFor(key);
+    expect(backupPuts(fake, id)).toBe(1);
+
+    const laptop = await laptopOf(fake, phone);
+
+    expect(await backupKeyOf(laptop)).toEqual(key);
+    // Nothing of the phone's upload record comes along: the laptop uploads on its own schedule.
+    expect(await laptop.services.store.getRelayBackup()).toMatchObject({
+      digest: null,
+      checkedDay: null,
+      uploadedAt: null,
+    });
+    expect(await laptop.services.sync.syncOnce()).toBe(true);
+    expect(backupPuts(fake, id)).toBe(2);
+    expect((await laptop.services.store.getRelayBackup())?.uploadedAt).not.toBeNull();
+  });
+
+  it('keeps the laptop’s own key when it already holds one', async () => {
+    const fake = createFakeRelay();
+    const { phone } = await phoneIn(fake, ['Ana']);
+    await startRelayBackup(phone.services);
+    const own = Uint8Array.from({ length: 32 }, (_, i) => 200 - i);
+    const before = await openStore('ana-laptop');
+    await before.setRelayBackupKey(own);
+    before.close();
+
+    const laptop = await laptopOf(fake, phone);
+
+    expect(await backupKeyOf(laptop)).toEqual(own);
+    expect(await backupKeyOf(phone)).not.toEqual(own);
   });
 });

@@ -1,0 +1,66 @@
+{
+  "kind": "relayBackup",
+  "about": "The relay backup (spec §3, #97). backupId and sealKey are HKDF-SHA-256 (RFC 5869) of the 32-byte backup key with an empty salt and 32 bytes of output, under the infos reconcile/v1/backup-id and reconcile/v1/backup-seal; the id is the unpadded base64url of backupId's bytes. The sealed blob is magic RCR1, the nonce, then XChaCha20-Poly1305 under sealKey, with AAD RCR1 and the id's UTF-8, of a 4-byte big-endian length, the plaintext and zeros, 65,536 bytes in all. Its SHA-256, first 64 and last 32 bytes pin it, since the whole blob is too large to keep here. Computed with Python's hmac and hashlib and the cryptography package's ChaCha20 and ChaCha20Poly1305 (HChaCha20 from its raw ChaCha20 block), each checked against draft-irtf-cfrg-xchacha-03's vectors. Neither is @noble.",
+  "infos": {
+    "backupId": "reconcile/v1/backup-id",
+    "sealKey": "reconcile/v1/backup-seal"
+  },
+  "vectors": [
+    {
+      "name": "the key 00 01 02 … 1f",
+      "key": [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31
+      ],
+      "backupId": [
+        118, 139, 206, 133, 70, 35, 36, 235, 62, 150, 178, 250, 251, 225, 72, 44, 214, 83, 49, 205,
+        122, 108, 252, 239, 160, 209, 123, 77, 226, 140, 9, 192
+      ],
+      "sealKey": [
+        52, 192, 241, 94, 77, 150, 204, 130, 76, 21, 79, 167, 130, 157, 191, 115, 255, 141, 144,
+        107, 228, 147, 19, 211, 217, 138, 87, 146, 122, 184, 167, 208
+      ]
+    },
+    {
+      "name": "the key ff fe fd … e0",
+      "key": [
+        255, 254, 253, 252, 251, 250, 249, 248, 247, 246, 245, 244, 243, 242, 241, 240, 239, 238,
+        237, 236, 235, 234, 233, 232, 231, 230, 229, 228, 227, 226, 225, 224
+      ],
+      "backupId": [
+        4, 179, 111, 88, 96, 31, 185, 95, 209, 243, 238, 203, 94, 148, 110, 76, 158, 246, 81, 208,
+        241, 4, 8, 118, 79, 100, 65, 245, 164, 160, 11, 47
+      ],
+      "sealKey": [
+        150, 216, 46, 242, 23, 88, 24, 207, 3, 71, 17, 170, 74, 41, 169, 200, 159, 188, 129, 64, 10,
+        54, 236, 18, 24, 238, 183, 31, 10, 192, 73, 149
+      ]
+    }
+  ],
+  "sealed": {
+    "key": [
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+      26, 27, 28, 29, 30, 31
+    ],
+    "nonce": [
+      160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178,
+      179, 180, 181, 182, 183
+    ],
+    "plaintext": "{\"format\":1,\"groups\":[]}",
+    "size": 65536,
+    "sha256": [
+      227, 140, 6, 152, 123, 216, 207, 206, 241, 211, 234, 235, 161, 94, 119, 192, 255, 254, 37,
+      233, 3, 204, 18, 79, 229, 143, 241, 178, 254, 184, 16, 103
+    ],
+    "head": [
+      82, 67, 82, 49, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174,
+      175, 176, 177, 178, 179, 180, 181, 182, 183, 247, 127, 184, 207, 159, 99, 135, 224, 46, 5,
+      117, 239, 82, 202, 226, 221, 24, 205, 53, 55, 5, 210, 115, 57, 218, 0, 97, 213, 200, 111, 216,
+      167, 50, 113, 221, 8
+    ],
+    "tail": [
+      44, 32, 47, 103, 44, 152, 236, 154, 21, 178, 111, 3, 225, 183, 166, 160, 21, 21, 119, 251,
+      219, 70, 172, 92, 189, 169, 143, 61, 160, 182, 2, 101
+    ]
+  }
+}

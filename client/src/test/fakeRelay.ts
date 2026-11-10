@@ -2,13 +2,15 @@
  * An in-memory relay with #62's contract (`reconcile/relay/app.py`), for tests.
  *
  * It is a `fetch` that answers the relay's routes: PUT and GET
- * `/v1/mailbox/{id}` and GET `/v1/health`, with the same status codes and
- * `{"error": code}` bodies, and #89's push routes (`/v1/push/...`, #99),
- * which keep each mailbox's endpoints and nudges for a test to read. A blob
- * PUT takes `wake=1` as the real relay does. No push is ever sent. Seqs are shared by every mailbox, as in the real
+ * `/v1/mailbox/{id}`, PUT and GET `/v1/backup/{id}` (#97) and GET
+ * `/v1/health`, with the same status codes and `{"error": code}` bodies, and
+ * #89's push routes (`/v1/push/...`, #99), which keep each mailbox's
+ * endpoints and nudges for a test to read. A blob PUT takes `wake=1` as the
+ * real relay does. No push is ever sent. Seqs are shared by every mailbox, as in the real
  * relay's one table, so a mailbox's seqs have gaps. Each blob expires as the
  * real relay's does: `ttl_days` after the UTC day it arrived, plus one, by the
- * fake's minute clock.
+ * fake's minute clock. A backup is one blob per id, of one of five sizes,
+ * replaced by each PUT and kept 180 days after the UTC day of the last one.
  *
  * Beside it sits the one other place a device may send anything, a group's
  * Discord webhook (#119): `discord`, a fake endpoint test devices post to, so
@@ -24,6 +26,10 @@ const MAILBOX_ID = /^[A-Za-z0-9_-]{43}$/;
 export const TEST_MAILBOX = 'test-mailbox-'.padEnd(43, '0');
 const BLOB_SIZES = new Set([1024, 4096, 16384, 65536]);
 const MAX_BLOB_BYTES = 65536;
+const BACKUP_SIZES = new Set([65536, 262144, 1048576, 4194304, 16777216]);
+const MAX_BACKUP_BYTES = 16777216;
+/** A backup is kept this many whole days after the UTC day of its last write. */
+const BACKUP_KEEP_DAYS = 180;
 const MAX_SEQ = 2 ** 53 - 1;
 const ORIGIN = 'http://relay.test';
 
@@ -49,6 +55,12 @@ interface Stored {
   /** The UTC day it expires on: the day it arrived, plus `ttl_days`, plus 1. */
   expiry: number;
   blob: Uint8Array;
+}
+
+/** A backup the fake relay keeps, as the real one's `backups` row: its blob and expiry day. */
+interface StoredBackup {
+  blob: Uint8Array;
+  expiry: number;
 }
 
 /** Minutes in a UTC day: a relay minute's day is ⌊minute / 1,440⌋. */
@@ -114,6 +126,8 @@ export interface FakeRelay {
   nudges(mailbox: string): number[];
   /** The unexpired blobs stored in `mailbox`, oldest first. */
   blobs(mailbox: string): Uint8Array[];
+  /** The unexpired backup stored as `backup` (#97), or undefined. */
+  backup(backup: string): Uint8Array | undefined;
   /** Deletes the oldest `count` blobs of `mailbox`, as a purge of expired rows would. */
   drop(mailbox: string, count: number): void;
   /**
@@ -136,6 +150,7 @@ class Refusal extends Error {
 /** A fake relay whose clock starts at `minute` (default: 29,000,000). */
 export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
   let stored: Stored[] = [];
+  const backups = new Map<string, StoredBackup>();
   let lastSeq = 0;
   let instance = randomInstance();
   const subs = new Map<string, string[]>();
@@ -153,6 +168,7 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
       return instance;
     },
     blobs: (mailbox) => live(mailbox).map((row) => row.blob),
+    backup: (backup) => liveBackup(backup)?.blob,
     drop: (mailbox, count) => {
       const doomed = new Set(live(mailbox).slice(0, count));
       stored = stored.filter((row) => !doomed.has(row));
@@ -178,8 +194,17 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
 
   /** The blobs of `mailbox` that haven't expired by the fake's clock, oldest first. */
   function live(mailbox: string): Stored[] {
-    const today = Math.floor(relay.minute / DAY_MINUTES);
-    return stored.filter((row) => row.mailbox === mailbox && row.expiry > today);
+    return stored.filter((row) => row.mailbox === mailbox && row.expiry > today());
+  }
+
+  /** The backup stored as `backup`, unless its expiry day has come by the fake's clock. */
+  function liveBackup(backup: string): StoredBackup | undefined {
+    const row = backups.get(backup);
+    return row !== undefined && row.expiry > today() ? row : undefined;
+  }
+
+  function today(): number {
+    return Math.floor(relay.minute / DAY_MINUTES);
   }
 
   function answer(request: FakeRequest): Response {
@@ -198,6 +223,10 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
     if (url.pathname === '/v1/health' && request.method === 'GET') {
       return Response.json({ status: 'ok' });
     }
+    const backupMatch = /^\/v1\/backup\/([^/]*)$/.exec(url.pathname);
+    if (backupMatch !== null) {
+      return backupRoute(checkId(backupMatch[1] ?? '', 'invalid_backup'), request);
+    }
     if (url.pathname.startsWith('/v1/push/')) {
       return pushRoute(url.pathname, request);
     }
@@ -215,25 +244,31 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
     throw new Refusal(405, 'method_not_allowed');
   }
 
+  function backupRoute(backup: string, request: FakeRequest): Response {
+    if (request.method === 'PUT') {
+      const blob = octets(request, BACKUP_SIZES, MAX_BACKUP_BYTES);
+      backups.set(backup, { blob, expiry: today() + BACKUP_KEEP_DAYS + 1 });
+      return new Response(null, { status: 204 });
+    }
+    if (request.method === 'GET') {
+      const row = liveBackup(backup);
+      if (row === undefined) throw new Refusal(404, 'not_found');
+      return new Response(Uint8Array.from(row.blob), {
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+    }
+    throw new Refusal(405, 'method_not_allowed');
+  }
+
   function put(mailbox: string, query: URLSearchParams, request: FakeRequest): Response {
     const ttlDays = queryInt(query, TTL_DAYS);
     const wake = query.get('wake');
     if (wake !== null && wake !== '1') {
       throw new Refusal(400, 'invalid_wake');
     }
-    const mediaType = (request.contentType ?? '').split(';')[0]?.trim().toLowerCase();
-    if (mediaType !== 'application/octet-stream') {
-      throw new Refusal(415, 'unsupported_media_type');
-    }
-    const blob = request.body ?? new Uint8Array();
-    if (blob.length > MAX_BLOB_BYTES) {
-      throw new Refusal(413, 'too_large');
-    }
-    if (!BLOB_SIZES.has(blob.length)) {
-      throw new Refusal(400, 'invalid_size');
-    }
+    const blob = octets(request, BLOB_SIZES, MAX_BLOB_BYTES);
     lastSeq += 1;
-    const expiry = Math.floor(relay.minute / DAY_MINUTES) + ttlDays + 1;
+    const expiry = today() + ttlDays + 1;
     stored.push({ mailbox, seq: lastSeq, received: relay.minute, expiry, blob });
     return Response.json({ seq: lastSeq }, { status: 201 });
   }
@@ -367,10 +402,31 @@ function bodyBytes(body: RequestInit['body']): Uint8Array | null {
 }
 
 function checkMailbox(mailbox: string): string {
-  if (!MAILBOX_ID.test(mailbox)) {
-    throw new Refusal(400, 'invalid_mailbox');
+  return checkId(mailbox, 'invalid_mailbox');
+}
+
+/** `id`, if it is 43 base64url characters; else a 400 with `code`. */
+function checkId(id: string, code: string): string {
+  if (!MAILBOX_ID.test(id)) {
+    throw new Refusal(400, code);
   }
-  return mailbox;
+  return id;
+}
+
+/** A PUT's octet-stream body, at most `max` bytes and exactly one of `sizes`. */
+function octets(request: FakeRequest, sizes: ReadonlySet<number>, max: number): Uint8Array {
+  const mediaType = (request.contentType ?? '').split(';')[0]?.trim().toLowerCase();
+  if (mediaType !== 'application/octet-stream') {
+    throw new Refusal(415, 'unsupported_media_type');
+  }
+  const blob = request.body ?? new Uint8Array();
+  if (blob.length > max) {
+    throw new Refusal(413, 'too_large');
+  }
+  if (!sizes.has(blob.length)) {
+    throw new Refusal(400, 'invalid_size');
+  }
+  return blob;
 }
 
 function queryInt(query: URLSearchParams, param: IntParam): number {
