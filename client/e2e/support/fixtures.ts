@@ -3,14 +3,18 @@
  * test (`relay.ts`), a fixture that opens one browser profile per person
  * under the deploy CSP and fails the test on any CSP violation in any of
  * them, axe on the screen a person is looking at, a few locators, and
- * first run's steps (#76).
+ * first run's steps (#76). Every profile's requests to Discord are answered
+ * by the fixture itself and kept in `discord` (#119), so no test ever posts
+ * to Discord.
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
+  type BrowserContext,
   type BrowserContextOptions,
   expect,
   type Locator,
   type Page,
+  type Route,
   test as base,
 } from '@playwright/test';
 
@@ -30,8 +34,62 @@ export interface Person {
   readonly page: Page;
 }
 
-/** Opens a new profile for `name`; the fixture closes it after the test. */
-export type OpenProfile = (name: string, options?: BrowserContextOptions) => Promise<Person>;
+/** One request a page sent to Discord, which the fixture answered as Discord answers a post. */
+export interface DiscordRequest {
+  readonly method: string;
+  readonly url: string;
+  /** Its headers, as the browser sent them. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Its body read as JSON, or null for none. */
+  readonly body: unknown;
+}
+
+/** True for a URL on a Discord host: discord.com, discordapp.com, or any name under them. */
+export function isDiscord(url: URL): boolean {
+  return /(^|\.)(discord|discordapp)\.com$/.test(url.hostname);
+}
+
+/** Answers a request to Discord as a webhook does, keeping it; a CORS preflight gets its own answer. */
+async function answerAsDiscord(route: Route, requests: DiscordRequest[]): Promise<void> {
+  const request = route.request();
+  const cors = { 'access-control-allow-origin': '*' };
+  if (request.method() === 'OPTIONS') {
+    await route.fulfill({
+      status: 204,
+      headers: {
+        ...cors,
+        'access-control-allow-methods': 'POST',
+        'access-control-allow-headers': 'content-type',
+      },
+    });
+    return;
+  }
+  const text = request.postData();
+  requests.push({
+    method: request.method(),
+    url: request.url(),
+    headers: await request.allHeaders(),
+    body: text === null ? null : (JSON.parse(text) as unknown),
+  });
+  await route.fulfill({ status: 204, headers: cors });
+}
+
+/** Answers every request `context` makes to Discord itself, keeping each in `requests`. */
+export async function routeDiscord(
+  context: BrowserContext,
+  requests: DiscordRequest[],
+): Promise<void> {
+  await context.route(isDiscord, (route) => answerAsDiscord(route, requests));
+}
+
+/**
+ * Opens a new profile for `name`; the fixture closes it after the test.
+ * `discord` holds every request any profile sent to Discord, in order (#119).
+ */
+export interface OpenProfile {
+  (name: string, options?: BrowserContextOptions): Promise<Person>;
+  readonly discord: readonly DiscordRequest[];
+}
 
 /**
  * Runs in every page before the app: sends each `securitypolicyviolation` to
@@ -70,9 +128,11 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
   ],
   openProfile: async ({ browser }, provide) => {
     const profiles: { readonly person: Person; readonly violations: string[] }[] = [];
-    await provide(async (name, options = {}) => {
+    const discord: DiscordRequest[] = [];
+    const open = async (name: string, options: BrowserContextOptions = {}): Promise<Person> => {
       // The project's `use` options (baseURL, device) apply; the CSP always does.
       const context = await browser.newContext({ ...options, bypassCSP: false });
+      await routeDiscord(context, discord);
       const violations: string[] = [];
       await context.exposeFunction(REPORT_VIOLATION, (line: string) => {
         violations.push(line);
@@ -81,7 +141,8 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
       const person = { name, page: await context.newPage() };
       profiles.push({ person, violations });
       return person;
-    });
+    };
+    await provide(Object.assign(open, { discord }));
     try {
       // A round trip through each page lets any queued violation report arrive.
       for (const { person } of profiles) await person.page.evaluate(() => undefined);

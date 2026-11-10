@@ -14,6 +14,7 @@ import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import { manualTimers } from '../test/timers';
+import type { ChatBot } from './chatBot';
 import { openStore } from './db';
 import type { Group, Store } from './db';
 import { createSync } from './sync';
@@ -459,6 +460,62 @@ describe('a sync pass', () => {
     vi.spyOn(ana.store, 'listGroups').mockRejectedValue(new Error('closed'));
 
     expect(await ana.sync.syncOnce()).toBe(false);
+  });
+});
+
+describe('the chat bot in a pass (#119)', () => {
+  /** A sync loop for Ana in two groups, running `chatBot`, with one group's relay refusing. */
+  async function twoGroups(chatBot: ChatBot) {
+    const fake = createFakeRelay();
+    const broken = newKeys();
+    const refusing: Fetch = (input, init) =>
+      typeof input === 'string' && input.includes(broken.mailbox)
+        ? Promise.resolve(Response.json({ error: 'storage_full' }, { status: 507 }))
+        : fake.fetch(input, init);
+    const store = await openStore('ana');
+    const me = { author: authorOf(ANA), name: 'Ana' };
+    const signingKey = testKeys(ANA).secretKey;
+    await store.addGroup({ groupId: GROUP, secret: newKeys().secret, signingKey, me });
+    await store.addGroup({ groupId: 'broken', secret: broken.secret, signingKey, me });
+    await store.enqueue('broken', genesis().record);
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch: refusing }),
+      seal: xchachaSeal,
+      chatBot,
+    });
+    opened.push(sync);
+    return { store, sync };
+  }
+
+  it('runs once for each group that synced, after its pull is saved, and never for one that failed', async () => {
+    const seen: (number | null)[] = [];
+    const { store, sync } = await twoGroups({
+      run: async (groupId) => {
+        seen.push((await store.getGroup(groupId))?.relayNow ?? null);
+      },
+    });
+
+    expect(await sync.syncOnce()).toBe(false);
+
+    expect(seen).toEqual([29_000_000]);
+  });
+
+  it('never fails a pass, however it fails', async () => {
+    const run = vi.fn(() => Promise.reject(new Error('Discord is down')));
+    const fake = createFakeRelay();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
+    const sync = createSync({
+      store: ana.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      chatBot: { run },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+    expect(run).toHaveBeenCalledWith(GROUP);
+    expect(sync.isReachable()).toBe(true);
   });
 });
 

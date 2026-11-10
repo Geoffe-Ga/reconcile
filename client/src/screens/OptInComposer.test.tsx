@@ -72,7 +72,11 @@ describe('OptInComposer: turning the chat bot on', () => {
     expect(
       screen.getByText(/higher bar: an average of 3\.0 or more, with zeros under 5%/),
     ).toBeVisible();
-    expect(screen.getByRole('textbox', { name: 'Discord webhook URL' })).toBeVisible();
+    const webhook = screen.getByRole('textbox', { name: 'Discord webhook URL' });
+    expect(webhook).toBeVisible();
+    expect(webhook).toHaveAccessibleDescription(
+      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
+    );
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
       'Turn on the Discord chat bot',
     );

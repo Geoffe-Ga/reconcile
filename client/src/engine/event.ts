@@ -166,6 +166,19 @@ export interface NarrowBody {
 }
 
 /**
+ * Claims one notice of the chat bot (#119): `moment` of `proposal`, which the
+ * author's device will post to the group's Discord webhook if its claim is
+ * the first. Both are kept as written: the fold checks them (chatPosts.ts).
+ * `nonce` is random, so two devices holding one key (#78) never sign the same
+ * bytes, and each can tell its own claim by its id. The fold doesn't read it.
+ */
+export interface ChatPostedBody {
+  readonly proposal: string;
+  readonly moment: string;
+  readonly nonce?: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -198,6 +211,7 @@ export interface EventBodies {
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
+  readonly 'chat-posted': ChatPostedBody;
 }
 
 /** The event types this engine understands. */
@@ -420,6 +434,12 @@ function parseNarrow(body: Json): NarrowBody | null {
   return isString(optIn) && isString(proposal) ? { optIn, proposal } : null;
 }
 
+function parseChatPosted(body: Json): ChatPostedBody | null {
+  const { proposal, moment, nonce } = body;
+  if (!isString(proposal) || !isString(moment) || !isOptionalString(nonce)) return null;
+  return { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -449,12 +469,11 @@ function attach<B>(body: B | null, make: (body: B) => GroupEvent): GroupEvent | 
   return body === null ? null : make(body);
 }
 
+/** An event's envelope fields, apart from its type and body. */
+type Head = Omit<GroupEvent, 'type' | 'body'>;
+
 /** Attaches a validated body to the envelope fields, or returns null for an unknown type or bad body. */
-function withBody(
-  head: Omit<GroupEvent, 'type' | 'body'>,
-  type: unknown,
-  body: Json,
-): GroupEvent | null {
+function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'genesis':
       return attach(parseGenesis(body), (parsed) => ({ ...head, type, body: parsed }));
@@ -470,10 +489,23 @@ function withBody(
       return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'leave':
       return { ...head, type, body: {} };
+    default:
+      return withLaterBody(head, type, body);
+  }
+}
+
+/**
+ * {@link withBody} for the types the restored features added: `suspend`
+ * (#102), `narrow` (#117) and `chat-posted` (#119).
+ */
+function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
     case 'suspend':
       return attach(parseSuspend(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'narrow':
       return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'chat-posted':
+      return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

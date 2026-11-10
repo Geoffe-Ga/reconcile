@@ -7,9 +7,14 @@
  * relay's one table, so a mailbox's seqs have gaps. Each blob expires as the
  * real relay's does: `ttl_days` after the UTC day it arrived, plus one, by the
  * fake's minute clock.
+ *
+ * Beside it sits the one other place a device may send anything, a group's
+ * Discord webhook (#119): `discord`, a fake endpoint test devices post to, so
+ * a test sees all a device sends and none of it reaches the network.
  */
 
 import type { Fetch } from '../net/relay';
+import { createFakeDiscord, type FakeDiscord } from './fakeDiscord';
 
 const MAILBOX_ID = /^[A-Za-z0-9_-]{43}$/;
 
@@ -82,6 +87,8 @@ export interface FakeRelay {
   readonly instance: string;
   /** Every request that reached the relay, oldest first. */
   readonly requests: FakeRequest[];
+  /** The Discord webhook endpoint test devices post to (#119); its requests aren't in `requests`. */
+  readonly discord: FakeDiscord;
   /** The unexpired blobs stored in `mailbox`, oldest first. */
   blobs(mailbox: string): Uint8Array[];
   /** Deletes the oldest `count` blobs of `mailbox`, as a purge of expired rows would. */
@@ -113,6 +120,7 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
     minute: options.minute ?? 29_000_000,
     offline: false,
     requests: [],
+    discord: createFakeDiscord(),
     get instance() {
       return instance;
     },
