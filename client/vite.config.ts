@@ -36,11 +36,14 @@ export default defineConfig(({ mode }) => {
     // may be inlined as one: every asset is a file served from 'self'.
     build: { assetsInlineLimit: 0 },
     // deploy/Caddyfile's CSP, so the e2e loop under `vite preview` runs the build
-    // under the policy members get. deploy/check.sh keeps the two equal.
+    // under the policy members get. deploy/check.sh keeps the two equal. Its one
+    // hash is React Aria's iOS scroll-lock <style> (#153), which
+    // src/styles/scrollLockStyle.test.tsx pins. It hashes public CSS, so the
+    // pragma tells detect-secrets it's no secret.
     preview: {
       headers: {
         'Content-Security-Policy':
-          "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+          "default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; object-src 'none'; base-uri 'none'; frame-ancestors 'none'", // pragma: allowlist secret
       },
     },
   };

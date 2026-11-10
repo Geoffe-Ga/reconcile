@@ -17,3 +17,7 @@
 
 - Accessibility target: WCAG 2.2 AA. The ballot and key screens get dedicated accessibility tests (axe in Playwright).
 - The placeholder Jest/ESLint 8/CommonJS scaffold from `green init` is replaced.
+
+## Amendment (2026-11-10)
+
+React Aria's runtime `<style>` elements meet the deploy CSP without `'unsafe-inline'` (#150, #153). The pressable style is claimed by its id in `index.html`, and its rule ships from `'self'`. The iOS scroll-lock style has no id, so the founder decided to allow that one exact text by its SHA-256 hash in `style-src-elem`. A client test hashes what the installed React Aria injects and fails on any change. [deploy/README.md](../../deploy/README.md#the-csp) has the policy and the reasons.
