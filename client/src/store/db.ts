@@ -12,9 +12,12 @@
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
  * record, so Leave deletes the group with a single delete (#77), the chat
- * bot's claims (#119) included. A dissolved group stays as a read-only
- * archive (#108): nothing more is queued, claimed or sent for it, and its
- * ballots and notes can be cleared while its outcomes stay.
+ * bot's claims (#119) included. A backup file's groups come back in one
+ * transaction too (#78), and the store closes itself when another tab
+ * deletes or upgrades its database, so Erase never waits on a connection
+ * left open. A dissolved group stays as a read-only archive (#108): nothing
+ * more is queued, claimed or sent for it, and its ballots and notes can be
+ * cleared while its outcomes stay.
  */
 
 import { openDB } from 'idb';
@@ -85,6 +88,13 @@ export interface Group {
    */
   leaving?: Uint8Array;
   /**
+   * How the group stands with backups on this device (#78): `saved` once it
+   * is in a backup file this device saved or restored from, `not-now` once
+   * the person answered Not now on group home's backup card. Absent until
+   * either, and group home suggests a backup while it is.
+   */
+  backup?: BackupMark;
+  /**
    * The chat bot claims this device made and hasn't settled yet (#119), oldest
    * first: each is posted once if it won, or dropped. Absent until the first.
    */
@@ -119,6 +129,30 @@ export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
 }
+
+/** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
+export type BackupMark = 'saved' | 'not-now';
+
+/**
+ * A group as a backup file carries it (#78): its keys, secret, your name, its
+ * relay-ordered log and sync state, and whether some history may be missing.
+ * Never the outbox or drafts, so a restore never sends stale intent. A file
+ * never holds `archived`: a restore sets it when the log folds to a
+ * `dissolve` (#108), so the group comes back read-only.
+ */
+export type BackedUpGroup = Pick<
+  Group,
+  | 'groupId'
+  | 'secret'
+  | 'signingKey'
+  | 'me'
+  | 'log'
+  | 'cursor'
+  | 'relayNow'
+  | 'instance'
+  | 'lastSyncAt'
+  | 'archived'
+> & { readonly missingHistory: boolean };
 
 /**
  * The longest gap between syncs that can't have missed an event: 28 days. The
@@ -231,6 +265,19 @@ export interface Store extends DraftStore {
    * takes nothing (#108), so a cleared one never gets its ballots back.
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
+  /**
+   * Keep a backup file's groups, in one transaction (#78). A group new to the
+   * device is kept as the file has it, with an empty outbox, no drafts and no
+   * chat claims (#119). For
+   * a group already here, whichever whole copy synced later stays: the file's
+   * replaces the device's only when its last sync is later, and a group this
+   * device is leaving or keeps read-only (#108) stays as it is. Either way
+   * the group is marked `saved`, since a backup file holds it. Nothing is
+   * stamped with the time now.
+   */
+  restoreGroups(groups: readonly BackedUpGroup[]): Promise<void>;
+  /** Mark each of these groups still on the device, in one transaction (#78). */
+  markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
   resetCursor(groupId: string, instance: string): Promise<void>;
   /** Hear which group changed after each change; returns the way to stop. */
@@ -252,14 +299,24 @@ interface Schema extends DBSchema {
 const VERSION = 3;
 const GROUPS = 'groups';
 
-/** Open the store in the IndexedDB database `name`. */
-export async function openStore(name = 'reconcile'): Promise<Store> {
+/** The IndexedDB database the app keeps its groups in. */
+export const DATABASE_NAME = 'reconcile';
+
+/**
+ * Open the store in the IndexedDB database `name`. When another tab deletes
+ * the database (Erase, #78) or opens a newer version of it, this connection
+ * closes, so that tab never waits on this one.
+ */
+export async function openStore(name = DATABASE_NAME): Promise<Store> {
   const db = await openDB<Schema>(name, VERSION, {
     upgrade(database) {
       if (database.objectStoreNames.contains(GROUPS)) {
         database.deleteObjectStore(GROUPS);
       }
       database.createObjectStore(GROUPS, { keyPath: 'groupId' });
+    },
+    blocking() {
+      db.close();
     },
   });
   const listeners = new Set<(groupId: string) => void>();
@@ -385,6 +442,28 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
         group.missingHistory = false;
       }),
+    async restoreGroups(groups) {
+      const tx = db.transaction(GROUPS, 'readwrite');
+      for (const restored of groups) {
+        const held = await tx.store.get(restored.groupId);
+        await tx.store.put(keptCopy(held, restored));
+      }
+      await tx.done;
+      for (const { groupId } of groups) notify(groupId);
+    },
+    async markBackup(groupIds, mark) {
+      const tx = db.transaction(GROUPS, 'readwrite');
+      const marked: string[] = [];
+      for (const groupId of groupIds) {
+        const group = await tx.store.get(groupId);
+        if (group === undefined) continue;
+        group.backup = mark;
+        await tx.store.put(group);
+        marked.push(groupId);
+      }
+      await tx.done;
+      for (const groupId of marked) notify(groupId);
+    },
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -398,6 +477,30 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       db.close();
     },
   };
+}
+
+/**
+ * The copy of a group to keep when a backup file holds `restored` and the
+ * device holds `held` (#78): the file's, with no outbox, drafts or chat
+ * claims, unless the device's synced at least as late, is leaving, or is a
+ * read-only archive, which a restore never brings back to life (#108).
+ * Either is marked `saved`.
+ */
+function keptCopy(held: Group | undefined, restored: BackedUpGroup): Group {
+  if (held !== undefined && (stays(held) || syncedSince(held, restored))) {
+    return { ...held, backup: 'saved' };
+  }
+  return { ...restored, outbox: [], backup: 'saved' };
+}
+
+/** Whether a restore leaves `held` as it is: the device is leaving it, or keeps it read-only. */
+function stays(held: Group): boolean {
+  return held.leaving !== undefined || held.archived !== undefined;
+}
+
+/** Whether `held` last synced no earlier than `restored`; a copy that never synced is the oldest. */
+function syncedSince(held: Group, restored: BackedUpGroup): boolean {
+  return (held.lastSyncAt ?? -Infinity) >= (restored.lastSyncAt ?? -Infinity);
 }
 
 /**

@@ -167,6 +167,16 @@ describe('a dissolved group on Group home', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('suggests no backup (#78), since no backup file carries a read-only copy', () => {
+    const { state } = dissolved();
+    renderHome(state, 'ana', {
+      backupCard: <p>The backup card</p>,
+      onRemove: () => Promise.resolve(),
+    });
+
+    expect(screen.queryByText('The backup card')).toBeNull();
+  });
+
   it('adds when this device erases it, a week after, when the vote chose to wipe', () => {
     const { state } = dissolved(true);
     renderHome(state, 'ben');

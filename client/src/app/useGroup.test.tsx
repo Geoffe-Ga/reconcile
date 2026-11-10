@@ -188,6 +188,7 @@ describe('useGroup', () => {
       me: null,
       missingHistory: false,
       leaving: false,
+      suggestBackup: false,
       loaded: true,
       cleared: null,
     });
@@ -209,6 +210,24 @@ describe('useGroup', () => {
       expect(result.current.leaving).toBe(true);
     });
     expect(result.current.pending.map(({ event }) => event.type)).toEqual(['leave']);
+  });
+
+  it('suggests a backup for a group no backup holds, and none once it is a read-only archive (#108)', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    await store.enqueue(GROUP, genesis().record);
+    await sync.syncOnce();
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    await waitFor(() => {
+      expect(result.current.suggestBackup).toBe(true);
+    });
+
+    await act(() => store.markArchived(GROUP, 'dissolved'));
+
+    await waitFor(() => {
+      expect(result.current.suggestBackup).toBe(false);
+    });
+    expect(result.current.state?.title).toBe('House rules');
   });
 
   it('says who this device is in the group, and hands the screens no secret', async () => {

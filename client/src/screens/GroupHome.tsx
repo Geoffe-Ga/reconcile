@@ -56,6 +56,11 @@ export interface GroupHomeProps {
   readonly leaving?: boolean;
   /** Removes a dissolved group's read-only copy from this device (#108); rejects when it couldn't. */
   readonly onRemove?: () => Promise<void>;
+  /**
+   * The quiet card that suggests a backup (#78), after the open Proposals;
+   * none when absent, or once the group has dissolved (#108).
+   */
+  readonly backupCard?: ReactNode;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -682,6 +687,8 @@ export function GroupHome(props: GroupHomeProps) {
       {dissolved === null ? <SuspendedNote state={state} me={me} /> : null}
       <div className="sections">
         <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
+        {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
+        {dissolved === null ? props.backupCard : null}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
             <span className="card-link-title">

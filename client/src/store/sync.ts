@@ -12,8 +12,9 @@
  *    won't open), and appends each event the log doesn't hold yet;
  * 3. saves the cursor, the relay's time and instance, and when it synced;
  * 4. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
- *    only while the group has its bot on and hasn't dissolved. Nothing the
- *    bot does, or fails to do, changes whether the pass succeeded.
+ *    only while the group has its bot on and hasn't dissolved, and never once
+ *    the loop is halted (#78). Nothing the bot does, or fails to do, changes
+ *    whether the pass succeeded.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -29,6 +30,12 @@
  * new records or a new relay minute, `settleDissolve` (./archive.ts)
  * archives the group, or posts this member's `dissolve` when a dissolve
  * Proposal's pass has become final.
+ *
+ * Erase halts the loop for good before it closes the store (#78): no new pass
+ * starts, a pass already running stops before its next group, and `halt`
+ * resolves once it has, so no request starts after that. The group that pass
+ * finishes still settles its dissolve, which touches only the store, but its
+ * chat bot doesn't run.
  *
  * A relay `instance` the group hasn't seen means a fresh relay database: the
  * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
@@ -192,6 +199,12 @@ export interface Sync extends Poller {
   isReachable(): boolean;
   /** Hear when {@link Sync.isReachable} changes; returns the way to stop. */
   subscribe(listener: () => void): () => void;
+  /**
+   * Stop for good (#78): no pass starts again, even on `start`, and a pass
+   * already running stops before its next group, running no chat bot for the
+   * group it finishes. Resolves once it has.
+   */
+  halt(): Promise<void>;
 }
 
 /** A sync loop over `options.store`; call `start()` to begin polling. */
@@ -200,6 +213,7 @@ export function createSync(options: SyncOptions): Sync {
   const { chatBot } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
+  let halted = false;
   let inFlight: Promise<boolean> | null = null;
 
   /**
@@ -246,20 +260,22 @@ export function createSync(options: SyncOptions): Sync {
 
   /**
    * Once a pull is saved: settle a dissolve (#108), then run the chat bot
-   * (#119), which posts and claims nothing once a `dissolve` has folded.
+   * (#119), which posts and claims nothing once a `dissolve` has folded, and
+   * doesn't run at all once the loop is halted (Erase, #78).
    */
   async function afterPull(group: Group, pull: Pull): Promise<void> {
     // Only something new can finish a dissolve vote or bring a dissolve: a record, or a later minute.
     if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
       await settleDissolve(store, group.groupId, clock);
     }
-    await chatBot?.run(group.groupId).catch(() => undefined);
+    if (!halted) await chatBot?.run(group.groupId).catch(() => undefined);
   }
 
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
       for (const group of await store.listGroups()) {
+        if (halted) break;
         ok = (await syncGroup(group).then(succeeded, failed)) && ok;
       }
     } catch {
@@ -275,6 +291,7 @@ export function createSync(options: SyncOptions): Sync {
   }
 
   function syncOnce(): Promise<boolean> {
+    if (halted) return Promise.resolve(false);
     inFlight ??= pass().finally(() => {
       inFlight = null;
     });
@@ -283,7 +300,17 @@ export function createSync(options: SyncOptions): Sync {
 
   const poller = createPoller(syncOnce, options.timers);
   return {
-    ...poller,
+    start() {
+      if (!halted) poller.start();
+    },
+    stop() {
+      poller.stop();
+    },
+    async halt() {
+      halted = true;
+      poller.stop();
+      await inFlight;
+    },
     syncOnce,
     isReachable: () => reachable,
     subscribe(listener) {

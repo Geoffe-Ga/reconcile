@@ -16,6 +16,7 @@ import { SEATS, type SeatNumber } from '../engine/stewards';
 export type Route =
   | { readonly name: 'start' }
   | { readonly name: 'create' }
+  | { readonly name: 'settings' }
   | { readonly name: 'join'; readonly payload: string | null }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
@@ -40,7 +41,7 @@ export type Route =
   | { readonly name: 'dissolve'; readonly groupId: string };
 
 /** A route inside one group. */
-type GroupRoute = Extract<Route, { readonly groupId: string }>;
+export type GroupRoute = Extract<Route, { readonly groupId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -110,6 +111,12 @@ function joinRoute(rest: readonly string[]): Route {
 /** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
 const INVITE_PREFIX = '#join/';
 
+/** The pages that take no argument after `#/`: Create group and Settings (#78). */
+const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
+  ['create', { name: 'create' }],
+  ['settings', { name: 'settings' }],
+]);
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
   if (hash.startsWith(INVITE_PREFIX)) {
@@ -119,14 +126,12 @@ export function parseRoute(hash: string): Route {
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
   switch (head) {
-    case 'create':
-      return rest.length === 0 ? { name: 'create' } : START;
     case 'join':
       return joinRoute(rest);
     case 'g':
       return groupRoute(rest);
     default:
-      return START;
+      return rest.length === 0 ? (PAGES.get(head) ?? START) : START;
   }
 }
 
@@ -177,6 +182,8 @@ export function routeHref(route: Route): string {
       return '#/';
     case 'create':
       return '#/create';
+    case 'settings':
+      return '#/settings';
     case 'join':
       return joinHref(route.payload);
     default:

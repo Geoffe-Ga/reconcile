@@ -11,8 +11,9 @@
  * outcome and its totals. Both count by the device's own clock, because no
  * relay time arrives after a dissolve.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { sealBackup } from '../crypto/backup';
 import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
@@ -24,7 +25,8 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import { containsBytes, scanDb } from '../test/scanDb';
 import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
-import { type Group, openStore, type Store } from './db';
+import { type BackedUpGroup, type Group, openStore, type Store } from './db';
+import { encodeSnapshot, exportGroups, importGroups } from './snapshot';
 import { createSync, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -353,6 +355,139 @@ describe('settleDissolve', () => {
     expect(await sync.syncOnce()).toBe(true);
     expect(await outboxOf(store, groupId)).toEqual([]);
     await settleDissolve(store, 'no-such-group', () => TS);
+  });
+});
+
+/** The backup file's passphrase, and a cheap scrypt cost for tests. */
+const PASSPHRASE = 'a long walk to the river';
+const CHEAP = 4;
+
+/** `group` as a backup file would hold it, with `changes`: what `restoreGroups` takes. */
+function copyOf(group: Group, changes: Partial<BackedUpGroup> = {}): BackedUpGroup {
+  const { groupId, secret, signingKey, me, log, cursor, relayNow, instance, lastSyncAt } = group;
+  const copy = { groupId, secret, signingKey, me, log, cursor, relayNow, instance, lastSyncAt };
+  return { ...copy, missingHistory: group.missingHistory === true, ...changes };
+}
+
+/** A file sealing `groups` under the test passphrase. */
+const fileOf = (groups: readonly BackedUpGroup[]) =>
+  sealBackup(encodeSnapshot(groups), PASSPHRASE, CHEAP);
+
+describe('a dissolved group and backup files (#78)', () => {
+  it('leaves the read-only copy out of a backup file, which held the group while it went on', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events, last } = history(group, false);
+    const { store, sync } = await openDevice(fake.fetch);
+    await keep(store, sync, group, [...events, last]);
+    expect((await exportGroups(store, PASSPHRASE, CHEAP)).groupIds).toEqual([group.genesis.id]);
+
+    fake.minute = DISSOLVED;
+    expect(await sync.syncOnce()).toBe(true);
+    expect((await store.getGroup(group.genesis.id))?.archived).toEqual({ reason: 'dissolved' });
+
+    expect((await exportGroups(store, PASSPHRASE, CHEAP)).groupIds).toEqual([]);
+  });
+
+  it('keeps the read-only copy when a file holds the group live and synced later', async () => {
+    const { fake, group, store, sync, groupId } = await dissolvedDevice(false);
+    const held = (await store.getGroup(groupId)) ?? never();
+    // The copy a device that never fetched the dissolve made a day later.
+    const live = held.log.filter((record) => parseRecord(record.bytes)?.event.type !== 'dissolve');
+    const later = (held.lastSyncAt ?? 0) + DAY_MINUTES * MINUTE_MS;
+    const file = await fileOf([copyOf(held, { log: live, lastSyncAt: later })]);
+
+    expect(await importGroups(store, file, PASSPHRASE)).toBe(1);
+
+    const kept = (await store.getGroup(groupId)) ?? never();
+    expect(kept).toEqual({ ...held, backup: 'saved' });
+    expect(shownState(kept).dissolved).toEqual({ received: DISSOLVED, wipe: false });
+    const requests = mailboxRequests(fake, group);
+    expect(await sync.syncOnce()).toBe(true);
+    expect(mailboxRequests(fake, group)).toBe(requests);
+  });
+
+  it('brings a file’s group whose log holds the dissolve back read-only, so it never syncs', async () => {
+    const { fake, group, store, groupId } = await dissolvedDevice(false);
+    // A file an older app made: the group's log holds the dissolve, with no mark on it.
+    const file = await fileOf([copyOf((await store.getGroup(groupId)) ?? never())]);
+    const other = await openStore('dissolve-restored');
+    stores.push(other);
+    const sync = createSync({
+      store: other,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      clock: () => TS,
+    });
+    opened.push(sync);
+
+    expect(await importGroups(other, file, PASSPHRASE)).toBe(1);
+
+    const restored = (await other.getGroup(groupId)) ?? never();
+    expect(restored.archived).toEqual({ reason: 'dissolved' });
+    expect(restored.outbox).toEqual([]);
+    expect(shownState(restored).dissolved).toEqual({ received: DISSOLVED, wipe: false });
+    const requests = mailboxRequests(fake, group);
+    fake.minute += 5;
+    expect(await sync.syncOnce()).toBe(true);
+    expect(mailboxRequests(fake, group)).toBe(requests);
+    await expect(other.enqueue(groupId, group.genesis.record)).rejects.toThrow('read-only');
+  });
+});
+
+describe('halting the sync loop (Erase, #78) as a group dissolves', () => {
+  it('waits for the pass that archives the group, runs no chat bot for it, and sends nothing after', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events, last } = history(group, false);
+    const groupId = group.genesis.id;
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding = false;
+    const fetch: Fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      // Hold the GET of the pass that brings the dissolve.
+      if (init?.method !== 'PUT' && url.includes(group.mailbox) && fake.minute === DISSOLVED) {
+        holding = true;
+        await held;
+      }
+      return fake.fetch(input, init);
+    };
+    const store = await openStore(DB);
+    stores.push(store);
+    const chatBot = { run: vi.fn(() => Promise.resolve()) };
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch }),
+      seal: xchachaSeal,
+      clock: () => TS,
+      chatBot,
+    });
+    opened.push(sync);
+    await keep(store, sync, group, [...events, last]);
+    expect(chatBot.run).toHaveBeenCalledOnce();
+    fake.minute = DISSOLVED;
+
+    const passing = sync.syncOnce();
+    await expect.poll(() => holding).toBe(true);
+    let halted = false;
+    const halting = sync.halt().then(() => {
+      halted = true;
+    });
+    await Promise.resolve();
+    expect(halted).toBe(false);
+    release();
+    await halting;
+
+    expect(await passing).toBe(true);
+    expect((await store.getGroup(groupId))?.archived).toEqual({ reason: 'dissolved' });
+    expect(chatBot.run).toHaveBeenCalledOnce();
+    const requests = fake.requests.length;
+    fake.minute += 5;
+    expect(await sync.syncOnce()).toBe(false);
+    expect(fake.requests.length).toBe(requests);
   });
 });
 
