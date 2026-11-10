@@ -15,11 +15,18 @@ interface TestMember {
   name: string;
   level: Level;
   seq: number;
+  invitedBy: null;
 }
 
 /** Members with these names, each under a fresh key. */
 function people(names: readonly string[]): TestMember[] {
-  return names.map((name, seq) => ({ author: freshKey(), name, level: DEFAULT_JOIN_LEVEL, seq }));
+  return names.map((name, seq) => ({
+    author: freshKey(),
+    name,
+    level: DEFAULT_JOIN_LEVEL,
+    seq,
+    invitedBy: null,
+  }));
 }
 
 /** A roster of members with these names, each under a fresh key, and nobody who has left. */

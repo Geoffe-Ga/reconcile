@@ -104,7 +104,10 @@ test('a group adds one section and removes another, and every profile shows the 
       .fill(`${FIRST_ATOM}\n\n${SECOND_ATOM}`);
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
-    const invite = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
+    const link = page.getByRole('textbox', { name: 'Invite link' });
+    await expect(link).toHaveValue(/#join\/[\w-]{43}$/);
+    const invite = await link.inputValue();
 
     await ben.page.goto(invite);
     await acceptNotice(ben);

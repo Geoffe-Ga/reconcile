@@ -1,49 +1,40 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { deriveMailboxId, newGroupSecret } from '../crypto/groupKeys';
+import { deriveMailboxId } from '../crypto/groupKeys';
+import { deriveInviteMailboxId, newInviteSeed } from '../crypto/invite';
 import { base64url } from '../engine/event';
-import {
-  type Invite,
-  inviteLink,
-  invitePayload,
-  parseInviteLink,
-  parseInvitePayload,
-} from './invite';
+import { inviteLink, parseInviteLink, parseInvitePayload } from './invite';
 
-const LINK = /^https?:\/\/[^#]+\/#\/join\/[A-Za-z0-9_-]{43}$/;
+/** The form the issue pins: the origin, then `#join/` and 43 base64url characters. */
+const LINK = /^https?:\/\/[^#]+\/#join\/[A-Za-z0-9_-]{43}$/;
 
-const anInvite = fc.record({ secret: fc.uint8Array({ minLength: 32, maxLength: 32 }) });
-
-/** An invite to a new group. */
-function newInvite(): Invite {
-  return { secret: newGroupSecret() };
-}
+const seeds = fc.uint8Array({ minLength: 32, maxLength: 32 });
 
 describe('inviteLink', () => {
-  it('puts the group secret after #, and no mailbox id anywhere', () => {
-    const invite = newInvite();
-    const link = inviteLink('https://reconcile.example', invite);
+  it('puts only the seed after #, and no mailbox id anywhere', () => {
+    const seed = newInviteSeed();
+    const link = inviteLink('https://reconcile.example', seed);
     expect(link).toMatch(LINK);
-    expect(link).toBe(`https://reconcile.example/#/join/${base64url(invite.secret)}`);
+    expect(link).toBe(`https://reconcile.example/#join/${base64url(seed)}`);
     const [beforeHash] = link.split('#');
-    expect(beforeHash).not.toContain(base64url(invite.secret));
-    expect(link).not.toContain(deriveMailboxId(invite.secret));
+    expect(beforeHash).not.toContain(base64url(seed));
+    expect(link).not.toContain(deriveInviteMailboxId(seed));
+    expect(link).not.toContain(deriveMailboxId(seed));
   });
 });
 
 describe('parseInvitePayload', () => {
-  it('reads back every payload invitePayload writes', () => {
+  it('reads back every seed a link carries', () => {
     fc.assert(
-      fc.property(anInvite, (invite: Invite) => {
-        const parsed = parseInvitePayload(invitePayload(invite));
-        expect(Array.from(parsed?.secret ?? [])).toEqual(Array.from(invite.secret));
+      fc.property(seeds, (seed) => {
+        expect(Array.from(parseInvitePayload(base64url(seed)) ?? [])).toEqual(Array.from(seed));
       }),
     );
   });
 
-  it('refuses anything that is not one 43-character base64url secret', () => {
-    const key = base64url(newGroupSecret());
+  it('refuses anything that is not one 43-character base64url seed', () => {
+    const key = base64url(newInviteSeed());
     for (const payload of [
       '',
       '.',
@@ -59,40 +50,36 @@ describe('parseInvitePayload', () => {
     }
   });
 
-  it('refuses a secret whose last character carries stray bits', () => {
-    const secret = newGroupSecret();
+  it('refuses a seed whose last character carries stray bits', () => {
     // 32 bytes leave 2 spare bits in the 43rd character; 'B' sets one of them.
-    const key = base64url(secret.map(() => 0)).slice(0, 42) + 'B';
-    expect(parseInvitePayload(key)).toBeNull();
-    expect(parseInvitePayload(base64url(secret))).not.toBeNull();
+    expect(parseInvitePayload(`${'A'.repeat(42)}B`)).toBeNull();
+    expect(parseInvitePayload(`${'A'.repeat(42)}E`)).not.toBeNull();
   });
 });
 
 describe('parseInviteLink', () => {
-  const invite = newInvite();
-  const payload = invitePayload(invite);
+  const seed = newInviteSeed();
+  const payload = base64url(seed);
 
   it.each([
-    ['a link from this app', `https://reconcile.example/#/join/${payload}`],
-    ['a link from a dev server', `http://localhost:5173/#/join/${payload}`],
-    ['a link with spaces around it', `  https://reconcile.example/#/join/${payload}\n`],
-    ['the bare payload', payload],
-    ['the bare payload with spaces around it', `  ${payload}\n`],
+    ['a link from this app', `https://reconcile.example/#join/${payload}`],
+    ['a link from a dev server', `http://localhost:5173/#join/${payload}`],
+    ['a link with spaces around it', `  https://reconcile.example/#join/${payload}\n`],
+    ['a link in the tracer’s #/join/ form', `https://reconcile.example/#/join/${payload}`],
+    ['the bare seed', payload],
+    ['the bare seed with spaces around it', ` ${payload} `],
   ])('reads %s', (_label, text) => {
-    expect(base64url(parseInviteLink(text)?.secret ?? new Uint8Array())).toBe(payload);
+    expect(base64url(parseInviteLink(text) ?? new Uint8Array())).toBe(payload);
   });
 
   it.each([
     ['empty text', ''],
     ['another page of the app', 'https://reconcile.example/#/create'],
-    ['the payload in the path, not after #', `https://reconcile.example/join/${payload}`],
-    [
-      'a link with the payload cut short',
-      `https://reconcile.example/#/join/${payload.slice(0, 40)}`,
-    ],
+    ['the seed in the path, not after #', `https://reconcile.example/join/${payload}`],
+    ['a link with the seed cut short', `https://reconcile.example/#join/${payload.slice(0, 40)}`],
     [
       'a link in the old mailbox.secret form',
-      `https://reconcile.example/#/join/${payload}.${payload}`,
+      `https://reconcile.example/#join/${payload}.${payload}`,
     ],
     ['words', 'please join my group'],
   ])('refuses %s', (_label, text) => {
