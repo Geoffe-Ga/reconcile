@@ -419,16 +419,27 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
   );
 }
 
+/** How a cut-off Proposal reads: its eyebrow, and the line saying why it shows no outcome. */
+interface CutOffWords {
+  readonly eyebrow: string;
+  readonly line: string;
+}
+
 /**
- * Why this device shows a Proposal as cut off, or null when it doesn't: it
- * was still open when the group dissolved (#108), or when a vote removed this
- * member (#115), so this device never learns how it ends.
+ * How this device shows a Proposal it has cut off, or null when it hasn't:
+ * closed, when it was still open as the group dissolved (#108), or open,
+ * when a vote removed this member while it was (#115), so this device never
+ * learns how it ends.
  */
-function cutOffLine(props: ProposalViewProps, proposal: Proposal): string | null {
+function cutOffOf(props: ProposalViewProps, proposal: Proposal): CutOffWords | null {
   const { state, me } = props;
-  if (closedByDissolve(state, proposal)) return messages.archive.closed;
+  if (closedByDissolve(state, proposal)) {
+    return { eyebrow: messages.proposal.eyebrowClosed, line: messages.archive.closed };
+  }
   const removed = removedFrom(state, me) !== undefined && !proposal.final;
-  return removed ? messages.removal.stillOpenLine : null;
+  return removed
+    ? { eyebrow: messages.proposal.eyebrowOpen, line: messages.removal.stillOpenLine }
+    : null;
 }
 
 /**
@@ -436,15 +447,16 @@ function cutOffLine(props: ProposalViewProps, proposal: Proposal): string | null
  * removed this member (#115): closed here, with no outcome and no ballot, its
  * versions as they stood, and `line` saying why.
  */
-function CutOff(props: { props: ProposalViewProps; proposal: Proposal; line: string }) {
-  const { proposal, line } = props;
+function CutOff(props: { props: ProposalViewProps; proposal: Proposal; words: CutOffWords }) {
+  const { proposal } = props;
+  const { eyebrow, line } = props.words;
   const { state } = props.props;
   const versions = versionViews(state, proposal);
   const comparison = comparisonOf(state, proposal, false);
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={messages.proposal.eyebrowClosed}
+        eyebrow={eyebrow}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
@@ -486,8 +498,8 @@ function clearedOf(props: ProposalViewProps, proposal: Proposal) {
  */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, now } = props;
-  const cutOff = cutOffLine(props, proposal);
-  if (cutOff !== null) return <CutOff props={props} proposal={proposal} line={cutOff} />;
+  const cutOff = cutOffOf(props, proposal);
+  if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
   const readOnly = props.leaving === true || isArchived(state, props.me);
   const versions = versionViews(state, proposal);
   const link =
