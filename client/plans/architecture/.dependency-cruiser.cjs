@@ -26,7 +26,7 @@ module.exports = {
     {
       name: 'only-the-net-module-talks-to-the-network',
       comment:
-        'The only network calls are to the relay and push service (client rule). Keep them in src/net/ so they can be audited in one place.',
+        'The only network calls are to the relay and, for a group that turned its chat bot on, its Discord webhook (client rule, #119). Keep them in src/net/ so they can be audited in one place.',
       severity: 'error',
       from: { pathNot: ['^src/net/', '\\.test\\.tsx?$'] },
       to: { path: 'node_modules/(axios|ky|ofetch|socket\\.io-client)/' },

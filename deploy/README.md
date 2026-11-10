@@ -146,10 +146,14 @@ The push services see the VM's address, and when each phone is woken, but never 
 Caddy sends this header on every response, and `vite preview` sends the same one ([`client/vite.config.ts`](../client/vite.config.ts)). The hash is shortened here; the [Caddyfile](Caddyfile) has it in full:
 
 ```
-default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-…'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-…'; connect-src 'self' https://discord.com/api/webhooks/; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
 ```
 
 This CSP and #70's Markdown sanitizer are the main defense against injected script stealing keys. The page can load script only from its own origin: no inline script, no third party, no plugins. No `<base>` tag can redirect its URLs, and no other site can frame it.
+
+**One more place to connect, by its path (#119).** `connect-src` lets the page reach its own origin, where the relay is, and Discord's webhooks, `https://discord.com/api/webhooks/` and nothing else on any host. A group's chat bot posts its content-free notices there once the group turns it on by Proposal ([ADR-0074](../docs/adr/0074-mvp-scope-revised.md)); the webhook URL lives only in the group's sealed events. A static header can't name one group's webhook, so the path allows every webhook, an attacker's own included. That gives a script that got injected one more place to send what it reads, as a relay mailbox of its own choosing already did. Keeping script from being injected (`script-src` and the sanitizer) stays the defense; `connect-src` keeps every other host out:
+- `client/src/net/discord.ts` is the only code that posts there. It rebuilds each webhook URL on `discord.com`, so a `discordapp.com` one works too, and sends `redirect: 'error'`, because a CSP path check doesn't hold across a redirect.
+- `client/src/net/discord.test.ts` pins the directive, and `client/e2e/csp.spec.ts` posts to the webhook path under this CSP and expects a `securitypolicyviolation` for another host, another Discord path and `discordapp.com`.
 
 **One inline style, by its hash (#153).** On iOS and iPadOS, React Aria inserts a `<style>` with one fixed rule, `@layer { * { overscroll-behavior: contain; } }`, while a Modal or a modal Popover (Select, ComboBox, Menu, DatePicker) is open, so scrolling inside the overlay doesn't scroll the page behind it. It has no id, so it can't be claimed the way the pressable style is (#150). `style-src-elem` allows `<style>` and stylesheet elements from `'self'`, plus that one text by the SHA-256 hash of its exact bytes, and nothing else:
 - It isn't `'unsafe-inline'`. An injected `<style>` with any other text is still blocked, `style` attributes still fall back to `default-src 'self'`, and script is untouched.

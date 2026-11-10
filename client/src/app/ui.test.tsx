@@ -14,6 +14,13 @@ describe('PageHeader', () => {
     expect(screen.getByText('Your group', { selector: 'p' })).toHaveClass('eyebrow');
   });
 
+  it('leaves focus alone when a heading below takes it, as on Join (#91)', () => {
+    render(<PageHeader title="Riverside Tenants" pageTitle="Join a group" takesFocus={false} />);
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+    expect(document.title).toBe('Join a group · Reconcile');
+  });
+
   it('isolates the title’s direction, as names may be right-to-left', () => {
     render(<PageHeader title="مجموعة" pageTitle="Your group" />);
     expect(screen.getByRole('heading', { level: 1 }).querySelector('bdi')).toHaveTextContent(

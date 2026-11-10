@@ -113,7 +113,9 @@ export default tseslint.config(
   },
   {
     files: ['**/*.{ts,tsx}'],
-    ignores: ['src/net/**'],
+    // e2e/support/connect.ts sends requests from inside the page on purpose: e2e/csp.spec.ts
+    // proves the deploy CSP lets the page reach only its own origin and Discord's webhooks (#119).
+    ignores: ['src/net/**', 'e2e/support/connect.ts'],
     rules: {
       'no-restricted-globals': [
         'error',

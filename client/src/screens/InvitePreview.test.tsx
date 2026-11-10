@@ -32,6 +32,28 @@ describe('InvitePreview', () => {
     expect(bdis).toEqual([preview.inviterName, preview.documentTitle, preview.excerpt]);
   });
 
+  it('heads the whole Document with the title, in place of the excerpt, and focuses it (#91)', () => {
+    const preview = { ...PREVIEW, documentTitle: '<b>House</b> **rules**' };
+    const { container } = render(
+      <InvitePreview preview={preview}>
+        <p>The whole Document.</p>
+      </InvitePreview>,
+    );
+    const heading = screen.getByRole('heading', { level: 2, name: preview.documentTitle });
+    expect(heading).toHaveFocus();
+    expect(screen.getByText('The whole Document.')).toBeVisible();
+    expect(screen.queryByText(PREVIEW.excerpt)).not.toBeInTheDocument();
+    const bdis = [...container.querySelectorAll('bdi')].map((bdi) => bdi.textContent);
+    expect(bdis).toEqual([preview.inviterName, preview.documentTitle]);
+    expect(container.querySelector('b, strong, .invite-excerpt')).toBeNull();
+  });
+
+  it('takes no focus and no heading where it previews, as on the install guide', () => {
+    render(<InvitePreview preview={PREVIEW} />);
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+    expect(document.body).toHaveFocus();
+  });
+
   it('leaves out an empty excerpt', () => {
     const { container } = render(<InvitePreview preview={{ ...PREVIEW, excerpt: '' }} />);
     expect(container.querySelector('.invite-excerpt')).toBeNull();

@@ -452,6 +452,14 @@ describe('parseEvent', () => {
     ['vouch without a member', 'vouch', {}],
     ['vouch with a numeric member', 'vouch', { member: 7 }],
     ['vouch with a null member', 'vouch', { member: null }],
+    ['chat-posted without a Proposal', 'chat-posted', { moment: 'open' }],
+    ['chat-posted without a moment', 'chat-posted', { proposal: 'p' }],
+    ['chat-posted with a numeric moment', 'chat-posted', { proposal: 'p', moment: 1 }],
+    [
+      'chat-posted with a numeric nonce',
+      'chat-posted',
+      { proposal: 'p', moment: 'open', nonce: 7 },
+    ],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -557,6 +565,21 @@ describe('parseEvent', () => {
       ts: 1,
       body: { optIn: 'chatBot', proposal: 'p1' },
     });
+  });
+
+  it('reads a chat-posted as its Proposal, moment and nonce, kept as written, dropping unknown keys (#119)', () => {
+    const body = { proposal: 'p1', moment: 'version', nonce: 'n1', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-posted', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-posted',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', moment: 'version', nonce: 'n1' },
+    });
+    const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
+    expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
   });
 
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {

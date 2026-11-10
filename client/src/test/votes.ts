@@ -69,6 +69,8 @@ export interface LogBuilder {
   narrow(name: string, optIn: string, proposal: string): string;
   /** Adds `name`'s vouch for the person named `who` (#101), returning its id. */
   vouch(name: string, who: string): string;
+  /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
+  chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -182,6 +184,10 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     vouch(name: string, who: string) {
       const body = { member: authorOf(who.toLowerCase()) };
       return add(name, { type: 'vouch', group, ts: 0, body });
+    },
+    chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
+      const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+      return add(name, { type: 'chat-posted', group, ts: 0, body });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

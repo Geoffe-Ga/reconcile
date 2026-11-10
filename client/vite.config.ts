@@ -44,11 +44,13 @@ export default defineConfig(({ mode }) => {
     // under the policy members get. deploy/check.sh keeps the two equal. Its one
     // hash is React Aria's iOS scroll-lock <style> (#153), which
     // src/styles/scrollLockStyle.test.tsx pins. It hashes public CSS, so the
-    // pragma tells detect-secrets it's no secret.
+    // pragma tells detect-secrets it's no secret. connect-src adds one path to
+    // the relay's origin: Discord's webhooks, for the chat bot (#119), which
+    // src/net/discord.test.ts pins.
     preview: {
       headers: {
         'Content-Security-Policy':
-          "default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; object-src 'none'; base-uri 'none'; frame-ancestors 'none'", // pragma: allowlist secret
+          "default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; connect-src 'self' https://discord.com/api/webhooks/; object-src 'none'; base-uri 'none'; frame-ancestors 'none'", // pragma: allowlist secret
       },
     },
   };
