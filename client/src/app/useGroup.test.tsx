@@ -80,6 +80,9 @@ describe('useGroup', () => {
     expect(result.current.state?.members.map((member) => member.name)).toEqual(['Ana']);
     expect(result.current.pending.map((parsed) => parsed.id)).toEqual([benJoins.id]);
     expect(result.current.pending[0]?.event.type).toBe('join');
+    // The relay records it folded, for what reads the log itself, such as a late ballot's notice.
+    expect(result.current.log.map((record) => record.seq)).toEqual([1]);
+    expect(Array.from(result.current.log[0]?.bytes ?? [])).toEqual(Array.from(founding.record));
   });
 
   it('moves an event from pending into the folded state once the relay has it', async () => {
@@ -175,6 +178,7 @@ describe('useGroup', () => {
     });
     expect(result.current).toEqual({
       state: null,
+      log: [],
       pending: [],
       lastSyncAt: null,
       relayNow: null,

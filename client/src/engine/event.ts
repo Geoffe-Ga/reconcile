@@ -19,6 +19,9 @@ export const EVENT_VERSION = 1;
 /** A score on one version: 0 (strongly opposed) to 4 (strongly supportive). */
 export type Score = 0 | 1 | 2 | 3 | 4;
 
+/** The highest score, the top of the scale the consent meter's average bar spans. */
+export const SCORE_MAX = 4;
+
 /**
  * Founds a group with its first Document and its founding rules. Carries
  * `group: ""`, as it can't contain its own hash. `rules` is kept as written:
@@ -187,7 +190,7 @@ function isWholeNumber(value: unknown): value is number {
 }
 
 function isScore(value: unknown): value is Score {
-  return isWholeNumber(value) && value >= 0 && value <= 4;
+  return isWholeNumber(value) && value >= 0 && value <= SCORE_MAX;
 }
 
 /** A public key's 43 base64url characters. The record's key must also match it exactly. */

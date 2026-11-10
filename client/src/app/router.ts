@@ -15,7 +15,8 @@ export type Route =
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
-  | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string };
+  | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
+  | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string };
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -25,13 +26,14 @@ const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 
 const START: Route = { name: 'start' };
 
-/** A page inside a group: `doc`, `propose/{atomId}` or `p/{proposalId}`. */
+/** A page inside a group: `doc`, `propose/{atomId}`, `p/{proposalId}` or `again/{proposalId}`. */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (page === 'doc' && arg === undefined) return { name: 'document', groupId };
   if (arg === undefined) return START;
   if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
-  if (page === 'p' && ID.test(arg)) return { name: 'proposal', groupId, proposalId: arg };
-  return START;
+  if (!ID.test(arg)) return START;
+  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
+  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -81,6 +83,8 @@ export function routeHref(route: Route): string {
       return `#/g/${route.groupId}/propose/${route.atomId}`;
     case 'proposal':
       return `#/g/${route.groupId}/p/${route.proposalId}`;
+    case 'again':
+      return `#/g/${route.groupId}/again/${route.proposalId}`;
   }
 }
 

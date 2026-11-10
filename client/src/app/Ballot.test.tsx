@@ -56,6 +56,8 @@ function setup(props: Partial<BallotProps> = {}) {
 
 const note = () => screen.getByRole('textbox');
 const send = () => screen.getByRole('button', { name: /your vote/ });
+const versionCard = (n: number) =>
+  screen.getByRole('region', { name: new RegExp(`^Version ${String(n)} ·`) });
 const scoreFor = (n: number) =>
   screen.getByRole('radiogroup', { name: `Score for version ${String(n)}` });
 
@@ -144,6 +146,31 @@ describe('Ballot', () => {
     expect(onVote).toHaveBeenCalledWith({ v1: 4, v2: 0 }, 'Midnight is too late.');
   });
 
+  it('asks what would make it a 3 when a voter gives a 1 and no 0, keeping the note optional', async () => {
+    const { user, onVote } = setup({ versions: [V1, V2] });
+    await pick(user, 1, '1 · Opposed');
+    await pick(user, 2, '3 · Supportive');
+    const prompt = screen.getByRole('textbox', { name: 'What would make this a 3 for you?' });
+    expect(prompt).not.toBeRequired();
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ v1: 1, v2: 3 }, '');
+    await pick(user, 2, '0 · Strongly opposed');
+    expect(screen.getByRole('textbox', { name: 'Your reason for a 0' })).toBeRequired();
+    await pick(user, 2, '4 · Strongly supportive');
+    await pick(user, 1, '2 · Neutral');
+    expect(screen.getByRole('textbox', { name: 'Note (optional)' })).not.toBeRequired();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows what goes under each version’s pills, such as its consent meter', () => {
+    setup({
+      versions: [V1, V2],
+      below: (version) => <p>{`Meter for ${version.id}`}</p>,
+    });
+    expect(within(versionCard(1)).getByText('Meter for v1')).toBeVisible();
+    expect(within(versionCard(2)).getByText('Meter for v2')).toBeVisible();
+  });
+
   it('prefills the earlier ballot and asks for a score on a version added since', async () => {
     const { user, onVote } = setup({
       versions: [V1, V2],
@@ -215,7 +242,9 @@ describe('Ballot', () => {
     await user.click(send());
     expect(onVote).not.toHaveBeenCalled();
     await user.click(screen.getByRole('radio', { name: '1 · Opposed' }));
-    expect(screen.getByRole('textbox', { name: 'Note (optional)' })).not.toBeRequired();
+    expect(
+      screen.getByRole('textbox', { name: 'What would make this a 3 for you?' }),
+    ).not.toBeRequired();
     await user.click(send());
     expect(onVote).toHaveBeenCalledWith({ v1: 1 }, '');
   });
