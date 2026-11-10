@@ -3,6 +3,7 @@ import { Link } from 'react-aria-components';
 
 import { Ballot, type Scores } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
+import { type ChatDetails, type ChatMoment, openMoment } from '../app/chatMessages';
 import { Countdown } from '../app/Countdown';
 import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
@@ -10,7 +11,7 @@ import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
-import { type ShareOutcome, type TellKind, tellKind } from '../app/share';
+import type { ShareOutcome } from '../app/share';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
@@ -58,8 +59,8 @@ export interface ProposalViewProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** Opens the composer to propose this Proposal again, once it has lapsed. */
   readonly onProposeAgain: () => void;
-  /** Tells the group's chat that a vote is open, with the line for `kind` and its deadline (#77). */
-  readonly onTell: (kind: TellKind, deadline: number) => Promise<ShareOutcome>;
+  /** Shares `moment`'s ready-made message into the group's chat, or copies it (#77, #113). */
+  readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
 }
@@ -239,13 +240,16 @@ function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean
 }
 
 /**
- * Tell your group, for whoever proposed it or added a version, while the vote
- * is open and they're staying. Only a folded Proposal has a deadline to share.
+ * Tell your group (#113), for everyone while the vote is open and they're
+ * staying: the open message, or the version line for someone who added a
+ * version, then the closing message from a day before the deadline. Only a
+ * folded Proposal has a deadline to share. Each moment starts a fresh,
+ * unticked Include the title.
  */
 function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  const kind = tellKind(proposal, props.me);
-  if (kind === null || !isOpen(props, proposal) || props.leaving === true) return null;
-  return <TellYourGroup onTell={() => props.onTell(kind, proposal.deadline)} />;
+  if (!isOpen(props, proposal) || props.leaving === true) return null;
+  const moment = openMoment(proposal, props.me, props.now);
+  return <TellYourGroup key={moment} moment={moment} proposal={proposal} onTell={props.onTell} />;
 }
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
@@ -396,6 +400,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           me={props.me}
           own={props.own}
           onProposeAgain={props.onProposeAgain}
+          onTell={props.onTell}
           leaving={props.leaving === true}
         />
       ) : null}
