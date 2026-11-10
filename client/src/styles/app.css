@@ -1004,3 +1004,57 @@ a[data-focus-visible] {
 .checkbox[data-disabled] {
   cursor: default;
 }
+
+/* Group opt-ins (#117) ----------------------------------------------------- */
+
+.opt-ins {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.opt-in.card {
+  gap: var(--space-3);
+}
+
+.opt-in-standing {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.opt-in-now {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* A webhook is a credential: a screen shows only its last 4 characters, in mono. */
+.webhook-tail {
+  color: var(--ink);
+  font: var(--type-mono);
+}
+
+/* What the outside platform would hold, said plainly where it matters (DESIGN.md, Do). */
+.opt-in-warning {
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--ochre);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* A steward turned it off at once: everyone reads it, by the steward's name. */
+.opt-in-narrowed {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--clay);
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+.opt-in-actions {
+  gap: var(--space-3);
+}

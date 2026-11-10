@@ -468,7 +468,7 @@ export const messages = {
       `A second seat opens once ${count(members)} people in your group vote.`,
     due: (seat: number) => `A steward election is due for seat ${String(seat)}.`,
     about: (days: number) =>
-      `A steward can suspend someone at once, for ${count(days)} days. Everyone in the group sees each suspension, and your group can recall a steward by a vote at any time.`,
+      `A steward can suspend someone at once, for ${count(days)} days, and turn off the chat bot or the front door while your group votes on it. Everyone in the group sees each one, and your group can recall a steward by a vote at any time.`,
     propose: 'Propose a steward',
     proposeFor: (seat: number) => `Propose a steward for seat ${String(seat)}`,
     recall: 'Propose recall',
@@ -520,5 +520,96 @@ export const messages = {
       'Another steward Proposal for this seat may be open, or your group isn’t large enough for it yet. Go back to your group to see its stewards.',
     notAllowed: 'Your place in this group doesn’t include proposing.',
     noNominees: 'Nobody in your group can stand for this seat right now.',
+  },
+  /**
+   * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat
+   * bot and the front door. Each changes only by a Proposal, so nothing here
+   * reads as a switch. Each warning says what the outside platform would hold.
+   */
+  optIns: {
+    pageTitle: 'Group rules',
+    eyebrow: 'Group rules',
+    title: 'What reaches outside your group',
+    lede: 'Your group decides each of these by a Proposal. Nobody can turn one on alone.',
+    founding: 'The other rules were set when your group was founded, and they don’t change.',
+    names: { chatBot: 'Discord chat bot', frontDoor: 'Front door' },
+    warnings: {
+      chatBot:
+        'Discord’s servers will hold that this group uses Reconcile and when votes open and close. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges.',
+      frontDoor:
+        'Anyone with the address can see the group’s name and a short excerpt of its mission statement, and ask to join. It never lists people.',
+    },
+    current: 'Now',
+    off: { chatBot: 'Off', frontDoor: 'Closed' },
+    on: { chatBot: 'On', frontDoor: 'Open' },
+    /** Before the webhook's last 4 characters, which sit in a mono span. */
+    webhookEnding: 'Webhook ending in',
+    narrowed: { before: 'Off for now. Steward', after: 'turned it off while your group votes.' },
+    voting: 'Your group is voting on this now.',
+    seeVote: 'See the vote',
+    proposeOn: 'Propose turning this on',
+    proposeOff: 'Propose turning this off',
+    turnOffNow: 'Turn off now',
+    /** Each opt-in's name inside a sentence. */
+    inSentence: { chatBot: 'Discord chat bot', frontDoor: 'front door' },
+    /** Read after a link's own words, so two alike links say which opt-in each is for. */
+    forOptIn: (name: string) => `for the ${name}`,
+    homeHeading: 'Rules',
+    homeLink: 'Chat bot and front door',
+    homeSummary: (bot: string, door: string) => `Chat bot: ${bot} · Front door: ${door}`,
+    /** What each change does, as its ballot is headed and its title starts. */
+    motions: {
+      chatBot: {
+        on: 'Turn on the Discord chat bot',
+        off: 'Turn off the Discord chat bot',
+        replace: 'Replace the chat bot’s webhook',
+      },
+      frontDoor: { on: 'Open a front door', off: 'Close the front door' },
+    },
+    /** What passing does, under the ballot's heading. */
+    lines: {
+      chatBot: {
+        on: 'If this passes, the bot posts content-free nudges in the channel the webhook belongs to.',
+        off: 'If this passes, the bot stops posting.',
+        replace:
+          'If this passes, the bot posts through the new webhook. Delete the old one in Discord, so nobody who still has it can post there.',
+      },
+      frontDoor: {
+        on: 'If this passes, your group gets a public page where people can ask to join.',
+        off: 'If this passes, the front door closes.',
+      },
+    },
+    /** A pass's outcome sentence. */
+    passed: {
+      chatBot: {
+        on: 'This passed. The Discord chat bot is on.',
+        off: 'This passed. The Discord chat bot is off.',
+        replace: 'This passed. The bot posts through the new webhook.',
+      },
+      frontDoor: {
+        on: 'This passed. Your group’s front door is open.',
+        off: 'This passed. The front door is closed.',
+      },
+    },
+    narrowedBallot: {
+      before: 'Steward',
+      after: 'turned this off at once. It stays off while your group votes.',
+    },
+    composerPageTitle: 'Propose a rules change',
+    nowTitle: (motion: string) => `${motion} now`,
+    higherBar: (average: string, zeros: string) =>
+      `Turning this on needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
+    nowLine: 'It’s off until the group decides. This Proposal asks the group to keep it off.',
+    webhookLabel: 'Discord webhook URL',
+    webhookHint:
+      'In Discord, open the channel’s settings, then Integrations, then Webhooks, and copy the URL. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
+    webhookMissing: 'Paste the webhook URL from Discord.',
+    webhookInvalid: 'Use a Discord webhook URL, starting with https://discord.com/api/webhooks/.',
+    submitNow: 'Turn off now',
+    unavailableTitle: 'This can’t take a Proposal now',
+    unavailable:
+      'Your group may be voting on this already. Go back to your group’s rules to see where it stands.',
+    nowUnavailable:
+      'You can’t turn this off at once right now. You can still propose turning it off.',
   },
 } as const;

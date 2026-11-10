@@ -87,6 +87,7 @@ describe('fold', () => {
     expect(fold([], null)).toEqual({
       group: null,
       rules: DEFAULT_RULES,
+      optIns: { chatBot: null, frontDoor: false },
       name: '',
       chat: null,
       title: '',
@@ -97,6 +98,7 @@ describe('fold', () => {
       at: 0,
       stewards: EMPTY_SEATS,
       suspensions: [],
+      narrowings: [],
       ignored: [],
     });
   });

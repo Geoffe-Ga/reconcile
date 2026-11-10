@@ -10,6 +10,7 @@ import { type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
 import { messages } from './messages';
+import type { RulesView } from './optInLines';
 import { MotionTitle } from './stewards';
 import { AtomText } from './text/AtomText';
 import { WordDiff } from './text/WordDiff';
@@ -48,31 +49,55 @@ function Change({ version, current }: Omit<VersionCardProps, 'children'>) {
   );
 }
 
+/** What a rules ballot decides passing does, and the webhook it would set, by its last 4 only (#117). */
+function RulesLines({ rules }: { readonly rules: RulesView }) {
+  return (
+    <>
+      <p className="caption">{rules.line}</p>
+      {rules.tail === null ? null : (
+        <p className="caption">
+          {messages.optIns.webhookEnding} <span className="webhook-tail">{rules.tail}</span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/** A version's heading: "Version N · <name>", or what a steward or rules ballot decides. */
+function VersionHeading({ version }: { readonly version: VersionView }) {
+  const { steward, rules } = version;
+  if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
+  if (rules !== undefined) return <>{rules.title}</>;
+  return (
+    <>
+      {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
+      <bdi>{version.author}</bdi>
+    </>
+  );
+}
+
+/** Under the heading: the version's change, or what passing a steward or rules ballot does. */
+function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
+  const { steward, rules } = version;
+  if (steward !== undefined) return <p className="caption">{steward.line}</p>;
+  if (rules !== undefined) return <RulesLines rules={rules} />;
+  return <Change version={version} current={current} />;
+}
+
 /**
  * One version: its heading, its change, and whatever goes under it. A steward
  * ballot's one version is headed by what it decides, "Make <name> steward
- * (seat N)", with what passing does in place of a change (#102).
+ * (seat N)", with what passing does in place of a change (#102), and so is a
+ * rules ballot's, "Turn on the Discord chat bot" (#117).
  */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();
-  const { steward } = version;
   return (
     <section className="version" aria-labelledby={heading}>
       <h3 id={heading} className="version-heading">
-        {steward === undefined ? (
-          <>
-            {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
-            <bdi>{version.author}</bdi>
-          </>
-        ) : (
-          <MotionTitle motion={steward.motion} />
-        )}
+        <VersionHeading version={version} />
       </h3>
-      {steward === undefined ? (
-        <Change version={version} current={current} />
-      ) : (
-        <p className="caption">{steward.line}</p>
-      )}
+      <VersionBody version={version} current={current} />
       {children}
     </section>
   );

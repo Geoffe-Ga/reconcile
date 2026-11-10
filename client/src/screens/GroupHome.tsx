@@ -9,6 +9,7 @@ import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
+import { RulesLink } from '../app/RulesLink';
 import { SendStatus } from '../app/SendStatus';
 import { formatDay } from '../app/format';
 import { StewardSeats } from '../app/StewardSeats';
@@ -512,6 +513,9 @@ function MemberSections(props: GroupHomeProps) {
           <StewardSeats state={state} me={me} leaving={leaving} />
         </Section>
       ) : null}
+      <Section title={messages.optIns.homeHeading}>
+        <RulesLink state={state} />
+      </Section>
       {can(state, me, 'invite') && !leaving ? (
         <Section title={messages.home.invite}>
           <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
@@ -525,7 +529,7 @@ function MemberSections(props: GroupHomeProps) {
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
  * other open Proposals, the group's Document, the Decided list of closed ones,
  * its people with their levels, the viewer's own involvement and Leave this
- * group, the Stewards (#102), then its invite link and its discussion, each shown only to members
+ * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check). While the viewer's
  * leave waits for the relay, it says so, lists every open Proposal together,
  * and offers no level choice, invite or Leave.
