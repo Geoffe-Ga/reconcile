@@ -16,6 +16,7 @@ import { xchachaSeal } from '../crypto/seal';
 import type { SignedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { createRelay } from '../net/relay';
+import { base64url } from '../crypto/base64url';
 import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -29,7 +30,7 @@ import {
   type RelayBackupServices,
   startRelayBackup,
 } from './relayBackup';
-import { importSnapshot } from './snapshot';
+import { deviceSnapshot, encodeSnapshot, importSnapshot } from './snapshot';
 import { createSync, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -189,6 +190,24 @@ describe('what the relay holds', () => {
       ].sort(),
     );
     expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual(['format', 'groups']);
+  });
+
+  it('seals the device’s own snapshot without its key, so it carries whatever the snapshot does', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+
+    await startRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    const sealed = openRelayBackup(key, fake.backup(backupIdFor(key)) ?? new Uint8Array());
+    const snapshot = JSON.parse(text(encodeSnapshot(await deviceSnapshot(device.store)))) as Record<
+      string,
+      unknown
+    >;
+    const { backupKey, ...withoutKey } = snapshot;
+    expect(backupKey).toBe(base64url(key));
+    expect(JSON.parse(text(sealed ?? new Uint8Array()))).toEqual(withoutKey);
   });
 
   it('lives under an id that is no mailbox’s, and the request names nothing else', async () => {

@@ -38,18 +38,17 @@ import {
   sealRelayBackup,
 } from '../crypto/relayBackup';
 import type { Relay } from '../net/relay';
-import type { BackedUpGroup, Group, RelayBackupState, Store } from './db';
-import { backedUpGroups, encodeSnapshot } from './snapshot';
+import type { RelayBackupState, Store } from './db';
+import { deviceSnapshot, encodeSnapshot, type Snapshot } from './snapshot';
 
 /** Minutes in a UTC day: a relay minute's day is ⌊minute / 1,440⌋. */
 const DAY_MINUTES = 1440;
 
 /** What the relay backup works with: `AppServices` has all three. */
 export interface RelayBackupServices {
-  readonly store: Pick<
-    Store,
-    'listGroups' | 'getRelayBackup' | 'setRelayBackupKey' | 'updateRelayBackup'
-  >;
+  /** What `deviceSnapshot` reads, and the relay backup's own record. */
+  readonly store: Parameters<typeof deviceSnapshot>[0] &
+    Pick<Store, 'getRelayBackup' | 'setRelayBackupKey' | 'updateRelayBackup'>;
   readonly relay: Pick<Relay, 'putBackup'>;
   /** The device clock in milliseconds, for when the last upload succeeded. */
   readonly now: () => number;
@@ -78,12 +77,12 @@ export async function startRelayBackup(
 ): Promise<string | null> {
   const held = await services.store.getRelayBackup();
   if (held !== undefined && !newKey) {
-    await upload(services, held.key, await listed(services));
+    await upload(services, held.key, await relayCopy(services));
     return null;
   }
   const key = newBackupKey();
   const replaced = await services.store.setRelayBackupKey(key);
-  await upload(services, key, await listed(services));
+  await upload(services, key, await relayCopy(services));
   key.fill(0);
   return replaced === undefined ? null : backupIdFor(replaced.key);
 }
@@ -96,14 +95,14 @@ export async function startRelayBackup(
 export async function refreshRelayBackup(services: RelayBackupServices): Promise<void> {
   const state = await services.store.getRelayBackup();
   if (state === undefined) return;
-  const groups = await listed(services);
-  const day = relayDayOf(groups.all);
+  const copy = await relayCopy(services);
+  const day = relayDayOf(copy);
   if (day === null || (state.checkedDay !== null && day <= state.checkedDay)) return;
-  if (digestOf(groups.kept) === state.digest) {
+  if (digestOf(copy) === state.digest) {
     await services.store.updateRelayBackup(state.key, { checkedDay: day });
     return;
   }
-  await upload(services, state.key, groups);
+  await upload(services, state.key, copy);
 }
 
 /**
@@ -129,19 +128,21 @@ export function relayBackupStatus(state: RelayBackupState | undefined): RelayBac
   return state.uploadedAt === null ? { kind: 'waiting' } : { kind: 'saved', at: state.uploadedAt };
 }
 
-/** The device's groups, and what a backup keeps of them. */
-interface Listed {
-  readonly all: readonly Group[];
-  readonly kept: readonly BackedUpGroup[];
+/**
+ * What the relay holds: the device's snapshot (`deviceSnapshot`, the one
+ * place a snapshot is gathered) without the backup key, so the relay backup
+ * carries whatever a backup file does, and never its own key.
+ */
+async function relayCopy(services: RelayBackupServices): Promise<Snapshot> {
+  const copy: { -readonly [K in keyof Snapshot]: Snapshot[K] } = {
+    ...(await deviceSnapshot(services.store)),
+  };
+  delete copy.backupKey;
+  return copy;
 }
 
-async function listed(services: RelayBackupServices): Promise<Listed> {
-  const all = await services.store.listGroups();
-  return { all, kept: backedUpGroups(all) };
-}
-
-/** The relay's UTC day by the latest `relayNow` among `groups`, or null before any synced. */
-function relayDayOf(groups: readonly Group[]): number | null {
+/** The relay's UTC day by the latest `relayNow` among the copy's groups, or null before any synced. */
+function relayDayOf({ groups }: Snapshot): number | null {
   const latest = Math.max(...groups.map((group) => group.relayNow ?? -1));
   return latest < 0 ? null : Math.floor(latest / DAY_MINUTES);
 }
@@ -151,9 +152,9 @@ function relayDayOf(groups: readonly Group[]): number | null {
  * group's `relayNow` and `lastSyncAt`, which every sync pass moves, so a day
  * with no change has the same digest as the day before.
  */
-function digestOf(groups: readonly BackedUpGroup[]): string {
-  const steady = groups.map((group) => ({ ...group, relayNow: null, lastSyncAt: null }));
-  const digest = sha256(encodeSnapshot({ groups: steady }));
+function digestOf(copy: Snapshot): string {
+  const groups = copy.groups.map((group) => ({ ...group, relayNow: null, lastSyncAt: null }));
+  const digest = sha256(encodeSnapshot({ ...copy, groups }));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
@@ -165,11 +166,11 @@ function digestOf(groups: readonly BackedUpGroup[]): string {
 async function upload(
   services: RelayBackupServices,
   key: Uint8Array,
-  groups: Listed,
+  copy: Snapshot,
 ): Promise<void> {
   const { store } = services;
-  const day = relayDayOf(groups.all);
-  const plaintext = encodeSnapshot({ groups: groups.kept });
+  const day = relayDayOf(copy);
+  const plaintext = encodeSnapshot(copy);
   let blob: Uint8Array<ArrayBuffer>;
   try {
     blob = sealRelayBackup(key, plaintext);
@@ -186,7 +187,7 @@ async function upload(
   );
   if (!sent) return;
   await store.updateRelayBackup(key, {
-    digest: digestOf(groups.kept),
+    digest: digestOf(copy),
     checkedDay: day,
     uploadedAt: services.now(),
     tooLarge: false,
