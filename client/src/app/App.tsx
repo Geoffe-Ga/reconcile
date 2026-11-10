@@ -21,6 +21,7 @@ import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { ProposalView } from '../screens/ProposalView';
 import { Settings } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
+import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
@@ -38,6 +39,7 @@ import {
 import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { BackupCard } from './BackupCard';
 import type { Scores } from './Ballot';
+import { FirstRunGuide } from './FirstRunGuide';
 import {
   addVersion,
   castBallot,
@@ -106,11 +108,20 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
   );
 }
 
-function CreateScreen({ services }: { readonly services: AppServices }) {
+interface CreateScreenProps {
+  readonly services: AppServices;
+  /** Offers the first-run guide on the new group's home (#91). */
+  readonly offerGuide: (groupId: string) => void;
+}
+
+function CreateScreen({ services, offerGuide }: CreateScreenProps) {
   const onCreate = async (values: CreateGroupValues): Promise<CreateOutcome> => {
     const result = await createGroup(services, values);
-    // Replace the form, so Back from the new group goes to Start, not to a second create.
-    if (result.outcome === 'created') replaceRoute({ name: 'group', groupId: result.groupId });
+    if (result.outcome === 'created') {
+      offerGuide(result.groupId);
+      // Replace the form, so Back from the new group goes to Start, not to a second create.
+      replaceRoute({ name: 'group', groupId: result.groupId });
+    }
     return result.outcome;
   };
   return <CreateGroup onCreate={onCreate} />;
@@ -120,21 +131,88 @@ interface JoinScreenProps {
   readonly services: AppServices;
   readonly payload: string | null;
   readonly heldSeed: Uint8Array | null;
-  readonly onJoined: () => void;
+  /** Lets go of the seed held in memory, once Join or Not now is done with it. */
+  readonly releaseSeed: () => void;
+  /** Offers the first-run guide on the joined group's home (#91). */
+  readonly offerGuide: (groupId: string) => void;
 }
 
-function JoinScreen({ services, payload, heldSeed, onJoined }: JoinScreenProps) {
+function JoinScreen(props: JoinScreenProps) {
+  const { services, payload, heldSeed, releaseSeed, offerGuide } = props;
   const lookup = useCallback((seed: Uint8Array) => lookupInvite(services, seed), [services]);
   const onJoin = useCallback(
     async (group: FoundGroup, name: string, level: Level) => {
       const groupId = await joinGroup(services, group, name, level);
-      onJoined();
+      releaseSeed();
+      offerGuide(groupId);
       replaceRoute({ name: 'group', groupId });
       return true;
     },
-    [services, onJoined],
+    [services, releaseSeed, offerGuide],
   );
-  return <Join payload={payload} heldSeed={heldSeed} lookup={lookup} onJoin={onJoin} />;
+  // Not now (#91): the held seed goes, and leaving Join drops the opened envelope with it.
+  const onNotNow = useCallback(() => {
+    releaseSeed();
+    replaceRoute({ name: 'start' });
+  }, [releaseSeed]);
+  return (
+    <Join
+      payload={payload}
+      heldSeed={heldSeed}
+      lookup={lookup}
+      onJoin={onJoin}
+      onNotNow={onNotNow}
+    />
+  );
+}
+
+/** The first-run guide's offer (#91): the group a first create or join opened, until it closes. */
+interface GuideOffer {
+  /** The group whose home shows the guide, or null when none waits. */
+  readonly groupId: string | null;
+  /** Offers the guide on `groupId`'s home, unless this device has seen it. */
+  readonly offer: (groupId: string) => void;
+  /** Skip or Done: records the guide as seen on this device and closes it. */
+  readonly close: () => void;
+}
+
+function useGuideOffer(guide: GuideRecord | undefined): GuideOffer {
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const offer = useCallback(
+    (id: string) => {
+      if (guide !== undefined && !guide.seen()) setGroupId(id);
+    },
+    [guide],
+  );
+  const close = useCallback(() => {
+    guide?.see();
+    setGroupId(null);
+  }, [guide]);
+  return { groupId, offer, close };
+}
+
+interface GroupGuideProps {
+  readonly route: GroupRoute;
+  readonly guide: GuideOffer;
+}
+
+/** The guide over a group's home while it's offered there, or nothing on any other screen. */
+function GroupGuide({ route, guide }: GroupGuideProps) {
+  const home = route.name === 'group' && guide.groupId === route.groupId;
+  return home ? <OfferedGuide groupId={route.groupId} onClose={guide.close} /> : null;
+}
+
+/** The offered guide, once the group's genesis and this member's join are back from the relay. */
+function OfferedGuide({
+  groupId,
+  onClose,
+}: {
+  readonly groupId: string;
+  readonly onClose: () => void;
+}) {
+  const { state, me } = useGroup(groupId);
+  if (state === null || state.group === null || me === null) return null;
+  return <FirstRunGuide state={state} me={me.author} onClose={onClose} />;
 }
 
 /** A group on this device whose genesis is back from the relay. */
@@ -410,9 +488,10 @@ interface ScreenProps {
   readonly heldSeed: Uint8Array | null;
   readonly holdSeed: (seed: Uint8Array | null) => void;
   readonly persistence: Persistence | null;
+  readonly guide: GuideOffer;
 }
 
-function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProps) {
+function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: ScreenProps) {
   const releaseSeed = useCallback(() => {
     holdSeed(null);
   }, [holdSeed]);
@@ -429,7 +508,7 @@ function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProp
         <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
       );
     case 'create':
-      return <CreateScreen services={services} />;
+      return <CreateScreen services={services} offerGuide={guide.offer} />;
     case 'settings':
       return <SettingsScreen services={services} />;
     case 'join':
@@ -438,11 +517,17 @@ function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProp
           services={services}
           payload={route.payload}
           heldSeed={heldSeed}
-          onJoined={releaseSeed}
+          releaseSeed={releaseSeed}
+          offerGuide={guide.offer}
         />
       );
     default:
-      return <GroupRouteScreen route={route} services={services} />;
+      return (
+        <>
+          <GroupRouteScreen route={route} services={services} />
+          <GroupGuide route={route} guide={guide} />
+        </>
+      );
   }
 }
 
@@ -451,6 +536,7 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
   const route = useRoute();
   // A pasted invite's seed, or one first run held, travels here in memory, never in the address bar.
   const [heldSeed, holdSeed] = useState<Uint8Array | null>(initialSeed);
+  const guide = useGuideOffer(services.guide);
   const groupServices = useMemo(
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
@@ -463,6 +549,7 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
         heldSeed={heldSeed}
         holdSeed={holdSeed}
         persistence={persistence}
+        guide={guide}
       />
     </GroupServicesContext>
   );

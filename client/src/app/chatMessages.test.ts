@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DAY_MINUTES } from '../engine/rules';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
-import { chatDetails, chatMessage, openMoment, shareableTitle } from './chatMessages';
+import { botNotice, chatDetails, chatMessage, openMoment, shareableTitle } from './chatMessages';
 import { MINUTE_MS } from './time';
 
 /** A relay minute on Friday 14 November 2025 at 12:00 UTC. */
@@ -149,5 +149,25 @@ describe('shareableTitle and chatDetails', () => {
     expect(shareableTitle(folded)).toBeNull();
     expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
     expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Ben');
+  });
+});
+
+describe('botNotice: what the chat bot posts (#119)', () => {
+  const notice = botNotice('https://app.example', 'UTC');
+
+  it('is the moment’s line with no title, then the app’s address on a line of its own', () => {
+    expect(notice('open', FRI_14)).toBe(
+      'A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\nhttps://app.example/',
+    );
+    expect(notice('closing', FRI_14)).toBe(
+      'A vote closes within a day in Reconcile.\nhttps://app.example/',
+    );
+    expect(notice('result', FRI_14)).toBe(
+      'A vote has finished in Reconcile.\nhttps://app.example/',
+    );
+  });
+
+  it('is made from the moment and the deadline alone, so nothing else of a Proposal can reach it', () => {
+    expect(notice).toHaveLength(2);
   });
 });

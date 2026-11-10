@@ -1,12 +1,16 @@
 /**
  * One device's `AppServices` for tests: its own IndexedDB database on the
- * shared fake-indexeddb, and a relay client on a shared fake relay.
+ * shared fake-indexeddb, a relay client on a shared fake relay, and a chat
+ * bot (#119) that posts to that fake's Discord endpoint, never the network.
  */
 import { vi } from 'vitest';
 
+import { botNotice } from '../app/chatMessages';
 import type { AppServices } from '../app/services';
 import { xchachaSeal } from '../crypto/seal';
+import { postWebhook } from '../net/discord';
 import { createRelay } from '../net/relay';
+import { createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
 import { createSync } from '../store/sync';
 import type { FakeRelay } from './fakeRelay';
@@ -28,7 +32,8 @@ export const TEST_NOW = 1_762_650_000_000;
  * Opens device `name` on `fake`. The sync loop never polls; actions run it
  * once. `clock` is the device clock, fixed at {@link TEST_NOW} unless a test
  * moves it. Copy invite link hands `copyText` a promise of the link, as the
- * browser's clipboard takes one, and nothing is copied when it rejects.
+ * browser's clipboard takes one, and nothing is copied when it rejects. The
+ * chat bot dates its notices in UTC, so a test can spell out what it posts.
  */
 export async function testDevice(
   fake: FakeRelay,
@@ -38,7 +43,13 @@ export async function testDevice(
   const store = await openStore(name);
   const relay = createRelay({ fetch: fake.fetch });
   const now = (): number => clock();
-  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now });
+  const chatBot = createChatBot({
+    store,
+    post: (webhook, content) => postWebhook(webhook, content, fake.discord.fetch),
+    notice: botNotice(TEST_ORIGIN, 'UTC'),
+    clock: now,
+  });
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot });
   const copied: string[] = [];
   const copyText = vi.fn(async (text: string | Promise<string>) => {
     copied.push(await text);

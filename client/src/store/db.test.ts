@@ -519,6 +519,103 @@ describe('purgeGroup', () => {
   });
 });
 
+describe('the chat bot’s claims (#119)', () => {
+  const claim = { id: 'claim-1', proposal: 'proposal-1', moment: 'open' } as const;
+
+  it('queues a claim’s record and keeps its id, in one change', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue(group.groupId, utf8('{"n":1}'));
+
+    expect(await store.claimChat(group.groupId, utf8('{"claim":1}'), claim)).toBe(true);
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox.map(text)).toEqual(['{"n":1}', '{"claim":1}']);
+    expect(kept?.chatClaims).toEqual([claim]);
+  });
+
+  it('queues nothing for a moment this device already claimed, as a second tab might ask', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.claimChat(group.groupId, utf8('{"claim":1}'), claim);
+
+    const again = { ...claim, id: 'claim-2' };
+    expect(await store.claimChat(group.groupId, utf8('{"claim":2}'), again)).toBe(false);
+    const closing = { ...claim, id: 'claim-3', moment: 'closing' } as const;
+    expect(await store.claimChat(group.groupId, utf8('{"claim":3}'), closing)).toBe(true);
+    const other = { ...claim, id: 'claim-4', proposal: 'proposal-2' };
+    expect(await store.claimChat(group.groupId, utf8('{"claim":4}'), other)).toBe(true);
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox.map(text)).toEqual(['{"claim":1}', '{"claim":3}', '{"claim":4}']);
+    expect(kept?.chatClaims?.map((held) => held.id)).toEqual(['claim-1', 'claim-3', 'claim-4']);
+  });
+
+  it('queues nothing once the group is leaving this device', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.markLeaving(group.groupId, utf8('{"leave":1}'));
+
+    expect(await store.claimChat(group.groupId, utf8('{"claim":1}'), claim)).toBe(false);
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.outbox.map(text)).toEqual(['{"leave":1}']);
+    expect(kept?.chatClaims).toBeUndefined();
+  });
+
+  it('refuses a claim over 64,000 bytes, keeping nothing', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+
+    await expect(
+      store.claimChat(group.groupId, new Uint8Array(MAX_RECORD_BYTES + 1), claim),
+    ).rejects.toThrow(RecordTooLarge);
+
+    expect((await store.getGroup(group.groupId))?.chatClaims).toBeUndefined();
+  });
+
+  it('settles a claim once: the first to ask hears true, and every later ask false', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.claimChat(group.groupId, utf8('{"claim":1}'), claim);
+    const closing = { ...claim, id: 'claim-2', moment: 'closing' } as const;
+    await store.claimChat(group.groupId, utf8('{"claim":2}'), closing);
+
+    const raced = await Promise.all([
+      store.settleChatClaim(group.groupId, claim.id),
+      store.settleChatClaim(group.groupId, claim.id),
+    ]);
+
+    expect(raced.sort()).toEqual([false, true]);
+    expect(await store.settleChatClaim(group.groupId, claim.id)).toBe(false);
+    expect(await store.settleChatClaim(group.groupId, 'never-made')).toBe(false);
+    expect((await store.getGroup(group.groupId))?.chatClaims).toEqual([closing]);
+  });
+
+  it('settles without telling subscribers, since no screen reads a claim', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.claimChat(group.groupId, utf8('{"claim":1}'), claim);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.settleChatClaim(group.groupId, claim.id);
+
+    expect(heard).toEqual([]);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+
+    await expect(store.claimChat('nope', utf8('{"claim":1}'), claim)).rejects.toThrow(
+      'No such group on this device.',
+    );
+    await expect(store.settleChatClaim('nope', claim.id)).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+});
+
 describe('every change', () => {
   it('runs in exactly one transaction', async () => {
     const store = await openStore();
@@ -529,6 +626,13 @@ describe('every change', () => {
       () => store.markSent(group.groupId, utf8('{"n":1}')),
       () => store.applyPull(group.groupId, pull([], 1), idOf),
       () => store.resetCursor(group.groupId, 'relay-2'),
+      () =>
+        store.claimChat(group.groupId, utf8('{"claim":1}'), {
+          id: 'claim-1',
+          proposal: 'proposal-1',
+          moment: 'open',
+        }),
+      () => store.settleChatClaim(group.groupId, 'claim-1'),
       () => store.markLeaving(group.groupId, utf8('{"leave":1}')),
       () => store.purgeGroup(group.groupId),
     ];
