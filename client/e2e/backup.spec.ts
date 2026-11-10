@@ -161,7 +161,9 @@ test('a backup restores on two fresh devices, holds nothing readable, and votes 
       textCanary('Proposal title', CANARY.title),
       ...keyCanaries('Ana’s signing key', Uint8Array.from(held.signingKey)),
       ...keyCanaries('group secret', Uint8Array.from(held.secret)),
+      ...keyCanaries('Ana’s encryption key (#98)', Uint8Array.from(held.kxKey ?? [])),
     ];
+    expect(held.kxKey).toHaveLength(32);
     expect(findIn(bytes, 'backup file', canaries).map(describeFinding)).toEqual([]);
   });
 
