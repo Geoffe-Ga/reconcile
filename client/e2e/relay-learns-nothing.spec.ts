@@ -21,7 +21,7 @@ import { statSync } from 'node:fs';
 
 import type { Page } from '@playwright/test';
 
-import { expect, heading, type Person, pick, test } from './support/fixtures';
+import { acceptNotice, expect, heading, type Person, pick, test } from './support/fixtures';
 import {
   type Canary,
   describeFinding,
@@ -156,6 +156,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     const { page } = ana;
     const toRelay = page.waitForRequest((sent) => sent.url().includes('/v1/mailbox/'));
     await page.goto('/#/create');
+    await acceptNotice(ana);
     await page.getByRole('textbox', { name: 'Group name' }).fill(words.group);
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ana);
     await page.getByRole('textbox', { name: 'Document title' }).fill(words.title);
@@ -176,6 +177,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
   await test.step('B joins from the link', async () => {
     const { page } = ben;
     await page.goto(inviteLink);
+    await acceptNotice(ben);
     await expect(heading(page, words.group)).toBeVisible();
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ben);
     await page.getByRole('button', { name: 'Join group' }).click();

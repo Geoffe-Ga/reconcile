@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Reconcile",
+  "short_name": "Reconcile",
+  "description": "Your group’s living Documents, changed only by Proposals your group votes on.",
+  "lang": "en-GB",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#f6f1e7",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

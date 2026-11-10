@@ -81,6 +81,7 @@ run_check "Type checking" "typecheck.sh"
 run_check "Tests + coverage" "test.sh" --coverage
 run_check "Architecture" "arch.sh"
 run_check "Dependency audit" "audit.sh"
+run_check "Tracked sources" "tracked.sh"
 
 echo "=== Quality Checks Summary ==="
 echo "Passed: ${#PASSED_CHECKS[@]}"

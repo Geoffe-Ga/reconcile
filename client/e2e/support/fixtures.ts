@@ -2,7 +2,8 @@
  * What the end-to-end specs share: a fresh run of the real relay for each
  * test (`relay.ts`), a fixture that opens one browser profile per person
  * under the deploy CSP and fails the test on any CSP violation in any of
- * them, axe on the screen a person is looking at, and a few locators.
+ * them, axe on the screen a person is looking at, a few locators, and
+ * first run's steps (#76).
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -119,4 +120,59 @@ export async function pick(page: Page, name: string, within?: Locator): Promise<
   // `has` is matched inside each label, so it names the radio from the page, not the scope.
   await scope.locator('label', { has: page.getByRole('radio', { name }) }).click();
   await expect(radio).toBeChecked();
+}
+
+/** First run (#76): a new profile's pilot notice, checked by axe, then accepted. */
+export async function acceptNotice(person: Person): Promise<void> {
+  await expect(heading(person.page, 'Before you start')).toBeVisible();
+  await expectAccessible(person, 'Pilot notice');
+  await person.page.getByRole('button', { name: 'I understand' }).click();
+}
+
+/** A group to found: its name, its Document's title and sections, and the founder's name. */
+export interface NewGroup {
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+  readonly founder: string;
+}
+
+/**
+ * From Start, founds `group`, waits for Group home (its genesis is back from
+ * the relay), and returns its invite link.
+ */
+export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
+  await page.getByRole('link', { name: 'Create group' }).click();
+  await page.getByRole('textbox', { name: 'Group name' }).fill(group.name);
+  await page.getByRole('textbox', { name: 'Your name' }).fill(group.founder);
+  await page.getByRole('textbox', { name: 'Document title' }).fill(group.title);
+  await page.getByRole('textbox', { name: 'Document text' }).fill(group.atoms.join('\n\n'));
+  await page.getByRole('button', { name: 'Create group' }).click();
+  await expect(heading(page, group.name)).toBeVisible();
+  return page.getByRole('textbox', { name: 'Invite link' }).inputValue();
+}
+
+/** The number of records in every IndexedDB database the page's origin holds. */
+export async function storedRecords(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const settle = <T>(request: IDBRequest<T>) =>
+      new Promise<T>((resolve, reject) => {
+        request.onsuccess = () => {
+          resolve(request.result);
+        };
+        request.onerror = () => {
+          reject(new Error('IndexedDB refused the read.'));
+        };
+      });
+    let records = 0;
+    for (const { name } of await indexedDB.databases()) {
+      if (name === undefined) continue;
+      const db = await settle(indexedDB.open(name));
+      for (const store of db.objectStoreNames) {
+        records += await settle(db.transaction(store).objectStore(store).count());
+      }
+      db.close();
+    }
+    return records;
+  });
 }

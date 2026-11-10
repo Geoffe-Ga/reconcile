@@ -13,7 +13,7 @@ Run from `client/`, or run `./scripts/check-all.sh` from the repo root, which ru
 
 ```bash
 npm ci
-./scripts/check-all.sh   # lint, format, typecheck, tests + coverage, architecture, npm audit
+./scripts/check-all.sh   # lint, format, typecheck, tests + coverage, architecture, npm audit, tracked sources
 ./scripts/e2e.sh         # the end-to-end loop in Chromium and WebKit, through the real relay
 ./scripts/mutation.sh    # Stryker (Vitest runner), ≥80%; recommended before a release, not a merge gate
 npm run dev              # local dev server
@@ -29,6 +29,7 @@ npm run build            # production build
 - **Arguments** go to `playwright test`: `./scripts/e2e.sh --project=chromium --headed`, or `--trace on` to debug. A run that matches no test fails.
 - **Gate:** the repo root's `./scripts/check-all.sh` runs it whenever `client/`, `reconcile/`, `requirements.txt` or `scripts/relay.sh` changed, and CI's `e2e` job runs `./scripts/check-all.sh --e2e`. It stays out of this directory's `check-all.sh`, so the client gate needs no browser.
 - **Rules:** keep `bypassCSP` off, and don't add a test-only relay mode or route, or time travel (`page.clock`): the relay runs exactly as `relay.sh` starts it.
+- **Beside the loop** (#76): `offline.spec.ts` (Chromium only) reloads offline under the service worker, `ios-gate.spec.ts` opens iPhone profiles at the install gate, and `csp.spec.ts` brings the worker up under the deploy CSP. Every new profile accepts the pilot notice first (`acceptNotice` in `e2e/support.ts`).
 
 ## Client rules
 
@@ -36,6 +37,7 @@ npm run build            # production build
 - **Nothing readable leaves the device.** Anything sent to the relay is a sealed, padded, encrypted blob (ADR-0019).
 - **No analytics, telemetry, or third-party scripts.** The app calls only the relay, the browser's push service (#99), and Discord webhooks for groups that opted in by Proposal (#119).
 - **Quiet safety:** protective features live in Settings and aren't promoted (ADR-0018).
+- **First run gates keys.** Nothing makes keys behind the iOS install gate or before the pilot notice (`src/app/FirstRunGate.tsx`, spec §8.1). The service worker is `src/net/serviceWorker.ts`, built to `/sw.js` by `plugins/serviceWorker.ts`; it never caches `/v1`.
 - **Keep the CSP clean.** The deploy CSP (spec §9) blocks inline `<style>` elements, `style` attributes in markup and `data:` URLs. React's `style` prop is fine: it sets styles through the CSSOM. React Aria's pressable `<style>` is claimed in `index.html`, and `src/styles/pressable.css` ships its rule instead; `src/styles/pressable.test.tsx` fails if React Aria changes it (#150). Its iOS scroll-lock `<style>` has no id, so the CSP allows that one text by its hash in `style-src-elem`; `src/styles/scrollLockStyle.test.tsx` fails if React Aria changes it, and `e2e/ios-scroll-lock.spec.ts` opens a Modal as an iPhone under the CSP (#153). Never add `'unsafe-inline'`.
 
 ## Toolchain
@@ -49,6 +51,7 @@ npm run build            # production build
   - `src/engine`, `src/crypto`, and `src/store` may not import React or UI code
   - network libraries belong in `src/net/` only
   - only `src/crypto` imports `@noble/*`, and `src/crypto` imports no other third-party package
+- **Tracked sources:** `scripts/tracked.sh` fails when git ignores anything in `client/` but tool output, because CI's checkout wouldn't have it (the root's Python `build/` rule once hid `client/build/`, #76)
 - **Audit:** `npm audit --audit-level=moderate`
   - `package.json` `overrides` pin `minimatch` and `qs` to patched releases. Remove an override once its upstream package ships the fix
 - **Fonts:** self-hosted through `@fontsource-variable/*`, never fetched from a third party

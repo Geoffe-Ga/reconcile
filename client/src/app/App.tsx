@@ -17,6 +17,7 @@ import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
 import { ProposalView } from '../screens/ProposalView';
 import { Start } from '../screens/Start';
+import type { Persistence } from '../platform/persist';
 import type { Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
 import {
@@ -47,16 +48,23 @@ import { useNow } from './useNow';
 export interface AppProps {
   /** The store, sync loop, relay and the rest, built once by `main.tsx`. */
   readonly services: AppServices;
+  /** An invite link first run took out of the address bar, which Join opens. */
+  readonly initialInvite?: Invite | null;
+  /** What the browser said about keeping this site's data, for Start. */
+  readonly persistence?: Persistence | null;
 }
 
 interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (invite: Invite) => void;
+  readonly persistence: Persistence | null;
 }
 
-function StartScreen({ services, onOpenInvite }: StartScreenProps) {
+function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
   const groups = useGroupList(services.store);
-  return groups === null ? null : <Start groups={groups} onOpenInvite={onOpenInvite} />;
+  return groups === null ? null : (
+    <Start groups={groups} onOpenInvite={onOpenInvite} persistence={persistence} />
+  );
 }
 
 function CreateScreen({ services }: { readonly services: AppServices }) {
@@ -232,9 +240,10 @@ interface ScreenProps {
   readonly services: AppServices;
   readonly heldInvite: Invite | null;
   readonly holdInvite: (invite: Invite | null) => void;
+  readonly persistence: Persistence | null;
 }
 
-function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
+function Screen({ route, services, heldInvite, holdInvite, persistence }: ScreenProps) {
   const releaseInvite = useCallback(() => {
     holdInvite(null);
   }, [holdInvite]);
@@ -247,7 +256,9 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
   );
   switch (route.name) {
     case 'start':
-      return <StartScreen services={services} onOpenInvite={openInvite} />;
+      return (
+        <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
+      );
     case 'create':
       return <CreateScreen services={services} />;
     case 'join':
@@ -277,17 +288,23 @@ function Screen({ route, services, heldInvite, holdInvite }: ScreenProps) {
 }
 
 /** The current route's screen, with the store and sync loop provided to `useGroup`. */
-export function App({ services }: AppProps) {
+export function App({ services, initialInvite = null, persistence = null }: AppProps) {
   const route = useRoute();
-  // A pasted invite travels here, in memory, rather than through the address bar.
-  const [heldInvite, holdInvite] = useState<Invite | null>(null);
+  // A pasted invite, or one first run held, travels here in memory rather than in the address bar.
+  const [heldInvite, holdInvite] = useState<Invite | null>(initialInvite);
   const groupServices = useMemo(
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
   );
   return (
     <GroupServicesContext value={groupServices}>
-      <Screen route={route} services={services} heldInvite={heldInvite} holdInvite={holdInvite} />
+      <Screen
+        route={route}
+        services={services}
+        heldInvite={heldInvite}
+        holdInvite={holdInvite}
+        persistence={persistence}
+      />
     </GroupServicesContext>
   );
 }
