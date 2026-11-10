@@ -251,6 +251,9 @@ test('a mission statement shared by link reads in a browser that never opened Re
       ...keyCanaries('group secret', groupSecret),
       ...keyCanaries('group seal key', derive(groupSecret, 'reconcile/v1/seal-key')),
       ...keyCanaries('group signing key', Uint8Array.from(group.signingKey)),
+      ...(group.kxKey === null
+        ? []
+        : keyCanaries('group encryption key', Uint8Array.from(group.kxKey))),
     ];
     const all = [...requests, ...readerRequests];
     const toRelay = all.filter((request) => new URL(request.url()).pathname.startsWith('/v1/'));

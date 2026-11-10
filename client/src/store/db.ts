@@ -74,6 +74,19 @@ export interface Group {
   secret: Uint8Array;
   /** This membership's 32-byte Ed25519 secret key. It never leaves the device or this group. */
   signingKey: Uint8Array;
+  /**
+   * This membership's 32-byte X25519 secret key (#98), which opens the group's
+   * new secrets when its key changes (`crypto/epoch.ts`). Like the signing
+   * key, it is made for this group alone and never leaves the device but in a
+   * backup file. Absent in a group kept before #98, until the sync loop makes one.
+   */
+  kxKey?: Uint8Array;
+  /**
+   * The epoch of `secret` (#98): 0 from genesis, then one more for each key
+   * change this device took up. Absent reads as 0, so a group kept before #98
+   * needs no migration.
+   */
+  epoch?: number;
   /** This device's membership. */
   me: Me;
   /** Relay records in relay order, each event once: the input to `fold`. */
@@ -160,6 +173,8 @@ export type BackedUpGroup = Pick<
   | 'groupId'
   | 'secret'
   | 'signingKey'
+  | 'kxKey'
+  | 'epoch'
   | 'me'
   | 'log'
   | 'cursor'
@@ -176,8 +191,25 @@ export type BackedUpGroup = Pick<
  */
 export const HISTORY_GAP_MS = 28 * 86_400_000;
 
-/** What a device knows about a group when it creates or joins it. */
-export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'>;
+/**
+ * What a device knows about a group when it creates or joins it: Create group
+ * and Join hand over its encryption key too, and a joiner the epoch of the
+ * secret its invite carried (#98).
+ */
+export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
+  Partial<Pick<Group, 'kxKey' | 'epoch'>>;
+
+/**
+ * A move to the group's next epoch (#98): its secret, the cursor to read its
+ * mailbox from, and this device's own records to post again there first,
+ * oldest first, since they reached the old mailbox after the key changed.
+ */
+export interface EpochAdvance {
+  readonly epoch: number;
+  readonly secret: Uint8Array;
+  readonly cursor: number;
+  readonly repost: readonly Uint8Array[];
+}
 
 /** What one sync pass read from the relay. */
 export interface Pull {
@@ -191,6 +223,8 @@ export interface Pull {
   instance: string;
   /** When the pass finished, in device milliseconds. */
   lastSyncAt: number;
+  /** The move to the next epoch this pull found the group's key change for, if any (#98). */
+  advance?: EpochAdvance;
 }
 
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
@@ -268,11 +302,26 @@ export interface Store extends DraftStore, PersonalStore {
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
-   * Append each record whose event id isn't in the log yet, and save the sync
-   * state. A pull more than {@link HISTORY_GAP_MS} after the last sync sets
-   * `missingHistory`.
+   * Append each record whose event id isn't in the log yet for its epoch, and
+   * save the sync state. A pull more than {@link HISTORY_GAP_MS} after the
+   * last sync sets `missingHistory`. A pull that carries an `advance` moves
+   * the group to its next epoch in the same change (#98): the new secret and
+   * cursor, and the records to post again ahead of the outbox, each once.
    */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
+  /**
+   * Keep `fresh` as the group's encryption key unless it has one (#98), in one
+   * change, and return the key it keeps: two tabs that race keep the first.
+   * No screen reads it, so no listener hears of it.
+   */
+  ensureKx(groupId: string, fresh: Uint8Array): Promise<Uint8Array>;
+  /**
+   * Take up a later epoch's secret that an invite carried (#98), reading its
+   * mailbox from `cursor` and posting `repost` again first, when it is later
+   * than the group's own. The caller checks the secret against the key
+   * change's commit first (`epochs.ts`).
+   */
+  adoptEpoch(groupId: string, next: EpochAdvance): Promise<void>;
   /**
    * Add each of an invite's `records` whose event id the log lacks, each in
    * seq order among the records already there, and clear `missingHistory`
@@ -320,7 +369,8 @@ interface Schema extends DBSchema {
  * could read, is deleted on upgrade, with no migration. A dissolved group's
  * `archived` mark (#108) is an optional field of its record, so it needed no
  * version of its own: a version 3 group that holds one keeps it through the
- * upgrade.
+ * upgrade. So are a group's encryption key and epoch and each record's epoch
+ * (#98): a group or record without one reads as epoch 0.
  */
 const VERSION = 4;
 const GROUPS = 'groups';
@@ -472,6 +522,19 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         group.relayNow = pull.relayNow;
         group.instance = pull.instance;
         group.lastSyncAt = pull.lastSyncAt;
+        if (pull.advance !== undefined) advanceTo(group, pull.advance);
+      }),
+    async ensureKx(groupId, fresh) {
+      let kept = fresh;
+      await changeQuietly(groupId, (group) => {
+        group.kxKey ??= fresh;
+        kept = group.kxKey;
+      });
+      return kept;
+    },
+    adoptEpoch: (groupId, next) =>
+      change(groupId, (group) => {
+        if (next.epoch > (group.epoch ?? 0)) advanceTo(group, next);
       }),
     mergeLog: (groupId, records, idOf) =>
       change(groupId, (group) => {
@@ -549,6 +612,18 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       db.close();
     },
   };
+}
+
+/**
+ * Moves `group` to the epoch `advance` names: its secret and cursor, and its
+ * records to post again ahead of the outbox, skipping any already queued.
+ */
+function advanceTo(group: Group, { epoch, secret, cursor, repost }: EpochAdvance): void {
+  group.epoch = epoch;
+  group.secret = secret;
+  group.cursor = cursor;
+  const fresh = repost.filter((bytes) => !group.outbox.some((queued) => sameBytes(queued, bytes)));
+  group.outbox = [...fresh, ...group.outbox];
 }
 
 /**
@@ -658,9 +733,20 @@ function changer(
 }
 
 /**
- * The records of `incoming` that hold a signed event whose id is neither in
- * `log` nor earlier in `incoming`. A record that doesn't verify has no id, so
- * it is dropped and can never shadow the real record of the same event.
+ * A record's key for dedupe: its event id within the epoch of the mailbox it
+ * was read from (#98), or null when it holds no signed event. A copy its
+ * author posted again to a new epoch's mailbox is a record of its own.
+ */
+function keyOf(record: LogRecord, idOf: EventIdOf): string | null {
+  const id = idOf(record.bytes);
+  return id === null ? null : `${String(record.epoch ?? 0)}:${id}`;
+}
+
+/**
+ * The records of `incoming` that hold a signed event whose id, in its epoch,
+ * is neither in `log` nor earlier in `incoming`. A record that doesn't verify
+ * has no id, so it is dropped and can never shadow the real record of the
+ * same event.
  */
 function unseen(
   log: readonly LogRecord[],
@@ -670,13 +756,13 @@ function unseen(
   if (incoming.length === 0) {
     return [];
   }
-  const seen = new Set(log.map((record) => idOf(record.bytes)));
+  const seen = new Set(log.map((record) => keyOf(record, idOf)));
   return incoming.filter((record) => {
-    const id = idOf(record.bytes);
-    if (id === null || seen.has(id)) {
+    const key = keyOf(record, idOf);
+    if (key === null || seen.has(key)) {
       return false;
     }
-    seen.add(id);
+    seen.add(key);
     return true;
   });
 }
