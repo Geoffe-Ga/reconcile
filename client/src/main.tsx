@@ -20,15 +20,18 @@ import { browserFileTargets, browserShare } from './app/share';
 import { SharedRoot } from './app/SharedRoot';
 import { xchachaSeal } from './crypto/seal';
 import { postWebhook } from './net/discord';
+import { createPushRelay } from './net/push';
 import { createRelay } from './net/relay';
 import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
 import { requestPersistence } from './platform/persist';
+import { browserPushPort, closeWhenVisible } from './platform/pushPort';
 import { sweepArchives } from './store/archive';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
+import { createPush } from './store/push';
 import { createSync } from './store/sync';
 import { keepSharesAlive } from './share/shareLink';
 
@@ -44,6 +47,8 @@ if (root === null) {
  * Each launch first wipes, or clears the ballots of, any dissolved group
  * whose time has come by this device's clock (#108). The chat bot posts only
  * for a group that turned it on by Proposal and hasn't dissolved (#119).
+ * Push stays off until the person turns a group on in Settings (#99), and the
+ * app closes its notifications whenever it comes to the front.
  * Each launch also posts again any shared personal Document whose link is
  * due a fresh copy or has an edit waiting (#105).
  */
@@ -54,7 +59,10 @@ async function start(container: HTMLElement): Promise<void> {
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
   const chatBot = createChatBot({ store, post: postWebhook, notice });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot });
+  const port = browserPushPort();
+  const push = createPush({ store, relay: createPushRelay(), port });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push });
+  closeWhenVisible(port, document);
   sync.start();
   const now = () => Date.now();
   // A share whose post fails stays pending, and the next launch tries again.
@@ -70,6 +78,7 @@ async function start(container: HTMLElement): Promise<void> {
     share: browserShare(),
     files: browserFileTargets(),
     erase: () => eraseDevice({ sync, store }),
+    push,
     guide: guideRecord(),
   };
   const firstRun = { platform: readPlatform(), notice: noticeRecord(), requestPersistence };

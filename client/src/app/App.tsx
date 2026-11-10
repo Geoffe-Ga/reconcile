@@ -7,7 +7,7 @@
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
-import type { GroupState } from '../engine/fold';
+import { fold, type GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
@@ -22,14 +22,14 @@ import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
-import { Settings } from '../screens/Settings';
+import { type NotifyGroup, Settings } from '../screens/Settings';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
-import type { Me } from '../store/db';
+import type { Group, Me } from '../store/db';
 import { groupDrafts } from '../store/drafts';
 import { newPersonalId } from '../store/personal';
 import {
@@ -68,7 +68,7 @@ import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
-import { useGroupList } from './useGroupList';
+import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
 
@@ -104,11 +104,32 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
   );
 }
 
-/** Settings (#78): Save a backup, Restore a backup, and Erase. */
+/**
+ * A group's push switch (#99): named once its genesis is back, and gone while
+ * it's leaving or once it's a read-only archive (#108).
+ */
+function notifyGroupOf(group: Group): NotifyGroup | null {
+  const state = fold(group.log, group.relayNow);
+  // A read-only archive takes nothing new, push included (#108).
+  if (state.group === null || group.leaving !== undefined || group.archived !== undefined) {
+    return null;
+  }
+  return { groupId: group.groupId, name: state.name, on: group.push !== undefined };
+}
+
+/** Settings (#78, #99): Notifications, Save a backup, Restore a backup, and Erase. */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
-  return groups === null ? null : (
+  const switches = useGroups(services.store, notifyGroupOf);
+  const { push } = services;
+  return groups === null || switches === null ? null : (
     <Settings
+      notify={{
+        availability: push.availability(),
+        groups: switches.filter((group) => group !== null),
+        onTurnOn: (groupId) => push.turnOn(groupId),
+        onTurnOff: (groupId) => push.turnOff(groupId),
+      }}
       hasGroups={groups.length > 0}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}

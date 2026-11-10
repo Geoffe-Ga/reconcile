@@ -35,11 +35,12 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     // offline.spec.ts takes the network away from the service worker, which
-    // Playwright does in Chromium (#76).
+    // Playwright does in Chromium (#76), and push.spec.ts delivers pushes over
+    // Chromium's DevTools protocol, with no push service (#99).
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
-      testIgnore: 'offline.spec.ts',
+      testIgnore: ['offline.spec.ts', 'push.spec.ts'],
     },
   ],
   webServer: {

@@ -7,21 +7,33 @@
  * offline doesn't sit out the backoff. Each pass, for each group:
  *
  * 1. posts the outbox in order, each record sealed for the group's mailbox,
- *    removing an entry only once the relay accepts it;
+ *    removing an entry only once the relay accepts it. A Proposal, or a
+ *    ballot after which this device's fold closes one early, goes with
+ *    `wake=1` (#99, `engine/wake.ts`), whether or not this device's own push
+ *    is on: the wake is for the others' phones;
  * 2. reads every record after the cursor, opens each blob (skipping one that
  *    won't open), and appends each event the log doesn't hold yet;
  * 3. saves the cursor, the relay's time and instance, and when it synced;
  * 4. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
  *    only while the group has its bot on and hasn't dissolved, and never once
  *    the loop is halted (#78). Nothing the bot does, or fails to do, changes
- *    whether the pass succeeded.
+ *    whether the pass succeeded;
+ * 5. posts the push nudges due for this device's own open Proposals (#99,
+ *    ./push.ts), each once, which likewise never fails the pass. A read-only
+ *    archive (#108) posts none.
+ *
+ * After a pass in which every group synced, push upkeep keeps each group
+ * with push on registered at the relay (#99), under the mailboxes of its
+ * current key (#98). A read-only archive gets no upkeep: its registration is
+ * left to expire at the relay, so no request names its mailbox again.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
  * blob that won't open, so one bad blob never stalls a group.
  *
  * A group this device is leaving (#77) goes once the relay returns a seq for
- * its leave: the pass purges it from the store and reads nothing more for it.
+ * its leave: the pass fires a `keepalive` DELETE of its push registration,
+ * without waiting (#99), purges it from the store and reads nothing more for it.
  * Until then it stays, leaving, through failures and reloads.
  *
  * A dissolved group (#108) is archived once its `dissolve` folds, and from
@@ -59,7 +71,8 @@ import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
-import { fold, type LogRecord } from '../engine/fold';
+import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { wakeForRecord } from '../engine/wake';
 import { settleDissolve } from './archive';
 import type { ChatBot } from './chatBot';
 import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
@@ -74,6 +87,7 @@ import {
   passesFreeze,
 } from './epochs';
 import { eventIdOf } from './eventId';
+import type { PushUpkeep } from './push';
 
 /** The wait between passes while they succeed. */
 export const POLL_MS = 3000;
@@ -211,6 +225,8 @@ export interface SyncOptions {
   timers?: Timers;
   /** The chat bot, run after each group syncs (#119); without one, nothing posts. */
   chatBot?: ChatBot;
+  /** Push's nudges, upkeep and Leave's forget (#99); without it, nothing is registered or nudged. */
+  push?: PushUpkeep;
 }
 
 /** The running sync loop. */
@@ -232,7 +248,7 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
-  const { chatBot } = options;
+  const { chatBot, push } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let halted = false;
@@ -246,10 +262,15 @@ export function createSync(options: SyncOptions): Sync {
    */
   async function postOutbox(groupId: string, { mailbox, key }: Channel, frozen: boolean) {
     const current = await store.getGroup(groupId);
-    for (const bytes of current?.outbox ?? []) {
+    if (current === undefined) return false;
+    let before: GroupState | null = null;
+    for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
-      await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS);
-      if (current?.leaving !== undefined && sameBytes(bytes, current.leaving)) {
+      before ??= fold(current.log, current.relayNow);
+      const wake = wakeForRecord(before, bytes);
+      await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
+      if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
+        push?.forget(current);
         await store.purgeGroup(groupId);
         return true;
       }
@@ -305,8 +326,8 @@ export function createSync(options: SyncOptions): Sync {
    * Syncs the group's mailbox, and each new one a key change moves it to at
    * once, then posts this member's encryption key if the fold has none
    * (#98), then runs the chat bot (#119), which posts and claims nothing once
-   * a `dissolve` has folded, and doesn't run at all once the loop is halted
-   * (Erase, #78). False when the group is gone.
+   * a `dissolve` has folded, then posts push nudges (#99). Neither runs once
+   * the loop is halted (Erase, #78). False when the group is gone.
    *
    * A read-only archive sends and reads nothing, so no request names its
    * mailbox (#108).
@@ -322,7 +343,10 @@ export function createSync(options: SyncOptions): Sync {
       if (outcome === 'stayed') break;
     }
     await queueKx(current);
-    if (!halted) await chatBot?.run(group.groupId).catch(() => undefined);
+    // Once halted (Erase, #78), the bot neither claims nor posts, and no nudge goes.
+    if (halted) return true;
+    await chatBot?.run(group.groupId).catch(() => undefined);
+    await push?.nudge(group.groupId).catch(() => undefined);
     return true;
   }
 
@@ -371,6 +395,7 @@ export function createSync(options: SyncOptions): Sync {
     } catch {
       ok = false;
     }
+    if (ok && !halted) await push?.upkeep();
     if (ok !== reachable) {
       reachable = ok;
       for (const listener of listeners) {
