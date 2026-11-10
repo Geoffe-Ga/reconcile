@@ -22,22 +22,31 @@
  * format 1 file may hold them or not: one from before #93 has no `personal`
  * field, and reads as holding no personal Documents.
  *
+ * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
+ * device keeps one, so a device restored from the file keeps the relay
+ * backup fresh. A restoring device that already keeps a key keeps its own. A
+ * file from before #97 has no `backupKey`, and brings no key. The plaintext
+ * the relay backup seals is this same snapshot without the key
+ * (`relayBackup.ts`), and `importSnapshot` reads it back.
+ *
  * Restoring opens the file, then checks everything before it writes
  * anything: the shape of every field, that each key makes its author, that
  * every log record verifies, that each log folds to its own group, and that
- * each personal Document is one the device could keep (`isPersonalDocument`).
- * Anything wrong fails as a wrong passphrase does, with `BackupUnreadable`,
- * and the store keeps every group and Document in one transaction
- * (`Store.restoreGroups`). A group whose log folds to a `dissolve`, as an
- * older app's file could hold, comes back as a read-only copy, so a restore
- * never brings a dissolved group back to life (#108).
+ * each personal Document is one the device could keep (`isPersonalDocument`),
+ * and that a backup key is 32 bytes. Anything wrong fails as a wrong
+ * passphrase does, with `BackupUnreadable`, and the store keeps every group
+ * and Document in one transaction (`Store.restoreGroups`), then the key. A
+ * group whose log folds to a `dissolve`, as an older app's file could hold,
+ * comes back as a read-only copy, so a restore never brings a dissolved group
+ * back to life (#108).
  *
  * A second device's link bundle (#96) is the same plaintext without the
- * passphrase layer: `takeSnapshot` makes it and `restoreSnapshot` checks and
- * keeps it, and the link seals it under its own key instead. So a link
- * carries what a backup does, format 2's keys and epochs (#98) and every
- * personal Document (#93) included, and leaves out what a backup does, a
- * dissolved group's read-only copy (#108) and push (#99) included.
+ * passphrase layer: `takeSnapshot` makes it and `importSnapshot` checks and
+ * keeps it, as from a link, and the link seals it under its own key instead.
+ * So a link carries what a backup does, format 2's keys and epochs (#98),
+ * every personal Document (#93) and the relay backup key (#97) included, and
+ * leaves out what a backup does, a dissolved group's read-only copy (#108)
+ * and push (#99) included.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
@@ -68,10 +77,15 @@ const GROUP_ID = /^[A-Za-z0-9_-]{43}$/;
 /** A group's secret and signing key are 32 bytes each. */
 const KEY_BYTES = 32;
 
-/** Everything a backup holds: the groups it keeps, and every personal Document (#93). */
+/**
+ * Everything a backup holds: the groups it keeps, every personal Document
+ * (#93), and the relay backup key, if any (#97).
+ */
 export interface Snapshot {
   readonly groups: readonly BackedUpGroup[];
   readonly personal: readonly PersonalDocument[];
+  /** The device's relay backup key; absent when it keeps none, and from the relay's own copy. */
+  readonly backupKey?: Uint8Array;
 }
 
 /** A saved backup: the sealed file, and the groups it holds. */
@@ -110,12 +124,20 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     }));
 }
 
-/** What a backup keeps of everything on `store`: its groups, and every personal Document. */
+/**
+ * What a backup keeps of everything on `store`: its groups, every personal
+ * Document, and its relay backup key.
+ */
 export async function deviceSnapshot(
-  store: Pick<Store, 'listGroups' | 'listPersonal'>,
+  store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>,
 ): Promise<Snapshot> {
-  const [groups, personal] = await Promise.all([store.listGroups(), store.listPersonal()]);
-  return { groups: backedUpGroups(groups), personal };
+  const [groups, personal, relayBackup] = await Promise.all([
+    store.listGroups(),
+    store.listPersonal(),
+    store.getRelayBackup(),
+  ]);
+  const kept = { groups: backedUpGroups(groups), personal };
+  return relayBackup === undefined ? kept : { ...kept, backupKey: relayBackup.key };
 }
 
 /** One personal Document as the backup's JSON holds it: its five fields and nothing else. */
@@ -125,7 +147,7 @@ function personalJson(document: PersonalDocument): PersonalDocument {
 }
 
 /** `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
-export function encodeSnapshot({ groups, personal }: Snapshot): Uint8Array<ArrayBuffer> {
+export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8Array<ArrayBuffer> {
   const json = {
     format: SNAPSHOT_FORMAT,
     groups: groups.map((group) => ({
@@ -148,6 +170,7 @@ export function encodeSnapshot({ groups, personal }: Snapshot): Uint8Array<Array
       missingHistory: group.missingHistory,
     })),
     personal: personal.map(personalJson),
+    ...(backupKey === undefined ? {} : { backupKey: base64url(backupKey) }),
   };
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
@@ -161,12 +184,12 @@ export interface SnapshotPlaintext {
 }
 
 /**
- * The plaintext of everything on the device that a backup keeps: its groups
- * and every personal Document (`deviceSnapshot`). It is a backup file's
- * plaintext, and a link's bundle (#96).
+ * The plaintext of everything on the device that a backup keeps: its groups,
+ * every personal Document and its relay backup key (`deviceSnapshot`). It is
+ * a backup file's plaintext, and a link's bundle (#96).
  */
 export async function takeSnapshot(
-  store: Pick<Store, 'listGroups' | 'listPersonal'>,
+  store: Parameters<typeof deviceSnapshot>[0],
 ): Promise<SnapshotPlaintext> {
   const snapshot = await deviceSnapshot(store);
   return {
@@ -176,30 +199,12 @@ export async function takeSnapshot(
 }
 
 /**
- * Checks every group and personal Document in `plaintext` and keeps them all
- * in one transaction, marked as `from` says (`Store.restoreGroups`). Returns
- * how many groups it held.
- *
- * @throws {BackupUnreadable} when anything in it doesn't check out; nothing is written then.
- */
-export async function restoreSnapshot(
-  store: Pick<Store, 'restoreGroups'>,
-  plaintext: Uint8Array,
-  from: RestoredFrom,
-): Promise<number> {
-  const snapshot = decodeSnapshot(plaintext);
-  if (snapshot === null) throw new BackupUnreadable();
-  await store.restoreGroups(snapshot.groups, snapshot.personal, from);
-  return snapshot.groups.length;
-}
-
-/**
- * Seals every group on the device that a backup keeps, and every personal
- * Document, under `passphrase`, at scrypt cost `log2N` (17 unless a test asks
- * for less).
+ * Seals every group on the device that a backup keeps, every personal
+ * Document, and its relay backup key, under `passphrase`, at scrypt cost
+ * `log2N` (17 unless a test asks for less).
  */
 export async function exportGroups(
-  store: Pick<Store, 'listGroups' | 'listPersonal'>,
+  store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>,
   passphrase: string,
   log2N = BACKUP_LOG2_N,
 ): Promise<SavedBackup> {
@@ -221,17 +226,39 @@ export async function exportGroups(
  *   file, or contents that don't check out; nothing is written then.
  */
 export async function importGroups(
-  store: Pick<Store, 'restoreGroups'>,
+  store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
   file: Uint8Array,
   passphrase: string,
 ): Promise<number> {
   if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
   const plaintext = await openBackup(file, passphrase);
   try {
-    return await restoreSnapshot(store, plaintext, 'backup');
+    return await importSnapshot(store, plaintext);
   } finally {
     plaintext.fill(0);
   }
+}
+
+/**
+ * Checks every group and personal Document in a backup's or a link bundle's
+ * `plaintext`, keeps them all in one transaction, marked as `from` says
+ * (`Store.restoreGroups`), then keeps its relay backup key if the device has
+ * none. Returns how many groups it held. `importGroups` calls it once a file
+ * is open, a second device's link (#96) once the bundle is in, and the relay
+ * backup's restore (#118) once `fetchRelayBackup` has.
+ *
+ * @throws {BackupUnreadable} when anything in it doesn't check out; nothing is written then.
+ */
+export async function importSnapshot(
+  store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
+  plaintext: Uint8Array,
+  from: RestoredFrom = 'backup',
+): Promise<number> {
+  const snapshot = decodeSnapshot(plaintext);
+  if (snapshot === null) throw new BackupUnreadable();
+  await store.restoreGroups(snapshot.groups, snapshot.personal, from);
+  if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
+  return snapshot.groups.length;
 }
 
 /** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
@@ -243,7 +270,11 @@ export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
   const groups = groupsIn(json.groups, format === FORMAT_1 ? groupIn : groupWithKeysIn);
   // A file from before #93 has no personal field: it holds no personal Documents.
   const personal = json.personal === undefined ? [] : personalIn(json.personal);
-  return groups === null || personal === null ? null : { groups, personal };
+  if (groups === null || personal === null) return null;
+  if (!('backupKey' in json)) return { groups, personal };
+  // A file from before #97 has no key; one that has a key holds a well-formed one.
+  const backupKey = keyIn(json.backupKey);
+  return backupKey === null ? null : { groups, personal, backupKey };
 }
 
 /** Each of `values` read by `read`, or null when any is null or two share a key. */

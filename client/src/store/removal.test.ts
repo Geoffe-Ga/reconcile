@@ -23,6 +23,7 @@ import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { shownState } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import type { PushUpkeep } from './push';
+import { fetchRelayBackup, startRelayBackup } from './relayBackup';
 import { settleRemoval } from './removal';
 import { encodeSnapshot, importGroups } from './snapshot';
 import { createSync, type Sync } from './sync';
@@ -303,6 +304,88 @@ describe('a removed member’s group and backup files (#78)', () => {
     const requests = mailboxRequests(fake, group.mailbox);
     expect(await sync.syncOnce()).toBe(true);
     expect(mailboxRequests(fake, group.mailbox)).toBe(requests);
+  });
+});
+
+describe('a removal and the relay backup (#97)', () => {
+  /** The ids of the groups the relay backup under `key` holds. */
+  async function groupsIn(fake: FakeRelay, key: Uint8Array): Promise<string[]> {
+    const plaintext = await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key);
+    if (plaintext === null) throw new Error('expected a relay backup');
+    const snapshot = JSON.parse(new TextDecoder().decode(plaintext)) as {
+      groups: { groupId: string; epoch?: number; log: unknown[] }[];
+    };
+    return snapshot.groups.map(
+      ({ groupId, epoch, log }) => `${groupId}@${String(epoch ?? 0)}#${String(log.length)}`,
+    );
+  }
+
+  it('leaves the removed member’s read-only copy out of their relay backup', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last, remove } = history(group);
+    const device = await openDevice(fake.fetch);
+    const services = {
+      store: device.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      now: () => TS,
+    };
+    await keep(device, group, 'cal', [...events, last]);
+    await startRelayBackup(services);
+    const key = (await device.store.getRelayBackup())?.key ?? never();
+    expect(await groupsIn(fake, key)).toEqual([`${groupId}@0#6`]);
+
+    await device.store.enqueue(groupId, remove('ben').record);
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(true);
+    await startRelayBackup(services);
+
+    expect(await groupsIn(fake, key)).toEqual([]);
+  });
+
+  it('holds off while the key change after a remove is due, then holds the group at its new key', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last, remove } = history(group);
+    const device = await openDevice(fake.fetch);
+    const services = {
+      store: device.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      now: () => TS,
+    };
+    await keep(device, group, 'ana', [...events, last]);
+    await startRelayBackup(services);
+    const key = (await device.store.getRelayBackup())?.key ?? never();
+    expect(await groupsIn(fake, key)).toEqual([`${groupId}@0#6`]);
+    // Ben's remove reaches this device's log before it has written the key change it now owes.
+    const held = (await device.store.getGroup(groupId)) ?? never();
+    const record = { seq: held.cursor + 1, received: START + 1, bytes: remove('ben').record };
+    const pull = {
+      records: [record],
+      cursor: held.cursor + 1,
+      relayNow: START + 1,
+      instance: held.instance,
+      lastSyncAt: TS,
+    };
+    await device.store.applyPull(groupId, pull, (bytes) => parseRecord(bytes)?.id ?? null);
+    await startRelayBackup(services);
+    // Still the copy from before the remove: the log it holds is one record short.
+    expect(await groupsIn(fake, key)).toEqual([`${groupId}@0#6`]);
+
+    // The remove goes up as it would have from Ben's device, and the pass writes the key change.
+    const relay = createRelay({ fetch: fake.fetch });
+    await relay.putBlob(
+      group.mailbox,
+      xchachaSeal.seal(group.mailbox, group.key, record.bytes),
+      30,
+    );
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(true);
+    expect((await device.store.getGroup(groupId))?.epoch).toBe(1);
+    await startRelayBackup(services);
+    expect((await groupsIn(fake, key))[0]).toMatch(new RegExp(`^${groupId}@1#`));
   });
 });
 

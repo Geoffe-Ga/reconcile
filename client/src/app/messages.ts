@@ -869,6 +869,12 @@ export const messages = {
     cancelled: 'The file wasn’t saved. Save the file to try again.',
     none: 'There are no groups on this device to back up yet.',
   },
+  /** Settings' line on the relay backup (#97), shown once the device keeps one. */
+  relayBackup: {
+    saved: (day: string) => `Backed up to the relay ${day}.`,
+    tooLarge: 'Your groups are too large for the relay backup. Save a backup file instead.',
+    waiting: 'Your groups will be backed up to the relay the next time Reconcile syncs.',
+  },
   restore: {
     lede: 'Bring back the groups in a backup file you saved. On a second device, they vote as you.',
     choose: 'Choose backup file',

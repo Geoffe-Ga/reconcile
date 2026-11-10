@@ -6,11 +6,28 @@
  * without reaching up into the engine; the engine re-exports it.
  */
 
+/**
+ * Bytes per `String.fromCharCode` call: well under every engine's argument
+ * limit, and far faster than one call per byte for a backup's megabytes (#97).
+ */
+const CHUNK = 0x8000;
+
+/** The Latin-1 string whose code units are `bytes`, one character per byte. */
+function binaryOf(bytes: Uint8Array): string {
+  const parts: string[] = [];
+  for (let at = 0; at < bytes.length; at += CHUNK) {
+    // `apply` reads any array-like, a typed array included, without the
+    // iterator a spread would run: about 7 times faster on 12 MB. TypeScript
+    // types its arguments as an array, so the chunk is cast to one.
+    const chunk = bytes.subarray(at, at + CHUNK) as unknown as number[];
+    parts.push(String.fromCharCode.apply(null, chunk));
+  }
+  return parts.join('');
+}
+
 /** Encodes bytes as unpadded base64url. */
 export function base64url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return btoa(binaryOf(bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /** Decodes base64url, with or without padding, to bytes. */

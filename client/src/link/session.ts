@@ -15,8 +15,8 @@
  * 5. Both show the six-digit number. Only A can confirm: on Match it posts
  *    the bundle (`bundle.ts`) under K; on Don't match, or when it closes, it
  *    drops every secret and sends nothing under K. B checks the bundle and
- *    keeps its groups and personal Documents (`Store.restoreGroups`, as from
- *    a link).
+ *    keeps its groups and personal Documents (`importSnapshot`, as from a
+ *    link), and the relay backup key (#97) if it has none.
  *
  * Every blob is sealed and padded, and every PUT uses `ttl_days=1`. Each
  * handshake message is a 1-byte tag (who posted it) and a 32-byte key. Each
@@ -42,7 +42,7 @@ import {
 import type { Seal } from '../crypto/seal';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { Store } from '../store/db';
-import { restoreSnapshot, takeSnapshot } from '../store/snapshot';
+import { importSnapshot, takeSnapshot } from '../store/snapshot';
 import { openBundle, sealBundle } from './bundle';
 
 /** How long the relay keeps every blob in a link: 1 day, rounded up to the end of the next UTC day. */
@@ -64,8 +64,14 @@ const MESSAGE_BYTES = 33;
 export interface LinkServices {
   readonly relay: Relay;
   readonly seal: Seal;
-  /** A's groups and personal Documents go out of it; B's come into it. */
-  readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'restoreGroups'>;
+  /**
+   * A's groups, personal Documents and relay backup key (#97) go out of it;
+   * B's come into it, the key kept only if B has none.
+   */
+  readonly store: Pick<
+    Store,
+    'listGroups' | 'listPersonal' | 'getRelayBackup' | 'restoreGroups' | 'adoptRelayBackupKey'
+  >;
   /** The device clock in milliseconds, for the 10 minutes. */
   readonly now: () => number;
 }
@@ -365,7 +371,7 @@ export async function joinLink(
 /** Keeps the bundle's groups, as from a link, and says how many groups the device now has. */
 async function keep(store: LinkServices['store'], plaintext: Uint8Array): Promise<Ended<JoinStep>> {
   try {
-    await restoreSnapshot(store, plaintext, 'link');
+    await importSnapshot(store, plaintext, 'link');
   } catch (error) {
     if (error instanceof BackupUnreadable) return { kind: 'damaged' };
     throw error;

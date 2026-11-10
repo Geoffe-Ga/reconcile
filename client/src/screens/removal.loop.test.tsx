@@ -40,9 +40,51 @@ async function syncAll(devices: readonly TestDevice[]): Promise<void> {
   for (const device of devices) await act(() => device.services.sync.syncOnce());
 }
 
+/** From Group home, through the removal composer, to Cal's removal; returns its id. */
+async function proposeRemovingCal(app: HTMLElement, groupId: string): Promise<string> {
+  const user = userEvent.setup();
+  await user.click(await within(app).findByRole('link', { name: 'Propose removing Cal' }));
+  expect(
+    await within(app).findByRole('heading', { level: 1, name: 'Propose a removal' }),
+  ).toBeVisible();
+  await user.click(within(app).getByRole('textbox', { name: 'Why' }));
+  await user.paste('Threats in the group chat.');
+  await user.click(within(app).getByRole('button', { name: 'Propose this removal' }));
+  await waitFor(() => {
+    expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+  });
+  return window.location.hash.split('/').at(-1) ?? '';
+}
+
+/** Cal's one response, from the ballot his app shows. */
+async function respondAsCal(app: HTMLElement): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(await within(app).findByRole('textbox', { name: 'Your response' }));
+  await user.paste('I wasn’t there.');
+  await user.click(within(app).getByRole('button', { name: 'Post your response' }));
+}
+
+/** Ana's and Ben's devices hold the two of them, at the key's next epoch. */
+async function expectRemaining(devices: readonly TestDevice[], groupId: string): Promise<void> {
+  for (const device of devices) {
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(state.members.map((m) => m.name)).toEqual(['Ana', 'Ben']);
+    expect(group?.epoch).toBe(1);
+  }
+}
+
+/** Cal's device holds the group read-only, with nothing waiting to send, and the remove in its log. */
+async function expectRemoved(device: TestDevice, groupId: string): Promise<void> {
+  const held = await device.services.store.getGroup(groupId);
+  expect(held?.archived).toEqual({ reason: 'removed' });
+  expect(held?.outbox).toEqual([]);
+  const types = held?.log.map((record) => parseRecord(record.bytes)?.event.type) ?? [];
+  expect(types).toContain('remove');
+}
+
 describe('removing a member in the app', () => {
   it('passes, takes Cal out, changes the key past him, and leaves his device a read-only copy', async () => {
-    const user = userEvent.setup();
     const fake = createFakeRelay();
     const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
     opened.push(...devices);
@@ -50,29 +92,14 @@ describe('removing a member in the app', () => {
     if (ana === undefined || ben === undefined || cal === undefined) throw new Error('3 devices');
 
     go(`#/g/${groupId}`);
-    const a = mount(ana, 'a');
-    await user.click(await within(a).findByRole('link', { name: 'Propose removing Cal' }));
-    expect(
-      await within(a).findByRole('heading', { level: 1, name: 'Propose a removal' }),
-    ).toBeVisible();
-    await user.click(within(a).getByRole('textbox', { name: 'Why' }));
-    await user.paste('Threats in the group chat.');
-    await user.click(within(a).getByRole('button', { name: 'Propose this removal' }));
-    await waitFor(() => {
-      expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
-    });
-    const proposal = window.location.hash.split('/').at(-1) ?? '';
+    const proposal = await proposeRemovingCal(mount(ana, 'a'), groupId);
     await syncAll(devices);
-
     const c = mount(cal, 'c');
-    const field = await within(c).findByRole('textbox', { name: 'Your response' });
-    await user.click(field);
-    await user.paste('I wasn’t there.');
-    await user.click(within(c).getByRole('button', { name: 'Post your response' }));
+    await respondAsCal(c);
     await syncAll(devices);
-    expect(
-      await within(c).findByRole('region', { name: 'Cal’s response' }, { timeout: 3_000 }),
-    ).toHaveTextContent('I wasn’t there.');
+    expect(await within(c).findByRole('region', { name: 'Cal’s response' })).toHaveTextContent(
+      'I wasn’t there.',
+    );
 
     for (const device of [ana, ben]) {
       await castBallot(device.services, groupId, { proposal, scores: { [proposal]: 4 }, note: '' });
@@ -81,17 +108,8 @@ describe('removing a member in the app', () => {
     // the duty writes the new key, and Cal's device reads the remove and archives the group.
     for (let pass = 0; pass < 4; pass += 1) await syncAll(devices);
 
-    const held = await cal.services.store.getGroup(groupId);
-    expect(held?.archived).toEqual({ reason: 'removed' });
-    expect(held?.outbox).toEqual([]);
-    const types = held?.log.map((record) => parseRecord(record.bytes)?.event.type) ?? [];
-    expect(types).toContain('remove');
-    for (const device of [ana, ben]) {
-      const group = await device.services.store.getGroup(groupId);
-      const state = fold(group?.log ?? [], group?.relayNow ?? null);
-      expect(state.members.map((m) => m.name)).toEqual(['Ana', 'Ben']);
-      expect(group?.epoch).toBe(1);
-    }
+    await expectRemoved(cal, groupId);
+    await expectRemaining([ana, ben], groupId);
     const before = fake.requests.length;
     await act(() => cal.services.sync.syncOnce());
     expect(fake.requests.length).toBe(before);

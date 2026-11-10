@@ -22,10 +22,22 @@
  *    ./push.ts), each once, which likewise never fails the pass. A read-only
  *    archive (#108) posts none.
  *
- * After a pass in which every group synced, push upkeep keeps each group
- * with push on registered at the relay (#99), under the mailboxes of its
- * current key (#98). A read-only archive gets no upkeep: its registration is
- * left to expire at the relay, so no request names its mailbox again.
+ * After a pass in which every group synced, and unless the loop is halted,
+ * three things follow, in this order:
+ *
+ * 1. the key changes due (#98, below), so what comes next sees each group at
+ *    the epoch it moved to;
+ * 2. push upkeep, which keeps each group with push on registered at the
+ *    relay (#99), under the mailboxes of its current key, so a phone is
+ *    under a new mailbox as soon as the pass that moved it. A read-only
+ *    archive gets no upkeep: its registration is left to expire at the
+ *    relay, so no request names its mailbox again;
+ * 3. `afterPass`: in the app, the relay backup's daily refresh (#97,
+ *    ./relayBackup.ts), last because it may send the largest request of the
+ *    day, and so that its snapshot holds each group after its key change.
+ *    It waits while a key change this device should write is still due
+ *    (`refreshRelayBackup`). Nothing it does changes whether the pass
+ *    succeeded.
  *
  * The mailbox id and seal key are derived from the group's secret on each
  * pass (spec §3); the store keeps only the secret. The cursor moves past a
@@ -231,6 +243,12 @@ export interface SyncOptions {
   chatBot?: ChatBot;
   /** Push's nudges, upkeep and Leave's forget (#99); without it, nothing is registered or nudged. */
   push?: PushUpkeep;
+  /**
+   * Run after each pass in which every group synced, unless halted, once the
+   * pass's key changes (#98) and push upkeep (#99) are done: the relay
+   * backup's daily refresh (#97). Its failures never fail the pass.
+   */
+  afterPass?: () => Promise<void>;
 }
 
 /** The running sync loop. */
@@ -252,7 +270,7 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
-  const { chatBot, push } = options;
+  const { chatBot, push, afterPass } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let halted = false;
@@ -392,6 +410,16 @@ export function createSync(options: SyncOptions): Sync {
     return ok;
   }
 
+  /**
+   * What follows a pass in which every group synced and its key changes were
+   * made, unless halted: push upkeep (#99), then, last, the relay backup's
+   * refresh (#97), so each sees every group at the epoch it moved to (#98).
+   */
+  async function afterComplete(): Promise<void> {
+    if (!halted) await push?.upkeep();
+    if (!halted) await afterPass?.().catch(() => undefined);
+  }
+
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
@@ -401,7 +429,7 @@ export function createSync(options: SyncOptions): Sync {
     } catch {
       ok = false;
     }
-    if (ok && !halted) await push?.upkeep();
+    if (ok) await afterComplete();
     if (ok !== reachable) {
       reachable = ok;
       for (const listener of listeners) {

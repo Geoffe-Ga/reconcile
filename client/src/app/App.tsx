@@ -85,6 +85,7 @@ import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { useRelayBackupStatus } from './useRelayBackup';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -131,12 +132,16 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
   return { groupId: group.groupId, name: state.name, on: group.push !== undefined };
 }
 
-/** Settings (#78, #99): Notifications, Save a backup, Restore a backup, and Erase. */
+/**
+ * Settings (#78, #96, #99): Notifications, Save a backup with the relay
+ * backup's line (#97), Restore a backup, Link a new device, and Erase.
+ */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
+  const relayBackup = useRelayBackupStatus(services.store);
   const { push } = services;
-  return groups === null || switches === null ? null : (
+  return groups === null || switches === null || relayBackup === null ? null : (
     <Settings
       notify={{
         availability: push.availability(),
@@ -145,6 +150,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
         onTurnOff: (groupId) => push.turnOff(groupId),
       }}
       hasGroups={groups.length > 0}
+      relayBackup={relayBackup}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
