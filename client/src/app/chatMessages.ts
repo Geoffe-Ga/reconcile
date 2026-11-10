@@ -11,8 +11,9 @@
  * Document text, a member's name or a link fragment never goes in, and a
  * steward Proposal's title, which names a member, is never offered.
  */
+import { type BotMoment, NOTICE_MINUTES } from '../engine/chatPosts';
 import type { Proposal } from '../engine/fold';
-import { DAY_MINUTES } from '../engine/rules';
+import type { Notice } from '../store/chatBot';
 import { formatDay } from './format';
 import { messages } from './messages';
 
@@ -34,8 +35,8 @@ export interface ChatDetails {
 /** The part of a Proposal a message is made from. */
 export type ChatSource = Pick<Proposal, 'deadline' | 'title' | 'target'>;
 
-/** How long before its deadline a vote counts as closing: a day, in relay minutes. */
-export const CLOSING_MINUTES = DAY_MINUTES;
+/** How long before its deadline a vote counts as closing: a day, in relay minutes, as the chat bot's. */
+export const CLOSING_MINUTES = NOTICE_MINUTES;
 
 /** Bidi embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069), which could reorder the chat's text. */
 const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/gu;
@@ -95,4 +96,17 @@ export function chatDetails(proposal: ChatSource, includeTitle: boolean): ChatDe
   return includeTitle && title !== null
     ? { deadline: proposal.deadline, title }
     : { deadline: proposal.deadline };
+}
+
+/**
+ * What the chat bot posts (#119; spec §9, "Shares carry no content"): for
+ * each moment, its message with no title, then the app's address on a line of
+ * its own. It is made from the moment and the deadline alone, so no title,
+ * name or other word of the group can reach Discord. `origin` is the app's
+ * (`location.origin`); `timeZone` dates the deadline, the device's own unless
+ * a test names one.
+ */
+export function botNotice(origin: string, timeZone?: string): Notice {
+  return (moment: BotMoment, deadline: number) =>
+    `${chatMessage(moment, { deadline }, timeZone)}\n${origin}/`;
 }

@@ -108,7 +108,7 @@ Don't reproduce any of those brands' marks, typefaces, or layouts.
 
 ## Fonts and privacy
 
-**Self-host every font in the PWA** through `@fontsource` packages (`@fontsource-variable/newsreader`, `@fontsource-variable/public-sans`, `@fontsource-variable/jetbrains-mono`). The app must never call Google Fonts or any other third-party host. The client rule in [`client/CLAUDE.md`](client/CLAUDE.md) allows only the relay, the browser's push service, and a Discord webhook for a group that turned its bot on by Proposal. Decision-sheet artifacts may use the Google Fonts CSS for the same families.
+**Self-host every font in the PWA** through `@fontsource` packages (`@fontsource-variable/newsreader`, `@fontsource-variable/public-sans`, `@fontsource-variable/jetbrains-mono`). The app must never call Google Fonts or any other third-party host. The client rule in [`client/CLAUDE.md`](client/CLAUDE.md) says so: the app's only network calls go to the relay and, once a group has turned its bot on by Proposal, that group's Discord webhook (#119). Decision-sheet artifacts may use the Google Fonts CSS for the same families.
 
 ## Colors
 

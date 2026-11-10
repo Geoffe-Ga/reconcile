@@ -142,13 +142,15 @@ describe('network globals: only src/net talks to the network', () => {
     'src/screens/Fixture.tsx',
     'src/fixture.ts',
     'src/app/fixture.test.ts',
+    'e2e/fixture.spec.ts',
+    'e2e/support/fixture.ts',
   ])('applies in %s', async (filePath) => {
     expect(await lint('export const api: unknown = fetch;', filePath)).toEqual([
       `no-restricted-globals: Unexpected use of 'fetch'. ${NETWORK}`,
     ]);
   });
 
-  it.each(['src/net/fixture.ts', 'src/net/fixture.test.ts'])(
+  it.each(['src/net/fixture.ts', 'src/net/fixture.test.ts', 'e2e/support/connect.ts'])(
     "doesn't apply in %s",
     async (filePath) => {
       const code =

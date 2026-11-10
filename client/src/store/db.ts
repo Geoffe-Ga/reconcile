@@ -11,13 +11,15 @@
  * here touches the network. Each change reads and writes one group in a
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
- * record, so Leave deletes the group with a single delete (#77).
+ * record, so Leave deletes the group with a single delete (#77), the chat
+ * bot's claims (#119) included.
  */
 
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
+import type { BotMoment } from '../engine/chatPosts';
 import type { LogRecord } from '../engine/fold';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
 
@@ -27,6 +29,17 @@ export interface Me {
   author: string;
   /** The name this device joined with. */
   name: string;
+}
+
+/**
+ * A chat bot claim this device made (#119): its `chat-posted` event's id, and
+ * the Proposal and moment it claims. Only the device that made the winning
+ * claim posts it, and it knows the claim by this id.
+ */
+export interface ChatClaim {
+  readonly id: string;
+  readonly proposal: string;
+  readonly moment: BotMoment;
 }
 
 /** Everything the device keeps about one group. */
@@ -68,6 +81,11 @@ export interface Group {
    * loop purges the group once the relay returns a seq for it.
    */
   leaving?: Uint8Array;
+  /**
+   * The chat bot claims this device made and hasn't settled yet (#119), oldest
+   * first: each is posted once if it won, or dropped. Absent until the first.
+   */
+  chatClaims?: ChatClaim[];
 }
 
 /**
@@ -128,6 +146,22 @@ export interface Store extends DraftStore {
    * leave. A group already leaving keeps its first leave.
    */
   markLeaving(groupId: string, leave: Uint8Array): Promise<void>;
+  /**
+   * Queue a signed `chat-posted` claim and keep it as one of this device's
+   * claims, in one change (#119). Returns false, changing nothing, when this
+   * device already holds a claim of that moment, as a second tab might, or the
+   * group is leaving.
+   *
+   * @throws {RecordTooLarge} when the record is over 64,000 bytes.
+   */
+  claimChat(groupId: string, record: Uint8Array, claim: ChatClaim): Promise<boolean>;
+  /**
+   * Drop the claim `id` from this device's claims, in one change, and return
+   * whether it was there. Two tabs settling one claim can't both hear true,
+   * so a claim is posted at most once. No screen reads claims, so no listener
+   * hears of it.
+   */
+  settleChatClaim(groupId: string, id: string): Promise<boolean>;
   /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
@@ -233,6 +267,28 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.outbox.push(leave);
         group.leaving = leave;
       }),
+    async claimChat(groupId, record, claim) {
+      if (record.length > MAX_RECORD_BYTES) throw new RecordTooLarge(record.length);
+      let queued = false;
+      await change(groupId, (group) => {
+        const held = group.chatClaims ?? [];
+        const same = held.some((c) => c.proposal === claim.proposal && c.moment === claim.moment);
+        if (group.leaving !== undefined || same) return;
+        group.outbox.push(record);
+        group.chatClaims = [...held, claim];
+        queued = true;
+      });
+      return queued;
+    },
+    async settleChatClaim(groupId, id) {
+      let held = false;
+      await changeQuietly(groupId, (group) => {
+        const claims = group.chatClaims ?? [];
+        held = claims.some((claim) => claim.id === id);
+        group.chatClaims = claims.filter((claim) => claim.id !== id);
+      });
+      return held;
+    },
     async purgeGroup(groupId) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const found = (await tx.store.getKey(groupId)) !== undefined;

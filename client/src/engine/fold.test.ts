@@ -99,6 +99,7 @@ describe('fold', () => {
       stewards: EMPTY_SEATS,
       suspensions: [],
       narrowings: [],
+      chatPosts: [],
       ignored: [],
     });
   });
