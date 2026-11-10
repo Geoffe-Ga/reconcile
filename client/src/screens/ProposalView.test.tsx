@@ -17,7 +17,7 @@ import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
 
-type OnVote = (score: Score, note: string) => Promise<void>;
+type OnVote = (scores: Readonly<Record<string, Score>>, note: string) => Promise<void>;
 
 const [FOLLOWING, VOTING] = LEVELS;
 
@@ -103,9 +103,7 @@ describe('ProposalView', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Later quiet hours' })).toBeVisible();
     expect(screen.getByText('Open Proposal', { selector: 'p' })).toBeVisible();
     expect(screen.getByText('Weekends run late.')).toBeVisible();
-    expect(screen.getByText('Ana', { selector: 'bdi' }).parentElement).toHaveTextContent(
-      /^Proposed by Ana$/,
-    );
+    expect(screen.getByText(/^Proposed by/)).toHaveTextContent(/^Proposed by Ana$/);
     expect(screen.getByText('Closes in 7 days')).toBeVisible();
     const deadline = deadlineOf(START_MINUTE);
     expect(screen.getByText(formatMinute(deadline)).tagName).toBe('TIME');
@@ -125,10 +123,15 @@ describe('ProposalView', () => {
       'href',
       'https://chat.example.org/later',
     );
-    const vote = screen.getByRole('region', { name: 'Your vote' });
-    expect(precedes(changes, vote)).toBe(true);
-    expect(within(vote).getAllByRole('radio')).toHaveLength(5);
-    expect(within(vote).getByRole('button', { name: 'Send your vote' })).toBeEnabled();
+    const version = within(changes).getByRole('region', { name: 'Version 1 · Ana' });
+    const pills = within(version).getByRole('radiogroup', { name: 'Score for version 1' });
+    expect(within(pills).getAllByRole('radio')).toHaveLength(5);
+    expect(within(changes).getByRole('button', { name: 'Send your vote' })).toBeEnabled();
+    expect(within(changes).getByRole('link', { name: 'Add your version' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/propose/${log.group}.0`,
+    );
+    expect(screen.getByRole('main')).not.toHaveClass('shell-wide');
     expect(screen.queryByRole('region', { name: 'Result' })).not.toBeInTheDocument();
     expect(document.title).toBe('Proposal · Reconcile');
     expect(await axeViolations()).toEqual([]);
@@ -166,7 +169,8 @@ describe('ProposalView', () => {
     const { user } = setup({ state: log.state(), proposalId });
     await user.click(screen.getByRole('button', { name: 'How it will read' }));
     const changes = screen.getByRole('region', { name: 'Changes to section 1' });
-    expect(changes.querySelector('img, script, a')).toBeNull();
+    const version = within(changes).getByRole('region', { name: 'Version 1 · Ana' });
+    expect(version.querySelector('img, script, a')).toBeNull();
     expect(side(changes, 'ins')).toContain('<img src=x onerror=alert(1)>');
   });
 
@@ -184,8 +188,7 @@ describe('ProposalView', () => {
     const log = groupLog({ founder: 'Sam', members: ['SAM '] });
     const proposalId = log.propose('sam', PROPOSAL);
     setup({ state: log.state(), proposalId, me: authorOf('sam') });
-    const byline = screen.getByText(/^Sam · [0-9a-f]{4}$/, { selector: 'bdi' });
-    expect(byline.parentElement).toHaveTextContent(/^Proposed by Sam · [0-9a-f]{4}$/);
+    expect(screen.getByText(/^Proposed by/)).toHaveTextContent(/^Proposed by Sam · [0-9a-f]{4}$/);
   });
 
   it('sends the ballot as this member', async () => {
@@ -193,7 +196,7 @@ describe('ProposalView', () => {
     const { user, onVote } = setup({ state: log.state(), proposalId, me: authorOf('ben') });
     await user.click(screen.getByRole('radio', { name: '4 · Strongly supportive' }));
     await user.click(screen.getByRole('button', { name: 'Send your vote' }));
-    expect(onVote).toHaveBeenCalledWith(4, '');
+    expect(onVote).toHaveBeenCalledWith({ [proposalId]: 4 }, '');
   });
 
   it('tells someone who joined after it opened why they can’t vote, with no pills', async () => {
@@ -220,7 +223,7 @@ describe('ProposalView', () => {
     const log = groupLog({ members: ['Ben', 'Kim'], levels: { Kim: FOLLOWING } });
     const proposalId = log.propose('ana', PROPOSAL);
     setup({ state: log.state(), proposalId, me: authorOf('kim') });
-    const vote = screen.getByRole('region', { name: 'Your vote' });
+    const vote = screen.getByRole('region', { name: 'Changes to section 1' });
     expect(vote).toHaveTextContent(
       'You weren’t at a voting level when this opened, so you can’t vote on it.',
     );
@@ -249,7 +252,7 @@ describe('ProposalView', () => {
     const { log, proposalId } = openVote();
     log.level('ben', FOLLOWING);
     setup({ state: log.state(), proposalId, me: authorOf('ben') });
-    const vote = screen.getByRole('region', { name: 'Your vote' });
+    const vote = screen.getByRole('region', { name: 'Changes to section 1' });
     expect(vote).toHaveTextContent(
       'You’re following this group. Choose Collaborator or Co-Creator to vote or propose.',
     );
@@ -301,6 +304,9 @@ describe('ProposalView', () => {
     expect(screen.getByText('Closed Proposal', { selector: 'p' })).toBeVisible();
     expect(precedes(result, screen.getByText('Weekends run late.'))).toBe(true);
     expect(screen.queryByRole('region', { name: 'Changes to section 1' })).not.toBeInTheDocument();
+    const ballot = screen.getByRole('region', { name: 'On the ballot' });
+    expect(ballot.querySelector('.word-diff')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
     expect(screen.getByText('Voting closed')).toBeVisible();
     expect(screen.getByText(formatMinute(START_MINUTE + 30)).tagName).toBe('TIME');
     expect(screen.getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
@@ -405,6 +411,136 @@ describe('ProposalView', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Later quiet hours' })).toBeVisible();
   });
 
+  it('offers no Add your version once relay time passes the deadline, or to a non-member', () => {
+    const { log, proposalId } = openVote();
+    const deadline = deadlineOf(START_MINUTE);
+    const { rerender } = setup({ state: log.state(deadline - 1), proposalId, now: deadline });
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+    rerender({ now: START_MINUTE + 60, me: authorOf('zed') });
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+  });
+});
+
+/** Ana's open Proposal, with Ben's and then Cy's versions, in a group of Ana, Ben and Cy. */
+function versionsVote(count: 2 | 3) {
+  const log = groupLog({ members: ['Ben', 'Cy'] });
+  const proposalId = log.propose('ana', PROPOSAL);
+  const ids = [proposalId, log.version('ben', proposalId, 'Quiet after midnight.')];
+  if (count === 3) ids.push(log.version('cy', proposalId, 'Quiet after 10pm.'));
+  return { log, proposalId, ids };
+}
+
+describe('ProposalView, with several versions', () => {
+  it('sets the versions side by side in a wider shell, each with its diff and own pills', async () => {
+    const { log, proposalId } = versionsVote(3);
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    expect(screen.getByRole('main')).toHaveClass('shell', 'shell-wide');
+    const changes = screen.getByRole('region', { name: 'Changes to section 1' });
+    const names = ['Version 1 · Ana', 'Version 2 · Ben', 'Version 3 · Cy'];
+    const texts = ['Quiet after 11pm.', 'Quiet after midnight.', 'Quiet after 10pm.'];
+    names.forEach((name, i) => {
+      const version = within(changes).getByRole('region', { name });
+      expect(side(version, 'ins')).toBe(texts[i]);
+      expect(side(version, 'del')).toBe('Quiet hours start at ten.');
+      const group = within(version).getByRole('radiogroup', {
+        name: `Score for version ${String(i + 1)}`,
+      });
+      expect(within(group).getAllByRole('radio')).toHaveLength(5);
+    });
+    expect(changes.querySelector('.versions')).toHaveClass('versions-3');
+    expect(within(changes).getAllByRole('textbox')).toHaveLength(1);
+    expect(within(changes).queryByRole('link', { name: 'Add your version' })).toBeNull();
+    expect(within(changes).getByText('This ballot already has three versions.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sends a score for every version, keyed by version id', async () => {
+    const { log, proposalId, ids } = versionsVote(2);
+    const { user, onVote } = setup({ state: log.state(), proposalId, me: authorOf('cy') });
+    const [first = '', second = ''] = ids;
+    const pick = async (n: number, pill: string) => {
+      const group = screen.getByRole('radiogroup', { name: `Score for version ${String(n)}` });
+      await user.click(within(group).getByRole('radio', { name: pill }));
+    };
+    await pick(1, '3 · Supportive');
+    await pick(2, '4 · Strongly supportive');
+    await user.click(screen.getByRole('button', { name: 'Send your vote' }));
+    expect(onVote).toHaveBeenCalledWith({ [first]: 3, [second]: 4 }, '');
+  });
+
+  it('asks a voter whose latest ballot misses a new version to score it, keeping the rest', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana', PROPOSAL);
+    log.vote('ben', proposalId, 3, undefined);
+    log.version('ana', proposalId, 'Quiet after midnight.');
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    expect(
+      screen.getByText('A new version was added. Score it to update your ballot.'),
+    ).toBeVisible();
+    const first = screen.getByRole('radiogroup', { name: 'Score for version 1' });
+    expect(within(first).getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
+    const second = screen.getByRole('radiogroup', { name: 'Score for version 2' });
+    for (const radio of within(second).getAllByRole('radio')) expect(radio).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Update your vote' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('names the winning version when several were on the ballot', async () => {
+    const { log, proposalId, ids } = versionsVote(2);
+    const [first = '', second = ''] = ids;
+    for (const name of ['ana', 'ben', 'cy']) {
+      log.ballot(name, proposalId, { [first]: 2, [second]: 4 });
+    }
+    setup({ state: log.state(), proposalId });
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(result).toHaveTextContent(
+      'Version 2 passed. The Document now reads:Quiet after midnight.',
+    );
+    const ballot = screen.getByRole('region', { name: 'On the ballot' });
+    expect(within(ballot).getByRole('region', { name: 'Version 2 · Ben' })).toHaveTextContent(
+      'Quiet after midnight.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the versions with no pills to someone who joined after it opened', () => {
+    const { log, proposalId } = versionsVote(2);
+    log.join('Dee');
+    setup({ state: log.state(), proposalId, me: authorOf('dee') });
+    expect(screen.getByRole('region', { name: 'Version 2 · Ben' })).toBeVisible();
+    expect(radios()).toEqual([]);
+    expect(
+      screen.getByText('You joined after this opened, so you can’t vote on it.'),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Add your version' })).toBeVisible();
+  });
+
+  it('shows this member’s version while it waits to send', async () => {
+    const { log, proposalId } = openVote();
+    const waiting = pendingEvent({
+      type: 'version',
+      group: log.group,
+      author: authorOf('ben'),
+      ts: 0,
+      body: { proposal: proposalId, text: 'Quiet after midnight.' },
+    });
+    setup({
+      state: log.state(),
+      proposalId,
+      me: authorOf('ben'),
+      pending: [waiting],
+      reachable: false,
+    });
+    const mine = screen.getByRole('region', { name: 'Your version' });
+    expect(side(mine, 'ins')).toBe('Quiet after midnight.');
+    expect(within(mine).getByRole('status')).toHaveTextContent(
+      'Saved on this device. It will send when you’re back online.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('ProposalView, missing', () => {
   it('says when the Proposal isn’t on this device', async () => {
     const log = groupLog();
     setup({ state: log.state(), proposalId: 'missing' });

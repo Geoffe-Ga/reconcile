@@ -7,7 +7,6 @@
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
-import type { Score } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
@@ -27,7 +26,15 @@ import {
   lookupInvite,
 } from './actions';
 import { type Invite, inviteLink } from './invite';
-import { castBallot, chooseLevel, propose, type ProposalValues } from './proposals';
+import type { Scores } from './Ballot';
+import {
+  addVersion,
+  castBallot,
+  chooseLevel,
+  propose,
+  type ProposalValues,
+  type VersionValues,
+} from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
 import { relayMinuteNow } from './time';
@@ -157,6 +164,13 @@ function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
           replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
           return result.outcome;
         };
+        const onAddVersion = async (values: VersionValues): Promise<ComposeOutcome> => {
+          const result = await addVersion(services, groupId, values);
+          if (result.outcome === 'too-large') return result.outcome;
+          // Replace the composer with the Proposal the version joins.
+          replaceRoute({ name: 'proposal', groupId, proposalId: values.proposal });
+          return result.outcome;
+        };
         return (
           <Composer
             state={state}
@@ -164,6 +178,7 @@ function ProposeScreen({ services, groupId, atomId }: ProposeScreenProps) {
             atomId={atomId}
             drafts={drafts}
             onPropose={onPropose}
+            onAddVersion={onAddVersion}
           />
         );
       }}
@@ -181,8 +196,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
     <GroupGate groupId={groupId}>
       {(group) => {
         const author = group.me.author;
-        const onVote = (score: Score, note: string) =>
-          castBallot(services, groupId, { proposal: proposalId, score, note });
+        const onVote = (scores: Scores, note: string) =>
+          castBallot(services, groupId, { proposal: proposalId, scores, note });
         return (
           <ProposalView
             state={group.state}

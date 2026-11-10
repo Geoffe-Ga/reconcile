@@ -195,6 +195,11 @@ describe('vector files', () => {
       './vectors/signatures.json',
       './vectors/tally.json',
       './vectors/time.json',
+      './vectors/versions-ballot.json',
+      './vectors/versions-early-close.json',
+      './vectors/versions-late-low-quorum.json',
+      './vectors/versions-one-open.json',
+      './vectors/versions-tie.json',
     ]);
     expect(Object.values(FILES).map((file) => file.kind)).toEqual([
       'atom-text',
@@ -207,11 +212,27 @@ describe('vector files', () => {
       'fold',
       'tally',
       'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
     ]);
   });
 
-  it('name six keys, each derived as a second implementation (WebCrypto) derives it', async () => {
-    expect([...SEEDS.keys()]).toEqual(['ana', 'ben', 'cal', 'dee', 'kim', 'zed']);
+  it('name ten keys, each derived as a second implementation (WebCrypto) derives it', async () => {
+    expect([...SEEDS.keys()]).toEqual([
+      'ana',
+      'ben',
+      'cal',
+      'dee',
+      'kim',
+      'zed',
+      'eve',
+      'fay',
+      'gus',
+      'hal',
+    ]);
     for (const [name, seed] of SEEDS) {
       const pkcs8 = concat(fromHex('302e020100300506032b657004220420'), seed);
       const key = await crypto.subtle.importKey('pkcs8', pkcs8, 'Ed25519', true, ['sign']);
@@ -275,6 +296,24 @@ describe('vector files', () => {
     "someone in a Proposal's eligible set who steps down and back up before its deadline can still vote on it",
     "in a group of 5 with 2 Members, a Proposal's eligible count is 3 and its quorum is 3, so 2 ballots lapse at the deadline",
     "in a group of 5 with 2 Members, the 3 voting members' ballots meet quorum and close the vote early",
+    'passes that close in the same minute apply in the relay order of their Proposals',
+    "a version joins the open Proposal's ballot under its own event id, in relay order",
+    'a fourth version is ignored, and the ballot keeps the first three',
+    'a version received a minute before the deadline joins the ballot, and one received at the deadline is ignored',
+    'a version received after an early close is ignored, even in the same minute',
+    'a version needs an author who holds propose, so not a Collaborator, and a Proposal to join',
+    'a ballot that names a version not yet on its Proposal is ignored, and stays ignored once the version arrives',
+    "a voter's latest ballot replaces their earlier one in full, so a version it leaves out loses their score",
+    "when both versions pass, the one with the higher average becomes the Atom's text",
+    'a version added after the others had scored keeps the vote open until every voter has scored it too',
+    "every voter's score for version 1 doesn't close the vote while one of them hasn't scored version 2",
+    'a second Proposal on an Atom whose first is still open is ignored, and so are its ballots',
+    "a Proposal on another Atom opens while the first Atom's is still open",
+    'a second Proposal on the same Atom opens once the first has closed early, even in the same minute',
+    "a second Proposal on the same Atom is ignored a minute before the first one's deadline, and opens at it",
+    "a late version scored 4 by only 2 of 10 eligible members can't win, because it never reaches quorum",
+    'a three-version tie goes to the earliest version',
+    'a tie between later versions goes to the one the relay received first, whatever their ts',
   ])('include the fold vector "%s"', (name) => {
     expect(foldVectors.map((vector) => vector.name)).toContain(name);
   });

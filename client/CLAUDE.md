@@ -22,7 +22,7 @@ npm run build            # production build
 
 ### End-to-end loop
 
-`e2e/loop.spec.ts` is the tracer loop: three browser profiles create a group, join it from the invite link, propose, vote (one of them offline) and see the Update. axe runs on every screen they visit, and any CSP violation fails the run.
+`e2e/loop.spec.ts` is the tracer loop: three browser profiles create a group, join it from the invite link, propose, vote (one of them offline) and see the Update. axe runs on every screen they visit, and any CSP violation fails the run. Other specs (`e2e/versions.spec.ts`, competing versions on a phone and a desktop) share `e2e/support.ts`: its `openProfile` fixture fails the test on any CSP violation in any profile, and `expectAccessible` runs axe with contrast on.
 
 - **Run it** with `./scripts/e2e.sh`, never bare `npx playwright test`. The script picks two free loopback ports (`E2E_WEB_PORT`, `RECONCILE_RELAY_PORT`) and puts the relay's database (`RECONCILE_RELAY_DB`) in a temp directory it deletes afterwards. It builds the app, then runs Playwright, whose config starts `../scripts/relay.sh` and `vite preview` (which sends the deploy CSP) and stops both.
 - **Browsers:** install them once with `npx playwright install chromium webkit` (on Linux, add `--with-deps`). On a machine where WebKit won't install, `E2E_PROJECTS=chromium ./scripts/e2e.sh` runs Chromium alone and says so. CI always runs both.

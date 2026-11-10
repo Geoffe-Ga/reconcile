@@ -404,6 +404,13 @@ a[data-focus-visible] {
   justify-items: start;
 }
 
+/* A line in place of an Atom's button keeps the button's height, so sections stay evenly spaced. */
+.atom-note {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+}
+
 /* An Atom's Markdown, built by <AtomText> from an allowlist of elements. */
 .atom-text {
   display: grid;

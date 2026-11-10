@@ -900,7 +900,7 @@
       }
     },
     {
-      "name": "final passes apply in order of close time, not relay order",
+      "name": "passes that close in the same minute apply in the relay order of their Proposals",
       "records": [
         {
           "seq": 1,
@@ -1010,13 +1010,13 @@
         },
         {
           "seq": 9,
-          "received": 29375100,
+          "received": 29385090,
           "event": {
             "v": 1,
             "type": "proposal",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762506000000,
+            "ts": 1763105400000,
             "body": {
               "atom": "@1.0",
               "title": "Later quiet hours",
@@ -1027,49 +1027,49 @@
         },
         {
           "seq": 10,
-          "received": 29375110,
+          "received": 29385090,
           "event": {
             "v": 1,
             "type": "vote",
             "group": "@1",
             "author": "%ana",
-            "ts": 1762506600000,
+            "ts": 1763105400000,
             "body": { "proposal": "@9", "scores": { "@9": 4 } }
           }
         },
         {
           "seq": 11,
-          "received": 29375111,
+          "received": 29385090,
           "event": {
             "v": 1,
             "type": "vote",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762506660000,
+            "ts": 1763105400000,
             "body": { "proposal": "@9", "scores": { "@9": 4 } }
           }
         },
         {
           "seq": 12,
-          "received": 29375112,
+          "received": 29385090,
           "event": {
             "v": 1,
             "type": "vote",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762506720000,
+            "ts": 1763105400000,
             "body": { "proposal": "@9", "scores": { "@9": 4 } }
           }
         },
         {
           "seq": 13,
-          "received": 29375113,
+          "received": 29385090,
           "event": {
             "v": 1,
             "type": "vote",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762506780000,
+            "ts": 1763105400000,
             "body": { "proposal": "@9", "scores": { "@9": 4 } }
           }
         }
@@ -1085,146 +1085,9 @@
           },
           {
             "id": "@9",
-            "closedAt": 29375113,
+            "closedAt": 29385090,
             "final": true,
             "outcome": { "kind": "pass", "version": "@9" }
-          }
-        ],
-        "atoms": [
-          { "id": "@1.0", "text": "Quiet after 10pm." },
-          { "id": "@1.1", "text": "Bins out on Sunday." }
-        ]
-      }
-    },
-    {
-      "name": "passes that close in the same minute apply in the relay order of their Proposals",
-      "records": [
-        {
-          "seq": 1,
-          "received": 29375000,
-          "event": {
-            "v": 1,
-            "type": "genesis",
-            "group": "",
-            "author": "%ana",
-            "ts": 1762500000000,
-            "body": {
-              "name": "Riverside Tenants",
-              "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
-            }
-          }
-        },
-        {
-          "seq": 2,
-          "received": 29375001,
-          "event": {
-            "v": 1,
-            "type": "join",
-            "group": "@1",
-            "author": "%ben",
-            "ts": 1762500060000,
-            "body": { "name": "Ben", "level": "co-creator" }
-          }
-        },
-        {
-          "seq": 3,
-          "received": 29375010,
-          "event": {
-            "v": 1,
-            "type": "proposal",
-            "group": "@1",
-            "author": "%ana",
-            "ts": 1762500600000,
-            "body": {
-              "atom": "@1.0",
-              "title": "Quiet hours",
-              "why": "People sleep earlier now.",
-              "text": "Quiet after 10pm."
-            }
-          }
-        },
-        {
-          "seq": 4,
-          "received": 29375011,
-          "event": {
-            "v": 1,
-            "type": "proposal",
-            "group": "@1",
-            "author": "%ben",
-            "ts": 1762500660000,
-            "body": {
-              "atom": "@1.0",
-              "title": "Later quiet hours",
-              "why": "People sleep earlier now.",
-              "text": "Quiet after midnight."
-            }
-          }
-        },
-        {
-          "seq": 5,
-          "received": 29375020,
-          "event": {
-            "v": 1,
-            "type": "vote",
-            "group": "@1",
-            "author": "%ana",
-            "ts": 1762501200000,
-            "body": { "proposal": "@3", "scores": { "@3": 4 } }
-          }
-        },
-        {
-          "seq": 6,
-          "received": 29375020,
-          "event": {
-            "v": 1,
-            "type": "vote",
-            "group": "@1",
-            "author": "%ana",
-            "ts": 1762501200000,
-            "body": { "proposal": "@4", "scores": { "@4": 4 } }
-          }
-        },
-        {
-          "seq": 7,
-          "received": 29375030,
-          "event": {
-            "v": 1,
-            "type": "vote",
-            "group": "@1",
-            "author": "%ben",
-            "ts": 1762501800000,
-            "body": { "proposal": "@4", "scores": { "@4": 4 } }
-          }
-        },
-        {
-          "seq": 8,
-          "received": 29375030,
-          "event": {
-            "v": 1,
-            "type": "vote",
-            "group": "@1",
-            "author": "%ben",
-            "ts": 1762501800000,
-            "body": { "proposal": "@3", "scores": { "@3": 4 } }
-          }
-        }
-      ],
-      "relayNow": 29375030,
-      "expect": {
-        "proposals": [
-          {
-            "id": "@3",
-            "closedAt": 29375030,
-            "final": true,
-            "outcome": { "kind": "pass", "version": "@3" }
-          },
-          {
-            "id": "@4",
-            "closedAt": 29375030,
-            "final": true,
-            "outcome": { "kind": "pass", "version": "@4" }
           }
         ],
         "atoms": [
@@ -1748,7 +1611,7 @@
             "ts": 1762500780000,
             "body": {
               "atom": "@1.0",
-              "title": "q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307",
+              "title": "q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307a",
               "why": "People sleep earlier now.",
               "text": "Quiet after 10pm."
             }
@@ -1765,7 +1628,7 @@
             "ts": 1762500840000,
             "body": {
               "atom": "@1.0",
-              "title": "q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307a",
+              "title": "e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301",
               "why": "People sleep earlier now.",
               "text": "Quiet after 10pm."
             }
@@ -1782,7 +1645,7 @@
             "ts": 1762500900000,
             "body": {
               "atom": "@1.0",
-              "title": "e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301",
+              "title": "q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307",
               "why": "People sleep earlier now.",
               "text": "Quiet after 10pm."
             }
@@ -1810,7 +1673,7 @@
       "expect": {
         "proposals": [
           {
-            "id": "@6",
+            "id": "@8",
             "title": "q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307q\u0307",
             "atom": "@1.0"
           },
@@ -1822,7 +1685,7 @@
             "eligible": ["%ana", "%ben"]
           }
         ],
-        "ignored": [{ "seq": 3 }, { "seq": 4 }, { "seq": 5 }, { "seq": 7 }, { "seq": 8 }]
+        "ignored": [{ "seq": 3 }, { "seq": 4 }, { "seq": 5 }, { "seq": 6 }, { "seq": 7 }]
       }
     },
     {

@@ -5,7 +5,8 @@ import { messages } from '../app/messages';
 import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
 import { can } from '../engine/capabilities';
-import type { GroupState } from '../engine/fold';
+import { composeOption } from '../engine/composeOption';
+import type { Atom, GroupState } from '../engine/fold';
 
 /** Props for {@link DocumentView}. */
 export interface DocumentViewProps {
@@ -33,10 +34,42 @@ function LevelNote({ state, me }: { readonly state: GroupState; readonly me: str
   );
 }
 
+interface SectionActionProps {
+  readonly state: GroupState;
+  readonly atom: Atom;
+  readonly section: number;
+  readonly onPropose: DocumentViewProps['onPropose'];
+}
+
+/**
+ * Propose a change, or Add your version while the section's Proposal is open
+ * (`composeOption`), or why its ballot takes no more. Both open the composer.
+ */
+function SectionAction({ state, atom, section, onPropose }: SectionActionProps) {
+  const option = composeOption(state, atom.id);
+  if (option === 'ballot-full') {
+    return <p className="caption atom-note">{messages.document.ballotFull}</p>;
+  }
+  const { document } = messages;
+  const adding = option === 'add-version';
+  return (
+    <Button
+      className="button button-quiet"
+      aria-label={adding ? document.addVersionLabel(section) : document.proposeLabel(section)}
+      onPress={() => {
+        onPropose(atom.id);
+      }}
+    >
+      {adding ? document.addVersion : document.propose}
+    </Button>
+  );
+}
+
 /**
  * Document view (`#/g/{groupId}/doc`): the canonical Document, each section
- * (Atom) formatted through `<AtomText>` in the document style. Nothing here is
- * ever read as HTML. Propose a change shows only when `can()` allows it;
+ * (Atom) formatted through `<AtomText>` in the document style, with Propose a
+ * change, or Add your version while the section's Proposal is open. Nothing
+ * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021).
  */
 export function DocumentView({ state, me, onPropose }: DocumentViewProps) {
@@ -58,15 +91,12 @@ export function DocumentView({ state, me, onPropose }: DocumentViewProps) {
             <div key={atom.id} className="atom">
               <AtomText text={atom.text} />
               {proposes ? (
-                <Button
-                  className="button button-quiet"
-                  aria-label={messages.document.proposeLabel(index + 1)}
-                  onPress={() => {
-                    onPropose(atom.id);
-                  }}
-                >
-                  {messages.document.propose}
-                </Button>
+                <SectionAction
+                  state={state}
+                  atom={atom}
+                  section={index + 1}
+                  onPropose={onPropose}
+                />
               ) : null}
             </div>
           ))}

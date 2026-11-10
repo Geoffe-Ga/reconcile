@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useState } from 'react';
+import { type SyntheticEvent, useId, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -7,7 +7,6 @@ import {
   RadioButton,
   RadioField,
   RadioGroup,
-  Text,
   VisuallyHidden,
 } from 'react-aria-components';
 
@@ -18,11 +17,20 @@ import { messages } from './messages';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
 import { useSaving } from './useSaving';
+import { VersionList } from './Versions';
+import type { VersionView } from './versionViews';
+
+/** A score for each version, by version id. */
+export type Scores = Readonly<Record<string, Score>>;
 
 /** Props for {@link Ballot}. */
 export interface BallotProps {
-  /** The score this voter's latest ballot gave, or null before they vote. */
-  readonly initialScore: Score | null;
+  /** The versions on the ballot, in ballot order. */
+  readonly versions: readonly VersionView[];
+  /** The section's text now, which each version is compared with, or null to show each alone. */
+  readonly current: string | null;
+  /** The scores this voter's latest ballot gave, by version id, or none before they vote. */
+  readonly initialScores: Scores;
   /** That ballot's note, or `''`. */
   readonly initialNote: string;
   /** Whether this voter has a ballot already, sent or waiting to send. */
@@ -33,8 +41,8 @@ export interface BallotProps {
   readonly pending: boolean;
   /** Whether the last sync pass reached the relay. */
   readonly reachable: boolean;
-  /** Queues the ballot; rejects when it couldn't be saved. */
-  readonly onVote: (score: Score, note: string) => Promise<void>;
+  /** Queues the ballot: a score for every version, and one note. Rejects when it couldn't be saved. */
+  readonly onVote: (scores: Scores, note: string) => Promise<void>;
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
@@ -44,10 +52,20 @@ function toScore(value: string | null): Score | null {
 }
 
 /** The note counts code points after NFC, as the fold does (spec §4), not UTF-16 units. */
-function noteProblem(note: string, score: Score | null): string | null {
+function noteProblem(note: string, needsReason: boolean): string | null {
   const trimmed = note.trim();
   if (nfcLength(trimmed) > NOTE_MAX) return messages.ballot.noteTooLong(NOTE_MAX);
-  return score === 0 && trimmed === '' ? messages.ballot.noteMissing : null;
+  return needsReason && trimmed === '' ? messages.ballot.noteMissing : null;
+}
+
+/** The scores chosen so far for the ballot's versions, leaving out any version not on it. */
+function scoresOn(versions: readonly VersionView[], chosen: Scores): Record<string, Score> {
+  return Object.fromEntries(
+    versions.flatMap((version) => {
+      const score = chosen[version.id];
+      return score === undefined ? [] : [[version.id, score] as const];
+    }),
+  );
 }
 
 /** One pill: its number on the score's color, then its label, read as "0 · Strongly opposed". */
@@ -63,64 +81,117 @@ function ScorePill({ score }: { readonly score: Score }) {
   );
 }
 
+interface ScoreGroupProps {
+  readonly version: VersionView;
+  readonly score: Score | undefined;
+  /** The id of the line that says who sees the scores. */
+  readonly hint: string;
+  readonly isDisabled: boolean;
+  readonly onChange: (score: Score) => void;
+}
+
+/** One version's five pills, in a React Aria RadioGroup labelled "Score for version N". */
+function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupProps) {
+  return (
+    <RadioGroup
+      className="score-group"
+      name={`score-${version.id}`}
+      value={score === undefined ? null : String(score)}
+      onChange={(value) => {
+        const chosen = toScore(value);
+        if (chosen !== null) onChange(chosen);
+      }}
+      isRequired
+      isDisabled={isDisabled}
+      aria-describedby={hint}
+    >
+      <Label className="field-label">{messages.ballot.scoreFor(version.number)}</Label>
+      <div className="score-pills">
+        {SCORES.map((option) => (
+          <ScorePill key={option} score={option} />
+        ))}
+      </div>
+      <FieldError className="field-error">{messages.ballot.scoreMissing}</FieldError>
+    </RadioGroup>
+  );
+}
+
+interface BallotNoteProps {
+  readonly note: string;
+  /** Whether any score is 0, which makes the note a required reason. */
+  readonly forZero: boolean;
+  readonly isDisabled: boolean;
+  readonly onChange: (note: string) => void;
+}
+
+/** The ballot's one note, or nothing on a closed ballot that has none. */
+function BallotNote({ note, forZero, isDisabled, onChange }: BallotNoteProps) {
+  if (isDisabled && note.trim() === '') return null;
+  return (
+    <Field
+      // A fresh field when the reason stops (or starts) being required, so a stale
+      // "Add your reason" never lingers until blur and moves Send under the pointer.
+      key={forZero ? 'reason' : 'note'}
+      name="note"
+      label={forZero ? messages.ballot.reasonLabel : messages.ballot.noteLabel}
+      multiline
+      value={note}
+      onChange={onChange}
+      isRequired={forZero}
+      isDisabled={isDisabled}
+      validate={(text) => noteProblem(text, forZero)}
+    />
+  );
+}
+
 /**
- * The ballot (DESIGN.md, Ballot; spec §8): five score pills in a React Aria
- * RadioGroup, each always showing its number and label, and one note, which
- * becomes a required reason when the score is 0 (ADR-0002). Sending again
- * before the close replaces the earlier ballot.
+ * The ballot (DESIGN.md, Ballot; spec §8): every version side by side, each
+ * with its word diff and five score pills in a React Aria RadioGroup that
+ * always shows each pill's number and label, then one note for the whole
+ * ballot, which becomes a required reason when any score is 0 (ADR-0002).
+ * Every version needs a score. Sending again before the close replaces the
+ * earlier ballot in full, so a voter whose latest ballot misses a version
+ * added since is asked to score it, with their earlier scores kept.
  */
 export function Ballot(props: BallotProps) {
-  const { initialScore, initialNote, hasVoted, isDisabled, pending, reachable } = props;
-  const [value, setValue] = useState<string | null>(
-    initialScore === null ? null : String(initialScore),
-  );
-  const [note, setNote] = useState(initialNote);
+  const { versions, current, initialScores, hasVoted, isDisabled, pending, reachable } = props;
+  const [chosen, setChosen] = useState<Scores>(initialScores);
+  const [note, setNote] = useState(props.initialNote);
   const { run: vote, running, outcome } = useSaving(props.onVote);
-  const score = toScore(value);
-  const forZero = score === 0;
+  const hint = useId();
+  const scores = scoresOn(versions, chosen);
+  const forZero = Object.values(scores).includes(0);
+  const complete = Object.keys(scores).length === versions.length;
+  const missing = versions.some((version) => !Object.hasOwn(initialScores, version.id));
 
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (score !== null && noteProblem(note, score) === null) void vote(score, note);
+    if (complete && noteProblem(note, forZero) === null) void vote(scores, note);
   };
 
   return (
     <Form className="ballot" onSubmit={submit}>
       {isDisabled ? <p className="caption">{messages.ballot.closed}</p> : null}
-      <RadioGroup
-        className="score-group"
-        name="score"
-        value={value}
-        onChange={setValue}
-        isRequired
-        isDisabled={isDisabled}
-      >
-        <Label className="field-label">{messages.ballot.scoreLabel}</Label>
-        <Text slot="description" className="field-hint">
-          {messages.ballot.visibility}
-        </Text>
-        <div className="score-pills">
-          {SCORES.map((option) => (
-            <ScorePill key={option} score={option} />
-          ))}
-        </div>
-        <FieldError className="field-error">{messages.ballot.scoreMissing}</FieldError>
-      </RadioGroup>
-      {isDisabled && note.trim() === '' ? null : (
-        <Field
-          // A fresh field when the reason stops (or starts) being required, so a stale
-          // "Add your reason" never lingers until blur and moves Send under the pointer.
-          key={forZero ? 'reason' : 'note'}
-          name="note"
-          label={forZero ? messages.ballot.reasonLabel : messages.ballot.noteLabel}
-          multiline
-          value={note}
-          onChange={setNote}
-          isRequired={forZero}
-          isDisabled={isDisabled}
-          validate={(text) => noteProblem(text, score)}
-        />
-      )}
+      {hasVoted && missing && !isDisabled ? (
+        <p className="ballot-notice">{messages.ballot.newVersion}</p>
+      ) : null}
+      <p id={hint} className="field-hint">
+        {messages.ballot.visibility}
+      </p>
+      <VersionList versions={versions} current={current}>
+        {(version) => (
+          <ScoreGroup
+            version={version}
+            score={scores[version.id]}
+            hint={hint}
+            isDisabled={isDisabled}
+            onChange={(score) => {
+              setChosen((now) => ({ ...now, [version.id]: score }));
+            }}
+          />
+        )}
+      </VersionList>
+      <BallotNote note={note} forZero={forZero} isDisabled={isDisabled} onChange={setNote} />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.ballot.failed}
