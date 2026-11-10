@@ -141,7 +141,9 @@ test('a backup restores on two fresh devices, holds nothing readable, and votes 
     await ana.page.getByRole('textbox', { name: 'Why' }).fill('Mornings are cooler.');
     await ana.page.getByRole('textbox', { name: 'New text' }).fill('The garden opens at six.');
     await ana.page.getByRole('button', { name: 'Propose this change' }).click();
-    await expect(ana.page.getByText('Sent', { exact: true })).toBeVisible();
+    // The ballot appears once the relay has ordered the Proposal (#113 replaced the
+    // "Sent" line after proposing with Tell your group).
+    await expect(ana.page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
   });
 
   const file = await test.step('Ana saves a backup through the download path', () =>
