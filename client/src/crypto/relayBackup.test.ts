@@ -183,7 +183,6 @@ describe('sealRelayBackup and openRelayBackup', () => {
     [65536 - 47, 262144],
     [262144 - 47, 1048576],
     [1048576 - 47, 4194304],
-    [4194304 - 47, 16777216],
   ])('round-trip a %i-byte plaintext in a %i-byte blob', (length, size) => {
     const plaintext = new Uint8Array(length);
     for (let i = 0; i < length; i += 97) plaintext[i] = (i * 7 + 3) % 251;

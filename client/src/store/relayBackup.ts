@@ -98,11 +98,12 @@ export async function refreshRelayBackup(services: RelayBackupServices): Promise
   const copy = await relayCopy(services);
   const day = relayDayOf(copy);
   if (day === null || (state.checkedDay !== null && day <= state.checkedDay)) return;
-  if (digestOf(copy) === state.digest) {
+  const digest = digestOf(copy);
+  if (digest === state.digest) {
     await services.store.updateRelayBackup(state.key, { checkedDay: day });
     return;
   }
-  await upload(services, state.key, copy);
+  await upload(services, state.key, copy, digest);
 }
 
 /**
@@ -159,14 +160,16 @@ function digestOf(copy: Snapshot): string {
 }
 
 /**
- * Seals the groups for `key` and PUTs them, then records the upload, unless
- * the key changed meanwhile. Too large, it records that and keeps the last
- * good backup; a failed PUT records nothing, so the next pass tries again.
+ * Seals `copy` for `key` and PUTs it, then records the upload and its
+ * `digest` (`digestOf(copy)`, unless the caller has it already), unless the
+ * key changed meanwhile. Too large, it records that and keeps the last good
+ * backup; a failed PUT records nothing, so the next pass tries again.
  */
 async function upload(
   services: RelayBackupServices,
   key: Uint8Array,
   copy: Snapshot,
+  digest?: string,
 ): Promise<void> {
   const { store } = services;
   const day = relayDayOf(copy);
@@ -187,7 +190,7 @@ async function upload(
   );
   if (!sent) return;
   await store.updateRelayBackup(key, {
-    digest: digestOf(copy),
+    digest: digest ?? digestOf(copy),
     checkedDay: day,
     uploadedAt: services.now(),
     tooLarge: false,

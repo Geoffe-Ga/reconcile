@@ -99,15 +99,22 @@ function secretFor(name: string): Uint8Array {
   return sha256(utf8(`group secret of ${name}`));
 }
 
-/** Ana founds `name` on `device` and syncs, so the relay has returned its genesis. */
-async function found(device: Device, name = CANARY.group): Promise<SignedEvent> {
+/**
+ * Ana founds `name` on `device`, known there as `myName`, and syncs, so the
+ * relay has returned its genesis.
+ */
+async function found(
+  device: Device,
+  name = CANARY.group,
+  myName = CANARY.founder,
+): Promise<SignedEvent> {
   const genesis = genesisOf(name);
   const { secretKey, author } = testKeys('ana');
   await device.store.addGroup({
     groupId: genesis.id,
     secret: secretFor(name),
     signingKey: secretKey,
-    me: { author, name: CANARY.founder },
+    me: { author, name: myName },
   });
   await device.store.enqueue(genesis.id, genesis.record);
   expect(await device.sync.syncOnce()).toBe(true);
@@ -348,27 +355,17 @@ describe('the schedule', () => {
   it('keeps the last good backup when the groups grow past 16 MiB, and says so', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
-    const founding = await found(device);
+    await found(device);
     await startRelayBackup(device.services);
     const key = await keyOf(device.store);
     const good = fake.backup(backupIdFor(key));
-    // The next relay day's pull brings 200 records of 64,000 bytes: about 17.1 MB once
-    // written as base64url, past 16 MiB. The refresh runs as a complete pass would run it.
-    const big = Array.from({ length: 200 }, (_, i) => ({
-      seq: 1000 + i,
-      received: NOON,
-      bytes: new Uint8Array(64_000).fill(i % 251),
-    }));
-    const pull = {
-      records: big,
-      cursor: 2000,
-      relayNow: NOON + DAY,
-      instance: fake.instance,
-      lastSyncAt: TS,
-    };
-    await device.store.applyPull(founding.id, pull, (bytes) => `big-${String(bytes[0])}`);
+    // A second group whose device-only name is 17 MB takes the snapshot past 16 MiB. Only
+    // the size matters here, and a name gets there without folding megabytes of log;
+    // crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte.
+    await found(device, 'Second Street Garden', 'n'.repeat(17_000_000));
+    fake.minute += DAY;
 
-    await refreshRelayBackup(device.services);
+    expect(await device.sync.syncOnce()).toBe(true);
 
     expect(uploads(fake)).toHaveLength(1);
     expect(fake.backup(backupIdFor(key))).toEqual(good);
