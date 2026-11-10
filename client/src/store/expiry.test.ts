@@ -123,8 +123,12 @@ interface Decided {
   readonly closedAt: number;
 }
 
-/** Two members' decided vote: both score it, the second ballot closes it early, then a minute passes. */
-async function decidedTogether(): Promise<Decided> {
+/**
+ * Two members' decided vote: both score it, the second ballot closes it
+ * early, then, unless `quiet`, a minute passes and the result goes up and
+ * comes back. A quiet group has no result yet: no device synced after the close.
+ */
+async function decidedTogether(quiet = false): Promise<Decided> {
   const fake = createFakeRelay();
   const relay = createRelay({ fetch: fake.fetch });
   const secret = newGroupSecret();
@@ -180,6 +184,7 @@ async function decidedTogether(): Promise<Decided> {
   await ben.store.enqueue(GROUP, ballots[1]?.record ?? new Uint8Array());
   await ben.sync.syncOnce();
   const closedAt = fake.minute;
+  if (quiet) return { fake, relay, secret, ana, ben, proposal, ballots, closedAt };
   // A minute on, both devices see the close; the first posts the result, and both read it back.
   fake.minute += 1;
   await ana.sync.syncOnce();
@@ -227,6 +232,20 @@ describe('ballot expiry on a device', () => {
     ]) {
       expect(await onDevice(needle)).toBe(false);
     }
+  });
+
+  it('clears on the pass after it posts a missing result, for a device back after 30 days away', async () => {
+    const { fake, ana } = await decidedTogether(true);
+    fake.minute += WINDOW + 5;
+
+    await ana.sync.syncOnce();
+    // The first pass posts the result; it's on the relay, not yet in the log.
+    expect(types((await ana.group()).log)).toEqual(['genesis', 'join', 'proposal', 'vote', 'vote']);
+    expect((await ana.group()).outbox).toEqual([]);
+    await ana.sync.syncOnce();
+
+    expect(types((await ana.group()).log)).toEqual(['genesis', 'join', 'proposal', 'result']);
+    expect(await onDevice(utf8(ANA_NOTE), ana)).toBe(false);
   });
 
   it('adds nothing back when the relay delivers the old ballots again, even from seq 0 of a new instance', async () => {

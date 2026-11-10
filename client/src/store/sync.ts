@@ -31,7 +31,7 @@ import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
-import type { LogRecord } from '../engine/fold';
+import type { GroupState, LogRecord } from '../engine/fold';
 import type { EventIdOf, Group, Pull, Store } from './db';
 import { eventIdOf } from './eventId';
 import { clearExpiredBallots, foldGroup, resultsDue, signResults } from './expiry';
@@ -223,26 +223,38 @@ export function createSync(options: SyncOptions): Sync {
   const settled = new Map<string, number | null>();
 
   /**
-   * Posts a result for each closed Proposal that has none (re-syncing once
-   * first, in case another device just posted one), then clears expired
-   * ballots (#111). Skips a group already settled in this relay minute.
+   * Posts a result for each closed Proposal in `state` that has none, after
+   * re-syncing once in case another device just posted one. Returns the
+   * state to clear from, and whether it posted anything.
+   */
+  async function postMissingResults(
+    group: Group,
+    state: GroupState,
+  ): Promise<{ state: GroupState; posted: boolean }> {
+    if (resultsDue(state, group).length === 0) return { state, posted: false };
+    await syncGroup(group);
+    const synced = (await store.getGroup(group.groupId)) ?? group;
+    const now = foldGroup(synced);
+    const records = signResults(now, synced, resultsDue(now, synced), clock());
+    if (records.length > 0) {
+      await store.enqueueAll(group.groupId, records);
+      await postOutbox(group.groupId, channelOf(synced.secret));
+    }
+    return { state: now, posted: records.length > 0 };
+  }
+
+  /**
+   * Posts missing results, then clears expired ballots (#111). Skips a group
+   * already settled in this relay minute, except right after it posted a
+   * result, so the next pass, which reads that result back, can clear.
    */
   async function settle(groupId: string): Promise<void> {
-    let group = await store.getGroup(groupId);
+    const group = await store.getGroup(groupId);
     if (group === undefined || settled.get(groupId) === group.relayNow) return;
-    let state = foldGroup(group);
-    if (resultsDue(state, group).length > 0) {
-      await syncGroup(group);
-      group = (await store.getGroup(groupId)) ?? group;
-      state = foldGroup(group);
-      const records = signResults(state, group, resultsDue(state, group), clock());
-      if (records.length > 0) {
-        await store.enqueueAll(groupId, records);
-        await postOutbox(groupId, channelOf(group.secret));
-      }
-    }
+    const { state, posted } = await postMissingResults(group, foldGroup(group));
     await clearExpiredBallots(store, groupId, state);
-    settled.set(groupId, group.relayNow);
+    if (posted) settled.delete(groupId);
+    else settled.set(groupId, group.relayNow);
   }
 
   async function pass(): Promise<boolean> {
