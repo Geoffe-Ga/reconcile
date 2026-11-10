@@ -63,6 +63,12 @@ export interface Group {
   /** Private drafts by target, never sent (./drafts.ts). Absent until the first one. */
   drafts?: DraftShelf;
   /**
+   * Set when a sync succeeded more than {@link HISTORY_GAP_MS} after the one
+   * before, so the relay may have dropped events this device never read
+   * (#73). Only {@link Store.mergeLog} clears it. Absent until first set.
+   */
+  missingHistory?: boolean;
+  /**
    * The signed `leave` this device queued (#77), while the group waits to be
    * deleted: absent until Leave. Nothing more is queued after it, and the sync
    * loop purges the group once the relay returns a seq for it.
@@ -82,8 +88,19 @@ export interface Clearing {
   readonly keep: string;
 }
 
-/** What a device knows about a group when it creates or joins it. */
-export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'>;
+/**
+ * The longest gap between syncs that can't have missed an event: 28 days. The
+ * relay keeps blobs 30 days, rounded up by a day (ADR-0057), so a device away
+ * for longer may find some already gone.
+ */
+export const HISTORY_GAP_MS = 28 * 86_400_000;
+
+/**
+ * What a device knows about a group when it creates or joins it: through an
+ * invite, also the Proposals the inviter has cleared (#111).
+ */
+export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
+  Partial<Pick<Group, 'cleared'>>;
 
 /** What one sync pass read from the relay. */
 export interface Pull {
@@ -144,10 +161,18 @@ export interface Store extends DraftStore {
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
    * Append each record whose event id isn't in the log yet, and save the sync
-   * state. A ballot, a result or anything else that expires with ballots, for a
-   * Proposal in `cleared`, is dropped (#111).
+   * state. A pull more than {@link HISTORY_GAP_MS} after the last sync sets
+   * `missingHistory`. A ballot, a result or anything else that expires with
+   * ballots, for a Proposal in `cleared`, is dropped (#111).
    */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
+  /**
+   * Add each of an invite's `records` whose event id the log lacks, each in
+   * seq order among the records already there, and clear `missingHistory`
+   * (#73). The cursor and sync state stay as they are. Like `applyPull`, it
+   * drops what expired with a Proposal in `cleared` (#111).
+   */
+  mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
    * In one change, delete from the log and the outbox every record that
    * expires with each Proposal's ballots, apart from the result it keeps, and
@@ -255,8 +280,12 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       }),
     applyPull: (groupId, pull, idOf) =>
       change(groupId, (group) => {
-        const kept = withoutCleared(pull.records, group.cleared ?? []);
-        group.log.push(...unseen(group.log, kept, idOf));
+        if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
+          group.missingHistory = true;
+        }
+        group.log.push(
+          ...unseen(group.log, withoutCleared(group.log, pull.records, group.cleared ?? []), idOf),
+        );
         group.cursor = pull.cursor;
         group.relayNow = pull.relayNow;
         group.instance = pull.instance;
@@ -273,6 +302,12 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
         group.outbox = group.outbox.filter((bytes) => !expires(bytes));
         const cleared = group.cleared ?? [];
         group.cleared = [...cleared, ...[...keep.keys()].filter((id) => !cleared.includes(id))];
+      }),
+    mergeLog: (groupId, records, idOf) =>
+      change(groupId, (group) => {
+        const kept = withoutCleared(group.log, records, group.cleared ?? []);
+        group.log = inSeqOrder(group.log, unseen(group.log, kept, idOf));
+        group.missingHistory = false;
       }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
@@ -318,7 +353,11 @@ function changer(
  * `log` nor earlier in `incoming`. A record that doesn't verify has no id, so
  * it is dropped and can never shadow the real record of the same event.
  */
-function unseen(log: LogRecord[], incoming: LogRecord[], idOf: EventIdOf): LogRecord[] {
+function unseen(
+  log: readonly LogRecord[],
+  incoming: readonly LogRecord[],
+  idOf: EventIdOf,
+): LogRecord[] {
   if (incoming.length === 0) {
     return [];
   }
@@ -333,13 +372,52 @@ function unseen(log: LogRecord[], incoming: LogRecord[], idOf: EventIdOf): LogRe
   });
 }
 
-/** The records of `incoming` that don't expire with a Proposal in `cleared`. */
-function withoutCleared(incoming: LogRecord[], cleared: readonly string[]): LogRecord[] {
-  if (cleared.length === 0) return incoming;
+/** The cleared Proposals that `log` already holds a result for. */
+function resultsHeld(log: readonly LogRecord[], cleared: readonly string[]): Set<string> {
+  const held = new Set<string>();
+  for (const record of log) {
+    const key = expiryKeyOf(record.bytes);
+    if (key?.result === true && cleared.includes(key.proposal)) held.add(key.proposal);
+  }
+  return held;
+}
+
+/**
+ * The records of `incoming` that don't expire with a Proposal in `cleared`
+ * (#111): no ballot or other expiring record for one, and no result for one
+ * once the log, or an earlier record of `incoming`, holds one. So a device
+ * keeps the one result it cleared by, and a newcomer whose invite carried
+ * `cleared` keeps the first, the one the fold reads ahead.
+ */
+function withoutCleared(
+  log: readonly LogRecord[],
+  incoming: readonly LogRecord[],
+  cleared: readonly string[],
+): LogRecord[] {
+  if (cleared.length === 0) return [...incoming];
+  let held: Set<string> | null = null;
   return incoming.filter((record) => {
-    const proposal = expiryKeyOf(record.bytes)?.proposal;
-    return proposal === undefined || !cleared.includes(proposal);
+    const key = expiryKeyOf(record.bytes);
+    if (key === null || !cleared.includes(key.proposal)) return true;
+    if (!key.result) return false;
+    held ??= resultsHeld(log, cleared);
+    if (held.has(key.proposal)) return false;
+    held.add(key.proposal);
+    return true;
   });
+}
+
+/**
+ * `log` with each of `added` placed before the first record of a higher seq,
+ * so the relay's order holds and the log's own records keep theirs.
+ */
+function inSeqOrder(log: readonly LogRecord[], added: readonly LogRecord[]): LogRecord[] {
+  const merged = [...log];
+  for (const record of [...added].sort((a, b) => a.seq - b.seq)) {
+    const at = merged.findIndex((kept) => kept.seq > record.seq);
+    merged.splice(at === -1 ? merged.length : at, 0, record);
+  }
+  return merged;
 }
 
 /** True when `a` and `b` hold the same bytes. */

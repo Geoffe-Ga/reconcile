@@ -4,7 +4,9 @@
  * It is a `fetch` that answers the relay's routes: PUT and GET
  * `/v1/mailbox/{id}` and GET `/v1/health`, with the same status codes and
  * `{"error": code}` bodies. Seqs are shared by every mailbox, as in the real
- * relay's one table, so a mailbox's seqs have gaps. Blobs never expire here.
+ * relay's one table, so a mailbox's seqs have gaps. Each blob expires as the
+ * real relay's does: `ttl_days` after the UTC day it arrived, plus one, by the
+ * fake's minute clock.
  */
 
 import type { Fetch } from '../net/relay';
@@ -35,8 +37,13 @@ interface Stored {
   mailbox: string;
   seq: number;
   received: number;
+  /** The UTC day it expires on: the day it arrived, plus `ttl_days`, plus 1. */
+  expiry: number;
   blob: Uint8Array;
 }
+
+/** Minutes in a UTC day: a relay minute's day is ⌊minute / 1,440⌋. */
+const DAY_MINUTES = 1440;
 
 /** A whole-number query parameter with a default and inclusive bounds. */
 interface IntParam {
@@ -75,8 +82,10 @@ export interface FakeRelay {
   readonly instance: string;
   /** Every request that reached the relay, oldest first. */
   readonly requests: FakeRequest[];
-  /** The blobs stored in `mailbox`, oldest first. */
+  /** The unexpired blobs stored in `mailbox`, oldest first. */
   blobs(mailbox: string): Uint8Array[];
+  /** Deletes the oldest `count` blobs of `mailbox`, as a purge of expired rows would. */
+  drop(mailbox: string, count: number): void;
   /**
    * Replace the database: a new instance id and, like a fresh relay, no blobs
    * and seqs from 1 again, unless `keep` copies the blobs over with their seqs.
@@ -107,7 +116,11 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
     get instance() {
       return instance;
     },
-    blobs: (mailbox) => stored.filter((row) => row.mailbox === mailbox).map((row) => row.blob),
+    blobs: (mailbox) => live(mailbox).map((row) => row.blob),
+    drop: (mailbox, count) => {
+      const doomed = new Set(live(mailbox).slice(0, count));
+      stored = stored.filter((row) => !doomed.has(row));
+    },
     restart: ({ keep = false } = {}) => {
       instance = randomInstance();
       if (!keep) {
@@ -124,6 +137,12 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
       return Promise.resolve(answer(request));
     },
   };
+
+  /** The blobs of `mailbox` that haven't expired by the fake's clock, oldest first. */
+  function live(mailbox: string): Stored[] {
+    const today = Math.floor(relay.minute / DAY_MINUTES);
+    return stored.filter((row) => row.mailbox === mailbox && row.expiry > today);
+  }
 
   function answer(request: FakeRequest): Response {
     try {
@@ -156,7 +175,7 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
   }
 
   function put(mailbox: string, query: URLSearchParams, request: FakeRequest): Response {
-    queryInt(query, TTL_DAYS);
+    const ttlDays = queryInt(query, TTL_DAYS);
     const mediaType = (request.contentType ?? '').split(';')[0]?.trim().toLowerCase();
     if (mediaType !== 'application/octet-stream') {
       throw new Refusal(415, 'unsupported_media_type');
@@ -169,15 +188,16 @@ export function createFakeRelay(options: { minute?: number } = {}): FakeRelay {
       throw new Refusal(400, 'invalid_size');
     }
     lastSeq += 1;
-    stored.push({ mailbox, seq: lastSeq, received: relay.minute, blob });
+    const expiry = Math.floor(relay.minute / DAY_MINUTES) + ttlDays + 1;
+    stored.push({ mailbox, seq: lastSeq, received: relay.minute, expiry, blob });
     return Response.json({ seq: lastSeq }, { status: 201 });
   }
 
   function get(mailbox: string, query: URLSearchParams): Response {
     const after = queryInt(query, AFTER);
     const limit = queryInt(query, LIMIT);
-    const records = stored
-      .filter((row) => row.mailbox === mailbox && row.seq > after)
+    const records = live(mailbox)
+      .filter((row) => row.seq > after)
       .slice(0, limit)
       .map((row) => ({ seq: row.seq, received: row.received, data: toBase64(row.blob) }));
     return Response.json({ records, now: relay.minute, instance });

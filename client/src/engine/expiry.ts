@@ -53,6 +53,8 @@ export function expiringProposal(event: GroupEvent): string | null {
 export interface ExpiryKey {
   readonly id: string;
   readonly proposal: string;
+  /** True for a `result`, which a cleared Proposal keeps one of. */
+  readonly result: boolean;
 }
 
 /**
@@ -63,7 +65,8 @@ export interface ExpiryKey {
 export function expiryKeyOf(bytes: Uint8Array): ExpiryKey | null {
   const parsed = parseRecord(bytes);
   const proposal = parsed === null ? null : expiringProposal(parsed.event);
-  return parsed === null || proposal === null ? null : { id: parsed.id, proposal };
+  if (parsed === null || proposal === null) return null;
+  return { id: parsed.id, proposal, result: parsed.event.type === 'result' };
 }
 
 /** The relay minute a decided Proposal's individual ballots and notes expire. */

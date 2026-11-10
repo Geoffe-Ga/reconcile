@@ -10,13 +10,17 @@
  * the golden vectors, which pin events' exact bytes.
  *
  * Stewards are an elected capability, not a level (ADR-0016, #102): holding a
- * seat adds `suspend` to a level's capabilities, and a suspension leaves only
- * {@link SUSPENDED_CAPABILITIES} until it ends, in relay time.
+ * seat adds {@link SEAT_CAPABILITIES} to a level's capabilities, and a
+ * suspension leaves only {@link SUSPENDED_CAPABILITIES} until it ends, in
+ * relay time.
  */
 
-/** Something a member may do in a group. `suspend` comes with a steward seat, never a level. */
+/**
+ * Something a member may do in a group. `suspend` (#102) and `narrow`, closing
+ * an opt-in at once (#117), come with a steward seat, never a level.
+ */
 export type Capability =
-  'read' | 'see-roster' | 'vote' | 'vouch' | 'invite' | 'propose' | 'suspend';
+  'read' | 'see-roster' | 'vote' | 'vouch' | 'invite' | 'propose' | 'suspend' | 'narrow';
 
 /** The involvement levels, from following to creating. Screens list them in this order. */
 export const LEVELS = ['member', 'collaborator', 'co-creator'] as const;
@@ -44,6 +48,9 @@ export const DEFAULT_JOIN_LEVEL: Level = 'collaborator';
 export function isLevel(value: unknown): value is Level {
   return LEVELS.some((level) => level === value);
 }
+
+/** What a steward seat adds to its holder's level: suspending someone (#102) and narrowing an opt-in (#117). */
+export const SEAT_CAPABILITIES = ['suspend', 'narrow'] as const satisfies readonly Capability[];
 
 /** What a suspended member keeps until the suspension ends (ADR-0016): reading, and the roster. */
 export const SUSPENDED_CAPABILITIES = [
@@ -75,19 +82,19 @@ export function isSuspended(state: Roster, member: string): boolean {
   return state.suspensions.some((s) => s.member === member && state.at < s.until);
 }
 
-/** What `member` may do now: their level's capabilities, `suspend` with a seat, or a suspension's two. */
+/** What `member` may do now: their level's capabilities, a seat's with a seat, or a suspension's two. */
 function current(state: Roster, member: string): readonly Capability[] {
   const level = granted(state, member);
   if (level.length === 0) return level;
   if (isSuspended(state, member)) return SUSPENDED_CAPABILITIES;
   const seated = state.stewards.some((seat) => seat.holder === member);
-  return seated ? [...level, 'suspend'] : level;
+  return seated ? [...level, ...SEAT_CAPABILITIES] : level;
 }
 
 /**
  * The only permission check: true when `member` belongs to the group and may
  * do `capability` now, by their level and any steward seat, unless a
- * suspension narrows them to reading (#102).
+ * suspension narrows them to reading (#102, #117).
  */
 export function can(state: Roster, member: string, capability: Capability): boolean {
   return current(state, member).includes(capability);

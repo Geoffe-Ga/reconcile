@@ -2,7 +2,7 @@ import { type SyntheticEvent, useEffect, useEffectEvent, useRef, useState } from
 import { Button, Form, Link } from 'react-aria-components';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
-import { type Invite, parseInvitePayload } from '../app/invite';
+import { parseInvitePayload } from '../app/invite';
 import { LevelPicker } from '../app/LevelPicker';
 import { messages } from '../app/messages';
 import { replaceRoute, routeHref } from '../app/router';
@@ -13,19 +13,14 @@ import { InvitePreview } from './InvitePreview';
 
 /** Props for {@link Join}. */
 export interface JoinProps {
-  /** The payload from `#/join/{payload}`, or null once it has left the address bar. */
+  /** The seed from `#join/{seed}`, as text, or null once it has left the address bar. */
   readonly payload: string | null;
-  /** An invite pasted on Start, handed over in memory, for when there's no payload. */
-  readonly heldInvite: Invite | null;
-  /** Reads the invite's mailbox, once per invite and once per Try again. */
-  readonly lookup: (invite: Invite) => Promise<InviteLookup>;
+  /** The seed of an invite pasted on Start, handed over in memory, for when there's no payload. */
+  readonly heldSeed: Uint8Array | null;
+  /** Opens the invite the seed names, once per invite and once per Try again. */
+  readonly lookup: (seed: Uint8Array) => Promise<InviteLookup>;
   /** Joins the found group under a name, at a level; false when that didn't finish. */
-  readonly onJoin: (
-    invite: Invite,
-    group: FoundGroup,
-    name: string,
-    level: Level,
-  ) => Promise<boolean>;
+  readonly onJoin: (group: FoundGroup, name: string, level: Level) => Promise<boolean>;
 }
 
 type Phase = { readonly kind: 'loading' } | InviteLookup;
@@ -81,12 +76,11 @@ function AlreadyJoined({ groupId }: { readonly groupId: string }) {
 }
 
 interface JoinFormProps {
-  readonly invite: Invite;
   readonly group: FoundGroup;
   readonly onJoin: JoinProps['onJoin'];
 }
 
-function JoinForm({ invite, group, onJoin }: JoinFormProps) {
+function JoinForm({ group, onJoin }: JoinFormProps) {
   const [failed, setFailed] = useState(false);
   const [level, setLevel] = useState<Level>(DEFAULT_JOIN_LEVEL);
   const busy = useRef(false);
@@ -95,7 +89,7 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
     if (busy.current) return;
     busy.current = true;
     setFailed(false);
-    const joined = await onJoin(invite, group, name, level).catch(() => false);
+    const joined = await onJoin(group, name, level).catch(() => false);
     busy.current = false;
     if (!joined) setFailed(true);
   };
@@ -110,10 +104,10 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
     <main className="shell">
       <PageHeader
         eyebrow={messages.join.eyebrow}
-        title={group.name}
+        title={group.preview.groupName}
         pageTitle={messages.join.pageTitle}
       />
-      <InvitePreview group={group} />
+      <InvitePreview preview={group.preview} />
       <Form className="form" onSubmit={submit}>
         <Field
           name="name"
@@ -139,14 +133,16 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
 }
 
 /**
- * Join (`#/join/{payload}`): reads the invite, takes its secret out of the
- * address bar, finds the group in its mailbox, then asks for a name and how
- * involved the person wants to be, preselecting Collaborator.
+ * Join (`#join/{seed}`): reads the seed, takes it out of the address bar,
+ * opens the invite's envelope, shows its preview, then asks for a name and
+ * how involved the person wants to be, preselecting Collaborator. A seed that
+ * doesn't parse shows the expired-or-damaged line and fetches nothing, and
+ * nothing is stored before Join.
  */
-export function Join({ payload, heldInvite, lookup, onJoin }: JoinProps) {
+export function Join({ payload, heldSeed, lookup, onJoin }: JoinProps) {
   const [source, setSource] = useState(() => ({
     payload,
-    invite: payload === null ? heldInvite : parseInvitePayload(payload),
+    invite: payload === null ? heldSeed : parseInvitePayload(payload),
   }));
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -164,7 +160,7 @@ export function Join({ payload, heldInvite, lookup, onJoin }: JoinProps) {
   }, [payload]);
 
   // Reads the latest `lookup` without making a new function read the mailbox again.
-  const read = useEffectEvent((which: Invite) => lookup(which));
+  const read = useEffectEvent((seed: Uint8Array) => lookup(seed));
 
   useEffect(() => {
     if (invite === null) return;
@@ -198,6 +194,6 @@ export function Join({ payload, heldInvite, lookup, onJoin }: JoinProps) {
     case 'joined':
       return <AlreadyJoined groupId={phase.groupId} />;
     case 'found':
-      return <JoinForm invite={invite} group={phase.group} onJoin={onJoin} />;
+      return <JoinForm group={phase.group} onJoin={onJoin} />;
   }
 }

@@ -51,6 +51,36 @@ export function parseAtom(text: string): Token[] {
   return md.parse(text, {});
 }
 
+/** An inline token's words: text and code as they read, a soft break as a space. */
+function inlineWords(token: Token): string {
+  switch (token.type) {
+    case 'text':
+    case 'code_inline':
+      return token.content;
+    case 'softbreak':
+      return ' ';
+    case 'hardbreak':
+      return '\n';
+    default:
+      return '';
+  }
+}
+
+/**
+ * One Atom's words with the Markdown taken out, for places that show text as
+ * plain text, such as an invite's excerpt (#73): each block's text on a line
+ * of its own, link targets and markup dropped. Raw HTML, which this parser
+ * never reads as HTML, stays as the text it is.
+ */
+export function plainText(text: string): string {
+  const lines = parseAtom(text).flatMap((token) => {
+    if (token.type === 'inline') return [(token.children ?? []).map(inlineWords).join('')];
+    if (token.type === 'code_block' || token.type === 'fence') return [token.content.trimEnd()];
+    return [];
+  });
+  return lines.filter((line) => line !== '').join('\n');
+}
+
 /** Builds one element from a closed block or inline token and its children. */
 type Build = (token: Token, key: number, children: ReactNode[]) => ReactNode;
 

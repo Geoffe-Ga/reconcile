@@ -22,7 +22,6 @@ import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { Group, Me, Store } from '../store/db';
 import { foldGroup } from '../store/expiry';
-import type { Invite } from './invite';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -57,8 +56,11 @@ export interface GroupView {
   reachable: boolean;
   /** Who this device is in the group, or `null` while loading or when the device isn't in it. */
   me: Me | null;
-  /** STUB(invite): what this group's invite link carries, or `null` likewise. */
-  invite: Invite | null;
+  /**
+   * Whether a sync came more than 28 days after the one before, so some
+   * history may be missing, until an invite's merge clears it (#73).
+   */
+  missingHistory: boolean;
   /**
    * Whether this device has queued its leave (#77): the group waits, read
    * only, until the relay has the leave and the sync loop deletes it.
@@ -78,18 +80,26 @@ export function useGroup(groupId: string): GroupView {
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
   const state = useMemo(() => (group === undefined ? null : foldGroup(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
-  const invite = useMemo(() => (group === undefined ? null : { secret: group.secret }), [group]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
     pending,
-    lastSyncAt: group?.lastSyncAt ?? null,
-    relayNow: group?.relayNow ?? null,
+    ...syncStatusOf(group),
     reachable,
     me: group?.me ?? null,
-    invite,
-    leaving: group?.leaving !== undefined,
     loaded,
+  };
+}
+
+/** What a stored group says of its syncs and its leave, or nothing yet before it loads. */
+function syncStatusOf(
+  group: Group | undefined,
+): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving'> {
+  return {
+    lastSyncAt: group?.lastSyncAt ?? null,
+    relayNow: group?.relayNow ?? null,
+    missingHistory: group?.missingHistory === true,
+    leaving: group?.leaving !== undefined,
   };
 }
 

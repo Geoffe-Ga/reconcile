@@ -13,6 +13,8 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  isRulesProposal,
+  isStewardProposal,
   parseEvent,
   parseRecord,
   signEvent,
@@ -211,6 +213,25 @@ describe('parseEvent', () => {
     const rules = { bars: { entrenched: { avgAtLeast: 1 } }, unknown: ['kept'] };
     const body = { name: 'G', founder: 'A', title: 'T', atoms: [], rules };
     expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual(body);
+  });
+
+  it('keeps a well-shaped invite token on a join, and drops any other, keeping the join', () => {
+    const token = { by: ANA, sig: 'S'.repeat(86) };
+    const kept = parseEvent(json(envelope('join', { name: 'Ben', token })));
+    expect(kept?.event.body).toEqual({ name: 'Ben', token });
+    for (const bad of [
+      { by: ANA, sig: 'S'.repeat(85) },
+      { by: ANA, sig: `${'S'.repeat(85)}+` },
+      { by: ANA.slice(1), sig: token.sig },
+      { by: ANA, sig: 7 },
+      { by: ANA },
+      [ANA, token.sig],
+      null,
+      'Ana sent me',
+    ]) {
+      const parsed = parseEvent(json(envelope('join', { name: 'Ben', token: bad })));
+      expect(parsed?.event.body, JSON.stringify(bad)).toEqual({ name: 'Ben' });
+    }
   });
 
   it('keeps a join’s level as written, known or not, so the fold decides', () => {
@@ -428,6 +449,44 @@ describe('parseEvent', () => {
     ['suspend with a numeric member', 'suspend', { member: 1 }],
     ['suspend with a null reason', 'suspend', { member: 'm', reason: null }],
     ['suspend with a numeric reason', 'suspend', { member: 'm', reason: 3 }],
+    [
+      'a rules target with a numeric opt-in',
+      'proposal',
+      { target: { kind: 'rules', optIn: 1, value: true }, title: 't', why: 'w' },
+    ],
+    [
+      'a rules target that leaves out its value',
+      'proposal',
+      { target: { kind: 'rules', optIn: 'frontDoor' }, title: 't', why: 'w' },
+    ],
+    [
+      'a rules Proposal that also names an Atom',
+      'proposal',
+      {
+        atom: 'a',
+        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        title: 't',
+        why: 'w',
+      },
+    ],
+    [
+      'a rules Proposal without a title',
+      'proposal',
+      { target: { kind: 'rules', optIn: 'frontDoor', value: true }, why: 'w' },
+    ],
+    [
+      'a rules Proposal with its window as text',
+      'proposal',
+      {
+        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        title: 't',
+        why: 'w',
+        window: '14',
+      },
+    ],
+    ['narrow without a Proposal', 'narrow', { optIn: 'chatBot' }],
+    ['narrow without an opt-in', 'narrow', { proposal: 'p' }],
+    ['narrow with a numeric Proposal', 'narrow', { optIn: 'chatBot', proposal: 1 }],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -506,6 +565,57 @@ describe('parseEvent', () => {
       json(envelope('proposal', { target: recall, title: 't', why: 'w', link: 'https://l' })),
     );
     expect(linked?.event.body).toEqual({ target: recall, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('reads a rules Proposal, keeping its value as written for the fold to check (#117)', () => {
+    const target = { kind: 'rules', optIn: 'chatBot', value: { webhook: 'https://x', extra: 1 } };
+    const parsed = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', text: 'x', class: 'ordinary' })),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w' });
+    const off = { kind: 'rules', optIn: 'chatBot', value: null };
+    const linked = parseEvent(
+      json(envelope('proposal', { target: { ...off, from: 1 }, title: 't', why: 'w', link: 'l' })),
+    );
+    expect(linked?.event.body).toEqual({ target: off, title: 't', why: 'w', link: 'l' });
+  });
+
+  it('keeps a rules Proposal’s voting window as written, for the fold to bound (#106, #117)', () => {
+    const target = { kind: 'rules', optIn: 'frontDoor', value: true };
+    const parsed = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', window: 13 })),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w', window: 13 });
+  });
+
+  it('tells a rules Proposal from a steward one and from an edit', () => {
+    const rules = {
+      target: { kind: 'rules', optIn: 'frontDoor', value: true },
+      title: 't',
+      why: 'w',
+    } as const;
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null },
+      title: 't',
+      why: 'w',
+    } as const;
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    expect([rules, steward, edit].map(isRulesProposal)).toEqual([true, false, false]);
+    expect([rules, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
+  });
+
+  it('reads a narrow as its opt-in and Proposal, dropping unknown keys (#117)', () => {
+    const parsed = parseEvent(
+      json(envelope('narrow', { optIn: 'chatBot', proposal: 'p1', until: 9 })),
+    );
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'narrow',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { optIn: 'chatBot', proposal: 'p1' },
+    });
   });
 
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {

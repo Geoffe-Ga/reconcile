@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ProposalBody } from './event';
+import type { ProposalBody, RulesProposalBody } from './event';
+import { OFF } from './optIns';
 import {
   chosenWindow,
   DAY_MINUTES,
@@ -32,10 +33,28 @@ function withLeaf(path: readonly string[], value: unknown): Record<string, unkno
   return rules;
 }
 
+/** The numeric leaves: every rule but the opt-ins, whose leaves are off values (#117). */
+function numericLeaves(): [readonly string[], unknown][] {
+  return leaves(DEFAULT_RULES).filter(([path]) => path[0] !== 'optIns');
+}
+
 const EDIT: ProposalBody = { atom: 'g.0', title: 'T', why: 'W', text: 'New\n' };
 
+const W1 = 'https://discord.com/api/webhooks/1/abc';
+const W2 = 'https://discord.com/api/webhooks/2/def';
+
+/** A rules Proposal setting `optIn` to `value`. */
+function rules(optIn: string, value: unknown): RulesProposalBody {
+  return { target: { kind: 'rules', optIn, value }, title: 'T', why: 'W' };
+}
+
+/** A group whose standing opt-ins are `optIns`. */
+function standing(optIns: Partial<typeof OFF>) {
+  return { rules: { ...DEFAULT_RULES, optIns: { ...OFF, ...optIns } } };
+}
+
 describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-0015)', () => {
-  it('holds the bars, windows, quorum, vouches, wait, ballot expiry, stewards and suspension', () => {
+  it('holds the bars, windows, quorum, vouches, wait, ballot expiry, stewards, suspension and opt-ins', () => {
     expect(DEFAULT_RULES).toEqual({
       bars: {
         ordinary: { avgAtLeast: 2, zerosUnderPercent: 10 },
@@ -51,11 +70,16 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
       ballotExpiryDays: 30,
       stewards: { firstElectionAt: 3, secondSeatAt: 6, termDays: 182 },
       suspensionDays: 7,
+      optIns: { chatBot: null, frontDoor: false },
     });
   });
 
-  it('holds only whole numbers, so the engine never counts in fractions', () => {
-    for (const [path, value] of leaves(DEFAULT_RULES)) {
+  it('founds every group with each opt-in off (ADR-0038, ADR-0039)', () => {
+    expect(DEFAULT_RULES.optIns).toEqual(OFF);
+  });
+
+  it('holds only whole numbers apart from the opt-ins, so the engine never counts in fractions', () => {
+    for (const [path, value] of numericLeaves()) {
       expect(Number.isSafeInteger(value), path.join('.')).toBe(true);
     }
   });
@@ -69,7 +93,7 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
 });
 
 describe('RULE_CLASS: each founding rule’s class (ADR-0051)', () => {
-  it('entrenches the pass rules, quorum, stewards and suspension, and keeps windows, vouches, the wait and expiry ordinary', () => {
+  it('entrenches the pass rules, quorum, stewards and suspension, keeps windows, vouches, the wait and expiry ordinary, and gives the opt-ins their own class', () => {
     expect(RULE_CLASS).toEqual({
       bars: 'entrenched',
       windows: 'ordinary',
@@ -79,6 +103,7 @@ describe('RULE_CLASS: each founding rule’s class (ADR-0051)', () => {
       ballotExpiryDays: 'ordinary',
       stewards: 'entrenched',
       suspensionDays: 'entrenched',
+      optIns: 'opt-in',
     });
   });
 
@@ -111,7 +136,7 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
     );
   });
 
-  it.each(leaves(DEFAULT_RULES).map(([path, value]) => [path.join('.'), path, value] as const))(
+  it.each(numericLeaves().map(([path, value]) => [path.join('.'), path, value] as const))(
     'refuses any other value for %s: one less, one more, as text, or null',
     (_name, path, value) => {
       const number = Number(value);
@@ -139,8 +164,15 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
     expect(foundingRules('defaults')).toBeNull();
   });
 
+  it('refuses a genesis that opens an opt-in: only a passed Proposal opens one (ADR-0040)', () => {
+    expect(foundingRules({ optIns: { frontDoor: true } })).toBeNull();
+    expect(foundingRules({ optIns: { chatBot: { webhook: W1 } } })).toBeNull();
+    expect(foundingRules({ optIns: { chatBot: false } })).toBeNull();
+    expect(foundingRules({ optIns: { chatBot: null, frontDoor: false } })).toEqual(DEFAULT_RULES);
+  });
+
   it('leaves out fields it doesn’t know, so a later rule a newer device writes founds the group here', () => {
-    const rules = { ...asJson(), optIns: { bot: false }, extra: 'x' };
+    const rules = { ...asJson(), optIns: { ...OFF, bot: false }, extra: 'x' };
     expect(foundingRules(rules)).toEqual(DEFAULT_RULES);
     expect(foundingRules({ bars: { removal: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
   });
@@ -152,8 +184,30 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
 });
 
 describe('targetClass: how hard a change is', () => {
-  it('makes every target ordinary until a later issue registers an entrenched one', () => {
+  it('makes an edit ordinary', () => {
     expect(targetClass({ rules: DEFAULT_RULES }, EDIT)).toBe('ordinary');
+  });
+
+  it('makes turning an opt-in on entrenched (ADR-0040)', () => {
+    expect(targetClass(standing({}), rules('chatBot', { webhook: W1 }))).toBe('entrenched');
+    expect(targetClass(standing({}), rules('frontDoor', true))).toBe('entrenched');
+  });
+
+  it('makes turning an opt-in off, or replacing one webhook with another, ordinary (ADR-0075 §5)', () => {
+    const on = standing({ chatBot: { webhook: W1 }, frontDoor: true });
+    expect(targetClass(on, rules('chatBot', null))).toBe('ordinary');
+    expect(targetClass(on, rules('frontDoor', false))).toBe('ordinary');
+    expect(targetClass(on, rules('chatBot', { webhook: W2 }))).toBe('ordinary');
+  });
+
+  it('reads the standing value when the Proposal opens, never one the proposer wrote', () => {
+    const forged = { ...rules('frontDoor', true), from: true, class: 'ordinary' };
+    expect(targetClass(standing({}), forged)).toBe('entrenched');
+    expect(targetClass(standing({ frontDoor: true }), rules('frontDoor', true))).toBe('ordinary');
+  });
+
+  it('makes a rules target for an opt-in it doesn’t know ordinary, which the fold ignores anyway', () => {
+    expect(targetClass(standing({}), rules('signalBot', true))).toBe('ordinary');
   });
 
   it('never reads a class, bar or deadline the proposer wrote', () => {

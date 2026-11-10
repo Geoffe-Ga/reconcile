@@ -2,6 +2,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ChatDetails, ChatMoment } from '../app/chatMessages';
+import type { ShareOutcome } from '../app/share';
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
 import { formatMinute, minuteIso } from '../app/time';
@@ -18,17 +20,21 @@ const [, VOTING] = LEVELS;
 const ANA = authorOf('ana');
 const DEADLINE = deadlineOf(START_MINUTE);
 
+type OnTell = (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
+
 interface Shown {
   readonly state: GroupState;
   readonly proposalId: string;
   readonly me?: string;
   readonly own?: OwnBallot;
+  readonly leaving?: boolean;
 }
 
-function show({ state, proposalId, me = ANA, own = 'none' }: Shown) {
+function show({ state, proposalId, me = ANA, own = 'none', leaving = false }: Shown) {
   const proposal = state.proposals.find((candidate) => candidate.id === proposalId);
   if (proposal === undefined) throw new Error('Expected the Proposal.');
   const onProposeAgain = vi.fn();
+  const onTell = vi.fn<OnTell>(() => Promise.resolve('shared'));
   document.title = 'Proposal · Reconcile';
   render(
     <main>
@@ -39,11 +45,13 @@ function show({ state, proposalId, me = ANA, own = 'none' }: Shown) {
         me={me}
         own={own}
         onProposeAgain={onProposeAgain}
+        onTell={onTell}
+        leaving={leaving}
       />
     </main>,
   );
   const result = screen.getByRole('region', { name: 'Result' });
-  return { proposal, result, onProposeAgain, user: userEvent.setup() };
+  return { proposal, result, onProposeAgain, onTell, user: userEvent.setup() };
 }
 
 /** The block the outcome sentence leads: on a pass, the new text and the thanks. */
@@ -418,6 +426,42 @@ describe('ResultView', () => {
       expect(result).not.toHaveTextContent(/part ways|split|fork/i);
       cleanup();
     }
+  });
+});
+
+describe('ResultView, Tell your group', () => {
+  it.each([
+    ['a pass', () => decided([4, 3, 2])],
+    ['a fail', () => decided([1, 1, 2])],
+    ['a lapse', lapsed],
+  ] as const)('offers everyone the result message after %s', async (_, made) => {
+    const { log, proposalId } = made();
+    const { result, onTell, user } = show({
+      state: log.state(DEADLINE),
+      proposalId,
+      me: authorOf('cal'),
+    });
+
+    expect(within(result).getByText('A vote has finished in Reconcile.')).toBeVisible();
+    await user.click(within(result).getByRole('button', { name: 'Tell your group' }));
+
+    expect(onTell).toHaveBeenCalledExactlyOnceWith('result', { deadline: DEADLINE });
+    expect(await within(result).findByText('Shared.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sits after the outcome and before the totals', () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const { result } = show({ state: log.state(DEADLINE), proposalId });
+    const tell = within(result).getByRole('button', { name: 'Tell your group' });
+    expect(precedes(result.querySelector('.result-outcome') ?? undefined, tell)).toBe(true);
+    expect(precedes(tell, within(result).getByRole('heading', { name: 'Totals' }))).toBe(true);
+  });
+
+  it('offers nothing to share while this device leaves the group', () => {
+    const { log, proposalId } = lapsed();
+    const { result } = show({ state: log.state(DEADLINE), proposalId, leaving: true });
+    expect(within(result).queryByRole('button', { name: 'Tell your group' })).toBeNull();
   });
 });
 

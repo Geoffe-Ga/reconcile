@@ -1,7 +1,7 @@
 import { type SyntheticEvent, useId } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
-import { type Invite, parseInviteLink } from '../app/invite';
+import { parseInviteLink } from '../app/invite';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
@@ -20,8 +20,8 @@ export interface StartGroup {
 export interface StartProps {
   /** The groups on this device. */
   readonly groups: readonly StartGroup[];
-  /** Opens a pasted invite. The invite travels in memory, never through the address bar. */
-  readonly onOpenInvite: (invite: Invite) => void;
+  /** Opens a pasted invite's seed. It travels in memory, never through the address bar. */
+  readonly onOpenInvite: (seed: Uint8Array) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
 }
@@ -65,8 +65,8 @@ export function Start({ groups, onOpenInvite, persistence = null }: StartProps) 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = new FormData(event.currentTarget).get('invite');
-    const invite = typeof text === 'string' ? parseInviteLink(text) : null;
-    if (invite !== null) onOpenInvite(invite);
+    const seed = typeof text === 'string' ? parseInviteLink(text) : null;
+    if (seed !== null) onOpenInvite(seed);
   };
 
   return (

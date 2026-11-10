@@ -128,23 +128,29 @@ describe('can', () => {
   });
 });
 
-describe('can: stewards and suspensions (#102)', () => {
-  it.each(LEVELS)('grants suspend to a %s holding a seat, on top of their level', (level) => {
-    const granted = [...ALL, 'suspend' as const].filter((c) => can(steward(level), 'ana', c));
-    expect(granted).toEqual([...LEVEL_CAPABILITIES[level], 'suspend']);
-  });
+/** What a steward seat adds to a level: suspending someone (#102) and narrowing an opt-in (#117). */
+const SEATED: readonly Capability[] = ['suspend', 'narrow'];
 
-  it('grants suspend to nobody who holds no seat, whatever their level', () => {
+describe('can: stewards and suspensions (#102)', () => {
+  it.each(LEVELS)(
+    'grants suspend and narrow to a %s holding a seat, on top of their level',
+    (level) => {
+      const granted = [...ALL, ...SEATED].filter((c) => can(steward(level), 'ana', c));
+      expect(granted).toEqual([...LEVEL_CAPABILITIES[level], 'suspend', 'narrow']);
+    },
+  );
+
+  it('grants suspend and narrow to nobody who holds no seat, whatever their level', () => {
     expect(can(at('co-creator'), 'ana', 'suspend')).toBe(false);
+    expect(can(at('co-creator'), 'ana', 'narrow')).toBe(false);
     const other = { ...steward('co-creator'), stewards: [{ holder: 'ben' }, { holder: null }] };
     expect(can(other, 'ana', 'suspend')).toBe(false);
+    expect(can(other, 'ana', 'narrow')).toBe(false);
   });
 
   it('leaves only read and see-roster to a suspended member, steward or not', () => {
     expect(SUSPENDED_CAPABILITIES).toEqual(['read', 'see-roster']);
-    const granted = [...ALL, 'suspend' as const].filter((c) =>
-      can(steward('co-creator', 101), 'ana', c),
-    );
+    const granted = [...ALL, ...SEATED].filter((c) => can(steward('co-creator', 101), 'ana', c));
     expect(granted).toEqual(['read', 'see-roster']);
   });
 

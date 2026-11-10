@@ -5,8 +5,10 @@
  * Ana, on a desktop, proposes and taps Tell your group: the browser's Web
  * Share gets fixed words, the deadline and the app's address, and no title.
  * Ben, on a 390 px phone in the dark theme, finds the Proposal under Needs
- * your vote, then leaves from People through the alert dialog, and the group
- * goes from his device once the relay has the leave. axe checks Group home,
+ * your vote, where Tell your group shows him the message as it will read and
+ * adds the title only once he ticks Include the title (#113). He then leaves
+ * from People through the alert dialog, and the group goes from his device
+ * once the relay has the leave. axe checks the Proposal view, Group home,
  * People with the dialog open, and Start; the fixture fails on any CSP
  * violation, the dialog's scroll lock included.
  */
@@ -78,6 +80,7 @@ async function createAndJoin(ana: Person, ben: Person): Promise<void> {
     .fill('Quiet hours start at 10pm.\n\nBins go out on Tuesday.');
   await ana.page.getByRole('button', { name: 'Create group' }).click();
   await expect(heading(ana.page, GROUP)).toBeVisible();
+  await ana.page.getByRole('button', { name: 'Copy invite link' }).click();
   const invite = await ana.page.getByRole('textbox', { name: 'Invite link' }).inputValue();
   await ben.page.goto(invite);
   await acceptNotice(ben);
@@ -113,7 +116,7 @@ test('A tells the group a vote is open; B finds it under Needs your vote, then l
     const origin = new URL(page.url()).origin;
     expect(shared).toEqual({
       text: expect.stringMatching(
-        /^I proposed a change in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\.$/,
+        /^A new Proposal is open in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\.$/,
       ) as unknown,
       url: `${origin}/`,
     });
@@ -126,6 +129,24 @@ test('A tells the group a vote is open; B finds it under Needs your vote, then l
     const needs = page.getByRole('region', { name: 'Needs your vote' });
     await expect(needs.getByRole('link', { name: new RegExp(PROPOSAL) })).toBeVisible();
     await expectAccessible(ben, 'Group home');
+  });
+
+  await test.step('B sees the message Tell your group shares, and the title only once ticked', async () => {
+    const { page } = ben;
+    await page
+      .getByRole('region', { name: 'Needs your vote' })
+      .getByRole('link', { name: new RegExp(PROPOSAL) })
+      .click();
+    const message = page.locator('.tell-message');
+    await expect(message).toHaveText(/^A new Proposal is open in Reconcile\. Voting ends /);
+    await page.getByText('Include the title').click();
+    await expect(page.getByRole('checkbox', { name: 'Include the title' })).toBeChecked();
+    await expect(message).toHaveText(
+      new RegExp(`^A new Proposal is open in Reconcile: "${PROPOSAL}"\\. Voting ends `),
+    );
+    await expectAccessible(ben, 'Proposal view, title included');
+    await page.getByRole('link', { name: GROUP }).click();
+    await expect(heading(page, GROUP)).toBeVisible();
   });
 
   await test.step('B opens Leave this group: an alert dialog that keeps focus, and Escape queues nothing', async () => {

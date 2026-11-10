@@ -220,7 +220,7 @@ describe('useGroup', () => {
       relayNow: null,
       reachable: true,
       me: null,
-      invite: null,
+      missingHistory: false,
       leaving: false,
       loaded: true,
     });
@@ -244,7 +244,7 @@ describe('useGroup', () => {
     expect(result.current.pending.map(({ event }) => event.type)).toEqual(['leave']);
   });
 
-  it('says who this device is in the group, and what its invite link carries', async () => {
+  it('says who this device is in the group, and hands the screens no secret', async () => {
     const fake = createFakeRelay();
     const { store, sync } = await setUp(fake);
     const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
@@ -254,10 +254,26 @@ describe('useGroup', () => {
       expect(result.current.loaded).toBe(true);
     });
 
-    expect(atFirst).toMatchObject({ me: null, invite: null, loaded: false });
+    expect(atFirst).toMatchObject({ me: null, missingHistory: false, loaded: false });
     expect(result.current.me).toEqual({ author: authorOf('ana'), name: 'Ana' });
-    expect(Object.keys(result.current.invite ?? {})).toEqual(['secret']);
-    expect(Array.from(result.current.invite?.secret ?? [])).toEqual(Array(32).fill(0));
+    expect(Object.values(result.current).some((value) => value instanceof Uint8Array)).toBe(false);
+  });
+
+  it('says when some history may be missing, until a merge clears it', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    const pull = { records: [], cursor: 0, relayNow: 1, instance: 'i' };
+    await store.applyPull(GROUP, { ...pull, lastSyncAt: TS }, () => null);
+    await store.applyPull(GROUP, { ...pull, lastSyncAt: TS + 29 * 86_400_000 }, () => null);
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+
+    await waitFor(() => {
+      expect(result.current.missingHistory).toBe(true);
+    });
+    await store.mergeLog(GROUP, [], () => null);
+    await waitFor(() => {
+      expect(result.current.missingHistory).toBe(false);
+    });
   });
 
   it('reloads only when its own group changes', async () => {
@@ -295,7 +311,7 @@ describe('useGroup', () => {
     rerender({ id: 'other' });
     const whileLoading = result.current;
 
-    expect(whileLoading).toMatchObject({ state: null, me: null, invite: null, loaded: false });
+    expect(whileLoading).toMatchObject({ state: null, me: null, loaded: false });
     await waitFor(() => {
       expect(result.current.state?.title).toBe('');
     });

@@ -4,24 +4,29 @@
  * Top to bottom: the outcome sentence; on a pass, the new text full width and
  * thanks to the winning version's author by name, with no numbers and no
  * animation; on a fail, each version's unmet condition in words; on a lapse,
- * ADR-0069's sentence and Propose again. Then each version's totals, the
- * individual ballots and notes under a disclosure, and when voting ran, in
- * relay time. A ballot that reached the relay too late tells its author so.
- * The disclosure says until when the individual scores and notes stay
- * visible, and once this device has cleared them, when it did (#111), while
- * the outcome and totals stay. A record of the decision that doesn't match
- * this device's ballots names who posted it. No result offers a part-ways
- * action (ADR-0068). Everything here is read from the group's own log on
- * this device; nothing is sent.
+ * ADR-0069's sentence and Propose again. Then Tell your group's result
+ * message (#113), each version's totals, the individual ballots and notes
+ * under a disclosure, and when voting ran, in relay time. A ballot that
+ * reached the relay too late tells its author so. The disclosure says until
+ * when the individual scores and notes stay visible, and once this device has
+ * cleared them, when it did (#111), while the outcome and totals stay. A
+ * record of the decision that doesn't match this device's ballots names who
+ * posted it. No result offers a part-ways action (ADR-0068). Everything here
+ * is read from the group's own log on this device; nothing is sent to the
+ * relay.
  */
 import { Fragment, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
+import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { formatAverage, formatAverageLine, formatDay, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
+import type { ShareOutcome } from '../app/share';
 import { MotionTitle, Named } from '../app/stewards';
+import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { formatMinute, minuteIso } from '../app/time';
+import type { RulesView } from '../app/optInLines';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
@@ -45,6 +50,8 @@ export interface ResultViewProps {
   readonly own: OwnBallot;
   /** Opens the composer to propose a lapsed Proposal again. */
   readonly onProposeAgain: () => void;
+  /** Shares the result message into the group's chat, or copies it (#113). */
+  readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then nothing is proposed again. */
   readonly leaving?: boolean;
 }
@@ -83,6 +90,15 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
       <p className="outcome-sentence">
         <Named parts={parts} name={motion.name} />
       </p>
+    </div>
+  );
+}
+
+/** A rules Proposal's pass: what is now on or off (#117). */
+function RulesPassed({ rules }: { readonly rules: RulesView }) {
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{rules.passed}</p>
     </div>
   );
 }
@@ -191,15 +207,17 @@ function Lapsed({ props }: OutcomeProps) {
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const steward = props.versions[0]?.steward;
+  const { steward, rules } = props.versions[0] ?? {};
   if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
+  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward ballot decided. */
+/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward or rules ballot decided. */
 function VersionName({ version }: { readonly version: VersionView }) {
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
+  if (version.rules !== undefined) return <>{version.rules.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -368,6 +386,9 @@ export function ResultView(props: ResultViewProps) {
       <Outcome props={props} detail={detail} versions={versions} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
       <Mismatches state={state} proposal={proposal} />
+      {props.leaving === true ? null : (
+        <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
+      )}
       <Totals detail={detail} versions={versions} />
       <Ballots props={props} versions={versions} />
       <Ran proposal={proposal} />

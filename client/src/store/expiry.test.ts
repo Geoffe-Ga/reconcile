@@ -291,12 +291,13 @@ describe('ballot expiry on a device', () => {
     expect(await onDevice(utf8(ANA_NOTE), ana)).toBe(false);
   });
 
-  it('lets a newcomer who joins afterwards fold the same Document, then clears what the relay still held', async () => {
+  it('lets a device that reads the history from the relay afterwards fold the same Document, then clear what the relay still held', async () => {
     const { fake, relay, secret, ana, closedAt } = await decidedTogether();
     fake.minute = closedAt + WINDOW;
     await ana.sync.syncOnce();
 
-    // STUB(invite): the tracer's invite reads the relay, which still holds the old blobs here.
+    // A device that reads the group's history from the relay, which still holds the old blobs
+    // here; app/actions.test.ts joins through a real invite envelope.
     const channel = channelOf(secret);
     const page = await relay.getBlobs(channel.mailbox, 0);
     const cal = await device('cal', relay, secret);

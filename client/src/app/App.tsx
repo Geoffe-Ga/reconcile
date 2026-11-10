@@ -13,8 +13,11 @@ import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
+import { GroupRules } from '../screens/GroupRules';
 import { GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import type { OptIn } from '../engine/optIns';
+import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { ProposalView } from '../screens/ProposalView';
 import type { SeatNumber } from '../engine/stewards';
 import type { Persistence } from '../platform/persist';
@@ -29,15 +32,17 @@ import {
   joinGroup,
   leaveGroup,
   lookupInvite,
+  makeInvite,
 } from './actions';
-import { type Invite, inviteLink } from './invite';
 import type { Scores } from './Ballot';
 import {
   addVersion,
   castBallot,
   chooseLevel,
   propose,
+  proposeRules,
   proposeSteward,
+  type RulesValues,
   type StewardValues,
   suspend,
   type ProposalValues,
@@ -45,7 +50,8 @@ import {
 } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
-import { shareOrCopy, type TellKind, tellPayload } from './share';
+import type { ChatDetails, ChatMoment } from './chatMessages';
+import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
@@ -55,15 +61,15 @@ import { useNow } from './useNow';
 export interface AppProps {
   /** The store, sync loop, relay and the rest, built once by `main.tsx`. */
   readonly services: AppServices;
-  /** An invite link first run took out of the address bar, which Join opens. */
-  readonly initialInvite?: Invite | null;
+  /** The seed of an invite link first run took out of the address bar, which Join opens. */
+  readonly initialSeed?: Uint8Array | null;
   /** What the browser said about keeping this site's data, for Start. */
   readonly persistence?: Persistence | null;
 }
 
 interface StartScreenProps {
   readonly services: AppServices;
-  readonly onOpenInvite: (invite: Invite) => void;
+  readonly onOpenInvite: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
 }
 
@@ -87,29 +93,28 @@ function CreateScreen({ services }: { readonly services: AppServices }) {
 interface JoinScreenProps {
   readonly services: AppServices;
   readonly payload: string | null;
-  readonly heldInvite: Invite | null;
+  readonly heldSeed: Uint8Array | null;
   readonly onJoined: () => void;
 }
 
-function JoinScreen({ services, payload, heldInvite, onJoined }: JoinScreenProps) {
-  const lookup = useCallback((invite: Invite) => lookupInvite(services, invite), [services]);
+function JoinScreen({ services, payload, heldSeed, onJoined }: JoinScreenProps) {
+  const lookup = useCallback((seed: Uint8Array) => lookupInvite(services, seed), [services]);
   const onJoin = useCallback(
-    async (invite: Invite, group: FoundGroup, name: string, level: Level) => {
-      const groupId = await joinGroup(services, invite, group, name, level);
+    async (group: FoundGroup, name: string, level: Level) => {
+      const groupId = await joinGroup(services, group, name, level);
       onJoined();
       replaceRoute({ name: 'group', groupId });
       return true;
     },
     [services, onJoined],
   );
-  return <Join payload={payload} heldInvite={heldInvite} lookup={lookup} onJoin={onJoin} />;
+  return <Join payload={payload} heldSeed={heldSeed} lookup={lookup} onJoin={onJoin} />;
 }
 
 /** A group on this device whose genesis is back from the relay. */
 interface ReadyGroup extends GroupView {
   readonly state: GroupState;
   readonly me: Me;
-  readonly invite: Invite;
 }
 
 interface GroupGateProps {
@@ -120,11 +125,11 @@ interface GroupGateProps {
 /** Renders `children` once the group is ready, or says why it isn't. */
 function GroupGate({ groupId, children }: GroupGateProps) {
   const group = useGroup(groupId);
-  const { loaded, state, me, invite } = group;
+  const { loaded, state, me } = group;
   if (!loaded) return null;
-  if (state === null || me === null || invite === null) return <GroupMissing />;
+  if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  return children({ ...group, state, me, invite });
+  return children({ ...group, state, me });
 }
 
 interface GroupScreenProps {
@@ -140,10 +145,15 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
         <GroupHome
           state={group.state}
           me={group.me.author}
-          inviteLink={inviteLink(services.origin, group.invite)}
+          makeInviteLink={() => makeInvite(services, groupId, services.origin)}
           copyText={services.copyText}
           now={relayMinuteNow(group, deviceNow)}
-          sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
+          sync={{
+            reachable: group.reachable,
+            lastSyncAt: group.lastSyncAt,
+            deviceNow,
+            missingHistory: group.missingHistory,
+          }}
           pending={group.pending}
           leaving={group.leaving}
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
@@ -234,8 +244,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const onProposeAgain = () => {
           navigate({ name: 'again', groupId, proposalId });
         };
-        const onTell = (kind: TellKind, deadline: number) =>
-          shareOrCopy(tellPayload(kind, deadline, services.origin), services);
+        const onTell = (moment: ChatMoment, details: ChatDetails) =>
+          shareOrCopy(chatPayload(moment, details, services.origin), services);
         return (
           <ProposalView
             state={group.state}
@@ -285,24 +295,103 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
   );
 }
 
+function RulesScreen({ groupId }: { readonly groupId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => <GroupRules state={state} me={me.author} />}
+    </GroupGate>
+  );
+}
+
+interface OptInScreenProps extends GroupScreenProps {
+  readonly optIn: OptIn;
+  readonly narrow: boolean;
+}
+
+/** The opt-in composer (#117); sending a Proposal replaces it with the Proposal's ballot. */
+function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
+  const deviceNow = useNow(services.now);
+  const onPropose = async (values: RulesValues): Promise<OptInOutcome> => {
+    const result = await proposeRules(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to the rules.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me }) => (
+        <OptInComposer
+          state={state}
+          me={me.author}
+          optIn={optIn}
+          narrow={narrow}
+          now={deviceNow}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** A route inside one group. */
+type GroupRoute = Extract<Route, { readonly groupId: string }>;
+
+/** The screen for a route inside one group. */
+function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
+  const { groupId } = route;
+  switch (route.name) {
+    case 'group':
+      return <GroupScreen services={services} groupId={groupId} />;
+    case 'document':
+      return <DocumentScreen groupId={groupId} />;
+    case 'propose':
+      return <ProposeScreen services={services} groupId={groupId} atomId={route.atomId} />;
+    case 'proposal':
+      return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'again':
+      return <ProposeScreen services={services} groupId={groupId} againId={route.proposalId} />;
+    case 'steward':
+      return (
+        <StewardScreen
+          services={services}
+          groupId={groupId}
+          seat={route.seat}
+          recall={route.recall}
+        />
+      );
+    case 'rules':
+      return <RulesScreen groupId={groupId} />;
+    case 'optIn':
+      return (
+        <OptInScreen
+          services={services}
+          groupId={groupId}
+          optIn={route.optIn}
+          narrow={route.narrow}
+        />
+      );
+  }
+}
+
 interface ScreenProps {
   readonly route: Route;
   readonly services: AppServices;
-  readonly heldInvite: Invite | null;
-  readonly holdInvite: (invite: Invite | null) => void;
+  readonly heldSeed: Uint8Array | null;
+  readonly holdSeed: (seed: Uint8Array | null) => void;
   readonly persistence: Persistence | null;
 }
 
-function Screen({ route, services, heldInvite, holdInvite, persistence }: ScreenProps) {
-  const releaseInvite = useCallback(() => {
-    holdInvite(null);
-  }, [holdInvite]);
+function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProps) {
+  const releaseSeed = useCallback(() => {
+    holdSeed(null);
+  }, [holdSeed]);
   const openInvite = useCallback(
-    (invite: Invite) => {
-      holdInvite(invite);
+    (seed: Uint8Array) => {
+      holdSeed(seed);
       navigate({ name: 'join', payload: null });
     },
-    [holdInvite],
+    [holdSeed],
   );
   switch (route.name) {
     case 'start':
@@ -316,41 +405,20 @@ function Screen({ route, services, heldInvite, holdInvite, persistence }: Screen
         <JoinScreen
           services={services}
           payload={route.payload}
-          heldInvite={heldInvite}
-          onJoined={releaseInvite}
+          heldSeed={heldSeed}
+          onJoined={releaseSeed}
         />
       );
-    case 'group':
-      return <GroupScreen services={services} groupId={route.groupId} />;
-    case 'document':
-      return <DocumentScreen groupId={route.groupId} />;
-    case 'propose':
-      return <ProposeScreen services={services} groupId={route.groupId} atomId={route.atomId} />;
-    case 'proposal':
-      return (
-        <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />
-      );
-    case 'again':
-      return (
-        <ProposeScreen services={services} groupId={route.groupId} againId={route.proposalId} />
-      );
-    case 'steward':
-      return (
-        <StewardScreen
-          services={services}
-          groupId={route.groupId}
-          seat={route.seat}
-          recall={route.recall}
-        />
-      );
+    default:
+      return <GroupRouteScreen route={route} services={services} />;
   }
 }
 
 /** The current route's screen, with the store and sync loop provided to `useGroup`. */
-export function App({ services, initialInvite = null, persistence = null }: AppProps) {
+export function App({ services, initialSeed = null, persistence = null }: AppProps) {
   const route = useRoute();
-  // A pasted invite, or one first run held, travels here in memory rather than in the address bar.
-  const [heldInvite, holdInvite] = useState<Invite | null>(initialInvite);
+  // A pasted invite's seed, or one first run held, travels here in memory, never in the address bar.
+  const [heldSeed, holdSeed] = useState<Uint8Array | null>(initialSeed);
   const groupServices = useMemo(
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
@@ -360,8 +428,8 @@ export function App({ services, initialInvite = null, persistence = null }: AppP
       <Screen
         route={route}
         services={services}
-        heldInvite={heldInvite}
-        holdInvite={holdInvite}
+        heldSeed={heldSeed}
+        holdSeed={holdSeed}
         persistence={persistence}
       />
     </GroupServicesContext>

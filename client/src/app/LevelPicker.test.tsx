@@ -120,7 +120,7 @@ describe('choosing a level in the app', () => {
       within(people)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
-    ).toEqual(['Ana, Co-Creator, Steward', 'Ben, Collaborator']);
+    ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Collaborator']);
 
     // Ben chooses Co-Creator, offline, so the change waits in the outbox.
     fake.offline = true;
@@ -133,8 +133,8 @@ describe('choosing a level in the app', () => {
         expect.objectContaining({ type: 'level', body: { level: CREATING } }),
       ]);
     });
-    expect(within(people).getByText('Ben', { selector: 'bdi' }).parentElement).toHaveTextContent(
-      'Ben, Collaborator',
+    expect(within(people).getByText('Ben', { selector: 'bdi' }).closest('li')).toHaveTextContent(
+      'Ben, invited by Ana, Collaborator',
     );
     expect(await axeViolations()).toEqual([]);
 
@@ -146,7 +146,7 @@ describe('choosing a level in the app', () => {
         within(people)
           .getAllByRole('listitem')
           .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator']);
+      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Co-Creator']);
     });
     expect(within(people).getByRole('status')).toHaveTextContent('Sent');
 
