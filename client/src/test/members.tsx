@@ -74,6 +74,18 @@ async function joinFrom(
   await device.services.sync.syncOnce();
 }
 
+/** `device` founds another group as `founder`, with the founding Document, and syncs; returns its id. */
+export async function foundAnother(device: TestDevice, founder: string): Promise<string> {
+  const created = await createGroup(device.services, {
+    ...FOUNDING,
+    yourName: founder,
+    chat: null,
+  });
+  if (created.outcome !== 'created') throw new Error('Expected a group.');
+  await device.services.sync.syncOnce();
+  return created.groupId;
+}
+
 /** Opens a new device on `fake` and joins `groupId` as `name`, later than the others. */
 export async function joinLater(
   fake: FakeRelay,

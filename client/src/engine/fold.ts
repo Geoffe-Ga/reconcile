@@ -783,8 +783,18 @@ function ballotIsValid(
   );
 }
 
-/** True when every eligible member's latest ballot scores every version. */
-function everyoneHasScored(proposal: OpenProposal): boolean {
+/** What {@link everyoneHasScored} reads: who may vote, the versions, and each voter's latest ballot. */
+export interface ScoredProposal {
+  readonly eligible: readonly string[];
+  readonly versions: readonly Pick<Version, 'id'>[];
+  readonly ballots: readonly Pick<Ballot, 'voter' | 'scores'>[];
+}
+
+/**
+ * True when every eligible member's latest ballot scores every version: the
+ * early close (spec §5). The fold and wakes (`wake.ts`, #99) both ask this.
+ */
+export function everyoneHasScored(proposal: ScoredProposal): boolean {
   return proposal.eligible.every((voter) => {
     const ballot = proposal.ballots.find((b) => b.voter === voter);
     return (

@@ -107,6 +107,44 @@ describe('restoreGroups', () => {
     );
   });
 
+  it('keeps this device’s push registration and posted nudges when the file’s copy replaces its own (#99)', async () => {
+    const store = await deviceWithGroup(1_000);
+    const push = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/device-1',
+      mailboxes: ['mailbox-1'],
+      instance: 'relay-1',
+      at: 29_000_002,
+    };
+    await store.setPush(ana.groupId, push);
+    await store.markNudged(ana.groupId, ['p1@29010080']);
+
+    await store.restoreGroups([copy(2_000)]);
+
+    const kept = await store.getGroup(ana.groupId);
+    expect(kept?.cursor).toBe(5);
+    expect(kept?.push).toEqual(push);
+    expect(kept?.nudged).toEqual(['p1@29010080']);
+  });
+
+  it('keeps no push registration or nudges in a copy the file brings back read-only (#108)', async () => {
+    const store = await deviceWithGroup(1_000);
+    const push = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/device-1',
+      mailboxes: ['mailbox-1'],
+      instance: 'relay-1',
+      at: 29_000_002,
+    };
+    await store.setPush(ana.groupId, push);
+    await store.markNudged(ana.groupId, ['p1@29010080']);
+
+    // A file whose log folds to a dissolve comes back marked so (snapshot.ts).
+    await store.restoreGroups([copy(2_000, { archived: { reason: 'dissolved' } })]);
+
+    const kept = await store.getGroup(ana.groupId);
+    expect([kept?.cursor, kept?.archived]).toEqual([5, { reason: 'dissolved' }]);
+    expect([kept?.push, kept?.nudged]).toEqual([undefined, undefined]);
+  });
+
   it.each([
     ['synced later', 3_000],
     ['synced at the same time', 2_000],

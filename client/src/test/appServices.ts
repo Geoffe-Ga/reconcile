@@ -1,8 +1,8 @@
 /**
  * One device's `AppServices` for tests: its own IndexedDB database on the
- * shared fake-indexeddb, a relay client on a shared fake relay, and a chat
- * bot (#119, #123) that posts to that fake's Discord webhook, never the
- * network.
+ * shared fake-indexeddb, a relay client on a shared fake relay, a chat bot
+ * (#119, #123) that posts to that fake's Discord webhook, never the network,
+ * and push (#99) over a fake browser whose permission starts unasked.
  */
 import { vi } from 'vitest';
 
@@ -10,10 +10,15 @@ import { botNotice, botThreadName } from '../app/chatMessages';
 import type { AppServices } from '../app/services';
 import { xchachaSeal } from '../crypto/seal';
 import { getWebhook, postWebhook } from '../net/discord';
+import { createPushRelay } from '../net/push';
 import { createRelay } from '../net/relay';
+import { browserPushPort } from '../platform/pushPort';
 import { type ChatBot, createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
+import type { MailboxAt } from '../store/mailbox';
+import { createPush } from '../store/push';
 import { createSync } from '../store/sync';
+import { fakePushBrowser, type FakePushBrowser } from './fakePush';
 import type { FakeRelay } from './fakeRelay';
 
 /** The app's origin in tests. */
@@ -21,13 +26,21 @@ export const TEST_ORIGIN = 'https://reconcile.test';
 
 /**
  * A test device: its services, every text it copied, every file it
- * downloaded, and its chat bot, whose posts a test can wait for (#123).
+ * downloaded, its browser's push, and its chat bot, whose posts a test can
+ * wait for (#123).
  */
 export interface TestDevice {
   readonly services: AppServices;
   readonly copied: string[];
   readonly downloaded: File[];
+  readonly push: FakePushBrowser;
   readonly chatBot: ChatBot;
+}
+
+/** What a test may change about a device. */
+export interface TestDeviceOptions {
+  /** A group's mailbox at a relay minute, for push (#99): the store's own unless a test stubs it. */
+  readonly mailboxAt?: MailboxAt;
 }
 
 /** The device clock tests start at, in milliseconds. */
@@ -44,6 +57,7 @@ export async function testDevice(
   fake: FakeRelay,
   name: string,
   clock: () => number = () => TEST_NOW,
+  options: TestDeviceOptions = {},
 ): Promise<TestDevice> {
   const store = await openStore(name);
   const relay = createRelay({ fetch: fake.fetch });
@@ -57,7 +71,15 @@ export async function testDevice(
     threadName: botThreadName,
     clock: now,
   });
-  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot });
+  const browser = fakePushBrowser();
+  const push = createPush({
+    store,
+    relay: createPushRelay({ fetch: fake.fetch }),
+    port: browserPushPort(browser.environment),
+    clock: now,
+    ...(options.mailboxAt === undefined ? {} : { mailboxAt: options.mailboxAt }),
+  });
+  const sync = createSync({ store, relay, seal: xchachaSeal, clock: now, chatBot, push });
   const copied: string[] = [];
   const copyText = vi.fn(async (text: string | Promise<string>) => {
     copied.push(await text);
@@ -83,6 +105,7 @@ export async function testDevice(
       },
     },
     erase: vi.fn(() => Promise.resolve()),
+    push,
   };
-  return { services, copied, downloaded, chatBot };
+  return { services, copied, downloaded, push: browser, chatBot };
 }
