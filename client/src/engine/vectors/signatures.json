@@ -385,7 +385,8 @@
             "author": "%ben",
             "ts": 1762500060000,
             "body": {
-              "name": "Ben"
+              "name": "Ben",
+              "level": "co-creator"
             }
           }
         },

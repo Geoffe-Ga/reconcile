@@ -28,9 +28,19 @@ export interface GenesisBody {
   readonly atoms: readonly string[];
 }
 
-/** Joins the group under a name fixed at join. */
+/**
+ * Joins the group under a name fixed at join, at an involvement level. The
+ * level is kept as written: the fold reads a missing one as Collaborator and
+ * ignores a join that names a level it doesn't know.
+ */
 export interface JoinBody {
   readonly name: string;
+  readonly level?: string;
+}
+
+/** Sets the author's own involvement level (ADR-0021: self-selected). The fold checks the id. */
+export interface LevelBody {
+  readonly level: string;
 }
 
 /** Proposes new text for one Atom, with a title, a justification and an optional discussion link. */
@@ -55,6 +65,7 @@ export interface EventBodies {
   readonly join: JoinBody;
   readonly proposal: ProposalBody;
   readonly vote: VoteBody;
+  readonly level: LevelBody;
 }
 
 /** The event types this engine understands. */
@@ -180,7 +191,13 @@ function parseGenesis(body: Json): GenesisBody | null {
 }
 
 function parseJoin(body: Json): JoinBody | null {
-  return isString(body.name) ? { name: body.name } : null;
+  const { name, level } = body;
+  if (!isString(name) || !isOptionalString(level)) return null;
+  return { name, ...(level === undefined ? {} : { level }) };
+}
+
+function parseLevel(body: Json): LevelBody | null {
+  return isString(body.level) ? { level: body.level } : null;
 }
 
 function parseProposal(body: Json): ProposalBody | null {
@@ -209,6 +226,11 @@ function parseVote(body: Json): VoteBody | null {
   return { proposal, scores, ...(note === undefined ? {} : { note }) };
 }
 
+/** The event a parsed body makes, or null when the body didn't parse. */
+function attach<B>(body: B | null, make: (body: B) => GroupEvent): GroupEvent | null {
+  return body === null ? null : make(body);
+}
+
 /** Attaches a validated body to the envelope fields, or returns null for an unknown type or bad body. */
 function withBody(
   head: Omit<GroupEvent, 'type' | 'body'>,
@@ -216,22 +238,16 @@ function withBody(
   body: Json,
 ): GroupEvent | null {
   switch (type) {
-    case 'genesis': {
-      const parsed = parseGenesis(body);
-      return parsed === null ? null : { ...head, type, body: parsed };
-    }
-    case 'join': {
-      const parsed = parseJoin(body);
-      return parsed === null ? null : { ...head, type, body: parsed };
-    }
-    case 'proposal': {
-      const parsed = parseProposal(body);
-      return parsed === null ? null : { ...head, type, body: parsed };
-    }
-    case 'vote': {
-      const parsed = parseVote(body);
-      return parsed === null ? null : { ...head, type, body: parsed };
-    }
+    case 'genesis':
+      return attach(parseGenesis(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'join':
+      return attach(parseJoin(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'proposal':
+      return attach(parseProposal(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'vote':
+      return attach(parseVote(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'level':
+      return attach(parseLevel(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

@@ -1,8 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { formatMinute, formatSyncedAt, MINUTE_MS } from '../app/time';
+import { type Level, LEVELS } from '../engine/capabilities';
+import { createEvent, type ParsedEvent, parseEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
@@ -11,29 +13,51 @@ import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 
 const LINK = 'https://reconcile.example/#/join/mailbox.secret';
+const [FOLLOWING, VOTING, CREATING] = LEVELS;
 const NOW = START_MINUTE + 60;
 const SYNCED = { reachable: true, lastSyncAt: NOW * MINUTE_MS, deviceNow: NOW * MINUTE_MS };
 
+type OnChooseLevel = (level: Level) => Promise<void>;
+
 function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
   const copyText = vi.fn(() => Promise.resolve());
-  render(
-    <GroupHome
-      state={state}
-      me={authorOf('ana')}
-      inviteLink={LINK}
-      copyText={copyText}
-      now={NOW}
-      sync={SYNCED}
-      {...props}
-    />,
-  );
-  return { user: userEvent.setup(), copyText };
+  const onChooseLevel = vi.fn<OnChooseLevel>(() => Promise.resolve());
+  const all: GroupHomeProps = {
+    state,
+    me: authorOf('ana'),
+    inviteLink: LINK,
+    copyText,
+    now: NOW,
+    sync: SYNCED,
+    pending: [],
+    onChooseLevel,
+    ...props,
+  };
+  const view = render(<GroupHome {...all} />);
+  const rerender = (next: Partial<GroupHomeProps>) => {
+    view.rerender(<GroupHome {...all} {...next} />);
+  };
+  return { user: userEvent.setup(), copyText, onChooseLevel: all.onChooseLevel, rerender };
 }
+
+/** A `level` event as `useGroup` lists it while it waits in the outbox. */
+function pendingLevel(author: string, level: string): ParsedEvent {
+  const input = { type: 'level', group: 'g', author, ts: 0, body: { level } } as const;
+  const parsed = parseEvent(createEvent(input).bytes);
+  if (parsed === null) throw new Error('Expected an event.');
+  return parsed;
+}
+
+/** The text of each row of the People list. */
+const rows = () =>
+  within(section('People'))
+    .getAllByRole('listitem')
+    .map((item) => item.textContent);
 
 function setup(options: TestGroupOptions = {}, me?: string) {
   const group = testGroup({ joiners: ['Ben'], ...options });
-  const { user, copyText } = renderHome(group.state, { me: me ?? group.founder });
-  return { user, copyText, state: group.state };
+  const { user, copyText, onChooseLevel } = renderHome(group.state, { me: me ?? group.founder });
+  return { user, copyText, onChooseLevel, state: group.state };
 }
 
 const section = (name: string) => screen.getByRole('region', { name });
@@ -47,8 +71,7 @@ describe('GroupHome', () => {
     const documentLink = screen.getByRole('link', { name: /House rules/ });
     expect(documentLink).toHaveAttribute('href', `#/g/${state.group ?? ''}/doc`);
     expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
-    const people = within(section('People')).getAllByRole('listitem');
-    expect(people.map((item) => item.textContent)).toEqual(['Ana', 'Ben']);
+    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Co-Creator']);
     const field = within(section('Invite people')).getByRole('textbox', { name: 'Invite link' });
     expect(field).toHaveValue(LINK);
     expect(field).toHaveAttribute('readonly');
@@ -152,7 +175,7 @@ describe('GroupHome', () => {
   it('tells two people of the same name apart by a key suffix, inside <bdi>', () => {
     setup({ joiners: ['Sam', 'sam ', 'Sammy'] });
     const people = within(section('People')).getAllByRole('listitem');
-    const [ana, sam, other, sammy] = people.map((item) => item.textContent);
+    const [ana, sam, other, sammy] = people.map((item) => item.firstElementChild?.textContent);
     expect([ana, sammy]).toEqual(['Ana', 'Sammy']);
     expect(sam).toMatch(/^Sam · [0-9a-f]{4}$/);
     expect(other).toMatch(/^sam {2}· [0-9a-f]{4}$/);
@@ -165,6 +188,126 @@ describe('GroupHome', () => {
     expect(screen.queryByRole('region', { name: 'People' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Invite people' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy invite link' })).not.toBeInTheDocument();
+  });
+
+  it('shows each person’s level beside their name', async () => {
+    setup({ joiners: ['Ben', 'Kim'], levels: { Ben: VOTING, Kim: FOLLOWING } });
+    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Collaborator', 'Kim, Member']);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a Member the People list and their involvement, but no invite', async () => {
+    setup({ joiners: ['Kim'], levels: { Kim: FOLLOWING } }, authorOf('kim'));
+    expect(rows()).toEqual(['Ana, Co-Creator', 'Kim, Member']);
+    expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
+    expect(screen.queryByRole('region', { name: 'Invite people' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a Collaborator the invite', () => {
+    setup({ joiners: ['Ben'], levels: { Ben: VOTING } }, authorOf('ben'));
+    expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
+  });
+
+  it('puts Your involvement under the People list, at this person’s level, with nothing to save', async () => {
+    setup({ joiners: ['Ben'], levels: { Ben: VOTING } }, authorOf('ben'));
+    const people = section('People');
+    const picker = within(people).getByRole('radiogroup', { name: 'Your involvement' });
+    expect(
+      within(people).getByRole('list').compareDocumentPosition(picker) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(picker).getByRole('radio', { name: 'Collaborator' })).toBeChecked();
+    expect(screen.queryByRole('button', { name: 'Save your choice' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('queues one level change when they save a new choice, and says where it has got to', async () => {
+    const { user, onChooseLevel, rerender } = renderHome(
+      testGroup({ joiners: ['Ben'], levels: { Ben: VOTING } }).state,
+      { me: authorOf('ben') },
+    );
+    await user.click(screen.getByRole('radio', { name: 'Co-Creator' }));
+    await user.click(screen.getByRole('button', { name: 'Save your choice' }));
+    expect(onChooseLevel).toHaveBeenCalledExactlyOnceWith(CREATING);
+
+    // While it waits in the outbox, the picker shows the new choice and nothing more to save.
+    rerender({ pending: [pendingLevel(authorOf('ben'), CREATING)] });
+    expect(screen.getByRole('radio', { name: 'Co-Creator' })).toBeChecked();
+    expect(screen.queryByRole('button', { name: 'Save your choice' })).not.toBeInTheDocument();
+    expect(within(section('People')).getByRole('status')).toHaveTextContent('Sending…');
+    // The People list changes only once the relay returns the event.
+    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Collaborator']);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hides Save again when they pick their level back before saving', async () => {
+    const { user, onChooseLevel } = setup(
+      { joiners: ['Ben'], levels: { Ben: VOTING } },
+      authorOf('ben'),
+    );
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    expect(screen.getByRole('button', { name: 'Save your choice' })).toBeVisible();
+    await user.click(screen.getByRole('radio', { name: 'Collaborator' }));
+    expect(screen.queryByRole('button', { name: 'Save your choice' })).not.toBeInTheDocument();
+    expect(onChooseLevel).not.toHaveBeenCalled();
+  });
+
+  it('says so when the choice couldn’t be saved, and keeps it to try again', async () => {
+    const onChooseLevel = vi.fn<OnChooseLevel>(() => Promise.reject(new Error('full')));
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
+      me: authorOf('ben'),
+      onChooseLevel,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    await user.click(screen.getByRole('button', { name: 'Save your choice' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your choice couldn’t be saved on this device. Try again.',
+    );
+    expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save your choice' })).toBeVisible();
+  });
+
+  it('saves once, however often Save is pressed while it saves', async () => {
+    let finish: () => void = () => undefined;
+    const onChooseLevel = vi.fn<OnChooseLevel>(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
+      me: authorOf('ben'),
+      onChooseLevel,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    const save = screen.getByRole('button', { name: 'Save your choice' });
+    await user.click(save);
+    await user.click(save);
+    expect(onChooseLevel).toHaveBeenCalledTimes(1);
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
+    finish();
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Member' })).toBeEnabled();
+    });
+  });
+
+  it('reads Sent once the change has left the outbox', async () => {
+    const { user, rerender } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
+      me: authorOf('ben'),
+    });
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    await user.click(screen.getByRole('button', { name: 'Save your choice' }));
+    rerender({ pending: [pendingLevel(authorOf('ben'), FOLLOWING)] });
+    const log = testGroup({ joiners: ['Ben'], levels: { Ben: FOLLOWING } });
+    rerender({ state: log.state, pending: [] });
+    expect(within(section('People')).getByRole('status')).toHaveTextContent('Sent');
+    expect(rows()).toEqual(['Ana, Co-Creator', 'Ben, Member']);
+  });
+
+  it('offers no involvement choice before this device’s join is back from the relay', () => {
+    setup({}, authorOf('cy'));
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 
   it.each([

@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 import { createGroup, joinGroup, lookupInvite } from '../app/actions';
 import { App } from '../app/App';
 import type { AppServices } from '../app/services';
+import { type Level, LEVELS } from '../engine/capabilities';
 import { testDevice, type TestDevice } from './appServices';
 import type { FakeRelay } from './fakeRelay';
 
@@ -25,14 +26,19 @@ export const FOUNDING = {
   text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
 };
 
+/** The level the helpers join at unless a test names one: the creating level, so joiners can do all the founder can. */
+const [, , CREATING] = LEVELS;
+
 /**
  * Opens one device per name on `fake`; the first founds the group with `chat`,
- * the others join from its invite, and every device syncs.
+ * the others join from its invite at `levels[name]` (a Co-Creator unless
+ * named), and every device syncs.
  */
 export async function members(
   fake: FakeRelay,
   names: readonly string[],
   chat: string | null = null,
+  levels: Readonly<Record<string, Level>> = {},
 ): Promise<TestMembers> {
   const devices = await Promise.all(names.map((name) => testDevice(fake, name.toLowerCase())));
   const [founder, ...joiners] = devices;
@@ -43,25 +49,27 @@ export async function members(
   const { groupId } = created;
   await founder.services.sync.syncOnce();
   for (const [index, device] of joiners.entries()) {
-    await joinFrom(founder, groupId, device, names[index + 1] ?? '');
+    const name = names[index + 1] ?? '';
+    await joinFrom(founder, groupId, device, name, levels[name] ?? CREATING);
   }
   for (const device of devices) await device.services.sync.syncOnce();
   return { groupId, devices };
 }
 
-/** `device` joins `groupId` as `name` from `founder`'s invite, and syncs. */
+/** `device` joins `groupId` as `name`, at `level`, from `founder`'s invite, and syncs. */
 async function joinFrom(
   founder: TestDevice,
   groupId: string,
   device: TestDevice,
   name: string,
+  level: Level,
 ): Promise<void> {
   const group = await founder.services.store.getGroup(groupId);
   if (group === undefined) throw new Error('Expected the group.');
   const invite = { mailbox: group.mailbox, secret: group.secret };
   const found = await lookupInvite(device.services, invite);
   if (found.kind !== 'found') throw new Error('Expected the invite to open.');
-  await joinGroup(device.services, invite, found.group, name);
+  await joinGroup(device.services, invite, found.group, name, level);
   await device.services.sync.syncOnce();
 }
 
@@ -71,9 +79,10 @@ export async function joinLater(
   founder: TestDevice,
   groupId: string,
   name: string,
+  level: Level = CREATING,
 ): Promise<TestDevice> {
   const device = await testDevice(fake, name.toLowerCase());
-  await joinFrom(founder, groupId, device, name);
+  await joinFrom(founder, groupId, device, name, level);
   return device;
 }
 

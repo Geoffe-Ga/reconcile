@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { authorOf, signedAs } from '../test/keys';
-import { can } from './capabilities';
+import { can, DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from './capabilities';
 import type { EventDraft, ProposalBody, VoteBody } from './event';
 import { fold, type LogRecord, NOTE_MAX, TITLE_MAX, VOTE_WINDOW_MINUTES, WHY_MAX } from './fold';
 
@@ -26,10 +26,15 @@ class TestLog {
     return this.group;
   }
 
-  join(received: number, author: string): string {
+  join(received: number, author: string, level?: string): string {
     const ts = received * 60_000;
-    const body = { name: author };
+    const body = { name: author, ...(level === undefined ? {} : { level }) };
     return this.add(received, author, { type: 'join', group: this.group, ts, body });
+  }
+
+  level(received: number, author: string, level: string): string {
+    const ts = received * 60_000;
+    return this.add(received, author, { type: 'level', group: this.group, ts, body: { level } });
   }
 
   propose(received: number, author: string, body: Partial<ProposalBody> = {}): string {
@@ -85,14 +90,75 @@ describe('fold', () => {
     expect(fold(log.records, R).chat).toBeNull();
   });
 
-  it('makes every member hold the MVP level, so can() lets them act', () => {
+  it('makes the founder a Co-Creator and a joiner who names no level a Collaborator', () => {
     const log = new TestLog();
     log.genesis(R);
     log.join(R + 1, 'ben');
     const state = fold(log.records, R + 1);
+    expect(state.members.map((m) => m.level)).toEqual([FOUNDER_LEVEL, DEFAULT_JOIN_LEVEL]);
     expect(can(state, authorOf('ana'), 'propose')).toBe(true);
     expect(can(state, authorOf('ben'), 'vote')).toBe(true);
+    expect(can(state, authorOf('ben'), 'propose')).toBe(false);
     expect(can(state, authorOf('cal'), 'read')).toBe(false);
+  });
+
+  it.each(LEVELS)('admits a joiner at the level %s they name', (level) => {
+    const log = new TestLog();
+    log.genesis(R);
+    log.join(R + 1, 'ben', level);
+    expect(fold(log.records, R + 1).members[1]).toEqual({
+      author: authorOf('ben'),
+      name: 'ben',
+      level,
+      seq: 2,
+    });
+  });
+
+  it('moves a member to each level they choose, in order, keeping their name and seq', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    log.join(R + 1, 'ben');
+    const [follow, , create] = LEVELS;
+    log.level(R + 2, 'ben', create);
+    log.level(R + 3, 'ben', follow);
+    const state = fold(log.records, R + 3);
+    expect(state.members[1]).toEqual({
+      author: authorOf('ben'),
+      name: 'ben',
+      level: follow,
+      seq: 2,
+    });
+    expect(state.ignored).toEqual([]);
+    expect(can(state, authorOf('ben'), 'vote')).toBe(false);
+  });
+
+  it('leaves the other members alone when one changes level', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    log.join(R + 1, 'ben');
+    log.join(R + 2, 'cal');
+    log.level(R + 3, 'cal', 'admin');
+    const [follow] = LEVELS;
+    log.level(R + 4, 'ben', follow);
+    const state = fold(log.records, R + 4);
+    expect(state.members.map((m) => m.level)).toEqual([FOUNDER_LEVEL, follow, DEFAULT_JOIN_LEVEL]);
+    expect(state.ignored.map((record) => record.seq)).toEqual([4]);
+  });
+
+  it('snapshots who would vote when a Proposal opens, and keeps that set after a level change', () => {
+    const log = new TestLog();
+    log.genesis(R);
+    const [follow] = LEVELS;
+    log.join(R + 1, 'ben', follow);
+    log.join(R + 2, 'cal');
+    const proposal = log.propose(R + 10, 'ana');
+    log.level(R + 11, 'ben', DEFAULT_JOIN_LEVEL);
+    log.level(R + 12, 'cal', follow);
+    const state = fold(log.records, R + 12);
+    expect(state.proposals.find((p) => p.id === proposal)?.eligible).toEqual([
+      authorOf('ana'),
+      authorOf('cal'),
+    ]);
   });
 
   it('carries a Proposal’s fields, its one version and its deadline', () => {

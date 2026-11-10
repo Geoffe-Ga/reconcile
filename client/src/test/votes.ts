@@ -4,9 +4,13 @@
  * hand-written state. Each member signs with the test key of their name in
  * lower case, so `authorOf('ana')` names Ana.
  */
+import { type Level, LEVELS } from '../engine/capabilities';
 import type { EventDraft, Score } from '../engine/event';
 import { fold, type GroupState, type LogRecord, VOTE_WINDOW_MINUTES } from '../engine/fold';
 import { signedAs } from './keys';
+
+/** The level a member joins at unless a test names one: the creating level. */
+const [, , CREATING] = LEVELS;
 
 /** The relay minute the log starts at. */
 export const START_MINUTE = 29_000_000;
@@ -26,8 +30,10 @@ export interface LogBuilder {
   readonly group: string;
   /** The relay minute the next record is received at. */
   minute: number;
-  /** Adds a join by `name`. */
-  join(name: string): void;
+  /** Adds a join by `name`, at `level` (a Co-Creator unless named). */
+  join(name: string, level?: Level): void;
+  /** Adds `name`'s move to `level`. */
+  level(name: string, level: string): void;
   /** Adds a Proposal by `name`, returning its id. */
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
@@ -42,6 +48,8 @@ export interface LogBuilder {
 export interface GroupStart {
   readonly founder?: string;
   readonly members?: readonly string[];
+  /** Each member's level at join, by name; a member not named joins as a Co-Creator. */
+  readonly levels?: Readonly<Record<string, Level>>;
   readonly atoms?: readonly string[];
   readonly chat?: string;
 }
@@ -71,8 +79,11 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
   builder.group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   const { group } = builder;
   const log: LogBuilder = Object.assign(builder, {
-    join(name: string) {
-      add(name, { type: 'join', group, ts: 0, body: { name } });
+    join(name: string, level: Level = CREATING) {
+      add(name, { type: 'join', group, ts: 0, body: { name, level } });
+    },
+    level(name: string, level: string) {
+      add(name, { type: 'level', group, ts: 0, body: { level } });
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {
@@ -101,7 +112,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       return fold(records, relayNow ?? builder.minute);
     },
   });
-  for (const member of members) log.join(member);
+  for (const member of members) log.join(member, start.levels?.[member]);
   return log;
 }
 

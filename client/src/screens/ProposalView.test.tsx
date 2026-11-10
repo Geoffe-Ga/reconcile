@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { formatMinute } from '../app/time';
+import { LEVELS } from '../engine/capabilities';
 import {
   createEvent,
   type EventInput,
@@ -17,6 +18,8 @@ import { authorOf } from '../test/keys';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
 
 type OnVote = (score: Score, note: string) => Promise<void>;
+
+const [FOLLOWING, VOTING] = LEVELS;
 
 interface Setup {
   readonly state: GroupState;
@@ -203,6 +206,77 @@ describe('ProposalView', () => {
     expect(radios()).toEqual([]);
     expect(screen.queryByRole('button', { name: /your vote/ })).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('never sends a late joiner to change their level, when their level votes', () => {
+    const { log, proposalId } = openVote();
+    log.join('Cy');
+    setup({ state: log.state(), proposalId, me: authorOf('cy') });
+    expect(screen.queryByText(/voting level/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /involvement/ })).not.toBeInTheDocument();
+  });
+
+  it('tells a Member why they can’t vote, and where they choose their level (#166)', async () => {
+    const log = groupLog({ members: ['Ben', 'Kim'], levels: { Kim: FOLLOWING } });
+    const proposalId = log.propose('ana', PROPOSAL);
+    setup({ state: log.state(), proposalId, me: authorOf('kim') });
+    const vote = screen.getByRole('region', { name: 'Your vote' });
+    expect(vote).toHaveTextContent(
+      'You weren’t at a voting level when this opened, so you can’t vote on it.',
+    );
+    expect(vote).not.toHaveTextContent('You joined after this opened');
+    expect(within(vote).getByRole('link', { name: 'Change your involvement' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}`,
+    );
+    expect(radios()).toEqual([]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps that reason, with no pills, after a Member steps up while it’s open', () => {
+    const log = groupLog({ members: ['Ben', 'Kim'], levels: { Kim: FOLLOWING } });
+    const proposalId = log.propose('ana', PROPOSAL);
+    log.level('kim', VOTING);
+    setup({ state: log.state(), proposalId, me: authorOf('kim') });
+    expect(
+      screen.getByText('You weren’t at a voting level when this opened, so you can’t vote on it.'),
+    ).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+    expect(radios()).toEqual([]);
+  });
+
+  it('tells someone who stepped down since it opened how to vote on it again', async () => {
+    const { log, proposalId } = openVote();
+    log.level('ben', FOLLOWING);
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    const vote = screen.getByRole('region', { name: 'Your vote' });
+    expect(vote).toHaveTextContent(
+      'You’re following this group. Choose Collaborator or Co-Creator to vote or propose.',
+    );
+    expect(vote).not.toHaveTextContent(/opened/);
+    expect(within(vote).getByRole('link', { name: 'Change your involvement' })).toBeVisible();
+    expect(radios()).toEqual([]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a closed Proposal’s ballot, unchangeable, to someone in its eligible set who stepped down', () => {
+    const { log, proposalId } = openVote();
+    log.vote('ben', proposalId, 3);
+    log.level('ben', FOLLOWING);
+    const deadline = deadlineOf(START_MINUTE);
+    setup({ state: log.state(deadline), proposalId, me: authorOf('ben'), now: deadline });
+    expect(screen.getByText('Voting has closed, so this ballot can’t change.')).toBeVisible();
+    expect(screen.getByRole('radio', { name: '3 · Supportive' })).toBeChecked();
+    expect(screen.queryByText(/You’re following this group/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+  });
+
+  it('gives the ballot back once they step up again before the deadline', () => {
+    const { log, proposalId } = openVote();
+    log.level('ben', FOLLOWING);
+    log.level('ben', VOTING);
+    setup({ state: log.state(), proposalId, me: authorOf('ben') });
+    expect(radios()).toHaveLength(5);
   });
 
   it('disables the ballot once relay time passes the deadline, before the close syncs', () => {

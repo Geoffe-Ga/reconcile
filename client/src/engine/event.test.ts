@@ -5,6 +5,7 @@ import { signRecord } from '../crypto/record';
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { concat } from '../test/bytes';
 import { authorOf, testKeys } from '../test/keys';
+import { LEVELS } from './capabilities';
 import {
   base64url,
   createEvent,
@@ -177,10 +178,29 @@ describe('parseEvent', () => {
     });
     const join = parseEvent(json(envelope('join', { name: 'Ben', token: 'later' })));
     expect(join?.event.body).toEqual({ name: 'Ben' });
+    const level = parseEvent(json(envelope('level', { level: 'steward', name: 'Ben' })));
+    expect(level?.event.body).toEqual({ level: 'steward' });
+  });
+
+  it('keeps a join’s level as written, known or not, so the fold decides', () => {
+    for (const level of [...LEVELS, 'admin', '']) {
+      const parsed = parseEvent(json(envelope('join', { name: 'Ben', level })));
+      expect(parsed?.event).toMatchObject({ type: 'join', body: { name: 'Ben', level } });
+    }
+  });
+
+  it('reads a level event, whose body names the level its author chooses', () => {
+    const [, middle] = LEVELS;
+    const bytes = json(envelope('level', { level: middle }));
+    expect(parseEvent(bytes)).toEqual({
+      event: { v: 1, type: 'level', group: 'g1', author: ANA, ts: 1, body: { level: middle } },
+      id: eventId(bytes),
+    });
   });
 
   it.each([
     ['genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] }],
+    ['join', { name: 'Ben' }],
     ['proposal', { atom: 'a', title: 't', why: 'w', text: 'x' }],
     ['vote', { proposal: 'p', scores: {} }],
   ])('leaves an absent optional field absent on a %s', (type, body) => {
@@ -243,6 +263,10 @@ describe('parseEvent', () => {
     ['genesis without a name', 'genesis', { founder: 'A', title: 'T', atoms: [] }],
     ['genesis without a title', 'genesis', { name: 'G', founder: 'A', atoms: [] }],
     ['join without a name', 'join', {}],
+    ['join with a numeric level', 'join', { name: 'Ben', level: 2 }],
+    ['join with a null level', 'join', { name: 'Ben', level: null }],
+    ['level without a level', 'level', {}],
+    ['level with a list of levels', 'level', { level: ['admin'] }],
     ['proposal without text', 'proposal', { atom: 'a', title: 't', why: 'w' }],
     ['proposal without an atom', 'proposal', { title: 't', why: 'w', text: 'x' }],
     ['proposal without a title', 'proposal', { atom: 'a', why: 'w', text: 'x' }],

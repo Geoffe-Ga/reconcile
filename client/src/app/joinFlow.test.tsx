@@ -94,14 +94,15 @@ describe('create, invite by link, join, and read the Document', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Riverside Tenants' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Join group' }));
 
-    // B lands on Group home, with both names once the join is back from the relay.
+    // B lands on Group home once the join is back from the relay: both names, and B a
+    // Collaborator, the level Join preselects.
     const people = await screen.findByRole('region', { name: 'People' });
     await waitFor(() => {
       expect(
         within(people)
           .getAllByRole('listitem')
           .map((item) => item.textContent),
-      ).toEqual(['Ana', 'Ben']);
+      ).toEqual(['Ana, Co-Creator', 'Ben, Collaborator']);
     });
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',

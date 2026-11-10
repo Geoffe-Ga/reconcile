@@ -5,6 +5,7 @@ import { Ballot } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
 import { Countdown } from '../app/Countdown';
 import { latestLink } from '../app/latestLink';
+import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { SendStatus } from '../app/SendStatus';
@@ -151,13 +152,43 @@ function myBallot(props: ProposalViewProps, proposal: Proposal) {
   };
 }
 
+/**
+ * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
+ * Outside its eligible set, they either joined after it opened or weren't at a
+ * voting level then. Inside it, they get the ballot, unchangeable once voting
+ * has closed; while it's open, they need a level that votes now, and choosing
+ * one gives them the ballot back.
+ */
+function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
+  const { state, me, now } = props;
+  if (proposal.eligible.includes(me)) {
+    const closed = proposal.final || now >= proposal.deadline;
+    return closed || can(state, me, 'vote') ? null : messages.levels.following;
+  }
+  const member = state.members.find((candidate) => candidate.author === me);
+  return member !== undefined && member.seq < proposal.seq
+    ? messages.proposal.notVotingLevel
+    : messages.proposal.joinedAfter;
+}
+
+/** Why they can't vote, and where they change their level when theirs doesn't vote now. */
+function NoVote({ state, me, reason }: { state: GroupState; me: string; reason: string }) {
+  const levelDoesntVote = can(state, me, 'read') && !can(state, me, 'vote');
+  return (
+    <div className="stack">
+      <p className="lede">{reason}</p>
+      {levelDoesntVote ? <ChangeInvolvement groupId={state.group ?? ''} /> : null}
+    </div>
+  );
+}
+
 function Vote({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, me, now, reachable, onVote } = props;
-  const eligible = proposal.eligible.includes(me) && can(state, me, 'vote');
+  const reason = whyNoVote(props, proposal);
   const mine = myBallot(props, proposal);
   return (
     <Block title={messages.ballot.heading} className="vote">
-      {eligible ? (
+      {reason === null ? (
         <Ballot
           key={proposal.id}
           initialScore={mine.score}
@@ -169,7 +200,7 @@ function Vote({ props, proposal }: { props: ProposalViewProps; proposal: Proposa
           onVote={onVote}
         />
       ) : (
-        <p className="lede">{messages.proposal.notEligible}</p>
+        <NoVote state={state} me={me} reason={reason} />
       )}
     </Block>
   );

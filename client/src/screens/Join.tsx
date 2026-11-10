@@ -3,9 +3,11 @@ import { Button, Form, Link } from 'react-aria-components';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
 import { type Invite, parseInvitePayload } from '../app/invite';
+import { LevelPicker } from '../app/LevelPicker';
 import { messages } from '../app/messages';
 import { replaceRoute, routeHref } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
+import { DEFAULT_JOIN_LEVEL, type Level } from '../engine/capabilities';
 
 /** Props for {@link Join}. */
 export interface JoinProps {
@@ -15,8 +17,13 @@ export interface JoinProps {
   readonly heldInvite: Invite | null;
   /** Reads the invite's mailbox, once per invite and once per Try again. */
   readonly lookup: (invite: Invite) => Promise<InviteLookup>;
-  /** Joins the found group under a name; false when that didn't finish. */
-  readonly onJoin: (invite: Invite, group: FoundGroup, name: string) => Promise<boolean>;
+  /** Joins the found group under a name, at a level; false when that didn't finish. */
+  readonly onJoin: (
+    invite: Invite,
+    group: FoundGroup,
+    name: string,
+    level: Level,
+  ) => Promise<boolean>;
 }
 
 type Phase = { readonly kind: 'loading' } | InviteLookup;
@@ -79,13 +86,14 @@ interface JoinFormProps {
 
 function JoinForm({ invite, group, onJoin }: JoinFormProps) {
   const [failed, setFailed] = useState(false);
+  const [level, setLevel] = useState<Level>(DEFAULT_JOIN_LEVEL);
   const busy = useRef(false);
 
   const join = async (name: string) => {
     if (busy.current) return;
     busy.current = true;
     setFailed(false);
-    const joined = await onJoin(invite, group, name).catch(() => false);
+    const joined = await onJoin(invite, group, name, level).catch(() => false);
     busy.current = false;
     if (!joined) setFailed(true);
   };
@@ -118,6 +126,7 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
           isRequired
           validate={checkName}
         />
+        <LevelPicker value={level} onChange={setLevel} />
         <p className="lede">{messages.join.visibility}</p>
         {failed ? (
           <p role="alert" className="form-error">
@@ -134,7 +143,8 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
 
 /**
  * Join (`#/join/{payload}`): reads the invite, takes its secret out of the
- * address bar, finds the group in its mailbox, then asks for a name.
+ * address bar, finds the group in its mailbox, then asks for a name and how
+ * involved the person wants to be, preselecting Collaborator.
  */
 export function Join({ payload, heldInvite, lookup, onJoin }: JoinProps) {
   const [source, setSource] = useState(() => ({

@@ -1,11 +1,13 @@
 /**
  * Properties of the fold (fast-check): every device that folds the same relay
- * records builds the same state, and the Document changes only on a final pass.
+ * records builds the same state, the Document changes only on a final pass,
+ * and a level change never reaches back into a Proposal that's already open.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { signedAs } from '../test/keys';
+import { LEVELS } from './capabilities';
 import { type EventDraft, parseRecord, type Score } from './event';
 import { fold, type LogRecord, VOTE_WINDOW_MINUTES } from './fold';
 
@@ -50,6 +52,10 @@ class Log {
   propose(received: number, atom: string, text: string): string {
     const body = { atom, title: 'T', why: 'W', text };
     return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  level(received: number, who: number, level: string): string {
+    return this.add(received, member(who), { type: 'level', body: { level } });
   }
 
   vote(received: number, voter: number, proposal: string, value: Score): string {
@@ -149,6 +155,33 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('keeps an open Proposal’s eligible set and deadline whatever levels its members move to', () => {
+    const change = fc.record({
+      who: fc.nat({ max: 11 }),
+      level: fc.constantFrom<string>(...LEVELS, 'admin'),
+    });
+    const scenario = fc.record({
+      count: fc.integer({ min: 1, max: 12 }),
+      before: fc.array(change, { maxLength: 6 }),
+      after: fc.array(change, { maxLength: 12 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, before, after }) => {
+        const opened = (changesAfter: readonly { who: number; level: string }[]) => {
+          const log = Log.founded(count);
+          // Before it opens, anyone but the proposer (member 0) may move; afterwards, anyone.
+          before.forEach(({ who, level }, i) => log.level(R + 13 + i, 1 + (who % count), level));
+          log.propose(R + 20, `${log.group}.0`, 'New text');
+          changesAfter.forEach(({ who, level }, i) => log.level(R + 30 + i, who % count, level));
+          const [p] = fold(log.records, R + 100).proposals;
+          if (p === undefined) throw new Error('Expected the Proposal to open.');
+          return { eligible: p.eligible, deadline: p.deadline, final: p.final };
+        };
+        expect(opened(after)).toEqual(opened([]));
+      }),
+    );
+  });
+
   it('changes only the target Atom on a final pass, and no Atom on a fail or lapse', () => {
     const scenario = fc.record({
       atoms: fc.array(fc.string({ unit: 'grapheme', maxLength: 12 }), {
@@ -183,13 +216,15 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
 });
 
 /**
- * One step of a random log, after a wait: a join, a Proposal, a ballot, a repeat, garbage, or a
- * forged copy of an earlier record with one byte changed.
+ * One step of a random log, after a wait: a join, a level change (to a known level or not), a
+ * Proposal, a ballot, a repeat, garbage, or a forged copy of an earlier record with one byte
+ * changed.
  */
 const step = fc.record({
-  kind: fc.constantFrom('join', 'propose', 'vote', 'repeat', 'garbage', 'forge'),
+  kind: fc.constantFrom('join', 'level', 'propose', 'vote', 'repeat', 'garbage', 'forge'),
   who: fc.integer({ min: 0, max: 5 }),
   target: fc.integer({ min: 0, max: 3 }),
+  level: fc.constantFrom<string>(...LEVELS, 'admin'),
   score,
   wait: fc.integer({ min: 0, max: 4_000 }),
 });
@@ -211,6 +246,9 @@ function applyStep(log: Log, proposals: string[], s: Step, received: number): vo
   switch (s.kind) {
     case 'join':
       log.add(received, member(s.who), { type: 'join', body: { name: 'N' } });
+      break;
+    case 'level':
+      log.level(received, s.who, s.level);
       break;
     case 'propose':
       proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));

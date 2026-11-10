@@ -164,7 +164,7 @@
             "group": "@1",
             "author": "%ben",
             "ts": 1762500060000,
-            "body": { "name": "Ben" }
+            "body": { "name": "Ben", "level": "co-creator" }
           }
         },
         {
@@ -928,7 +928,7 @@
             "group": "@1",
             "author": "%ben",
             "ts": 1762500060000,
-            "body": { "name": "Ben" }
+            "body": { "name": "Ben", "level": "co-creator" }
           }
         },
         {
@@ -1125,7 +1125,7 @@
             "group": "@1",
             "author": "%ben",
             "ts": 1762500060000,
-            "body": { "name": "Ben" }
+            "body": { "name": "Ben", "level": "co-creator" }
           }
         },
         {
@@ -1683,7 +1683,7 @@
             "group": "@1",
             "author": "%ben",
             "ts": 1762500060000,
-            "body": { "name": "Ben" }
+            "body": { "name": "Ben", "level": "co-creator" }
           }
         },
         {

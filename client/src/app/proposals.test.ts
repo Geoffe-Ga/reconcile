@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { publicKeyOf } from '../crypto/sign';
+import { LEVELS } from '../engine/capabilities';
 import { base64url, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { createGroup } from './actions';
-import { castBallot, propose, type ProposalValues } from './proposals';
+import { castBallot, chooseLevel, propose, type ProposalValues } from './proposals';
 
 freshIndexedDBPerTest();
 
@@ -198,5 +199,39 @@ describe('castBallot', () => {
     });
     const [vote] = await outbox(device, groupId);
     expect(vote?.body).toEqual({ proposal: 'proposal-1', scores: { 'proposal-1': 4 } });
+  });
+});
+
+describe('chooseLevel', () => {
+  it('queues one level event for this device’s member, and sends it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    const [follow] = LEVELS;
+    fake.offline = true;
+    await chooseLevel(device.services, groupId, follow);
+    expect(await outbox(device, groupId)).toEqual([
+      {
+        v: 1,
+        type: 'level',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: { level: follow },
+      },
+    ]);
+
+    fake.offline = false;
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(state.members.map((member) => member.level)).toEqual([follow]);
+    expect(group?.outbox).toEqual([]);
+  });
+
+  it('refuses to choose a level in a group this device isn’t in', async () => {
+    const fake = createFakeRelay();
+    const { device } = await founded(fake);
+    const [, vote] = LEVELS;
+    await expect(chooseLevel(device.services, 'no-such-group', vote)).rejects.toThrow();
   });
 });

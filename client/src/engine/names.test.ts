@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { newSigningKeys } from '../crypto/sign';
 import { base64url } from './event';
 import { displayName, NAME_SUFFIX_SEPARATOR } from './names';
-import { MVP_LEVEL } from './capabilities';
+import { DEFAULT_JOIN_LEVEL, type Level } from './capabilities';
 
 /** A fresh member's author key. */
 function freshKey(): string {
@@ -12,10 +12,15 @@ function freshKey(): string {
 
 /** A roster of members with these names, each under a fresh key. */
 function roster(...names: string[]): {
-  members: { author: string; name: string; level: typeof MVP_LEVEL; seq: number }[];
+  members: { author: string; name: string; level: Level; seq: number }[];
 } {
   return {
-    members: names.map((name, seq) => ({ author: freshKey(), name, level: MVP_LEVEL, seq })),
+    members: names.map((name, seq) => ({
+      author: freshKey(),
+      name,
+      level: DEFAULT_JOIN_LEVEL,
+      seq,
+    })),
   };
 }
 

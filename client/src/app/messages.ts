@@ -91,6 +91,8 @@ export const messages = {
     openProposals: 'Open Proposals',
     noProposals: 'Nothing to vote on yet.',
     people: 'People',
+    /** Read between a name and its level, as in "Ana, Co-Creator"; the screen shows a gap. */
+    levelSeparator: ',',
     invite: 'Invite people',
     copyInvite: 'Copy invite link',
     inviteField: 'Invite link',
@@ -151,7 +153,8 @@ export const messages = {
     passed: 'This passed. The Document now reads:',
     failed: 'This didn’t pass.',
     lapsed: 'Not enough people weighed in. This isn’t a no.',
-    notEligible: 'You joined after this opened, so you can’t vote on it.',
+    joinedAfter: 'You joined after this opened, so you can’t vote on it.',
+    notVotingLevel: 'You weren’t at a voting level when this opened, so you can’t vote on it.',
     missingTitle: 'This Proposal isn’t on this device',
     missing: 'Go back to your group to see its open Proposals.',
   },
@@ -191,6 +194,23 @@ export const messages = {
     added: 'added',
     removed: 'removed',
     legend: 'Added words are underlined and highlighted. Removed words are struck through.',
+  },
+  levels: {
+    label: 'Your involvement',
+    hint: 'Everyone in this group sees your choice. You can change it at any time.',
+    /** Each level's name, in `LEVELS` order (Member, Collaborator, Co-Creator). */
+    names: ['Member', 'Collaborator', 'Co-Creator'],
+    /** What each level adds, in `LEVELS` order. */
+    descriptions: [
+      'Follow along and read',
+      'Also vote, vouch and invite',
+      'Also propose changes and add versions',
+    ],
+    save: 'Save your choice',
+    failed: 'Your choice couldn’t be saved on this device. Try again.',
+    following: 'You’re following this group. Choose Collaborator or Co-Creator to vote or propose.',
+    notProposing: 'You vote on changes here. Choose Co-Creator to propose them.',
+    change: 'Change your involvement',
   },
   document: {
     pageTitle: 'Document',

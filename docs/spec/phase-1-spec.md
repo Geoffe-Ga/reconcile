@@ -141,19 +141,20 @@ ADR-0006, as ADR-0073 cut it: signed UTF-8 JSON, applied in the relay's order.
 | Type | Body | Valid when | Built by |
 |---|---|---|---|
 | `genesis` | `{name, chat?, founder, title, atoms}`: the group name, an optional chat link, the founder's name, the Document title and its Atoms | it is the first valid event in the mailbox | #63 |
-| `join` | `{name, token?}`: the joiner's name, and the inviter's token | the author isn't a member yet | #63 (the token: #73) |
+| `join` | `{name, level?, token?}`: the joiner's name, their involvement level (Collaborator when missing), and the inviter's token | the author isn't a member yet, and `level`, when present, is one of `LEVELS` | #63 (the level: #90; the token: #73) |
+| `level` | `{level}`: the involvement level the author moves to | the author is a member, and `level` is one of `LEVELS` other than the one they hold | #90 |
 | `proposal` | `{atom, title, why, text, link?}`: the target Atom (an add carries `target` instead, #75), the title, the justification, the proposed text and an optional discussion link | the author holds `propose`, the Atom exists and has no open Proposal (#72), the title is 1–120 code points, and the justification is at most 2,000 | #63 |
 | `version` | `{proposal, text}` | the author holds `propose`, and the Proposal is open with fewer than 3 versions | #72 |
 | `vote` | `{proposal, scores, note?}`: a score from 0 to 4 for each version it names (at least one), and one note | the author is eligible and holds `vote`, every score names a version already on the Proposal, the note is at most 280 code points and isn't blank when any score is 0, and the relay received the ballot before the deadline and before any early close | #63 |
 | `leave` | `{}` | the author is a member | #77 |
 
-The founder becomes a member at genesis. Genesis Atoms get the ids `${genesisId}.${i}`, and every Atom keeps a document id, the genesis id, which #92 builds on.
+The founder becomes a member at genesis, as a Co-Creator. Genesis Atoms get the ids `${genesisId}.${i}`, and every Atom keeps a document id, the genesis id, which #92 builds on.
 
 ### Proposals and ballots
 
 - **Versions** ([ADR-0004](../adr/0004-competing-versions-go-to-ballot.md), #72). A Proposal's own text is version 1, and its id is the Proposal's id. A `version` event's id is its own event id. Versions keep relay order. An Atom has at most one open Proposal, so new wording joins it as a version.
 - **Targets** (#75). An edit names an `atom`. An add carries `target: {kind: "add", after: <atom id> | null}` instead, and the new Atom's id is the Proposal's id. An edit whose version text is `""` removes the Atom, and the fold then ignores later Proposals on it.
-- **Eligibility** ([ADR-0015](../adr/0015-anti-capture.md), #77). The eligible voters are the members at the Proposal's place in relay order: people who joined before it and hadn't left. A later join or leave never changes an open Proposal's eligible set, quorum or early close.
+- **Eligibility** ([ADR-0015](../adr/0015-anti-capture.md), #77, #90). The eligible voters are the members at the Proposal's place in relay order for whom `wouldVote` holds: people who joined before it and hadn't left, at a level that grants `vote`. A later join, leave or level change never changes an open Proposal's eligible set, quorum or early close. A ballot also needs `vote` when the relay receives it, so someone who steps down to Member can't vote until they step back up, while the vote is open.
 - **Deadline.** The Proposal's `received` plus 10,080 minutes.
 - **Ballots.** A voter's latest valid ballot replaces their earlier one in full. A ballot that names a version not yet on the Proposal is ignored, and so is a ballot received after the deadline or the close. An ignored ballot never replaces the voter's earlier one.
 - **Close.** A Proposal closes early at the first ballot after which every eligible member's latest ballot scores every version; `closedAt` is that ballot's `received`. Otherwise it closes once `relayNow` reaches the deadline. A new version restarts the wait for an early close.
@@ -162,7 +163,18 @@ The founder becomes a member at genesis. Genesis Atoms get the ids `${genesisId}
 
 ### Capabilities
 
-`can(state, member, capability)` is the only permission check, and it's false for non-members (#63). The foundation has one level, which holds `read`, `propose`, `vote`, `invite` and `see-roster` (ADR-0073). Code never compares level names. #90 brings back three levels behind the same helper.
+`can(state, member, capability)` is the only permission check, and it's false for non-members (#63). It reads the member's level through `LEVEL_CAPABILITIES` in `client/src/engine/capabilities.ts`, the one map from levels to capabilities ([ADR-0003](../adr/0003-three-tier-involvement-levels.md), [ADR-0021](../adr/0021-level-names-and-self-selection.md), #90):
+
+| Level (id) | Capabilities |
+|---|---|
+| Member (`member`) | `read`, `see-roster` |
+| Collaborator (`collaborator`) | `read`, `see-roster`, `vote`, `vouch`, `invite` |
+| Co-Creator (`co-creator`) | `read`, `see-roster`, `vote`, `vouch`, `invite`, `propose` |
+
+- Each person chooses their level at Join and changes it with a `level` event whenever they like, and the change takes effect at once. #101 adds the earned-rights gate in front of the voting levels.
+- Every level holds `see-roster` until the hidden roster returns (ADR-0074, §12).
+- `wouldVote(state, member)` decides who enters a Proposal's eligible set: the member's level, and from #101 their voting rights, would grant `vote`. It ignores suspensions, so a suspension never shrinks the electorate (ADR-0075 §3). #102 narrows `can()` for a suspended member and leaves `wouldVote` alone.
+- Code never compares level names. Only `capabilities.ts` and the golden vectors spell out a level id, and a test fails on one anywhere else in `src/`. Screens take ids from `LEVELS` and labels from the messages module, in `LEVELS` order.
 
 ---
 
@@ -239,7 +251,7 @@ Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.m
 1. **First run** (#76). An iOS browser outside the installed app shows an install guide, plus an invite link's preview with a Copy button. Everywhere, the pilot notice comes before any key exists. It covers what's stored, what the relay sees (a device's IP address while it connects, without logging it; when messages arrive; their size class; which mailboxes a device checks), that data can be lost, and that this is a test (ADR-0056).
 2. **Start** (#65, #76, #77, #78). The groups on this device, Create group, a field to paste an invite link, and Restore a backup.
 3. **Create group** (#65, #70, #71). Group name, your name, an optional chat link, a Document title and the Document text, which splits into Atoms at blank lines. The text has the composer's Write and Preview tabs, and Preview shows each section, numbered, as it will read. A chat link must be `http:` or `https:`. A founding Document over 64,000 bytes is refused before anything is queued.
-4. **Join** (#73). "From <inviter>'s invite", then the preview as plain text, a name field with the hint "This name is only shown in this group. It doesn't have to be your real name.", and the line "People in this group will see the name you choose and how you vote." An expired or damaged link says "This invite link has expired or is damaged. Ask someone in your group for a new one." and fetches nothing.
+4. **Join** (#73). "From <inviter>'s invite", then the preview as plain text, a name field with the hint "This name is only shown in this group. It doesn't have to be your real name.", then "Your involvement" (#90): the three levels in a radio group, each with its line ("Follow along and read", "Also vote, vouch and invite", "Also propose changes and add versions"), with Collaborator preselected and the hint "Everyone in this group sees your choice. You can change it at any time.", and the line "People in this group will see the name you choose and how you vote." An expired or damaged link says "This invite link has expired or is damaged. Ask someone in your group for a new one." and fetches nothing.
 5. **Group home** (#65, #66, #74, #77, #78). In order:
    - **Needs your vote:** open Proposals you're eligible for and haven't fully scored, closing soonest first;
    - the other open Proposals, by closing date;
@@ -248,7 +260,7 @@ Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.m
    - **People.**
 
    It also holds Copy invite link with its warning (§9), Join discussion (the latest Proposal's link, or else the group's), "Can't reach the relay right now. Last synced {time}." while polling fails, the catch-up line, and a quiet card that suggests a backup.
-6. **Document view** (#65, #70, #75). Each Atom renders through `<AtomText>` in the document style, with Propose a change (or Add your version), Propose removing this section, Add a section here between Atoms, and Copy as Markdown.
+6. **Document view** (#65, #70, #75, #90). Each Atom renders through `<AtomText>` in the document style, with Propose a change (or Add your version), Propose removing this section, Add a section here between Atoms, and Copy as Markdown. Propose, Add your version and Add a section show only when `can()` grants `propose`. Otherwise a quiet card above the Document says why, with "Change your involvement" linking to Group home: "You're following this group. Choose Collaborator or Co-Creator to vote or propose." without `vote`, or "You vote on changes here. Choose Co-Creator to propose them." with it.
    - **`<AtomText>` is the only renderer of Atom text** (#70, `client/src/app/text/`), wherever Atom text appears. It uses one markdown-it instance: the `commonmark` preset with `html: false` passed explicitly (the preset turns HTML on), images disabled, no linkify and no plugins ([ADR-0023](../adr/0023-markdown-atoms.md)).
    - Its `validateLink` is `safeHref`: `new URL(href)` with no base, so a relative link fails, allowing only `http:`, `https:` and `mailto:`. The chat-link check is the same function without `mailto:`.
    - A token walker builds React elements from an allowlist: p, h2–h6 (an Atom's `#` moves down one level, clamped at h6), em, strong, ul, ol, li, a, blockquote, code, pre, br and hr. Links re-check their href and open in a new tab with `rel="noopener noreferrer"`; a link's title is dropped. Any other token, or any error, shows the Atom's source as plain text instead. Nothing is ever parsed as HTML: ESLint bans `dangerouslySetInnerHTML` and the other raw-HTML sinks across `src/`.
@@ -261,14 +273,18 @@ Built with React Aria Components and styled only from [DESIGN.md](../../DESIGN.m
    - One note per ballot. It's required when any score is 0, and labelled "What would make this a 3 for you?" when the person gives a 1 and no 0.
    - A countdown with the absolute deadline in a `<time>` element, Join discussion (the Proposal's own link, or else the group's latest), and a consent meter for each version.
    - Screens count down on the device's estimate of relay time: the last relay `now` plus the device time since that sync, or the device clock before any sync, so a device clock set to the wrong date can't move a deadline. Once that estimate reaches the deadline the ballot is disabled; the outcome shows only once the fold says the Proposal has closed (#66).
-   - Someone who joined after the Proposal opened reads "You joined after this opened, so you can't vote on it." and sees no pills.
+   - Someone who can't vote on it sees no pills, and reads why (#90, #166):
+     - someone who joined after it opened: "You joined after this opened, so you can't vote on it.";
+     - someone who was a member when it opened, at a level without `vote`: "You weren't at a voting level when this opened, so you can't vote on it.";
+     - someone in its eligible set whose level doesn't vote now: "You're following this group. Choose Collaborator or Co-Creator to vote or propose." Stepping back up gives them the ballot while the vote is open.
+   - Whenever their level doesn't vote now, "Change your involvement" links to Group home.
    - After sending a Proposal or a version, Tell your group shares fixed text with no title (§9).
 9. **Result** (#74). The outcome sentence comes first.
    - A pass shows the new text full width and thanks its authors by name, with no counts, streaks or confetti.
    - Then each version's totals, individual ballots and notes under a disclosure, and "Voting ran <start> – <end>" in relay time.
    - A lapse offers Propose again. A ballot that arrived late tells its author it wasn't counted.
    - No result offers a part-ways action ([ADR-0068](../adr/0068-part-ways.md)).
-10. **People** (#65, #73, #77). Every member's name, "invited by <name>", and Leave this group. The Leave dialog says plainly that the group's keys don't change, until #98 replaces that sentence.
+10. **People** (#65, #73, #77, #90). Every member's name with their level ("Ana, Co-Creator" to a screen reader), "invited by <name>", and Leave this group. Under the list, "Your involvement" holds the same radio group as Join, at the person's level. Save your choice appears once the choice differs, and queues one `level` event. The list shows the new level once the relay returns it, and the line under Save reads "Sending…" until then, as a ballot's does. The Leave dialog says plainly that the group's keys don't change, until #98 replaces that sentence.
 11. **Settings** (#78). Save a backup (the passphrase twice, with "Nobody can recover this passphrase for you."), Restore, and Erase Reconcile from this device behind a 3-second press and hold.
 
 The restored features add their own screens (§11).

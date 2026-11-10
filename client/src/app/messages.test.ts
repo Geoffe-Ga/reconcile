@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { LEVELS } from '../engine/capabilities';
 import { messages } from './messages';
 
 /** Every string in the catalog, with functions called on a sample argument. */
@@ -41,6 +42,12 @@ describe('messages', () => {
     for (const [path, text] of strings) {
       expect(text, path).not.toMatch(/\b(pitch|push|fork|split|organization|community)\b/i);
     }
+  });
+
+  it('names and describes each level once, in LEVELS order', () => {
+    expect(messages.levels.names).toHaveLength(LEVELS.length);
+    expect(messages.levels.descriptions).toHaveLength(LEVELS.length);
+    expect(messages.levels.names).toEqual(['Member', 'Collaborator', 'Co-Creator']);
   });
 
   it('fills in names and counts', () => {

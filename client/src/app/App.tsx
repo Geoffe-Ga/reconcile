@@ -6,7 +6,7 @@
  */
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
-import { can } from '../engine/capabilities';
+import type { Level } from '../engine/capabilities';
 import type { Score } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
@@ -27,7 +27,7 @@ import {
   lookupInvite,
 } from './actions';
 import { type Invite, inviteLink } from './invite';
-import { castBallot, propose, type ProposalValues } from './proposals';
+import { castBallot, chooseLevel, propose, type ProposalValues } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
 import { relayMinuteNow } from './time';
@@ -71,8 +71,8 @@ interface JoinScreenProps {
 function JoinScreen({ services, payload, heldInvite, onJoined }: JoinScreenProps) {
   const lookup = useCallback((invite: Invite) => lookupInvite(services, invite), [services]);
   const onJoin = useCallback(
-    async (invite: Invite, group: FoundGroup, name: string) => {
-      const groupId = await joinGroup(services, invite, group, name);
+    async (invite: Invite, group: FoundGroup, name: string, level: Level) => {
+      const groupId = await joinGroup(services, invite, group, name, level);
       onJoined();
       replaceRoute({ name: 'group', groupId });
       return true;
@@ -121,6 +121,8 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           copyText={services.copyText}
           now={relayMinuteNow(group, deviceNow)}
           sync={{ reachable: group.reachable, lastSyncAt: group.lastSyncAt, deviceNow }}
+          pending={group.pending}
+          onChooseLevel={(level) => chooseLevel(services, groupId, level)}
         />
       )}
     </GroupGate>
@@ -133,12 +135,7 @@ function DocumentScreen({ groupId }: { readonly groupId: string }) {
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me }) => (
-        <DocumentView
-          state={state}
-          {...(can(state, me.author, 'propose') ? { onPropose: openComposer } : {})}
-        />
-      )}
+      {({ state, me }) => <DocumentView state={state} me={me.author} onPropose={openComposer} />}
     </GroupGate>
   );
 }
