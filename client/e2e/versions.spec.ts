@@ -54,13 +54,14 @@ async function fitsWidth(page: Page): Promise<boolean> {
   );
 }
 
-/** Once the vote has closed: Ben's version passed, and the Document reads it. */
+/** Once the vote has closed: Ben's version passed, his name and Ana's are thanked, and the Document reads it. */
 async function expectBensVersion(person: Person): Promise<void> {
   const { page } = person;
   const result = page.getByRole('region', { name: 'Result' });
-  await expect(result.getByRole('paragraph')).toHaveText([
+  await expect(result.locator('.result-outcome').getByRole('paragraph')).toHaveText([
     'Version 2 passed. The Document now reads:',
     BEN_TEXT,
+    'Thank you, Ben and Ana.',
   ]);
   await expectAccessible(person, 'Result');
   await page.getByRole('link', { name: GROUP }).click();

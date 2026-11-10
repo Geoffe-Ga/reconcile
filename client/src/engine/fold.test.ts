@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { authorOf, signedAs } from '../test/keys';
 import { can, DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from './capabilities';
 import type { EventDraft, ProposalBody, VoteBody } from './event';
-import { fold, type LogRecord, NOTE_MAX, TITLE_MAX, WHY_MAX } from './fold';
+import { fold, type LogRecord, NOTE_MAX, proposalTally, TITLE_MAX, WHY_MAX } from './fold';
 import { DEFAULT_RULES, defaultWindowMinutes } from './rules';
 
 const R = 29_375_000;
@@ -49,6 +49,12 @@ class TestLog {
   vote(received: number, author: string, body: VoteBody): string {
     const ts = received * 60_000;
     return this.add(received, author, { type: 'vote', group: this.group, ts, body });
+  }
+
+  version(received: number, author: string, proposal: string, text: string): string {
+    const ts = received * 60_000;
+    const body = { proposal, text };
+    return this.add(received, author, { type: 'version', group: this.group, ts, body });
   }
 }
 
@@ -266,5 +272,33 @@ describe('fold', () => {
     const copy = log.records.map((r) => ({ ...r, bytes: r.bytes.slice() }));
     fold(log.records, R + 20 + WINDOW);
     expect(log.records).toEqual(copy);
+  });
+});
+
+describe('proposalTally', () => {
+  it('tallies each version’s latest scores, in ballot order, as the fold settles the outcome', () => {
+    const { log, proposal } = threeMembersAndAProposal();
+    const second = log.version(R + 11, 'ana', proposal, 'Other');
+    log.vote(R + 20, 'ana', { proposal, scores: { [proposal]: 4, [second]: 1 } });
+    log.vote(R + 21, 'ben', { proposal, scores: { [proposal]: 0, [second]: 3 }, note: 'No.' });
+    log.vote(R + 22, 'ben', { proposal, scores: { [proposal]: 2, [second]: 3 } });
+    const open = fold(log.records, R + 30).proposals[0];
+    if (open === undefined) throw new Error('Expected the Proposal.');
+    const detail = proposalTally(open);
+    expect(detail.bar).toEqual(DEFAULT_RULES.bars.ordinary);
+    expect(
+      detail.versions.map(({ id, scorers, sum, zeros, quorum }) => ({
+        id,
+        scorers,
+        sum,
+        zeros,
+        quorum,
+      })),
+    ).toEqual([
+      { id: proposal, scorers: 2, sum: 6, zeros: 0, quorum: 3 },
+      { id: second, scorers: 2, sum: 4, zeros: 0, quorum: 3 },
+    ]);
+    expect(detail.outcome).toEqual(open.outcome);
+    expect(detail.outcome).toEqual({ kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary });
   });
 });

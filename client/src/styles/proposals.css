@@ -130,15 +130,23 @@
   content: '▾' / '';
 }
 
-/* The outcome: its sentence first, then a pass's new text --------------- */
+/* The result (DESIGN.md, Result) -------------------------------------------
+ * The outcome sentence first; on a pass, the new text full width and thanks,
+ * with no numbers; then each version's totals, the ballots behind a
+ * disclosure, and when voting ran. Quiet: no confetti, no celebration. */
 
-.outcome {
+.result {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   padding: var(--space-5);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+
+.result-outcome {
+  display: grid;
+  gap: var(--space-3);
 }
 
 .outcome-sentence {
@@ -147,10 +155,155 @@
   text-wrap: balance;
 }
 
-.outcome .atom-card {
+.result-text {
   padding: 0;
   border: 0;
   background: none;
+}
+
+.result-thanks,
+.result-reason {
+  color: var(--body);
+  font: var(--type-body);
+}
+
+.result-again {
+  row-gap: var(--space-2);
+}
+
+.result-totals {
+  display: grid;
+  gap: var(--space-3);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.result-list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.result-version,
+.result-voter {
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.result-ballots .result-list {
+  gap: 0;
+}
+
+.result-ballot {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.result-voter {
+  font-weight: 650;
+}
+
+.result-scores {
+  padding: 0;
+  list-style: none;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.result-ran time {
+  white-space: nowrap;
+}
+
+.result-note {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--hairline);
+  color: var(--body);
+  font: var(--type-body);
+  overflow-wrap: anywhere;
+}
+
+/* The consent meter (DESIGN.md, Consent meter) -----------------------------
+ * Two plain bars under each open version: the average against its line, and
+ * the share of zeros against its line. Each is named for its line and read in
+ * words, which say everything the fill does. The fill is forest once the bar
+ * meets its line and stone before it. Widths and the line's place come from
+ * React's style prop, which sets them through the CSSOM (spec §9). */
+
+.meter {
+  display: grid;
+  gap: var(--space-3);
+  padding-block-start: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+/* With no pills above it, the meter sits at the card's foot, so cards line up. */
+.version:not(:has(.score-group)) > .meter {
+  margin-block-start: auto;
+}
+
+.meter-bar {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.meter-name {
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+.meter-line-name {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Right-aligned, even when it wraps under the name on a narrow card. */
+.meter-reading {
+  margin-inline-start: auto;
+  text-align: end;
+  color: var(--body);
+  font: var(--type-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-track {
+  position: relative;
+  height: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: var(--sunken);
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.meter-fill-met {
+  background: var(--primary);
+}
+
+/* The line the bar must reach (the average) or stay under (the zeros). */
+.meter-line {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  margin-inline-start: -1px;
+  border-radius: 1px;
+  background: var(--ink);
 }
 
 /* The ballot -------------------------------------------------------------- */

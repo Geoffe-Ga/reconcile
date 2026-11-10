@@ -151,6 +151,45 @@ describe('enqueue', () => {
   });
 });
 
+describe('enqueueAll', () => {
+  it('queues several events in order, in one change that also clears their draft', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const draft = { title: 'T', why: 'W', text: 'X', link: '' };
+    await store.writeDraft(group.groupId, 'again:p1', draft);
+    await store.enqueue(group.groupId, utf8('{"n":0}'));
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+
+    await store.enqueueAll(group.groupId, [utf8('{"n":1}'), utf8('{"n":2}')], 'again:p1');
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    const stored = await store.getGroup(group.groupId);
+    expect(stored?.outbox.map(text)).toEqual(['{"n":0}', '{"n":1}', '{"n":2}']);
+    expect(await store.readDraft(group.groupId, 'again:p1')).toBeUndefined();
+  });
+
+  it('queues none of them when one is too large for any blob, and keeps the draft', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const draft = { title: 'T', why: 'W', text: 'X', link: '' };
+    await store.writeDraft(group.groupId, 'atom-1', draft);
+
+    await expect(
+      store.enqueueAll(
+        group.groupId,
+        [utf8('{"n":1}'), new Uint8Array(MAX_PLAINTEXT_BYTES + 1)],
+        'atom-1',
+      ),
+    ).rejects.toThrow(PayloadTooLarge);
+
+    expect((await store.getGroup(group.groupId))?.outbox).toEqual([]);
+    expect(await store.readDraft(group.groupId, 'atom-1')).toEqual(draft);
+  });
+});
+
 describe('markSent', () => {
   it('removes only the first entry with those bytes', async () => {
     const store = await openStore();

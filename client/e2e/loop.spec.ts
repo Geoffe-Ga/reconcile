@@ -58,6 +58,10 @@ async function openProposal(person: Person): Promise<void> {
   await open.getByRole('link', { name: PROPOSAL }).click();
   await expect(heading(page, PROPOSAL)).toBeVisible();
   await expect(page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
+  // Nobody has scored yet, and the consent meter says so in words.
+  await expect(page.getByRole('group', { name: 'How version 1 stands so far' })).toContainText(
+    'No scores yet',
+  );
   await expectAccessible(person, 'Proposal view');
 }
 
@@ -73,19 +77,30 @@ async function score(person: Person, pill: string): Promise<void> {
   await page.getByRole('button', { name: 'Send your vote' }).click();
 }
 
-/** Once the vote has closed: the result, then the Document with the new section. */
+/**
+ * Once the vote has closed: the result, which thanks Ana with no numbers and
+ * then gives the totals, then Group home's Decided list and the Document with
+ * the new section.
+ */
 async function expectUpdate(person: Person): Promise<void> {
   const { page } = person;
   const result = page.getByRole('region', { name: 'Result' });
-  await expect(result.getByRole('paragraph')).toHaveText([
+  await expect(result.locator('.result-outcome').getByRole('paragraph')).toHaveText([
     'This passed. The Document now reads:',
     NEW_TEXT,
+    'Thank you, Ana.',
   ]);
+  await expect(result.getByRole('list', { name: 'Totals' })).toContainText(
+    'Scored by 3 · average 3.3 · no zeros',
+  );
   await expectAccessible(person, 'Result');
   await page.getByRole('link', { name: GROUP }).click();
   await expect(page.getByRole('region', { name: 'Open Proposals' })).toContainText(
     'Nothing to vote on yet.',
   );
+  await expect(
+    page.getByRole('region', { name: 'Decided' }).getByRole('link', { name: PROPOSAL }),
+  ).toContainText('Passed');
   await page.getByRole('link', { name: TITLE }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     NEW_TEXT,

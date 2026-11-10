@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { type Bar, DEFAULT_RULES } from './rules';
-import { tally, type TallyInput } from './tally';
+import { tally, tallyDetail, type TallyInput } from './tally';
 
 const ORDINARY = DEFAULT_RULES.bars.ordinary;
 const ENTRENCHED = DEFAULT_RULES.bars.entrenched;
@@ -382,6 +382,158 @@ describe('tally: properties', () => {
           const a = ordinary({ eligible, versions: [{ id: 'v1', scores }] });
           const b = ordinary({ eligible, versions: [{ id: 'v1', scores: shuffled }] });
           expect(b).toEqual(a);
+        },
+      ),
+    );
+  });
+});
+
+describe('tallyDetail: what the consent meter reads (#74)', () => {
+  it('carries the bar it tallied at, beside the outcome that carries it too', () => {
+    const detail = tallyDetail({ eligible: 3, versions: [], bar: ENTRENCHED });
+    expect(detail.bar).toBe(ENTRENCHED);
+    expect(detail.outcome).toEqual({ kind: 'lapse', bar: ENTRENCHED });
+  });
+
+  it('flags each condition at the bar it is given', () => {
+    // An average of exactly 2.5 with no zeros meets the ordinary bar and misses the entrenched one.
+    const input = { eligible: 4, versions: [{ id: 'v1', scores: [3, 2, 3, 2] }] };
+    const [ordinaryVersion] = tallyDetail({ ...input, bar: ORDINARY }).versions;
+    const [entrenchedVersion] = tallyDetail({ ...input, bar: ENTRENCHED }).versions;
+    expect(ordinaryVersion).toMatchObject({ averageMet: true, zerosMet: true, passes: true });
+    expect(entrenchedVersion).toMatchObject({ averageMet: false, zerosMet: true, passes: false });
+    const zeros = { eligible: 20, versions: [{ id: 'v1', scores: [0, ...many(19, 4)] }] };
+    expect(tallyDetail({ ...zeros, bar: ORDINARY }).versions[0]?.zerosMet).toBe(true);
+    expect(tallyDetail({ ...zeros, bar: ENTRENCHED }).versions[0]?.zerosMet).toBe(false);
+  });
+
+  it('gives each version its scorers, sum, zeros and quorum, and its pass flags, in ballot order', () => {
+    const detail = tallyDetail({
+      bar: ORDINARY,
+      eligible: 12,
+      versions: [
+        { id: 'v1', scores: [4, 4, 0, 3] },
+        { id: 'v2', scores: [2, 1] },
+      ],
+    });
+    expect(detail.versions).toEqual([
+      {
+        id: 'v1',
+        scorers: 4,
+        sum: 11,
+        zeros: 1,
+        quorum: 4,
+        atQuorum: true,
+        averageMet: true,
+        zerosMet: false,
+        passes: false,
+      },
+      {
+        id: 'v2',
+        scorers: 2,
+        sum: 3,
+        zeros: 0,
+        quorum: 4,
+        atQuorum: false,
+        averageMet: false,
+        zerosMet: true,
+        passes: false,
+      },
+    ]);
+    expect(detail.outcome).toEqual({ kind: 'fail', bar: ORDINARY });
+  });
+
+  it('meets the average at exactly 2.0 and misses the zeros at exactly 10%', () => {
+    const [atTwo] = tallyDetail({
+      bar: ORDINARY,
+      eligible: 3,
+      versions: [{ id: 'v1', scores: [2, 2, 2] }],
+    }).versions;
+    expect(atTwo).toMatchObject({ averageMet: true, zerosMet: true, passes: true });
+    const [atTen] = tallyDetail({
+      bar: ORDINARY,
+      eligible: 10,
+      versions: [{ id: 'v1', scores: [0, ...many(9, 4)] }],
+    }).versions;
+    expect(atTen).toMatchObject({ averageMet: true, zerosMet: false, passes: false });
+  });
+
+  it('meets neither condition before anyone has scored', () => {
+    const [none] = tallyDetail({
+      eligible: 5,
+      versions: [{ id: 'v1', scores: [] }],
+      bar: ORDINARY,
+    }).versions;
+    expect(none).toMatchObject({
+      scorers: 0,
+      sum: 0,
+      zeros: 0,
+      quorum: 3,
+      atQuorum: false,
+      averageMet: false,
+      zerosMet: false,
+      passes: false,
+    });
+  });
+
+  it.each([
+    { eligible: 0, quorum: 1 },
+    { eligible: 1, quorum: 1 },
+    { eligible: 2, quorum: 2 },
+    { eligible: 3, quorum: 3 },
+    { eligible: 10, quorum: 3 },
+    { eligible: 11, quorum: 4 },
+    { eligible: 15, quorum: 5 },
+    { eligible: 30, quorum: 9 },
+    { eligible: 31, quorum: 10 },
+  ])('needs $quorum scorers at $eligible eligible', ({ eligible, quorum }) => {
+    const [version] = tallyDetail({
+      eligible,
+      versions: [{ id: 'v1', scores: [] }],
+      bar: ORDINARY,
+    }).versions;
+    expect(version?.quorum).toBe(quorum);
+  });
+
+  it('is at quorum exactly when its scorers reach the quorum it reports', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 300 }), fc.integer({ min: 0, max: 120 }), (e, n) => {
+        const [version] = tallyDetail({
+          eligible: e,
+          versions: [{ id: 'v1', scores: many(n, 4) }],
+          bar: ORDINARY,
+        }).versions;
+        const needed = Math.max(1, Math.min(e, Math.max(3, Math.ceil((3 * e) / 10))));
+        expect(version?.quorum).toBe(needed);
+        expect(version?.atQuorum).toBe(n >= needed);
+      }),
+    );
+  });
+
+  it('gives tally()’s outcome, which passes exactly when a version passes all three', () => {
+    const score = fc.integer({ min: 0, max: 4 });
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 30 }),
+        fc.array(fc.array(score, { maxLength: 30 }), { minLength: 1, maxLength: 3 }),
+        (eligible, lists) => {
+          const input = {
+            eligible,
+            versions: lists.map((scores, i) => ({ id: `v${String(i)}`, scores })),
+            bar: ORDINARY,
+          };
+          const detail = tallyDetail(input);
+          expect(detail.outcome).toEqual(tally(input));
+          const anyPasses = detail.versions.some((version) => version.passes);
+          expect(detail.outcome.kind === 'pass').toBe(anyPasses);
+          for (const version of detail.versions) {
+            const average = version.scorers > 0 ? version.sum / version.scorers : 0;
+            expect(version.averageMet).toBe(version.scorers > 0 && average >= 2);
+            expect(version.zerosMet).toBe(
+              version.scorers > 0 && version.zeros / version.scorers < 0.1,
+            );
+            expect(version.passes).toBe(version.atQuorum && version.averageMet && version.zerosMet);
+          }
         },
       ),
     );
