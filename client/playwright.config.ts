@@ -21,7 +21,7 @@ required('RECONCILE_RELAY_DB');
 
 export default defineConfig({
   testDir: 'e2e',
-  // Every test runs the whole loop against one relay: one at a time, no retries.
+  // Every test runs against one relay: one at a time, no retries.
   workers: 1,
   fullyParallel: false,
   retries: 0,
@@ -34,9 +34,17 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${webPort}`,
     trace: 'retain-on-failure',
   },
+  // Desktop profiles: neither is an iPhone or iPad, so the install gate stays
+  // open for them; e2e/ios-gate.spec.ts opens iPhone profiles of its own.
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    // offline.spec.ts takes the network away from the service worker, which
+    // Playwright does in Chromium (#76).
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+      testIgnore: 'offline.spec.ts',
+    },
   ],
   webServer: [
     {

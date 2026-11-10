@@ -8,6 +8,7 @@ import { messages } from '../app/messages';
 import { replaceRoute, routeHref } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { DEFAULT_JOIN_LEVEL, type Level } from '../engine/capabilities';
+import { InvitePreview } from './InvitePreview';
 
 /** Props for {@link Join}. */
 export interface JoinProps {
@@ -111,12 +112,7 @@ function JoinForm({ invite, group, onJoin }: JoinFormProps) {
         title={group.name}
         pageTitle={messages.join.pageTitle}
       />
-      <div className="card">
-        <p className="eyebrow">{messages.join.documentLabel}</p>
-        <p className="heading-2">
-          <bdi>{group.title}</bdi>
-        </p>
-      </div>
+      <InvitePreview group={group} />
       <Form className="form" onSubmit={submit}>
         <Field
           name="name"

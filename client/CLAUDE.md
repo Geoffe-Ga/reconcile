@@ -29,6 +29,7 @@ npm run build            # production build
 - **Arguments** go to `playwright test`: `./scripts/e2e.sh --project=chromium --headed`, or `--trace on` to debug. A run that matches no test fails.
 - **Gate:** the repo root's `./scripts/check-all.sh` runs it whenever `client/`, `reconcile/`, `requirements.txt` or `scripts/relay.sh` changed, and CI's `e2e` job runs `./scripts/check-all.sh --e2e`. It stays out of this directory's `check-all.sh`, so the client gate needs no browser.
 - **Rules:** keep `bypassCSP` off, and don't add a test-only relay mode or route, or time travel (`page.clock`): the relay runs exactly as `relay.sh` starts it.
+- **Beside the loop** (#76): `offline.spec.ts` (Chromium only) reloads offline under the service worker, `ios-gate.spec.ts` opens iPhone profiles at the install gate, and `csp.spec.ts` brings the worker up under the deploy CSP. Every new profile accepts the pilot notice first (`e2e/helpers.ts`).
 
 ## Client rules
 
@@ -36,6 +37,7 @@ npm run build            # production build
 - **Nothing readable leaves the device.** Anything sent to the relay is a sealed, padded, encrypted blob (ADR-0019).
 - **No analytics, telemetry, or third-party scripts.** The app calls only the relay, the browser's push service (#99), and Discord webhooks for groups that opted in by Proposal (#119).
 - **Quiet safety:** protective features live in Settings and aren't promoted (ADR-0018).
+- **First run gates keys.** Nothing makes keys behind the iOS install gate or before the pilot notice (`src/app/FirstRunGate.tsx`, spec §8.1). The service worker is `src/net/serviceWorker.ts`, built to `/sw.js` by `build/serviceWorker.ts`; it never caches `/v1`.
 - **Keep the CSP clean.** The deploy CSP (spec §9) blocks inline `<style>` elements, `style` attributes in markup and `data:` URLs. React's `style` prop is fine: it sets styles through the CSSOM. React Aria's pressable `<style>` is claimed in `index.html`, and `src/styles/pressable.css` ships its rule instead; `src/styles/pressable.test.tsx` fails if React Aria changes it (#150).
 
 ## Toolchain

@@ -8,12 +8,9 @@
  * nothing. Each step here types into a field, clicks submit once without
  * blurring first, and checks that the click took effect.
  */
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-/** The screen's one `h1`. */
-function heading(page: Page, name: string): Locator {
-  return page.getByRole('heading', { level: 1, name });
-}
+import { acceptNotice, heading } from './helpers';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -28,6 +25,7 @@ test('one submit click acts when its blur shows or clears a field error', async 
 
   await test.step('Create group: the click that shows the chat link’s error submits', async () => {
     await page.goto('/#/create');
+    await acceptNotice(page);
     await expect(heading(page, 'Create a group')).toBeVisible();
     await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
     await page.getByRole('textbox', { name: 'Your name' }).fill('Ana');

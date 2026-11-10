@@ -5,6 +5,7 @@ import { type Invite, parseInviteLink } from '../app/invite';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
+import type { Persistence } from '../platform/persist';
 
 /** A group as Start lists it. Name and title are null until its genesis reaches the relay. */
 export interface StartGroup {
@@ -19,6 +20,8 @@ export interface StartProps {
   readonly groups: readonly StartGroup[];
   /** Opens a pasted invite. The invite travels in memory, never through the address bar. */
   readonly onOpenInvite: (invite: Invite) => void;
+  /** What the browser said about keeping this site's data, or null before it answered. */
+  readonly persistence?: Persistence | null;
 }
 
 function GroupItem({ group }: { readonly group: StartGroup }) {
@@ -41,12 +44,18 @@ function GroupItem({ group }: { readonly group: StartGroup }) {
   );
 }
 
+/** M2-03's expired-or-damaged line for anything that isn't an invite link. It never repeats the text. */
 function checkInvite(text: string): string | null {
-  return parseInviteLink(text) === null ? messages.start.inviteInvalid : null;
+  return parseInviteLink(text) === null ? messages.join.badLink : null;
 }
 
-/** Start (`#/`): the groups on this device, Create group, and a field to paste an invite link. */
-export function Start({ groups, onOpenInvite }: StartProps) {
+/**
+ * Start (`#/`): the groups on this device, Create group, and Join with an
+ * invite link, a field to paste one into. The app reads the clipboard only
+ * through that paste. When the browser may clear the app's data, one quiet
+ * line says so (ADR-0029).
+ */
+export function Start({ groups, onOpenInvite, persistence = null }: StartProps) {
   const inviteHeading = useId();
 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -95,6 +104,9 @@ export function Start({ groups, onOpenInvite }: StartProps) {
           </Button>
         </Form>
       </section>
+      {persistence === null || persistence === 'granted' ? null : (
+        <p className="caption">{messages.start.mayClear}</p>
+      )}
     </main>
   );
 }

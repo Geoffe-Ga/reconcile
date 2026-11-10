@@ -2,13 +2,16 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
+import { serviceWorker } from './build/serviceWorker.ts';
+
 export default defineConfig(({ mode }) => {
   // The app calls the relay at /v1 on its own origin. In development, and in
   // `vite preview` (which reuses server.proxy), that is ./scripts/relay.sh.
   const { RECONCILE_RELAY_PORT = '8787' } = loadEnv(mode, '.', 'RECONCILE_RELAY_');
 
   return {
-    plugins: [react()],
+    // serviceWorker() writes /sw.js, which keeps the app offline (#76).
+    plugins: [react(), serviceWorker()],
     server: {
       proxy: { '/v1': `http://127.0.0.1:${RECONCILE_RELAY_PORT}` },
     },
@@ -26,6 +29,8 @@ export default defineConfig(({ mode }) => {
           'src/**/*.test.{ts,tsx}',
           'src/test/**',
           'src/main.tsx',
+          // The worker's entry only starts src/net/serviceWorker.ts, which is tested.
+          'src/net/sw.ts',
           'src/test-setup.ts',
           'src/vite-env.d.ts',
         ],

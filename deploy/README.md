@@ -4,7 +4,7 @@ The pilot runs on one small DigitalOcean droplet that serves the app and the rel
 
 | File | What it does |
 |---|---|
-| [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app`. Caddy's own error responses get the same headers and a fixed body. Every log goes to discard |
+| [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app` (the manifest with its own `Content-Type`). Caddy's own error responses get the same headers and a fixed body. Every log goes to discard |
 | [`reconcile-relay.service`](reconcile-relay.service) | The relay under Uvicorn, as the `reconcile` user, with no access log, no proxy headers and no `Server` header |
 | [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)) |
 | [`deploy.sh`](deploy.sh) | Builds, syncs, installs, restarts and smoke-tests. Run it with `--help` for the steps |
@@ -155,4 +155,8 @@ Caddy writes some responses itself, such as a 502 while the relay is down. Those
 
 ## Not here
 
-Staging, CI deploys, deploy keys in GitHub and containers wait until after the MVP (ADR-0073 amends ADR-0041's container). So do log shipping, metrics and uptime pings. The installable PWA and its iOS install gate are #76, and real encryption is #71.
+Staging, CI deploys, deploy keys in GitHub and containers wait until after the MVP (ADR-0073 amends ADR-0041's container). So do log shipping, metrics and uptime pings. Real encryption is #71.
+
+## The installable app
+
+The build includes the web app manifest and the service worker, `/sw.js`, which keeps the app on each device so it opens offline (#76, spec §7). Both are plain files from the app's own origin, so the CSP needs no change. The worker never caches `/v1`. A deploy reaches each device in the background and applies the next time the app opens after every Reconcile window has closed: testers update by closing the app and opening it again.

@@ -48,9 +48,13 @@
 		}
 	}
 
-	# The built client (client/dist). Unknown paths get index.html.
+	# The built client (client/dist). Unknown paths get index.html. The
+	# service worker (/sw.js) keeps it offline and never caches /v1 (#76).
 	handle {
 		root * /srv/reconcile/app
+		# The web app manifest (#76): Go's MIME table doesn't always know
+		# .webmanifest, and a manifest should say what it is.
+		header /manifest.webmanifest Content-Type application/manifest+json
 		try_files {path} /index.html
 		file_server
 	}
