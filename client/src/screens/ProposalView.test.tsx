@@ -559,7 +559,8 @@ describe('ProposalView, with several versions', () => {
     expect(
       screen.getByText('You joined after this opened, so you can’t vote on it.'),
     ).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Add your version' })).toBeVisible();
+    // A newcomer adds no version until their own vote arrives (#101).
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
   });
 
   it('shows this member’s version while it waits to send', async () => {

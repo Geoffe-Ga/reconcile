@@ -144,6 +144,14 @@ describe('FirstRunGuide', () => {
     });
   });
 
+  it('shows a Co-Creator still earning a vote (#101) only the Discuss card', () => {
+    const state = groupLog({ members: ['Ben', 'Cal'], newcomers: ['Kim'] }).state();
+    showGuide(state, authorOf('kim'));
+    expect(card()).toMatchObject({ title: 'Discuss in your chat', step: '1 of 1', body: DISCUSS });
+    expect(screen.queryByText(PROPOSE)).not.toBeInTheDocument();
+    expect(screen.queryByText(VOTE)).not.toBeInTheDocument();
+  });
+
   it('waits until the relay has returned the person’s join', () => {
     showGuide(bensGroup(CREATING), authorOf('cal'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
