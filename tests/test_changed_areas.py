@@ -104,6 +104,8 @@ def test_all_flag_checks_every_area(repo: Path) -> None:
         # tests/test_e2e_script.py checks e2e.sh's ports, temp dir and order.
         ("client/scripts/e2e.sh", {"client", "python", "e2e"}),
         ("tests/test_relay.py", {"python"}),
+        # Stubs only change what mypy sees (#89's py-vapid types).
+        ("stubs/py_vapid/__init__.pyi", {"python"}),
         ("pyproject.toml", {"python"}),
         ("scripts/check-all.sh", set(AREAS)),
         (".github/workflows/ci.yml", set(AREAS)),

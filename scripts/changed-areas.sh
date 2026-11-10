@@ -84,7 +84,8 @@ while IFS= read -r path; do
         deploy/*)                                   deploy=true ;;
         # requirements.txt is what the relay runs on; scripts/relay.sh is shared tooling.
         reconcile/*|requirements.txt)               python=true; e2e=true ;;
-        tests/*|pyproject.toml|requirements*.txt|.pylintrc)
+        # stubs/ types third-party Python packages for mypy (pyproject.toml).
+        tests/*|stubs/*|pyproject.toml|requirements*.txt|.pylintrc)
                                                     python=true ;;
         # Shared contract and shared tooling: every area must re-check.
         protocol/*|scripts/*|.github/workflows/ci.yml|.pre-commit-config.yaml|.secrets.baseline)
