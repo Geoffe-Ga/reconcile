@@ -47,7 +47,8 @@ import {
 } from './proposals';
 import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
-import { shareOrCopy, type TellKind, tellPayload } from './share';
+import type { ChatDetails, ChatMoment } from './chatMessages';
+import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList } from './useGroupList';
@@ -317,8 +318,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         const onProposeAgain = () => {
           navigate({ name: 'again', groupId, proposalId });
         };
-        const onTell = (kind: TellKind, deadline: number) =>
-          shareOrCopy(tellPayload(kind, deadline, services.origin), services);
+        const onTell = (moment: ChatMoment, details: ChatDetails) =>
+          shareOrCopy(chatPayload(moment, details, services.origin), services);
         return (
           <ProposalView
             state={group.state}

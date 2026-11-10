@@ -1,90 +1,104 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { testGroup } from '../test/groups';
-import { authorOf } from '../test/keys';
-import { groupLog } from '../test/votes';
-import { browserShare, shareOrCopy, tellKind, tellPayload, tellText, type WebShare } from './share';
+import { type ChatMoment, chatDetails, chatMessage } from './chatMessages';
+import { browserShare, chatPayload, shareOrCopy, type WebShare } from './share';
 import { MINUTE_MS } from './time';
 
 /** A relay minute on Friday 14 November 2025 at 12:00 UTC. */
 const FRIDAY_NOON = Date.UTC(2025, 10, 14, 12) / MINUTE_MS;
 const URL_ = 'https://reconcile.test/';
 
-describe('tellText', () => {
-  it('is fixed copy whose only variable is the deadline, formatted on the device', () => {
-    expect(tellText('proposal', FRIDAY_NOON, 'UTC')).toBe(
-      'I proposed a change in Reconcile. Voting ends Fri 14 Nov.',
-    );
-    expect(tellText('version', FRIDAY_NOON, 'UTC')).toBe(
-      'I added a version in Reconcile. Voting ends Fri 14 Nov.',
-    );
-  });
-
-  it('dates the deadline in the device’s own time zone', () => {
-    expect(tellText('proposal', FRIDAY_NOON, 'Pacific/Kiritimati')).toBe(
-      'I proposed a change in Reconcile. Voting ends Sat 15 Nov.',
+describe('chatPayload', () => {
+  it('is the moment’s message and the app’s origin and a slash, with no path or fragment', () => {
+    expect(chatPayload('open', { deadline: FRIDAY_NOON }, 'https://reconcile.test', 'UTC')).toEqual(
+      {
+        text: 'A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.',
+        url: 'https://reconcile.test/',
+      },
     );
   });
 });
 
-describe('tellKind', () => {
-  it('offers the Proposal’s wording to its proposer, and the version’s to whoever added one', () => {
-    const log = groupLog({ members: ['Ben', 'Cal'] });
-    const p = log.propose('ana');
-    log.version('ben', p, 'Quiet after midnight.');
-    const [proposal] = log.state().proposals;
-    if (proposal === undefined) throw new Error('Expected the Proposal.');
-    expect(tellKind(proposal, authorOf('ana'))).toBe('proposal');
-    expect(tellKind(proposal, authorOf('ben'))).toBe('version');
-    expect(tellKind(proposal, authorOf('cal'))).toBeNull();
-  });
-});
-
-describe('what Tell your group shares', () => {
+describe('what Tell your group shares, at every moment', () => {
   const CANARY_GROUP = 'Canary Street Commons';
   const CANARY_TITLE = 'Canary title: open the garden';
   const CANARY_ATOM = 'Canary atom: the garden opens at dawn.';
+  const CANARY_FOUNDER = 'Canarina Founder';
+  const CANARY_JOINER = 'Canaryo Joiner';
+  /** What an invite link carries after its `#`, which no share may hold. */
+  const CANARY_FRAGMENT = '#/join/';
   const ORIGIN = 'https://reconcile.test';
+  const MOMENTS: readonly ChatMoment[] = ['open', 'version', 'closing', 'result'];
 
-  it.each(['proposal', 'version'] as const)(
-    'carries no group name, title, Document text, fragment or title field (%s)',
-    async (kind) => {
-      const { state, founder } = testGroup({
-        name: CANARY_GROUP,
-        atoms: [CANARY_ATOM],
-        proposals: [CANARY_TITLE],
-      });
-      const [proposal] = state.proposals;
-      if (proposal === undefined) throw new Error('Expected the Proposal.');
-      expect(tellKind(proposal, founder)).toBe('proposal');
-      const payload = tellPayload(kind, proposal.deadline, ORIGIN, 'UTC');
-      const share = vi.fn<WebShare>(() => Promise.resolve());
-      const copied: string[] = [];
-      const copyText = vi.fn((text: string) => {
-        copied.push(text);
-        return Promise.resolve();
-      });
+  /** Shares `moment`'s payload through Web Share, then copies it where there is none. */
+  async function shareBothWays(moment: ChatMoment, includeTitle: boolean) {
+    const { state } = testGroup({
+      name: CANARY_GROUP,
+      founder: CANARY_FOUNDER,
+      joiners: [CANARY_JOINER],
+      atoms: [CANARY_ATOM],
+      proposals: [CANARY_TITLE],
+    });
+    const [proposal] = state.proposals;
+    if (proposal === undefined) throw new Error('Expected the Proposal.');
+    const details = chatDetails(proposal, includeTitle);
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    const copied: string[] = [];
+    const copyText = vi.fn((text: string) => {
+      copied.push(text);
+      return Promise.resolve();
+    });
 
-      await shareOrCopy(payload, { share, copyText });
-      await shareOrCopy(payload, { share: undefined, copyText });
+    await shareOrCopy(chatPayload(moment, details, ORIGIN, 'UTC'), { share, copyText });
+    await shareOrCopy(chatPayload(moment, details, ORIGIN, 'UTC'), { share: undefined, copyText });
 
-      const [shared] = share.mock.calls[0] ?? [];
-      expect(shared).toEqual({ text: tellText(kind, proposal.deadline, 'UTC'), url: `${ORIGIN}/` });
-      expect(Object.keys(shared ?? {})).toEqual(['text', 'url']);
-      for (const sent of [JSON.stringify(shared), ...copied]) {
-        for (const canary of [CANARY_GROUP, CANARY_TITLE, CANARY_ATOM, 'Canary', '#']) {
+    const [shared] = share.mock.calls[0] ?? [];
+    expect(shared).toEqual({ text: chatMessage(moment, details, 'UTC'), url: `${ORIGIN}/` });
+    // Some apps use Web Share's title as a subject line: it never gets one.
+    expect(Object.keys(shared ?? {})).toEqual(['text', 'url']);
+    expect(copied).toEqual([`${chatMessage(moment, details, 'UTC')} ${ORIGIN}/`]);
+    return [JSON.stringify(shared), ...copied];
+  }
+
+  it.each(MOMENTS)(
+    'carries no title, group name, Document text, member name or fragment unticked (%s)',
+    async (moment) => {
+      for (const sent of await shareBothWays(moment, false)) {
+        for (const canary of [
+          CANARY_GROUP,
+          CANARY_TITLE,
+          CANARY_ATOM,
+          CANARY_FOUNDER,
+          CANARY_JOINER,
+          CANARY_FRAGMENT,
+          'Canar',
+          '#',
+        ]) {
           expect(sent).not.toContain(canary);
         }
       }
-      expect(copied).toEqual([`${tellText(kind, proposal.deadline, 'UTC')} ${ORIGIN}/`]);
     },
   );
 
-  it('is the app’s origin and a slash, with no path or fragment', () => {
-    expect(tellPayload('proposal', 0, 'https://reconcile.test', 'UTC').url).toBe(
-      'https://reconcile.test/',
-    );
-  });
+  it.each(MOMENTS)(
+    'carries the title once ticked, and still no group name, text, names or fragment (%s)',
+    async (moment) => {
+      for (const sent of await shareBothWays(moment, true)) {
+        expect(sent).toContain(CANARY_TITLE);
+        for (const canary of [
+          CANARY_GROUP,
+          CANARY_ATOM,
+          CANARY_FOUNDER,
+          CANARY_JOINER,
+          CANARY_FRAGMENT,
+          '#',
+        ]) {
+          expect(sent).not.toContain(canary);
+        }
+      }
+    },
+  );
 });
 
 describe('shareOrCopy', () => {
