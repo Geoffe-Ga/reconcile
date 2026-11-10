@@ -22,7 +22,6 @@ import type { ParsedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { Group, Me, Store } from '../store/db';
-import type { Invite } from './invite';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -57,8 +56,11 @@ export interface GroupView {
   reachable: boolean;
   /** Who this device is in the group, or `null` while loading or when the device isn't in it. */
   me: Me | null;
-  /** STUB(invite): what this group's invite link carries, or `null` likewise. */
-  invite: Invite | null;
+  /**
+   * Whether a sync came more than 28 days after the one before, so some
+   * history may be missing, until an invite's merge clears it (#73).
+   */
+  missingHistory: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
 }
@@ -76,7 +78,6 @@ export function useGroup(groupId: string): GroupView {
     [group],
   );
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
-  const invite = useMemo(() => (group === undefined ? null : { secret: group.secret }), [group]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
@@ -85,7 +86,7 @@ export function useGroup(groupId: string): GroupView {
     relayNow: group?.relayNow ?? null,
     reachable,
     me: group?.me ?? null,
-    invite,
+    missingHistory: group?.missingHistory === true,
     loaded,
   };
 }

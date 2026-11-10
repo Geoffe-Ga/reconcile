@@ -11,6 +11,7 @@
  * randomness, so every device that folds the same records builds the same
  * state.
  */
+import { verifyInviteToken } from '../crypto/invite';
 import {
   can,
   DEFAULT_JOIN_LEVEL,
@@ -22,9 +23,10 @@ import {
 import { optionFor } from './composeOption';
 import {
   EVENT_VERSION,
+  fromBase64url,
   type GenesisBody,
   type GroupEvent,
-  type JoinBody,
+  type InviteToken,
   type LevelBody,
   parseRecord,
   type ProposalBody,
@@ -63,13 +65,15 @@ export interface LogRecord {
 
 /**
  * A member: the name fixed at join, the involvement level they chose most
- * recently, and the seq of the event that admitted them.
+ * recently, the seq of the event that admitted them, and who invited them:
+ * the author of a verified invite token (#73), or null.
  */
 export interface Member {
   readonly author: string;
   readonly name: string;
   readonly level: Level;
   readonly seq: number;
+  readonly invitedBy: string | null;
 }
 
 /** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
@@ -158,6 +162,9 @@ export interface GroupState {
   readonly ignored: readonly IgnoredRecord[];
 }
 
+/** A `join`, as the fold reads it: the envelope's `group` and `author` with its body. */
+type JoinEvent = Extract<GroupEvent, { readonly type: 'join' }>;
+
 /** Where an event sits in the relay's log. */
 interface Receipt {
   readonly id: string;
@@ -196,7 +203,13 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   draft.name = body.name;
   draft.chat = body.chat ?? null;
   draft.title = body.title;
-  draft.members.push({ author, name: body.founder, level: FOUNDER_LEVEL, seq: at.seq });
+  draft.members.push({
+    author,
+    name: body.founder,
+    level: FOUNDER_LEVEL,
+    seq: at.seq,
+    invitedBy: null,
+  });
   draft.atoms = body.atoms.map((text, i) => ({
     id: `${at.id}.${String(i)}`,
     documentId: at.id,
@@ -205,11 +218,25 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   return true;
 }
 
+/**
+ * Who a join's token names: its `by`, when that key is already a member and
+ * signed the group id under the invite-token tag. Anything else names no one,
+ * and never changes whether the join counts.
+ */
+function inviterOf(draft: Draft, token: InviteToken | undefined, group: string): string | null {
+  if (token === undefined) return null;
+  const { by, sig } = token;
+  if (!draft.members.some((m) => m.author === by)) return null;
+  return verifyInviteToken(fromBase64url(by), fromBase64url(sig), group) ? by : null;
+}
+
 /** A join names a level it knows, or none (a Collaborator), and comes from someone not yet in. */
-function applyJoin(draft: Draft, body: JoinBody, author: string, at: Receipt): boolean {
+function applyJoin(draft: Draft, event: JoinEvent, at: Receipt): boolean {
+  const { author, body } = event;
   const level = body.level ?? DEFAULT_JOIN_LEVEL;
   if (!isLevel(level) || draft.members.some((m) => m.author === author)) return false;
-  draft.members.push({ author, name: body.name, level, seq: at.seq });
+  const invitedBy = inviterOf(draft, body.token, event.group);
+  draft.members.push({ author, name: body.name, level, seq: at.seq, invitedBy });
   return true;
 }
 
@@ -347,7 +374,7 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
     case 'genesis':
       return applyGenesis(draft, event.body, event.author, at);
     case 'join':
-      return applyJoin(draft, event.body, event.author, at);
+      return applyJoin(draft, event, at);
     case 'proposal':
       return applyProposal(draft, event.body, event.author, at);
     case 'version':

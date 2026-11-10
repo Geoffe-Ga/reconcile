@@ -1,0 +1,626 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "invite-token-member: a token a member signed over the group id names them as the joiner's inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": {
+                  "$base64url": [
+                    156, 209, 69, 161, 120, 239, 68, 86, 162, 67, 184, 205, 242, 170, 25, 135, 135,
+                    223, 216, 6, 9, 132, 12, 166, 136, 1, 182, 6, 57, 190, 239, 36, 88, 136, 153,
+                    113, 61, 37, 16, 149, 159, 56, 48, 121, 33, 28, 199, 161, 86, 4, 16, 255, 112,
+                    91, 183, 27, 207, 89, 28, 60, 219, 134, 23, 4
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": "%ana"
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-non-member: a token from someone who isn't a member gives a valid join with no inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%zed",
+                "sig": {
+                  "$base64url": [
+                    32, 30, 66, 115, 31, 79, 68, 226, 239, 218, 130, 137, 36, 179, 252, 170, 245,
+                    236, 92, 118, 77, 134, 229, 167, 39, 186, 185, 45, 110, 227, 72, 135, 168, 7,
+                    28, 114, 253, 141, 137, 226, 72, 4, 3, 189, 227, 231, 15, 229, 222, 232, 134,
+                    85, 224, 11, 191, 177, 103, 19, 90, 149, 125, 154, 55, 5
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": null
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-other-group: a member's token over another group's id gives a valid join with no inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": {
+                  "$base64url": [
+                    226, 233, 186, 122, 86, 162, 61, 28, 25, 230, 37, 119, 138, 76, 30, 58, 157, 75,
+                    173, 136, 127, 240, 146, 41, 248, 50, 31, 103, 190, 230, 144, 155, 162, 191,
+                    152, 11, 138, 48, 122, 221, 142, 218, 167, 97, 138, 214, 204, 89, 111, 6, 143,
+                    223, 230, 186, 66, 98, 100, 225, 15, 35, 110, 48, 127, 9
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": null
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-event-tag: a member's signature over the group id under the event tag gives a valid join with no inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": {
+                  "$base64url": [
+                    193, 11, 205, 126, 84, 117, 206, 116, 108, 210, 234, 136, 177, 135, 117, 104,
+                    69, 50, 36, 216, 229, 102, 245, 241, 102, 226, 149, 174, 58, 52, 10, 114, 84,
+                    39, 56, 162, 10, 192, 0, 183, 19, 31, 194, 168, 60, 103, 21, 248, 67, 70, 86,
+                    42, 130, 188, 149, 181, 69, 154, 90, 37, 210, 175, 124, 13
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": null
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-forged: a token naming a member but signed by someone else gives a valid join with no inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": {
+                  "$base64url": [
+                    32, 30, 66, 115, 31, 79, 68, 226, 239, 218, 130, 137, 36, 179, 252, 170, 245,
+                    236, 92, 118, 77, 134, 229, 167, 39, 186, 185, 45, 110, 227, 72, 135, 168, 7,
+                    28, 114, 253, 141, 137, 226, 72, 4, 3, 189, 227, 231, 15, 229, 222, 232, 134,
+                    85, 224, 11, 191, 177, 103, 19, 90, 149, 125, 154, 55, 5
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": null
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-joined-later: a token from someone who joins after the joiner names no one",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Cal",
+              "token": {
+                "by": "%ben",
+                "sig": {
+                  "$base64url": [
+                    179, 187, 59, 178, 23, 66, 171, 30, 77, 0, 193, 117, 217, 182, 124, 57, 150, 33,
+                    249, 87, 253, 142, 153, 228, 32, 228, 151, 80, 106, 9, 113, 27, 110, 228, 71,
+                    47, 24, 249, 17, 207, 173, 13, 206, 52, 199, 25, 130, 172, 37, 196, 246, 92,
+                    255, 98, 137, 110, 48, 10, 213, 48, 102, 103, 123, 13
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060003,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": {
+                  "$base64url": [
+                    156, 209, 69, 161, 120, 239, 68, 86, 162, 67, 184, 205, 242, 170, 25, 135, 135,
+                    223, 216, 6, 9, 132, 12, 166, 136, 1, 182, 6, 57, 190, 239, 36, 88, 136, 153,
+                    113, 61, 37, 16, 149, 159, 56, 48, 121, 33, 28, 199, 161, 86, 4, 16, 255, 112,
+                    91, 183, 27, 207, 89, 28, 60, 219, 134, 23, 4
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": "%ana"
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-chain: a member who joined by invite names the next joiner",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": {
+                  "$base64url": [
+                    156, 209, 69, 161, 120, 239, 68, 86, 162, 67, 184, 205, 242, 170, 25, 135, 135,
+                    223, 216, 6, 9, 132, 12, 166, 136, 1, 182, 6, 57, 190, 239, 36, 88, 136, 153,
+                    113, 61, 37, 16, 149, 159, 56, 48, 121, 33, 28, 199, 161, 86, 4, 16, 255, 112,
+                    91, 183, 27, 207, 89, 28, 60, 219, 134, 23, 4
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500060003,
+            "body": {
+              "name": "Cal",
+              "token": {
+                "by": "%ben",
+                "sig": {
+                  "$base64url": [
+                    179, 187, 59, 178, 23, 66, 171, 30, 77, 0, 193, 117, 217, 182, 124, 57, 150, 33,
+                    249, 87, 253, 142, 153, 228, 32, 228, 151, 80, 106, 9, 113, 27, 110, 228, 71,
+                    47, 24, 249, 17, 207, 173, 13, 206, 52, 199, 25, 130, 172, 37, 196, 246, 92,
+                    255, 98, 137, 110, 48, 10, 213, 48, 102, 103, 123, 13
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": "%ana"
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "invitedBy": "%ben"
+          }
+        ]
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-malformed: a token of the wrong shape gives a valid join with no inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben",
+              "token": {
+                "by": "%ana",
+                "sig": 7
+              }
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500060003,
+            "body": {
+              "name": "Cal",
+              "token": "Ana sent me"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": null
+          },
+          {
+            "author": "%cal",
+            "name": "Cal",
+            "invitedBy": null
+          }
+        ],
+        "ignored": []
+      },
+      "relayNow": 29375100
+    },
+    {
+      "name": "invite-token-none: a join with no token, as the tracer made, names no inviter",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060002,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana",
+            "invitedBy": null
+          },
+          {
+            "author": "%ben",
+            "name": "Ben",
+            "invitedBy": null
+          }
+        ]
+      },
+      "relayNow": 29375100
+    }
+  ]
+}

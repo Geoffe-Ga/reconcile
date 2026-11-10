@@ -12,11 +12,32 @@ export interface AppServices extends Services {
   readonly sync: Sync;
   /** The app's origin, which invite links start with. */
   readonly origin: string;
-  /** Puts text on the clipboard; rejects when the browser blocks it. */
-  readonly copyText: (text: string) => Promise<void>;
+  /**
+   * Puts text on the clipboard; rejects when the browser blocks it. Text still
+   * on its way, such as an invite link waiting on the relay, may come as a
+   * promise: nothing is copied if it rejects.
+   */
+  readonly copyText: (text: string | Promise<string>) => Promise<void>;
 }
 
-/** The browser's clipboard. A browser without one (an insecure origin) rejects. */
-export async function copyToClipboard(text: string): Promise<void> {
-  await navigator.clipboard.writeText(text);
+/**
+ * The browser's clipboard. A browser without one (an insecure origin) rejects.
+ *
+ * Text that is still on its way goes in a `ClipboardItem` holding the
+ * promise, where the browser has one. Safari allows a clipboard write only
+ * inside the tap that asked for it, and an invite link is ready only after
+ * the relay has its envelope, so the write starts at the tap and the browser
+ * waits for the text. When the promise rejects, the clipboard is left alone.
+ */
+export async function copyToClipboard(text: string | Promise<string>): Promise<void> {
+  if (typeof text === 'string') {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  if (typeof ClipboardItem === 'function') {
+    const blob = text.then((ready) => new Blob([ready], { type: 'text/plain' }));
+    await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+    return;
+  }
+  await navigator.clipboard.writeText(await text);
 }

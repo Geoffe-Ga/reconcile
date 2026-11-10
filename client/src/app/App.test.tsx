@@ -6,9 +6,8 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { createGroup } from './actions';
+import { createGroup, makeInvite } from './actions';
 import { App } from './App';
-import { inviteLink } from './invite';
 
 freshIndexedDBPerTest();
 
@@ -41,11 +40,9 @@ async function existingGroup(owner: TestDevice): Promise<string> {
   return result.groupId;
 }
 
-/** The invite link for `groupId` on `owner`. */
-async function linkFor(owner: TestDevice, groupId: string, origin: string): Promise<string> {
-  const group = await owner.services.store.getGroup(groupId);
-  if (group === undefined) throw new Error('Expected the group.');
-  return inviteLink(origin, { secret: group.secret });
+/** A new invite link for `groupId`, made on `owner` as Copy invite link makes one. */
+function linkFor(owner: TestDevice, groupId: string, origin: string): Promise<string> {
+  return makeInvite(owner.services, groupId, origin);
 }
 
 function at(hash: string): void {

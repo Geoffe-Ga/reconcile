@@ -6,7 +6,9 @@
  * Two people found a group, join it, propose, vote with a note and see the
  * Update, every field carrying a canary, and every request carrying a
  * documentation IP address in each forwarding header. The test reads the
- * group secret and each member's keys from IndexedDB, then stops the relay,
+ * group secret and each member's keys from IndexedDB, and the invite seed
+ * from the link, whose envelope carried the secret and the whole log (#73),
+ * then stops the relay,
  * so its database is checkpointed and its log complete, and scans the raw
  * bytes of the database, its `-wal` and `-shm` files and the log.
  *
@@ -16,10 +18,8 @@
  * find both. Any build that sends readable blobs fails here, as the stub seal
  * did (recorded in #71's PR).
  */
-import { hkdfSync, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { statSync } from 'node:fs';
-
-import type { Page } from '@playwright/test';
 
 import { acceptNotice, expect, heading, type Person, pick, test } from './support/fixtures';
 import {
@@ -30,6 +30,7 @@ import {
   scan,
   textCanary,
 } from './support/scan';
+import { derive, storedGroups } from './support/stored';
 
 /**
  * TEST-NET-3 (RFC 5737): an address no tester has. Loopback can't be the
@@ -38,54 +39,9 @@ import {
 const IP = '203.0.113.7';
 const FORWARDING = { 'X-Forwarded-For': IP, Forwarded: `for=${IP}`, 'X-Real-IP': IP };
 
-/** What a device keeps for its group, read straight from its IndexedDB. */
-interface StoredGroup {
-  readonly groupId: string;
-  readonly secret: number[];
-  readonly signingKey: number[];
-  readonly author: string;
-}
-
 /** A random tag, so no two runs plant the same canaries. */
 function tag(): string {
   return randomBytes(8).toString('hex');
-}
-
-/** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's derivations. */
-function derive(secret: Uint8Array, info: string): Buffer {
-  return Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), info, 32));
-}
-
-/** The groups in the app's IndexedDB on `page`, read with no hook into the app. */
-function storedGroups(page: Page): Promise<StoredGroup[]> {
-  return page.evaluate(async () => {
-    const request = <T>(asking: IDBRequest<T>): Promise<T> =>
-      new Promise((resolve, reject) => {
-        asking.onsuccess = () => {
-          resolve(asking.result);
-        };
-        asking.onerror = () => {
-          reject(asking.error ?? new Error('IndexedDB refused the request.'));
-        };
-      });
-    const db = await request(indexedDB.open('reconcile'));
-    try {
-      const groups = (await request(db.transaction('groups').objectStore('groups').getAll())) as {
-        groupId: string;
-        secret: Uint8Array;
-        signingKey: Uint8Array;
-        me: { author: string };
-      }[];
-      return groups.map((group) => ({
-        groupId: group.groupId,
-        secret: Array.from(group.secret),
-        signingKey: Array.from(group.signingKey),
-        author: group.me.author,
-      }));
-    } finally {
-      db.close();
-    }
-  });
 }
 
 /** Scores the open Proposal with `pill`, writes `note` when there is one, and sends the ballot. */
@@ -171,7 +127,9 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
       `for=${IP}`,
       IP,
     ]);
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
     inviteLink = await page.getByRole('textbox', { name: 'Invite link' }).inputValue();
+    expect(inviteLink).toMatch(/^https?:\/\/[^#]+\/#join\/[A-Za-z0-9_-]{43}$/);
   });
 
   await test.step('B joins from the link', async () => {
@@ -182,7 +140,10 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ben);
     await page.getByRole('button', { name: 'Join group' }).click();
     const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-    await expect(people).toHaveText([`${words.ana}, Co-Creator`, `${words.ben}, Collaborator`]);
+    await expect(people).toHaveText([
+      `${words.ana}, Co-Creator`,
+      `${words.ben}, invited by ${words.ana}, Collaborator`,
+    ]);
   });
 
   await test.step('A proposes, and both vote, B with a note', async () => {
@@ -221,6 +182,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
   expect([theirs.groupId, theirs.secret]).toEqual([mine.groupId, mine.secret]);
   const secret = Uint8Array.from(mine.secret);
   const mailbox = derive(secret, 'reconcile/v1/mailbox').toString('base64url');
+  const seed = Buffer.from(new URL(inviteLink).hash.slice('#join/'.length), 'base64url');
 
   await test.step('the relay stops, and its database, WAL, shared memory and log hold no canary', async () => {
     // Both devices go offline first, so no poll is in flight while the relay stops.
@@ -236,6 +198,8 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
       ...keyCanaries('the group id', Buffer.from(mine.groupId, 'base64url')),
       ...keyCanaries('the group secret', secret),
       ...keyCanaries('the seal key', derive(secret, 'reconcile/v1/seal-key')),
+      ...keyCanaries('the invite seed', seed),
+      ...keyCanaries('the invite key', derive(seed, 'reconcile/v1/invite-key')),
       ...[mine, theirs].flatMap((member, i) => [
         ...keyCanaries(
           `member ${String(i + 1)}’s public key`,

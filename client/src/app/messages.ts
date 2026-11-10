@@ -129,6 +129,9 @@ export const messages = {
     pageTitle: 'Join a group',
     loading: 'Opening the invite…',
     eyebrow: 'You’re invited',
+    /** Around the inviter's name, which renders in its own `<bdi>`: "From Ana’s invite". */
+    fromBefore: 'From',
+    fromAfter: '’s invite',
     documentLabel: 'Their Document',
     nameLabel: 'Your name',
     nameHint: 'This name is only shown in this group. It doesn’t have to be your real name.',
@@ -142,7 +145,8 @@ export const messages = {
     retry: 'Try again',
     failed: 'Joining didn’t finish. Try again.',
     memberTitle: 'You’re already in this group',
-    alreadyJoined: 'This invite is for a group you joined on this device before.',
+    alreadyJoined:
+      'This invite is for a group you’re already in on this device. Anything this device was missing from its history is here now.',
     openGroup: 'Open your group',
   },
   home: {
@@ -154,11 +158,21 @@ export const messages = {
     people: 'People',
     /** Read between a name and its level, as in "Ana, Co-Creator"; the screen shows a gap. */
     levelSeparator: ',',
+    /** Read between a name and who invited them, as in "Ben, invited by Ana". */
+    invitedBySeparator: ',',
+    invitedBy: 'invited by',
     invite: 'Invite people',
     copyInvite: 'Copy invite link',
+    inviteWarning:
+      'Anyone who opens this link in the next 2 days can read everything this group has written and voted on, and what comes next. Send it directly to the people you’re inviting.',
     inviteField: 'Invite link',
+    making: 'Making your invite link…',
+    makeFailed:
+      'The invite link couldn’t be made, so nothing was copied. Making one needs the relay. Check your connection, then try again.',
     copied: 'Copied. Send it to the people you’re inviting.',
     copyFailed: 'Copying is blocked here. Select the link above and copy it yourself.',
+    missingHistory:
+      'Some history may be missing on this device. Open a new invite link from your group to catch up.',
     joinDiscussion: 'Join discussion',
     discussion: 'Discussion',
     unreachable: 'Can’t reach the relay right now.',

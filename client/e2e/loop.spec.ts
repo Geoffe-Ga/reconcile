@@ -27,16 +27,25 @@ const TITLE = 'House rules';
 const FIRST_ATOM = 'Quiet hours start at 10pm.';
 const SECOND_ATOM = 'Shared spaces are cleaned every Sunday.';
 const ATOMS = [FIRST_ATOM, SECOND_ATOM];
-/** Everyone on the People list, with the level each chose: Cal picks Co-Creator at Join. */
-const PEOPLE = ['Ana, Co-Creator', 'Ben, Collaborator', 'Cal, Co-Creator'];
+/**
+ * Everyone on the People list, with who invited them and the level each chose:
+ * both joined from Ana's link, and Cal picks Co-Creator at Join.
+ */
+const PEOPLE = [
+  'Ana, Co-Creator',
+  'Ben, invited by Ana, Collaborator',
+  'Cal, invited by Ana, Co-Creator',
+];
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
 /** Joins from Join's form, at Join's preselected level unless `level` names another, then waits for Group home. */
 async function join(person: Person, level?: string): Promise<void> {
   await expect(heading(person.page, GROUP)).toBeVisible();
-  // The invite's secret has left the address bar.
+  // The invite's seed has left the address bar, and the preview names the inviter.
   await expect(person.page).toHaveURL(/#\/join$/);
+  await expect(person.page.getByText('From Ana’s invite')).toBeVisible();
+  await expect(person.page.getByText(FIRST_ATOM)).toBeVisible();
   await expect(person.page.getByRole('radio', { name: 'Collaborator' })).toBeChecked();
   await expectAccessible(person, 'Join');
   await person.page.getByRole('textbox', { name: 'Your name' }).fill(person.name);
@@ -144,12 +153,17 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await expect(page.getByRole('region', { name: 'People' }).getByRole('listitem')).toHaveText([
       'Ana, Co-Creator',
     ]);
+    await expect(
+      page.getByText('Anyone who opens this link in the next 2 days can read everything'),
+    ).toBeVisible();
     await expectAccessible(ana, 'Group home');
+    await page.getByRole('button', { name: 'Copy invite link' }).click();
     const field = page.getByRole('textbox', { name: 'Invite link' });
     await expect(field).toHaveAttribute('readonly', '');
     inviteLink = await field.inputValue();
-    // The tracer link carries only the group secret; the joiner derives the mailbox.
-    expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#\/join\/[\w-]{43}$/);
+    // The link carries only the invite seed; the sealed envelope holds the group secret.
+    expect(inviteLink).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#join\/[\w-]{43}$/);
+    await expectAccessible(ana, 'Group home, invite link made');
   });
 
   await test.step('B joins from the link in A’s invite field, and C as a Co-Creator', async () => {

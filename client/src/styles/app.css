@@ -369,9 +369,21 @@ a[data-focus-visible] {
   padding-block-start: 0;
 }
 
+.person-who {
+  display: grid;
+  min-width: 0;
+}
+
 .person-name {
   color: var(--ink);
   font: var(--type-body);
+  overflow-wrap: anywhere;
+}
+
+/* "invited by Ana", under the name (#73). */
+.person-invited {
+  color: var(--muted);
+  font: var(--type-caption);
   overflow-wrap: anywhere;
 }
 
@@ -501,6 +513,34 @@ a[data-focus-visible] {
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--surface);
+}
+
+/* An invite's preview (#73): who sent it, then the Document's title and first
+ * section, all plain text from the envelope. */
+.invite-preview {
+  gap: var(--space-4);
+}
+
+.invite-from {
+  color: var(--body);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.invite-document {
+  display: grid;
+  gap: var(--space-1);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.invite-excerpt {
+  max-width: 34em;
+  margin-block-start: var(--space-2);
+  color: var(--ink);
+  font: var(--type-document);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 /* Write and Preview (MarkdownField) ------------------------------------- */

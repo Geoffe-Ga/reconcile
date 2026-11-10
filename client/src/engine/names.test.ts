@@ -12,7 +12,7 @@ function freshKey(): string {
 
 /** A roster of members with these names, each under a fresh key. */
 function roster(...names: string[]): {
-  members: { author: string; name: string; level: Level; seq: number }[];
+  members: { author: string; name: string; level: Level; seq: number; invitedBy: null }[];
 } {
   return {
     members: names.map((name, seq) => ({
@@ -20,6 +20,7 @@ function roster(...names: string[]): {
       name,
       level: DEFAULT_JOIN_LEVEL,
       seq,
+      invitedBy: null,
     })),
   };
 }

@@ -1,13 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { deriveMailboxId, deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
+import { openDB } from 'idb';
+
+import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import {
+  deriveInviteKey,
+  inviteChannelOf,
+  newInviteSeed,
+  verifyInviteToken,
+} from '../crypto/invite';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { xchachaSeal } from '../crypto/seal';
 import { publicKeyOf } from '../crypto/sign';
 import { DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from '../engine/capabilities';
-import { base64url, type ParsedEvent, parseRecord } from '../engine/event';
+import { base64url, fromBase64url, type ParsedEvent, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
+import { type Envelope, INVITE_TTL_DAYS, openEnvelope, sealEnvelope } from '../invite/envelope';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { createSync, type Sync } from '../store/sync';
@@ -19,9 +28,10 @@ import {
   type CreateGroupValues,
   joinGroup,
   lookupInvite,
+  makeInvite,
   type Services,
 } from './actions';
-import type { Invite } from './invite';
+import { parseInviteLink } from './invite';
 
 freshIndexedDBPerTest();
 
@@ -49,14 +59,21 @@ async function device(fake: FakeRelay, name: string): Promise<Services & { sync:
   return { store, relay, sync, seal: xchachaSeal, now: () => NOW };
 }
 
-/** An invite to a group no device has made. */
-function newInvite(): Invite {
-  return { secret: newGroupSecret() };
+const ORIGIN = 'https://reconcile.test';
+
+/** A secret's spellings a leak could take: base64url, standard base64 and hex. */
+function spellings(secret: Uint8Array): string[] {
+  const b64url = base64url(secret);
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const hex = Array.from(secret, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return [b64url, b64, hex, hex.toUpperCase()];
 }
 
-/** The invite `group`'s members hand out: its secret. */
-function inviteTo(group: Group): Invite {
-  return { secret: group.secret };
+/** Writes `group` straight into device `name`'s IndexedDB, as an older sync might have left it. */
+async function putGroup(name: string, group: Group): Promise<void> {
+  const db = await openDB(name);
+  await db.put('groups', group);
+  db.close();
 }
 
 /** The stored group, which the test expects to exist. */
@@ -256,11 +273,7 @@ describe('a device in two groups', () => {
     const own = await created(ana);
     const theirs = await created(ben, { ...VALUES, groupName: 'Hilltop Allotments' });
     await ben.sync.syncOnce();
-    const benGroup = await stored(ben, theirs);
-    const invite = inviteTo(benGroup);
-    const lookup = await lookupInvite(ana, invite);
-    if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
-    await joinGroup(ana, invite, lookup.group, 'Ana', DEFAULT_JOIN_LEVEL);
+    await joinBy(ana, await linkTo(ben, theirs), 'Ana');
     await ana.sync.syncOnce();
 
     const [one, two] = [await stored(ana, own), await stored(ana, theirs)];
@@ -283,73 +296,277 @@ describe('a device in two groups', () => {
   });
 });
 
-describe('lookupInvite', () => {
-  async function anaInvites(fake: FakeRelay) {
-    const ana = await device(fake, 'ana');
-    const groupId = await created(ana);
-    await ana.sync.syncOnce();
+/** The link `services` makes for `groupId`, as Copy invite link does. */
+function linkTo(services: Services, groupId: string): Promise<string> {
+  return makeInvite(services, groupId, ORIGIN);
+}
+
+/** The seed in an invite link. */
+function seedOf(link: string): Uint8Array {
+  const seed = parseInviteLink(link);
+  if (seed === null) throw new Error(`Expected an invite link, not ${link}.`);
+  return seed;
+}
+
+/** Opens `link` on `services` and joins as `name`; returns the group id. */
+async function joinBy(services: Services, link: string, name: string): Promise<string> {
+  const lookup = await lookupInvite(services, seedOf(link));
+  if (lookup.kind !== 'found') throw new Error(`Expected to find the group, not ${lookup.kind}.`);
+  return joinGroup(services, lookup.group, name, DEFAULT_JOIN_LEVEL);
+}
+
+/** The envelope a link's seed opens, read straight from the fake relay. */
+function envelopeAt(fake: FakeRelay, link: string): Envelope | null {
+  const channel = inviteChannelOf(seedOf(link));
+  return openEnvelope(xchachaSeal, channel, fake.blobs(channel.mailbox));
+}
+
+/** Ana's device, with a group she created and synced. */
+async function anaWithGroup(fake: FakeRelay, values = VALUES) {
+  const ana = await device(fake, 'ana');
+  const groupId = await created(ana, values);
+  await ana.sync.syncOnce();
+  return { ana, groupId };
+}
+
+describe('makeInvite', () => {
+  it('posts a header, then the relay-accepted log, to a new invite mailbox kept 1 day', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    fake.requests.length = 0;
+
+    const link = await linkTo(ana, groupId);
+
+    expect(link).toMatch(/^https?:\/\/[^#]+\/#join\/[A-Za-z0-9_-]{43}$/);
+    const { mailbox } = inviteChannelOf(seedOf(link));
+    expect(fake.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+      `PUT /v1/mailbox/${mailbox}?ttl_days=${String(INVITE_TTL_DAYS)}`,
+      `PUT /v1/mailbox/${mailbox}?ttl_days=${String(INVITE_TTL_DAYS)}`,
+    ]);
+    expect(INVITE_TTL_DAYS).toBe(1);
     const group = await stored(ana, groupId);
-    return { ana, groupId, invite: inviteTo(group) };
-  }
-
-  it('finds the group’s id, name and Document title from its genesis', async () => {
-    const fake = createFakeRelay();
-    const { groupId, invite } = await anaInvites(fake);
-    const ben = await device(fake, 'ben');
-
-    const lookup = await lookupInvite(ben, invite);
-
-    expect(lookup).toMatchObject({
-      kind: 'found',
-      group: { groupId, name: 'Riverside Tenants', title: 'House rules' },
+    const envelope = envelopeAt(fake, link);
+    expect(envelope).toEqual({
+      groupSecret: Uint8Array.from(group.secret),
+      preview: {
+        groupName: 'Riverside Tenants',
+        inviterName: 'Ana',
+        documentTitle: 'House rules',
+        excerpt: 'Quiet hours start at ten.',
+      },
+      token: { by: group.me.author, sig: expect.any(String) as string },
+      entries: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
     });
+    const sig = fromBase64url(envelope?.token.sig ?? '');
+    expect(verifyInviteToken(publicKeyOf(group.signingKey), sig, groupId)).toBe(true);
   });
 
-  it('tells a device already in the group so', async () => {
+  it('carries the log in seq order, never what still waits in the outbox', async () => {
     const fake = createFakeRelay();
-    const { ana, groupId, invite } = await anaInvites(fake);
-    expect(await lookupInvite(ana, invite)).toEqual({ kind: 'joined', groupId });
+    const { ana, groupId } = await anaWithGroup(fake);
+    fake.offline = true;
+    await ana.store.enqueue(groupId, utf8('not yet sent'));
+    fake.offline = false;
+
+    const envelope = envelopeAt(fake, await linkTo(ana, groupId));
+
+    const group = await stored(ana, groupId);
+    expect(envelope?.entries.map((entry) => entry.seq)).toEqual(group.log.map((r) => r.seq));
+    expect(group.outbox).toHaveLength(1);
   });
 
-  it('finds nothing in an empty mailbox, or in blobs that won’t open', async () => {
+  it('shows the first section as plain text, cut to 280 code points and “…”', async () => {
+    const fake = createFakeRelay();
+    const long = `**Quiet** ${'hours '.repeat(80)}`;
+    const { ana, groupId } = await anaWithGroup(fake, { ...VALUES, text: `${long}\n\nBins.` });
+
+    const excerpt = envelopeAt(fake, await linkTo(ana, groupId))?.preview.excerpt ?? '';
+
+    expect(excerpt.startsWith('Quiet hours hours')).toBe(true);
+    expect(excerpt.endsWith('…')).toBe(true);
+    expect(Array.from(excerpt)).toHaveLength(281);
+  });
+
+  it('makes a new seed and mailbox each time', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const [one, two] = [await linkTo(ana, groupId), await linkTo(ana, groupId)];
+    expect(one).not.toBe(two);
+    expect(inviteChannelOf(seedOf(one)).mailbox).not.toBe(inviteChannelOf(seedOf(two)).mailbox);
+  });
+
+  it('rejects while the relay is out of reach, so there is no link to copy', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    fake.offline = true;
+    await expect(linkTo(ana, groupId)).rejects.toThrow();
+  });
+
+  it('rejects when a PUT after the first fails, so a partial envelope never gets a link', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    let puts = 0;
+    const relay = {
+      ...ana.relay,
+      putBlob: (...args: Parameters<typeof ana.relay.putBlob>) =>
+        puts++ === 0 ? ana.relay.putBlob(...args) : Promise.reject(new Error('relay full')),
+    };
+    await expect(makeInvite({ ...ana, relay }, groupId, ORIGIN)).rejects.toThrow('relay full');
+    expect(puts).toBe(2);
+  });
+
+  it('refuses a group the device isn’t in', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    await expect(linkTo(ana, 'nope')).rejects.toThrow('No such group');
+  });
+
+  it('sends no group secret, seed or key in any spelling, in any path, query or body', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const link = await linkTo(ana, groupId);
+    const ben = await device(fake, 'ben');
+    await joinBy(ben, link, 'Ben');
+    await ben.sync.syncOnce();
+
+    const group = await stored(ana, groupId);
+    const seed = seedOf(link);
+    const leaks = [group.secret, seed, deriveInviteKey(seed), deriveSealKey(group.secret)];
+    expect(fake.requests.length).toBeGreaterThan(4);
+    for (const request of fake.requests) {
+      const body = request.body ?? new Uint8Array();
+      for (const secret of leaks) {
+        expect(contains(body, secret)).toBe(false);
+        for (const text of spellings(secret)) {
+          expect(request.url).not.toContain(text);
+          expect(contains(body, utf8(text))).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+describe('lookupInvite', () => {
+  it('opens the envelope: the group, its preview, secret and token, and every entry', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const link = await linkTo(ana, groupId);
+    const ben = await device(fake, 'ben');
+    fake.minute += 5;
+
+    const lookup = await lookupInvite(ben, seedOf(link));
+
+    const group = await stored(ana, groupId);
+    expect(lookup).toEqual({
+      kind: 'found',
+      group: {
+        groupId,
+        preview: envelopeAt(fake, link)?.preview,
+        secret: Uint8Array.from(group.secret),
+        token: envelopeAt(fake, link)?.token,
+        page: {
+          records: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
+          cursor: group.cursor,
+          relayNow: fake.minute,
+          instance: fake.instance,
+        },
+      },
+    });
+    expect(await ben.store.listGroups()).toEqual([]);
+  });
+
+  it('reads only the invite mailbox the seed derives', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const link = await linkTo(ana, groupId);
+    const ben = await device(fake, 'ben');
+    fake.requests.length = 0;
+
+    await lookupInvite(ben, seedOf(link));
+
+    const { mailbox } = inviteChannelOf(seedOf(link));
+    expect(fake.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+      `GET /v1/mailbox/${mailbox}?after=0&limit=100`,
+    ]);
+  });
+
+  it('finds nothing once the relay has dropped the envelope, 2 UTC days on', async () => {
+    const fake = createFakeRelay({ minute: 1440 * 20_000 + 60 });
+    const { ana, groupId } = await anaWithGroup(fake);
+    const link = await linkTo(ana, groupId);
+    const ben = await device(fake, 'ben');
+
+    fake.minute = 1440 * 20_001 + 1439;
+    expect((await lookupInvite(ben, seedOf(link))).kind).toBe('found');
+    fake.minute = 1440 * 20_002;
+    expect(await lookupInvite(ben, seedOf(link))).toEqual({ kind: 'missing' });
+  });
+
+  it('finds nothing in an empty mailbox, a mailbox missing a chunk, or blobs that won’t open', async () => {
     const fake = createFakeRelay();
     const ben = await device(fake, 'ben');
-    const invite = newInvite();
-    expect(await lookupInvite(ben, invite)).toEqual({ kind: 'missing' });
+    const seed = newInviteSeed();
+    expect(await lookupInvite(ben, seed)).toEqual({ kind: 'missing' });
 
-    await ben.relay.putBlob(deriveMailboxId(invite.secret), new Uint8Array(1024).fill(7));
-    expect(await lookupInvite(ben, invite)).toEqual({ kind: 'missing' });
+    const { ana, groupId } = await anaWithGroup(fake);
+    const link = await linkTo(ana, groupId);
+    const { mailbox } = inviteChannelOf(seedOf(link));
+    const [header] = fake.blobs(mailbox);
+    await ben.relay.putBlob(inviteChannelOf(seed).mailbox, Uint8Array.from(header ?? []));
+    expect(await lookupInvite(ben, seed)).toEqual({ kind: 'missing' });
+
+    fake.drop(mailbox, 1);
+    expect(await lookupInvite(ben, seedOf(link))).toEqual({ kind: 'missing' });
+    await ben.relay.putBlob(mailbox, new Uint8Array(1024).fill(7));
+    expect(await lookupInvite(ben, seedOf(link))).toEqual({ kind: 'missing' });
+  });
+
+  it('finds nothing in an envelope whose entries hold no genesis', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const group = await stored(ana, groupId);
+    const seed = newInviteSeed();
+    const channel = inviteChannelOf(seed);
+    const forged = sealEnvelope(xchachaSeal, channel, {
+      groupSecret: group.secret,
+      preview: { groupName: 'g', inviterName: 'i', documentTitle: 't', excerpt: 'e' },
+      token: { by: group.me.author, sig: 'A'.repeat(86) },
+      entries: [{ seq: 1, received: 1, bytes: utf8('not a record') }],
+    });
+    for (const blob of forged) await ana.relay.putBlob(channel.mailbox, blob, 1);
+
+    expect(await lookupInvite(await device(fake, 'ben'), seed)).toEqual({ kind: 'missing' });
   });
 
   it('says the relay is out of reach rather than that the link is bad', async () => {
     const fake = createFakeRelay();
     const ben = await device(fake, 'ben');
     fake.offline = true;
-    expect(await lookupInvite(ben, newInvite())).toEqual({ kind: 'offline' });
+    expect(await lookupInvite(ben, newInviteSeed())).toEqual({ kind: 'offline' });
   });
 
-  it('reads only the mailbox the secret derives, and sends no secret', async () => {
+  it('merges what a member’s device lacks, in seq order, with no new key or join', async () => {
     const fake = createFakeRelay();
-    const { invite } = await anaInvites(fake);
+    const { ana, groupId } = await anaWithGroup(fake);
     const ben = await device(fake, 'ben');
-    fake.requests.length = 0;
+    await joinBy(ben, await linkTo(ana, groupId), 'Ben');
+    await ben.sync.syncOnce();
+    await ana.sync.syncOnce();
+    const before = await stored(ben, groupId);
+    // Ben's device loses the genesis, as if the relay had purged it before he read it.
+    ben.store.close();
+    const reopened = await device(fake, 'ben');
+    const lost = { ...before, log: before.log.slice(1), missingHistory: true };
+    await putGroup('ben', lost);
 
-    await lookupInvite(ben, invite);
+    const lookup = await lookupInvite(reopened, seedOf(await linkTo(ana, groupId)));
 
-    expect(fake.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-      `GET /v1/mailbox/${deriveMailboxId(invite.secret)}?after=0&limit=100`,
-    ]);
-  });
-
-  it('opens nothing sealed under another group’s secret', async () => {
-    const fake = createFakeRelay();
-    const { invite } = await anaInvites(fake);
-    const ben = await device(fake, 'ben');
-    const elsewhere = newInvite();
-    const [blob] = fake.blobs(deriveMailboxId(invite.secret));
-    await ben.relay.putBlob(deriveMailboxId(elsewhere.secret), Uint8Array.from(blob ?? []));
-
-    expect(await lookupInvite(ben, elsewhere)).toEqual({ kind: 'missing' });
+    expect(lookup).toEqual({ kind: 'joined', groupId });
+    const after = await stored(reopened, groupId);
+    expect(after.log.map((record) => record.seq)).toEqual(before.log.map((record) => record.seq));
+    expect(after.missingHistory).toBe(false);
+    expect(after.me).toEqual(before.me);
+    expect(base64url(after.signingKey)).toBe(base64url(before.signingKey));
+    expect(after.outbox).toEqual([]);
   });
 });
 
@@ -359,27 +576,27 @@ describe('joinGroup', () => {
     return fold(group.log, group.relayNow).members.map((member) => member.name);
   }
 
-  it('keeps the group with what the invite read, queues the join, and both devices agree', async () => {
+  it('keeps the group with the invite’s secret and history, and queues a join with the token', async () => {
     const fake = createFakeRelay();
-    const ana = await device(fake, 'ana');
-    const groupId = await created(ana);
-    await ana.sync.syncOnce();
+    const { ana, groupId } = await anaWithGroup(fake);
     const anaGroup = await stored(ana, groupId);
-    const invite = inviteTo(anaGroup);
+    const link = await linkTo(ana, groupId);
     const ben = await device(fake, 'ben');
-    const lookup = await lookupInvite(ben, invite);
+    const lookup = await lookupInvite(ben, seedOf(link));
     if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
 
     const [follow] = LEVELS;
-    expect(await joinGroup(ben, invite, lookup.group, 'Ben', follow)).toBe(groupId);
+    expect(await joinGroup(ben, lookup.group, 'Ben', follow)).toBe(groupId);
 
     const before = await stored(ben, groupId);
     expect(before.me.name).toBe('Ben');
     expect(before.signingKey).toHaveLength(32);
     expect(before.me.author).toBe(base64url(publicKeyOf(before.signingKey)));
     expect(before.me.author).not.toBe(anaGroup.me.author);
-    expect(base64url(before.secret)).toBe(base64url(invite.secret));
+    expect(base64url(before.secret)).toBe(base64url(anaGroup.secret));
     expect(before.cursor).toBe(lookup.group.page.cursor);
+    expect(before.instance).toBe(fake.instance);
+    expect(before.relayNow).toBe(fake.minute);
     expect(fold(before.log, before.relayNow).title).toBe('House rules');
     expect(queued(before)?.event).toEqual({
       v: 1,
@@ -387,7 +604,7 @@ describe('joinGroup', () => {
       group: groupId,
       author: before.me.author,
       ts: NOW,
-      body: { name: 'Ben', level: follow },
+      body: { name: 'Ben', level: follow, token: lookup.group.token },
     });
 
     await ben.sync.syncOnce();
@@ -396,19 +613,44 @@ describe('joinGroup', () => {
     expect(await folded(ana, groupId)).toEqual(['Ana', 'Ben']);
     const benState = fold((await stored(ana, groupId)).log, null);
     expect(benState.members.map((member) => member.level)).toEqual([FOUNDER_LEVEL, follow]);
+    expect(benState.members.map((member) => member.invitedBy)).toEqual([null, anaGroup.me.author]);
+  });
+
+  it('gives a newcomer the whole history, even what the relay has purged', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const ben = await device(fake, 'ben');
+    await joinBy(ben, await linkTo(ana, groupId), 'Ben');
+    await ben.sync.syncOnce();
+    await ana.sync.syncOnce();
+    const mailbox = deriveMailboxId((await stored(ana, groupId)).secret);
+    fake.drop(mailbox, 2);
+    expect(fake.blobs(mailbox)).toEqual([]);
+
+    const cal = await device(fake, 'cal');
+    await joinBy(cal, await linkTo(ben, groupId), 'Cal');
+    for (const services of [cal, ana, ben]) await services.sync.syncOnce();
+
+    for (const services of [ana, ben, cal]) {
+      expect(await folded(services, groupId)).toEqual(['Ana', 'Ben', 'Cal']);
+    }
+    const state = fold((await stored(cal, groupId)).log, null);
+    expect(state.title).toBe('House rules');
+    expect(state.members.map((member) => member.invitedBy)).toEqual([
+      null,
+      (await stored(ana, groupId)).me.author,
+      (await stored(ben, groupId)).me.author,
+    ]);
   });
 
   it('never adds a second join for the same group', async () => {
     const fake = createFakeRelay();
-    const ana = await device(fake, 'ana');
-    const groupId = await created(ana);
-    await ana.sync.syncOnce();
-    const group = await stored(ana, groupId);
-    const page = { records: [], cursor: 0, relayNow: 0, instance: 'i' };
-    const found = { groupId, name: 'n', title: 't', page };
-    const invite = inviteTo(group);
+    const { ana, groupId } = await anaWithGroup(fake);
+    const ben = await device(fake, 'ben');
+    const lookup = await lookupInvite(ben, seedOf(await linkTo(ana, groupId)));
+    if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
 
-    await expect(joinGroup(ana, invite, found, 'Ana again', FOUNDER_LEVEL)).rejects.toThrow();
+    await expect(joinGroup(ana, lookup.group, 'Ana again', FOUNDER_LEVEL)).rejects.toThrow();
     expect((await stored(ana, groupId)).outbox).toEqual([]);
   });
 });

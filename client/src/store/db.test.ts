@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import { local, text, utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { openStore } from './db';
+import { HISTORY_GAP_MS, openStore } from './db';
 import type { NewGroup, Pull } from './db';
 
 freshIndexedDBPerTest();
@@ -303,6 +303,117 @@ describe('applyPull', () => {
       cursor: 0,
       instance: null,
     });
+  });
+});
+
+describe('the missing-history flag', () => {
+  const DAY = 86_400_000;
+  const T0 = 1_762_650_000_000;
+
+  /** A pull that read nothing, finishing at device time `at`. */
+  const empty = (at: number): Pull => ({ ...pull([], 0), lastSyncAt: at });
+
+  it('is 28 days: the relay keeps blobs 30, so a longer gap may have missed some', () => {
+    expect(HISTORY_GAP_MS).toBe(28 * DAY);
+  });
+
+  it('stays unset through a group’s first sync and syncs no more than 28 days apart', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, empty(T0), idOf);
+    await store.applyPull(group.groupId, empty(T0 + 28 * DAY), idOf);
+
+    expect((await store.getGroup(group.groupId))?.missingHistory).not.toBe(true);
+  });
+
+  it('is set by a sync more than 28 days after the one before, and stays through later syncs', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, empty(T0), idOf);
+    await store.applyPull(group.groupId, empty(T0 + 28 * DAY + 1), idOf);
+    expect((await store.getGroup(group.groupId))?.missingHistory).toBe(true);
+
+    await store.applyPull(group.groupId, empty(T0 + 28 * DAY + 2), idOf);
+    expect((await store.getGroup(group.groupId))?.missingHistory).toBe(true);
+  });
+
+  it('is cleared only by a merge', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, empty(T0), idOf);
+    await store.applyPull(group.groupId, empty(T0 + 29 * DAY), idOf);
+
+    await store.mergeLog(group.groupId, [], idOf);
+
+    expect((await store.getGroup(group.groupId))?.missingHistory).toBe(false);
+  });
+});
+
+describe('mergeLog', () => {
+  const record = (seq: number, body: string) => ({ seq, received: seq * 10, bytes: utf8(body) });
+
+  it('adds each entry the log lacks, in seq order among the ones it has', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(
+      group.groupId,
+      pull([record(2, '{"a":2}'), record(7, '{"a":7}')], 7),
+      idOf,
+    );
+
+    await store.mergeLog(
+      group.groupId,
+      [
+        record(1, '{"a":1}'),
+        record(2, '{"a":2}'),
+        record(5, '{"a":5}'),
+        record(6, 'unsigned'),
+        record(4, '{"a":4}'),
+        record(9, '{"a":9}'),
+      ],
+      idOf,
+    );
+
+    const saved = await store.getGroup(group.groupId);
+    expect(saved?.log.map((entry) => [entry.seq, entry.received, text(entry.bytes)])).toEqual([
+      [1, 10, '{"a":1}'],
+      [2, 20, '{"a":2}'],
+      [4, 40, '{"a":4}'],
+      [5, 50, '{"a":5}'],
+      [7, 70, '{"a":7}'],
+      [9, 90, '{"a":9}'],
+    ]);
+  });
+
+  it('keeps the cursor, relay time, instance and last sync as they were', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, pull([record(7, '{"a":7}')], 7), idOf);
+
+    await store.mergeLog(group.groupId, [record(1, '{"a":1}'), record(12, '{"a":12}')], idOf);
+
+    expect(await store.getGroup(group.groupId)).toMatchObject({
+      cursor: 7,
+      relayNow: 29_000_010,
+      instance: 'relay-1',
+      lastSyncAt: 1_762_650_000_000,
+    });
+  });
+
+  it('tells subscribers the group changed, so its screens fold again', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard = vi.fn();
+    store.subscribe(heard);
+
+    await store.mergeLog(group.groupId, [record(1, '{"a":1}')], idOf);
+
+    expect(heard).toHaveBeenCalledWith(group.groupId);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+    await expect(store.mergeLog('nope', [], idOf)).rejects.toThrow('No such group');
   });
 });
 

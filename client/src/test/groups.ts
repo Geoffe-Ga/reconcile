@@ -2,10 +2,11 @@
  * Real group state for screen tests, built through the engine: events signed
  * with `signEvent` and folded with `fold`, never hand-written state.
  */
+import { signInviteToken } from '../crypto/invite';
 import { type Level, LEVELS } from '../engine/capabilities';
-import type { EventDraft } from '../engine/event';
+import { base64url, type EventDraft } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
-import { authorOf, signedAs } from './keys';
+import { authorOf, signedAs, testKeys } from './keys';
 
 /** What a test group holds. Each member signs with the test key of their name in lower case. */
 export interface TestGroupOptions {
@@ -17,6 +18,8 @@ export interface TestGroupOptions {
   readonly joiners?: readonly string[];
   /** Each joiner's level, by name; a joiner not named joins as a Co-Creator. */
   readonly levels?: Readonly<Record<string, Level>>;
+  /** Who invited each joiner, by name: their join carries that member's token (#73). */
+  readonly invitedBy?: Readonly<Record<string, string>>;
   readonly proposals?: readonly string[];
 }
 
@@ -54,7 +57,17 @@ export function testGroup(options: TestGroupOptions = {}): TestGroup {
   const group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   for (const joiner of joiners) {
     const level = options.levels?.[joiner] ?? CREATING;
-    add(joiner, { type: 'join', group, ts: 0, body: { name: joiner, level } });
+    const inviter = options.invitedBy?.[joiner]?.toLowerCase();
+    const token =
+      inviter === undefined
+        ? {}
+        : {
+            token: {
+              by: authorOf(inviter),
+              sig: base64url(signInviteToken(testKeys(inviter).secretKey, group)),
+            },
+          };
+    add(joiner, { type: 'join', group, ts: 0, body: { name: joiner, level, ...token } });
   }
   for (const proposal of proposals) {
     const proposalBody = {

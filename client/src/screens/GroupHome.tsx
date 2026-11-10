@@ -24,10 +24,13 @@ export interface GroupHomeProps {
   readonly state: GroupState;
   /** This device's author id in the group. */
   readonly me: string;
-  /** The link Copy invite link copies. */
-  readonly inviteLink: string;
-  /** Puts text on the clipboard; rejects when the browser blocks it. */
-  readonly copyText: (text: string) => Promise<void>;
+  /**
+   * Copy invite link's work: posts a fresh invite envelope and resolves to
+   * its link, or rejects when the relay can't be reached (#73).
+   */
+  readonly makeInviteLink: () => Promise<string>;
+  /** Puts text, or text still on its way, on the clipboard; rejects when that fails. */
+  readonly copyText: (text: string | Promise<string>) => Promise<void>;
   /** The relay's minute now, as this device estimates it, for the countdowns. */
   readonly now: number;
   /** How syncing is going. */
@@ -46,6 +49,8 @@ export interface SyncStatus {
   readonly lastSyncAt: number | null;
   /** The device clock now, in milliseconds. */
   readonly deviceNow: number;
+  /** Whether a long gap between syncs may have lost some history (#73). */
+  readonly missingHistory: boolean;
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
@@ -138,23 +143,51 @@ function Decided({ state }: { readonly state: GroupState }) {
   );
 }
 
-/** "Can't reach the relay right now", in a live region that is always there. */
-function Reachability({ sync }: { readonly sync: SyncStatus }) {
-  const { reachable, lastSyncAt, deviceNow } = sync;
+/**
+ * "Can't reach the relay right now", and the catch-up line while some history
+ * may be missing, in a live region that is always there.
+ */
+function SyncNotices({ sync }: { readonly sync: SyncStatus }) {
+  const { reachable, lastSyncAt, deviceNow, missingHistory } = sync;
   const line =
     lastSyncAt === null
       ? messages.home.unreachable
       : messages.home.unreachableSince(formatSyncedAt(lastSyncAt, deviceNow));
-  return <div role="status">{reachable ? null : <p className="notice">{line}</p>}</div>;
+  return (
+    <div role="status">
+      {reachable ? null : <p className="notice">{line}</p>}
+      {missingHistory ? <p className="notice">{messages.home.missingHistory}</p> : null}
+    </div>
+  );
 }
 
-/** Everyone in the group, each with the level they chose (ADR-0074: every level sees it). */
+/** "invited by <name>", read after a comma, once a verified token names the inviter (#73). */
+function InvitedBy({ state, inviter }: { readonly state: GroupState; readonly inviter: string }) {
+  const name = displayName(state, inviter);
+  if (name === null) return null;
+  return (
+    <span className="person-invited">
+      <VisuallyHidden>{messages.home.invitedBySeparator}</VisuallyHidden> {messages.home.invitedBy}{' '}
+      <bdi>{name}</bdi>
+    </span>
+  );
+}
+
+/**
+ * Everyone in the group, each with who invited them and the level they chose
+ * (ADR-0074: every level sees it).
+ */
 function People({ state }: { readonly state: GroupState }) {
   return (
     <ul className="people">
       {state.members.map((member) => (
         <li key={member.author} className="person">
-          <bdi className="person-name">{displayName(state, member.author)}</bdi>
+          <span className="person-who">
+            <bdi className="person-name">{displayName(state, member.author)}</bdi>
+            {member.invitedBy === null ? null : (
+              <InvitedBy state={state} inviter={member.invitedBy} />
+            )}
+          </span>
           <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>{' '}
           <span className="person-level">{levelName(member.level)}</span>
         </li>
@@ -238,49 +271,86 @@ function PeopleSection(props: GroupHomeProps) {
   );
 }
 
-type CopyStatus = 'idle' | 'copied' | 'blocked';
+/** Where Copy invite link has got to. */
+type InviteStatus =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'making' }
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'made'; readonly link: string; readonly copied: boolean };
 
-const COPY_STATUS: Readonly<Record<CopyStatus, string>> = {
-  idle: '',
-  copied: messages.home.copied,
-  blocked: messages.home.copyFailed,
-};
+/** The status line for each step. */
+function statusLine(status: InviteStatus): string {
+  switch (status.kind) {
+    case 'idle':
+      return '';
+    case 'making':
+      return messages.home.making;
+    case 'failed':
+      return messages.home.makeFailed;
+    case 'made':
+      return status.copied ? messages.home.copied : messages.home.copyFailed;
+  }
+}
 
-function Invite({
-  link,
-  copyText,
-}: {
-  readonly link: string;
+interface InviteProps {
+  readonly makeInviteLink: GroupHomeProps['makeInviteLink'];
   readonly copyText: GroupHomeProps['copyText'];
-}) {
-  const [status, setStatus] = useState<CopyStatus>('idle');
+}
+
+/**
+ * Copy invite link, with spec §9's warning beside it. Each press makes a new
+ * link: the clipboard write starts at the press and waits for the link, and
+ * the link appears only once the relay holds the whole envelope. When making
+ * it fails, nothing is copied and the line says so.
+ */
+function Invite({ makeInviteLink, copyText }: InviteProps) {
+  const [status, setStatus] = useState<InviteStatus>({ kind: 'idle' });
+  const warning = useId();
+  const making = status.kind === 'making';
   const copy = () => {
-    copyText(link).then(
-      () => {
-        setStatus('copied');
+    if (making) return;
+    setStatus({ kind: 'making' });
+    const link = makeInviteLink();
+    const copied = copyText(link);
+    link.then(
+      (made) => {
+        copied.then(
+          () => {
+            setStatus({ kind: 'made', link: made, copied: true });
+          },
+          () => {
+            setStatus({ kind: 'made', link: made, copied: false });
+          },
+        );
       },
       () => {
-        setStatus('blocked');
+        copied.catch(() => undefined);
+        setStatus({ kind: 'failed' });
       },
     );
   };
   return (
     <div className="stack">
-      <Button className="button button-primary" onPress={copy}>
+      <p id={warning} className="lede">
+        {messages.home.inviteWarning}
+      </p>
+      <Button className="button button-primary" onPress={copy} aria-describedby={warning}>
         {messages.home.copyInvite}
       </Button>
       <div className="field-status">
-        <Field
-          label={messages.home.inviteField}
-          value={link}
-          isReadOnly
-          inputClassName="input-link"
-          onFocus={(event) => {
-            event.currentTarget.select();
-          }}
-        />
+        {status.kind === 'made' ? (
+          <Field
+            label={messages.home.inviteField}
+            value={status.link}
+            isReadOnly
+            inputClassName="input-link"
+            onFocus={(event) => {
+              event.currentTarget.select();
+            }}
+          />
+        ) : null}
         <p role="status" className="status">
-          {COPY_STATUS[status]}
+          {statusLine(status)}
         </p>
       </div>
     </div>
@@ -294,7 +364,7 @@ function Invite({
  * capabilities allow it (spec §8; `can()` is the only check).
  */
 export function GroupHome(props: GroupHomeProps) {
-  const { state, me, inviteLink, copyText, now, sync } = props;
+  const { state, me, makeInviteLink, copyText, now, sync } = props;
   const groupId = state.group ?? '';
   const discussion = latestLink(state);
   return (
@@ -306,7 +376,7 @@ export function GroupHome(props: GroupHomeProps) {
           title={state.name}
           pageTitle={messages.home.pageTitle}
         />
-        <Reachability sync={sync} />
+        <SyncNotices sync={sync} />
       </div>
       <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
         <span className="eyebrow">{messages.home.documentLabel}</span>
@@ -329,7 +399,7 @@ export function GroupHome(props: GroupHomeProps) {
         {can(state, me, 'see-roster') ? <PeopleSection {...props} /> : null}
         {can(state, me, 'invite') ? (
           <Section title={messages.home.invite}>
-            <Invite link={inviteLink} copyText={copyText} />
+            <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
           </Section>
         ) : null}
         {discussion === null ? null : (
