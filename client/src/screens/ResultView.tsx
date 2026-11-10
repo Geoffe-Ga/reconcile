@@ -25,13 +25,19 @@ import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
 import type { RulesView } from '../app/optInLines';
-import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
+import {
+  type RemovalView,
+  type StewardView,
+  type VersionView,
+  versionViews,
+} from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import type { Ballot, GroupState, Proposal } from '../engine/fold';
 import { proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
 import type { OwnBallot } from '../engine/ownBallot';
+import { removalTarget } from '../engine/removal';
 import type { Bar } from '../engine/rules';
 import type { TallyDetail, VersionTally } from '../engine/tally';
 
@@ -223,22 +229,61 @@ function DissolvePassed() {
   );
 }
 
+/**
+ * A removal's pass (#115): the person it named is no longer in the group, or,
+ * on their own device, they aren't.
+ */
+function RemovalPassed({ removal, you }: { readonly removal: RemovalView; readonly you: boolean }) {
+  const { removal: words } = messages;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">
+        {you ? words.passedYou : <Named parts={words.passed} name={removal.name} />}
+      </p>
+    </div>
+  );
+}
+
+/** What a pass of a steward, rules, dissolve or removal ballot says in place of new text, or null. */
+function TargetPassed(props: OutcomeProps) {
+  const { steward, rules, dissolve, removal } = props.versions[0] ?? {};
+  const { proposal, me } = props.props;
+  if (removal !== undefined)
+    return <RemovalPassed removal={removal} you={removalTarget(proposal) === me} />;
+  if (dissolve !== undefined) return <DissolvePassed />;
+  if (steward !== undefined) return <StewardPassed steward={steward} />;
+  return rules === undefined ? null : <RulesPassed rules={rules} />;
+}
+
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const { steward, rules, dissolve } = props.versions[0] ?? {};
-  if (outcome.kind === 'pass' && dissolve !== undefined) return <DissolvePassed />;
-  if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
-  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
-  if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
+  if (outcome.kind === 'pass') {
+    return proposalTextless(props.props.proposal) ? (
+      <TargetPassed {...props} />
+    ) : (
+      <Passed {...props} winner={outcome.version} />
+    );
+  }
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward or rules ballot decided. */
+/** True for a Proposal whose one version has no text: anything but an edit. */
+function proposalTextless(proposal: Proposal): boolean {
+  return proposal.target.kind !== 'edit';
+}
+
+/**
+ * "Version 1 · Ana", the version's heading wherever the result names it, or
+ * what a steward, rules, dissolve or removal ballot decided.
+ */
 function VersionName({ version }: { readonly version: VersionView }) {
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
   if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
+  if (version.removal !== undefined) {
+    return <Named parts={messages.removal.ballotTitle} name={version.removal.name} />;
+  }
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}

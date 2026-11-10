@@ -6,6 +6,7 @@ import { tally, tallyDetail, type TallyInput } from './tally';
 
 const ORDINARY = DEFAULT_RULES.bars.ordinary;
 const ENTRENCHED = DEFAULT_RULES.bars.entrenched;
+const REMOVAL = DEFAULT_RULES.bars.removal;
 
 /**
  * Tallies at the ordinary bar, M1-03's consent floor, and checks the outcome carries that bar.
@@ -132,6 +133,87 @@ describe('tally: the bar it was given', () => {
       });
       expect(tally({ eligible: 3, versions: [], bar })).toEqual({ kind: 'lapse', bar });
     }
+  });
+});
+
+describe('tally: removal’s bar, where a single 0 never blocks (ADR-0075 §3, #115)', () => {
+  /** The outcome kind of one version scored `scores` at removal’s bar, with everyone scoring. */
+  function removal(scores: readonly number[]): string {
+    return tally({ eligible: scores.length, versions: [{ id: 'v1', scores }], bar: REMOVAL }).kind;
+  }
+
+  it('passes at an average of exactly 3.0 and fails just under it', () => {
+    expect(removal(many(100, 3))).toBe('pass');
+    expect(removal([2, ...many(99, 3)])).toBe('fail');
+    expect(removal([0, 4, 4, 4])).toBe('pass');
+    expect(removal([0, 3, 4, 4])).toBe('fail');
+  });
+
+  it('passes with one 0 in 10, and fails with two', () => {
+    expect(removal([0, ...many(9, 4)])).toBe('pass');
+    expect(removal([0, 0, ...many(8, 4)])).toBe('fail');
+  });
+
+  it('passes 20 scorers with one 0, which the entrenched bar fails at exactly 5%', () => {
+    const scores = [0, ...many(19, 4)];
+    expect(removal(scores)).toBe('pass');
+    const entrenched = tally({ eligible: 20, versions: [{ id: 'v1', scores }], bar: ENTRENCHED });
+    expect(entrenched.kind).toBe('fail');
+  });
+
+  it('fails two 0s among 40 scorers (exactly 5%) and passes them among 41', () => {
+    expect(removal([0, 0, ...many(38, 4)])).toBe('fail');
+    expect(removal([0, 0, ...many(39, 4)])).toBe('pass');
+  });
+
+  it('still needs the average with one 0: one 0 and three 3s average 2.25', () => {
+    expect(removal([0, 3, 3, 3])).toBe('fail');
+  });
+
+  it('flags the zeros met for one 0 at any share, and the average on its own', () => {
+    const [version] = tallyDetail({
+      eligible: 2,
+      versions: [{ id: 'v1', scores: [0, 4] }],
+      bar: REMOVAL,
+    }).versions;
+    expect(version).toMatchObject({ zeros: 1, zerosMet: true, averageMet: false, passes: false });
+  });
+
+  it('forgives no 0 at a bar that names no allowance, and before anyone scores', () => {
+    const [none] = tallyDetail({
+      eligible: 3,
+      versions: [{ id: 'v1', scores: [] }],
+      bar: REMOVAL,
+    }).versions;
+    expect(none).toMatchObject({ zerosMet: false, passes: false });
+    const strict: Bar = { avgAtLeast: 0, zerosUnderPercent: 0 };
+    expect(tally({ eligible: 1, versions: [{ id: 'v1', scores: [4] }], bar: strict }).kind).toBe(
+      'fail',
+    );
+  });
+
+  it('matches `sum ≥ 3·n` and (`zeros ≤ 1` or `20·zeros < n`) computed with real numbers', () => {
+    const score = fc.integer({ min: 0, max: 4 });
+    fc.assert(
+      fc.property(fc.array(score, { minLength: 1, maxLength: 60 }), (scores) => {
+        const n = scores.length;
+        const sum = scores.reduce((total, s) => total + s, 0);
+        const zeros = scores.filter((s) => s === 0).length;
+        const passes = sum / n >= 3 && (zeros <= 1 || zeros / n < 0.05);
+        expect(removal(scores)).toBe(passes ? 'pass' : 'fail');
+      }),
+    );
+  });
+
+  it('passes whatever the entrenched bar passes, so it is never harder', () => {
+    const score = fc.integer({ min: 0, max: 4 });
+    fc.assert(
+      fc.property(fc.array(score, { minLength: 1, maxLength: 60 }), (scores) => {
+        const input = { eligible: scores.length, versions: [{ id: 'v1', scores }] };
+        if (tally({ ...input, bar: ENTRENCHED }).kind === 'pass')
+          expect(removal(scores)).toBe('pass');
+      }),
+    );
   });
 });
 

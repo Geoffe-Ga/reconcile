@@ -46,10 +46,18 @@ export type Route =
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
     }
-  | { readonly name: 'dissolve'; readonly groupId: string };
+  | { readonly name: 'dissolve'; readonly groupId: string }
+  /** Propose removing a member (#115), by their key in the group. */
+  | { readonly name: 'removal'; readonly groupId: string; readonly member: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
+
+/** A route to a composer for a Proposal with a target: a steward, an opt-in, dissolving, or a removal. */
+export type TargetRoute = Extract<
+  GroupRoute,
+  { readonly name: 'steward' | 'optIn' | 'dissolve' | 'removal' }
+>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -84,17 +92,18 @@ function barePage(groupId: string, page: string): Route {
   return page === 'rules' ? { name: 'rules', groupId } : START;
 }
 
-/** `p/{proposalId}` or `again/{proposalId}`. */
+/** `p/{proposalId}`, `again/{proposalId}` or `remove/{member}` (#115). */
 function proposalPage(groupId: string, page: string, arg: string): Route {
   if (!ID.test(arg)) return START;
   if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
+  if (page === 'remove') return { name: 'removal', groupId, member: arg };
   return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
 }
 
 /**
  * A page inside a group: `doc`, `rules`, `dissolve`, `propose/{atomId}`,
  * `p/{proposalId}`, `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`,
- * `rules/{optIn}` or `narrow/{optIn}`.
+ * `rules/{optIn}`, `narrow/{optIn}` or `remove/{member}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   if (arg === undefined) return barePage(groupId, page);
@@ -178,6 +187,20 @@ function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 
+/** The path of a composer for a Proposal with a target, after `#/g/{groupId}`. */
+function targetPath(route: TargetRoute): string {
+  switch (route.name) {
+    case 'steward':
+      return stewardPath(route);
+    case 'optIn':
+      return optInPath(route);
+    case 'dissolve':
+      return '/dissolve';
+    case 'removal':
+      return `/remove/${route.member}`;
+  }
+}
+
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
   switch (route.name) {
@@ -193,12 +216,8 @@ function groupPath(route: GroupRoute): string {
       return `/p/${route.proposalId}`;
     case 'again':
       return `/again/${route.proposalId}`;
-    case 'steward':
-      return stewardPath(route);
-    case 'optIn':
-      return optInPath(route);
-    case 'dissolve':
-      return '/dissolve';
+    default:
+      return targetPath(route);
   }
 }
 

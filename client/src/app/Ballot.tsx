@@ -19,7 +19,7 @@ import { SendStatus } from './SendStatus';
 import { Field } from './ui';
 import { useSaving } from './useSaving';
 import { VersionList } from './Versions';
-import type { VersionView } from './versionViews';
+import { hasText, type VersionView } from './versionViews';
 
 /** A score for each version, by version id. */
 export type Scores = Readonly<Record<string, Score>>;
@@ -111,11 +111,7 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       aria-describedby={hint}
     >
       <Label className="field-label">
-        {version.steward === undefined &&
-        version.rules === undefined &&
-        version.dissolve === undefined
-          ? messages.ballot.scoreFor(version.number)
-          : messages.stewards.score}
+        {hasText(version) ? messages.ballot.scoreFor(version.number) : messages.stewards.score}
       </Label>
       <div className="score-pills">
         {SCORES.map((option) => (

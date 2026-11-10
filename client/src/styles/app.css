@@ -1160,6 +1160,31 @@ a[data-focus-visible] {
   border-top: 1px solid var(--hairline);
 }
 
+/* Removal (#115) ---------------------------------------------------------- */
+
+/* The bar a removal needs, and how long it runs, in words, kept to the lede's reading measure. */
+.removal-terms .caption {
+  max-width: 34em;
+}
+
+/* The response the person a removal names posted on its ballot: their own
+ * words as plain text with its line breaks kept, set apart by a hairline rule
+ * as a ballot note is. */
+.removal-response {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 42rem;
+}
+
+.response-text {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--hairline);
+  color: var(--ink);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Earning a vote (#101) --------------------------------------------------- */
 
 /* A newcomer's progress, who vouched for them and Vouch, across their row in People. */

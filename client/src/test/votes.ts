@@ -75,6 +75,12 @@ export interface LogBuilder {
   vouch(name: string, who: string): string;
   /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
+  /** Adds `name`'s Proposal to remove the person named `who` (#115), returning its id. */
+  proposeRemoval(name: string, who: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s response on the removal `proposal` (#115), returning its id. */
+  respond(name: string, proposal: string, text: string): string;
+  /** Adds `name`'s `remove`, naming the removal `proposal` whose pass is final (#115). */
+  remove(name: string, proposal: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -205,6 +211,17 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
       const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
       return add(name, { type: 'chat-posted', group, ts: 0, body });
+    },
+    proposeRemoval(name: string, who: string, entry: ProposalEntry = {}) {
+      const { title = `Remove ${who}`, why = 'They keep breaking the house rules.' } = entry;
+      const target = { kind: 'remove' as const, member: authorOf(who.toLowerCase()) };
+      return add(name, { type: 'proposal', group, ts: 0, body: { target, title, why } });
+    },
+    respond(name: string, proposal: string, text: string) {
+      return add(name, { type: 'removal-response', group, ts: 0, body: { proposal, text } });
+    },
+    remove(name: string, proposal: string) {
+      return add(name, { type: 'remove', group, ts: 0, body: { proposal } });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

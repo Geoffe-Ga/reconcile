@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
 import { fold, type GroupState } from '../engine/fold';
+import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
@@ -24,6 +25,7 @@ import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
+import { RemovalComposer } from '../screens/RemovalComposer';
 import { type NotifyGroup, Settings } from '../screens/Settings';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
@@ -55,8 +57,11 @@ import {
   type DissolveValues,
   propose,
   proposeDissolve,
+  proposeRemoval,
   proposeRules,
   proposeSteward,
+  type RemovalValues,
+  respondToRemoval,
   type RulesValues,
   type StewardValues,
   suspend,
@@ -64,7 +69,14 @@ import {
   type VersionValues,
   vouch,
 } from './proposals';
-import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
+import {
+  type GroupRoute,
+  navigate,
+  replaceRoute,
+  type Route,
+  type TargetRoute,
+  useRoute,
+} from './router';
 import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
@@ -294,7 +306,10 @@ interface ReadyGroup extends GroupView {
 
 interface GroupGateProps {
   readonly groupId: string;
-  /** True for a screen that writes something new: a dissolved group shows it only reads (#108). */
+  /**
+   * True for a screen that writes something new: a dissolved group (#108),
+   * or one a vote removed this member from (#115), shows it only reads.
+   */
   readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
 }
@@ -306,8 +321,10 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  if (writes && state.dissolved !== null)
-    return <GroupArchived groupId={groupId} name={state.name} />;
+  const removed = removedFrom(state, me.author) !== undefined;
+  if (writes && (state.dissolved !== null || removed)) {
+    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
+  }
   return children({ ...group, state, me });
 }
 
@@ -436,6 +453,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         };
         const onTell = (moment: ChatMoment, details: ChatDetails) =>
           shareOrCopy(chatPayload(moment, details, services.origin), services);
+        const onRespond = (text: string) =>
+          respondToRemoval(services, groupId, { proposal: proposalId, text });
         return (
           <ProposalView
             state={group.state}
@@ -450,6 +469,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             onVote={onVote}
             onProposeAgain={onProposeAgain}
             onTell={onTell}
+            onRespond={onRespond}
           />
         );
       }}
@@ -550,7 +570,62 @@ function DissolveScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
-/** A route inside one group. */
+interface RemovalScreenProps extends GroupScreenProps {
+  readonly member: string;
+}
+
+/** The removal composer (#115); sending the Proposal replaces it with the Proposal's ballot. */
+function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
+  const onPropose = async (values: RemovalValues) => {
+    const result = await proposeRemoval(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <RemovalComposer
+          state={state}
+          me={me.author}
+          member={member}
+          leaving={leaving}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** The screen for a composer route inside one group. */
+function TargetRouteScreen({ route, services }: { route: TargetRoute; services: AppServices }) {
+  const { groupId } = route;
+  switch (route.name) {
+    case 'steward':
+      return (
+        <StewardScreen
+          services={services}
+          groupId={groupId}
+          seat={route.seat}
+          recall={route.recall}
+        />
+      );
+    case 'optIn':
+      return (
+        <OptInScreen
+          services={services}
+          groupId={groupId}
+          optIn={route.optIn}
+          narrow={route.narrow}
+        />
+      );
+    case 'dissolve':
+      return <DissolveScreen services={services} groupId={groupId} />;
+    case 'removal':
+      return <RemovalScreen services={services} groupId={groupId} member={route.member} />;
+  }
+}
 
 /** The screen for a route inside one group. */
 function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
@@ -566,28 +641,10 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
     case 'again':
       return <ProposeScreen services={services} groupId={groupId} againId={route.proposalId} />;
-    case 'steward':
-      return (
-        <StewardScreen
-          services={services}
-          groupId={groupId}
-          seat={route.seat}
-          recall={route.recall}
-        />
-      );
     case 'rules':
       return <RulesScreen groupId={groupId} />;
-    case 'optIn':
-      return (
-        <OptInScreen
-          services={services}
-          groupId={groupId}
-          optIn={route.optIn}
-          narrow={route.narrow}
-        />
-      );
-    case 'dissolve':
-      return <DissolveScreen services={services} groupId={groupId} />;
+    default:
+      return <TargetRouteScreen route={route} services={services} />;
   }
 }
 

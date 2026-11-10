@@ -1,10 +1,12 @@
 /**
  * The checks a new Proposal's title and why share on every composer that
- * has no draft: the steward composer (#102) and the dissolve composer (#108).
+ * has no draft: the steward composer (#102), the dissolve composer (#108)
+ * and the removal composer (#115), and the one response on a removal.
  * Limits count code points after NFC, as the fold does (spec §4), never
  * UTF-16 units.
  */
 import { TITLE_MAX, WHY_MAX } from '../engine/fold';
+import { RESPONSE_MAX } from '../engine/removal';
 import { nfcLength } from '../engine/text';
 import { messages } from './messages';
 
@@ -29,4 +31,11 @@ export const checkWhy = required(
   messages.composer.whyMissing,
   WHY_MAX,
   messages.composer.whyTooLong(WHY_MAX),
+);
+
+/** A removal response of 1–1,000 code points (#115; ADR-0072 §4). */
+export const checkResponse = required(
+  messages.removal.respondEmpty,
+  RESPONSE_MAX,
+  messages.removal.respondTooLong(RESPONSE_MAX),
 );

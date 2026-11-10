@@ -20,7 +20,7 @@
  * this file reads only the few fields it names.
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
-import type { DissolveTarget } from './event';
+import type { DissolveTarget, RemoveTarget } from './event';
 import {
   effectiveOptIn,
   isOff,
@@ -97,15 +97,18 @@ export interface StewardChange {
 
 /**
  * What a Proposal changes: an Atom's text (#63, #72), a steward seat (#102),
- * an opt-in (#117), or whether the group goes on (#108).
+ * an opt-in (#117), whether the group goes on (#108), or who is in it (#115).
  */
 export type ProposalTarget =
-  { readonly kind: 'edit' } | StewardChange | RulesChange | DissolveTarget;
+  { readonly kind: 'edit' } | StewardChange | RulesChange | DissolveTarget | RemoveTarget;
 
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that
  * minute plus `suspensionDays` × 1,440. `by` is the steward who wrote it,
- * and `reason` what they wrote, or null.
+ * and `reason` what they wrote, or null. A removal vote against the member
+ * that opens while it runs keeps it until that vote closes (ADR-0059, #115):
+ * `removal` names that vote, or is null, and `until` is then the later of its
+ * own end and the vote's close.
  */
 export interface Suspension {
   readonly id: string;
@@ -115,6 +118,7 @@ export interface Suspension {
   readonly member: string;
   readonly reason: string | null;
   readonly until: number;
+  readonly removal: string | null;
 }
 
 /** What the steward rules read of a Proposal: its target, and when it closes. */
@@ -302,7 +306,7 @@ export function suspensionEnd(rules: Rules, received: number): number {
 
 /**
  * The seats once `person` gives up any they hold, on a step down to Member
- * (#102), a leave (#77) or a removal (#115). Whether an election ever filled
+ * (#102), a leave (#77) or a `remove` (#115). Whether an election ever filled
  * the seat stays as it was.
  */
 export function vacate(seats: readonly Seat[], person: string): Seat[] {

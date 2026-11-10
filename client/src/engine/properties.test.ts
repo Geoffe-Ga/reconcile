@@ -7,6 +7,9 @@
  * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
  * windows (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
  * And of epochs (#98): a record read from another epoch's mailbox changes nothing, not even relay time.
+ * And of removal (#115): nothing the member a removal names sends on it counts, they are taken out
+ * once whoever posts the remove, and after the pass only their leave counts; removal's bar is never
+ * harder than the entrenched one and never depends on ballot order.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -17,7 +20,7 @@ import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
 import { fold, type LogRecord } from './fold';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
-import { tally, type TallyInput } from './tally';
+import { tally, tallyDetail, type TallyInput } from './tally';
 
 const R = 29_375_000;
 const [FOLLOWING, , CREATING] = LEVELS;
@@ -104,6 +107,23 @@ class Log {
 
   version(received: number, author: number, proposal: string, text: string): string {
     return this.add(received, member(author), { type: 'version', body: { proposal, text } });
+  }
+
+  /** A removal of member `who` by member `by` (#115). */
+  removal(received: number, by: number, who: number): string {
+    const target = { kind: 'remove', member: authorOf(member(who)) } as const;
+    const body = { target, title: 'Remove them', why: 'They broke the house rules.' };
+    return this.add(received, member(by), { type: 'proposal', body });
+  }
+
+  /** Member `who`'s response on removal `proposal` (#115). */
+  respond(received: number, who: number, proposal: string, text: string): string {
+    return this.add(received, member(who), { type: 'removal-response', body: { proposal, text } });
+  }
+
+  /** Member `who`'s `remove`, naming removal `proposal` (#115). */
+  remove(received: number, who: number, proposal: string): string {
+    return this.add(received, member(who), { type: 'remove', body: { proposal } });
   }
 }
 
@@ -470,6 +490,129 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('counts nothing the member a removal names sends on it: their ballots and later responses change nothing (#115)', () => {
+    const scenario = electorate
+      .filter(({ count }) => count >= 2)
+      .chain(({ count, ballots: cast }) =>
+        fc.record({
+          count: fc.constant(count),
+          ballots: fc.constant(cast),
+          target: fc.integer({ min: 1, max: count - 1 }),
+          theirs: fc.array(score, { maxLength: 3 }),
+          responses: fc.integer({ min: 1, max: 3 }),
+          relayNow: fc.integer({
+            min: 100,
+            max: 2 * DEFAULT_RULES.windows.removal.default * DAY_MINUTES,
+          }),
+        }),
+      );
+    fc.assert(
+      fc.property(scenario, ({ count, ballots: cast, target, theirs, responses, relayNow }) => {
+        const folded = (withTheirs: boolean) => {
+          const log = Log.founded(count);
+          const id = log.removal(R + 20, 0, target);
+          if (withTheirs) {
+            for (let i = 0; i < responses; i += 1)
+              log.respond(R + 21, target, id, `Mine ${String(i)}`);
+            for (const value of theirs) log.vote(R + 21, target, id, value);
+          }
+          cast.forEach(({ voter, value }, i) => {
+            if (voter !== target) log.vote(R + 30 + i, voter, id, value);
+          });
+          return fold(log.records, R + 20 + relayNow);
+        };
+        const pick = (state: ReturnType<typeof fold>) => {
+          const {
+            eligible,
+            ballots: counted = [],
+            closedAt,
+            final,
+            outcome,
+          } = state.proposals[0] ?? {};
+          const unsequenced = counted.map(({ id, voter, scores, received }) => ({
+            id,
+            voter,
+            scores,
+            received,
+          }));
+          const removals = state.removals.map(({ member: out, passedAt }) => ({ out, passedAt }));
+          return { eligible, unsequenced, closedAt, final, outcome, removals };
+        };
+        const sent = folded(true);
+        expect(pick(sent)).toEqual(pick(folded(false)));
+        expect(sent.proposals[0]?.eligible).not.toContain(authorOf(member(target)));
+        expect(sent.responses.map((response) => response.text)).toEqual(['Mine 0']);
+      }),
+    );
+  });
+
+  it('takes the member a passed removal names out once, whoever posts the remove and in whatever order (#115)', () => {
+    const scenario = fc.integer({ min: 3, max: 6 }).chain((count) =>
+      fc.record({
+        count: fc.constant(count),
+        target: fc.integer({ min: 1, max: count - 1 }),
+        posters: fc.array(fc.nat({ max: count + 1 }), { minLength: 1, maxLength: 6 }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ count, target, posters }) => {
+        const log = Log.founded(count);
+        const id = log.removal(R + 20, target === 1 ? 2 : 1, target);
+        for (let voter = 0; voter < count; voter += 1) {
+          if (voter !== target) log.vote(R + 21 + voter, voter, id, 4);
+        }
+        posters.forEach((who, i) => log.remove(R + 40 + i, who, id));
+        const state = fold(log.records, R + 100);
+        // The first remove from a member other than the one it names; members are 0 to count - 1.
+        const poster = posters.find((who) => who < count && who !== target);
+        const took = poster === undefined ? 0 : 1;
+        const out = authorOf(member(target));
+        expect(state.members.filter((m) => m.author === out)).toHaveLength(1 - took);
+        expect(state.members).toHaveLength(count - took);
+        expect(state.former.filter((m) => m.author === out)).toHaveLength(took);
+        expect(state.rotationDue).toBe(took === 1);
+        const by = state.removals[0]?.removed?.by;
+        expect(by).toBe(poster === undefined ? undefined : authorOf(member(poster)));
+        expect(state.ignored).toHaveLength(posters.length - took);
+      }),
+    );
+  });
+
+  it('ignores everything the member a passed removal names sends but their leave (#115)', () => {
+    const late = fc.array(
+      fc.record({
+        kind: fc.constantFrom(
+          ...LATE_KINDS.filter((kind) => !['leave', 'join', 'proposal'].includes(kind)),
+        ),
+        value: score,
+      }),
+      { minLength: 1, maxLength: 6 },
+    );
+    fc.assert(
+      fc.property(fc.integer({ min: 3, max: 5 }), late, (count, events) => {
+        const target = count - 1;
+        const log = Log.founded(count);
+        const edit = log.propose(R + 10, `${log.group}.0`, 'New text');
+        const id = log.removal(R + 11, 0, target);
+        for (let voter = 0; voter < target; voter += 1) log.vote(R + 12 + voter, voter, id, 4);
+        const before = fold(log.records, R + 100);
+        let at = R + 20;
+        for (const { kind, value } of events) {
+          at += 1;
+          LATE[kind](log, at, target, value, { count, edit, motion: id });
+        }
+        log.remove(at + 1, target, id);
+        const after = fold(log.records, R + 100);
+        expect(before.removals).toHaveLength(1);
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        log.leave(at + 2, target);
+        const left = fold(log.records, R + 100);
+        expect(left.former.map((m) => m.author)).toEqual([authorOf(member(target))]);
+        expect(left.rotationDue).toBe(true);
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
@@ -660,7 +803,7 @@ function ballots(eligible: number, versions: number, rows: Rows): Omit<TallyInpu
   };
 }
 
-const { ordinary: ORDINARY, entrenched: ENTRENCHED } = DEFAULT_RULES.bars;
+const { ordinary: ORDINARY, entrenched: ENTRENCHED, removal: REMOVAL } = DEFAULT_RULES.bars;
 
 describe('properties of the bars', () => {
   it('passes a ballot set at the ordinary bar whenever it passes at the entrenched bar', () => {
@@ -690,11 +833,36 @@ describe('properties of the bars', () => {
     );
     fc.assert(
       fc.property(scenario, ({ set: { eligible, versions, rows }, shuffled }) => {
-        for (const bar of [ORDINARY, ENTRENCHED] satisfies Bar[]) {
+        for (const bar of [ORDINARY, ENTRENCHED, REMOVAL] satisfies Bar[]) {
           const first = tally({ ...ballots(eligible, versions, rows), bar });
           const second = tally({ ...ballots(eligible, versions, shuffled), bar });
           expect(second).toEqual(first);
         }
+      }),
+    );
+  });
+
+  it('passes a ballot set at removal’s bar whenever it passes at the entrenched bar (#115)', () => {
+    fc.assert(
+      fc.property(ballotSet, ({ eligible, versions, rows }) => {
+        const input = ballots(eligible, versions, rows);
+        if (tally({ ...input, bar: ENTRENCHED }).kind === 'pass') {
+          expect(tally({ ...input, bar: REMOVAL }).kind).toBe('pass');
+        }
+      }),
+    );
+  });
+
+  it('never lets a single 0 block a removal: one 0 fails it only through the average (#115)', () => {
+    fc.assert(
+      fc.property(fc.array(score, { minLength: 1, maxLength: 40 }), (scores) => {
+        const withZero = [0, ...scores.filter((value) => value !== 0)] as Score[];
+        const detail = tallyDetail({
+          eligible: withZero.length,
+          versions: [{ id: 'v', scores: withZero }],
+          bar: REMOVAL,
+        });
+        expect(detail.versions[0]?.zerosMet).toBe(true);
       }),
     );
   });

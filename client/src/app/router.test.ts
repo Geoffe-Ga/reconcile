@@ -51,6 +51,7 @@ describe('parseRoute', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
+    [`#/g/${GROUP}/remove/${PROPOSAL}`, { name: 'removal', groupId: GROUP, member: PROPOSAL }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -98,6 +99,9 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/narrow/toString`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
+    `#/g/${GROUP}/remove`,
+    `#/g/${GROUP}/remove/${ATOM}`,
+    `#/g/${GROUP}/remove/${PROPOSAL}/extra`,
     '#/join/',
     '#join',
     '#join/',
@@ -137,6 +141,7 @@ describe('routeHref', () => {
       `#/g/${GROUP}/narrow/chatBot`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
+    [{ name: 'removal', groupId: GROUP, member: PROPOSAL }, `#/g/${GROUP}/remove/${PROPOSAL}`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

@@ -90,6 +90,18 @@ function zeroReading(tally: VersionTally): string {
   return meter.reading(formatZeroShare(tally), standing);
 }
 
+/**
+ * The zeros' line in words: "under 10%", or for removal's bar, which forgives
+ * one 0 (ADR-0075 §3, #115), "one at most, or under 5%".
+ */
+function zeroLineOf(bar: Bar): string {
+  const { meter } = messages;
+  const line = formatZeroLine(bar);
+  return bar.zerosAllowed === undefined
+    ? meter.zeroLine(line)
+    : meter.zeroLineOr(bar.zerosAllowed, line);
+}
+
 /** One version's meter: its two bars and how many have scored it of how many it needs. */
 export function ConsentMeter({ number, tally, bar }: ConsentMeterProps) {
   const { meter } = messages;
@@ -109,7 +121,7 @@ export function ConsentMeter({ number, tally, bar }: ConsentMeterProps) {
       />
       <MeterBar
         name={meter.zeros}
-        line={meter.zeroLine(formatZeroLine(bar))}
+        line={zeroLineOf(bar)}
         lineAt={lines.zeros}
         fill={zeroShare(tally)}
         met={tally.zerosMet}

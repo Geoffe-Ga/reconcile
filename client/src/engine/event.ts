@@ -163,11 +163,38 @@ export interface DissolveProposalBody {
 }
 
 /**
+ * Removing a member by vote (ADR-0049, ADR-0075 §3, #115): it names the key
+ * of the person it would remove, kept as written; the fold checks it.
+ */
+export interface RemoveTarget {
+  readonly kind: 'remove';
+  readonly member: string;
+}
+
+/**
+ * Proposes removing a member (#115): a Proposal with a title, a
+ * justification and an optional discussion link, whose target names them. It
+ * always runs a fixed 14 days, so it carries no window, and no text, so its
+ * ballot has one version, under the Proposal's id.
+ */
+export interface RemovalProposalBody {
+  readonly target: RemoveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+}
+
+/**
  * What a `proposal` event carries: new text for an Atom, a steward seat
- * (#102), an opt-in (#117), or dissolving the group (#108).
+ * (#102), an opt-in (#117), dissolving the group (#108), or removing a member
+ * (#115).
  */
 export type ProposalEventBody =
-  ProposalBody | StewardProposalBody | RulesProposalBody | DissolveProposalBody;
+  | ProposalBody
+  | StewardProposalBody
+  | RulesProposalBody
+  | DissolveProposalBody
+  | RemovalProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -182,6 +209,11 @@ export function isRulesProposal(body: ProposalEventBody): body is RulesProposalB
 /** True when a Proposal's body proposes dissolving the group (#108). */
 export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
   return 'target' in body && body.target.kind === 'dissolve';
+}
+
+/** True when a Proposal's body proposes removing a member (#115). */
+export function isRemovalProposal(body: ProposalEventBody): body is RemovalProposalBody {
+  return 'target' in body && body.target.kind === 'remove';
 }
 
 /**
@@ -252,6 +284,25 @@ export interface DissolveBody {
 }
 
 /**
+ * The one response the person a removal names may post on its ballot
+ * (ADR-0049, #115): `text` is kept as written, and the fold counts its code
+ * points. The author trims it and normalizes it to NFC before signing.
+ */
+export interface RemovalResponseBody {
+  readonly proposal: string;
+  readonly text: string;
+}
+
+/**
+ * Removes a member once a removal Proposal's pass is final (#115): any
+ * member's device that folds that pass posts one. The fold takes the first
+ * valid one, and the group's key changes after it, as after a leave (#98).
+ */
+export interface RemoveBody {
+  readonly proposal: string;
+}
+
+/**
  * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
  * the author is the one who leaves, and the fold reads any object as `{}`.
  */
@@ -293,6 +344,8 @@ export interface EventBodies {
   readonly 'chat-posted': ChatPostedBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'removal-response': RemovalResponseBody;
+  readonly remove: RemoveBody;
 }
 
 /** The event types this engine understands. */
@@ -497,6 +550,12 @@ function parseDissolveTarget(value: unknown): DissolveTarget | null {
   return typeof value.wipe === 'boolean' ? { kind: 'dissolve', wipe: value.wipe } : null;
 }
 
+/** A removal target's kind and member, or null for any other shape (#115). */
+function parseRemoveTarget(value: unknown): RemoveTarget | null {
+  if (!isObject(value) || value.kind !== 'remove' || !isString(value.member)) return null;
+  return { kind: 'remove', member: value.member };
+}
+
 /**
  * A rules (#117) or dissolve (#108) Proposal: its target and fields, and the
  * window its proposer chose, if any (#106).
@@ -519,17 +578,17 @@ function parseWindowedProposal(
 }
 
 /**
- * A steward (#102), rules (#117) or dissolve (#108) Proposal carries `target`
- * and no `atom`; any `text` is dropped, and so is a steward Proposal's
- * `window` (#106).
+ * A steward (#102), rules (#117), dissolve (#108) or removal (#115) Proposal
+ * carries `target` and no `atom`; any `text` is dropped, and so is a steward
+ * or removal Proposal's `window` (#106).
  */
-function parseTargetedProposal(
-  body: Json,
-): StewardProposalBody | RulesProposalBody | DissolveProposalBody | null {
+function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
   const fields = parseTargetedFields(body);
   if (fields === null) return null;
   const steward = parseStewardTarget(body.target);
-  return steward === null ? parseWindowedProposal(body, fields) : { ...fields, target: steward };
+  if (steward !== null) return { ...fields, target: steward };
+  const removal = parseRemoveTarget(body.target);
+  return removal === null ? parseWindowedProposal(body, fields) : { ...fields, target: removal };
 }
 
 function parseProposal(body: Json): ProposalEventBody | null {
@@ -592,6 +651,15 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   const wraps = parseWraps(body.wraps);
   if (!isWholeNumber(epoch) || epoch < 1 || epoch > MAX_EPOCH) return null;
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
+}
+
+function parseRemovalResponse(body: Json): RemovalResponseBody | null {
+  const { proposal, text } = body;
+  return isString(proposal) && isString(text) ? { proposal, text } : null;
+}
+
+function parseRemove(body: Json): RemoveBody | null {
+  return isString(body.proposal) ? { proposal: body.proposal } : null;
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -670,13 +738,20 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
   }
 }
 
-/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+/**
+ * {@link withBody} for #98's types, `kx` and `key-rotate`, and #115's,
+ * `removal-response` and `remove`.
+ */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'kx':
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'removal-response':
+      return attach(parseRemovalResponse(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'remove':
+      return attach(parseRemove(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

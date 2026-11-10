@@ -19,14 +19,16 @@ import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
 import { type VersionView, versionViews } from '../app/versionViews';
 import { rulesView } from '../app/optInLines';
+import { RemovalResponse } from '../app/RemovalResponse';
 import { Named, SuspendedNote } from '../app/stewards';
-import { dissolveView, stewardView } from '../app/versionViews';
+import { dissolveView, removalView, stewardView } from '../app/versionViews';
 import { rightsAt } from '../engine/admission';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
 import { closedByDissolve } from '../engine/dissolve';
 import {
   isDissolveProposal,
+  isRemovalProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -38,6 +40,7 @@ import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
+import { removalTarget, removedFrom } from '../engine/removal';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
 import { ConsentMeter } from './ConsentMeter';
@@ -67,6 +70,11 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /**
+   * Queues this member's one response on the removal of them (#115); rejects
+   * when it couldn't be saved. Without it, no response form shows.
+   */
+  readonly onRespond?: (text: string) => Promise<void>;
   /**
    * Once a dissolved group's ballots are cleared on this device (#108): when,
    * and each decided Proposal's tally as the device kept it, by id.
@@ -205,8 +213,9 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 
 /**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they joined after it opened, hadn't earned a vote
- * yet when it opened (#101), weren't at a voting level then, or are the
+ * Outside its eligible set, they are the member it would remove (#115), a
+ * vote has removed them since, they joined after it opened, hadn't earned a
+ * vote yet when it opened (#101), weren't at a voting level then, or are the
  * steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
@@ -215,6 +224,13 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
   const { state, me } = props;
   if (props.leaving === true) return messages.leave.noVoting;
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
+  if (removalTarget(proposal) === me) return messages.removal.ownRemoval;
+  if (removedFrom(state, me) !== undefined) return messages.removal.readOnly;
+  return whyOutside(state, me, proposal);
+}
+
+/** Why `me`, a member outside `proposal`'s eligible set, wasn't in it when it opened. */
+function whyOutside(state: GroupState, me: string, proposal: Proposal): string {
   const change = stewardChangeOf(proposal);
   if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
@@ -404,11 +420,25 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
 }
 
 /**
- * A Proposal still open when its group dissolved (#108): closed, with no
- * outcome and no ballot, its versions as they stood.
+ * Why this device shows a Proposal as cut off, or null when it doesn't: it
+ * was still open when the group dissolved (#108), or when a vote removed this
+ * member (#115), so this device never learns how it ends.
  */
-function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  const { state } = props;
+function cutOffLine(props: ProposalViewProps, proposal: Proposal): string | null {
+  const { state, me } = props;
+  if (closedByDissolve(state, proposal)) return messages.archive.closed;
+  const removed = removedFrom(state, me) !== undefined && !proposal.final;
+  return removed ? messages.removal.stillOpenLine : null;
+}
+
+/**
+ * A Proposal still open when its group dissolved (#108), or when a vote
+ * removed this member (#115): closed here, with no outcome and no ballot, its
+ * versions as they stood, and `line` saying why.
+ */
+function CutOff(props: { props: ProposalViewProps; proposal: Proposal; line: string }) {
+  const { proposal, line } = props;
+  const { state } = props.props;
   const versions = versionViews(state, proposal);
   const comparison = comparisonOf(state, proposal, false);
   return (
@@ -423,7 +453,7 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
           <p className="meta">
             {messages.proposal.proposedBy} <bdi>{displayName(state, proposal.author) ?? ''}</bdi>
           </p>
-          <p className="meta">{messages.archive.closed}</p>
+          <p className="meta">{line}</p>
         </div>
         <p className="lede" dir="auto">
           {proposal.why}
@@ -437,6 +467,11 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
   );
 }
 
+/** True once this group only reads here: it dissolved (#108), or a vote removed `me` (#115). */
+function isArchived(state: GroupState, me: string): boolean {
+  return state.dissolved !== null || removedFrom(state, me) !== undefined;
+}
+
 /** The tally a cleared archive kept for `proposal`, if its ballots are cleared (#108). */
 function clearedOf(props: ProposalViewProps, proposal: Proposal) {
   const tally = props.cleared?.tallies[proposal.id];
@@ -445,11 +480,15 @@ function clearedOf(props: ProposalViewProps, proposal: Proposal) {
     : { cleared: { at: props.cleared.at, tally } };
 }
 
-/** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
+/**
+ * A Proposal the relay has ordered: open with its ballot, or closed with its
+ * outcome first. A removal's response follows its justification (#115).
+ */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, now } = props;
-  if (closedByDissolve(state, proposal))
-    return <ClosedByDissolve props={props} proposal={proposal} />;
+  const cutOff = cutOffLine(props, proposal);
+  if (cutOff !== null) return <CutOff props={props} proposal={proposal} line={cutOff} />;
+  const readOnly = props.leaving === true || isArchived(state, props.me);
   const versions = versionViews(state, proposal);
   const link =
     proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
@@ -469,7 +508,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           own={props.own}
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
-          leaving={props.leaving === true || state.dissolved !== null}
+          leaving={readOnly}
           {...clearedOf(props, proposal)}
         />
       ) : null}
@@ -479,6 +518,16 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           {proposal.why}
         </p>
       </div>
+      <RemovalResponse
+        state={state}
+        me={props.me}
+        proposal={proposal}
+        pending={props.pending}
+        reachable={props.reachable}
+        now={now}
+        readOnly={readOnly}
+        {...(props.onRespond === undefined ? {} : { onRespond: props.onRespond })}
+      />
       <ChatLink href={link} />
       <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} />
@@ -534,6 +583,11 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   if (isDissolveProposal(body)) {
     const dissolve = dissolveView(body.target.wipe);
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
+    return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
+  if (isRemovalProposal(body)) {
+    const removal = removalView(state, body.target.member);
+    const versions = [{ id: '', number: 1, author, text: '', removal }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
   const comparison = comparisonFor(state, body.atom, false);

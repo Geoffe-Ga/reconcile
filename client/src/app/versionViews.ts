@@ -2,7 +2,8 @@
  * A Proposal's versions as the screens show them (spec §8; ADR-0004):
  * numbered in ballot order, which is relay order, each with its author's name.
  * A steward or rules Proposal's one version has no text: it carries what the
- * ballot decides instead (#102, #117), and so does a dissolve Proposal's (#108).
+ * ballot decides instead (#102, #117), and so does a dissolve Proposal's (#108)
+ * and a removal's (#115).
  */
 import { WIPE_DAYS } from '../engine/dissolve';
 import type { GroupState, Proposal } from '../engine/fold';
@@ -35,6 +36,32 @@ export interface VersionView {
   readonly rules?: RulesView;
   /** For a dissolve Proposal, what its ballot decides, in place of any text (#108). */
   readonly dissolve?: DissolveView;
+  /** For a removal, whom its ballot would remove, in place of any text (#115). */
+  readonly removal?: RemovalView;
+}
+
+/** What a removal's ballot decides: the name of the person it would remove, and what passing does (#115). */
+export interface RemovalView {
+  readonly name: string;
+  readonly line: string;
+}
+
+/**
+ * True for a version that puts text in a section: false for the one version
+ * of a steward, rules, dissolve or removal ballot, which decides something
+ * else (#102, #117, #108, #115).
+ */
+export function hasText(version: VersionView): boolean {
+  const { steward, rules, dissolve, removal } = version;
+  return [steward, rules, dissolve, removal].every((view) => view === undefined);
+}
+
+/** What a removal's ballot decides: removing `person`, named as the group sees them. */
+export function removalView(
+  state: Pick<GroupState, 'members' | 'former'>,
+  person: string,
+): RemovalView {
+  return { name: displayName(state, person) ?? '', line: messages.removal.ballotLine };
 }
 
 /** What a dissolve ballot decides, and the line that says what passing does (#108). */
@@ -77,5 +104,6 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
     ...(change === null ? {} : { steward: stewardView(state, change) }),
     ...(rules === null ? {} : { rules: rulesView(rules) }),
     ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
+    ...(target.kind === 'remove' ? { removal: removalView(state, target.member) } : {}),
   }));
 }

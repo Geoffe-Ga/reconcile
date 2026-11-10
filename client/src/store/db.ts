@@ -19,7 +19,8 @@
  * groups (`./personal.ts`), and a backup file brings them back in that same
  * transaction. A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay.
+ * cleared while its outcomes stay. So does a group a vote removed this
+ * member from (#115), which keeps what it already had.
  */
 
 import { openDB } from 'idb';
@@ -148,14 +149,15 @@ export interface Group {
    */
   nudged?: string[];
   /**
-   * Set once the group is read-only on this device (#108): absent while it
-   * goes on. Nothing is queued, claimed or synced for it from then on.
+   * Set once the group is read-only on this device: it dissolved (#108), or
+   * a vote removed this member (#115). Absent while it goes on. Nothing is
+   * queued, claimed or synced for it from then on.
    */
   archived?: Archive;
 }
 
-/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
-export type ArchiveReason = 'dissolved';
+/** Why a group only reads on this device: it dissolved (#108), or a vote removed this member (#115). */
+export type ArchiveReason = 'dissolved' | 'removed';
 
 /**
  * A dissolved archive once this device has cleared its ballots and notes
@@ -172,7 +174,10 @@ export interface ClearedArchive {
   readonly tallies: Readonly<Record<string, TallyDetail>>;
 }
 
-/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+/**
+ * A group this device keeps read-only: why (#108, #115), and its cleared
+ * state once a dissolved archive's ballots are cleared.
+ */
 export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
@@ -309,11 +314,12 @@ export interface Store extends DraftStore, PersonalStore {
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
-   * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts, any leave and the chat bot's
-   * claims (#119), and mark it archived for `reason`. From then on nothing is
-   * queued or claimed for it, and the sync loop sends, reads and posts
-   * nothing for it. A group already archived keeps its archive.
+   * Keep the group read-only on this device, in one change: once it has
+   * dissolved (#108), or a vote has removed this member (#115). Drop its
+   * outbox, its drafts, any leave and the chat bot's claims (#119), and mark
+   * it archived for `reason`. From then on nothing is queued or claimed for
+   * it, and the sync loop sends, reads and posts nothing for it. A group
+   * already archived keeps its archive.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**

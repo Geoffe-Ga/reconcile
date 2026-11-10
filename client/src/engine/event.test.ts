@@ -14,6 +14,7 @@ import {
   eventId,
   fromBase64url,
   isDissolveProposal,
+  isRemovalProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -438,6 +439,42 @@ describe('parseEvent', () => {
       'proposal',
       { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', window: '14' },
     ],
+    [
+      'a removal target with a numeric member',
+      'proposal',
+      { target: { kind: 'remove', member: 7 }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal target that leaves out its member',
+      'proposal',
+      { target: { kind: 'remove' }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal target whose member is null',
+      'proposal',
+      { target: { kind: 'remove', member: null }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal Proposal that also names an Atom',
+      'proposal',
+      { atom: 'a', target: { kind: 'remove', member: 'k' }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal Proposal without a why',
+      'proposal',
+      { target: { kind: 'remove', member: 'k' }, title: 't' },
+    ],
+    [
+      'a removal Proposal with a numeric link',
+      'proposal',
+      { target: { kind: 'remove', member: 'k' }, title: 't', why: 'w', link: 1 },
+    ],
+    ['removal-response without a Proposal', 'removal-response', { text: 'x' }],
+    ['removal-response without text', 'removal-response', { proposal: 'p' }],
+    ['removal-response with numeric text', 'removal-response', { proposal: 'p', text: 1 }],
+    ['removal-response with a numeric Proposal', 'removal-response', { proposal: 1, text: 'x' }],
+    ['remove without a Proposal', 'remove', {}],
+    ['remove with a numeric Proposal', 'remove', { proposal: 7 }],
     ['dissolve without a proposal', 'dissolve', {}],
     ['dissolve with a numeric proposal', 'dissolve', { proposal: 7 }],
     ['suspend without a member', 'suspend', { reason: 'r' }],
@@ -572,6 +609,61 @@ describe('parseEvent', () => {
     const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
     expect([dissolve, steward, edit].map(isDissolveProposal)).toEqual([true, false, false]);
     expect([dissolve, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
+  });
+
+  it('reads a removal Proposal as its member, dropping any window, text and unknown keys (#115)', () => {
+    const target = { kind: 'remove', member: BEN };
+    const parsed = parseEvent(
+      json(
+        envelope('proposal', {
+          target: { ...target, extra: 1 },
+          title: 't',
+          why: 'w',
+          text: 'x',
+          window: 3,
+          class: 'ordinary',
+        }),
+      ),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w' });
+    const linked = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', link: 'https://l' })),
+    );
+    expect(linked?.event.body).toEqual({ target, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('tells a removal Proposal from a dissolve, a steward one and an edit (#115)', () => {
+    const removal = { target: { kind: 'remove', member: BEN } as const, title: 't', why: 'w' };
+    const dissolve = { target: { kind: 'dissolve', wipe: false } as const, title: 't', why: 'w' };
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null } as const,
+      title: 't',
+      why: 'w',
+    };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    const all = [removal, dissolve, steward, edit];
+    expect(all.map(isRemovalProposal)).toEqual([true, false, false, false]);
+    expect(all.map(isDissolveProposal)).toEqual([false, true, false, false]);
+    expect(all.map(isStewardProposal)).toEqual([false, false, true, false]);
+    expect(all.map(isRulesProposal)).toEqual([false, false, false, false]);
+  });
+
+  it('reads a removal-response as its Proposal and text, kept as written, dropping unknown keys (#115)', () => {
+    const body = { proposal: 'p1', text: ' I wasn’t there. ', extra: 1 };
+    expect(parseEvent(json(envelope('removal-response', body)))?.event).toEqual({
+      v: 1,
+      type: 'removal-response',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', text: ' I wasn’t there. ' },
+    });
+  });
+
+  it('reads a remove as the removal it names, dropping unknown keys (#115)', () => {
+    const parsed = parseEvent(json(envelope('remove', { proposal: 'p1', member: BEN })));
+    expect(parsed?.event.body).toEqual({ proposal: 'p1' });
+    expect(parsed?.event.type).toBe('remove');
   });
 
   it('reads a dissolve as the Proposal it names, dropping unknown keys (#108)', () => {
