@@ -108,6 +108,10 @@ describe('dissolving a group in the app', () => {
     expect(
       await within(b).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
     ).toBeVisible();
+    go(`#/g/${groupId}/rules/chatBot`);
+    expect(
+      await within(c).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
+    ).toBeVisible();
 
     go(`#/g/${groupId}`);
     await user.click(await within(a).findByRole('button', { name: 'Remove from this device' }));

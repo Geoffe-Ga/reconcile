@@ -1,23 +1,31 @@
 /**
  * A group's founding rules (docs/spec/phase-1-spec.md §4, §5 and §11; ADR-0015,
- * ADR-0051, ADR-0067, ADR-0074).
+ * ADR-0040, ADR-0051, ADR-0067, ADR-0074).
  *
  * Genesis records the rules, and the fold keeps them in `state.rules`. The MVP
- * founds every group with ADR-0067's Fellowship defaults and changes none of
- * them by vote (ADR-0074), so a genesis can only restate a default: it can't
- * lower a bar. Every Proposal gets its class from {@link targetClass} when it
- * opens, and its class picks the bar its vote must clear and bounds the window
- * its proposer chooses ({@link validWindow}, #106).
+ * founds every group with ADR-0067's Fellowship defaults (ADR-0074), so a
+ * genesis can only restate a default: it can't lower a bar or open an opt-in.
+ * The opt-ins are the one exception to "no rule changes by vote": a rules
+ * Proposal sets them (optIns.ts, #117), and the fold keeps each one's
+ * standing value in `state.rules.optIns`. Every Proposal gets its class from
+ * {@link targetClass} when it opens, and its class picks the bar its vote
+ * must clear and bounds the window its proposer chooses ({@link validWindow},
+ * #106).
  * Integers only, like the tally: a bar is an average of at least
  * `avgAtLeast` with under `zerosUnderPercent`% zeros, compared as products.
  */
-import { isDissolveProposal, type ProposalEventBody } from './event';
+import { isDissolveProposal, isRulesProposal, type ProposalEventBody } from './event';
+import { isOptIn, isWider, type OptIns } from './optIns';
 
 /** How hard a change is: the class whose bar and window a Proposal gets. #115 adds removal's. */
 export type ProposalClass = 'ordinary' | 'entrenched';
 
-/** The class a founding rule is in, which decides the bar a change to it would need (ADR-0051). */
-export type RuleClass = 'ordinary' | 'entrenched';
+/**
+ * The class a founding rule is in, which decides the bar a change to it would
+ * need (ADR-0051). `opt-in` is the opt-ins' own: widening one is entrenched
+ * and narrowing it ordinary (ADR-0040, {@link targetClass}).
+ */
+export type RuleClass = 'ordinary' | 'entrenched' | 'opt-in';
 
 /**
  * What a version must reach to pass, among those who scored it: `sum ≥ avgAtLeast · n`
@@ -49,9 +57,9 @@ export interface StewardRules {
 /**
  * A group's founding rules. Quorum per version is min(eligible, max(`min`,
  * ⌈`percent`% of eligible⌉)) scorers (ADR-0073). #101 reads `vouches` and
- * `waitDays`, #111 reads `ballotExpiryDays`, and #102 reads `stewards` and
- * `suspensionDays`. #117 adds its own fields here, each with its class in
- * {@link RULE_CLASS}.
+ * `waitDays`, #111 reads `ballotExpiryDays`, #102 reads `stewards` and
+ * `suspensionDays`, and #117 keeps each opt-in's standing value in `optIns`.
+ * Each field has its class in {@link RULE_CLASS}.
  */
 export interface Rules {
   readonly bars: Readonly<Record<ProposalClass, Bar>>;
@@ -62,13 +70,15 @@ export interface Rules {
   readonly ballotExpiryDays: number;
   readonly stewards: StewardRules;
   readonly suspensionDays: number;
+  readonly optIns: OptIns;
 }
 
 /**
  * The founding rules every MVP group has: ADR-0067's Fellowship defaults, the
  * consent floor (ADR-0002), the entrenched bar (ADR-0015 §2), ADR-0074's windows,
- * ADR-0073's quorum, ADR-0049's steward seats and ADR-0016's 7-day suspension.
- * Create group writes them into genesis as they are.
+ * ADR-0073's quorum, ADR-0049's steward seats, ADR-0016's 7-day suspension,
+ * and both opt-ins off (ADR-0038, ADR-0039). Create group writes them into
+ * genesis as they are.
  */
 export const DEFAULT_RULES = {
   bars: {
@@ -85,13 +95,14 @@ export const DEFAULT_RULES = {
   ballotExpiryDays: 30,
   stewards: { firstElectionAt: 3, secondSeatAt: 6, termDays: 182 },
   suspensionDays: 7,
+  optIns: { chatBot: null, frontDoor: false },
 } as const satisfies Rules;
 
 /**
  * Each founding rule's class (ADR-0051). The pass rules, quorum, the steward
  * seats and the suspension's length are entrenched; the windows, vouches, the
  * wait before voting and ballot expiry are ordinary. Changing a rule by vote
- * stays deferred apart from #117's opt-ins, which add their own class here.
+ * stays deferred apart from the opt-ins (#117), whose class is their own.
  */
 export const RULE_CLASS = {
   bars: 'entrenched',
@@ -102,6 +113,7 @@ export const RULE_CLASS = {
   ballotExpiryDays: 'ordinary',
   stewards: 'entrenched',
   suspensionDays: 'entrenched',
+  optIns: 'opt-in',
 } as const satisfies Record<keyof Rules, RuleClass>;
 
 /** Relay minutes in a day. */
@@ -152,13 +164,18 @@ export type TargetClassifier = (state: ClassState, proposal: ProposalEventBody) 
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
  * change. The fold stores it as the Proposal's `class`. Dissolving the group
- * is entrenched (ADR-0051, #108). Every other target is ordinary today,
- * steward elections and recalls included (ADR-0049): entrenched sections
- * (#116), removal (#115) and widening an opt-in (#117) each add their case
- * here.
+ * is entrenched (ADR-0051, #108), and so is a rules Proposal that widens an
+ * opt-in from its standing value (ADR-0040, #117). Every other target is
+ * ordinary, steward elections and recalls included (ADR-0049): entrenched
+ * sections (#116) and removal (#115) each add their case here.
  */
-export const targetClass: TargetClassifier = (_state, proposal) =>
-  isDissolveProposal(proposal) ? 'entrenched' : 'ordinary';
+export const targetClass: TargetClassifier = (state, proposal) => {
+  if (isDissolveProposal(proposal)) return 'entrenched';
+  if (!isRulesProposal(proposal)) return 'ordinary';
+  const { optIn, value } = proposal.target;
+  const wider = isOptIn(optIn) && isWider(optIn, state.rules.optIns[optIn], value);
+  return wider ? 'entrenched' : 'ordinary';
+};
 
 /** How long a vote of class `cls` runs when the proposer names no window, in relay minutes. */
 export function defaultWindowMinutes(rules: Rules, cls: ProposalClass): number {

@@ -17,6 +17,7 @@ import {
   propose,
   type ProposalValues,
   proposeDissolve,
+  proposeRules,
   proposeSteward,
   suspend,
 } from './proposals';
@@ -515,6 +516,86 @@ describe('proposeSteward', () => {
       member: null,
       title: 'Recall',
       why,
+    });
+    expect(result).toEqual({ outcome: 'too-large' });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
+describe('proposeRules', () => {
+  const webhook = 'https://discord.com/api/webhooks/1/abc';
+
+  it('queues one rules Proposal, NFC-normalized, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeRules(device.services, groupId, {
+      optIn: 'chatBot',
+      value: { webhook },
+      title: 'Cafe\u0301 bot',
+      why: 'Nudges.',
+      narrow: false,
+    });
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: {
+          target: { kind: 'rules', optIn: 'chatBot', value: { webhook } },
+          title: 'Caf\u00e9 bot',
+          why: 'Nudges.',
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    const id = parseRecord(group?.outbox[0] ?? new Uint8Array())?.id;
+    expect(result).toEqual({ outcome: 'proposed', proposalId: id });
+  });
+
+  it('queues the off-Proposal and then a narrow naming it, in one change, for Turn off now', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeRules(device.services, groupId, {
+      optIn: 'frontDoor',
+      value: false,
+      title: 'Close the front door',
+      why: 'Someone posted the address.',
+      narrow: true,
+      window: 3,
+    });
+    if (result.outcome !== 'proposed') throw new Error('Expected a Proposal.');
+    const queued = await outbox(device, groupId);
+    expect(queued.map((event) => event?.type)).toEqual(['proposal', 'narrow']);
+    expect(queued[0]?.body).toEqual({
+      target: { kind: 'rules', optIn: 'frontDoor', value: false },
+      title: 'Close the front door',
+      why: 'Someone posted the address.',
+      window: 3,
+    });
+    expect(queued[1]).toEqual({
+      v: 1,
+      type: 'narrow',
+      group: groupId,
+      author,
+      ts: 1_762_650_000_000,
+      body: { optIn: 'frontDoor', proposal: result.proposalId },
+    });
+  });
+
+  it('refuses a rules Proposal too large for any blob, and queues nothing', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const result = await proposeRules(device.services, groupId, {
+      optIn: 'frontDoor',
+      value: false,
+      title: 'Close it',
+      why: 'x'.repeat(70_000),
+      narrow: true,
     });
     expect(result).toEqual({ outcome: 'too-large' });
     expect(await outbox(device, groupId)).toEqual([]);

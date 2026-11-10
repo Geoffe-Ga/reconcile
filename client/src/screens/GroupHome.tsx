@@ -10,6 +10,7 @@ import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
+import { RulesLink } from '../app/RulesLink';
 import { SendStatus } from '../app/SendStatus';
 import { formatDay } from '../app/format';
 import { StewardSeats } from '../app/StewardSeats';
@@ -573,9 +574,10 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 }
 
 /**
- * People, the Stewards (#102) and the invite, each for whoever may see it.
- * While this member's leave waits for the relay, there's no invite. A
- * dissolved group has no stewards to speak of, so its copy leaves them out (#108).
+ * People, the Stewards (#102), the Rules (#117) and the invite, each for
+ * whoever may see it. While this member's leave waits for the relay, there's
+ * no invite. A dissolved group has no stewards or opt-ins to speak of, so its
+ * copy leaves both out (#108).
  */
 function MemberSections(props: GroupHomeProps) {
   const { state, me, makeInviteLink, copyText, leaving = false } = props;
@@ -586,6 +588,11 @@ function MemberSections(props: GroupHomeProps) {
       {roster && state.dissolved === null ? (
         <Section title={messages.stewards.heading}>
           <StewardSeats state={state} me={me} leaving={leaving} />
+        </Section>
+      ) : null}
+      {state.dissolved === null ? (
+        <Section title={messages.optIns.homeHeading}>
+          <RulesLink state={state} />
         </Section>
       ) : null}
       {can(state, me, 'invite') && !leaving ? (
@@ -644,7 +651,7 @@ function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
  * other open Proposals, the group's Document, the Decided list of closed ones,
  * its people with their levels, the viewer's own involvement and Leave this
- * group, the Stewards (#102), then its invite link and its discussion, each shown only to members
+ * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
  * whoever may propose it, Propose dissolving the group (#108). While the viewer's
  * leave waits for the relay, it says so, lists every open Proposal together,

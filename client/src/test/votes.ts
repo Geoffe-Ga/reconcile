@@ -60,6 +60,10 @@ export interface LogBuilder {
   proposeDissolve(name: string, wipe: boolean, entry?: ProposalEntry): string;
   /** Adds `name`'s `dissolve`, naming the dissolve Proposal `proposal` (#108). */
   dissolve(name: string, proposal: string): string;
+  /** Adds `name`'s rules Proposal setting `optIn` to `value` (#117), returning its id. */
+  rules(name: string, optIn: string, value: unknown, entry?: ProposalEntry): string;
+  /** Adds `name`'s narrowing of `optIn` beside the off-Proposal `proposal` (#117), returning its id. */
+  narrow(name: string, optIn: string, proposal: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -161,6 +165,20 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     dissolve(name: string, proposal: string) {
       return add(name, { type: 'dissolve', group, ts: 0, body: { proposal } });
+    },
+    rules(name: string, optIn: string, value: unknown, entry: ProposalEntry = {}) {
+      const { title = 'Our chat bot', why = 'A nudge when votes open.' } = entry;
+      const target = { kind: 'rules' as const, optIn, value };
+      const body = {
+        target,
+        title,
+        why,
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
+    narrow(name: string, optIn: string, proposal: string) {
+      return add(name, { type: 'narrow', group, ts: 0, body: { optIn, proposal } });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);

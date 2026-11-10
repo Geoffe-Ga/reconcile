@@ -105,6 +105,7 @@ describe('Propose dissolving the group on Group home', () => {
   it('sits at the very bottom for someone who may propose, and opens the dissolve composer', async () => {
     const state = group().state();
     renderHome(state, 'ana');
+    expect(screen.getByRole('region', { name: 'Rules' })).toBeVisible();
     const link = screen.getByRole('link', { name: 'Propose dissolving the group' });
     expect(link).toHaveAttribute('href', `#/g/${state.group ?? ''}/dissolve`);
     const everything = within(main()).getAllByRole('link');
@@ -160,6 +161,7 @@ describe('a dissolved group on Group home', () => {
     expect(screen.queryByRole('button', { name: /^Suspend / })).toBeNull();
     expect(screen.queryByRole('link', { name: /Propose a steward/ })).toBeNull();
     expect(screen.queryByRole('region', { name: 'Stewards' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Rules' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Propose dissolving the group' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Remove from this device' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);

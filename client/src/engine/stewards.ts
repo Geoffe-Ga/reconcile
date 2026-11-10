@@ -10,7 +10,10 @@
  * can suspend another member at once: for `suspensionDays`, everyone sees it,
  * and the suspended member keeps only reading. A steward holds one suspension
  * at a time, can't suspend while a recall against them is open, and nobody is
- * suspended again within 30 days of their last suspension ending.
+ * suspended again within 30 days of their last suspension ending. A steward
+ * can also narrow an opt-in at once (ADR-0040, ADR-0075 §3, #117): only
+ * beside their own open off-Proposal for it, until that Proposal closes, and
+ * not within 30 days of the group turning an off-Proposal for it down.
  *
  * The fold and the screens ask the same functions here, so a screen never
  * offers what the fold would ignore. Every rule reads relay time (`at`), and
@@ -18,6 +21,17 @@
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
 import type { DissolveTarget } from './event';
+import {
+  effectiveOptIn,
+  isOff,
+  isOptIn,
+  mayProposeRules,
+  type Narrowing,
+  OFF,
+  type OptIn,
+  type RulesChange,
+  rulesChangeOf,
+} from './optIns';
 import { DAY_MINUTES, type Rules } from './rules';
 import { codePointLength } from './text';
 
@@ -32,6 +46,12 @@ export const REASON_MAX = 280;
 
 /** How long after a suspension ends before the same person can be suspended again, in days (ADR-0075 §3). */
 export const SUSPENSION_GAP_DAYS = 30;
+
+/**
+ * How long after the group turns down an off-Proposal for an opt-in (it fails
+ * or lapses) before a steward can narrow that opt-in again, in days (ADR-0075 §3).
+ */
+export const NARROW_GAP_DAYS = 30;
 
 /**
  * Seat 2's first-ever term, in days: half of `termDays` (182), so the two
@@ -75,8 +95,12 @@ export interface StewardChange {
   readonly holder: string | null;
 }
 
-/** What a Proposal changes: an Atom's text (#63, #72), a steward seat (#102), or whether the group goes on (#108). */
-export type ProposalTarget = { readonly kind: 'edit' } | StewardChange | DissolveTarget;
+/**
+ * What a Proposal changes: an Atom's text (#63, #72), a steward seat (#102),
+ * an opt-in (#117), or whether the group goes on (#108).
+ */
+export type ProposalTarget =
+  { readonly kind: 'edit' } | StewardChange | RulesChange | DissolveTarget;
 
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that
@@ -324,5 +348,93 @@ export function seatsAtTermEnds(state: StewardState): Seat[] {
     s.seat === 2 && s.termEnd !== null && state.at >= s.termEnd && !open
       ? { ...s, ...NO_HOLDER }
       : s,
+  );
+}
+
+/**
+ * What the narrowing rules read of a Proposal: who made it, what it changes,
+ * when it closes, and, once `final` at `at`, how it came out.
+ */
+export interface NarrowProposalState extends StewardProposalState {
+  readonly id: string;
+  readonly author: string;
+  readonly final: boolean;
+  readonly outcome: { readonly kind: 'pass' | 'fail' | 'lapse' };
+}
+
+/** What the narrowing rules read of a group, at relay minute `at`: the steward rules' fields, and the opt-ins'. */
+export interface NarrowState extends StewardState {
+  readonly rules: Rules;
+  readonly proposals: readonly NarrowProposalState[];
+  readonly narrowings: readonly Narrowing[];
+}
+
+/** When a closed Proposal closed: early, or at its deadline. */
+function closeOf(proposal: NarrowProposalState): number {
+  return proposal.closedAt ?? proposal.deadline;
+}
+
+/** True when `proposal` is an off-Proposal for `optIn`: a rules change to its off value. */
+function isOffProposal(proposal: NarrowProposalState, optIn: OptIn): boolean {
+  const change = rulesChangeOf(proposal);
+  return change !== null && change.optIn === optIn && isOff(optIn, change.value);
+}
+
+/** True when an off-Proposal for `optIn` failed or lapsed at most {@link NARROW_GAP_DAYS} before `at`. */
+function turnedDownLately(state: NarrowState, optIn: OptIn): boolean {
+  const gap = NARROW_GAP_DAYS * DAY_MINUTES;
+  return state.proposals.some(
+    (p) =>
+      isOffProposal(p, optIn) &&
+      p.final &&
+      p.outcome.kind !== 'pass' &&
+      state.at - closeOf(p) <= gap,
+  );
+}
+
+/**
+ * Whether `author` could narrow `optIn` now, given an off-Proposal of their
+ * own (ADR-0075 §3): they hold `narrow` (a seat, no suspension), no recall of
+ * them is open, the opt-in isn't off in effect, and the group hasn't turned
+ * an off-Proposal for it down in the last 30 days.
+ */
+function mayTurnOff(state: NarrowState, author: string, optIn: OptIn): boolean {
+  return (
+    can(state, author, 'narrow') &&
+    !facesRecall(state, author) &&
+    !isOff(optIn, effectiveOptIn(state, optIn)) &&
+    !turnedDownLately(state, optIn)
+  );
+}
+
+/**
+ * Whether a `narrow` by `author` holds now (ADR-0040, ADR-0075 §3, #117): it
+ * names an opt-in {@link mayTurnOff} allows them, and `proposal` is their own
+ * off-Proposal for it, still open.
+ */
+export function mayNarrow(
+  state: NarrowState,
+  author: string,
+  body: { readonly optIn: string; readonly proposal: string },
+): boolean {
+  const { optIn } = body;
+  if (!isOptIn(optIn) || !mayTurnOff(state, author, optIn)) return false;
+  const proposal = state.proposals.find((p) => p.id === body.proposal);
+  return (
+    proposal !== undefined &&
+    proposal.author === author &&
+    isOffProposal(proposal, optIn) &&
+    isOpen(proposal, state.at)
+  );
+}
+
+/**
+ * Whether Turn off now can work for `author` on `optIn`: they may propose its
+ * off-Proposal now, and a `narrow` beside it would hold. The screen offers it
+ * only then, so it never queues a `narrow` the fold would ignore.
+ */
+export function mayTurnOffNow(state: NarrowState, author: string, optIn: OptIn): boolean {
+  return (
+    mayProposeRules(state, author, { optIn, value: OFF[optIn] }) && mayTurnOff(state, author, optIn)
   );
 }

@@ -14,8 +14,11 @@ import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
+import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
+import type { OptIn } from '../engine/optIns';
+import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { ProposalView } from '../screens/ProposalView';
 import type { SeatNumber } from '../engine/stewards';
 import type { Persistence } from '../platform/persist';
@@ -40,13 +43,15 @@ import {
   type DissolveValues,
   propose,
   proposeDissolve,
+  proposeRules,
   proposeSteward,
+  type RulesValues,
   type StewardValues,
   suspend,
   type ProposalValues,
   type VersionValues,
 } from './proposals';
-import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
+import { navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
@@ -302,6 +307,45 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
   );
 }
 
+function RulesScreen({ groupId }: { readonly groupId: string }) {
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me }) => <GroupRules state={state} me={me.author} />}
+    </GroupGate>
+  );
+}
+
+interface OptInScreenProps extends GroupScreenProps {
+  readonly optIn: OptIn;
+  readonly narrow: boolean;
+}
+
+/** The opt-in composer (#117); sending a Proposal replaces it with the Proposal's ballot. */
+function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
+  const deviceNow = useNow(services.now);
+  const onPropose = async (values: RulesValues): Promise<OptInOutcome> => {
+    const result = await proposeRules(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to the rules.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me }) => (
+        <OptInComposer
+          state={state}
+          me={me.author}
+          optIn={optIn}
+          narrow={narrow}
+          now={deviceNow}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
 /** The dissolve composer (#108); sending the Proposal replaces it with the Proposal's ballot. */
 function DissolveScreen({ services, groupId }: GroupScreenProps) {
   const deviceNow = useNow(services.now);
@@ -325,6 +369,48 @@ function DissolveScreen({ services, groupId }: GroupScreenProps) {
       )}
     </GroupGate>
   );
+}
+
+/** A route inside one group. */
+type GroupRoute = Extract<Route, { readonly groupId: string }>;
+
+/** The screen for a route inside one group. */
+function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
+  const { groupId } = route;
+  switch (route.name) {
+    case 'group':
+      return <GroupScreen services={services} groupId={groupId} />;
+    case 'document':
+      return <DocumentScreen groupId={groupId} />;
+    case 'propose':
+      return <ProposeScreen services={services} groupId={groupId} atomId={route.atomId} />;
+    case 'proposal':
+      return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'again':
+      return <ProposeScreen services={services} groupId={groupId} againId={route.proposalId} />;
+    case 'steward':
+      return (
+        <StewardScreen
+          services={services}
+          groupId={groupId}
+          seat={route.seat}
+          recall={route.recall}
+        />
+      );
+    case 'rules':
+      return <RulesScreen groupId={groupId} />;
+    case 'optIn':
+      return (
+        <OptInScreen
+          services={services}
+          groupId={groupId}
+          optIn={route.optIn}
+          narrow={route.narrow}
+        />
+      );
+    case 'dissolve':
+      return <DissolveScreen services={services} groupId={groupId} />;
+  }
 }
 
 interface ScreenProps {
@@ -363,44 +449,7 @@ function Screen({ route, services, heldSeed, holdSeed, persistence }: ScreenProp
         />
       );
     default:
-      return <GroupPage route={route} services={services} />;
-  }
-}
-
-/** The screen for a route inside a group. */
-function GroupPage({
-  route,
-  services,
-}: {
-  readonly route: GroupRoute;
-  readonly services: AppServices;
-}) {
-  switch (route.name) {
-    case 'group':
-      return <GroupScreen services={services} groupId={route.groupId} />;
-    case 'document':
-      return <DocumentScreen groupId={route.groupId} />;
-    case 'propose':
-      return <ProposeScreen services={services} groupId={route.groupId} atomId={route.atomId} />;
-    case 'proposal':
-      return (
-        <ProposalScreen services={services} groupId={route.groupId} proposalId={route.proposalId} />
-      );
-    case 'again':
-      return (
-        <ProposeScreen services={services} groupId={route.groupId} againId={route.proposalId} />
-      );
-    case 'steward':
-      return (
-        <StewardScreen
-          services={services}
-          groupId={route.groupId}
-          seat={route.seat}
-          recall={route.recall}
-        />
-      );
-    case 'dissolve':
-      return <DissolveScreen services={services} groupId={route.groupId} />;
+      return <GroupRouteScreen route={route} services={services} />;
   }
 }
 

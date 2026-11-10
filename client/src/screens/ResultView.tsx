@@ -24,6 +24,7 @@ import { MotionTitle, Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
+import type { RulesView } from '../app/optInLines';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
@@ -99,6 +100,15 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
       <p className="outcome-sentence">
         <Named parts={parts} name={motion.name} />
       </p>
+    </div>
+  );
+}
+
+/** A rules Proposal's pass: what is now on or off (#117). */
+function RulesPassed({ rules }: { readonly rules: RulesView }) {
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{rules.passed}</p>
     </div>
   );
 }
@@ -216,18 +226,19 @@ function DissolvePassed() {
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const [first] = props.versions;
-  const steward = first?.steward;
-  if (outcome.kind === 'pass' && first?.dissolve !== undefined) return <DissolvePassed />;
+  const { steward, rules, dissolve } = props.versions[0] ?? {};
+  if (outcome.kind === 'pass' && dissolve !== undefined) return <DissolvePassed />;
   if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
+  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward ballot decided. */
+/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward or rules ballot decided. */
 function VersionName({ version }: { readonly version: VersionView }) {
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
-  if (version.dissolve !== undefined) return version.dissolve.title;
+  if (version.rules !== undefined) return <>{version.rules.title}</>;
+  if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
