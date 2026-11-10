@@ -6,16 +6,16 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { parseLinkCode } from '../crypto/link';
 import { bootstrapOpen, vouchesFor } from '../engine/admission';
 import { fold } from '../engine/fold';
-import { parseLinkCode } from '../crypto/link';
-import { vouch } from '../app/proposals';
+import { joinLink, offerLink } from '../link/session';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { local } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { joinLater, members } from '../test/members';
-import { joinLink, offerLink } from './session';
+import { vouch } from './proposals';
 
 freshIndexedDBPerTest();
 
