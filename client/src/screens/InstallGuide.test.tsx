@@ -3,11 +3,17 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
-import { type Invite, inviteLink, newInvite } from '../app/invite';
+import { type Invite, inviteLink } from '../app/invite';
+import { newGroupSecret } from '../crypto/groupKeys';
 import { axeViolations } from '../test/axe';
 import { type Arrival, InstallGuide } from './InstallGuide';
 
 const ORIGIN = 'https://reconcile.example';
+
+/** A new invite: a fresh group secret, as Copy invite link would send. */
+function newInvite(): Invite {
+  return { secret: newGroupSecret() };
+}
 const FOUND: FoundGroup = {
   groupId: 'group-1',
   name: 'Riverside Tenants',

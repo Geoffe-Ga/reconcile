@@ -7,7 +7,8 @@ import type { NoticeRecord } from '../platform/notice';
 import type { Persistence } from '../platform/persist';
 import type { InviteLookup } from './actions';
 import { FirstRunGate, type OpenedApp } from './FirstRunGate';
-import { type Invite, invitePayload, newInvite } from './invite';
+import { newGroupSecret } from '../crypto/groupKeys';
+import { type Invite, invitePayload } from './invite';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -30,6 +31,11 @@ const DESKTOP: PlatformEnv = {
 afterEach(() => {
   window.history.replaceState(null, '', '/');
 });
+
+/** A new invite: a fresh group secret, as Copy invite link would send. */
+function newInvite(): Invite {
+  return { secret: newGroupSecret() };
+}
 
 /** A notice record in memory, recording each call in `events`. */
 function memoryNotice(accepted: boolean, events: string[]): NoticeRecord {
@@ -113,7 +119,7 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
     await waitFor(() => {
       expect(lookup).toHaveBeenCalledTimes(1);
     });
-    expect(lookup.mock.calls[0]?.[0]).toMatchObject({ mailbox: invite.mailbox });
+    expect(lookup.mock.calls[0]?.[0]?.secret).toEqual(invite.secret);
     expect(app).not.toHaveBeenCalled();
   });
 
@@ -127,7 +133,7 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
     await waitFor(() => {
       expect(lookup).toHaveBeenCalledTimes(1);
     });
-    expect(lookup.mock.calls[0]?.[0]).toMatchObject({ mailbox: invite.mailbox });
+    expect(lookup.mock.calls[0]?.[0]?.secret).toEqual(invite.secret);
     expect(window.location.hash).toBe('');
     // This lookup finds the mailbox empty, so the guide says the link has expired.
     expect(await screen.findByText(/This invite link has expired or is damaged/)).toBeVisible();
@@ -175,7 +181,6 @@ describe('FirstRunGate where keys may be made', () => {
     expect(window.location.hash).toBe('#/join');
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     const held: Invite | null | undefined = opened.at(-1)?.heldInvite;
-    expect(held?.mailbox).toBe(invite.mailbox);
     expect(held?.secret).toEqual(invite.secret);
     expect(lookup).not.toHaveBeenCalled();
   });
@@ -190,7 +195,7 @@ describe('FirstRunGate where keys may be made', () => {
       expect(window.location.hash).toBe('#/join');
     });
     await user.click(screen.getByRole('button', { name: 'I understand' }));
-    expect(opened.at(-1)?.heldInvite?.mailbox).toBe(invite.mailbox);
+    expect(opened.at(-1)?.heldInvite?.secret).toEqual(invite.secret);
   });
 
   it('opens at once once accepted, asking to keep the data at each launch', async () => {

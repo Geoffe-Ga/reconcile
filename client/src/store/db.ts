@@ -1,8 +1,11 @@
 /**
  * The device's store: every group it belongs to, kept in IndexedDB (ADR-0029).
  *
- * A group's record holds its keys, the relay-ordered log, the outbox of signed
- * records not yet accepted by the relay, and the sync cursor. Each membership
+ * A group's record holds its secret and signing key, the relay-ordered log,
+ * the outbox of signed records not yet accepted by the relay, and the sync
+ * cursor. The mailbox id and seal key aren't kept: they derive from the
+ * secret wherever they're needed (spec §3), so nothing stored can drift
+ * from it. Each membership
  * has its own signing key, made for that group alone and kept only with its
  * records (ADR-0009), so two groups on one device share no key or id. Nothing
  * here touches the network. Each change reads and writes one group in a
@@ -13,7 +16,7 @@
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
 
-import { bucketFor } from '../crypto/seal';
+import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { LogRecord } from '../engine/fold';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
 
@@ -29,9 +32,10 @@ export interface Me {
 export interface Group {
   /** The group's id. */
   groupId: string;
-  /** The group's one mailbox at the relay. */
-  mailbox: string;
-  /** STUB(seal): the group secret, used as the seal key until #71 derives one from it. */
+  /**
+   * The 32-byte group secret, made at genesis, that only members hold. The
+   * group's mailbox id and seal key derive from it (`crypto/groupKeys.ts`).
+   */
   secret: Uint8Array;
   /** This membership's 32-byte Ed25519 secret key. It never leaves the device or this group. */
   signingKey: Uint8Array;
@@ -54,7 +58,7 @@ export interface Group {
 }
 
 /** What a device knows about a group when it creates or joins it. */
-export type NewGroup = Pick<Group, 'groupId' | 'mailbox' | 'secret' | 'signingKey' | 'me'>;
+export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'>;
 
 /** What one sync pass read from the relay. */
 export interface Pull {
@@ -86,15 +90,15 @@ export interface Store extends DraftStore {
    * Proposal or version names the `draft` target it came from, and that draft
    * goes in the same change, so a queued one never leaves its draft behind.
    *
-   * @throws {PayloadTooLarge} when the record can't fit in any blob.
+   * @throws {RecordTooLarge} when the record is over 64,000 bytes.
    */
   enqueue(groupId: string, bytes: Uint8Array, draft?: string): Promise<void>;
   /**
    * Queue several signed records, in order, in one change, as `enqueue` does
-   * one: a Proposal proposed again with its other versions (#74). If any
-   * can't fit in a blob, none is queued and the draft stays.
+   * one: a Proposal proposed again with its other versions (#74). If any is
+   * over 64,000 bytes, none is queued and the draft stays.
    *
-   * @throws {PayloadTooLarge} when a record can't fit in any blob.
+   * @throws {RecordTooLarge} when a record is over 64,000 bytes.
    */
   enqueueAll(groupId: string, records: readonly Uint8Array[], draft?: string): Promise<void>;
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
@@ -114,10 +118,12 @@ interface Schema extends DBSchema {
 }
 
 /**
- * The schema version. Version 2 holds signed records and per-group keys (#69);
- * version 1's unsigned stub-era data is deleted on upgrade, with no migration.
+ * The schema version. Version 3 holds a real group secret, from which the
+ * mailbox id and seal key derive (#71); version 2 held signed records (#69)
+ * and version 1 the stub era's unsigned data. Older data, whose relay blobs
+ * anyone could read, is deleted on upgrade, with no migration.
  */
-const VERSION = 2;
+const VERSION = 3;
 const GROUPS = 'groups';
 
 /** Open the store in the IndexedDB database `name`. */
@@ -139,7 +145,9 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
   const change = changer(db, notify);
   const changeQuietly = changer(db, () => undefined);
   const enqueueAll: Store['enqueueAll'] = async (groupId, records, draft) => {
-    for (const record of records) bucketFor(record.length);
+    for (const { length } of records) {
+      if (length > MAX_RECORD_BYTES) throw new RecordTooLarge(length);
+    }
     await change(groupId, (group) => {
       group.outbox.push(...records);
       if (draft !== undefined) group.drafts = withDraft(group.drafts, draft, null);
@@ -176,6 +184,7 @@ export async function openStore(name = 'reconcile'): Promise<Store> {
       }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
+        // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
         const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
         if (index >= 0) {
           group.outbox.splice(index, 1);

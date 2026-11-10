@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs';
 
-import { acceptNotice, expect, heading, test } from './support';
+import { acceptNotice, expect, heading, test } from './support/fixtures';
 
 /** The Caddyfile's one Content-Security-Policy value, as deploy/check.sh reads it. */
 function deployCsp(): string {

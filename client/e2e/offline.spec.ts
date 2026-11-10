@@ -12,7 +12,7 @@ import {
   heading,
   type NewGroup,
   test,
-} from './support';
+} from './support/fixtures';
 
 const GROUP: NewGroup = {
   name: 'Riverside Tenants',

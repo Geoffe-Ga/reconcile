@@ -20,13 +20,15 @@ while [[ $# -gt 0 ]]; do
             cat << EOF
 Usage: $(basename "$0") [OPTIONS] [PLAYWRIGHT_ARGS...]
 
-Build the app, then run e2e/ with Playwright. playwright.config.ts starts the
-relay (../scripts/relay.sh) and "vite preview" of the build, which sends the
-deploy CSP, and stops both when the run ends.
+Build the app, then run e2e/ with Playwright. playwright.config.ts starts
+"vite preview" of the build, which sends the deploy CSP. Each test starts the
+relay (../scripts/relay.sh) itself and stops it when it ends, so the
+relay-learns-nothing spec can scan what the relay left behind.
 
-Each run gets two free loopback ports (E2E_WEB_PORT, RECONCILE_RELAY_PORT)
-and a relay database (RECONCILE_RELAY_DB) in a new temp directory, which is
-deleted when the script exits, pass or fail.
+Each run gets two free loopback ports (E2E_WEB_PORT, RECONCILE_RELAY_PORT),
+and a new temp directory holding the relay's database (RECONCILE_RELAY_DB)
+and its stdout and stderr (E2E_RELAY_LOG). The directory is deleted when the
+script exits, pass or fail; on a failure the relay's log is printed first.
 
 Any other argument goes to "playwright test", for example:
     $(basename "$0") --project=chromium
@@ -81,13 +83,22 @@ print(*(sock.getsockname()[1] for sock in socks))
 ')
 export E2E_WEB_PORT RECONCILE_RELAY_PORT
 
-# The relay's database lives only as long as this run.
+# The relay's database and output live only as long as this run. The specs
+# read both: relay-learns-nothing.spec.ts scans their raw bytes.
 E2E_TMP="$(mktemp -d)"
-cleanup() { rm -rf "$E2E_TMP"; }
+export RECONCILE_RELAY_DB="$E2E_TMP/relay.db"
+export E2E_RELAY_LOG="$E2E_TMP/relay.log"
+cleanup() {
+    local status=$?
+    if [[ $status -ne 0 && -s "$E2E_RELAY_LOG" ]]; then
+        echo "=== Relay output (it logs no requests) ===" >&2
+        cat "$E2E_RELAY_LOG" >&2
+    fi
+    rm -rf "$E2E_TMP"
+}
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-export RECONCILE_RELAY_DB="$E2E_TMP/relay.db"
 
 if [[ ! -d node_modules ]]; then
     npm ci

@@ -54,9 +54,8 @@ export const messages = {
     copyApp: 'Copy link',
     copied: 'Copied.',
   },
-  // STUB(seal): "sealed" and "can’t read" hold once #71 seals every blob. Until
-  // then the relay stores the tracer's events as sent (deploy/README.md), and
-  // the pilot doesn't start before #71 merges (spec §1).
+  // The pilot notice (ADR-0056). "Sealed" and "can’t read" hold because every
+  // blob is sealed before it leaves the device (#71, spec §3).
   notice: {
     pageTitle: 'Before you start',
     eyebrow: 'Reconcile pilot',

@@ -13,7 +13,7 @@ import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 
-const LINK = 'https://reconcile.example/#/join/mailbox.secret';
+const LINK = 'https://reconcile.example/#/join/group-secret';
 const [FOLLOWING, VOTING, CREATING] = LEVELS;
 const NOW = START_MINUTE + 60;
 const SYNCED = { reachable: true, lastSyncAt: NOW * MINUTE_MS, deviceNow: NOW * MINUTE_MS };

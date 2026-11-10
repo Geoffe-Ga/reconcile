@@ -30,3 +30,12 @@ export function fromHex(hex: string): Uint8Array<ArrayBuffer> {
 export function concat(...parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(parts.flatMap((part) => Array.from(part)));
 }
+
+/** Whether `needle` occurs anywhere inside `haystack`. */
+export function contains(haystack: Uint8Array, needle: Uint8Array): boolean {
+  const last = haystack.length - needle.length;
+  for (let start = 0; start <= last; start += 1) {
+    if (needle.every((byte, i) => haystack[start + i] === byte)) return true;
+  }
+  return false;
+}

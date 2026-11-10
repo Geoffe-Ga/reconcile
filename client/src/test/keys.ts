@@ -1,3 +1,4 @@
+// Test-only: name-derived, deterministic seeds. Never mirror them in production code.
 /**
  * Fixed signing keys for tests. Each name has one key, from the seed
  * SHA-256("reconcile/test-key/" + name), so a test signs as "ana" and names

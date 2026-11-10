@@ -76,10 +76,7 @@ export function useGroup(groupId: string): GroupView {
     [group],
   );
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
-  const invite = useMemo(
-    () => (group === undefined ? null : { mailbox: group.mailbox, secret: group.secret }),
-    [group],
-  );
+  const invite = useMemo(() => (group === undefined ? null : { secret: group.secret }), [group]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,

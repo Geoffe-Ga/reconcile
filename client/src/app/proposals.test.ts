@@ -162,7 +162,7 @@ describe('propose', () => {
     );
   });
 
-  it('refuses a Proposal too large for any blob, and queues nothing', async () => {
+  it('refuses a Proposal over 64,000 bytes, and queues nothing', async () => {
     const fake = createFakeRelay();
     const { device, groupId, atom } = await founded(fake);
     const values = { atom, title: 'Long', why: 'Why not.', text: 'x'.repeat(70_000), link: null };
@@ -297,7 +297,30 @@ describe('addVersion', () => {
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
   });
 
-  it('refuses a version too large for any blob, queues nothing and keeps its draft', async () => {
+  it('takes a version record of exactly 64,000 bytes and refuses one a byte longer', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, proposal } = await proposed(fake);
+    fake.offline = true;
+    await addVersion(device.services, groupId, { proposal, text: 'x' });
+    const lengths = async () =>
+      ((await device.services.store.getGroup(groupId))?.outbox ?? []).map((entry) => entry.length);
+    const [shortest = 0] = await lengths();
+    const room = 64_000 - shortest;
+
+    const fits = await addVersion(device.services, groupId, {
+      proposal,
+      text: 'x'.repeat(1 + room),
+    });
+    const over = await addVersion(device.services, groupId, {
+      proposal,
+      text: 'x'.repeat(2 + room),
+    });
+
+    expect([fits.outcome, over.outcome]).toEqual(['added', 'too-large']);
+    expect(await lengths()).toEqual([shortest, 64_000]);
+  });
+
+  it('refuses a version over 64,000 bytes, queues nothing and keeps its draft', async () => {
     const fake = createFakeRelay();
     const { device, groupId, proposal } = await proposed(fake);
     const draft = { title: '', why: '', text: 'x'.repeat(70_000), link: '' };

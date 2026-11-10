@@ -8,9 +8,7 @@
  * nothing. Each step here types into a field, clicks submit once without
  * blurring first, and checks that the click took effect.
  */
-import { expect, test } from '@playwright/test';
-
-import { acceptNotice, heading } from './support';
+import { acceptNotice, expect, heading, test } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';

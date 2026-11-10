@@ -13,7 +13,7 @@ import { createRoot } from 'react-dom/client';
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
 import { Root } from './app/Root';
 import { copyToClipboard } from './app/services';
-import { stubSeal } from './crypto/stubSeal';
+import { xchachaSeal } from './crypto/seal';
 import { createRelay } from './net/relay';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
@@ -34,13 +34,13 @@ if (root === null) {
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
-  const sync = createSync({ store, relay });
+  const sync = createSync({ store, relay, seal: xchachaSeal });
   sync.start();
   const services = {
     store,
     relay,
     sync,
-    seal: stubSeal,
+    seal: xchachaSeal,
     now: () => Date.now(),
     origin: window.location.origin,
     copyText: copyToClipboard,

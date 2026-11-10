@@ -19,7 +19,7 @@ import {
   type Person,
   pick,
   test,
-} from './support';
+} from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';

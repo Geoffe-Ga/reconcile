@@ -73,7 +73,7 @@ async function anasGroup(fake: FakeRelay): Promise<string> {
   const group = await ana.services.store.getGroup(result.groupId);
   if (group === undefined) throw new Error('Expected the group.');
   keysMade.mockClear();
-  return inviteLink(ana.services.origin, { mailbox: group.mailbox, secret: group.secret });
+  return inviteLink(ana.services.origin, { secret: group.secret });
 }
 
 function memoryNotice(): NoticeRecord {

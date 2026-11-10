@@ -14,9 +14,10 @@ import {
   foundGroup,
   heading,
   type NewGroup,
+  type OpenProfile,
   storedRecords,
   test,
-} from './support';
+} from './support/fixtures';
 
 const GROUP: NewGroup = {
   name: 'Riverside Tenants',
@@ -37,19 +38,13 @@ const IPHONES = {
   ),
 };
 
-test.describe.configure({ mode: 'serial' });
-
-let inviteLink = '';
-
-test.beforeAll(async ({ browser }) => {
-  // A desktop profile, where keys may be made, founds the group the link invites to.
-  const desktop = await browser.newContext();
-  const page = await desktop.newPage();
-  await page.goto('/');
-  await acceptNotice({ name: 'Ana', page });
-  inviteLink = await foundGroup(page, GROUP);
-  await desktop.close();
-});
+/** A desktop profile, where keys may be made, founds the group; returns its invite link. */
+async function founderInvite(openProfile: OpenProfile): Promise<string> {
+  const ana = await openProfile('Ana');
+  await ana.page.goto('/');
+  await acceptNotice(ana);
+  return foundGroup(ana.page, GROUP);
+}
 
 /** Nothing here makes keys or records anything. */
 async function expectNothingMade(page: Page): Promise<void> {
@@ -62,7 +57,7 @@ async function expectNothingMade(page: Page): Promise<void> {
 }
 
 /** The guide, with the invite's preview and its link to copy. */
-async function expectInviteGuide(page: Page): Promise<void> {
+async function expectInviteGuide(page: Page, inviteLink: string): Promise<void> {
   await expect(heading(page, 'Add Reconcile to your Home Screen')).toBeVisible();
   const preview = page.getByRole('region', { name: GROUP.name });
   await expect(preview.getByText(GROUP.title)).toBeVisible();
@@ -76,6 +71,8 @@ for (const [name, userAgent] of Object.entries(IPHONES)) {
   test(`an iPhone in ${name} gets the install guide and Copy, and no keys`, async ({
     openProfile,
   }) => {
+    // Each test gets its own relay (e2e/support/fixtures.ts), so each founds its own group.
+    const inviteLink = await founderInvite(openProfile);
     const phone = await openProfile(name, {
       userAgent,
       viewport: { width: 390, height: 844 },
@@ -93,7 +90,7 @@ for (const [name, userAgent] of Object.entries(IPHONES)) {
     await test.step('an invite link, opened in a new page', async () => {
       const invited = await page.context().newPage();
       await invited.goto(inviteLink);
-      await expectInviteGuide(invited);
+      await expectInviteGuide(invited, inviteLink);
       await expectAccessible({ name, page: invited }, 'install guide');
       await expectNothingMade(invited);
       await invited.close();
@@ -101,7 +98,7 @@ for (const [name, userAgent] of Object.entries(IPHONES)) {
 
     await test.step('an invite link opened in the guide’s own window', async () => {
       await page.goto(inviteLink);
-      await expectInviteGuide(page);
+      await expectInviteGuide(page, inviteLink);
       await expectNothingMade(page);
     });
   });
