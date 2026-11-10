@@ -11,6 +11,8 @@
 #     then deleted, a refused endpoint naming a canary, a nudge an hour
 #     ahead and a wake=1 PUT. Nothing is due while it runs, so the relay
 #     sends no push (#89);
+#   - a backup PUT and GET with the same canaries, and refused backup
+#     requests (#97);
 #   - garbage where a TLS handshake belongs, and a handshake for a name with
 #     no certificate;
 #   - malformed HTTP, over TLS and on the plain HTTP port;
@@ -248,6 +250,15 @@ expect 201 "PUT a blob with wake=1 (canary headers)" "${CANARY_HEADERS[@]}" -X P
     -H 'Content-Type: application/octet-stream' --data-binary "@$work/blob" \
     "$site/v1/mailbox/$mailbox?ttl_days=1&wake=1"
 
+# --- 1c. The relay backup (#97), with the same canaries --------------------
+head -c 65536 /dev/urandom > "$work/backup"
+expect 204 "PUT a backup (canary headers)" "${CANARY_HEADERS[@]}" -X PUT \
+    -H 'Content-Type: application/octet-stream' --data-binary "@$work/backup" \
+    "$site/v1/backup/$mailbox"
+expect 200 "GET it back (canary headers)" "${CANARY_HEADERS[@]}" "$site/v1/backup/$mailbox"
+cmp -s "$work/body" "$work/backup" ||
+    die "the backup GET didn't return the backup: the relay isn't behind Caddy."
+
 # --- 2. Failed TLS handshakes ----------------------------------------------
 raw "garbage instead of a TLS handshake" "$HTTPS_PORT" "\\x16\\x03\\x09$canary\\r\\n\\r\\n"
 refused "TLS for a name with no certificate" "https://nocert.invalid:$HTTPS_PORT/"
@@ -266,6 +277,12 @@ expect 400 "PUT a blob of the wrong size" "${CANARY_HEADERS[@]}" -X PUT \
     "$site/v1/mailbox/$mailbox"
 expect 404 "GET an unknown API path (canary in path)" "${CANARY_HEADERS[@]}" "$site/v1/$canary"
 expect 405 "DELETE a mailbox" "${CANARY_HEADERS[@]}" -X DELETE "$site/v1/mailbox/$mailbox"
+expect 400 "GET a malformed backup id (canary in path)" "${CANARY_HEADERS[@]}" \
+    "$site/v1/backup/$canary"
+expect 400 "PUT a backup of the wrong size" "${CANARY_HEADERS[@]}" -X PUT \
+    -H 'Content-Type: application/octet-stream' --data-binary "@$work/blob" \
+    "$site/v1/backup/$mailbox"
+expect 404 "GET an unknown backup" "${CANARY_HEADERS[@]}" "$site/v1/backup/$(hex 21)x"
 
 # Snapshot the database while it runs: the -wal and -shm exist only then.
 mkdir -p "$work/snapshot"

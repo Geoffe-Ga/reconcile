@@ -6,9 +6,9 @@ The pilot runs on one small DigitalOcean droplet that serves the app and the rel
 |---|---|
 | [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app` (the manifest with its own `Content-Type`). Caddy's own error responses get the same headers and a fixed body. Every log goes to discard |
 | [`reconcile-relay.service`](reconcile-relay.service) | The relay under Uvicorn, as the `reconcile` user, with no access log, no proxy headers and no `Server` header. It points at the VAPID key that signs Web Push ([below](#web-push)) |
-| [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)) |
+| [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)), and backups 180 days after their last refresh (#97) |
 | [`deploy.sh`](deploy.sh) | Builds, syncs, installs, restarts and smoke-tests. Run it with `--help` for the steps |
-| [`smoke.sh`](smoke.sh) | Health, a 1 KiB PUT and a GET back, then the push key, against any base URL |
+| [`smoke.sh`](smoke.sh) | Health, a 1 KiB PUT and a GET back, a 64 KiB backup PUT and GET back (#97), then the push key, against any base URL |
 | [`check.sh`](check.sh) | Validates the Caddyfile and the units. CI runs it through `./scripts/check-all.sh --deploy` |
 | [`no-ip-check.sh`](no-ip-check.sh) | Tries to make Caddy or the relay, with push on, write a client IP. Run it locally before changing either |
 
@@ -18,7 +18,7 @@ The founder does this once. The `<placeholders>` are yours; never commit their v
 
 **1. The droplet.** Create an **Ubuntu 24.04 LTS** droplet, the smallest size, in a US region, with your SSH key.
 - Leave **Monitoring** unticked: it installs a metrics agent.
-- Turn **Backups** off, and don't take **snapshots**. Either would keep the relay's database past its 30 days.
+- Turn **Backups** off, and don't take **snapshots**. Either would keep the relay's database past its retention: 30 days for blobs, and 180 days after the last refresh for relay backups (#97).
 
 **2. DNS.** Point an **A record** for `<domain>` at the droplet's IPv4 address. Caddy gets its certificate for that name on the first deploy.
 
@@ -96,7 +96,7 @@ deploy: <commit> to <domain>
 …the client build…
 [sudo] password for deploy:
 built client · synced · restarted reconcile-relay
-smoke: health ok · put seq 1 · get matches · push key · PASS
+smoke: health ok · put seq 1 · get matches · backup matches · push key · PASS
 ```
 
 It exits non-zero if any step fails, including the smoke test. The VM's own Caddy validates the Caddyfile before anything restarts. A deploy restarts Caddy, because `admin off` disables `caddy reload`, so the app is down for a second or two. On the first deploy the script waits up to two minutes for Caddy's certificate.
@@ -124,7 +124,7 @@ RECONCILE_RELAY_VAPID_KEY=.relay-data/vapid.pem RECONCILE_RELAY_VAPID_SUBJECT=ht
 ## Checks
 
 - **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it. It also holds the Caddyfile's CSP and HSTS header to their values, on the site's routes and on [its error routes](#caddys-own-errors) (see [The CSP](#the-csp) and [HSTS](#hsts)).
-- **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy`, `curl` and `openssl` on your PATH. It starts the relay with the unit's flags and push on, and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`, push routes included. Nothing it sends makes the relay call a push service. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. It also checks that the 502 Caddy writes while the relay is down carries the app's security headers and a body that names nothing. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
+- **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy`, `curl` and `openssl` on your PATH. It starts the relay with the unit's flags and push on, and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`, push and backup routes included. Nothing it sends makes the relay call a push service. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. It also checks that the 502 Caddy writes while the relay is down carries the app's security headers and a body that names nothing. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
 - **`deploy/smoke.sh <base-url>`** works against any running relay with push on, such as `http://127.0.0.1:8787` from `./scripts/relay.sh` started [with a key](#web-push). Without one, it fails at its last step, `push`.
 
 ## What the VM still sees
