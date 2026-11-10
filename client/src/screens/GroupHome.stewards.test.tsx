@@ -30,10 +30,15 @@ function renderHome(state: GroupState, me: string, props: Partial<GroupHomeProps
     <GroupHome
       state={state}
       me={me}
-      inviteLink="https://reconcile.example/#/join/m.s"
+      makeInviteLink={() => Promise.resolve(`https://reconcile.example/#join/${'s'.repeat(43)}`)}
       copyText={() => Promise.resolve()}
       now={now}
-      sync={{ reachable: true, lastSyncAt: now * MINUTE_MS, deviceNow: now * MINUTE_MS }}
+      sync={{
+        reachable: true,
+        lastSyncAt: now * MINUTE_MS,
+        deviceNow: now * MINUTE_MS,
+        missingHistory: false,
+      }}
       pending={[]}
       onChooseLevel={() => Promise.resolve()}
       onSuspend={onSuspend}

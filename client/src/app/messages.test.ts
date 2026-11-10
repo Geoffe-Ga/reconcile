@@ -45,6 +45,25 @@ describe('messages', () => {
     }
   });
 
+  it('says what an invite link opens in spec §9’s words, and the join lines in §8’s', () => {
+    expect(messages.home.inviteWarning).toBe(
+      'Anyone who opens this link in the next 2 days can read everything this group has written and voted on, and what comes next. Send it directly to the people you’re inviting.',
+    );
+    expect(messages.home.missingHistory).toBe(
+      'Some history may be missing on this device. Open a new invite link from your group to catch up.',
+    );
+    expect(messages.join.badLink).toBe(
+      'This invite link has expired or is damaged. Ask someone in your group for a new one.',
+    );
+    expect(messages.join.nameHint).toBe(
+      'This name is only shown in this group. It doesn’t have to be your real name.',
+    );
+    expect(messages.join.visibility).toBe(
+      'People in this group will see the name you choose and how you vote.',
+    );
+    expect(`${messages.join.fromBefore} Ana${messages.join.fromAfter}`).toBe('From Ana’s invite');
+  });
+
   it('names and describes each level once, in LEVELS order', () => {
     expect(messages.levels.names).toHaveLength(LEVELS.length);
     expect(messages.levels.descriptions).toHaveLength(LEVELS.length);

@@ -48,6 +48,19 @@ export interface GenesisBody {
 export interface JoinBody {
   readonly name: string;
   readonly level?: string;
+  /** The inviter's token from the invite link (#73), when the join carries a well-shaped one. */
+  readonly token?: InviteToken;
+}
+
+/**
+ * An inviter's token (#73): their public key and their signature over the
+ * group id's UTF-8 under the invite-token tag, both in unpadded base64url. The
+ * fold names the inviter only when it verifies and `by` joined first; a token
+ * that doesn't never invalidates the join.
+ */
+export interface InviteToken {
+  readonly by: string;
+  readonly sig: string;
 }
 
 /** Sets the author's own involvement level (ADR-0021: self-selected). The fold checks the id. */
@@ -229,6 +242,9 @@ const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 /** An author: a 32-byte Ed25519 public key in unpadded base64url. */
 const AUTHOR = /^[A-Za-z0-9_-]{43}$/;
 
+/** A 64-byte Ed25519 signature in unpadded base64url. */
+const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
+
 /** The id of an event: the unpadded base64url SHA-256 of its exact bytes. */
 export function eventId(bytes: Uint8Array): string {
   return base64url(sha256(bytes));
@@ -307,10 +323,22 @@ function parseGenesis(body: Json): GenesisBody | null {
   };
 }
 
+/** A well-shaped invite token, or undefined for none or anything else: a bad token never sinks a join. */
+function parseToken(value: unknown): InviteToken | undefined {
+  if (!isObject(value)) return undefined;
+  const { by, sig } = value;
+  return isAuthor(by) && isString(sig) && SIGNATURE.test(sig) ? { by, sig } : undefined;
+}
+
 function parseJoin(body: Json): JoinBody | null {
   const { name, level } = body;
   if (!isString(name) || !isOptionalString(level)) return null;
-  return { name, ...(level === undefined ? {} : { level }) };
+  const token = parseToken(body.token);
+  return {
+    name,
+    ...(level === undefined ? {} : { level }),
+    ...(token === undefined ? {} : { token }),
+  };
 }
 
 function parseLevel(body: Json): LevelBody | null {

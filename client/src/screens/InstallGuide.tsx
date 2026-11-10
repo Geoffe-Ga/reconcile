@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useId, useState } from 'react';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
 import { CopyLink } from '../app/CopyLink';
-import { type Invite, inviteLink } from '../app/invite';
+import { inviteLink } from '../app/invite';
 import { messages } from '../app/messages';
 import { PageHeader } from '../app/ui';
 import { InvitePreview } from './InvitePreview';
@@ -10,7 +10,7 @@ import { InvitePreview } from './InvitePreview';
 /** How the page was opened: plainly, with an invite link, or with one that can't be read. */
 export type Arrival =
   | { readonly kind: 'plain' }
-  | { readonly kind: 'invite'; readonly invite: Invite }
+  | { readonly kind: 'invite'; readonly seed: Uint8Array }
   | { readonly kind: 'damaged' };
 
 /** Props for {@link InstallGuide}. */
@@ -19,8 +19,8 @@ export interface InstallGuideProps {
   readonly arrival: Arrival;
   /** The app's origin: its address, and the start of invite links. */
   readonly origin: string;
-  /** Reads the invite's mailbox for its preview. It stores nothing and makes no keys. */
-  readonly lookup: (invite: Invite) => Promise<InviteLookup>;
+  /** Opens the invite's envelope for its preview. It stores nothing and makes no keys. */
+  readonly lookup: (seed: Uint8Array) => Promise<InviteLookup>;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
 }
@@ -61,10 +61,10 @@ function InviteSection({ group, link, copyText }: InviteSectionProps) {
           <div className="page-head">
             <p className="eyebrow">{messages.join.eyebrow}</p>
             <h2 id={heading} className="heading-2">
-              <bdi>{group.name}</bdi>
+              <bdi>{group.preview.groupName}</bdi>
             </h2>
           </div>
-          <InvitePreview group={group} />
+          <InvitePreview preview={group.preview} />
         </>
       )}
       <CopyLink
@@ -80,11 +80,11 @@ function InviteSection({ group, link, copyText }: InviteSectionProps) {
 }
 
 interface InviteAreaProps extends Pick<InstallGuideProps, 'origin' | 'copyText'> {
-  readonly invite: Invite;
+  readonly seed: Uint8Array;
   readonly phase: Phase;
 }
 
-function InviteArea({ invite, phase, origin, copyText }: InviteAreaProps) {
+function InviteArea({ seed, phase, origin, copyText }: InviteAreaProps) {
   switch (phase.kind) {
     case 'loading':
       return (
@@ -96,11 +96,11 @@ function InviteArea({ invite, phase, origin, copyText }: InviteAreaProps) {
       return <ExpiredLink origin={origin} copyText={copyText} />;
     case 'found':
       return (
-        <InviteSection group={phase.group} link={inviteLink(origin, invite)} copyText={copyText} />
+        <InviteSection group={phase.group} link={inviteLink(origin, seed)} copyText={copyText} />
       );
     case 'offline':
     case 'joined':
-      return <InviteSection group={null} link={inviteLink(origin, invite)} copyText={copyText} />;
+      return <InviteSection group={null} link={inviteLink(origin, seed)} copyText={copyText} />;
   }
 }
 
@@ -117,12 +117,12 @@ function ExpiredLink({ origin, copyText }: Pick<InstallGuideProps, 'origin' | 'c
 /** Reads the invite's preview once, with nothing kept on the device. */
 function useInviteLookup(arrival: Arrival, lookup: InstallGuideProps['lookup']): Phase {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
-  const invite = arrival.kind === 'invite' ? arrival.invite : null;
-  const read = useEffectEvent((which: Invite) => lookup(which));
+  const seed = arrival.kind === 'invite' ? arrival.seed : null;
+  const read = useEffectEvent((which: Uint8Array) => lookup(which));
   useEffect(() => {
-    if (invite === null) return;
+    if (seed === null) return;
     let live = true;
-    read(invite).then(
+    read(seed).then(
       (found) => {
         if (live) setPhase(found);
       },
@@ -133,7 +133,7 @@ function useInviteLookup(arrival: Arrival, lookup: InstallGuideProps['lookup']):
     return () => {
       live = false;
     };
-  }, [invite]);
+  }, [seed]);
   return phase;
 }
 
@@ -161,7 +161,7 @@ export function InstallGuide({ arrival, origin, lookup, copyText }: InstallGuide
         ))}
       </ol>
       {arrival.kind === 'invite' ? (
-        <InviteArea invite={arrival.invite} phase={phase} origin={origin} copyText={copyText} />
+        <InviteArea seed={arrival.seed} phase={phase} origin={origin} copyText={copyText} />
       ) : arrival.kind === 'damaged' ? (
         <ExpiredLink origin={origin} copyText={copyText} />
       ) : (

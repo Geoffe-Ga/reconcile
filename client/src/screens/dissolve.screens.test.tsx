@@ -32,10 +32,15 @@ function renderHome(state: GroupState, me: string, props: Partial<GroupHomeProps
     <GroupHome
       state={state}
       me={authorOf(me)}
-      inviteLink="https://reconcile.example/#/join/m.s"
+      makeInviteLink={() => Promise.resolve(`https://reconcile.example/#join/${'s'.repeat(43)}`)}
       copyText={() => Promise.resolve()}
       now={now}
-      sync={{ reachable: true, lastSyncAt: now * MINUTE_MS, deviceNow: now * MINUTE_MS }}
+      sync={{
+        reachable: true,
+        lastSyncAt: now * MINUTE_MS,
+        deviceNow: now * MINUTE_MS,
+        missingHistory: false,
+      }}
       pending={[]}
       onChooseLevel={() => Promise.resolve()}
       onSuspend={() => Promise.resolve()}
@@ -127,7 +132,7 @@ describe('a dissolved group on Group home', () => {
   it('says when it dissolved and that this is a read-only copy, and offers no controls', async () => {
     const { state, open, motion } = dissolved();
     renderHome(state, 'ana', {
-      sync: { reachable: false, lastSyncAt: null, deviceNow: 0 },
+      sync: { reachable: false, lastSyncAt: null, deviceNow: 0, missingHistory: true },
       onRemove: () => Promise.resolve(),
     });
     const received = state.dissolved?.received ?? 0;
@@ -138,6 +143,7 @@ describe('a dissolved group on Group home', () => {
     ).toBeVisible();
     expect(screen.queryByText(/It will be erased from this device/)).toBeNull();
     expect(screen.queryByText(/Can’t reach the relay/)).toBeNull();
+    expect(screen.queryByText(/Some history may be missing/)).toBeNull();
     expect(screen.queryByRole('region', { name: 'Needs your vote' })).toBeNull();
     const unfinished = screen.getByRole('region', { name: 'Not decided' });
     const cut = within(unfinished).getByRole('link', { name: /Later quiet hours/ });

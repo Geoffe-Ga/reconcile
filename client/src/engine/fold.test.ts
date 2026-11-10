@@ -199,6 +199,7 @@ describe('fold', () => {
       name: 'ben',
       level,
       seq: 2,
+      invitedBy: null,
     });
   });
 
@@ -215,6 +216,7 @@ describe('fold', () => {
       name: 'ben',
       level: follow,
       seq: 2,
+      invitedBy: null,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);

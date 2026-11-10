@@ -1,24 +1,40 @@
-import type { FoundGroup } from '../app/actions';
+/**
+ * An invite's preview card (spec §8.4; ADR-0052): who sent the invite, the
+ * Document's title and its first section.
+ *
+ * Every field arrives inside the sealed envelope, written by the inviter's
+ * device, so it renders as plain text inside `<bdi>`, never as Markdown or
+ * HTML: nothing in a preview can run script, load anything or reorder the
+ * text around it. Join and the install guide (#76) both show it.
+ */
+import type { InvitePreview as Preview } from '../invite/envelope';
 import { messages } from '../app/messages';
 
 /** Props for {@link InvitePreview}. */
 export interface InvitePreviewProps {
-  /** What the invite's mailbox showed of the group. */
-  readonly group: Pick<FoundGroup, 'title'>;
+  /** The preview from the invite's header. */
+  readonly preview: Preview;
 }
 
-/**
- * What an invite shows of its group before anyone joins: Join's card, which
- * the install guide shows too (#76). Group words render as plain text in
- * `<bdi>`. #73 adds the inviter and an excerpt here, for both screens.
- */
-export function InvitePreview({ group }: InvitePreviewProps) {
+/** "From Ana’s invite", then the Document's title and its first section. */
+export function InvitePreview({ preview }: InvitePreviewProps) {
   return (
-    <div className="card">
-      <p className="eyebrow">{messages.join.documentLabel}</p>
-      <p className="heading-2">
-        <bdi>{group.title}</bdi>
+    <div className="card invite-preview">
+      <p className="invite-from">
+        {messages.join.fromBefore} <bdi>{preview.inviterName}</bdi>
+        {messages.join.fromAfter}
       </p>
+      <div className="invite-document">
+        <p className="eyebrow">{messages.join.documentLabel}</p>
+        <p className="heading-2">
+          <bdi>{preview.documentTitle}</bdi>
+        </p>
+        {preview.excerpt === '' ? null : (
+          <p className="invite-excerpt">
+            <bdi>{preview.excerpt}</bdi>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

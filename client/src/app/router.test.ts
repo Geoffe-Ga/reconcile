@@ -19,6 +19,8 @@ describe('parseRoute', () => {
     ['#/create', { name: 'create' }],
     ['#/join', { name: 'join', payload: null }],
     ['#/join/abc.def', { name: 'join', payload: 'abc.def' }],
+    ['#join/abc-def', { name: 'join', payload: 'abc-def' }],
+    ['#join/abc.def', { name: 'join', payload: 'abc.def' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
@@ -60,6 +62,10 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
     '#/join/',
+    '#join',
+    '#join/',
+    '#join/abc/def',
+    '#join/has space',
     'create',
   ])('sends the unknown %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
@@ -71,7 +77,7 @@ describe('routeHref', () => {
     [{ name: 'start' }, '#/'],
     [{ name: 'create' }, '#/create'],
     [{ name: 'join', payload: null }, '#/join'],
-    [{ name: 'join', payload: 'abc.def' }, '#/join/abc.def'],
+    [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],

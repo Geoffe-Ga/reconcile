@@ -2,8 +2,10 @@
  * A small hash router (spec §8: hash routes, no router library).
  *
  * Every route lives after `#`, which browsers never send to a server, so an
- * invite's secret in `#/join/{payload}` stays on the device. The Join screen
- * replaces that entry with `#/join` once it has read the payload.
+ * invite's seed in `#join/{seed}` stays on the device. The Join screen
+ * replaces that entry with `#/join` once it has read the seed. The tracer's
+ * `#/join/{payload}` form still reads as Join, so an old link says plainly
+ * that it no longer works.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -85,8 +87,15 @@ function joinRoute(rest: readonly string[]): Route {
     : START;
 }
 
+/** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
+const INVITE_PREFIX = '#join/';
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
+  if (hash.startsWith(INVITE_PREFIX)) {
+    const rest = hash.slice(INVITE_PREFIX.length).split('/');
+    return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
+  }
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
   switch (head) {
@@ -103,7 +112,7 @@ export function parseRoute(hash: string): Route {
 
 /** Join's `href`: with its invite payload, or bare once Join has read it. */
 function joinHref(payload: string | null): string {
-  return payload === null ? '#/join' : `#/join/${payload}`;
+  return payload === null ? '#/join' : `${INVITE_PREFIX}${payload}`;
 }
 
 /** A steward composer's `href`: `recall/{seat}` for a recall, else `steward/{seat}` (#102). */

@@ -19,8 +19,11 @@ import { concatBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 /** The tag on an event's signature. */
 export const EVENT_CONTEXT = 'reconcile/v1/event';
 
-/** What a signature is for. #73 adds `'reconcile/v1/invite-token'`. */
-export type SignContext = typeof EVENT_CONTEXT;
+/** The tag on an invite token: an inviter's signature over the group id (#73). */
+export const INVITE_TOKEN_CONTEXT = 'reconcile/v1/invite-token';
+
+/** What a signature is for. */
+export type SignContext = typeof EVENT_CONTEXT | typeof INVITE_TOKEN_CONTEXT;
 
 /** An Ed25519 public key's length in bytes. */
 export const PUBLIC_KEY_BYTES = 32;

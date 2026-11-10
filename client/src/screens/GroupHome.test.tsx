@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { formatDay } from '../app/format';
+import { messages } from '../app/messages';
 import { formatMinute, formatSyncedAt, MINUTE_MS } from '../app/time';
 import { type Level, LEVELS } from '../engine/capabilities';
 import { createEvent, type ParsedEvent, parseEvent } from '../engine/event';
@@ -13,22 +14,32 @@ import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 
-const LINK = 'https://reconcile.example/#/join/group-secret';
+const LINK = `https://reconcile.example/#join/${'s'.repeat(43)}`;
 const [FOLLOWING, VOTING, CREATING] = LEVELS;
 const NOW = START_MINUTE + 60;
-const SYNCED = { reachable: true, lastSyncAt: NOW * MINUTE_MS, deviceNow: NOW * MINUTE_MS };
+const SYNCED = {
+  reachable: true,
+  lastSyncAt: NOW * MINUTE_MS,
+  deviceNow: NOW * MINUTE_MS,
+  missingHistory: false,
+};
 
 type OnChooseLevel = (level: Level) => Promise<void>;
+type CopyText = GroupHomeProps['copyText'];
 type OnLeave = () => Promise<void>;
 
 function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
-  const copyText = vi.fn(() => Promise.resolve());
+  const copied: string[] = [];
+  const copyText = vi.fn<CopyText>(async (text) => {
+    copied.push(await text);
+  });
+  const makeInviteLink = vi.fn(() => Promise.resolve(LINK));
   const onChooseLevel = vi.fn<OnChooseLevel>(() => Promise.resolve());
   const onLeave = vi.fn<OnLeave>(() => Promise.resolve());
   const all: GroupHomeProps = {
     state,
     me: authorOf('ana'),
-    inviteLink: LINK,
+    makeInviteLink,
     copyText,
     now: NOW,
     sync: SYNCED,
@@ -44,7 +55,9 @@ function renderHome(state: GroupState, props: Partial<GroupHomeProps> = {}) {
   };
   return {
     user: userEvent.setup(),
-    copyText,
+    copied,
+    copyText: all.copyText,
+    makeInviteLink: all.makeInviteLink,
     onChooseLevel: all.onChooseLevel,
     onLeave: all.onLeave,
     rerender,
@@ -71,10 +84,8 @@ const rows = () =>
 
 function setup(options: TestGroupOptions = {}, me?: string) {
   const group = testGroup({ joiners: ['Ben'], ...options });
-  const { user, copyText, onChooseLevel, onLeave } = renderHome(group.state, {
-    me: me ?? group.founder,
-  });
-  return { user, copyText, onChooseLevel, onLeave, state: group.state };
+  const home = renderHome(group.state, { me: me ?? group.founder });
+  return { ...home, state: group.state };
 }
 
 const section = (name: string) => screen.getByRole('region', { name });
@@ -89,9 +100,6 @@ describe('GroupHome', () => {
     expect(documentLink).toHaveAttribute('href', `#/g/${state.group ?? ''}/doc`);
     expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
     expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator']);
-    const field = within(section('Invite people')).getByRole('textbox', { name: 'Invite link' });
-    expect(field).toHaveValue(LINK);
-    expect(field).toHaveAttribute('readonly');
     expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',
@@ -101,22 +109,82 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('copies the invite link, and says so', async () => {
-    const { user, copyText } = setup();
-    await user.click(screen.getByRole('button', { name: 'Copy invite link' }));
-    expect(copyText).toHaveBeenCalledWith(LINK);
-    expect(within(section('Invite people')).getByRole('status')).toHaveTextContent(
-      'Copied. Send it to the people you’re inviting.',
+  it('says beside Copy invite link what a leaked link opens, and makes no link until pressed', async () => {
+    const { makeInviteLink } = setup();
+    const invite = section('Invite people');
+    const button = within(invite).getByRole('button', { name: 'Copy invite link' });
+    const warning = within(invite).getByText(messages.home.inviteWarning);
+    expect(warning).toHaveTextContent(
+      'Anyone who opens this link in the next 2 days can read everything this group has written and voted on, and what comes next. Send it directly to the people you’re inviting.',
     );
+    expect(button).toHaveAccessibleDescription(messages.home.inviteWarning);
+    expect(warning.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(invite).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(makeInviteLink).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
   });
 
-  it('points to the field when the browser blocks copying', async () => {
+  it('makes a link, copies it once the relay has it, shows it, and says so', async () => {
+    const { user, copied, copyText, makeInviteLink } = setup();
+    await user.click(screen.getByRole('button', { name: 'Copy invite link' }));
+    const invite = section('Invite people');
+    expect(await within(invite).findByRole('textbox', { name: 'Invite link' })).toHaveValue(LINK);
+    expect(within(invite).getByRole('textbox')).toHaveAttribute('readonly');
+    expect(makeInviteLink).toHaveBeenCalledTimes(1);
+    expect(copyText).toHaveBeenCalledTimes(1);
+    expect(copied).toEqual([LINK]);
+    expect(within(invite).getByRole('status')).toHaveTextContent(
+      'Copied. Send it to the people you’re inviting.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says “Making…” while the relay takes the envelope, and makes one link per press', async () => {
+    const user = userEvent.setup();
+    let finish: (link: string) => void = () => undefined;
+    const makeInviteLink = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderHome(testGroup().state, { me: authorOf('ana'), makeInviteLink });
+    const button = screen.getByRole('button', { name: 'Copy invite link' });
+    await user.click(button);
+    await user.click(button);
+    const invite = section('Invite people');
+    expect(within(invite).getByRole('status')).toHaveTextContent('Making your invite link…');
+    finish(LINK);
+    expect(await within(invite).findByRole('textbox', { name: 'Invite link' })).toHaveValue(LINK);
+    expect(makeInviteLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('copies nothing and says so when the link can’t be made', async () => {
+    const user = userEvent.setup();
+    const makeInviteLink = vi.fn(() => Promise.reject(new Error('offline')));
+    const { copied } = renderHome(testGroup().state, { me: authorOf('ana'), makeInviteLink });
+    await user.click(screen.getByRole('button', { name: 'Copy invite link' }));
+    const invite = section('Invite people');
+    await waitFor(() => {
+      expect(within(invite).getByRole('status')).toHaveTextContent(messages.home.makeFailed);
+    });
+    expect(messages.home.makeFailed).toBe(
+      'The invite link couldn’t be made, so nothing was copied. Making one needs the relay. Check your connection, then try again.',
+    );
+    expect(copied).toEqual([]);
+    expect(within(invite).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('points to the link when the browser blocks copying', async () => {
     const user = userEvent.setup();
     const group = testGroup();
     const copyText = vi.fn(() => Promise.reject(new Error('blocked')));
     renderHome(group.state, { me: group.founder, copyText });
     await user.click(screen.getByRole('button', { name: 'Copy invite link' }));
-    expect(within(section('Invite people')).getByRole('status')).toHaveTextContent(
+    const invite = section('Invite people');
+    expect(await within(invite).findByRole('textbox', { name: 'Invite link' })).toHaveValue(LINK);
+    expect(within(invite).getByRole('status')).toHaveTextContent(
       'Copying is blocked here. Select the link above and copy it yourself.',
     );
     expect(await axeViolations()).toEqual([]);
@@ -124,10 +192,39 @@ describe('GroupHome', () => {
 
   it('selects the whole link when the field takes focus', async () => {
     const { user } = setup();
-    const field = screen.getByRole<HTMLInputElement>('textbox', { name: 'Invite link' });
+    await user.click(screen.getByRole('button', { name: 'Copy invite link' }));
+    const field = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Invite link' });
     await user.click(field);
     expect(field.selectionStart).toBe(0);
     expect(field.selectionEnd).toBe(LINK.length);
+  });
+
+  it('says some history may be missing while the flag is set, and nothing otherwise', async () => {
+    const group = testGroup();
+    const { rerender } = renderHome(group.state, { sync: { ...SYNCED, missingHistory: true } });
+    expect(screen.getByText(messages.home.missingHistory)).toHaveTextContent(
+      'Some history may be missing on this device. Open a new invite link from your group to catch up.',
+    );
+    expect(await axeViolations()).toEqual([]);
+    rerender({ sync: SYNCED });
+    expect(screen.queryByText(messages.home.missingHistory)).not.toBeInTheDocument();
+  });
+
+  it('says who invited each person, once a verified token names them', async () => {
+    const group = testGroup({
+      joiners: ['Ben', 'Cal', 'Dee'],
+      invitedBy: { Ben: 'Ana', Cal: 'Ben' },
+    });
+    renderHome(group.state, { me: group.founder });
+    expect(rows()).toEqual([
+      'Ana, Co-Creator, Steward',
+      'Ben, invited by Ana, Co-Creator',
+      'Cal, invited by Ben, Co-Creator',
+      'Dee, Co-Creator',
+    ]);
+    const ben = within(section('People')).getAllByRole('listitem')[1];
+    expect(ben?.querySelectorAll('bdi')).toHaveLength(2);
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('lists the open Proposals waiting on this person by title, under Needs your vote', () => {
@@ -291,7 +388,7 @@ describe('GroupHome', () => {
 
   it('says when it can’t reach the relay, and when it last synced', async () => {
     const lastSyncAt = (NOW - 90) * MINUTE_MS;
-    const sync = { reachable: false, lastSyncAt, deviceNow: NOW * MINUTE_MS };
+    const sync = { ...SYNCED, reachable: false, lastSyncAt };
     renderHome(groupLog().state(), { sync });
     expect(screen.getByText(/^Can’t reach the relay right now/)).toHaveTextContent(
       `Can’t reach the relay right now. Last synced ${formatSyncedAt(lastSyncAt, NOW * MINUTE_MS)}.`,
@@ -300,7 +397,7 @@ describe('GroupHome', () => {
   });
 
   it('says it can’t reach the relay before any sync has finished', () => {
-    const sync = { reachable: false, lastSyncAt: null, deviceNow: NOW * MINUTE_MS };
+    const sync = { ...SYNCED, reachable: false, lastSyncAt: null };
     renderHome(groupLog().state(), { sync });
     expect(screen.getByText(/^Can’t reach the relay right now/)).toHaveTextContent(
       /^Can’t reach the relay right now\.$/,
@@ -315,12 +412,14 @@ describe('GroupHome', () => {
   it('tells two people of the same name apart by a key suffix, inside <bdi>', () => {
     setup({ joiners: ['Sam', 'sam ', 'Sammy'] });
     const people = within(section('People')).getAllByRole('listitem');
-    const [ana, sam, other, sammy] = people.map((item) => item.firstElementChild?.textContent);
+    const [ana, sam, other, sammy] = people.map((item) => item.querySelector('bdi')?.textContent);
     expect([ana, sammy]).toEqual(['Ana', 'Sammy']);
     expect(sam).toMatch(/^Sam · [0-9a-f]{4}$/);
     expect(other).toMatch(/^sam {2}· [0-9a-f]{4}$/);
     expect(sam?.slice(-4)).not.toBe(other?.slice(-4));
-    for (const item of people) expect(item.firstElementChild?.tagName).toBe('BDI');
+    for (const item of people) {
+      expect(item.querySelector('.person-name')).toBe(item.querySelector('bdi'));
+    }
   });
 
   it('shows people and the invite only to someone who may see them', () => {

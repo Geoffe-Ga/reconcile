@@ -2,13 +2,13 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { newInviteSeed } from '../crypto/invite';
+import { base64url } from '../engine/event';
 import type { PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import type { Persistence } from '../platform/persist';
 import type { InviteLookup } from './actions';
 import { FirstRunGate, type OpenedApp } from './FirstRunGate';
-import { newGroupSecret } from '../crypto/groupKeys';
-import { type Invite, invitePayload } from './invite';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -32,9 +32,14 @@ afterEach(() => {
   window.history.replaceState(null, '', '/');
 });
 
-/** A new invite: a fresh group secret, as Copy invite link would send. */
-function newInvite(): Invite {
-  return { secret: newGroupSecret() };
+/** A new invite's seed, as Copy invite link makes one. */
+function newInvite(): Uint8Array {
+  return newInviteSeed();
+}
+
+/** The seed as a link carries it. */
+function invitePayload(seed: Uint8Array): string {
+  return base64url(seed);
 }
 
 /** A notice record in memory, recording each call in `events`. */
@@ -65,7 +70,7 @@ function setup(options: Options = {}) {
     events.push('persist');
     return Promise.resolve(options.persistence ?? 'granted');
   });
-  const lookup = vi.fn<(invite: Invite) => Promise<InviteLookup>>(() =>
+  const lookup = vi.fn<(seed: Uint8Array) => Promise<InviteLookup>>(() =>
     Promise.resolve({ kind: 'missing' }),
   );
   const opened: OpenedApp[] = [];
@@ -111,7 +116,7 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
     const invite = newInvite();
     const { lookup, app } = setup({
       platform: IPHONE_TAB,
-      hash: `#/join/${invitePayload(invite)}`,
+      hash: `#join/${invitePayload(invite)}`,
     });
     expect(guideHeading()).toBeVisible();
     expect(window.location.pathname).toBe('/');
@@ -119,7 +124,7 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
     await waitFor(() => {
       expect(lookup).toHaveBeenCalledTimes(1);
     });
-    expect(lookup.mock.calls[0]?.[0]?.secret).toEqual(invite.secret);
+    expect(lookup.mock.calls[0]?.[0]).toEqual(invite);
     expect(app).not.toHaveBeenCalled();
   });
 
@@ -128,19 +133,19 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
     const { lookup } = setup({ platform: IPHONE_TAB });
     expect(screen.getByRole('textbox', { name: 'Reconcile’s address' })).toBeVisible();
     act(() => {
-      window.location.hash = `#/join/${invitePayload(invite)}`;
+      window.location.hash = `#join/${invitePayload(invite)}`;
     });
     await waitFor(() => {
       expect(lookup).toHaveBeenCalledTimes(1);
     });
-    expect(lookup.mock.calls[0]?.[0]?.secret).toEqual(invite.secret);
+    expect(lookup.mock.calls[0]?.[0]).toEqual(invite);
     expect(window.location.hash).toBe('');
     // This lookup finds the mailbox empty, so the guide says the link has expired.
     expect(await screen.findByText(/This invite link has expired or is damaged/)).toBeVisible();
   });
 
   it('takes a damaged invite out of the address bar too, and fetches nothing', () => {
-    const { lookup } = setup({ platform: IPHONE_TAB, hash: '#/join/damaged.payload' });
+    const { lookup } = setup({ platform: IPHONE_TAB, hash: '#join/damaged.payload' });
     expect(window.location.hash).toBe('');
     expect(
       screen.getByText(
@@ -171,17 +176,17 @@ describe('FirstRunGate where keys may be made', () => {
       expect(opened.at(-1)?.persistence).toBe('denied');
     });
     expect(events).toEqual(['accept', 'persist']);
-    expect(opened[0]).toEqual({ heldInvite: null, persistence: null });
+    expect(opened[0]).toEqual({ heldSeed: null, persistence: null });
   });
 
   it('holds an invite through the notice, out of the address bar, and hands it to the app', async () => {
     const invite = newInvite();
-    const { user, opened, lookup } = setup({ hash: `#/join/${invitePayload(invite)}` });
+    const { user, opened, lookup } = setup({ hash: `#join/${invitePayload(invite)}` });
     expect(noticeHeading()).toBeVisible();
     expect(window.location.hash).toBe('#/join');
     await user.click(screen.getByRole('button', { name: 'I understand' }));
-    const held: Invite | null | undefined = opened.at(-1)?.heldInvite;
-    expect(held?.secret).toEqual(invite.secret);
+    const held: Uint8Array | null | undefined = opened.at(-1)?.heldSeed;
+    expect(held).toEqual(invite);
     expect(lookup).not.toHaveBeenCalled();
   });
 
@@ -189,24 +194,24 @@ describe('FirstRunGate where keys may be made', () => {
     const invite = newInvite();
     const { user, opened } = setup();
     act(() => {
-      window.location.hash = `#/join/${invitePayload(invite)}`;
+      window.location.hash = `#join/${invitePayload(invite)}`;
     });
     await waitFor(() => {
       expect(window.location.hash).toBe('#/join');
     });
     await user.click(screen.getByRole('button', { name: 'I understand' }));
-    expect(opened.at(-1)?.heldInvite?.secret).toEqual(invite.secret);
+    expect(opened.at(-1)?.heldSeed).toEqual(invite);
   });
 
   it('opens at once once accepted, asking to keep the data at each launch', async () => {
     const invite = newInvite();
-    const hash = `#/join/${invitePayload(invite)}`;
+    const hash = `#join/${invitePayload(invite)}`;
     const { opened, requestPersistence } = setup({ accepted: true, hash });
     expect(appHeading()).toBeVisible();
     expect(noticeHeading()).not.toBeInTheDocument();
     // Join reads the link itself, as it always has.
     expect(window.location.hash).toBe(hash);
-    expect(opened[0]?.heldInvite).toBeNull();
+    expect(opened[0]?.heldSeed).toBeNull();
     await waitFor(() => {
       expect(opened.at(-1)?.persistence).toBe('granted');
     });

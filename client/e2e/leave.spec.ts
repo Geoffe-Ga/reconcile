@@ -78,6 +78,7 @@ async function createAndJoin(ana: Person, ben: Person): Promise<void> {
     .fill('Quiet hours start at 10pm.\n\nBins go out on Tuesday.');
   await ana.page.getByRole('button', { name: 'Create group' }).click();
   await expect(heading(ana.page, GROUP)).toBeVisible();
+  await ana.page.getByRole('button', { name: 'Copy invite link' }).click();
   const invite = await ana.page.getByRole('textbox', { name: 'Invite link' }).inputValue();
   await ben.page.goto(invite);
   await acceptNotice(ben);

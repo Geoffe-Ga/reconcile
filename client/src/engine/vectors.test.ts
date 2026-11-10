@@ -34,6 +34,7 @@ describe('vector files', () => {
       'dissolve-window.json',
       'fold.json',
       'home-two-open-proposals.json',
+      'invite.json',
       'keys.json',
       'leave-ballots.json',
       'leave-eligibility.json',
@@ -70,6 +71,7 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -273,6 +275,20 @@ describe('vector files', () => {
     'dissolve-window-max: a dissolve window of 29 days, over the entrenched maximum, is ignored, and 28 opens it with a deadline of received + 40,320',
     'dissolve-unfinished: an edit and a steward election still open when the group dissolves never close, apply or seat, even once later records and relay time pass their deadlines, and a Proposal decided before keeps its outcome and its text',
   ])('include the fold vector "%s"', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    "invite-token-member: a token a member signed over the group id names them as the joiner's inviter",
+    "invite-token-non-member: a token from someone who isn't a member gives a valid join with no inviter",
+    "invite-token-other-group: a member's token over another group's id gives a valid join with no inviter",
+    "invite-token-event-tag: a member's signature over the group id under the event tag gives a valid join with no inviter",
+    'invite-token-forged: a token naming a member but signed by someone else gives a valid join with no inviter',
+    'invite-token-joined-later: a token from someone who joins after the joiner names no one',
+    'invite-token-chain: a member who joined by invite names the next joiner',
+    'invite-token-malformed: a token of the wrong shape gives a valid join with no inviter',
+    'invite-token-none: a join with no token, as the tracer made, names no inviter',
+  ])('include the invite vector "%s"', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 });
