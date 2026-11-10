@@ -159,6 +159,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each version shows a word diff of the Markdown source against the current text, in Newsreader with its line breaks kept: additions underlined on `primary-soft`, and deletions struck through on `negative-soft`, the `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
+  - A priority vote's options (#107) are cards like versions, each headed by the option as plain text in Newsreader, with its own pills and consent meter. Phones stack them; wide screens set two columns, then three.
 - **Level picker** (#90): the three involvement levels as a radio group of cards, Member to Co-Creator.
   - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
   - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
@@ -171,6 +172,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - The outcome sentence comes first.
   - Totals come next.
   - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
+  - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots.
 - **Erase card** (Settings): one card, "Erase Reconcile from this device", in the same calm style as any setting.
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.

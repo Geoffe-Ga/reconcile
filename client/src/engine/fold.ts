@@ -22,9 +22,9 @@ import {
 } from './capabilities';
 import { optionFor } from './composeOption';
 import {
+  type EditProposalBody,
   EVENT_VERSION,
   type GenesisBody,
-  type EditProposalBody,
   type GroupEvent,
   type JoinBody,
   type LevelBody,
