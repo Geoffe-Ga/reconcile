@@ -9,6 +9,7 @@ import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
+import { NewcomerProgress, WaitingNote } from '../app/Newcomer';
 import { routeHref } from '../app/router';
 import { RulesLink } from '../app/RulesLink';
 import { SendStatus } from '../app/SendStatus';
@@ -19,7 +20,9 @@ import { SuspendDialog } from '../app/SuspendDialog';
 import { formatDate, formatMinute, formatSyncedAt, minuteIso } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
-import { can, isLevel, isSuspended, type Level } from '../engine/capabilities';
+import { VouchDialog } from '../app/VouchDialog';
+import { vouchWanted } from '../engine/admission';
+import { can, holdsRights, isLevel, isSuspended, type Level } from '../engine/capabilities';
 import { type Dissolution, mayProposeDissolve, wipeMinute } from '../engine/dissolve';
 import type { ParsedEvent } from '../engine/event';
 import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
@@ -50,6 +53,8 @@ export interface GroupHomeProps {
   readonly onChooseLevel: (level: Level) => Promise<void>;
   /** Queues this steward's suspension of the member named, with a reason, blank for none (#102). */
   readonly onSuspend: (member: string, reason: string) => Promise<void>;
+  /** Queues this member's vouch for the newcomer named (#101); rejects when it couldn't be saved. */
+  readonly onVouch: (member: string) => Promise<void>;
   /** Queues this member's leave and marks the group as leaving; rejects when it couldn't be saved. */
   readonly onLeave: () => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): the group reads, but takes no votes. */
@@ -268,15 +273,51 @@ interface PersonProps {
   readonly member: Member;
   /** The member this device's `suspend` in the outbox names, if one waits. */
   readonly suspending: string | undefined;
+  /** The members this device's `vouch` events in the outbox name (#101). */
+  readonly vouching: readonly string[];
+}
+
+interface NewcomerProps {
+  readonly props: GroupHomeProps;
+  readonly author: string;
+  readonly name: string;
+  readonly vouching: readonly string[];
+}
+
+/**
+ * A newcomer's progress and who vouched for them, then Vouch for <name> when
+ * this member may vouch for them, has none waiting to send and isn't leaving
+ * (admission.ts decides, as the fold does), or the vouch's status while it
+ * waits (#101). Nothing for someone who holds rights.
+ */
+function NewcomerRow({ props, author, name, vouching }: NewcomerProps) {
+  const { state, me, sync, onVouch } = props;
+  const waiting = vouching.includes(author);
+  const offered = props.leaving !== true && !waiting && vouchWanted(state, me, author);
+  return (
+    <>
+      <NewcomerProgress state={state} author={author} />
+      {offered ? (
+        <div className="person-vouch">
+          <VouchDialog name={name} chat={latestLink(state)} onVouch={() => onVouch(author)} />
+        </div>
+      ) : null}
+      {waiting ? (
+        <div className="person-status">
+          <SendStatus pending reachable={sync.reachable} sent={false} />
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /**
  * One person: their name and who invited them (#73), level and Steward
  * badge, any running suspension, and Suspend when this member may suspend
  * them now, has none waiting to send and isn't leaving (stewards.ts decides,
- * as the fold does).
+ * as the fold does). A newcomer's row also shows their way to a vote (#101).
  */
-function Person({ props, member, suspending }: PersonProps) {
+function Person({ props, member, suspending, vouching }: PersonProps) {
   const { state, me, sync, onSuspend } = props;
   const { author } = member;
   const name = displayName(state, author) ?? '';
@@ -308,12 +349,20 @@ function Person({ props, member, suspending }: PersonProps) {
         ) : null}
       </span>
       {suspension === undefined ? null : <SuspensionLine suspension={suspension} />}
+      <NewcomerRow props={props} author={author} name={name} vouching={vouching} />
       {suspending === author ? (
         <div className="person-status">
           <SendStatus pending reachable={sync.reachable} sent={false} />
         </div>
       ) : null}
     </li>
+  );
+}
+
+/** Whom this member's `vouch` events still in the outbox name (#101). */
+function waitingVouches(me: string, pending: readonly ParsedEvent[]): string[] {
+  return pending.flatMap(({ event }) =>
+    event.type === 'vouch' && event.author === me ? [event.body.member] : [],
   );
 }
 
@@ -333,10 +382,17 @@ function waitingSuspend(me: string, pending: readonly ParsedEvent[]): string | u
  */
 function People(props: GroupHomeProps) {
   const suspending = waitingSuspend(props.me, props.pending);
+  const vouching = waitingVouches(props.me, props.pending);
   return (
     <ul className="people">
       {props.state.members.map((member) => (
-        <Person key={member.author} props={props} member={member} suspending={suspending} />
+        <Person
+          key={member.author}
+          props={props}
+          member={member}
+          suspending={suspending}
+          vouching={vouching}
+        />
       ))}
     </ul>
   );
@@ -359,6 +415,8 @@ interface InvolvementProps {
   readonly reachable: boolean;
   /** True while a suspension runs: the fold ignores a suspended member's level change. */
   readonly suspended: boolean;
+  /** True until this member's voting rights arrive: every level reads and follows until then (#101). */
+  readonly newcomer: boolean;
   readonly onChooseLevel: GroupHomeProps['onChooseLevel'];
 }
 
@@ -368,7 +426,7 @@ interface InvolvementProps {
  * new level once the relay returns it (ADR-0021: self-selected).
  */
 function Involvement(props: InvolvementProps) {
-  const { current, waiting, reachable, suspended, onChooseLevel } = props;
+  const { current, waiting, reachable, suspended, newcomer, onChooseLevel } = props;
   const [choice, setChoice] = useState<Level | null>(null);
   const { run, running, outcome } = useSaving(onChooseLevel);
   const picked = choice ?? current;
@@ -380,6 +438,7 @@ function Involvement(props: InvolvementProps) {
   return (
     <div className="involvement">
       <LevelPicker value={picked} onChange={setChoice} isDisabled={running || suspended} />
+      {newcomer ? <p className="caption">{messages.admission.levelsWait}</p> : null}
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.levels.failed}
@@ -418,6 +477,7 @@ function PeopleSection(props: GroupHomeProps) {
               waiting={waiting !== undefined}
               reachable={sync.reachable}
               suspended={isSuspended(state, me)}
+              newcomer={!holdsRights(state, me)}
               onChooseLevel={onChooseLevel}
             />
             <div>
@@ -685,6 +745,8 @@ export function GroupHome(props: GroupHomeProps) {
       </div>
       {/* A suspension means nothing once the group has dissolved, though its end is still ahead. */}
       {dissolved === null ? <SuspendedNote state={state} me={me} /> : null}
+      {/* Nor does a newcomer's wait: no vote opens once the group has dissolved (#101, #108). */}
+      {readOnly ? null : <WaitingNote state={state} me={me} />}
       <div className="sections">
         <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
         {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}

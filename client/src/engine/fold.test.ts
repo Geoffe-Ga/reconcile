@@ -99,6 +99,7 @@ describe('fold', () => {
       stewards: EMPTY_SEATS,
       suspensions: [],
       narrowings: [],
+      vouches: [],
       chatPosts: [],
       dissolved: null,
       ignored: [],
@@ -202,7 +203,9 @@ describe('fold', () => {
       name: 'ben',
       level,
       seq: 2,
+      received: R + 1,
       invitedBy: null,
+      rightsAt: R + 1,
     });
   });
 
@@ -219,7 +222,9 @@ describe('fold', () => {
       name: 'ben',
       level: follow,
       seq: 2,
+      received: R + 1,
       invitedBy: null,
+      rightsAt: R + 1,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);

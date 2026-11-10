@@ -376,3 +376,23 @@ export async function proposeRules(
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
 }
+
+/**
+ * Vouches for the newcomer named (ADR-0014, #101), as this device's member of
+ * `groupId`. The vouch counts from the relay's receipt, and the fold decides
+ * whether it holds.
+ */
+export async function vouch(
+  services: ProposalServices,
+  groupId: string,
+  member: string,
+): Promise<void> {
+  const event = await signFor(services, groupId, {
+    type: 'vouch',
+    group: groupId,
+    ts: services.now(),
+    body: { member },
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+}

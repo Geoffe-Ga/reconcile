@@ -201,6 +201,15 @@ export interface NarrowBody {
 }
 
 /**
+ * Vouches for a newcomer (ADR-0014, #101): the author says they've met or
+ * talked with the member it names. Everyone in the group sees it. The fold checks that
+ * the author may vouch, and for whom.
+ */
+export interface VouchBody {
+  readonly member: string;
+}
+
+/**
  * Claims one notice of the chat bot (#119): `moment` of `proposal`, which the
  * author's device will post to the group's Discord webhook if its claim is
  * the first. Both are kept as written: the fold checks them (chatPosts.ts).
@@ -256,6 +265,7 @@ export interface EventBodies {
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
   readonly dissolve: DissolveBody;
+  readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
 }
 
@@ -505,6 +515,10 @@ function parseNarrow(body: Json): NarrowBody | null {
   return isString(optIn) && isString(proposal) ? { optIn, proposal } : null;
 }
 
+function parseVouch(body: Json): VouchBody | null {
+  return isString(body.member) ? { member: body.member } : null;
+}
+
 function parseChatPosted(body: Json): ChatPostedBody | null {
   const { proposal, moment, nonce } = body;
   if (!isString(proposal) || !isString(moment) || !isOptionalString(nonce)) return null;
@@ -567,7 +581,8 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 
 /**
  * {@link withBody} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `dissolve` (#108) and `chat-posted` (#119).
+ * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101) and
+ * `chat-posted` (#119).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -577,6 +592,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseNarrow(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dissolve':
       return attach(parseDissolve(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'vouch':
+      return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-posted':
       return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
     default:

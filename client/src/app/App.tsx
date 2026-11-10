@@ -55,6 +55,7 @@ import {
   suspend,
   type ProposalValues,
   type VersionValues,
+  vouch,
 } from './proposals';
 import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
@@ -279,6 +280,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             replaceRoute({ name: 'start' });
           }}
           onSuspend={(member, reason) => suspend(services, groupId, { member, reason })}
+          onVouch={(member) => vouch(services, groupId, member)}
           onRemove={async () => {
             await services.store.purgeGroup(groupId);
             replaceRoute({ name: 'start' });

@@ -10,7 +10,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { signedAs } from '../test/keys';
+import { authorOf, signedAs } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
@@ -20,6 +20,8 @@ import { tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
 const [FOLLOWING, , CREATING] = LEVELS;
+/** How long before R the founded members join: past the 14-day wait, so they vote from R on (#101). */
+const SETTLED = DEFAULT_RULES.waitDays * DAY_MINUTES + 100;
 /** How long an ordinary vote runs when no one chooses, in relay minutes. */
 const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 const encoder = new TextEncoder();
@@ -48,13 +50,23 @@ class Log {
     return id;
   }
 
-  /** Genesis by member 0 at R, then members 1..count-1 join. */
+  /**
+   * Genesis by member 0, then members 1..count-1 join, all {@link SETTLED}
+   * minutes before R, and members 0 and 1 vouch for each joiner after the
+   * bootstrap's first two, so everyone holds voting rights by R (#101).
+   */
   static founded(count: number, atoms: readonly string[] = ['A0', 'A1']): Log {
     const log = new Log();
+    const start = R - SETTLED;
     const body = { name: 'G', founder: 'Founder', title: 'Doc', atoms };
-    log.group = log.add(R, member(0), { type: 'genesis', body });
+    log.group = log.add(start, member(0), { type: 'genesis', body });
     for (let i = 1; i < count; i += 1) {
-      log.add(R + i, member(i), { type: 'join', body: { name: member(i) } });
+      log.add(start + i, member(i), { type: 'join', body: { name: member(i) } });
+    }
+    for (let i = 3; i < count; i += 1) {
+      const vouch = { type: 'vouch', body: { member: authorOf(member(i)) } } as const;
+      log.add(start + 20 + 2 * i, member(0), vouch);
+      log.add(start + 21 + 2 * i, member(1), vouch);
     }
     return log;
   }
@@ -243,9 +255,11 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
       fc.property(scenario, ({ log: { records, relayNow }, source, at, flip }) => {
         const forged = Uint8Array.from(source.bytes);
         forged[flip % forged.length] = (forged[flip % forged.length] ?? 0) ^ 0x01;
+        // It lands at its neighbour's receipt: relay time moves on with any record, valid or not.
+        const received = records[at]?.received ?? records.at(-1)?.received ?? R;
         const withForgery = [
           ...records.slice(0, at),
-          { seq: 0, received: records[at]?.received ?? R, bytes: forged },
+          { seq: 0, received, bytes: forged },
           ...records.slice(at),
         ];
         const state = fold(withForgery, relayNow);

@@ -20,6 +20,7 @@ import {
   proposeRules,
   proposeSteward,
   suspend,
+  vouch,
 } from './proposals';
 
 freshIndexedDBPerTest();
@@ -672,5 +673,18 @@ describe('suspend', () => {
     await suspend(device.services, groupId, { member, reason: '   ' });
     const [queued] = await outbox(device, groupId);
     expect(queued?.body).toEqual({ member });
+  });
+});
+
+describe('vouch', () => {
+  it('queues one vouch naming the newcomer, signed by this device’s member (#101)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const member = 'k'.repeat(43);
+    await vouch(device.services, groupId, member);
+    expect(await outbox(device, groupId)).toEqual([
+      { v: 1, type: 'vouch', group: groupId, author, ts: 1_762_650_000_000, body: { member } },
+    ]);
   });
 });
