@@ -1,0 +1,228 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "vouch-wait-boundary: Ana, Ben and Cal hold rights; Kim joins at minute 1,000,000, claiming a ts 14 days earlier, and Ana and Ben vouch the next day, so a Proposal received at 1,020,159 leaves Kim out and one at 1,020,160 lets her vote",
+      "records": [
+        {
+          "seq": 1,
+          "received": 999000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 59940000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 999001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 59940060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 999002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 59940120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 1000000,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 58790400000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 1001440,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 60086400000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 1001441,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 60086460000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 1020159,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 61209540000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet after 10pm",
+              "why": "People asked for it.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 1020160,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 61209600000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Bins out on Monday",
+              "why": "People asked for it.",
+              "text": "Bins out on Monday."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 1020161,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 61209660000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 1020162,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 61209720000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 1020170,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana",
+            "received": 999000,
+            "rightsAt": 999000
+          },
+          {
+            "author": "%ben",
+            "received": 999001,
+            "rightsAt": 999001
+          },
+          {
+            "author": "%cal",
+            "received": 999002,
+            "rightsAt": 999002
+          },
+          {
+            "author": "%kim",
+            "received": 1000000,
+            "rightsAt": 1020160
+          }
+        ],
+        "vouches": [
+          {
+            "id": "@5",
+            "seq": 5,
+            "received": 1001440,
+            "by": "%ana",
+            "member": "%kim"
+          },
+          {
+            "id": "@6",
+            "seq": 6,
+            "received": 1001441,
+            "by": "%ben",
+            "member": "%kim"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@7",
+            "eligible": ["%ana", "%ben", "%cal"],
+            "ballots": []
+          },
+          {
+            "id": "@8",
+            "eligible": ["%ana", "%ben", "%cal", "%kim"],
+            "ballots": [
+              {
+                "voter": "%kim"
+              }
+            ]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      }
+    }
+  ]
+}

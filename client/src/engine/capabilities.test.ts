@@ -10,6 +10,8 @@ import {
   type Level,
   LEVEL_CAPABILITIES,
   LEVELS,
+  holdsRights,
+  NEWCOMER_CAPABILITIES,
   type Roster,
   SUSPENDED_CAPABILITIES,
   votingRightsCount,
@@ -45,14 +47,24 @@ function filesNamingLevels(sources: Readonly<Record<string, string>>): string[] 
     .map(([path]) => path);
 }
 
-/** A roster of one member, ana, at `level`. */
-const at = (level: Level): Roster => ({ ...QUIET, members: [{ author: 'ana', level }] });
+/** A roster of one member, ana, at `level`, holding voting rights since relay minute 0. */
+const at = (level: Level): Roster => ({
+  ...QUIET,
+  members: [{ author: 'ana', level, rightsAt: 0 }],
+});
+
+/** Ana at `level`, at relay minute 100, whose voting rights arrive at `rightsAt`, or never (null). */
+const earning = (level: Level, rightsAt: number | null): Roster => ({
+  ...QUIET,
+  at: 100,
+  members: [{ author: 'ana', level, rightsAt }],
+});
 
 /** Ana at `level` holding a steward seat, at relay minute 100, maybe suspended until `until`. */
 function steward(level: Level, until?: number): Roster {
   const suspensions = until === undefined ? [] : [{ member: 'ana', until }];
   return {
-    members: [{ author: 'ana', level }],
+    members: [{ author: 'ana', level, rightsAt: 0 }],
     stewards: [{ holder: 'ana' }, { holder: null }],
     suspensions,
     at: 100,
@@ -118,8 +130,8 @@ describe('can', () => {
     const state = {
       ...QUIET,
       members: [
-        { author: 'ana', level: 'co-creator' as const },
-        { author: 'kim', level: 'member' as const },
+        { author: 'ana', level: 'co-creator' as const, rightsAt: 0 },
+        { author: 'kim', level: 'member' as const, rightsAt: 0 },
       ],
     };
     expect(can(state, 'ana', 'propose')).toBe(true);
@@ -192,23 +204,60 @@ describe('wouldVote', () => {
 });
 
 describe('votingRightsCount', () => {
-  it('counts the members whose level votes, ignoring Members and suspensions', () => {
+  it('counts the people holding voting rights, whatever level they chose, ignoring suspensions (ADR-0075 §3)', () => {
     const state = {
       ...QUIET,
       at: 5,
       members: [
-        { author: 'ana', level: 'co-creator' as const },
-        { author: 'ben', level: 'collaborator' as const },
-        { author: 'kim', level: 'member' as const },
-        { author: 'cal', level: 'collaborator' as const },
+        { author: 'ana', level: 'co-creator' as const, rightsAt: 0 },
+        { author: 'ben', level: 'collaborator' as const, rightsAt: 1 },
+        { author: 'kim', level: 'member' as const, rightsAt: 2 },
+        { author: 'cal', level: 'collaborator' as const, rightsAt: 5 },
+        { author: 'dee', level: 'co-creator' as const, rightsAt: 6 },
+        { author: 'eve', level: 'collaborator' as const, rightsAt: null },
       ],
       suspensions: [{ member: 'cal', until: 10 }],
     };
-    expect(votingRightsCount(state)).toBe(3);
+    expect(votingRightsCount(state)).toBe(4);
   });
 
   it('counts nobody before anyone is a member', () => {
     expect(votingRightsCount({ ...QUIET, members: [] })).toBe(0);
+  });
+});
+
+describe('earned voting rights (#101; ADR-0014, ADR-0021)', () => {
+  it('names what a newcomer holds: the Member capabilities', () => {
+    expect(NEWCOMER_CAPABILITIES).toEqual(LEVEL_CAPABILITIES[LEVELS[0]]);
+  });
+
+  it.each(LEVELS)('grants a %s only the Member capabilities until their rights arrive', (level) => {
+    for (const rightsAt of [null, 101, 1_000]) {
+      const granted = ALL.filter((capability) => can(earning(level, rightsAt), 'ana', capability));
+      expect(granted).toEqual(['read', 'see-roster']);
+    }
+  });
+
+  it.each(LEVELS)('grants a %s their level from the minute their rights arrive', (level) => {
+    for (const rightsAt of [100, 99, 0]) {
+      const granted = ALL.filter((capability) => can(earning(level, rightsAt), 'ana', capability));
+      expect(granted).toEqual(LEVEL_CAPABILITIES[level]);
+    }
+  });
+
+  it('holds rights from the minute they arrive, and never before or with none', () => {
+    const [follower] = LEVELS;
+    expect(holdsRights(earning(follower, 100), 'ana')).toBe(true);
+    expect(holdsRights(earning(follower, 101), 'ana')).toBe(false);
+    expect(holdsRights(earning(follower, null), 'ana')).toBe(false);
+    expect(holdsRights(earning(follower, 0), 'ben')).toBe(false);
+  });
+
+  it('keeps a newcomer out of the eligible set whatever their level', () => {
+    const [, voting, creating] = LEVELS;
+    expect(wouldVote(earning(voting, 101), 'ana')).toBe(false);
+    expect(wouldVote(earning(creating, null), 'ana')).toBe(false);
+    expect(wouldVote(earning(voting, 100), 'ana')).toBe(true);
   });
 });
 
