@@ -2,7 +2,7 @@
  * Small building blocks the screens share, on React Aria Components (ADR-0022)
  * and styled from DESIGN.md tokens in src/styles/app.css.
  */
-import { useEffect, useRef } from 'react';
+import { type InputEvent as ReactInputEvent, useEffect, useRef } from 'react';
 import {
   FieldError,
   Input,
@@ -82,10 +82,29 @@ export interface FieldProps extends Omit<TextFieldProps, 'children' | 'className
 }
 
 /**
+ * Re-checks a field on each keystroke while it shows an error, so the error
+ * updates as the person types and is gone once the text is right.
+ *
+ * React Aria's native validation changes a shown error only on the input's
+ * `change` event, which for text fires on blur. Pressing submit straight
+ * after a fix would blur the field on mousedown and remove the error line,
+ * moving the button out from under the pointer, so the click would miss. A
+ * field that isn't showing an error is left alone: errors still first appear
+ * on blur or submit, never in the middle of a word.
+ */
+function recheckShownError(event: ReactInputEvent<HTMLInputElement | HTMLTextAreaElement>): void {
+  const input = event.currentTarget;
+  // A `change` that doesn't bubble reaches only React Aria's listener on the input.
+  if (input.getAttribute('aria-invalid') === 'true') input.dispatchEvent(new Event('change'));
+}
+
+/**
  * A labelled text field: label, hint, input, then its error.
  *
  * React Aria ties the hint and the error to the input with
  * `aria-describedby`, and marks the input invalid when validation fails.
+ * A shown error clears as soon as the person fixes the text (see
+ * {@link recheckShownError}).
  */
 export function Field({ label, hint, multiline = false, inputClassName, ...props }: FieldProps) {
   const inputClass = inputClassName === undefined ? 'input' : `input ${inputClassName}`;
@@ -97,7 +116,11 @@ export function Field({ label, hint, multiline = false, inputClassName, ...props
           {hint}
         </Text>
       )}
-      {multiline ? <TextArea className={inputClass} /> : <Input className={inputClass} />}
+      {multiline ? (
+        <TextArea className={inputClass} onInput={recheckShownError} />
+      ) : (
+        <Input className={inputClass} onInput={recheckShownError} />
+      )}
       <FieldError className="field-error" />
     </TextField>
   );

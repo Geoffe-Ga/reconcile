@@ -102,15 +102,28 @@ const PEOPLE = ['Ana', 'Ben', 'Cal'];
 const PROPOSAL = 'Later quiet hours on weekends';
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
-/** Joins from Join's form, then waits for Group home. */
+/**
+ * Joins from Join's form, then waits for Group home. The first press has no
+ * name, so the form shows its error; then one press after typing the name
+ * must join. The error clears as the name is typed. If it cleared on the
+ * blur from that press instead, the button would move up between mousedown
+ * and mouseup, and the click would miss.
+ */
 async function join(person: Person): Promise<void> {
-  await expect(heading(person.page, GROUP)).toBeVisible();
+  const { page } = person;
+  await expect(heading(page, GROUP)).toBeVisible();
   // The invite's secret has left the address bar.
-  await expect(person.page).toHaveURL(/#\/join$/);
+  await expect(page).toHaveURL(/#\/join$/);
   await expectAccessible(person, 'Join');
-  await person.page.getByRole('textbox', { name: 'Your name' }).fill(person.name);
-  await person.page.getByRole('button', { name: 'Join group' }).click();
-  await expect(person.page).toHaveURL(/#\/g\/[A-Za-z0-9_-]+$/);
+  const name = page.getByRole('textbox', { name: 'Your name' });
+  const submit = page.getByRole('button', { name: 'Join group' });
+  await submit.click();
+  await expect(name).toBeFocused();
+  await expect(name).toHaveAccessibleDescription(/Add the name your group will see\.$/);
+  await expectAccessible(person, 'Join, with a missing name');
+  await name.fill(person.name);
+  await submit.click();
+  await expect(page).toHaveURL(/#\/g\/[A-Za-z0-9_-]+$/);
 }
 
 /** Group home lists everyone; the Document view shows every section. */
