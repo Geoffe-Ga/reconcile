@@ -67,7 +67,8 @@ export interface GroupHomeProps {
   readonly onRemove?: () => Promise<void>;
   /**
    * The quiet card that suggests a backup (#78), after the open Proposals;
-   * none when absent, or once the group has dissolved (#108).
+   * none when absent, once the group has dissolved (#108), or once its key
+   * changed past this device (#226).
    */
   readonly backupCard?: ReactNode;
   /**
@@ -431,6 +432,15 @@ const KEY_CHANGE_LINE: Readonly<Record<KeyChange, string>> = {
   left: messages.home.keyLeft,
   missed: messages.home.keyMissed,
 };
+
+/**
+ * The backup card (#78) while this device reads the group's key: none once
+ * the key changed past it (#98), while {@link SyncNotices} says so, since a
+ * backup made then can't read what comes next either (#226).
+ */
+function backupCardOf({ sync, backupCard }: GroupHomeProps): ReactNode {
+  return (sync.keyChange ?? null) === null ? backupCard : null;
+}
 
 /**
  * "Can't reach the relay right now", the catch-up line while some history
@@ -1009,7 +1019,7 @@ export function GroupHome(props: GroupHomeProps) {
           now={now}
           leaving={leaving}
           // No backup file carries a dissolved group's read-only copy, so none is suggested (#108).
-          after={dissolved === null ? props.backupCard : null}
+          after={dissolved === null ? backupCardOf(props) : null}
           names={props.coalitionNames}
         >
           <Focus state={state} me={me} readOnly={readOnly} />
