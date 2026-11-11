@@ -31,7 +31,7 @@ const MAC = /Macintosh/;
  * An Apple touch device: an iPhone, iPad or iPod, or an iPad asking for
  * desktop sites, which reports a Mac but has a touch screen (no Mac does).
  */
-export function isAppleTouch(env: PlatformEnv): boolean {
+export function isAppleTouch(env: Pick<PlatformEnv, 'userAgent' | 'maxTouchPoints'>): boolean {
   if (IOS_DEVICE.test(env.userAgent)) return true;
   return MAC.test(env.userAgent) && env.maxTouchPoints > 1;
 }

@@ -15,9 +15,10 @@ import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
+import { scanDb } from '../test/scanDb';
 import { groupLog } from '../test/votes';
 import { clearedArchive } from './archive';
-import { type BackedUpGroup, type Group, openStore, type Store } from './db';
+import { type BackedUpGroup, type Group, openStore, type Store, VaultLocked } from './db';
 import { eventIdOf } from './eventId';
 import type { PersonalDocument, ShareState } from './personal';
 import {
@@ -29,6 +30,7 @@ import {
   importGroups,
   importSnapshot,
   MAX_BACKUP_BYTES,
+  replaceWithBackup,
   SNAPSHOT_FORMAT,
   takeSnapshot,
   withoutShares,
@@ -988,6 +990,176 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
 async function snapshotOf(store: Store): Promise<Uint8Array> {
   return encodeSnapshot(await deviceSnapshot(store));
 }
+
+/** The passkey lock and vault key the vault tests seal under (#95). */
+const LOCK = { credentialId: Uint8Array.of(1), prfSalt: new Uint8Array(32).fill(4) };
+const VAULT_KEY = new Uint8Array(32).fill(5);
+
+/** Everything in the IndexedDB database `name`, raw, joined, for a canary scan. */
+async function rawBytes(name: string): Promise<Uint8Array> {
+  const { text: words, bytes } = await scanDb(name);
+  const parts = [utf8(words), ...bytes];
+  const all = new Uint8Array(parts.reduce((total, part) => total + part.length + 1, 0));
+  let at = 0;
+  for (const part of parts) {
+    all.set(part, at);
+    at += part.length + 1;
+  }
+  return all;
+}
+
+/**
+ * A device named `name` holding an unrelated group, its keys sealed with a
+ * passkey, then closed and opened again: unlocked in this session only if
+ * `unlocked`.
+ */
+async function sealedDevice(name: string, unlocked: boolean): Promise<Store> {
+  const store = await otherDevice(name);
+  await store.sealKeys(LOCK, VAULT_KEY);
+  store.close();
+  const reopened = await openStore(name);
+  if (unlocked && !(await reopened.unlock(VAULT_KEY))) throw new Error('Expected it to unlock.');
+  return reopened;
+}
+
+describe('a backup or a link into a device whose keys are locked with a passkey (#95)', () => {
+  it('seals a link bundle’s keys and relay backup key into the vault, never writing them plain (#96, #97)', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    const plaintext = await snapshotOf(device);
+    const linked = await sealedDevice('linked', true);
+
+    expect(await importSnapshot(linked, plaintext, 'link')).toBe(1);
+
+    const canaries = [
+      ...keyCanaries('group secret', group.secret),
+      ...keyCanaries('signing key', group.secretKey),
+      ...keyCanaries('backup key', BACKUP_KEY),
+    ];
+    expect(findCanaries(await rawBytes('linked'), canaries)).toEqual([]);
+    const held = await linked.getGroup(group.groupId);
+    expect(local(held?.signingKey ?? new Uint8Array())).toEqual(local(group.secretKey));
+    expect(local(held?.secret ?? new Uint8Array())).toEqual(local(group.secret));
+    expect(held?.backup).toBeUndefined();
+    expect(local((await linked.getRelayBackup())?.key ?? new Uint8Array())).toEqual(
+      local(BACKUP_KEY),
+    );
+  });
+
+  it('refuses a link or a backup on a device whose vault this session hasn’t opened, writing nothing', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    const plaintext = await snapshotOf(device);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const locked = await sealedDevice('locked', false);
+    const before = await rawBytes('locked');
+
+    await expect(importSnapshot(locked, plaintext, 'link')).rejects.toThrow(VaultLocked);
+    await expect(importGroups(locked, file, PASSPHRASE)).rejects.toThrow(VaultLocked);
+
+    expect(local(await rawBytes('locked'))).toEqual(local(before));
+  });
+});
+
+describe('replaceWithBackup: Restore when the passkey no longer unlocks the vault (#95)', () => {
+  it('puts the file’s groups in place of everything the device held, its vault included', async () => {
+    const device = await openStore('ana');
+    const group = await keepCanary(device);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const locked = await otherDevice('locked');
+    const prfSalt = new Uint8Array(32).fill(4);
+    await locked.sealKeys({ credentialId: Uint8Array.of(1), prfSalt }, new Uint8Array(32).fill(5));
+    locked.close();
+    const reopened = await openStore('locked');
+
+    expect(await replaceWithBackup(reopened, file, PASSPHRASE)).toBe(1);
+
+    expect(await reopened.readVault()).toBeNull();
+    const groups = await reopened.listGroups();
+    expect(groups.map((held) => held.groupId)).toEqual([group.groupId]);
+    expect(local(groups[0]?.signingKey ?? new Uint8Array())).toEqual(local(group.secretKey));
+    expect(await folded(reopened, group.groupId)).toEqual(await folded(device, group.groupId));
+  });
+
+  it('merges the file’s personal Documents with the device’s, which hold no key', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.savePersonal(canaryStatement());
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const locked = await otherDevice('locked');
+    await locked.savePersonal(READING);
+    await locked.sealKeys(
+      { credentialId: Uint8Array.of(1), prfSalt: new Uint8Array(32).fill(4) },
+      new Uint8Array(32).fill(5),
+    );
+    locked.close();
+    const reopened = await openStore('locked');
+
+    await replaceWithBackup(reopened, file, PASSPHRASE);
+
+    expect(await reopened.listPersonal()).toEqual(
+      [canaryStatement(), READING].sort((a, b) => a.createdAt - b.createdAt),
+    );
+  });
+
+  it('drops the locked vault’s relay backup key with it, and keeps the file’s instead (#97)', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const sealed = await sealedDevice('locked', true);
+    await sealed.setRelayBackupKey(new Uint8Array(32).fill(0x6c));
+    sealed.close();
+    const locked = await openStore('locked');
+
+    await replaceWithBackup(locked, file, PASSPHRASE);
+
+    expect(await locked.readVault()).toBeNull();
+    const state = await locked.getRelayBackup();
+    expect(state === undefined ? undefined : { ...state, key: local(state.key) }).toEqual({
+      key: local(BACKUP_KEY),
+      digest: null,
+      checkedDay: null,
+      uploadedAt: null,
+      tooLarge: false,
+    });
+  });
+
+  it('keeps no relay backup key when the file holds none, since the vault’s went with it (#97)', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const sealed = await sealedDevice('locked', true);
+    await sealed.setRelayBackupKey(new Uint8Array(32).fill(0x6c));
+    sealed.close();
+    const locked = await openStore('locked');
+
+    await replaceWithBackup(locked, file, PASSPHRASE);
+
+    expect(await locked.getRelayBackup()).toBeUndefined();
+  });
+
+  it('writes nothing under a wrong passphrase, so the locked vault stays', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const { file } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const locked = await otherDevice('locked');
+    const lock = { credentialId: Uint8Array.of(1), prfSalt: new Uint8Array(32).fill(4) };
+    await locked.sealKeys(lock, new Uint8Array(32).fill(5));
+
+    await expect(replaceWithBackup(locked, file, 'not the passphrase')).rejects.toThrow(
+      BackupUnreadable,
+    );
+    await expect(
+      replaceWithBackup(locked, new Uint8Array(MAX_BACKUP_BYTES + 1), PASSPHRASE),
+    ).rejects.toThrow(BackupUnreadable);
+
+    expect(await locked.readVault()).not.toBeNull();
+    expect((await locked.listGroups()).map((held) => held.groupId)).toEqual(['unrelated-group']);
+  });
+});
 
 describe('a backup that doesn’t open', () => {
   it('fails with the plain error for a wrong passphrase, and changes nothing', async () => {

@@ -36,14 +36,24 @@ export function passphraseProblem(passphrase: string): string | null {
   return characters < MIN_PASSPHRASE_CHARS ? messages.backup.passphraseShort : null;
 }
 
-/** Seals every group a backup keeps under `passphrase`, as a file named for today on this device. */
+/**
+ * Seals every group a backup keeps under `passphrase`, as a file named for
+ * today on this device. It first checks this session holds the unlocked keys
+ * (#95), as everything that hands keys on does.
+ *
+ * @throws {VaultLocked} when the device's keys are locked with a passkey this session hasn't used.
+ */
 export async function makeBackup(
   services: {
-    readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>;
+    readonly store: Pick<
+      Store,
+      'listGroups' | 'listPersonal' | 'getRelayBackup' | 'requireUnlocked'
+    >;
     readonly now: () => number;
   },
   passphrase: string,
 ): Promise<BackupToSave> {
+  await services.store.requireUnlocked();
   const { file, groupIds } = await exportGroups(services.store, passphrase);
   return { file: backupFile(file, new Date(services.now())), groupIds };
 }
