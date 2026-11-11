@@ -39,6 +39,12 @@ export interface VersionView {
   readonly rules?: RulesView;
   /** For a dissolve Proposal, what its ballot decides, in place of any text (#108). */
   readonly dissolve?: DissolveView;
+  /**
+   * For a reconcile Proposal or a coalition motion, what its ballot decides,
+   * in place of any text (#114): its title, which may hold a name someone
+   * chose, and what passing does.
+   */
+  readonly decision?: DissolveView;
 }
 
 /** What a dissolve ballot decides, and the line that says what passing does (#108). */
@@ -115,6 +121,25 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
       ...(change === null ? {} : { steward: stewardView(state, change) }),
       ...(rules === null ? {} : { rules: rulesView(rules) }),
       ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
+      ...decisionOf(proposal),
     };
   });
+}
+
+/**
+ * What a reconcile Proposal's or a coalition motion's ballot decides (#114):
+ * the coalition it would form, or the motion as the coalition titled it.
+ */
+export function decisionOf(proposal: Pick<Proposal, 'target' | 'title'>): {
+  readonly decision?: DissolveView;
+} {
+  const { target } = proposal;
+  if (target.kind === 'reconcile') {
+    const title = messages.card.proposalTitle(target.name);
+    return { decision: { title, line: messages.coalitions.reconcileLine } };
+  }
+  if (target.kind === 'motion') {
+    return { decision: { title: proposal.title, line: messages.coalitions.motionLine } };
+  }
+  return {};
 }

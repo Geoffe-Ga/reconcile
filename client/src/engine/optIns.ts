@@ -261,7 +261,8 @@ export interface OptInProposalState {
           | 'dissolve'
           | 'reconcile'
           | 'motion'
-          | 'priority';
+          | 'priority'
+          | 'admit';
       }
     | RulesChange;
   readonly deadline: number;

@@ -171,6 +171,17 @@ export class Logs {
     return this.add('coalition', received, who, { type: 'group-result', body });
   }
 
+  /** `who`, from the group whose seat is `seat`, proposes admitting it as `name` (#114). */
+  admit(received: number, who: string, seat: string, name: string): string {
+    const coalition = this.ids.coalition ?? '';
+    const proof = base64url(
+      signSeatProof(seatSecret(seat), coalition, fromBase64url(authorOf(who))),
+    );
+    const target = { kind: 'admit', seat: { name, key: seatKey(seat) }, proof } as const;
+    const body = { target, title: `Admit ${name}`, why: 'They share the river.' };
+    return this.add('coalition', received, who, { type: 'proposal', body });
+  }
+
   /** `who`'s motion in the coalition: new text for its first Atom. */
   motion(received: number, who: string, text = 'We keep the river and its banks clean.'): string {
     const atom = `${this.ids.coalition ?? ''}.0`;
