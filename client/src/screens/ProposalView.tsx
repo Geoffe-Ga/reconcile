@@ -502,6 +502,7 @@ function CarryNotice({
   const { rising } = messages;
   return (
     <div className="carry-notice">
+      <p className="field-hint">{messages.ballot.visibility}</p>
       <p className="ballot-notice">{rising.carried(score)}</p>
       <div className="row">
         <Button className="button button-secondary" onPress={onChange}>
@@ -721,8 +722,9 @@ function DispatchWords({ title, text }: { readonly title: string; readonly text:
 
 /**
  * A Dispatch that may rise (#126; ADR-0037): the group's own vote on it, with
- * how far it can go and what passing does, or a promotion motion from the
- * coalition, with the seat that passed it and what the coalition's pass does.
+ * how far it can go (its ballot card says what passing does), or a promotion
+ * motion from the coalition, with the seat that passed it and what the
+ * coalition's pass does.
  */
 function RisingDispatch({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { rising, sendDispatch } = messages;
@@ -732,7 +734,6 @@ function RisingDispatch({ props, proposal }: { props: ProposalViewProps; proposa
       <Block title={rising.heading} className="card dispatch dispatch-carried">
         <DispatchWords title={dispatch.title} text={dispatch.text} />
         <p className="caption">{rising.ceiling(sendDispatch.ceilings[target.ceiling])}</p>
-        <p className="caption">{rising.groupLine[target.ceiling]}</p>
       </Block>
     );
   }

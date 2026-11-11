@@ -74,7 +74,9 @@ describe('ProposalView: a Dispatch put to the group’s vote (#126)', () => {
     expect(within(words).getByText(WORDS.title)).toBeVisible();
     expect(within(words).getByText(/Meet at the river at ten\./).textContent).toBe(WORDS.text);
     expect(within(words).getByText(rising.ceiling('As far as the coalitions go'))).toBeVisible();
-    expect(within(words).getByText(rising.groupLine.coalitions)).toBeVisible();
+    // What passing does sits once, on the ballot's one card.
+    expect(screen.getAllByText(rising.groupLine.coalitions)).toHaveLength(1);
+    expect(within(words).queryByText(rising.groupLine.coalitions)).toBeNull();
     // No second "If this passes" block for the same words.
     expect(screen.queryByRole('region', { name: messages.proposal.dispatchHeading })).toBeNull();
     expect(screen.getByText(rising.ballotTitle)).toBeVisible();
@@ -90,7 +92,7 @@ describe('ProposalView: a Dispatch put to the group’s vote (#126)', () => {
     const id = log.rising('Ana', ceiling, WORDS);
     setup(log.state(), id, 'ben');
     expect(within(block()).getByText(rising.ceiling(label))).toBeVisible();
-    expect(within(block()).getByText(rising.groupLine[ceiling])).toBeVisible();
+    expect(screen.getByText(rising.groupLine[ceiling])).toBeVisible();
   });
 
   it('says what its pass did once it passed', () => {
@@ -194,6 +196,7 @@ describe('ProposalView: a promotion motion in another group (#126)', () => {
     });
 
     expect(screen.getByText(rising.carried(3))).toBeVisible();
+    expect(screen.getByText(messages.ballot.visibility)).toBeVisible();
     expect(screen.queryByRole('radiogroup', { name: messages.stewards.score })).toBeNull();
     expect(await axeViolations()).toEqual([]);
 

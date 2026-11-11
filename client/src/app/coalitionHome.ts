@@ -14,7 +14,7 @@ import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionPr
 import { openProposalOn } from '../engine/composeOption';
 import { type Dispatch, newestFirst } from '../engine/dispatches';
 import { type ParsedEvent, parseRecord } from '../engine/event';
-import type { Atom, GroupState } from '../engine/fold';
+import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
 
 /**
@@ -215,13 +215,23 @@ function deciderOf(
   return undefined;
 }
 
+/**
+ * The seats beneath which `proposal` opens as a vote: its snapshot, but for a
+ * promotion motion (#126) the seat it came from, which passed it already and
+ * opens no new vote.
+ */
+function votingSeats(state: GroupState, proposal: Proposal): readonly string[] {
+  const snapshot = state.coalition?.motions.find((m) => m.id === proposal.id)?.seats ?? [];
+  const { target } = proposal;
+  return target.kind === 'promote' ? snapshot.filter((seat) => seat !== target.from) : snapshot;
+}
+
 /** Each motion of the coalition with its progress, and a group on this device that decides it. */
 function motionItems(state: GroupState, groups: readonly DeviceGroup[]): MotionItem[] {
   return state.proposals.flatMap((proposal) => {
     const progress = coalitionProgress(state, proposal.id);
-    const snapshot = state.coalition?.motions.find((m) => m.id === proposal.id)?.seats ?? [];
     if (progress === null) return [];
-    const decider = deciderOf(snapshot, groups);
+    const decider = deciderOf(votingSeats(state, proposal), groups);
     return [
       {
         id: proposal.id,

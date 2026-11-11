@@ -193,6 +193,15 @@ describe('coalitionHome’s Dispatches (#126)', () => {
     expect(view?.dispatches).toEqual([
       { id: p, title: words.title, text: words.text, from: 'Riverside', received: final },
     ]);
+    // Its vote opens in Oak St, and never in Riverside, which passed it already.
+    const riverside = deviceGroup(logs, 'A', final, 'ana');
+    const oak = deviceGroup(logs, 'B', final, 'cy');
+    expect(coalitionHome(heldBy(logs, final, 'kim'), [riverside])?.decided).toEqual([
+      expect.objectContaining({ id: m, groupId: null }),
+    ]);
+    expect(coalitionHome(heldBy(logs, final, 'kim'), [riverside, oak])?.decided).toEqual([
+      expect.objectContaining({ id: m, groupId: oak.groupId }),
+    ]);
   });
 });
 

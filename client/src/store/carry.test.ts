@@ -326,6 +326,11 @@ describe('settleCarries', () => {
     await tick(store, R + 60);
     expect(await settle(store, fixed(0))).toEqual([]);
     expect(await queued(store, b)).toEqual([]);
+    // Nothing of the reason Cy gave in A is kept for B: the plan holds the score alone.
+    const kept = await store.getGroup(b);
+    expect(JSON.stringify({ carries: kept?.carries, scores: kept?.scores })).not.toContain(
+      ORIGINAL,
+    );
   });
 
   it('finds the person’s own note on the Dispatch in their other groups, so a copy can be refused', async () => {
