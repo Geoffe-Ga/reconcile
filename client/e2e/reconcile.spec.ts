@@ -13,9 +13,15 @@
  * blob, the coalition's weekly mailbox ids and the card's mailbox id must
  * all turn up, so the scan can't pass by reading nothing.
  *
- * Admitting a third group isn't here: its pass is final only a week after
- * its deadline (#100), and these specs never move the clock, so
- * `src/app/reconcileFlow.test.tsx` covers it on a fake relay.
+ * Then Ana proposes a change to the coalition's statement from its home
+ * (#120), it opens as a coalition vote in both groups, and once both pass,
+ * both see that the coalition passed it, to take effect a week after its
+ * deadline. Its title, why and text are canaries too.
+ *
+ * Admitting a third group, and the coalition's text changing once a pass is
+ * final, aren't here: each is final only a week after its deadline (#100),
+ * and these specs never move the clock, so `src/app/reconcileFlow.test.tsx`
+ * and `src/screens/coalitionLoop.test.tsx` cover them on a fake relay.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -72,6 +78,9 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
     why: `CANARY-WHY-${run}`,
     anaName: `CANARY-ANA-IN-COALITION-${run}`,
     benName: `CANARY-BEN-IN-COALITION-${run}`,
+    motionTitle: `CANARY-MOTION-${run}`,
+    motionWhy: `CANARY-MOTION-WHY-${run}`,
+    motionText: `CANARY-MOTION-TEXT-${run}`,
   };
   const control = `CONTROL-${tag()}`;
   const ana = await openProfile('Ana');
@@ -157,6 +166,55 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
     await expect(ana.page.getByRole('region', { name: 'Coalitions' })).toContainText(
       `You take part as ${words.anaName}`,
     );
+  });
+
+  await test.step('Ana proposes a change from the coalition’s home (#120)', async () => {
+    const { page } = ana;
+    const coalitions = page.getByRole('region', { name: 'Coalitions' });
+    await coalitions.getByRole('link', { name: 'Open the coalition' }).click();
+    await expect(heading(page, words.coalition)).toBeVisible();
+    await expectAccessible(ana, 'the coalition’s home');
+    await page
+      .getByRole('region', { name: 'Documents' })
+      .getByRole('link', { name: /Mission statement/ })
+      .click();
+    await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
+    await page.getByRole('textbox', { name: 'Title' }).fill(words.motionTitle);
+    await page.getByRole('textbox', { name: 'Why' }).fill(words.motionWhy);
+    await page.getByRole('textbox', { name: 'New text' }).fill(words.motionText);
+    await page.getByRole('button', { name: 'Propose this change' }).click();
+    await expect(heading(page, words.coalition)).toBeVisible();
+  });
+
+  await test.step('it opens as a coalition vote in Oak St, which passes it inside the group', async () => {
+    // Ben is still on Oak St's home, which updates as his device syncs.
+    const { page } = ben;
+    const card = page
+      .getByRole('region', { name: 'Needs your vote' })
+      .getByRole('link', { name: new RegExp(words.motionTitle) });
+    await expect(card).toContainText(`Coalition vote · ${words.coalition}`, { timeout: 45_000 });
+    await card.click();
+    await expect(heading(page, words.motionTitle)).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Across the coalition' })).toContainText(
+      '0 of 2 groups have passed.',
+    );
+    await expectAccessible(ben, 'a coalition vote');
+    await passes(ben);
+  });
+
+  await test.step('once Riverside passes it too, the coalition has passed it, to take effect in a week', async () => {
+    const { page } = ana;
+    await page.getByRole('link', { name: words.riverside, exact: true }).click();
+    await page
+      .getByRole('region', { name: 'Needs your vote' })
+      .getByRole('link', { name: new RegExp(words.motionTitle) })
+      .click();
+    await passes(ana);
+    const result = page.getByRole('region', { name: 'The coalition’s result' });
+    await expect(result).toContainText('The coalition passed this. It takes effect on', {
+      timeout: 45_000,
+    });
+    await expectAccessible(ana, 'a coalition vote’s result');
   });
 
   const held = [...(await storedGroups(ana.page)), ...(await storedGroups(ben.page))];

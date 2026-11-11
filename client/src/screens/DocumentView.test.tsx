@@ -8,7 +8,10 @@ import { axeViolations } from '../test/axe';
 import { testGroup } from '../test/groups';
 import { authorOf } from '../test/keys';
 import { groupLog, SETTLED_MINUTES } from '../test/votes';
-import { DocumentView } from './DocumentView';
+import type { CoalitionStanding } from '../app/coalitionHome';
+import { messages } from '../app/messages';
+import type { Atom } from '../engine/fold';
+import { CoalitionDocumentView, DocumentView } from './DocumentView';
 
 const [FOLLOWING, VOTING] = LEVELS;
 
@@ -482,5 +485,83 @@ describe('DocumentView: a suspended member (#102)', () => {
     expect(screen.queryByRole('button', { name: /Propose a change/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Change your involvement/ })).toBeNull();
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('CoalitionDocumentView (#120)', () => {
+  const ATOMS: Atom[] = [
+    { id: 'c.0', documentId: 'c', text: 'We keep the river clean.' },
+    { id: 'c.1', documentId: 'c', text: 'We meet on the first Sunday.' },
+  ];
+
+  /** The coalition's Document as someone standing `standing` reads it. */
+  function coalitionView(standing: CoalitionStanding, open = new Set<string>(), atoms = ATOMS) {
+    const onPropose = vi.fn();
+    const onTakePart = vi.fn(() => Promise.resolve());
+    render(
+      <CoalitionDocumentView
+        coalitionId="c"
+        name="Eastside Housing"
+        title="Mission statement"
+        atoms={atoms}
+        standing={standing}
+        open={open}
+        onPropose={onPropose}
+        onTakePart={onTakePart}
+        copyText={vi.fn(() => Promise.resolve())}
+      />,
+    );
+    return { onPropose, onTakePart };
+  }
+
+  it('offers Propose a change on each section to whoever proposes, and only that', async () => {
+    const user = userEvent.setup();
+    const { onPropose } = coalitionView({ kind: 'proposes', groupId: 'g' });
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Mission statement' })).toBeVisible();
+    expect(screen.getByText(messages.coalitions.documentEyebrow)).toBeVisible();
+    expect(screen.getByRole('link', { name: /Eastside Housing/ })).toHaveAttribute('href', '#/c/c');
+    await user.click(screen.getByRole('button', { name: 'Propose a change to section 2' }));
+    expect(onPropose).toHaveBeenCalledWith('c.1');
+    // A coalition motion only rewords a section (#100): no add, removal or version here.
+    expect(
+      screen.queryByRole('button', { name: /Add a section|removing|Add your version/ }),
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy as Markdown' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a section with a motion open takes none until it’s decided', () => {
+    coalitionView({ kind: 'proposes', groupId: 'g' }, new Set(['c.0']));
+    expect(screen.getAllByRole('button', { name: /Propose a change/ })).toHaveLength(1);
+    expect(screen.getByText(messages.coalitions.sectionOpen)).toBeVisible();
+  });
+
+  it('shows a reader no Propose, and why', () => {
+    coalitionView({ kind: 'reads' });
+    expect(screen.queryByRole('button', { name: /Propose/ })).toBeNull();
+    expect(screen.getByText(messages.coalitions.cantPropose)).toBeVisible();
+  });
+
+  it('says joining while a join waits', () => {
+    coalitionView({ kind: 'joining' });
+    expect(screen.queryByRole('button', { name: /Propose/ })).toBeNull();
+    expect(screen.getByText(messages.coalitions.joining)).toBeVisible();
+  });
+
+  it('offers Take part first to someone who may propose in a member group', async () => {
+    const user = userEvent.setup();
+    const { onTakePart } = coalitionView({ kind: 'take-part', groupId: 'g' });
+    expect(screen.queryByRole('button', { name: /Propose a change/ })).toBeNull();
+    expect(screen.getByText(messages.coalitions.takePartFirst)).toBeVisible();
+    await user.type(screen.getByRole('textbox', { name: 'Your name in the coalition' }), 'Cy');
+    await user.click(screen.getByRole('button', { name: 'Take part' }));
+    expect(onTakePart).toHaveBeenCalledWith('Cy');
+  });
+
+  it('says an empty Document has no sections, with nothing to copy', () => {
+    coalitionView({ kind: 'proposes', groupId: 'g' }, new Set(), []);
+    expect(screen.getByText(messages.document.empty)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Copy as Markdown' })).toBeNull();
   });
 });

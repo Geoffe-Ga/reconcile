@@ -14,6 +14,7 @@ import { type OwnBallot, ownBallot } from '../engine/ownBallot';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
 import { deadlineOf, groupLog, type LogBuilder, START_MINUTE } from '../test/votes';
+import { Thanks } from './ResultParts';
 import { ResultView } from './ResultView';
 
 const [, VOTING] = LEVELS;
@@ -458,6 +459,46 @@ describe('ResultView', () => {
       expect(result).not.toHaveTextContent(/part ways|split|fork/i);
       cleanup();
     }
+  });
+});
+
+describe('Thanks', () => {
+  it('ends with one full stop, even after a name that ends with one (#120)', () => {
+    const { container, rerender } = render(<Thanks names={['Ana E.']} />);
+    expect(container).toHaveTextContent(/^Thank you, Ana E\.$/);
+    rerender(<Thanks names={['Ben', 'Ana']} />);
+    expect(container).toHaveTextContent(/^Thank you, Ben and Ana\.$/);
+  });
+});
+
+describe('ResultView, a coalition motion in the group (#120)', () => {
+  /** `state` with the Proposal `id` opened from a coalition, as a member group's fold opens one. */
+  function asMotion(state: GroupState, id: string): GroupState {
+    const target = {
+      kind: 'motion',
+      coalition: 'coalition-1',
+      bar: state.rules.bars.ordinary,
+    } as const;
+    const proposals = state.proposals.map((p) => (p.id === id ? { ...p, target } : p));
+    return { ...state, proposals };
+  }
+
+  it('says the group’s pass goes to the coalition, never that the Document changed', () => {
+    const { log, proposalId } = decided([4, 4, 4]);
+    const { result } = show({ state: asMotion(log.state(), proposalId), proposalId });
+    const block = outcomeBlock(result);
+    expect(block).toHaveTextContent(messages.coalitions.motionPassed);
+    expect(block).not.toHaveTextContent(messages.result.passed);
+    expect(within(block).queryByText(/Thank you/)).toBeNull();
+  });
+
+  it('says the coalition counts a lapse as not passing, and offers no Propose again', () => {
+    const { log, proposalId } = lapsed();
+    const { result } = show({ state: asMotion(log.state(DEADLINE), proposalId), proposalId });
+    const block = outcomeBlock(result);
+    expect(block).toHaveTextContent(messages.coalitions.motionLapsed);
+    expect(block).not.toHaveTextContent(messages.result.lapsed);
+    expect(within(block).queryByRole('button', { name: 'Propose again' })).toBeNull();
   });
 });
 

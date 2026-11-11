@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Button, Label, Text, TextArea, TextField } from 'react-aria-components';
 
+import type { CoalitionStanding } from '../app/coalitionHome';
+import { TakePart } from '../app/CoalitionSection';
 import { documentNamed } from '../app/documentLines';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { messages } from '../app/messages';
@@ -149,7 +151,7 @@ interface CopyMarkdownProps {
  * browser blocks the clipboard, the text shows selected in a read-only text
  * area, so the person can copy it themselves. Nothing leaves the device.
  */
-function CopyMarkdown({ atoms, copyText }: CopyMarkdownProps) {
+export function CopyMarkdown({ atoms, copyText }: CopyMarkdownProps) {
   const [status, setStatus] = useState<CopyStatus>('idle');
   const field = useRef<HTMLTextAreaElement>(null);
   const markdown = documentToMarkdown(atoms);
@@ -292,6 +294,121 @@ export function DocumentView(props: DocumentViewProps) {
         handlers={props}
       />
       {atoms.length === 0 ? null : <CopyMarkdown atoms={atoms} copyText={copyText} />}
+    </main>
+  );
+}
+
+/** Props for {@link CoalitionDocumentView}. */
+export interface CoalitionDocumentViewProps {
+  /** The coalition's genesis id, whose home Back returns to. */
+  readonly coalitionId: string;
+  /** The coalition's name. */
+  readonly name: string;
+  /** The Document's title. */
+  readonly title: string;
+  /** The Document's sections, in order. */
+  readonly atoms: readonly Atom[];
+  /** Where this person stands in the coalition (`standingIn`). */
+  readonly standing: CoalitionStanding;
+  /** The sections with a motion open on them, which take no new one until it's final. */
+  readonly open: ReadonlySet<string>;
+  /** Opens the coalition's composer for one section. */
+  readonly onPropose: (atomId: string) => void;
+  /** Takes part under the seat of the group `standing` names; rejects when it couldn't be saved. */
+  readonly onTakePart: (name: string) => Promise<void>;
+  /** Puts text on the clipboard; rejects when the browser blocks it. */
+  readonly copyText: (text: string) => Promise<void>;
+}
+
+/** Why there's no Propose here, and Take part where it comes first; nothing for whoever proposes. */
+function CoalitionStandingNote({
+  standing,
+  onTakePart,
+}: Pick<CoalitionDocumentViewProps, 'standing' | 'onTakePart'>) {
+  const { coalitions } = messages;
+  switch (standing.kind) {
+    case 'proposes':
+      return null;
+    case 'take-part':
+      return (
+        <div className="level-note coalition-join">
+          <p>{coalitions.takePartFirst}</p>
+          <TakePart onTakePart={onTakePart} />
+        </div>
+      );
+    case 'joining':
+      return <p className="level-note">{coalitions.joining}</p>;
+    case 'reads':
+      return <p className="level-note">{coalitions.cantPropose}</p>;
+  }
+}
+
+/** One coalition section's action: Propose a change, or that a motion is open on it. */
+function CoalitionSectionAction(props: {
+  readonly atom: Atom;
+  readonly section: number;
+  readonly open: boolean;
+  readonly proposes: boolean;
+  readonly onPropose: (atomId: string) => void;
+}) {
+  const { document, coalitions } = messages;
+  if (props.open) return <p className="caption atom-note">{coalitions.sectionOpen}</p>;
+  if (!props.proposes) return null;
+  return (
+    <div className="row atom-actions">
+      <Button
+        className="button button-quiet"
+        aria-label={document.proposeLabel(props.section)}
+        onPress={() => {
+          props.onPropose(props.atom.id);
+        }}
+      >
+        {document.propose}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A coalition's Document (`#/c/{coalitionId}/doc/{documentId}`; #120): its
+ * sections as the coalition's last final pass left them, with Propose a
+ * change on each for someone bound to a member group's seat who can propose
+ * in that group, and, while a motion is open on a section, a line saying so.
+ * A coalition motion only rewords a section (#100): there's no Add your
+ * version, Add a section or removal here. Anyone else reads why there's no
+ * Propose, or is offered Take part first. Copy as Markdown is for everyone.
+ */
+export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
+  const { atoms, standing, open } = props;
+  const proposes = standing.kind === 'proposes';
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'coalition', coalitionId: props.coalitionId }} label={props.name} />
+      <PageHeader
+        eyebrow={messages.coalitions.documentEyebrow}
+        title={props.title}
+        pageTitle={messages.document.pageTitle}
+      />
+      <CoalitionStandingNote standing={standing} onTakePart={props.onTakePart} />
+      {atoms.length === 0 ? (
+        <p className="lede">{messages.document.empty}</p>
+      ) : (
+        <article className="document">
+          {atoms.map((atom, index) => (
+            <div key={atom.id} className="atom">
+              <AtomText text={atom.text} />
+              <CoalitionSectionAction
+                atom={atom}
+                section={index + 1}
+                open={open.has(atom.id)}
+                proposes={proposes}
+                onPropose={props.onPropose}
+              />
+            </div>
+          ))}
+        </article>
+      )}
+      {atoms.length === 0 ? null : <CopyMarkdown atoms={atoms} copyText={props.copyText} />}
     </main>
   );
 }

@@ -24,6 +24,7 @@ import {
 } from '../app/proposals';
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
+import type { CoalitionStanding } from '../app/coalitionHome';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { sectionsPreview } from '../app/sectionsPreview';
 import { useDraft } from '../app/useDraft';
@@ -210,7 +211,7 @@ interface UnavailableProps {
   readonly state: GroupState;
   readonly title: string;
   readonly text: string;
-  /** Where Back goes: the group's first Document when absent. */
+  /** Where Back goes: the group's first Document unless given, as a coalition's is (#92, #120). */
   readonly back?: Back;
 }
 
@@ -339,6 +340,9 @@ interface FieldsProps {
   readonly place: ProposalPlace;
   readonly now: number;
   readonly onChange: (values: Draft) => void;
+  readonly words: FormWords;
+  /** Whether it may carry a Dispatch: a coalition motion may not (#100, #120). */
+  readonly dispatch: boolean;
 }
 
 /** A new Document's title (#92), between the why and its first sections, kept in the draft. */
@@ -365,7 +369,7 @@ function DocumentTitleField({ values, onChange }: Pick<FieldsProps, 'values' | '
  * whose title comes after the why (#92), the voting time and any Dispatch it
  * carries (#112), each kept in the draft as it changes.
  */
-function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
+function Fields({ state, values, text, place, now, onChange, words, dispatch }: FieldsProps) {
   const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
   };
@@ -384,7 +388,7 @@ function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
       <Field
         name="why"
         label={messages.composer.whyLabel}
-        hint={messages.composer.whyHint}
+        hint={words.whyHint ?? messages.composer.whyHint}
         multiline
         isRequired
         validate={checkWhy}
@@ -407,7 +411,7 @@ function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
       <Field
         name="link"
         label={messages.composer.linkLabel}
-        hint={messages.composer.linkHint}
+        hint={words.linkHint ?? messages.composer.linkHint}
         inputMode="url"
         autoComplete="off"
         validate={checkLink}
@@ -423,11 +427,13 @@ function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
         }}
         now={now}
       />
-      <DispatchChoice
-        values={values}
-        start={dispatchStart(state, values, place)}
-        onChange={onChange}
-      />
+      {dispatch ? (
+        <DispatchChoice
+          values={values}
+          start={dispatchStart(state, values, place)}
+          onChange={onChange}
+        />
+      ) : null}
     </>
   );
 }
@@ -472,11 +478,18 @@ export function AgainLede({ again }: { readonly again: Proposal | undefined }) {
   return again === undefined ? null : <p className="lede">{messages.composer.againLede}</p>;
 }
 
-/** The words of a Proposal's form: its heading, the tab's title and its button. */
+/**
+ * The words of a Proposal's form: its heading, the tab's title and its
+ * button, and, for a coalition's (#120), the why's and link's hints and who
+ * will see it, in place of the group's.
+ */
 export interface FormWords {
   readonly title: string;
   readonly pageTitle: string;
   readonly submit: string;
+  readonly whyHint?: string;
+  readonly linkHint?: string;
+  readonly visibility?: string;
 }
 
 /** Props for {@link ProposalForm}. */
@@ -499,6 +512,10 @@ export interface ProposalFormProps {
   readonly text: TextEntry | null;
   /** The lapsed Proposal this proposes again (#74), whose other versions it carries, or undefined. */
   readonly again: Proposal | undefined;
+  /** Where Back goes: the group's Document unless given, as a coalition's is (#120). */
+  readonly back?: Back;
+  /** Whether it offers "Send a Dispatch if this passes" (#112): yes unless false, as for a coalition (#120). */
+  readonly dispatch?: boolean;
 }
 
 /**
@@ -530,7 +547,7 @@ export function ProposalForm(props: ProposalFormProps) {
     setSaid(messages.composer.discarded);
     form.current?.querySelector<HTMLInputElement>('input[name="title"]')?.focus();
   };
-  const back = backFor(state, place);
+  const back = props.back ?? backFor(state, place);
   return (
     <main className="shell">
       <BackLink to={back.to} label={back.label} />
@@ -545,9 +562,11 @@ export function ProposalForm(props: ProposalFormProps) {
           place={place}
           now={props.now}
           onChange={change}
+          words={words}
+          dispatch={props.dispatch ?? true}
         />
         <OtherVersions again={props.again} />
-        <p className="caption">{messages.composer.visibility}</p>
+        <p className="caption">{words.visibility ?? messages.composer.visibility}</p>
         {failed ? (
           <p role="alert" className="form-error">
             {messages.composer.failed}
@@ -840,6 +859,102 @@ export function Composer(props: ComposerProps) {
       proposal={what.proposal}
       drafts={drafts}
       onAddVersion={props.onAddVersion}
+    />
+  );
+}
+
+/** Props for {@link CoalitionComposer}. */
+export interface CoalitionComposerProps {
+  /** The coalition, folded from its relay records. */
+  readonly state: GroupState;
+  /** The section the motion would reword, from the route. */
+  readonly atomId: string;
+  /** Where this person stands in the coalition (`standingIn`). */
+  readonly standing: CoalitionStanding;
+  /** This coalition's private drafts on this device. */
+  readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from. */
+  readonly now: number;
+  /** Queues the motion in the coalition's outbox, clearing its draft as it does. */
+  readonly onPropose: ComposerProps['onPropose'];
+}
+
+/** Why there's no form for this section, or null when there is one. */
+function whyNoMotion(props: CoalitionComposerProps): { title: string; text: string } | null {
+  const { composer, coalitions } = messages;
+  const { standing } = props;
+  if (standing.kind === 'take-part')
+    return { title: composer.notAllowedTitle, text: coalitions.takePartFirst };
+  if (standing.kind !== 'proposes')
+    return { title: composer.notAllowedTitle, text: coalitions.cantPropose };
+  return openProposalOn(props.state, props.atomId) === undefined
+    ? null
+    : { title: composer.title, text: coalitions.sectionOpen };
+}
+
+/**
+ * The coalition's composer (`#/c/{coalitionId}/propose/{atomId}`; #120): the
+ * group composer's form, with the voting time (#106), that proposes new text
+ * for one section of the coalition's Document. Proposing writes the motion to
+ * the coalition's outbox; every member group then votes on it inside itself.
+ * A motion carries no Dispatch and takes no other version (#100), so there's
+ * no "Send a Dispatch if this passes" or Add your version. Only someone bound
+ * to a member group's seat who can propose there sees a form.
+ */
+export function CoalitionComposer(props: CoalitionComposerProps) {
+  const { state, atomId, drafts } = props;
+  const { composer, coalitions } = messages;
+  const coalitionId = state.group ?? '';
+  const section = sectionOf(state, atomId);
+  const documentId = section?.atom.documentId ?? coalitionId;
+  const back = {
+    to: { name: 'coalitionDocument', coalitionId, documentId },
+    label: documentTitle(state, documentId) ?? '',
+  } as const;
+  if (section === null) {
+    return (
+      <Unavailable
+        state={state}
+        title={composer.missingTitle}
+        text={composer.missing}
+        back={back}
+      />
+    );
+  }
+  const refused = whyNoMotion(props);
+  if (refused !== null) return <Unavailable state={state} {...refused} back={back} />;
+  const { atom, number } = section;
+  return (
+    <ProposalForm
+      state={state}
+      place={{ atom: atom.id }}
+      draftKey={atom.id}
+      start={startOf(state, atom)}
+      drafts={drafts}
+      now={props.now}
+      onPropose={props.onPropose}
+      words={{
+        title: composer.title,
+        pageTitle: composer.pageTitle,
+        submit: composer.submit,
+        whyHint: coalitions.composerWhyHint,
+        linkHint: coalitions.composerLinkHint,
+        visibility: coalitions.composerVisibility,
+      }}
+      intro={
+        <>
+          <p className="lede">{coalitions.composerLede}</p>
+          <CurrentText atom={atom} section={number} />
+        </>
+      }
+      text={{
+        label: composer.textLabel,
+        hint: coalitions.composerTextHint,
+        validate: textCheck(atom.text),
+      }}
+      again={undefined}
+      back={back}
+      dispatch={false}
     />
   );
 }

@@ -77,10 +77,23 @@ export type Route =
   /** Send a Dispatch (#112). */
   | { readonly name: 'sendDispatch'; readonly groupId: string }
   /** Reconcile with another group (#114): the card's form. */
-  | { readonly name: 'reconcile'; readonly groupId: string };
+  | { readonly name: 'reconcile'; readonly groupId: string }
+  /** A coalition's home (#120), by its genesis id. */
+  | { readonly name: 'coalition'; readonly coalitionId: string }
+  /** One of a coalition's Documents (#120), by its id: today, the coalition's genesis id. */
+  | {
+      readonly name: 'coalitionDocument';
+      readonly coalitionId: string;
+      readonly documentId: string;
+    }
+  /** Propose a change to one of a coalition's sections (#120). */
+  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
+
+/** A route inside one coalition (#120). */
+export type CoalitionRoute = Extract<Route, { readonly coalitionId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
@@ -211,6 +224,29 @@ function groupRoute(rest: readonly string[]): Route {
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
 }
 
+/** The pages inside a coalition that take one argument (#120): a Document, and the composer. */
+const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) => Route> = new Map([
+  [
+    'doc',
+    (coalitionId: string, arg: string): Route =>
+      DOCUMENT_ID.test(arg) ? { name: 'coalitionDocument', coalitionId, documentId: arg } : START,
+  ],
+  [
+    'propose',
+    (coalitionId: string, arg: string): Route =>
+      ATOM_ID.test(arg) ? { name: 'coalitionPropose', coalitionId, atomId: arg } : START,
+  ],
+]);
+
+/** `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or `propose/{atomId}` (#120). */
+function coalitionRoute(rest: readonly string[]): Route {
+  const [coalitionId, page, arg, ...extra] = rest;
+  if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
+  if (page === undefined) return { name: 'coalition', coalitionId };
+  const open = COALITION_PAGES.get(page);
+  return open === undefined || arg === undefined ? START : open(coalitionId, arg);
+}
+
 /** `#/me` (Personal), or `#/me/{id}`, one personal Document (#93). */
 function personalRoute(rest: readonly string[]): Route {
   if (rest.length === 0) return { name: 'personal' };
@@ -256,11 +292,12 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['card', { name: 'card', payload: null }],
 ]);
 
-/** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
+/** The pages after `#/` that read what follows them: Join, a group, Personal (#93) and a coalition (#120). */
 const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
   ['join', joinRoute],
   ['g', groupRoute],
   ['me', personalRoute],
+  ['c', coalitionRoute],
 ]);
 
 /** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
@@ -371,6 +408,19 @@ function pagePath(route: Extract<GroupRoute, { readonly name: 'document' | Fixed
     : `/${FIXED_PATHS[route.name]}`;
 }
 
+/** The `href` of a page inside a coalition (#120). */
+function coalitionHref(route: CoalitionRoute): string {
+  const home = `#/c/${route.coalitionId}`;
+  switch (route.name) {
+    case 'coalition':
+      return home;
+    case 'coalitionDocument':
+      return `${home}/doc/${route.documentId}`;
+    case 'coalitionPropose':
+      return `${home}/propose/${route.atomId}`;
+  }
+}
+
 /** A route outside any group that takes nothing. */
 type FixedTop = Extract<
   Route,
@@ -387,8 +437,8 @@ const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
   linkThis: '#/link-this',
 };
 
-/** The `href` of a route outside any group. */
-function topHref(route: Exclude<Route, GroupRoute>): string {
+/** The `href` of a route outside any group or coalition. */
+function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
   switch (route.name) {
     case 'personalDocument':
       return `#/me/${route.id}`;
@@ -407,7 +457,8 @@ function topHref(route: Exclude<Route, GroupRoute>): string {
 
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
-  return 'groupId' in route ? `#/g/${route.groupId}${groupPath(route)}` : topHref(route);
+  if ('groupId' in route) return `#/g/${route.groupId}${groupPath(route)}`;
+  return 'coalitionId' in route ? coalitionHref(route) : topHref(route);
 }
 
 const listeners = new Set<() => void>();

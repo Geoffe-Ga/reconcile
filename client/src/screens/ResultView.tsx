@@ -20,6 +20,7 @@
  */
 import { useId } from 'react';
 
+import { OutcomeSentence } from '../app/CoalitionProgress';
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
 import type { RulesView } from '../app/optInLines';
@@ -27,6 +28,7 @@ import { Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
+import type { CoalitionProgress } from '../engine/coalitionProgress';
 import { type Proposal, proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
 import type { Bar } from '../engine/rules';
@@ -160,11 +162,18 @@ function Failed({ detail, versions }: OutcomeProps) {
   );
 }
 
-/** A lapse: ADR-0069's sentence, a late ballot's notice, then Propose again. */
+/**
+ * A lapse: ADR-0069's sentence, a late ballot's notice, then Propose again.
+ * A coalition motion's lapse goes to the coalition as a fail, so it says
+ * that instead (#100, #120).
+ */
 function Lapsed({ props }: OutcomeProps) {
+  const motion = props.proposal.target.kind === 'motion';
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{messages.result.lapsed}</p>
+      <p className="outcome-sentence">
+        {motion ? messages.coalitions.motionLapsed : messages.result.lapsed}
+      </p>
       <LateNotice own={props.own} />
       <ProposeAgain props={props} />
     </div>
@@ -195,10 +204,17 @@ function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']
   );
 }
 
-/** A pass's block: what a one-card ballot decided, or the winning text as the Document reads. */
+/**
+ * A pass's block: what a one-card ballot decided, or the winning text as the
+ * Document reads. A coalition motion's pass in the group only goes to the
+ * coalition (#120), whose own result says what changed.
+ */
 function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
   const { steward, rules, dissolve, decision } = props.versions[0] ?? {};
-  if (decision !== undefined) return <DecisionPassed proposal={props.props.proposal} />;
+  const { proposal } = props.props;
+  if (decision !== undefined || proposal.target.kind === 'motion') {
+    return <DecisionPassed proposal={proposal} />;
+  }
   if (dissolve !== undefined) return <DissolvePassed />;
   if (steward !== undefined) return <StewardPassed steward={steward} />;
   if (rules !== undefined) return <RulesPassed rules={rules} />;
@@ -217,7 +233,7 @@ function EditResult(props: ResultViewProps) {
   const { state, proposal, own, cleared } = props;
   const heading = useId();
   const detail = cleared?.tally ?? proposalTally(proposal);
-  const versions = versionViews(state, proposal);
+  const versions = versionViews(state, proposal, props.names ?? state);
   return (
     <section className="result" aria-labelledby={heading}>
       <h2 id={heading} className="eyebrow">
@@ -236,6 +252,71 @@ function EditResult(props: ResultViewProps) {
         <Cleared at={cleared.at} />
       )}
       <Ran proposal={proposal} />
+    </section>
+  );
+}
+
+/** Props for {@link CoalitionResult}. */
+export interface CoalitionResultProps {
+  /** The motion's progress once the coalition has decided it (`coalitionProgress`). */
+  readonly progress: CoalitionProgress;
+  /** The text a final pass put in the coalition's Document, or `""` for none, as admitting a group has. */
+  readonly text: string;
+  /** The proposer's name in the coalition, thanked once its pass is final, or `""` for none. */
+  readonly author: string;
+}
+
+/** Each member group, in seat order, with whether it passed, didn't, or is still deciding. */
+function GroupStandings({ groups }: { readonly groups: CoalitionProgress['groups'] }) {
+  const heading = useId();
+  const { coalitions } = messages;
+  return (
+    <div className="result-totals">
+      <h3 id={heading} className="eyebrow">
+        {coalitions.eachGroup}
+      </h3>
+      <ul className="result-list" aria-labelledby={heading}>
+        {groups.map((group, index) => (
+          <li key={index} className="result-row">
+            <p className="result-version">
+              <bdi>{group.name}</bdi>
+            </p>
+            <p className="caption">{coalitions.standing[group.result ?? 'deciding']}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The coalition's result on a motion (#120; ADR-0036, ADR-0069), shown on its
+ * vote in each member group once the coalition has decided it. A final pass
+ * reads "The coalition passed this. It now reads:", the new text full width
+ * and thanks to its proposer by their coalition name, with no numbers. A
+ * pass not yet final says the day it takes effect (#250); a fail says not
+ * every group passed it, or from 5 groups, fewer than two-thirds. Then each
+ * group with "Passed" or "Didn't pass": only those cross group lines, so no
+ * group's ballots, notes or counts appear here; each group's own stay in its
+ * own result below.
+ */
+export function CoalitionResult({ progress, text, author }: CoalitionResultProps) {
+  const heading = useId();
+  const passed = progress.outcome === 'pass' && progress.final;
+  const reads = passed && text !== '';
+  return (
+    <section className="result coalition-result" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow">
+        {messages.coalitions.resultTitle}
+      </h2>
+      <div className="result-outcome">
+        <p className="outcome-sentence">
+          {reads ? messages.coalitions.nowReads : <OutcomeSentence progress={progress} />}
+        </p>
+        {reads ? <AtomText text={text} className="atom-card result-text" /> : null}
+        {passed && author !== '' ? <Thanks names={[author]} /> : null}
+      </div>
+      <GroupStandings groups={progress.groups} />
     </section>
   );
 }
