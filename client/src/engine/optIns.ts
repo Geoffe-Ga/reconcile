@@ -252,7 +252,10 @@ export interface OptInProposalState {
   readonly author: string;
   /** A rules change, or any other kind of target, whose details the opt-in rules don't read. */
   readonly target:
-    | { readonly kind: 'edit' | 'add' | 'steward' | 'dissolve' | 'reconcile' | 'motion' }
+    | {
+        readonly kind:
+          'edit' | 'add' | 'steward' | 'dissolve' | 'reconcile' | 'motion' | 'priority';
+      }
     | RulesChange;
   readonly deadline: number;
   readonly closedAt: number | null;

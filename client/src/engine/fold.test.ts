@@ -110,6 +110,7 @@ describe('fold', () => {
       dissolved: null,
       coalitions: [],
       coalition: null,
+      focus: null,
       ignored: [],
     });
   });

@@ -7,9 +7,10 @@
  *
  * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
  *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, bar?, versions, expect}`. `bar` names a class whose
- *   bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
- *   `expect` with that bar added.
+ * - A tally vector is `{name, eligible, bar?, versions, expect, rank?}`. `bar` names a class
+ *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
+ *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
+ *   first (#107).
  * - A fold vector is `{name, cleared?, records, relayNow, expect, unchangedWithout?}`. `cleared`
  *   lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed to `fold`.
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
@@ -64,6 +65,8 @@ export interface TallyVector extends Omit<TallyInput, 'bar'> {
   readonly bar?: ProposalClass;
   /** The outcome without its bar, which the runner adds. */
   readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
+  /** The passing versions' ids, best first, as `rank()` gives them (#107). */
+  readonly rank?: readonly string[];
 }
 
 /** How a vector record departs from a plain record signed by its author. */

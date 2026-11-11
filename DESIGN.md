@@ -166,6 +166,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each version shows a word diff of the Markdown source against the current text, in Newsreader with its line breaks kept: additions underlined on `primary-soft`, and deletions struck through on `negative-soft`, the `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
+  - A priority vote's options (#107) are cards like versions, each headed by the option as plain text in Newsreader, with its own pills and consent meter. Phones stack them; wide screens set two columns, then three.
 - **Level picker** (#90): the three involvement levels as a radio group of cards, Member to Co-Creator.
   - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
   - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
@@ -179,6 +180,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Totals come next.
   - Individual ballots appear under a disclosure, with the expiry date shown under its toggle ("Individual scores and notes are visible until Sat 12 Dec. Screenshots taken before then can outlast this.", #111).
   - Once they expire, a caption takes the disclosure's place ("Individual scores and notes were cleared on Sat 12 Dec."), and the totals stay.
+  - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots. Once the ballots expire, that disclosure, now "Totals", keeps the totals, with the cleared caption in the ballots' place.
 - **Dispatch card** (#112): a `surface` card with a `hairline` border, as every card.
   - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it.
   - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.
