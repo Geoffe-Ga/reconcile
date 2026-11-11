@@ -441,7 +441,7 @@ describe('PersonalDocument', () => {
     ).toBeVisible();
   });
 
-  it('says the sealed relay backup has it too once the device keeps one, and nothing until it knows (#248)', async () => {
+  it('says the sealed relay backup has it too, once the device keeps one (#248)', async () => {
     await store.savePersonal(STATEMENT);
     open(ID, vi.fn(), true);
 
