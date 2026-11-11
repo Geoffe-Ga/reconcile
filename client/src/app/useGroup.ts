@@ -74,6 +74,12 @@ export interface GroupView {
    */
   leaving: boolean;
   /**
+   * Whether this copy came back from a backup and hasn't heard from the
+   * group since (#231): it reads, and takes nothing new, until a sync brings
+   * word from the group or the person opens a new invite link.
+   */
+  unconfirmed: boolean;
+  /**
    * Why this device can't read what the group writes now (#98): `left` when
    * this membership left on another device, `missed` when the group's key
    * changed and this device didn't get the new one; null while it can, and
@@ -195,17 +201,35 @@ function clearedOf(group: Group | undefined): GroupView['cleared'] {
   return group?.archived?.cleared ?? null;
 }
 
-/** What a stored group says of its syncs, its leave and its backup, or nothing yet before it loads. */
+/**
+ * What a stored group says of its syncs, its leave, whether it has heard from
+ * the group since a restore (#231) and its backup, or nothing yet before it loads.
+ */
 function syncStatusOf(
   group: Group | undefined,
-): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'suggestBackup'> {
+): Pick<
+  GroupView,
+  'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'unconfirmed' | 'suggestBackup'
+> {
   return {
     lastSyncAt: group?.lastSyncAt ?? null,
     relayNow: group?.relayNow ?? null,
     missingHistory: group?.missingHistory === true,
     leaving: group?.leaving !== undefined,
-    suggestBackup:
-      group !== undefined && group.backup === undefined && group.archived === undefined,
+    ...standingOf(group),
+  };
+}
+
+/**
+ * Whether a stored group is a copy back from a backup that hasn't heard from
+ * the group (#231), and whether group home suggests a backup of it (#78): not
+ * for a read-only copy, which no backup carries.
+ */
+function standingOf(group: Group | undefined): Pick<GroupView, 'unconfirmed' | 'suggestBackup'> {
+  if (group === undefined) return { unconfirmed: false, suggestBackup: false };
+  return {
+    unconfirmed: group.archived?.reason === 'unconfirmed',
+    suggestBackup: group.backup === undefined && group.archived === undefined,
   };
 }
 

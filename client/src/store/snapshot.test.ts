@@ -189,6 +189,8 @@ describe('exportGroups and importGroups', () => {
       missingHistory: false,
       outbox: [],
       backup: 'saved',
+      // Read-only until it hears from the group, since its copy's last sync (#231).
+      archived: expect.objectContaining({ reason: 'unconfirmed' }) as unknown,
     });
     expect(await folded(second, group.groupId)).toEqual(await folded(device, group.groupId));
   });
@@ -1043,7 +1045,11 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
 
     expect(groupIds).toEqual([group.groupId]);
     const [held] = await fresh.listGroups();
-    expect([held?.groupId, held?.epoch, held?.archived]).toEqual([group.groupId, 1, undefined]);
+    expect([held?.groupId, held?.epoch, held?.archived]).toEqual([
+      group.groupId,
+      1,
+      expect.objectContaining({ reason: 'unconfirmed' }),
+    ]);
     expect(local(held?.secret ?? new Uint8Array())).toEqual(local(group.secret));
     expect(local(held?.kxKey ?? new Uint8Array())).toEqual(local(group.kxKey));
     const original = await device.getGroup(group.groupId);
@@ -1087,7 +1093,11 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
     ).toBe(2);
 
     const live = await fresh.getGroup(group.groupId);
-    expect([live?.kxKey, live?.epoch ?? 0, live?.archived]).toEqual([undefined, 0, undefined]);
+    expect([live?.kxKey, live?.epoch ?? 0, live?.archived]).toEqual([
+      undefined,
+      0,
+      expect.objectContaining({ reason: 'unconfirmed' }),
+    ]);
     expect(await folded(fresh, group.groupId)).toEqual(await folded(device, group.groupId));
     expect((await fresh.getGroup(dissolvedId))?.archived).toEqual({ reason: 'dissolved' });
     expect(await fresh.listPersonal()).toEqual([canaryStatement(), READING]);

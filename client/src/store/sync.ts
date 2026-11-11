@@ -42,9 +42,10 @@
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
  * 2. results and expiry (#111, ./expiry.ts): for each group that isn't a
- *    read-only archive, a result for each closed Proposal that still has
+ *    dissolved archive, a result for each closed Proposal that still has
  *    none after the pass before found none too, so the device has synced
- *    once more to be sure, is queued for the next pass to post; then every
+ *    once more to be sure, is queued for the next pass to post, unless the
+ *    group is a restored copy that hasn't heard from it (#231); then every
  *    ballot that has expired is cleared. Folding the log for this costs a
  *    signature check per record, so a group is settled once per relay minute
  *    unless a result is owed: the duty waits for the minute after a close,
@@ -78,6 +79,14 @@
  * new records or a new relay minute, `settleDissolve` (./archive.ts)
  * archives the group, or posts this member's `dissolve` when a dissolve
  * Proposal's pass has become final.
+ *
+ * A group a restore brought back reads only until it hears from the group
+ * (#231; ADR-0051's 2026-11-11 amendment), since it may have dissolved after
+ * its copy was made, with the relay's copy of the `dissolve` gone: a pass
+ * reads its mailboxes as for any group, and sends nothing for it, no `kx`,
+ * chat post, front door or nudge, and no result, key change or push upkeep
+ * after. The pull that brings word from the group opens it (`applyPull`),
+ * and one that brings a `dissolve` archives it.
  *
  * Erase halts the loop for good before it closes the store (#78): no new pass
  * starts, a pass already running stops before its next group, and `halt`
@@ -460,15 +469,15 @@ export function createSync(options: SyncOptions): Sync {
    * a `dissolve` has folded, then posts push nudges (#99). Neither runs once
    * the loop is halted (Erase, #78). False when the group is gone.
    *
-   * A read-only archive sends and reads nothing, so no request names its
-   * mailbox (#108).
+   * A dissolved group's archive sends and reads nothing, so no request names
+   * its mailbox (#108). A restored copy that hasn't heard from its group
+   * (#231) reads, and sends nothing, until a pull brings word from the group.
    */
   async function syncGroup(group: Group): Promise<boolean> {
-    if (group.archived !== undefined || !stillSyncs(group)) return true;
+    if (!readsFor(group)) return true;
     const current = await syncEpochs(group);
     if (current === undefined) return false;
-    // A coalition has no key of its own to post, no chat bot and no nudges yet (#114, #120).
-    if (isCoalitionEntry(current)) return true;
+    if (!postsFor(current)) return true;
     await queueKx(current);
     // Once halted (Erase, #78), the bot neither claims nor posts, and no nudge goes.
     if (halted) return true;
@@ -580,14 +589,16 @@ export function createSync(options: SyncOptions): Sync {
    * result due on this pass and on the one before, so the device has synced
    * once more since it first saw none, is queued, and the next pass posts it
    * and reads it back; then every ballot that has expired is cleared. A
-   * read-only archive (#108) posts nothing, and its own sweep clears it.
+   * read-only archive (#108) posts nothing, and its own sweep clears it; a
+   * restored copy that hasn't heard from its group (#231) queues no result
+   * (`resultsDue`), and clears its expired ballots on the device all the same.
    * Folding costs a signature check per record, so a group already settled in
    * this relay minute, with nothing owed, is skipped, and one that just
    * queued results is settled again on the next pass, which clears by them.
    */
   async function settleExpiry(groupId: string): Promise<void> {
     const group = await store.getGroup(groupId);
-    if (group === undefined || group.archived !== undefined) return;
+    if (group === undefined || group.archived?.reason === 'dissolved') return;
     const noted = owed.get(groupId) ?? [];
     if (settled.get(groupId) === group.relayNow && noted.length === 0) return;
     const state = foldGroup(group);
@@ -808,6 +819,23 @@ export function openRecords(
     const bytes = seal.open(mailbox, key, data);
     return bytes === null ? [] : [{ seq, received, bytes, ...tag }];
   });
+}
+
+/** Whether a pass reads `group`: not a dissolved group's archive (#108), nor a declined coalition (#114). */
+function readsFor(group: Group): boolean {
+  return group.archived?.reason !== 'dissolved' && stillSyncs(group);
+}
+
+/**
+ * Whether a pass runs anything more for `group` once it has synced: a `kx`,
+ * the chat bot, the front door and nudges. A coalition has no key of its own
+ * to post, no chat bot and no nudges yet (#114, #120), and a copy that
+ * hasn't heard from its group (#231) posts nothing. A group the pass just
+ * archived still runs them once, so its front door's page closes (#121);
+ * each posts nothing else for a dissolved group.
+ */
+function postsFor(group: Group): boolean {
+  return !isCoalitionEntry(group) && group.archived?.reason !== 'unconfirmed';
 }
 
 const succeeded = (): boolean => true;

@@ -32,17 +32,20 @@ export function foldGroup(group: Pick<Group, 'log' | 'relayNow' | 'cleared'>): G
  * The closed Proposals this device's member should post a result for now:
  * none once they've left or are leaving (#77), since nothing is queued after
  * a leave; none once the group has dissolved (#108), since the fold takes no
- * event after its dissolve; and none in a coalition's own log (#100), which
- * takes no result: its motions are decided by the groups' results, and each
- * group's own log carries the result of its vote on one. A Proposal whose
- * result already waits in the outbox is left out, so none is queued twice.
+ * event after its dissolve; none while the device keeps the group read-only,
+ * as a restored copy that hasn't heard from it (#231); and none in a
+ * coalition's own log (#100), which takes no result: its motions are
+ * decided by the groups' results, and each group's own log carries the
+ * result of its vote on one. A Proposal whose result already waits in the
+ * outbox is left out, so none is queued twice.
  */
 export function resultsDue(
   state: GroupState,
-  group: Pick<Group, 'me' | 'relayNow' | 'leaving'> & Partial<Pick<Group, 'outbox'>>,
+  group: Pick<Group, 'me' | 'relayNow' | 'leaving' | 'archived'> & Partial<Pick<Group, 'outbox'>>,
 ): readonly Proposal[] {
   if (state.dissolved !== null || state.coalition !== null) return [];
-  if (group.leaving !== undefined || !can(state, group.me.author, 'read')) return [];
+  if (group.leaving !== undefined || group.archived !== undefined) return [];
+  if (!can(state, group.me.author, 'read')) return [];
   const queued = queuedResults(group.outbox ?? []);
   return state.proposals.filter(
     (proposal) => needsResult(proposal, group.relayNow) && !queued.has(proposal.id),

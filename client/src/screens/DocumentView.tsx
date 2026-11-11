@@ -31,6 +31,8 @@ export interface DocumentViewProps {
   readonly copyText: (text: string) => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): then nobody proposes from here. */
   readonly leaving?: boolean;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
 }
 
 /**
@@ -236,13 +238,14 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
  * removing this section, and Add a section here in each gap (#75). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
- * this member is leaving, or once the group has dissolved (#108), the
- * Document only reads. Copy as Markdown is for everyone who can read it, an
+ * this member is leaving, once the group has dissolved (#108), or while a
+ * copy back from a backup hasn't heard from the group (#231), the Document
+ * only reads. Copy as Markdown is for everyone who can read it, an
  * archive's readers included.
  */
 export function DocumentView(props: DocumentViewProps) {
-  const { state, me, copyText, leaving = false } = props;
-  const readOnly = leaving || state.dissolved !== null;
+  const { state, me, copyText, leaving = false, unconfirmed = false } = props;
+  const readOnly = leaving || unconfirmed || state.dissolved !== null;
   const proposes = !readOnly && can(state, me, 'propose');
   return (
     <main className="shell">

@@ -158,9 +158,14 @@ function previewOf(state: GroupState, me: Me): InvitePreview {
  * group secret, a preview, this member's token and the relay-accepted log,
  * never the outbox) sealed under the invite key and posted to the invite
  * mailbox, kept {@link INVITE_TTL_DAYS} day. Returns the link only once every
- * PUT has succeeded; otherwise it rejects, and no link exists to copy.
+ * PUT has succeeded; otherwise it rejects, and no link exists to copy. A copy
+ * this device keeps read-only makes none: a dissolved group's (#108), whose
+ * link would carry a group that has ended, and a restored copy that hasn't
+ * heard from its group (#231), since a member who opens a link counts it as
+ * word from a copy that takes new things.
  *
- * @throws {Error} when the device isn't in the group or the relay can't be reached.
+ * @throws {Error} when the device isn't in the group, keeps it read-only, or
+ *   the relay can't be reached.
  */
 export async function makeInvite(
   services: Services,
@@ -169,6 +174,7 @@ export async function makeInvite(
 ): Promise<string> {
   const group = await services.store.getGroup(groupId);
   if (group === undefined) throw new Error('No such group on this device.');
+  if (group.archived !== undefined) throw new Error('This group is read-only on this device.');
   const seed = newInviteSeed();
   const channel = inviteChannelOf(seed);
   const sig = base64url(signInviteToken(group.signingKey, groupId));
@@ -196,7 +202,8 @@ function highestSeq(records: readonly LogRecord[]): number {
  * Merges an invite's entries into a group this device is already in (#73),
  * then takes up the invite's secret when its epoch is later than the one the
  * device holds and its key change's commit names it (#98): how a device that
- * missed a new key gets back in.
+ * missed a new key gets back in. A restored copy that hadn't heard from its
+ * group goes live (#231): someone in the group made the link.
  */
 async function mergeInvite(services: Services, groupId: string, envelope: Envelope) {
   const { store } = services;
