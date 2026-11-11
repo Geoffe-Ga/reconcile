@@ -114,10 +114,11 @@ function ApplicationCard({ state, me, application, onInvite, onDismiss }: CardPr
         <span id={hint} className="visually-hidden">
           {door.dismissHint}
         </span>
+        {/* Beside the buttons, so the live region adds no empty line to the card. */}
+        <p role="status" className="status">
+          {STATUS[sending]}
+        </p>
       </div>
-      <p role="status" className="status">
-        {STATUS[sending]}
-      </p>
     </li>
   );
 }

@@ -116,6 +116,7 @@ function DoorLink({ state, origin, copyText }: GroupRulesProps) {
   const words = messages.door;
   return (
     <div className="stack door-link">
+      <p className="caption">{door.showCount ? words.counted : words.uncounted}</p>
       <CopyLink
         link={doorLinkOf(origin, addressOf(door))}
         label={words.linkLabel}
@@ -124,7 +125,6 @@ function DoorLink({ state, origin, copyText }: GroupRulesProps) {
         primary={false}
         copyText={copyText}
       />
-      <p className="caption">{door.showCount ? words.counted : words.uncounted}</p>
     </div>
   );
 }
