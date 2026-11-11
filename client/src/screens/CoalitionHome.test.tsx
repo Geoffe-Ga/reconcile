@@ -49,6 +49,7 @@ const VIEW: CoalitionHomeView = {
   decided: [],
   pending: [],
   standing: { kind: 'proposes', groupId: 'riverside' },
+  dispatches: [],
 };
 
 function props(overrides: Partial<CoalitionHomeProps> = {}): CoalitionHomeProps {
@@ -77,6 +78,40 @@ describe('CoalitionHome, with a coalition among its members (#122)', () => {
     expect(hill).toHaveTextContent(`Hill Coalition${messages.coalitions.coalitionSeat}`);
     expect(elm).toHaveTextContent(/^Elm Row$/);
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('CoalitionHome’s Dispatches (#126)', () => {
+  it('lists what the coalition passed and sent out, newest first, each from the seat that passed it', async () => {
+    const dispatches = [
+      { id: 'd2', title: 'Rent strike vote', text: '', from: 'Oak St Co-op', received: NOW - 60 },
+      {
+        id: 'd1',
+        title: 'Rally Saturday',
+        text: 'Meet at the river at ten.\nBring water.',
+        from: 'Riverside Tenants',
+        received: NOW - 4_000,
+      },
+    ];
+    render(<CoalitionHome {...props({ view: { ...VIEW, dispatches } })} />);
+    const list = region(messages.dispatches.title);
+    const cards = within(list).getAllByRole('article');
+    expect(
+      cards.map((card) => within(card).getByRole('heading', { level: 3 }).textContent),
+    ).toEqual(['Rent strike vote', 'Rally Saturday']);
+    const [, rally] = cards;
+    if (rally === undefined) throw new Error('Expected the second card.');
+    expect(rally).toHaveTextContent(`From Riverside Tenants,·${formatDay(NOW - 4_000)}`);
+    expect(within(rally).getByText(/Meet at the river/).textContent).toBe(
+      'Meet at the river at ten.\nBring water.',
+    );
+    expect(within(cards[0] ?? rally).queryByText(/Meet at the river/)).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says there are none yet', () => {
+    render(<CoalitionHome {...props()} />);
+    expect(region(messages.dispatches.title)).toHaveTextContent(messages.dispatches.empty);
   });
 });
 

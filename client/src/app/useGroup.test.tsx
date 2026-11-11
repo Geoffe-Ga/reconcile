@@ -239,6 +239,7 @@ describe('useGroup', () => {
       cleared: null,
       applications: [],
       coalitions: [],
+      carries: [],
     });
   });
 
@@ -258,6 +259,23 @@ describe('useGroup', () => {
       expect(result.current.leaving).toBe(true);
     });
     expect(result.current.pending.map(({ event }) => event.type)).toEqual(['leave']);
+  });
+
+  it('hands over the carried scores this device means to cast here, once it plans one (#126)', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
+    expect(result.current.carries).toEqual([]);
+
+    const plan = { motion: 'm', dispatch: 'd', score: 3, castAt: 10, deadline: 20 } as const;
+    await act(() => store.updateCarried(GROUP, (held) => ({ ...held, carries: [plan] })));
+
+    await waitFor(() => {
+      expect(result.current.carries).toEqual([plan]);
+    });
   });
 
   it('suggests a backup for a group no backup holds, and none once it is a read-only archive (#108)', async () => {

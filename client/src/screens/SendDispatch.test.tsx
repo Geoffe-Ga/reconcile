@@ -3,12 +3,12 @@
  * only to someone who holds `dispatch`. The form counts code points after
  * NFC, as the fold's limits do, and queues nothing it would refuse.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
-import type { DispatchValues } from '../app/proposals';
+import type { DispatchValues, RisingValues } from '../app/proposals';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
@@ -23,15 +23,26 @@ interface Options {
   readonly me?: string;
   readonly leaving?: boolean;
   readonly fails?: boolean;
+  /** Whether the group sits in a formed coalition, so a Dispatch can rise (#126). */
+  readonly rises?: boolean;
 }
 
 function renderSend(state: GroupState, options: Options = {}) {
-  const { me = 'ana', leaving = false, fails = false } = options;
-  const onSend = vi.fn<(values: DispatchValues) => Promise<void>>(() =>
-    fails ? Promise.reject(new Error('IndexedDB refused the write.')) : Promise.resolve(),
+  const { me = 'ana', leaving = false, fails = false, rises = false } = options;
+  const saved = () =>
+    fails ? Promise.reject(new Error('IndexedDB refused the write.')) : Promise.resolve();
+  const onSend = vi.fn<(values: DispatchValues) => Promise<void>>(saved);
+  const onPropose = vi.fn<(values: RisingValues) => Promise<void>>(saved);
+  render(
+    <SendDispatch
+      state={state}
+      me={authorOf(me)}
+      leaving={leaving}
+      onSend={onSend}
+      {...(rises ? { onPropose } : {})}
+    />,
   );
-  render(<SendDispatch state={state} me={authorOf(me)} leaving={leaving} onSend={onSend} />);
-  return { user: userEvent.setup(), onSend };
+  return { user: userEvent.setup(), onSend, onPropose };
 }
 
 /** Ana founds; Ben joins as a Collaborator and Kim as a Member. */
@@ -144,6 +155,72 @@ describe('SendDispatch', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers how far it can go once the group sits in a formed coalition, this group only first (#126)', async () => {
+    renderSend(group().state(), { rises: true });
+    const picker = screen.getByRole('radiogroup', { name: sendDispatch.ceilingLabel });
+    const options = within(picker).getAllByRole('radio');
+    expect(
+      options.map(
+        (option) => option.getAttribute('aria-label') ?? option.closest('label')?.textContent,
+      ),
+    ).toEqual(['This group only', 'One level up', 'Two levels up', 'As far as the coalitions go']);
+    expect(within(picker).getByRole('radio', { name: 'This group only' })).toBeChecked();
+    expect(within(picker).getByRole('radio', { name: 'One level up' })).toHaveAccessibleDescription(
+      sendDispatch.ceilingHints[1],
+    );
+    expect(submit()).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('puts it to a vote with the ceiling chosen, its Document and the trimmed words, and says so (#126)', async () => {
+    const log = group();
+    const { user, onSend, onPropose } = renderSend(log.state(), { rises: true });
+    await fill(user, '  Rally Saturday  ', 'Meet at the river.');
+    await user.click(screen.getByText('House rules'));
+    await user.click(screen.getByText('As far as the coalitions go'));
+    expect(screen.getByText(sendDispatch.visibilityVote)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Send Dispatch' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: sendDispatch.submitVote }));
+    expect(onPropose).toHaveBeenCalledExactlyOnceWith({
+      title: 'Rally Saturday',
+      text: 'Meet at the river.',
+      doc: log.group,
+      ceiling: 'coalitions',
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it.each([
+    ['One level up', 1],
+    ['Two levels up', 2],
+  ] as const)('reads %s as a ceiling of %s (#126)', async (label, ceiling) => {
+    const { user, onPropose } = renderSend(group().state(), { rises: true });
+    await fill(user, 'Rally');
+    await user.click(screen.getByText(label));
+    await user.click(screen.getByRole('button', { name: sendDispatch.submitVote }));
+    expect(onPropose).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ ceiling }));
+  });
+
+  it('sends it at once with This group only, as before (#126)', async () => {
+    const { user, onSend, onPropose } = renderSend(group().state(), { rises: true });
+    await fill(user, 'Meet on Sunday');
+    await user.click(screen.getByText('One level up'));
+    await user.click(screen.getByText('This group only'));
+    await user.click(submit());
+    expect(onSend).toHaveBeenCalledExactlyOnceWith({
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+    });
+    expect(onPropose).not.toHaveBeenCalled();
+  });
+
+  it('offers no ceiling where the group sits in no formed coalition (#126)', () => {
+    renderSend(group().state());
+    expect(screen.queryByRole('radiogroup', { name: sendDispatch.ceilingLabel })).toBeNull();
   });
 
   it('shows a suspended Co-Creator until when, in place of the form', () => {

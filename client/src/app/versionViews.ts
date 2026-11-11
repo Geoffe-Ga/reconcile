@@ -138,12 +138,23 @@ export function versionViews(
  * What a reconcile Proposal's or a coalition motion's ballot decides (#114):
  * the coalition it would form, or a motion with no text, as admitting a
  * group is, as the coalition titled it. A motion that rewords a section
- * shows its change instead, as any edit does (#120).
+ * shows its change instead, as any edit does (#120). A Dispatch put to the
+ * group's vote, and a promotion motion, whose words `withMotionWords` reads
+ * from its coalition into `dispatch`, decide sending it on (#126).
  */
-export function decisionOf(proposal: Pick<Proposal, 'target' | 'title' | 'text'>): {
+export function decisionOf(
+  proposal: Pick<Proposal, 'target' | 'title' | 'text'> & Partial<Pick<Proposal, 'dispatch'>>,
+): {
   readonly decision?: DissolveView;
 } {
   const { target } = proposal;
+  const { rising } = messages;
+  if (target.kind === 'dispatch') {
+    return { decision: { title: rising.ballotTitle, line: rising.groupLine[target.ceiling] } };
+  }
+  if (target.kind === 'motion' && (proposal.dispatch ?? null) !== null) {
+    return { decision: { title: rising.ballotTitle, line: messages.coalitions.motionLine } };
+  }
   if (target.kind === 'reconcile') {
     const title = messages.card.proposalTitle(target.name);
     return { decision: { title, line: messages.coalitions.reconcileLine } };

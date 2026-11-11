@@ -11,7 +11,7 @@ import { parseCardLink } from '../coalition/card';
 import type { Score } from '../engine/event';
 import { LEVELS } from '../engine/capabilities';
 import { fold, type GroupState } from '../engine/fold';
-import { TEST_NOW, type TestDevice, testDevice } from './appServices';
+import { TEST_NOW, type TestDevice, testDevice, type TestDeviceOptions } from './appServices';
 import type { FakeRelay } from './fakeRelay';
 
 /** The creating level, so every person here may propose and bring cards. */
@@ -29,9 +29,13 @@ export function closeAll(): void {
   window.history.replaceState(null, '', '#/');
 }
 
-/** Opens device `name` on `fake`, kept for `syncAll` and `closeAll`. */
-export async function open(fake: FakeRelay, name: string): Promise<TestDevice> {
-  const device = await testDevice(fake, name, () => TEST_NOW);
+/** Opens device `name` on `fake`, kept for `syncAll` and `closeAll`, with `options` (#126: its random bytes). */
+export async function open(
+  fake: FakeRelay,
+  name: string,
+  options: TestDeviceOptions = {},
+): Promise<TestDevice> {
+  const device = await testDevice(fake, name, () => TEST_NOW, options);
   devices.push(device);
   return device;
 }
@@ -71,11 +75,11 @@ export async function syncAll(rounds = 2): Promise<void> {
   }
 }
 
-/** Riverside Tenants (Ana, Cy) and Oak St Co-op (Ben, Cy), all synced. */
-export async function twoGroups(fake: FakeRelay) {
+/** Riverside Tenants (Ana, Cy) and Oak St Co-op (Ben, Cy), all synced; Cy's device with `cyOptions`. */
+export async function twoGroups(fake: FakeRelay, cyOptions: TestDeviceOptions = {}) {
   const ana = await open(fake, 'ana');
   const ben = await open(fake, 'ben');
-  const cy = await open(fake, 'cy');
+  const cy = await open(fake, 'cy', cyOptions);
   const riverside = await found(ana, 'Riverside Tenants', 'Ana');
   const oak = await found(ben, 'Oak St Co-op', 'Ben');
   await join(ana, riverside, cy, 'Cy');

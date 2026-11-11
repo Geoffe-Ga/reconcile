@@ -258,11 +258,14 @@ interface Planning {
   readonly pending: readonly ParsedEvent[];
 }
 
-/** Whether `plan` still stands: its motion is open, before its deadline, and the member hasn't voted. */
+/**
+ * Whether `plan` still stands: its motion is still open, before its deadline,
+ * which is the plan's, and the member hasn't voted.
+ */
 function stands(plan: CarryPlan, held: Held, planning: Planning): boolean {
   const proposal = held.state.proposals.find((p) => p.id === plan.motion);
   if (proposal === undefined || !openAt(proposal, planning.now)) return false;
-  return planning.now < plan.deadline && !hasVoted(held, proposal, planning.pending);
+  return !hasVoted(held, proposal, planning.pending);
 }
 
 /**

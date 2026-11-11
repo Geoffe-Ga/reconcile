@@ -105,6 +105,38 @@ export function DispatchCard({ state, dispatch, level }: DispatchCardProps) {
   );
 }
 
+/** Props for {@link RisenDispatchCard}. */
+export interface RisenDispatchCardProps {
+  readonly title: string;
+  readonly text: string;
+  /** The seat that passed it below, as the coalition names it. */
+  readonly from: string;
+  readonly received: number;
+}
+
+/**
+ * A Dispatch a coalition passed and sent out (#126), on the coalition's home:
+ * its title, "From <seat> · <date>", and its text. It points to no
+ * Document, since a Document link stays in the group it started in.
+ */
+export function RisenDispatchCard({ title, text, from, received }: RisenDispatchCardProps) {
+  const heading = useId();
+  return (
+    <article className="card dispatch" aria-labelledby={heading}>
+      <Title id={heading} level={3} title={title} />
+      <p className="dispatch-meta">
+        <span>
+          <Named parts={messages.dispatches.from} name={from} />
+        </span>
+        <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>
+        <span aria-hidden="true">{messages.dispatches.dateSeparator}</span>
+        <time dateTime={minuteIso(received)}>{formatDay(received)}</time>
+      </p>
+      <Text text={text} />
+    </article>
+  );
+}
+
 /** Props for {@link WaitingDispatchCard}. */
 export interface WaitingDispatchCardProps {
   readonly state: GroupState;

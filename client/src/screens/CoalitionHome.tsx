@@ -18,6 +18,7 @@ import type { CoalitionHomeView, MotionItem } from '../app/coalitionHome';
 import { ProgressLine } from '../app/CoalitionProgress';
 import { TakePart } from '../app/CoalitionSection';
 import { Countdown } from '../app/Countdown';
+import { RisenDispatchCard } from '../app/DispatchCard';
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
@@ -119,6 +120,20 @@ function Decided({ decided }: { readonly decided: readonly MotionItem[] }) {
   );
 }
 
+/** The Dispatches the coalition passed and sent out, newest first (#126). */
+function Dispatches({ view }: { readonly view: CoalitionHomeView }) {
+  if (view.dispatches.length === 0) return <p>{messages.dispatches.empty}</p>;
+  return (
+    <ul className="dispatch-list">
+      {view.dispatches.map((dispatch) => (
+        <li key={dispatch.id}>
+          <RisenDispatchCard {...dispatch} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The coalition's Documents, each opening the coalition's Document view. */
 function Documents({ view }: { readonly view: CoalitionHomeView }) {
   return (
@@ -177,7 +192,8 @@ function MemberGroups({ view }: { readonly view: CoalitionHomeView }) {
 
 /**
  * The coalition home (#120): Take part first for whoever may, then its open
- * Proposals, its Documents, its Decided list and its member groups.
+ * Proposals, the Dispatches it sent out (#126), its Documents, its Decided
+ * list and its member groups.
  */
 export function CoalitionHome({ view, now, back, onTakePart }: CoalitionHomeProps) {
   return (
@@ -203,6 +219,9 @@ export function CoalitionHome({ view, now, back, onTakePart }: CoalitionHomeProp
         ) : null}
         <Section title={coalitions.openMotions}>
           <OpenMotions view={view} now={now} />
+        </Section>
+        <Section title={messages.dispatches.title}>
+          <Dispatches view={view} />
         </Section>
         <Section title={coalitions.documents}>
           <Documents view={view} />

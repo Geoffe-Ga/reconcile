@@ -12,6 +12,7 @@ import { can } from '../engine/capabilities';
 import { MAX_LEVEL, seatLevel } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { openProposalOn } from '../engine/composeOption';
+import { type Dispatch, newestFirst } from '../engine/dispatches';
 import { type ParsedEvent, parseRecord } from '../engine/event';
 import type { Atom, GroupState } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
@@ -91,6 +92,41 @@ export interface CoalitionHomeView {
   /** Motions this device proposed that the relay hasn't ordered yet, oldest first. */
   readonly pending: readonly { readonly id: string; readonly title: string }[];
   readonly standing: CoalitionStanding;
+  /** The Dispatches the coalition passed and sent out, newest first (#126). */
+  readonly dispatches: readonly DispatchItem[];
+}
+
+/**
+ * A Dispatch a coalition sent out (#126): its id, the same at every level,
+ * its words, the name of the seat that passed it below, and when it went
+ * out here, once the coalition's pass was final.
+ */
+export interface DispatchItem {
+  readonly id: string;
+  readonly title: string;
+  readonly text: string;
+  readonly from: string;
+  readonly received: number;
+}
+
+/** The name of the seat a promotion motion came from (#126), as the coalition's seats name it, or `""`. */
+function fromSeat(state: GroupState, by: Dispatch['by']): string {
+  const motion =
+    typeof by === 'string' ? undefined : state.proposals.find((p) => p.id === by.proposal);
+  const target = motion?.target;
+  if (target?.kind !== 'promote') return '';
+  return state.coalition?.seats.find((seat) => seat.key === target.from)?.name ?? '';
+}
+
+/** The coalition's Dispatches, newest first, each with the seat it came from (#126). */
+function dispatchItems(state: GroupState): DispatchItem[] {
+  return newestFirst(state).map(({ id, title, text, by, received }) => ({
+    id,
+    title,
+    text,
+    from: fromSeat(state, by),
+    received,
+  }));
 }
 
 /** The coalition on this device whose genesis id is `coalitionId`, or undefined. */
@@ -234,6 +270,7 @@ export function coalitionHome(
     decided: motions.filter((m) => m.progress.final).sort((a, b) => b.decidedAt - a.decidedAt),
     pending: pendingIn(held),
     standing: standingIn(held, groups),
+    dispatches: dispatchItems(state),
   };
 }
 

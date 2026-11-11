@@ -25,6 +25,7 @@ import {
   motionView,
   motionWords,
   reconcileView,
+  sitsInFormed,
   withMotionWords,
 } from './coalitionLines';
 
@@ -63,6 +64,26 @@ function riverside(logs: Logs, pass = true): string {
   logs.vote('A', R + 5, 'ben', proposal, pass ? 4 : 0, pass ? undefined : 'No.');
   return proposal;
 }
+
+describe('sitsInFormed (#126)', () => {
+  it('is true once a coalition whose seats name the group’s seat has formed, and not before', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const none = heldCoalition(logs, R + 10);
+    expect(sitsInFormed(groupState(logs, 'A', R + 10, none), [none])).toBe(false);
+    logs.coalition(R + 10, ['A', 'B']);
+    logs.join(R + 11, 'kim', 'A');
+    logs.join(R + 11, 'dee', 'B');
+    const forming = heldCoalition(logs, R + 12);
+    expect(sitsInFormed(groupState(logs, 'A', R + 12, forming), [forming])).toBe(false);
+    const genesis = logs.ids.coalition ?? '';
+    logs.result(R + 12, 'kim', genesis, 'A', 'pass');
+    logs.result(R + 12, 'dee', genesis, 'B', 'pass');
+    const formed = heldCoalition(logs, R + 13);
+    expect(sitsInFormed(groupState(logs, 'A', R + 13, formed), [formed])).toBe(true);
+    expect(sitsInFormed(fold(logs.logs.A ?? [], R + 13), [])).toBe(false);
+  });
+});
 
 describe('coalitionRows', () => {
   it('waits for the card while no genesis exists, and for the group’s own vote while it’s open', () => {
@@ -281,6 +302,7 @@ describe('motion words', () => {
       text: '',
       link: null,
       author: authorOf('dee'),
+      promoted: null,
     });
     expect(motionWords(opened, [])).toBeNull();
     expect(motionWords({ id: 'x', target: { kind: 'edit' } }, [held])).toBeNull();

@@ -397,6 +397,9 @@ export const messages = {
     reasonLabel: 'Your reason for a 0',
     betterLabel: 'What would make this a 3 for you?',
     noteMissing: 'Add your reason for the 0.',
+    /** A note the person wrote on the same Dispatch in another group (#126; ADR-0065). */
+    copiedNote:
+      'You wrote this in another group. Write a fresh one for this group, so the two can’t be matched.',
     noteTooLong: (max: number) => `Keep the note to ${count(max)} characters or fewer.`,
     submit: 'Send your vote',
     update: 'Update your vote',
@@ -1131,6 +1134,35 @@ export const messages = {
     /** Read between who sent a Dispatch and its date. */
     dateSeparator: '·',
   },
+  /**
+   * A Dispatch that may rise (#126; ADR-0037), on its ballot: the group's own
+   * vote on it, a promotion motion in another group, and a score this
+   * person's device carries from another group.
+   */
+  rising: {
+    heading: 'The Dispatch',
+    ballotTitle: 'Send this Dispatch',
+    /** How far it can go, with the form's label for its ceiling. */
+    ceiling: (label: string) => `How far it can go: ${label}`,
+    groupLine: {
+      1: 'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it.',
+      2: 'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it, and then the coalition above that.',
+      coalitions:
+        'If your group passes it, it goes out to everyone here. Then each coalition above votes on it in turn, as far up as they go.',
+    },
+    passed:
+      'This passed. It went out to everyone in your group, and the coalition your group is in votes on it next.',
+    /** Before the seat that passed it, which follows in `<bdi>`: "Passed by Riverside Tenants". */
+    passedBy: { before: 'Passed by' },
+    motionLine: (coalition: string) =>
+      `If ${coalition} passes it, it goes out to everyone in ${coalition}.`,
+    goesOn: 'Then the coalition above votes on it.',
+    carried: (score: number) =>
+      `Your ${String(score)} from another group will be cast here before voting ends.`,
+    change: 'Change',
+    dontCast: 'Don’t cast',
+    freshReason: 'You gave this a 0 elsewhere. Write a fresh reason for this group.',
+  },
   sendDispatch: {
     pageTitle: 'Send a Dispatch',
     eyebrow: 'Dispatches',
@@ -1150,6 +1182,24 @@ export const messages = {
     notAllowed:
       'Your place in this group doesn’t include sending Dispatches. Co-Creators send them.',
     leaving: 'You can’t send a Dispatch in a group you’re leaving.',
+    /** How far a Dispatch can rise (#126; ADR-0037, ADR-0071), offered once the group sits in a formed coalition. */
+    ceilingLabel: 'How far can it go?',
+    ceilings: {
+      0: 'This group only',
+      1: 'One level up',
+      2: 'Two levels up',
+      coalitions: 'As far as the coalitions go',
+    },
+    ceilingHints: {
+      0: 'It goes out now, to everyone in your group.',
+      1: 'Your group votes on it first. If it passes, the coalition your group is in votes on it too.',
+      2: 'Your group votes first, then the coalition your group is in, then the coalition above that.',
+      coalitions:
+        'Your group votes first, then each coalition above it in turn, as far up as they go.',
+    },
+    submitVote: 'Put it to a vote',
+    visibilityVote:
+      'Everyone in your group sees this Proposal and that you made it. Each coalition it reaches sees only its title and text, never who wrote it or how anyone voted.',
   },
   /**
    * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows

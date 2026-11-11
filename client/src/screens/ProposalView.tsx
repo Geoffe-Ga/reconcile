@@ -1,5 +1,5 @@
 import { type ReactNode, useId, useState } from 'react';
-import { Link } from 'react-aria-components';
+import { Button, Link } from 'react-aria-components';
 
 import { Ballot, type Scores } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
@@ -31,6 +31,7 @@ import { rightsAt } from '../engine/admission';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { threadFor } from '../engine/chatPosts';
 import { composeOption } from '../engine/composeOption';
+import { MAX_LEVEL, withinCeiling } from '../engine/coalition';
 import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
@@ -65,6 +66,7 @@ import { CoalitionProgress } from '../app/CoalitionProgress';
 import { MotionTagText } from '../app/MotionTag';
 import { decisionOf } from '../app/versionViews';
 import type { HeldCoalition } from '../store/coalitions';
+import type { CarryPlan } from '../store/db';
 import { ConsentMeter } from './ConsentMeter';
 import { CoalitionResult, ResultView } from './ResultView';
 
@@ -102,6 +104,15 @@ export interface ProposalViewProps {
   };
   /** Every coalition on this device (#114): a reconcile Proposal or a motion reads its words there. */
   readonly coalitions?: readonly HeldCoalition[];
+  /**
+   * This device's plan to cast this person's score from another group on
+   * this promotion motion (#126), if it holds one.
+   */
+  readonly carry?: CarryPlan | null;
+  /** Keeps that score from being cast: Don't cast (#126). */
+  readonly onSkipCarry?: () => Promise<void>;
+  /** Notes this person wrote on the same Dispatch in their other groups, which the note may not repeat (#126). */
+  readonly notesElsewhere?: readonly string[];
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -425,21 +436,28 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
       <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} open={!proposal.final} />
       {ballotShown(reason, proposal) ? (
-        <Ballot
-          key={proposal.id}
-          versions={versions}
-          current={comparison.current}
-          initialScores={mine.scores}
-          initialNote={mine.note}
-          hasVoted={mine.hasVoted}
-          isDisabled={closed || suspended}
-          pending={mine.pending}
-          reachable={reachable}
-          onVote={onVote}
-          below={meters}
-          layout={layout}
-          disabledNote={closed || !suspended ? undefined : <SuspendedNote state={state} me={me} />}
-        />
+        <CarriedOrBallot props={props} proposal={proposal} mine={mine} closed={closed}>
+          {(carried) => (
+            <Ballot
+              key={proposal.id}
+              versions={versions}
+              current={comparison.current}
+              initialScores={carried ?? mine.scores}
+              initialNote={mine.note}
+              hasVoted={mine.hasVoted}
+              isDisabled={closed || suspended}
+              pending={mine.pending}
+              reachable={reachable}
+              onVote={onVote}
+              below={meters}
+              layout={layout}
+              disabledNote={
+                closed || !suspended ? undefined : <SuspendedNote state={state} me={me} />
+              }
+              refusedNotes={props.notesElsewhere ?? []}
+            />
+          )}
+        </CarriedOrBallot>
       ) : (
         <>
           <ChoiceList versions={versions} current={comparison.current} layout={layout}>
@@ -452,6 +470,86 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
       )}
       <AddVersion props={props} proposal={proposal} />
     </Block>
+  );
+}
+
+/**
+ * This device's plan to carry this person's score here (#126), while it
+ * stands: on this Proposal, not kept back, the vote open, and no ballot of
+ * their own yet.
+ */
+function carryFor(
+  props: ProposalViewProps,
+  proposal: Proposal,
+  mine: { readonly hasVoted: boolean },
+  closed: boolean,
+): CarryPlan | null {
+  const plan = props.carry ?? null;
+  if (plan?.motion !== proposal.id || plan.skipped === true) return null;
+  return mine.hasVoted || closed ? null : plan;
+}
+
+/** "Your 3 from another group will be cast here before voting ends.", with Change and Don't cast (#126). */
+function CarryNotice({
+  score,
+  onChange,
+  onSkip,
+}: {
+  readonly score: number;
+  readonly onChange: () => void;
+  readonly onSkip: (() => Promise<void>) | undefined;
+}) {
+  const { rising } = messages;
+  return (
+    <div className="carry-notice">
+      <p className="ballot-notice">{rising.carried(score)}</p>
+      <div className="row">
+        <Button className="button button-secondary" onPress={onChange}>
+          {rising.change}
+        </Button>
+        <Button className="button button-quiet" onPress={() => void onSkip?.()}>
+          {rising.dontCast}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface CarriedOrBallotProps {
+  readonly props: ProposalViewProps;
+  readonly proposal: Proposal;
+  readonly mine: { readonly hasVoted: boolean };
+  readonly closed: boolean;
+  /** The ballot, given the scores to start from: a carried score's, or null for the voter's own. */
+  readonly children: (carried: Scores | null) => ReactNode;
+}
+
+/**
+ * Where this device carries this person's score here (#126): a score above
+ * 0 shows that it will be cast, in place of the pills, until Change opens
+ * the ballot with it chosen; a 0 asks for a fresh reason over a ballot with
+ * the 0 chosen. Otherwise the ballot as usual.
+ */
+function CarriedOrBallot({ props, proposal, mine, closed, children }: CarriedOrBallotProps) {
+  const [changing, setChanging] = useState(false);
+  const carry = carryFor(props, proposal, mine, closed);
+  if (carry === null) return children(null);
+  if (carry.score !== 0 && !changing) {
+    return (
+      <CarryNotice
+        score={carry.score}
+        onChange={() => {
+          setChanging(true);
+        }}
+        onSkip={props.onSkipCarry}
+      />
+    );
+  }
+  return (
+    <>
+      {carry.score === 0 ? <p className="ballot-notice">{messages.rising.freshReason}</p> : null}
+      {children({ [proposal.id]: carry.score })}
+    </>
   );
 }
 
@@ -585,8 +683,10 @@ function clearedOf(props: ProposalViewProps, proposal: Proposal) {
  * Dispatches view has it then, or it never went.
  */
 function CarriedDispatch({ proposal }: { readonly proposal: Proposal }) {
-  const { dispatch } = proposal;
-  if (dispatch === null || proposal.final) return null;
+  const { dispatch, target } = proposal;
+  // A Dispatch that may rise shows in its own block (#126).
+  if (dispatch === null || proposal.final || target.kind === 'dispatch') return null;
+  if (target.kind === 'motion') return null;
   const { dispatchHeading, dispatchLine } = messages.proposal;
   return (
     <Block title={dispatchHeading} className="card dispatch dispatch-carried">
@@ -599,6 +699,55 @@ function CarriedDispatch({ proposal }: { readonly proposal: Proposal }) {
         </p>
       )}
       <p className="caption">{dispatchLine}</p>
+    </Block>
+  );
+}
+
+/** A Dispatch's title and its text as plain text, which keeps its line breaks. */
+function DispatchWords({ title, text }: { readonly title: string; readonly text: string }) {
+  return (
+    <>
+      <p className="heading-3 dispatch-title">
+        <bdi>{title}</bdi>
+      </p>
+      {text === '' ? null : (
+        <p className="dispatch-text" dir="auto">
+          {text}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * A Dispatch that may rise (#126; ADR-0037): the group's own vote on it, with
+ * how far it can go and what passing does, or a promotion motion from the
+ * coalition, with the seat that passed it and what the coalition's pass does.
+ */
+function RisingDispatch({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { rising, sendDispatch } = messages;
+  const { target, dispatch } = proposal;
+  if (target.kind === 'dispatch' && dispatch !== null) {
+    return (
+      <Block title={rising.heading} className="card dispatch dispatch-carried">
+        <DispatchWords title={dispatch.title} text={dispatch.text} />
+        <p className="caption">{rising.ceiling(sendDispatch.ceilings[target.ceiling])}</p>
+        <p className="caption">{rising.groupLine[target.ceiling]}</p>
+      </Block>
+    );
+  }
+  const words = motionWords(proposal, props.coalitions ?? []);
+  const promoted = words?.promoted ?? null;
+  if (words === null || promoted === null) return null;
+  const above = promoted.level < MAX_LEVEL && withinCeiling(promoted.level + 1, promoted.ceiling);
+  return (
+    <Block title={rising.heading} className="card dispatch dispatch-carried">
+      <DispatchWords title={promoted.title} text={promoted.text} />
+      <p className="caption">
+        {rising.passedBy.before} <bdi>{promoted.from}</bdi>
+      </p>
+      <p className="caption">{rising.motionLine(words.coalition)}</p>
+      {above ? <p className="caption">{rising.goesOn}</p> : null}
     </Block>
   );
 }
@@ -737,6 +886,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
       <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
       <AdmitsCoalition words={motionWords(proposal, props.coalitions ?? [])} />
       <CarriedDispatch proposal={proposal} />
+      <RisingDispatch props={props} proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} motion={motion} />

@@ -13,7 +13,14 @@ import { fold } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { foldCoalitions, type HeldCoalition } from '../store/coalitions';
 import type { Group } from '../store/db';
-import { COALITION_STATEMENT, Logs, NestedLogs, testSecret, threeLevels } from '../test/coalitions';
+import {
+  COALITION_STATEMENT,
+  Logs,
+  NestedLogs,
+  seatKey,
+  testSecret,
+  threeLevels,
+} from '../test/coalitions';
 import { authorOf, testKeys } from '../test/keys';
 import {
   coalitionById,
@@ -157,6 +164,35 @@ describe('coalitionHome', () => {
     const held = heldBy(logs, at, 'kim');
     expect(coalitionById([held], logs.ids.coalition ?? '')).toBe(held);
     expect(coalitionById([held], 'nope')).toBeUndefined();
+  });
+});
+
+describe('coalitionHome’s Dispatches (#126)', () => {
+  it('lists each Dispatch the coalition sent out, newest first, from the seat that passed it', () => {
+    const logs = new Logs();
+    formed(logs);
+    const words = { title: 'Rally Saturday', text: 'Meet at the river.' };
+    const p = logs.dispatchVote('A', R + 20, 'ana', 'coalitions', words);
+    logs.vote('A', R + 21, 'ana', p, 4);
+    logs.vote('A', R + 21, 'ben', p, 4);
+    const target = {
+      kind: 'promote',
+      dispatch: { id: p, ...words },
+      ceiling: 'coalitions',
+      level: 1,
+      from: seatKey('Riverside'),
+    } as const;
+    const m = logs.promoteIn('coalition', R + 30, 'kim', { target, title: words.title, why: '' });
+    logs.result(R + 31, 'kim', m, 'Riverside', 'pass');
+    logs.result(R + 31, 'zed', m, 'Oak St', 'pass');
+    const before = coalitionHome(heldBy(logs, R + 30 + 2 * WEEK - 1, 'kim'), []);
+    expect(before?.dispatches).toEqual([]);
+
+    const final = R + 30 + 2 * WEEK;
+    const view = coalitionHome(heldBy(logs, final, 'kim'), []);
+    expect(view?.dispatches).toEqual([
+      { id: p, title: words.title, text: words.text, from: 'Riverside', received: final },
+    ]);
   });
 });
 

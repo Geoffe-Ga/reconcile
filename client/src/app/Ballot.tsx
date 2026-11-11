@@ -13,6 +13,7 @@ import {
 import type { Score } from '../engine/event';
 import { NOTE_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
+import { copiedNote } from '../store/carry';
 import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { ChoiceList } from './Options';
@@ -63,18 +64,34 @@ export interface BallotProps {
   readonly layout?: 'versions' | 'options';
   /** Why a disabled ballot can't change, in place of "Voting has closed", such as a suspension (#102). */
   readonly disabledNote?: ReactNode;
+  /**
+   * Notes this person wrote on the same Dispatch in their other groups
+   * (#126): the note may not repeat one, so the two can't be matched.
+   */
+  readonly refusedNotes?: readonly string[];
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
+
+/** No notes refused: every ballot that isn't on a Dispatch rising from another group. */
+const NONE_REFUSED: readonly string[] = [];
 
 function toScore(value: string | null): Score | null {
   return SCORES.find((score) => String(score) === value) ?? null;
 }
 
-/** The note counts code points after NFC, as the fold does (spec §4), not UTF-16 units. */
-function noteProblem(note: string, needsReason: boolean): string | null {
+/**
+ * The note counts code points after NFC, as the fold does (spec §4), not
+ * UTF-16 units, and may not repeat a note in `refused` (#126).
+ */
+function noteProblem(
+  note: string,
+  needsReason: boolean,
+  refused: readonly string[],
+): string | null {
   const trimmed = note.trim();
   if (nfcLength(trimmed) > NOTE_MAX) return messages.ballot.noteTooLong(NOTE_MAX);
+  if (copiedNote(trimmed, refused)) return messages.ballot.copiedNote;
   return needsReason && trimmed === '' ? messages.ballot.noteMissing : null;
 }
 
@@ -160,10 +177,12 @@ interface BallotNoteProps {
   readonly ask: NoteAsk;
   readonly isDisabled: boolean;
   readonly onChange: (note: string) => void;
+  /** Notes it may not repeat (#126). */
+  readonly refused: readonly string[];
 }
 
 /** The ballot's one note, or nothing on a closed ballot that has none. */
-function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
+function BallotNote({ note, ask, isDisabled, onChange, refused }: BallotNoteProps) {
   if (isDisabled && note.trim() === '') return null;
   const forZero = ask === 'reason';
   return (
@@ -178,7 +197,7 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
       onChange={onChange}
       isRequired={forZero}
       isDisabled={isDisabled}
-      validate={(text) => noteProblem(text, forZero)}
+      validate={(text) => noteProblem(text, forZero, refused)}
     />
   );
 }
@@ -197,6 +216,16 @@ function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactN
     );
   }
   return decidesOne(version) ? messages.stewards.score : messages.ballot.scoreFor(version.number);
+}
+
+/**
+ * What the ballot says above its versions: why it can't change once closed,
+ * or that a version was added since this voter's ballot.
+ */
+function BallotNotices({ props, missing }: { props: BallotProps; missing: boolean }) {
+  const { isDisabled, hasVoted } = props;
+  if (isDisabled) return props.disabledNote ?? <p className="caption">{messages.ballot.closed}</p>;
+  return hasVoted && missing ? <p className="ballot-notice">{messages.ballot.newVersion}</p> : null;
 }
 
 /**
@@ -222,19 +251,15 @@ export function Ballot(props: BallotProps) {
   const complete = Object.keys(scores).length === versions.length;
   const missing = versions.some((version) => !Object.hasOwn(initialScores, version.id));
 
+  const refused = props.refusedNotes ?? NONE_REFUSED;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (complete && noteProblem(note, forZero) === null) void vote(scores, note);
+    if (complete && noteProblem(note, forZero, refused) === null) void vote(scores, note);
   };
 
   return (
     <Form className="ballot" onSubmit={submit}>
-      {isDisabled
-        ? (props.disabledNote ?? <p className="caption">{messages.ballot.closed}</p>)
-        : null}
-      {hasVoted && missing && !isDisabled ? (
-        <p className="ballot-notice">{messages.ballot.newVersion}</p>
-      ) : null}
+      <BallotNotices props={props} missing={missing} />
       <p id={hint} className="field-hint">
         {messages.ballot.visibility}
       </p>
@@ -255,7 +280,13 @@ export function Ballot(props: BallotProps) {
           </>
         )}
       </ChoiceList>
-      <BallotNote note={note} ask={ask} isDisabled={isDisabled} onChange={setNote} />
+      <BallotNote
+        note={note}
+        ask={ask}
+        isDisabled={isDisabled}
+        onChange={setNote}
+        refused={refused}
+      />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.ballot.failed}
