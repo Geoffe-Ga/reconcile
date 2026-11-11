@@ -6,6 +6,7 @@
  * pilot notice's (`notice.ts`), recorded only on this device and never sent
  * anywhere. Skip and Done set it, and Erase (#78) clears it with the rest.
  */
+import { deviceFlag } from './deviceFlag';
 
 /** The `localStorage` key that holds the seen guide's version. */
 export const GUIDE_KEY = 'reconcile.first-run-guide';
@@ -23,24 +24,15 @@ export interface GuideRecord {
 
 /**
  * The record in `storage()`, which defaults to `localStorage`. A browser that
- * blocks site data throws from either call; that reads as not seen, so the
- * guide can show again after a later Create group or Join.
+ * blocks site data reads as not seen, so the guide can show again after a
+ * later Create group or Join.
  */
-export function guideRecord(storage: () => Storage = () => window.localStorage): GuideRecord {
+export function guideRecord(storage?: () => Storage): GuideRecord {
+  const flag = deviceFlag(GUIDE_KEY, GUIDE_VERSION, storage);
   return {
-    seen() {
-      try {
-        return storage().getItem(GUIDE_KEY) === GUIDE_VERSION;
-      } catch {
-        return false;
-      }
-    },
-    see() {
-      try {
-        storage().setItem(GUIDE_KEY, GUIDE_VERSION);
-      } catch {
-        // Nothing is kept, so the guide may show after the next Create group or Join.
-      }
+    seen: () => flag.isSet(),
+    see: () => {
+      flag.set();
     },
   };
 }
