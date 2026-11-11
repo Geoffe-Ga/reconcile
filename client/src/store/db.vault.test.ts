@@ -464,7 +464,12 @@ describe('every later write of key material, with a vault', () => {
     await store.markSent(ANA.groupId, record);
     await store.markBackup([ANA.groupId, BEN.groupId], 'saved');
     await store.writeDraft(ANA.groupId, 'atom-1', { title: 'T', why: 'W', text: 'X', link: '' });
-    await store.resetCursor(BEN.groupId, 'relay-2');
+    // A pull from a fresh relay instance starts every cursor over (#110), still writing no key.
+    await store.applyPull(
+      BEN.groupId,
+      { records: [], cursors: { thisWeek: 1 }, relayNow: 3, instance: 'relay-2', lastSyncAt: 4 },
+      (bytes) => text(bytes),
+    );
     await store.markLeaving(BEN.groupId, utf8('{"leave":1}'));
     await store.markArchived(ANA.groupId, 'dissolved');
     await store.clearArchive(ANA.groupId, { at: 5, state: fold([], null), tallies: {} });

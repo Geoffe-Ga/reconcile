@@ -13,11 +13,16 @@
  *   group (`forget`), and doesn't wait for it.
  * - **Nudges:** after each group syncs, this device asks the relay to wake the
  *   group a day before each of its own open Proposals closes and at its
- *   deadline (`engine/nudges.ts`), each once.
+ *   deadline (`engine/nudges.ts`), each once, in the mailbox of the week the
+ *   Proposal was received in (#110). The deadline's own week would do worse:
+ *   its minute less the vote window is the Proposal's receipt in an earlier
+ *   week's mailbox, so the relay could tie the two weeks' ids together.
  * - **Upkeep**, after each sync pass that reached the relay: each group with
  *   push on is registered again 7 days after the relay last took it, or when
  *   this device's endpoint, the relay's `instance` or the group's mailboxes
- *   change. Then, if the relay's key isn't the one the subscription was made
+ *   change. A registration names each week's mailbox from now to 30 days
+ *   on and, before them, the week of each Proposal still open, where its
+ *   nudges wait (#110). Then, if the relay's key isn't the one the subscription was made
  *   with (a rebuilt relay), the device subscribes again, and each group's old
  *   endpoint is forgotten as the new one is registered. After a failure the
  *   upkeep rests for an hour, so a refusal never repeats every few seconds.
@@ -27,8 +32,9 @@
  * request bodies hold `endpoint` or `not_before` and nothing else.
  *
  * What the relay can link, and the switch's disclosure says: one endpoint
- * under several groups' mailboxes shows that one phone is in each of them
- * (ADR-0075 §2, revisited by #130). Erase sends nothing (#78): unregistering
+ * under several groups' mailboxes shows that one phone is in each of them,
+ * and ties a group's weekly mailboxes together (ADR-0075 §2, revisited by
+ * #130). Erase sends nothing (#78): unregistering
  * the service worker ends the subscription, so the push service refuses the
  * relay's next push and the relay forgets the endpoint everywhere.
  */
@@ -107,6 +113,17 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((item, i) => item === b[i]);
 }
 
+/**
+ * Every mailbox `group`'s registration names at relay minute `now` (#110):
+ * the week of each Proposal still open, where its proposer's nudges wait,
+ * then each week's from now to 30 days on, each named once, in order.
+ */
+function registrationOf(group: Group, now: number, at: MailboxAt): string[] {
+  const open = fold(group.log, group.relayNow).proposals.filter((proposal) => !proposal.final);
+  const waiting = open.map((proposal) => at(group, proposal.received));
+  return [...new Set([...waiting, ...mailboxesFrom(group, now, at)])];
+}
+
 /** True for a refusal that asking again won't change: any 4xx answer. */
 function isFinal(error: unknown): boolean {
   return error instanceof RelayError && error.status >= 400 && error.status < 500;
@@ -168,13 +185,14 @@ export function createPush(options: PushOptions): Push {
    * Registers `endpoint` under each of `group`'s mailboxes from its relay
    * time to 30 days on, then keeps the registration. An endpoint it replaces
    * is forgotten first. A mailbox the group no longer has, as after a key
-   * change moved it to a new one (#98), is forgotten once the new ones hold
-   * the endpoint, so nothing posted to the old mailbox wakes this phone.
+   * change moved it to new ones (#98) or once its week has passed (#110), is
+   * forgotten once the new ones hold the endpoint, so nothing posted to the
+   * old mailbox wakes this phone.
    */
   async function register(group: Group, endpoint: string, now: number): Promise<void> {
     const old = group.push;
     if (old !== undefined && old.endpoint !== endpoint) await forgetAt(old.mailboxes, old.endpoint);
-    const mailboxes = mailboxesFrom(group, now, mailboxAt);
+    const mailboxes = registrationOf(group, now, mailboxAt);
     for (const mailbox of mailboxes) await relay.register(mailbox, endpoint);
     await store.setPush(group.groupId, { endpoint, mailboxes, instance: group.instance, at: now });
     if (old?.endpoint !== endpoint) return;
@@ -192,7 +210,7 @@ export function createPush(options: PushOptions): Push {
       push.endpoint !== endpoint ||
       push.instance !== group.instance ||
       now - push.at >= RENEW_MINUTES ||
-      !sameList(push.mailboxes, mailboxesFrom(group, now, mailboxAt))
+      !sameList(push.mailboxes, registrationOf(group, now, mailboxAt))
     );
   }
 
@@ -212,10 +230,13 @@ export function createPush(options: PushOptions): Push {
     }
   }
 
-  /** Posts one nudge to its minute's mailbox; true once it needn't be sent again. */
+  /**
+   * Posts one nudge to the mailbox of the week its Proposal was received in
+   * (#110); true once it needn't be sent again.
+   */
   async function post(group: Group, nudge: Nudge): Promise<boolean> {
     try {
-      await relay.nudge(mailboxAt(group, nudge.minute), nudge.minute);
+      await relay.nudge(mailboxAt(group, nudge.opened), nudge.minute);
       return true;
     } catch (error) {
       return isFinal(error);

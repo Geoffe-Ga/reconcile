@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
-import { deriveMailboxId, deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
+import { deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { xchachaSeal } from '../crypto/seal';
 import { shareChannelOf, signShareRecord } from '../crypto/share';
@@ -15,6 +15,7 @@ import { newSigningKeys } from '../crypto/sign';
 import { createRelay } from '../net/relay';
 import type { Store } from '../store/db';
 import { openStore } from '../store/db';
+import { mailboxAt } from '../store/mailbox';
 import type { PersonalDocument } from '../store/personal';
 import { exportGroups, importGroups } from '../store/snapshot';
 import { TEST_NOW, TEST_ORIGIN } from '../test/appServices';
@@ -232,7 +233,7 @@ describe('startSharing', () => {
 
     const [a, b] = [shareChannelOf(first.seed), shareChannelOf(second.seed)];
     const groupValues = [
-      deriveMailboxId(group.secret),
+      mailboxAt(group, fake.minute),
       base64url(deriveSealKey(group.secret)),
       base64url(group.secret),
       group.me.author,

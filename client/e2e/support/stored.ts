@@ -23,6 +23,36 @@ export function derive(secret: Uint8Array, info: string): Buffer {
   return Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), info, 32));
 }
 
+/** Minutes in a relay week (#110): weeks turn over on Thursday at 00:00 UTC. */
+export const WEEK_MINUTES = 10_080;
+
+/** The relay week of relay minute `minute` (#110). */
+export function weekOf(minute: number): number {
+  return Math.floor(minute / WEEK_MINUTES);
+}
+
+/**
+ * A group's mailbox id for relay week `week` (#110), by Node's own crypto:
+ * HKDF-SHA-256 of the secret with an empty salt, under the info
+ * `reconcile/v1/mailbox-week` ‖ 0x00 ‖ the week's 4 big-endian bytes.
+ */
+export function weekMailbox(secret: Uint8Array, week: number): string {
+  const tail = Buffer.alloc(5);
+  tail.writeUInt32BE(week, 1);
+  const info = Buffer.concat([Buffer.from('reconcile/v1/mailbox-week'), tail]);
+  return Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), info, 32)).toString('base64url');
+}
+
+/**
+ * A group's mailbox ids from last week's to next week's, by the clock this
+ * machine shares with the test relay: every id the group's traffic in a run
+ * can name, even one that crosses Thursday 00:00 UTC (#110).
+ */
+export function groupMailboxes(secret: Uint8Array): string[] {
+  const week = weekOf(Math.floor(Date.now() / 60_000));
+  return [week - 1, week, week + 1].map((each) => weekMailbox(secret, each));
+}
+
 /** The groups in the app's IndexedDB on `page`. */
 export function storedGroups(page: Page): Promise<StoredGroup[]> {
   return page.evaluate(async () => {

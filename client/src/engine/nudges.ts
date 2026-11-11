@@ -5,17 +5,23 @@
  * A new Proposal and an early close wake the group when they're sent
  * (`wake.ts`). The two moments no one sends anything for, a vote's last day
  * and its result at the deadline, are nudges: relay minutes the proposer's
- * device asks the relay, once, to wake the group's mailbox at. Only the
- * proposer's device asks, so a group gets each nudge once. A nudge for a
- * Proposal that then closes early still fires: one extra wake, carrying
- * nothing, is fine (cancelling it is deferred).
+ * device asks the relay, once, to wake the group's mailbox at: the mailbox of
+ * the week the Proposal was received in (#110). Only the proposer's device
+ * asks, so a group gets each nudge once. A nudge for a Proposal that then
+ * closes early still fires: one extra wake, carrying nothing, is fine
+ * (cancelling it is deferred).
  */
 import type { GroupState } from './fold';
 import { DAY_MINUTES } from './rules';
 
-/** One wake to schedule: a Proposal of mine, and the relay minute to wake its group at. */
+/**
+ * One wake to schedule: a Proposal of mine, the relay minute it was received
+ * in, whose week's mailbox the wake goes to (#110), and the relay minute to
+ * wake its group at.
+ */
 export interface Nudge {
   readonly proposal: string;
+  readonly opened: number;
   readonly minute: number;
 }
 
@@ -31,12 +37,12 @@ export function nudgesFor(state: GroupState, me: string): Nudge[] {
   return state.proposals
     .filter((p) => p.author === me && !p.final)
     .flatMap((p) => [
-      { proposal: p.id, minute: p.deadline - DAY_MINUTES },
-      { proposal: p.id, minute: p.deadline },
+      { proposal: p.id, opened: p.received, minute: p.deadline - DAY_MINUTES },
+      { proposal: p.id, opened: p.received, minute: p.deadline },
     ]);
 }
 
 /** The name a device records a nudge under once it is posted: its Proposal and minute. */
-export function nudgeKey(nudge: Nudge): string {
+export function nudgeKey(nudge: Pick<Nudge, 'proposal' | 'minute'>): string {
   return `${nudge.proposal}@${String(nudge.minute)}`;
 }

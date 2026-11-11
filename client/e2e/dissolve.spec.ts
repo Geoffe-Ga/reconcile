@@ -8,12 +8,10 @@
  * 4. The vote closes early, a device posts the `dissolve`, and every profile
  * shows the archive's note and the same Document, read-only. From then on no
  * request from any profile names the group's mailbox: the requests are
- * captured, and the mailbox id is derived from the group secret as spec §3
- * says. axe checks the composer and the archive; the fixture fails the test
+ * captured, and the weekly mailbox ids are derived from the group secret as
+ * spec §3 says (#110). axe checks the composer and the archive; the fixture fails the test
  * on any CSP violation. Nothing moves time.
  */
-import { hkdfSync } from 'node:crypto';
-
 import type { Page } from '@playwright/test';
 
 import {
@@ -26,18 +24,13 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { groupMailboxes } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
 const ATOMS = ['Quiet hours start at 10pm.', 'Bins go out on Tuesday.'];
 const ARCHIVED = /^This group dissolved on .+\. This is a read-only copy\.$/;
 const PHONE = { width: 390, height: 844 };
-
-/** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's mailbox id. */
-function mailboxOf(secret: Uint8Array): string {
-  const id = hkdfSync('sha256', secret, Buffer.alloc(0), 'reconcile/v1/mailbox', 32);
-  return Buffer.from(id).toString('base64url');
-}
 
 /** The group secret of the one group in the app's IndexedDB on `page`, read with no hook into the app. */
 function storedSecret(page: Page): Promise<number[]> {
@@ -168,10 +161,12 @@ test('three members dissolve their group, and every device keeps the same read-o
   });
 
   await test.step('no profile’s request names the group’s mailbox again', async () => {
-    const mailbox = mailboxOf(Uint8Array.from(await storedSecret(ana.page)));
+    // Its weekly mailboxes (#110), whichever weeks this run fell in.
+    const mailboxes = groupMailboxes(Uint8Array.from(await storedSecret(ana.page)));
+    const names = (url: string) => mailboxes.some((mailbox) => url.includes(mailbox));
     const sent = everyone.map((person) => requests.get(person) ?? []);
     // The control: each profile did name it while the group went on.
-    for (const urls of sent) expect(urls.some((url) => url.includes(mailbox))).toBe(true);
+    for (const urls of sent) expect(urls.some(names)).toBe(true);
     const marks = sent.map((urls) => urls.length);
     // Focus runs a sync pass at once, and a poll follows every 3 seconds; give it several.
     for (const { page } of everyone) {
@@ -181,9 +176,7 @@ test('three members dissolve their group, and every device keeps the same read-o
     for (const { page } of everyone) {
       await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     }
-    const later = sent.map((urls, i) =>
-      urls.slice(marks[i]).filter((url) => url.includes(mailbox)),
-    );
+    const later = sent.map((urls, i) => urls.slice(marks[i]).filter(names));
     expect(later).toEqual([[], [], []]);
   });
 });
