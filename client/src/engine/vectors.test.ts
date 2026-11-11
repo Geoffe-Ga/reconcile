@@ -88,6 +88,16 @@ describe('vector files', () => {
       'rules-genesis-defaults.json',
       'rules-genesis-differs.json',
       'rules-genesis-missing.json',
+      'sections-add.json',
+      'sections-admission.json',
+      'sections-anchor-removed.json',
+      'sections-chat-thread.json',
+      'sections-coalition.json',
+      'sections-dispatch.json',
+      'sections-dissolve.json',
+      'sections-pass-order.json',
+      'sections-remove.json',
+      'sections-rotate.json',
       'signatures.json',
       'steward-recall.json',
       'steward-seats.json',
@@ -157,6 +167,16 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -287,6 +307,23 @@ describe('vector files', () => {
     "a late version scored 4 by only 2 of 10 eligible members can't win, because it never reaches quorum",
     'a three-version tie goes to the earliest version',
     'a tie between later versions goes to the one the relay received first, whatever their ts',
+    "a passed add lands right after its anchor, as a new Atom of the same Document whose id is the Proposal's",
+    'an add with after: null lands first',
+    "an add whose anchor isn't in the Document when it's made is ignored, and one made once the anchor's own add has passed lands after it",
+    "an add or a version of one whose text is empty is ignored, and an add's versions compete on its ballot as an edit's do",
+    'a Proposal on an added section is ignored until its add passes, and changes it after',
+    "an add runs the voting window its proposer chose, and one outside its class's bounds is ignored",
+    'a passed removal deletes its Atom, and the fold then ignores a Proposal on it and an add anchored on it',
+    'a removal and a rewording of one Atom share one ballot; when the removal wins, only it applies, and the fold ignores a later Proposal on the Atom',
+    'when a rewording beats a removal on one ballot, only the rewording applies and the section stays in its place',
+    'a removal that fails leaves its section in place',
+    'a removal that passes at its deadline takes its Atom out from that minute, so a Proposal on it or anchored on it received then is ignored',
+    'sections-anchor-removed: the Atoms are [A, B, C]; P1 adds D after B and P2 removes B; P2 closes early, before P1 reaches its deadline, so the Document ends as [A, C, D]',
+    'passes apply in order of close time, not relay order: of two adds on one anchor, the one that closes later ends directly after it',
+    "adds that close in the same minute apply in their Proposals' relay order, whatever order their closing ballots came in",
+    'sections-dissolve: an add and a removal still open when the group dissolves never close or apply, even once relay time passes their deadlines; an add that passed before it keeps its section, and an add, a ballot and a version on a section change after it are ignored',
+    "sections-rotate: after a key change, a ballot on a removal and an add read from epoch 0's mailbox change nothing; the add's copy in epoch 1's opens once, the removal opened in epoch 0 closes on epoch 1's ballots, and both apply",
+    "sections-admission: a newcomer still earning voting rights can't propose an add or a removal, put a removal on a ballot or score an add, and isn't eligible on one; from the minute their rights arrive they propose a removal, and their ballot counts toward closing it",
     'a genesis without rules folds with DEFAULT_RULES',
     "a Proposal's class is ordinary and its deadline is its received plus 7 × 1,440 minutes",
     'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
@@ -430,6 +467,27 @@ describe('vector files', () => {
     'dispatch-carried-dissolve',
   ])('include the Dispatch vector "%s" (#112)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'sections-dispatch-add',
+    'sections-dispatch-remove',
+    'sections-dispatch-added-edit',
+    'sections-dispatch-ignored',
+  ])('include the sections Dispatch vector "%s" (#75, #112)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('include the sections vector "sections-coalition" (#75, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'sections-coalition',
+    );
+  });
+
+  it('include the sections vector "sections-chat-thread" (#75, #123)', () => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'sections-chat-thread',
+    );
   });
 });
 

@@ -299,6 +299,86 @@ describe('takeSnapshot and importSnapshot, without the passphrase (#96)', () => 
   });
 });
 
+/**
+ * A group whose Document gained a section by a passed add and lost one by a
+ * passed removal (#75), kept on `store` with a draft under each section key
+ * (`addDraft` and `removalDraft` in `app/proposals.ts`).
+ */
+async function keepSections(store: Store) {
+  const log = groupLog({ members: ['Ben', 'Cal'] });
+  const first = `${log.group}.0`;
+  const add = log.addSection('ana', first, { title: 'Guests', text: 'Guests leave by 11pm.\n' });
+  const removal = log.propose('ben', { atom: 1, title: 'No bins rule', text: '' });
+  for (const name of ['ana', 'ben', 'cal']) {
+    log.vote(name, add, 4);
+    log.vote(name, removal, 4);
+  }
+  log.minute += 1;
+  const { secretKey, author } = testKeys('ana');
+  await store.addGroup({
+    groupId: log.group,
+    secret: new Uint8Array(32).fill(7),
+    signingKey: secretKey,
+    me: { author, name: 'Ana' },
+  });
+  const pull = {
+    records: [...log.records],
+    cursor: log.records.length,
+    relayNow: log.minute + 5,
+    instance: 'relay-1',
+    lastSyncAt: 1_762_000_000_000,
+  };
+  await store.applyPull(log.group, pull, eventIdOf);
+  const draft = { title: 'Canary section draft', why: 'Canary why', text: 'Canary text', link: '' };
+  await store.writeDraft(log.group, `add:${first}`, draft);
+  await store.writeDraft(log.group, `remove:${first}`, draft);
+  return { groupId: log.group, first, add };
+}
+
+/** The first group in a snapshot's plaintext, as JSON. */
+function firstGroupOf(plaintext: Uint8Array): object {
+  const [group] = (JSON.parse(text(plaintext)) as { groups: object[] }).groups;
+  if (group === undefined) throw new Error('Expected a group in the snapshot.');
+  return group;
+}
+
+describe('added and removed sections in a backup and a link (#75 with #78, #96, #97)', () => {
+  it('carry them as the log alone, leaving section drafts behind, and bring the same Document back', async () => {
+    const device = await openStore('ana');
+    const { groupId, first, add } = await keepSections(device);
+    const sections = await folded(device, groupId);
+    expect(sections.atoms.map((atom) => atom.id)).toEqual([first, add]);
+    expect([...((await device.getGroup(groupId))?.drafts?.keys() ?? [])]).toEqual([
+      `add:${first}`,
+      `remove:${first}`,
+    ]);
+    const plain = await openStore('plain');
+    await keepCanary(plain);
+
+    const { plaintext } = await takeSnapshot(device);
+    const { plaintext: linked } = await takeSnapshot(device, 'link');
+    for (const bytes of [plaintext, linked]) {
+      expect(Object.keys(firstGroupOf(bytes))).toEqual(
+        Object.keys(firstGroupOf(await snapshotOf(plain))),
+      );
+      expect(text(bytes)).not.toContain('Canary section draft');
+    }
+    // With no share by link (#105) a link's bundle is the backup's plaintext,
+    // and #97's relay copy is that same snapshot (`relayBackup.ts`).
+    expect(text(linked)).toBe(text(plaintext));
+
+    for (const [name, from] of [
+      ['restored', 'backup'],
+      ['laptop', 'link'],
+    ] as const) {
+      const second = await openStore(name);
+      await importSnapshot(second, from === 'link' ? linked : plaintext, from);
+      expect(await folded(second, groupId)).toEqual(sections);
+      expect((await second.getGroup(groupId))?.drafts).toBeUndefined();
+    }
+  });
+});
+
 describe('encryption keys and epochs in a backup (#98)', () => {
   it('bring back the group’s encryption key and epoch, and each record’s epoch', async () => {
     const device = await openStore('ana');

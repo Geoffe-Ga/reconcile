@@ -40,6 +40,61 @@ describe('versionViews', () => {
       { id: second, number: 2, author: 'Ben', text: 'Quiet after midnight.\n' },
     ]);
   });
+
+  it('says first what each version of an add does, and what a removal does', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const after = log.addSection('Ana', `${log.group}.0`);
+    const first = log.addSection('Ben', null, { text: '# House rules\n' });
+    const edit = log.propose('Ana', { atom: 1, text: 'Bins go out on Monday.\n' });
+    const removal = log.version('Ben', edit, '');
+    const state = log.state();
+    const views = (id: string) => {
+      const proposal = state.proposals.find((candidate) => candidate.id === id);
+      if (proposal === undefined) throw new Error('Expected the Proposal.');
+      return versionViews(state, proposal);
+    };
+    expect(views(after)).toEqual([
+      {
+        id: after,
+        number: 1,
+        author: 'Ana',
+        text: 'Guests leave by 11pm.\n',
+        does: 'Adds a section after ‘Quiet hours start at ten.’',
+      },
+    ]);
+    expect(views(first).map((view) => view.does)).toEqual(['Adds a section at the start']);
+    expect(views(edit)).toEqual([
+      { id: edit, number: 1, author: 'Ana', text: 'Bins go out on Monday.\n' },
+      { id: removal, number: 2, author: 'Ben', text: '', does: 'Removes this section' },
+    ]);
+  });
+
+  it('says nothing of sections on a steward ballot, whose one version has no text (#102)', () => {
+    const log = groupLog({ members: ['Ben', 'Cy'] });
+    const election = log.steward('Ana', 1, 'Ben');
+    const state = log.state();
+    const proposal = state.proposals.find((candidate) => candidate.id === election);
+    if (proposal === undefined) throw new Error('Expected the steward Proposal.');
+    const [view] = versionViews(state, proposal);
+    expect(view?.text).toBe('');
+    expect(view?.does).toBeUndefined();
+    expect(view?.steward).toBeDefined();
+  });
+
+  it('says an add whose anchor has been removed goes at the end', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const add = log.addSection('Ana', `${log.group}.0`);
+    const removal = log.propose('Ben', { atom: 0, text: '' });
+    log.vote('Ana', removal, 4);
+    log.vote('Ben', removal, 4);
+    const state = log.state();
+    const proposal = state.proposals.find((candidate) => candidate.id === add);
+    if (proposal === undefined) throw new Error('Expected the add.');
+    expect(state.atoms.map((atom) => atom.id)).toEqual([`${log.group}.1`]);
+    expect(versionViews(state, proposal).map((view) => view.does)).toEqual([
+      'Adds a section at the end',
+    ]);
+  });
 });
 
 describe('VersionList', () => {
@@ -85,6 +140,31 @@ describe('VersionList', () => {
   it('marks how many versions there are, so wide screens set them in equal columns', () => {
     show(CURRENT);
     expect(document.querySelector('.versions')).toHaveClass('versions-2');
+  });
+
+  it('says what a removal does, then strikes the whole section through, with nothing to read', async () => {
+    show(CURRENT, [
+      { id: 'v1', number: 1, author: 'Ana', text: 'Quiet hours start at eleven.\n' },
+      { id: 'v2', number: 2, author: 'Ben', text: '', does: 'Removes this section' },
+    ]);
+    const removal = screen.getByRole('region', { name: 'Version 2 · Ben' });
+    const [does, diff] = Array.from(removal.querySelectorAll('h3 ~ *'));
+    expect(does).toHaveTextContent('Removes this section');
+    expect(diff?.querySelector('del')).toHaveTextContent('Quiet hours start at ten.');
+    expect(diff?.querySelector('ins')).toBeNull();
+    expect(within(removal).queryByRole('button', { name: 'How it will read' })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says where an add goes, then marks its whole text as added, and how it will read', async () => {
+    const adds = { does: 'Adds a section at the start' };
+    show('', [{ id: 'v1', number: 1, author: 'Ana', text: '# House rules\n', ...adds }]);
+    const version = screen.getByRole('region', { name: 'Version 1 · Ana' });
+    expect(within(version).getByText('Adds a section at the start')).toBeVisible();
+    expect(version.querySelector('.word-diff ins')).toHaveTextContent('# House rules');
+    expect(version.querySelector('.word-diff del')).toBeNull();
+    expect(within(version).getByRole('button', { name: 'How it will read' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('keeps a right-to-left name from reordering the heading', () => {

@@ -190,8 +190,9 @@ export interface Narrowing {
 export interface OptInProposalState {
   readonly id: string;
   readonly author: string;
+  /** A rules change, or any other kind of target, whose details the opt-in rules don't read. */
   readonly target:
-    | { readonly kind: 'edit' | 'steward' | 'dissolve' | 'reconcile' | 'motion' | 'admit' }
+    | { readonly kind: 'edit' | 'add' | 'steward' | 'dissolve' | 'reconcile' | 'motion' | 'admit' }
     | RulesChange;
   readonly deadline: number;
   readonly closedAt: number | null;

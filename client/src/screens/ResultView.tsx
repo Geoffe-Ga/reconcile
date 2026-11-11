@@ -90,6 +90,13 @@ function Thanks({ names }: { readonly names: readonly string[] }) {
   );
 }
 
+/** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
+function passSentence(versions: number, winner: number, removed: boolean): string {
+  const { result } = messages;
+  if (removed) return versions > 1 ? result.passedVersionRemoval(winner) : result.passedRemoval;
+  return versions > 1 ? result.passedVersion(winner) : result.passed;
+}
+
 /** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
 function StewardPassed({ steward }: { readonly steward: StewardView }) {
   const { motion } = steward;
@@ -113,20 +120,22 @@ function RulesPassed({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A pass: its sentence, the winning text as the Document now reads, and thanks. No numbers. */
+/**
+ * A pass: its sentence, the winning text as the Document now reads, or no
+ * text when it removed the section, and thanks. No numbers.
+ */
 function Passed({ props, versions, winner }: OutcomeProps & { readonly winner: string }) {
   const { proposal } = props;
   const index = versions.findIndex((version) => version.id === winner);
   const shown = versions[index];
-  const sentence =
-    versions.length > 1 ? messages.result.passedVersion(index + 1) : messages.result.passed;
+  const text = shown?.text ?? '';
   // The proposer wrote version 1; a later version's author is thanked first.
   const byProposer = proposal.versions[index]?.author === proposal.author;
   const names = [shown?.author ?? '', ...(byProposer ? [] : [versions[0]?.author ?? ''])];
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{sentence}</p>
-      <AtomText text={shown?.text ?? ''} className="atom-card result-text" />
+      <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+      {text === '' ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={names} />
     </div>
   );
@@ -176,8 +185,9 @@ function Failed({ detail, versions }: OutcomeProps) {
 function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
   const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  // A steward vote isn't proposed again from here: Group home says when an election is due (#102).
-  if (leaving || proposal.target.kind !== 'edit' || !can(state, me, 'propose')) return null;
+  // A steward or rules vote isn't proposed again from here (#102, #117); a change, a removal or an add is (#75).
+  const { kind } = proposal.target;
+  if (leaving || (kind !== 'edit' && kind !== 'add') || !can(state, me, 'propose')) return null;
   const busy = composeOption(state, proposal.atom) !== 'propose';
   return (
     <div className="row result-again">

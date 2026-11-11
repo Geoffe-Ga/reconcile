@@ -1,17 +1,19 @@
 /**
  * A Proposal's versions as the screens show them (spec §8; ADR-0004):
- * numbered in ballot order, which is relay order, each with its author's name.
- * A steward or rules Proposal's one version has no text: it carries what the
+ * numbered in ballot order, which is relay order, each with its author's name,
+ * and, for an add or a removal (#75), a line that says first what it does. A
+ * steward or rules Proposal's one version has no text: it carries what the
  * ballot decides instead (#102, #117), and so does a dissolve Proposal's (#108).
  */
 import { WIPE_DAYS } from '../engine/dissolve';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { rulesChangeOf } from '../engine/optIns';
-import { type StewardChange, stewardChangeOf } from '../engine/stewards';
+import { type ProposalTarget, type StewardChange, stewardChangeOf } from '../engine/stewards';
 import { messages } from './messages';
 import { type RulesView, rulesView } from './optInLines';
 import { type Motion, motionFor } from './stewardLines';
+import { firstWords } from './text/firstWords';
 
 /** What a steward ballot decides, and the line that says what passing does. */
 export interface StewardView {
@@ -27,8 +29,10 @@ export interface VersionView {
   readonly number: number;
   /** Its author's name as the group sees it. */
   readonly author: string;
-  /** The text it would put in the section. */
+  /** The text it would put in the section, or `""` to remove it. */
   readonly text: string;
+  /** What it does, said before its change: where an add goes, or that it removes the section (#75). */
+  readonly does?: string;
   /** For a steward Proposal, what its ballot decides, in place of any text (#102). */
   readonly steward?: StewardView;
   /** For a rules Proposal, what its ballot decides, in place of any text (#117). */
@@ -58,6 +62,37 @@ export function dissolveView(wipe: boolean): DissolveView {
   };
 }
 
+/** Where an add's section goes: after its anchor's first words, at the start, or at the end once the anchor is gone. */
+function addsWhere(state: GroupState, after: string | null): string {
+  if (after === null) return messages.proposal.addsAtStart;
+  const anchor = state.atoms.find((atom) => atom.id === after);
+  return anchor === undefined
+    ? messages.proposal.addsAtEnd
+    : messages.proposal.addsAfter(firstWords(anchor.text));
+}
+
+/**
+ * What a version with `text` does to the Document (#75): where an add's
+ * section goes, or that an edit's `""` removes the section. Null for a change
+ * of wording, and for a steward, rules or dissolve Proposal, whose ballot
+ * says what it decides.
+ */
+export function versionDoes(
+  state: GroupState,
+  target: ProposalTarget,
+  text: string,
+): string | null {
+  if (target.kind === 'add') return addsWhere(state, target.after);
+  return target.kind === 'edit' && text === '' ? messages.proposal.removes : null;
+}
+
+/** True when a ballot already holds a removal: a version whose text is `""` (#75). */
+export function holdsRemoval(proposal: {
+  readonly versions: readonly { readonly text: string }[];
+}): boolean {
+  return proposal.versions.some((version) => version.text === '');
+}
+
 /** What a steward change's ballot decides: electing its nominee, or recalling its steward. */
 export function stewardView(
   state: Pick<GroupState, 'members' | 'former' | 'rules'>,
@@ -75,16 +110,20 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
   const change = stewardChangeOf(proposal);
   const rules = rulesChangeOf(proposal);
   const { target } = proposal;
-  return proposal.versions.map((version, index) => ({
-    id: version.id,
-    number: index + 1,
-    author: displayName(state, version.author) ?? '',
-    text: version.text,
-    ...(change === null ? {} : { steward: stewardView(state, change) }),
-    ...(rules === null ? {} : { rules: rulesView(rules) }),
-    ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
-    ...decisionOf(proposal),
-  }));
+  return proposal.versions.map((version, index) => {
+    const does = versionDoes(state, target, version.text);
+    return {
+      id: version.id,
+      number: index + 1,
+      author: displayName(state, version.author) ?? '',
+      text: version.text,
+      ...(does === null ? {} : { does }),
+      ...(change === null ? {} : { steward: stewardView(state, change) }),
+      ...(rules === null ? {} : { rules: rulesView(rules) }),
+      ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
+      ...decisionOf(proposal),
+    };
+  });
 }
 
 /**
