@@ -21,6 +21,16 @@ import { Field } from './ui';
 import { useSaving } from './useSaving';
 import type { VersionView } from './versionViews';
 
+/**
+ * Whether a version is the one card of a ballot that decides something other
+ * than a section's text (a steward, an opt-in, dissolving, or a coalition,
+ * #102, #117, #108, #114), whose pills read "Your score".
+ */
+function decidesOne(version: VersionView): boolean {
+  const { steward, rules, dissolve, decision } = version;
+  return [steward, rules, dissolve, decision].some((field) => field !== undefined);
+}
+
 /** A score for each version, by version id. */
 export type Scores = Readonly<Record<string, Score>>;
 
@@ -174,8 +184,8 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
 }
 
 /**
- * "Score for version N", a steward, rules or dissolve ballot's own label
- * (#102, #117, #108), or for a priority option, "Score for <option>" with the
+ * "Score for version N", a steward, rules, dissolve or coalition ballot's own
+ * label (#102, #117, #108, #114), or for a priority option, "Score for <option>" with the
  * option in `<bdi>` (#107).
  */
 function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
@@ -186,9 +196,7 @@ function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactN
       </>
     );
   }
-  const own =
-    version.steward === undefined && version.rules === undefined && version.dissolve === undefined;
-  return own ? messages.ballot.scoreFor(version.number) : messages.stewards.score;
+  return decidesOne(version) ? messages.stewards.score : messages.ballot.scoreFor(version.number);
 }
 
 /**

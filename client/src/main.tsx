@@ -10,6 +10,7 @@ import './styles/backup.css';
 import './styles/link.css';
 import './styles/door.css';
 import './styles/passkey.css';
+import './styles/coalitions.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

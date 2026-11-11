@@ -116,7 +116,15 @@ import type { GroupState, LogRecord } from '../engine/fold';
 import { wakeForRecord } from '../engine/wake';
 import { settleDissolve } from './archive';
 import type { ChatBot } from './chatBot';
-import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
+import { ensureEntries, settleCoalitions, stillSyncs } from './coalitions';
+import {
+  type EventIdOf,
+  type Group,
+  isCoalitionEntry,
+  type Pull,
+  sameBytes,
+  type Store,
+} from './db';
 import {
   advanceFor,
   epochOf,
@@ -315,6 +323,8 @@ export function createSync(options: SyncOptions): Sync {
   let reachable = true;
   let halted = false;
   let inFlight: Promise<boolean> | null = null;
+  // Each group as the coalitions' part of a pass last read it (#114), so an unchanged one isn't folded again.
+  const scanned = new Map<string, string>();
 
   /**
    * Post the group's current outbox in order; an entry leaves only once the
@@ -335,7 +345,8 @@ export function createSync(options: SyncOptions): Sync {
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
       before ??= foldGroup(current);
-      const wake = wakeForRecord(before, bytes);
+      // No phone registers under a coalition's mailboxes yet (#120), so nothing there asks to wake one.
+      const wake = !isCoalitionEntry(current) && wakeForRecord(before, bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
       if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
         push?.forget(current);
@@ -436,6 +447,7 @@ export function createSync(options: SyncOptions): Sync {
    * later minute.
    */
   async function settleAfter(group: Group, pull: Pull): Promise<void> {
+    if (isCoalitionEntry(group)) return;
     if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
       await settleDissolve(store, group.groupId, clock);
     }
@@ -452,15 +464,11 @@ export function createSync(options: SyncOptions): Sync {
    * mailbox (#108).
    */
   async function syncGroup(group: Group): Promise<boolean> {
-    if (group.archived !== undefined) return true;
-    let current = group;
-    for (;;) {
-      const outcome = await syncMailbox(current);
-      const fresh = outcome === 'left' ? undefined : await store.getGroup(group.groupId);
-      if (fresh === undefined) return false;
-      current = fresh;
-      if (outcome === 'stayed') break;
-    }
+    if (group.archived !== undefined || !stillSyncs(group)) return true;
+    const current = await syncEpochs(group);
+    if (current === undefined) return false;
+    // A coalition has no key of its own to post, no chat bot and no nudges yet (#114, #120).
+    if (isCoalitionEntry(current)) return true;
     await queueKx(current);
     // Once halted (Erase, #78), the bot neither claims nor posts, and no nudge goes.
     if (halted) return true;
@@ -468,6 +476,20 @@ export function createSync(options: SyncOptions): Sync {
     await door?.run(group.groupId).catch(() => undefined);
     await push?.nudge(group.groupId).catch(() => undefined);
     return true;
+  }
+
+  /**
+   * Syncs the group's mailboxes, and each new epoch's a key change moves it
+   * to at once (#98); the group as it stands after, or undefined once gone.
+   */
+  async function syncEpochs(group: Group): Promise<Group | undefined> {
+    let current = group;
+    for (;;) {
+      const outcome = await syncMailbox(current);
+      const fresh = outcome === 'left' ? undefined : await store.getGroup(group.groupId);
+      if (fresh === undefined || outcome === 'stayed') return fresh;
+      current = fresh;
+    }
   }
 
   /** Queues this member's `kx` when the fold has no encryption key for them (#98). */
@@ -499,14 +521,40 @@ export function createSync(options: SyncOptions): Sync {
     await syncGroup(fresh);
   }
 
-  /** Runs `step` for each group in turn while not halted; true when every group's step succeeded. */
-  async function eachGroup(step: (group: Group) => Promise<unknown>): Promise<boolean> {
+  /** Runs `step` for each of `groups` in turn while not halted; true when every step succeeded. */
+  async function each(
+    groups: readonly Group[],
+    step: (group: Group) => Promise<unknown>,
+  ): Promise<boolean> {
     let ok = true;
-    for (const group of await store.listGroups()) {
+    for (const group of groups) {
       if (halted) break;
       ok = (await step(group).then(succeeded, failed)) && ok;
     }
     return ok;
+  }
+
+  /** Runs `step` for each group in turn while not halted; true when every group's step succeeded. */
+  async function eachGroup(step: (group: Group) => Promise<unknown>): Promise<boolean> {
+    return each(await store.listGroups(), step);
+  }
+
+  /**
+   * The coalitions' part of a pass (#114), once every group has synced:
+   * keeps an entry for each coalition secret a group holds, syncs each, then
+   * joins, reports and proposes admissions as `settleCoalitions` decides,
+   * and sends what that queued at once.
+   */
+  async function syncCoalitions(): Promise<boolean> {
+    await ensureEntries(store, scanned);
+    const ok = await each(await store.listCoalitions(), syncGroup);
+    if (!ok || halted) return ok;
+    const queued = await settleCoalitions(store, clock);
+    const entries = await Promise.all(queued.map((id) => store.getGroup(id)));
+    return each(
+      entries.filter((entry) => entry !== undefined),
+      syncGroup,
+    );
   }
 
   /**
@@ -566,6 +614,8 @@ export function createSync(options: SyncOptions): Sync {
       if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));
       // Then results and expiry (#111), at each group's epoch after any key change.
       if (ok) ok = await eachGroup((group) => settleExpiry(group.groupId));
+      // Coalitions read their groups as this pass left them (#114).
+      if (ok && !halted) ok = await syncCoalitions();
     } catch {
       ok = false;
     }
@@ -694,6 +744,52 @@ function cursorsAfter(
     ...Object.entries(cursors.held).filter(([mailbox]) => kept.has(mailbox)),
     ...reads.map((read) => [read.mailbox, read.records.at(-1)?.seq ?? read.after] as const),
   ]);
+}
+
+/** A log read straight from the relay, outside any store entry (#114). */
+export interface RecentLog {
+  /** The records that opened, as log records, in seq order. */
+  readonly records: LogRecord[];
+  /** The highest seq read, or 0 for none. */
+  readonly cursor: number;
+  /** The relay minute the reads stand at: the earliest of their `now`s. */
+  readonly relayNow: number;
+  /** The relay instance that answered. */
+  readonly instance: string;
+}
+
+/**
+ * Reads `secret`'s mailboxes for last week and the week of relay minute `now`
+ * from the start (#110, #114), as a sync pass that has never synced would,
+ * and opens what they hold: how Bring a card reads a coalition whose genesis,
+ * if any, is no older than the card. Every read must come from one relay
+ * instance.
+ *
+ * @throws {Error} when the relay can't be reached or changes instance.
+ */
+export async function readRecentLog(
+  relay: Pick<Relay, 'getBlobs'>,
+  seal: Seal,
+  secret: Uint8Array,
+  now: number,
+): Promise<RecentLog> {
+  const week = weekOf(now);
+  const key = deriveSealKey(secret);
+  const pages = [];
+  for (const each of pollWeeks(null, week)) {
+    const mailbox = deriveWeekMailboxId(secret, each);
+    pages.push({ mailbox, page: await relay.getBlobs(mailbox, 0) });
+  }
+  const [first] = pages;
+  if (first === undefined || pages.some(({ page }) => page.instance !== first.page.instance)) {
+    throw new Error('The relay changed instance during the read.');
+  }
+  const records = pages
+    .flatMap(({ mailbox, page }) => openRecords(seal, { mailbox, key }, page.records))
+    .sort((a, b) => a.seq - b.seq);
+  const relayNow = Math.min(...pages.map(({ page }) => page.now));
+  const cursor = records.reduce((highest, record) => Math.max(highest, record.seq), 0);
+  return { records, cursor, relayNow, instance: first.page.instance };
 }
 
 /**

@@ -40,6 +40,8 @@ import {
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
+  type AddProposalBody,
+  type ProposalBody,
   type ProposalEventBody,
   type RulesProposalBody,
   type StewardProposalBody,
@@ -51,6 +53,9 @@ import type { OwnBallot } from '../engine/ownBallot';
 import { isPriority, optionId } from '../engine/priority';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
+import { motionWords, reconcileView, type ReconcileView } from '../app/coalitionLines';
+import { decisionOf } from '../app/versionViews';
+import type { HeldCoalition } from '../store/coalitions';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -86,6 +91,8 @@ export interface ProposalViewProps {
     readonly at: number;
     readonly tallies: Readonly<Record<string, TallyDetail>>;
   };
+  /** Every coalition on this device (#114): a reconcile Proposal or a motion reads its words there. */
+  readonly coalitions?: readonly HeldCoalition[];
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -449,14 +456,22 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
  * days its proposer set it to run (#106), each on its own line so none breaks
  * mid-phrase.
  */
-function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposal; now: number }) {
+function Byline({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { state, now } = props;
   const name = displayName(state, proposal.author) ?? '';
   const open = !proposal.final && now < proposal.deadline;
+  const motion = motionWords(proposal, props.coalitions ?? []);
   return (
     <div className="meta-lines">
-      <p className="meta">
-        {messages.proposal.proposedBy} <bdi>{name}</bdi>
-      </p>
+      {motion === null ? (
+        <p className="meta">
+          {messages.proposal.proposedBy} <bdi>{name}</bdi>
+        </p>
+      ) : (
+        <p className="meta">
+          {messages.coalitions.from} <bdi>{motion.coalition}</bdi>
+        </p>
+      )}
       <p className="meta">
         <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
       </p>
@@ -560,9 +575,50 @@ function CarriedDispatch({ proposal }: { readonly proposal: Proposal }) {
   );
 }
 
+/** The justification, as plain text, or nothing when there is none, as a card brought in may have (#114). */
+function Why({ why }: { readonly why: string }) {
+  return why === '' ? null : (
+    <p className="lede" dir="auto">
+      {why}
+    </p>
+  );
+}
+
+/**
+ * A reconcile Proposal's coalition (#114): its name and statement as the
+ * card set them, then, once its genesis names them, the other groups it
+ * reconciles with.
+ */
+function ReconcileStatement({ view }: { readonly view: ReconcileView | null }) {
+  if (view === null) return null;
+  return (
+    <Block title={messages.coalitions.statement} className="card reconcile-statement">
+      <p className="heading-3">
+        <bdi>{view.name}</bdi>
+      </p>
+      {view.others === null || view.others.length === 0 ? null : (
+        <p className="reconcile-with">
+          {messages.coalitions.with} <bdi>{view.others.join(', ')}</bdi>
+        </p>
+      )}
+      <div className="document reconcile-document">
+        <p className="eyebrow">
+          <bdi>{view.title}</bdi>
+        </p>
+        {view.atoms.map((atom, index) => (
+          // Sections are numbered by position; the same text may appear twice.
+          <div key={index} className="atom">
+            <AtomText text={atom} />
+          </div>
+        ))}
+      </div>
+    </Block>
+  );
+}
+
 /** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  const { state, now } = props;
+  const { state } = props;
   if (closedByDissolve(state, proposal))
     return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
@@ -586,11 +642,10 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         />
       ) : null}
       <div className="stack">
-        <Byline state={state} proposal={proposal} now={now} />
-        <p className="lede" dir="auto">
-          {proposal.why}
-        </p>
+        <Byline props={props} proposal={proposal} />
+        <Why why={proposal.why} />
       </div>
+      <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
@@ -633,11 +688,11 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
 }
 
 /**
- * How a waiting Proposal's versions show: its text against the section, what
- * its ballot decides, or a priority vote's options (#107).
+ * What a waiting ballot decides other than a section's text: a steward,
+ * rules, dissolve or coalition card (#102, #117, #108, #114), or a priority
+ * vote's options (#107); null for one that changes text.
  */
-function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
-  const author = displayName(state, me) ?? '';
+function waitingDecision(state: GroupState, author: string, body: ProposalEventBody) {
   if (isStewardProposal(body)) {
     return {
       comparison: STEWARD_BALLOT,
@@ -661,20 +716,40 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
-  // A reconcile Proposal (#100) changes no section; #114 gives it its card.
+  // A reconcile Proposal (#100) changes no section: its ballot decides the coalition (#114).
   if (isReconcileProposal(body)) {
-    return {
-      comparison: STEWARD_BALLOT,
-      versions: [{ id: '', number: 1, author, text: '' }],
-      optIn: null,
-    };
+    const decision = decisionOf({ target: { ...body.target, key: '' }, title: body.title });
+    const versions = [{ id: '', number: 1, author, text: '', ...decision }];
+    return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
+  return null;
+}
+
+/** True for a Proposal whose versions hold text: an edit, a removal or an add (#75). */
+function changesText(body: ProposalEventBody): body is ProposalBody | AddProposalBody {
+  return !('target' in body) || isAddProposal(body);
+}
+
+/** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
+function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
+  const author = displayName(state, me) ?? '';
+  const decided = waitingDecision(state, author, body);
+  if (decided !== null) return decided;
+  // An admit target is only ever a coalition's (#114), so it waits in no group's outbox.
+  if (!changesText(body)) return { comparison: STEWARD_BALLOT, versions: [], optIn: null };
   // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
   const add = isAddProposal(body);
   const comparison = comparisonFor(state, add ? null : body.atom, false);
   const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
   const version = { id: '', number: 1, author, text: body.text };
   return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
+}
+
+/** A waiting reconcile Proposal's coalition, as its card set it: no other group is named yet (#114). */
+function waitingReconcile(body: ProposalEventBody): ReconcileView | null {
+  if (!isReconcileProposal(body)) return null;
+  const { name, title, atoms } = body.target;
+  return { name, title, atoms, others: null };
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
@@ -687,9 +762,8 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
         title={body.title}
         pageTitle={messages.proposal.pageTitle}
       />
-      <p className="lede" dir="auto">
-        {body.why}
-      </p>
+      <Why why={body.why} />
+      <ReconcileStatement view={waitingReconcile(body)} />
       <Block title={comparison.title} className="vote">
         <OptInWarning optIn={optIn} />
         <Legend comparison={comparison} />

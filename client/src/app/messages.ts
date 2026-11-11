@@ -36,7 +36,8 @@ export const messages = {
     create: 'Create group',
     inviteHeading: 'Have an invite link?',
     inviteLabel: 'Invite link',
-    inviteHint: 'Paste the link someone in your group sent you.',
+    inviteHint:
+      'Paste the link someone in your group sent you, or a reconcile card from another group.',
     openInvite: 'Join with an invite link',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
@@ -1291,5 +1292,114 @@ export const messages = {
     body: 'Save a backup so you can get this group back if you lose your phone.',
     save: 'Save a backup',
     notNow: 'Not now',
+  },
+  /** Reconcile with another group (#114): making a card, and the card a formed coalition's row makes. */
+  card: {
+    pageTitle: 'Reconcile with another group',
+    title: 'Reconcile with another group',
+    lede: 'Propose a coalition with another group. Your group votes on it here, then theirs votes on it there. It forms only if both pass.',
+    nameLabel: 'The coalition’s name',
+    nameHint: 'A name of its own, apart from either group’s.',
+    nameMissing: 'Add a name for the coalition.',
+    nameTooLong: (max: number) => `Keep the name to ${count(max)} characters or fewer.`,
+    statementLabel: 'Its first statement',
+    statementHint:
+      'What both groups would stand for together. Leave a blank line between sections.',
+    statementMissing: 'Add the statement both groups will vote on.',
+    whyLabel: 'Why',
+    whyHint: 'Tell your group why you’d reconcile.',
+    whyMissing: 'Tell your group why.',
+    whyTooLong: (max: number) => `Keep this to ${count(max)} characters or fewer.`,
+    yourNameLabel: 'Your name in the coalition',
+    yourNameHint: 'This name is only shown in this coalition.',
+    yourNameMissing: 'Add the name the coalition will see.',
+    submit: 'Make the card',
+    making: 'Making the card…',
+    tooLarge: 'This statement is too long to send. Shorten it, then try again.',
+    failed:
+      'Can’t reach the relay right now, so there’s no card yet. Your group’s Proposal is saved. Try again.',
+    retry: 'Try again',
+    madeTitle: 'Your card is ready',
+    linkLabel: 'Card link',
+    warning:
+      'Anyone who opens this link in the next 2 days can read the coalition from then on. Send it only to someone in the group you want to reconcile with.',
+    copy: 'Copy',
+    copied: 'Copied.',
+    copyFailed: 'Couldn’t copy it. Select the link and copy it yourself.',
+    proposalLink: 'Open your group’s Proposal',
+    /** The coalition statement's title: every card's Document is its mission statement. */
+    documentTitle: 'Mission statement',
+    proposalTitle: (name: string) => `Reconcile into ${name}`,
+    admitTitle: (group: string) => `Admit ${group}`,
+    another: 'Make a card for another group',
+    failedAnother: 'Can’t reach the relay right now, so there’s no card yet. Try again.',
+    anotherLede: 'Bring in another group: they vote, then every group in the coalition does.',
+  },
+  /** Opening a card and bringing it to one of your groups (#114). */
+  bring: {
+    pageTitle: 'Bring a card',
+    loading: 'Opening the card…',
+    eyebrow: 'A reconcile card',
+    /** Around the maker's group, which renders in its own `<bdi>`: "From Riverside Tenants". */
+    from: 'From',
+    statementLabel: 'Their proposed statement',
+    admitLede:
+      'This coalition has already formed. Your group votes first, then every group in it votes on letting yours in.',
+    question: 'Bring this to one of your groups?',
+    groupLabel: 'Your group',
+    groupHint: 'It votes on this card. Only groups where you can propose are listed.',
+    noGroups:
+      'None of your groups on this device can take this card. You need to be able to propose there, and it can’t hold this card already.',
+    yourNameLabel: 'Your name in the coalition',
+    yourNameHint: 'This name is only shown in this coalition.',
+    yourNameMissing: 'Add the name the coalition will see.',
+    submit: 'Bring to my group',
+    notNow: 'Not now',
+    failed: 'Bringing the card didn’t finish. Try again.',
+    badLinkTitle: 'This card doesn’t work',
+    badLink: 'This card has expired or is damaged. Ask the group that sent it for a new one.',
+    usedTitle: 'Can’t bring this card',
+    used: 'This card has already been used.',
+    offlineTitle: 'Can’t open the card yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+  },
+  /** Group home's Coalitions, and what a reconcile Proposal says of its coalition (#114). */
+  coalitions: {
+    heading: 'Coalitions',
+    start: 'Reconcile with another group',
+    forming: 'Forming',
+    formed: 'Formed',
+    declined: 'Didn’t form',
+    /** Around a group's name, in its own `<bdi>`: "Waiting for Oak St Co-op’s vote". */
+    waitingBefore: 'Waiting for',
+    waitingAfter: '’s vote',
+    /** Around a group's name: "Oak St Co-op didn’t pass this". */
+    didntPassAfter: 'didn’t pass this',
+    waitingCard: 'Waiting for another group to bring the card.',
+    lapsed: 'Not every group voted in time.',
+    youTakePart: 'You take part as',
+    takePart: 'Take part',
+    takePartHint: 'Join the coalition under your group’s seat.',
+    nameLabel: 'Your name in the coalition',
+    nameHint: 'This name is only shown in this coalition.',
+    nameMissing: 'Add the name the coalition will see.',
+    joining: 'Joining…',
+    takePartFailed: 'That didn’t save. Try again.',
+    mismatch: 'The result reported for your group doesn’t match your group’s vote.',
+    /** On a reconcile Proposal: "Reconcile with Oak St Co-op", the other group in its own `<bdi>`. */
+    with: 'Reconcile with',
+    statement: 'The coalition’s statement',
+    /** Under a reconcile ballot's one version. */
+    reconcileLine: 'If your group and the other group both pass this, the coalition forms.',
+    /** A reconcile Proposal's pass, and a coalition motion's in the group. */
+    reconcilePassed:
+      'This passed. Your group’s pass goes to the coalition, which forms once every group has passed.',
+    motionPassed:
+      'This passed in your group. Your group’s pass goes to the coalition, which decides with every group’s.',
+    /** Under a coalition motion's one version. */
+    motionLine:
+      'Every group in the coalition votes on this. Only your group’s pass or fail goes back.',
+    from: 'From the coalition',
   },
 } as const;
