@@ -22,17 +22,37 @@ export interface Draft {
    * (#106), NaN while it's blank. Absent, the composer shows the class default.
    */
   readonly window?: number;
+  /**
+   * The Dispatch to send if the Proposal passes (#112), its title and text as
+   * typed, while "Send a Dispatch if this passes" is checked; absent otherwise.
+   */
+  readonly dispatch?: DraftDispatch;
+}
+
+/** A draft's Dispatch (#112): its title and text, as typed. */
+export interface DraftDispatch {
+  readonly title: string;
+  readonly text: string;
 }
 
 /** A group's drafts by target. Absent from records kept before drafts existed. */
 export type DraftShelf = ReadonlyMap<string, Draft>;
 
-/** True for a value shaped like a {@link Draft}: four strings, nothing missing, and any window a number. */
-export function isDraft(value: unknown): value is Draft {
+/** True for a value that is an object, not null, whose fields named `keys` are all strings. */
+function hasStrings(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return false;
-  const { title, why, text, link, window } = value as Record<string, unknown>;
-  const strings = [title, why, text, link].every((field) => typeof field === 'string');
-  return strings && (window === undefined || typeof window === 'number');
+  return keys.every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
+}
+
+/**
+ * True for a value shaped like a {@link Draft}: four strings, nothing
+ * missing, any window a number, and any Dispatch a title and a text (#112).
+ */
+export function isDraft(value: unknown): value is Draft {
+  if (!hasStrings(value, ['title', 'why', 'text', 'link'])) return false;
+  const { window, dispatch } = value;
+  const windowFits = window === undefined || typeof window === 'number';
+  return windowFits && (dispatch === undefined || hasStrings(dispatch, ['title', 'text']));
 }
 
 /** The draft a group's record holds for `target`, or undefined for none or for one that isn't whole. */

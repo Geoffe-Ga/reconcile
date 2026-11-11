@@ -1,0 +1,1382 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dispatch-carried-pass: A proposes with a dispatch, A and B score 4 and 3, and B's ballot closes it, so the Dispatch appears at its close: its id is the Proposal's, it comes from the Proposal, and it opens the Document the Proposal changed",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "Mission statement",
+              "atoms": ["We share what we grow.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "We share what we grow, and our tools.\n",
+              "dispatch": {
+                "title": "Updated: Mission statement",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764001800000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29400040,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "dispatch": {
+              "title": "Updated: Mission statement",
+              "text": ""
+            },
+            "closedAt": 29400030,
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "text": "We share what we grow, and our tools.\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "title": "Updated: Mission statement",
+            "text": "",
+            "doc": "@1",
+            "received": 29400030
+          }
+        ]
+      }
+    },
+    {
+      "name": "dispatch-carried-open: a Proposal carrying a Dispatch adds none while its vote is open, though every ballot so far scores it 4",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "Mission statement",
+              "atoms": ["We share what we grow.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "We share what we grow, and our tools.\n",
+              "dispatch": {
+                "title": "Updated: Mission statement",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29410089,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "dispatch": {
+              "title": "Updated: Mission statement",
+              "text": ""
+            },
+            "final": false
+          }
+        ],
+        "dispatches": []
+      }
+    },
+    {
+      "name": "dispatch-carried-lapse: a Proposal carrying a Dispatch that lapses below quorum at its deadline adds nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764000120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Quiet hours moved."
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764001260000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29410090,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "dispatch": {
+              "title": "Updated: House rules",
+              "text": "Quiet hours moved."
+            },
+            "final": true,
+            "outcome": {
+              "kind": "lapse"
+            }
+          }
+        ],
+        "dispatches": []
+      }
+    },
+    {
+      "name": "dispatch-carried-fail: a Proposal carrying a Dispatch that fails, closed early by a 0, adds nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764001260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 0
+              },
+              "note": "Too early for us."
+            }
+          }
+        }
+      ],
+      "relayNow": 29400030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "dispatch": {
+              "title": "Updated: House rules",
+              "text": ""
+            },
+            "closedAt": 29400021,
+            "final": true,
+            "outcome": {
+              "kind": "fail"
+            }
+          }
+        ],
+        "dispatches": []
+      }
+    },
+    {
+      "name": "dispatch-carried-invalid: a proposal whose dispatch has an 81-code-point title, an empty title or a 501-code-point text is ignored whole, an edit or a rules change alike, and ones at 80 and 500 open with their Dispatch",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000660000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "",
+                "text": "No title."
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000720000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "Too long",
+                "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000780000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": true
+              },
+              "title": "Open our front door",
+              "why": "We talked it over on Sunday.",
+              "dispatch": {
+                "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000840000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29400015,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000900000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": true
+              },
+              "title": "Open our front door",
+              "why": "We talked it over on Sunday.",
+              "dispatch": {
+                "title": "Our front door is open",
+                "text": ""
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29400020,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7",
+            "dispatch": {
+              "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "final": false
+          },
+          {
+            "id": "@8",
+            "dispatch": {
+              "title": "Our front door is open",
+              "text": ""
+            },
+            "final": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 4, 5, 6]
+    },
+    {
+      "name": "dispatch-carried-close-order: the Proposal that opened second closes first, so its Dispatch comes first, a Dispatch sent between the two closes sits between them, and the first Proposal's comes at its own close",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "Updated: quiet hours",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000660000,
+            "body": {
+              "atom": "@1.1",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Bins out on Monday.\n",
+              "dispatch": {
+                "title": "Updated: bins",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764001260000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400022,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001320000,
+            "body": {
+              "title": "Two changes this week",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29400023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001380000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29400024,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764001440000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29400030,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@4",
+            "by": {
+              "proposal": "@4"
+            },
+            "title": "Updated: bins",
+            "text": "",
+            "doc": "@1",
+            "received": 29400021
+          },
+          {
+            "id": "@7",
+            "by": "%ana",
+            "title": "Two changes this week",
+            "text": "",
+            "doc": null,
+            "received": 29400022
+          },
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "title": "Updated: quiet hours",
+            "text": "",
+            "doc": "@1",
+            "received": 29400024
+          }
+        ]
+      }
+    },
+    {
+      "name": "dispatch-carried-same-deadline: two Proposals that pass at the same deadline append their Dispatches in their Proposals' relay order, after one received the minute before and before one received at that minute",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764000120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1764000180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400004,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000240000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400005,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000300000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29420200,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1765212000000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "Updated: quiet hours",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29420200,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1765212000000,
+            "body": {
+              "atom": "@1.1",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Bins out on Monday.\n",
+              "dispatch": {
+                "title": "Updated: bins",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29420201,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1765212060000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29420201,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1765212060000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29420202,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1765212120000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29420202,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1765212120000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29420203,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1765212180000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29420203,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1765212180000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29430279,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1765816740000,
+            "body": {
+              "title": "Last day to vote",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29430280,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1765816800000,
+            "body": {
+              "title": "Both passed",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29430285,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7",
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          },
+          {
+            "id": "@8",
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@15",
+            "by": "%ana",
+            "title": "Last day to vote",
+            "text": "",
+            "doc": null,
+            "received": 29430279
+          },
+          {
+            "id": "@7",
+            "by": {
+              "proposal": "@7"
+            },
+            "title": "Updated: quiet hours",
+            "text": "",
+            "doc": "@1",
+            "received": 29430280
+          },
+          {
+            "id": "@8",
+            "by": {
+              "proposal": "@8"
+            },
+            "title": "Updated: bins",
+            "text": "",
+            "doc": "@1",
+            "received": 29430280
+          },
+          {
+            "id": "@16",
+            "by": "%ana",
+            "title": "Both passed",
+            "text": "",
+            "doc": null,
+            "received": 29430280
+          }
+        ]
+      }
+    },
+    {
+      "name": "dispatch-carried-dissolve: a dissolve Proposal's Dispatch appears at its close with no Document, since it changes none, and a dispatch after the group dissolves is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764000120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "title": "Before we go",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000660000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve our group",
+              "why": "We talked it over on Sunday.",
+              "dispatch": {
+                "title": "We have dissolved",
+                "text": "Thank you, all."
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764001260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29400022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764001320000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29400023,
+          "event": {
+            "v": 1,
+            "type": "dissolve",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001380000,
+            "body": {
+              "proposal": "@5"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29400024,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764001440000,
+            "body": {
+              "title": "After the end",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29400030,
+      "expect": {
+        "dissolved": {
+          "received": 29400023,
+          "wipe": false
+        },
+        "dispatches": [
+          {
+            "id": "@4",
+            "by": "%ana",
+            "title": "Before we go",
+            "text": "",
+            "doc": null,
+            "received": 29400010
+          },
+          {
+            "id": "@5",
+            "by": {
+              "proposal": "@5"
+            },
+            "title": "We have dissolved",
+            "text": "Thank you, all.",
+            "doc": null,
+            "received": 29400022
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 10,
+            "id": "@10"
+          }
+        ]
+      },
+      "unchangedWithout": [10]
+    }
+  ]
+}
