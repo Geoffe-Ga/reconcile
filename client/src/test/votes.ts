@@ -83,6 +83,8 @@ export interface LogBuilder {
   respond(name: string, proposal: string, text: string): string;
   /** Adds `name`'s `remove`, naming the removal `proposal` whose pass is final (#115). */
   remove(name: string, proposal: string): string;
+  /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
+  chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
   dispatch(name: string, body: DispatchBody): string;
   /** The records so far, in relay order. */
@@ -233,6 +235,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     remove(name: string, proposal: string) {
       return add(name, { type: 'remove', group, ts: 0, body: { proposal } });
+    },
+    chatThread(name: string, proposal: string, url: string) {
+      return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
     },
     dispatch(name: string, body: DispatchBody) {
       return add(name, { type: 'dispatch', group, ts: 0, body });

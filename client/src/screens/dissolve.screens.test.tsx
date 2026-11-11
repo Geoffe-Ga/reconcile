@@ -317,7 +317,8 @@ describe('a Proposal the dissolve cut off', () => {
   it('reads closed when the group dissolved, with no outcome and no ballot', async () => {
     const { state, open } = dissolved();
     renderProposal(state, open, 'cal');
-    expect(screen.getByText('Closed Proposal')).toBeVisible();
+    const number = state.proposals.find((proposal) => proposal.id === open)?.number;
+    expect(screen.getByText(`Proposal ${String(number)} · Closed`)).toBeVisible();
     expect(screen.getByText('Closed when the group dissolved')).toBeVisible();
     expect(screen.queryByRole('region', { name: 'Result' })).toBeNull();
     expect(screen.queryByRole('radiogroup')).toBeNull();

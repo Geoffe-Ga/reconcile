@@ -20,6 +20,20 @@ function comparable(state: RelayBackupState | undefined) {
   return state === undefined ? undefined : { ...state, key: local(state.key) };
 }
 
+/** A group record as versions 3 and 4 kept it: its keys in the record. */
+const KEPT = {
+  groupId: 'kept',
+  secret: new Uint8Array(32),
+  signingKey: new Uint8Array(32).fill(7),
+  me: { author: 'author-ana', name: 'Ana' },
+  log: [],
+  cursor: 0,
+  relayNow: null,
+  instance: null,
+  outbox: [],
+  lastSyncAt: null,
+};
+
 /** A fresh state for `key`: nothing uploaded, nothing checked. */
 function fresh(key: Uint8Array): RelayBackupState {
   return { key, digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
@@ -146,7 +160,8 @@ describe('the relay backup’s state', () => {
         database.createObjectStore('groups', { keyPath: 'groupId' });
       },
     });
-    await old.put('groups', { groupId: 'kept', secret: new Uint8Array(32) });
+    // A real record holds its keys (#95 reads a record without them as sealed in the vault).
+    await old.put('groups', KEPT);
     old.close();
 
     const store = await openStore();
@@ -171,7 +186,8 @@ describe('the relay backup’s state', () => {
         database.createObjectStore('personal', { keyPath: 'id' });
       },
     });
-    await old.put('groups', { groupId: 'kept', secret: new Uint8Array(32) });
+    // A real record holds its keys (#95 reads a record without them as sealed in the vault).
+    await old.put('groups', KEPT);
     await old.put('personal', statement);
     old.close();
 

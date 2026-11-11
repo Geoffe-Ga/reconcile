@@ -117,7 +117,7 @@ describe('ProposalView', () => {
     setup({ state: log.state(), proposalId });
 
     expect(screen.getByRole('heading', { level: 1, name: 'Later quiet hours' })).toBeVisible();
-    expect(screen.getByText('Open Proposal', { selector: 'p' })).toBeVisible();
+    expect(screen.getByText('Proposal 1 · Open', { selector: 'p' })).toBeVisible();
     expect(screen.getByText('Weekends run late.')).toBeVisible();
     expect(screen.getByText(/^Proposed by/)).toHaveTextContent(/^Proposed by Ana$/);
     expect(screen.getByText('Closes in 7 days')).toBeVisible();
@@ -343,7 +343,7 @@ describe('ProposalView', () => {
 
     const result = screen.getByRole('region', { name: 'Result' });
     expect(result).toHaveTextContent('This passed. The Document now reads:Quiet after 11pm.');
-    expect(screen.getByText('Closed Proposal', { selector: 'p' })).toBeVisible();
+    expect(screen.getByText('Proposal 1 · Closed', { selector: 'p' })).toBeVisible();
     expect(precedes(result, screen.getByText('Weekends run late.'))).toBe(true);
     expect(screen.queryByRole('region', { name: 'Changes to section 1' })).not.toBeInTheDocument();
     const ballot = screen.getByRole('region', { name: 'On the ballot' });
@@ -476,6 +476,84 @@ function versionsVote(count: 2 | 3) {
   if (count === 3) ids.push(log.version('cy', proposalId, 'Quiet after 10pm.'));
   return { log, proposalId, ids };
 }
+
+describe('ProposalView, a Proposal’s number and its Discord thread (#123)', () => {
+  const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/rV7-first_token';
+  const THREAD = 'https://discord.com/channels/1188000000000000001/1309000000000000003';
+
+  /** Ana and Ben turn the bot on (Proposal 1), and Ana proposes the edit under test (Proposal 2). */
+  function botOnAndProposed() {
+    const log = groupLog({ chat: 'https://chat.example.org/riverside' });
+    const on = log.rules('Ana', 'chatBot', { webhook: WEBHOOK });
+    log.minute += 10;
+    log.vote('Ana', on, 4);
+    log.vote('Ben', on, 4);
+    log.minute += 10;
+    const proposalId = log.propose('ana', PROPOSAL);
+    return { log, proposalId };
+  }
+
+  /** Join discussion's link. */
+  const joinDiscussion = () => screen.getByRole('link', { name: /Join discussion/ });
+
+  it('shows Proposal {n} above the title: its place among the group’s Proposals', async () => {
+    const { log, proposalId } = botOnAndProposed();
+    setup({ state: log.state(), proposalId });
+
+    const eyebrow = screen.getByText('Proposal 2 · Open', { selector: 'p' });
+    const title = screen.getByRole('heading', { level: 1, name: 'Later quiet hours' });
+    expect(precedes(eyebrow, title)).toBe(true);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('opens the Proposal’s own link until its thread is in the log, then the thread', async () => {
+    const { log, proposalId } = botOnAndProposed();
+    log.chatPosted('Ben', proposalId, 'open');
+    const { rerender } = setup({ state: log.state(), proposalId });
+    expect(joinDiscussion()).toHaveAttribute('href', PROPOSAL.link);
+
+    log.chatThread('Ben', proposalId, THREAD);
+    rerender({ state: log.state() });
+
+    expect(joinDiscussion()).toHaveAttribute('href', THREAD);
+    expect(joinDiscussion()).toHaveAttribute('target', '_blank');
+    expect(joinDiscussion()).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('opens the group’s latest link for a Proposal with none, until its thread is in the log', () => {
+    const { log } = botOnAndProposed();
+    log.minute += 10;
+    const bins = log.propose('ben', { atom: 1, title: 'Bins' });
+    log.chatPosted('Ana', bins, 'open');
+    const { rerender } = setup({ state: log.state(), proposalId: bins });
+    expect(joinDiscussion()).toHaveAttribute('href', PROPOSAL.link);
+
+    log.chatThread('Ana', bins, THREAD);
+    rerender({ state: log.state() });
+    expect(joinDiscussion()).toHaveAttribute('href', THREAD);
+  });
+
+  it('keeps the Proposal’s link when a thread the fold ignored names another server', () => {
+    const { log, proposalId } = botOnAndProposed();
+    log.chatPosted('Ben', proposalId, 'open');
+    log.chatThread('Ana', proposalId, THREAD);
+    setup({ state: log.state(), proposalId });
+    expect(joinDiscussion()).toHaveAttribute('href', PROPOSAL.link);
+  });
+
+  it('shows a closed Proposal’s number with its outcome, and its thread', () => {
+    const { log, proposalId } = botOnAndProposed();
+    log.chatPosted('Ben', proposalId, 'open');
+    log.chatThread('Ben', proposalId, THREAD);
+    log.minute += 30;
+    log.vote('ana', proposalId, 4);
+    log.vote('ben', proposalId, 4);
+    setup({ state: log.state(), proposalId });
+    expect(screen.getByText('Proposal 2 · Closed', { selector: 'p' })).toBeVisible();
+    expect(joinDiscussion()).toHaveAttribute('href', THREAD);
+  });
+});
 
 describe('ProposalView, with several versions', () => {
   it('sets the versions side by side in a wider shell, each with its diff and own pills', async () => {

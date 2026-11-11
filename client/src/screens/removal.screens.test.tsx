@@ -502,7 +502,7 @@ describe('the removed member’s copy (ADR-0016)', () => {
   it('shows a Proposal open when they were removed as cut off, with no ballot', async () => {
     const { state, edit } = removed();
     renderProposal(state, edit, 'kim');
-    expect(screen.getByText('Open Proposal')).toBeVisible();
+    expect(screen.getByText(/^Proposal \d+ · Open$/)).toBeVisible();
     expect(screen.getByText('You won’t see how this ends')).toBeVisible();
     expect(screen.queryByRole('radiogroup', { name: 'Your score' })).toBeNull();
     expect(await axeViolations()).toEqual([]);

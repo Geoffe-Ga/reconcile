@@ -289,8 +289,9 @@ export const messages = {
   },
   proposal: {
     pageTitle: 'Proposal',
-    eyebrowOpen: 'Open Proposal',
-    eyebrowClosed: 'Closed Proposal',
+    /** Over an ordered Proposal's title: its number among the group's Proposals (#123), and whether it's open. */
+    eyebrowOpen: (number: number) => `Proposal ${String(number)} · Open`,
+    eyebrowClosed: (number: number) => `Proposal ${String(number)} · Closed`,
     eyebrowNew: 'New Proposal',
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
@@ -435,6 +436,10 @@ export const messages = {
     untitled: '.',
     /** How it ends with the title, such as `: "Quiet hours".` */
     titled: (title: string) => `: "${title}".`,
+    /** The chat bot's result post inside a Proposal's Discord thread (#123; ADR-0011). */
+    concluded: 'The argument has concluded. A vote has finished in Reconcile.',
+    /** The name of a Proposal's Discord thread: its number, never its title (#123; ADR-0039). */
+    threadName: (number: number) => `Proposal ${String(number)} in Reconcile`,
   },
   decided: {
     title: 'Decided',
@@ -693,7 +698,7 @@ export const messages = {
     names: { chatBot: 'Discord chat bot', frontDoor: 'Front door' },
     warnings: {
       chatBot:
-        'Discord’s servers will hold that this group uses Reconcile and when votes open and close. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges. Discord also sees the internet address of the member’s phone that posts each notice.',
+        'Discord’s servers will hold that this group uses Reconcile, when votes open and close, and each Proposal’s number. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges. Discord also sees the internet address of the member’s phone that posts each notice.',
       frontDoor:
         'Anyone with the address can see the group’s name and a short excerpt of its mission statement, and ask to join. It never lists people.',
     },
@@ -760,7 +765,7 @@ export const messages = {
     nowLine: 'It’s off until the group decides. This Proposal asks the group to keep it off.',
     webhookLabel: 'Discord webhook URL',
     webhookHint:
-      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
+      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel, or a forum channel to give each Proposal its own thread. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
     webhookMissing: 'Paste the webhook URL from Discord.',
     webhookInvalid: 'Use a Discord webhook URL, starting with https://discord.com/api/webhooks/.',
     submitNow: 'Turn off now',
@@ -912,6 +917,47 @@ export const messages = {
     backupHeading: 'Back up your groups',
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
+    passkeyHeading: 'Lock with a passkey',
+    eraseHeading: 'Erase this device',
+  },
+  // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
+  // notice and always in Settings. iOS allows one passkey request per tap, so
+  // the first time asks twice. The no-PRF line is #95's own words.
+  passkey: {
+    pageTitle: 'Lock with a passkey',
+    title: 'Lock your keys with a passkey',
+    lede: 'Someone who picks up your unlocked phone could act as you in your groups. With a passkey, Reconcile asks for your face, fingerprint or screen lock each time it opens.',
+    twice:
+      'The first time, your phone asks twice: once to make the passkey, then once to check it can lock your keys.',
+    privacy:
+      'Your password manager keeps it as “Reconcile key”, with nothing about your groups, and nothing about it reaches the relay.',
+    create: 'Make a passkey',
+    creating: 'Waiting for your passkey…',
+    createFailed: 'No passkey was made. You can try again.',
+    confirmLede: 'Now confirm your passkey, and Reconcile locks your keys with it.',
+    confirm: 'Confirm your passkey',
+    confirming: 'Waiting for your passkey…',
+    confirmFailed: 'Your passkey didn’t answer. Try again.',
+    locked:
+      'Your keys on this device are locked with your passkey. Reconcile asks for it each time it opens.',
+    noPrf: 'This device’s passkey can’t protect your keys, so they stay on this device as before.',
+    saveBackup: 'Save a backup',
+    notNow: 'Not now',
+    continue: 'Continue',
+  },
+  // The unlock screen (#95): a device whose keys are locked opens here, and
+  // nothing syncs or signs until the passkey unlocks it.
+  unlock: {
+    pageTitle: 'Unlock Reconcile',
+    title: 'Unlock Reconcile',
+    lede: 'Your keys on this device are locked with your passkey.',
+    unlock: 'Unlock with your passkey',
+    unlocking: 'Waiting for your passkey…',
+    failed: 'Your passkey didn’t unlock Reconcile.',
+    tryAgain: 'Try again',
+    restoreHeading: 'Restore a backup',
+    restoreLede:
+      'Restoring puts the groups in your backup file in place of the locked ones on this device. Their keys stay on this device unlocked, and you can lock them with a passkey again in Settings.',
     eraseHeading: 'Erase this device',
   },
   /**
@@ -1056,6 +1102,9 @@ export const messages = {
     expired: 'This code has expired. Nothing was sent.',
     sendFailed: 'Your groups couldn’t be sent. Make a new code to try again.',
     again: 'Make a new code',
+    // A tab whose keys another tab locked with a passkey (#95) shows no code until it's unlocked.
+    locked:
+      'Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it, then link a new device.',
     backToSettings: 'Settings',
     // The new device.
     thisPageTitle: 'Link to your other device',

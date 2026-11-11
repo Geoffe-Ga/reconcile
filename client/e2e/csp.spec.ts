@@ -7,10 +7,12 @@
  * origin.
  *
  * The page may connect to its own origin and to one path more, Discord's
- * webhooks, which a group's chat bot posts to (#119). A `fetch` anywhere
- * else, another path on Discord or `discordapp.com` included, is blocked
- * with a `securitypolicyviolation`. Every request off the app's origin is
- * answered by the test, so nothing reaches Discord or any other host.
+ * webhooks, which a group's chat bot posts to (#119), with or without the
+ * query that opens a thread or posts into one (#123): a CSP path never
+ * matches the query. A `fetch` anywhere else, another path on Discord or
+ * `discordapp.com` included, is blocked with a `securitypolicyviolation`.
+ * Every request off the app's origin is answered by the test, so nothing
+ * reaches Discord or any other host.
  */
 import { readFileSync } from 'node:fs';
 
@@ -84,6 +86,8 @@ const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tok
 /** Where the page tries to connect, and what it must get: Discord's answer, or blocked. */
 const TRIES: readonly (readonly [string, number | 'blocked'])[] = [
   [WEBHOOK, 204],
+  [`${WEBHOOK}?wait=true`, 200],
+  [`${WEBHOOK}?thread_id=1309000000000000010`, 204],
   ['https://example.com/collect', 'blocked'],
   ['https://discord.com/api/v10/channels/1199000000000000001/messages', 'blocked'],
   ['https://discordapp.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ', 'blocked'],
@@ -134,8 +138,11 @@ test('connects only to its own origin and Discord’s webhook path, blocking any
       TRIES.map(([url]) => url),
     );
     expect(got).toEqual(TRIES.map(([, outcome]) => outcome));
-    expect(discord.map((request) => `${request.method} ${request.url}`)).toEqual([
+    // The page sends them all at once, so they may reach the fixture in any order.
+    expect(discord.map((request) => `${request.method} ${request.url}`).sort()).toEqual([
       `POST ${WEBHOOK}`,
+      `POST ${WEBHOOK}?thread_id=1309000000000000010`,
+      `POST ${WEBHOOK}?wait=true`,
     ]);
 
     const violations = await page.evaluate(async (key) => {

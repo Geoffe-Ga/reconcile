@@ -90,6 +90,8 @@ function renderRoot(ben: TestDevice, platform: PlatformEnv = DESKTOP) {
     platform,
     notice: memoryNotice(),
     requestPersistence: () => Promise.resolve('denied' as const),
+    lock: { lockedAtLaunch: false, unlock: vi.fn(), restore: vi.fn() },
+    passkeyOffer: { answered: () => false, answer: vi.fn() },
   };
   const { unmount } = render(<Root services={ben.services} firstRun={firstRun} />);
   return { user: userEvent.setup(), unmount };

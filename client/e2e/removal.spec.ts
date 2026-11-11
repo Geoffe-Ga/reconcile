@@ -36,6 +36,7 @@ import {
   type Person,
   pick,
   test,
+  visit,
 } from './support/fixtures';
 import { type Canary, describeFinding, keyCanaries, scan, textCanary } from './support/scan';
 import { derive, onlyGroup, storedLogs } from './support/stored';
@@ -159,7 +160,7 @@ test('Ana and Ben remove Cal: his device keeps what it had, and nothing after op
 
   await test.step('Cal can’t vote on it, and posts his one response', async () => {
     const { page } = cal;
-    await page.goto(ballot);
+    await visit(page, ballot);
     await expect(page.getByText(/This Proposal would remove you/)).toBeVisible();
     await expect(page.getByRole('radiogroup', { name: 'Your score' })).toHaveCount(0);
     await expectAccessible(cal, 'Removal ballot with the response form');
@@ -173,7 +174,7 @@ test('Ana and Ben remove Cal: his device keeps what it had, and nothing after op
   await test.step('Ana and Ben read the response and score it 4, which closes it early', async () => {
     for (const person of [ana, ben]) {
       const { page } = person;
-      await page.goto(ballot);
+      await visit(page, ballot);
       await expect(page.getByRole('region', { name: 'Cal’s response' })).toContainText(response);
       await expectAccessible(person, 'Removal ballot with the response');
       await vote(person);
