@@ -37,7 +37,8 @@
  *    archive (#108) posts none.
  *
  * After a pass in which every group synced, and unless the loop is halted,
- * five things follow, in this order:
+ * the coalitions sync and settle (#114), the carried scores with them
+ * (#126, ./carry.ts), and five things follow, in this order:
  *
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
@@ -108,6 +109,7 @@
  */
 
 import { newKxKey } from '../crypto/box';
+import { randomBytes } from '../crypto/random';
 import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
@@ -116,7 +118,8 @@ import type { GroupState, LogRecord } from '../engine/fold';
 import { wakeForRecord } from '../engine/wake';
 import { settleDissolve } from './archive';
 import type { ChatBot } from './chatBot';
-import { ensureEntries, settleCoalitions, stillSyncs } from './coalitions';
+import { type Random, settleCarries } from './carry';
+import { ensureEntries, holdings, settleCoalitions, stillSyncs } from './coalitions';
 import {
   type EventIdOf,
   type Group,
@@ -283,6 +286,11 @@ export interface SyncOptions {
   idOf?: EventIdOf;
   /** The device clock in milliseconds, for `lastSyncAt` and a result's `ts` (default: `Date.now`). */
   clock?: () => number;
+  /**
+   * Random bytes for the minute each carried score is cast at (#126,
+   * ./carry.ts): the platform's CSPRNG (default: `crypto/random.ts`).
+   */
+  random?: Random;
   /** The timers the poller uses (default: the window's). */
   timers?: Timers;
   /** The chat bot, run after each group syncs (#119); without one, nothing posts. */
@@ -318,6 +326,7 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
+  const random = options.random ?? randomBytes;
   const { chatBot, push, door, afterPass } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
@@ -542,15 +551,19 @@ export function createSync(options: SyncOptions): Sync {
   /**
    * The coalitions' part of a pass (#114), once every group has synced:
    * keeps an entry for each coalition secret a group holds, syncs each, then
-   * joins, reports and proposes admissions as `settleCoalitions` decides,
-   * and sends what that queued at once.
+   * joins, reports, promotes Dispatches (#126) and proposes admissions as
+   * `settleCoalitions` decides, then keeps and casts carried scores in the
+   * groups (#126, `settleCarries`), each folded once for both, and sends
+   * what they queued at once.
    */
   async function syncCoalitions(): Promise<boolean> {
     await ensureEntries(store, scanned);
     const ok = await each(await store.listCoalitions(), syncGroup);
     if (!ok || halted) return ok;
-    const queued = await settleCoalitions(store, clock);
-    const entries = await Promise.all(queued.map((id) => store.getGroup(id)));
+    const held = await holdings(store);
+    const queued = await settleCoalitions(store, clock, held);
+    const carried = await settleCarries(store, held, { random, clock });
+    const entries = await Promise.all([...queued, ...carried].map((id) => store.getGroup(id)));
     return each(
       entries.filter((entry) => entry !== undefined),
       syncGroup,

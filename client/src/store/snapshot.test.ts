@@ -202,6 +202,16 @@ describe('exportGroups and importGroups', () => {
       moment: 'open',
     } as const;
     await device.claimChat(kept.groupId, utf8('{"claim":"Canary claim record"}'), claim);
+    // The scores this member gave, and the casts planned here, belong to this device (#126).
+    const score = { dispatch: 'Canary score', score: 3, ceiling: 1, at: 1, until: null } as const;
+    const plan = {
+      motion: 'Canary plan',
+      dispatch: 'd',
+      score: 3,
+      castAt: 2,
+      deadline: 3,
+    } as const;
+    await device.updateCarried(kept.groupId, () => ({ scores: [score], carries: [plan] }));
     const [group] = await device.listGroups();
     if (group === undefined) throw new Error('Expected the group.');
 
@@ -210,6 +220,8 @@ describe('exportGroups and importGroups', () => {
     expect(text(plaintext)).not.toContain('Canary outbox');
     expect(text(plaintext)).not.toContain('Canary draft');
     expect(text(plaintext)).not.toContain('Canary claim');
+    expect(text(plaintext)).not.toContain('Canary score');
+    expect(text(plaintext)).not.toContain('Canary plan');
     expect(Object.keys(JSON.parse(text(plaintext)) as object)).toEqual([
       'format',
       'groups',

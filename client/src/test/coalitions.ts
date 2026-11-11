@@ -191,6 +191,27 @@ export class Logs {
   }
 
   /**
+   * `who`'s Dispatch put to `log`'s vote with `ceiling` (#126), carrying
+   * `words`, with the Proposal's own title and why.
+   */
+  dispatchVote(
+    log: string,
+    received: number,
+    who: string,
+    ceiling: Ceiling,
+    words: CarriedDispatch,
+    { title = 'Send it on', why = 'The coalitions should hear.' } = {},
+  ): string {
+    const body = { target: { kind: 'dispatch', ceiling } as const, title, why, dispatch: words };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /** `who` posts the promotion record `body` in the coalition `log` (#126). */
+  promoteIn(log: string, received: number, who: string, body: PromoteProposalBody): string {
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /**
    * A formed coalition of `seats` from relay minute `received`: its genesis,
    * then `participants[i]` joining under `seats[i]` and passing the genesis.
    */
@@ -328,27 +349,6 @@ export class NestedLogs extends Logs {
     });
     const target = { kind: 'reconcile', sealed, key: seatKey(log), ...statement } as const;
     const body = { target, title: `Reconcile into ${statement.name}`, why: 'Neighbours.' };
-    return this.add(log, received, who, { type: 'proposal', body });
-  }
-
-  /**
-   * `who`'s Dispatch put to `log`'s vote with `ceiling` (#126), carrying
-   * `words`, with the Proposal's own title and why.
-   */
-  dispatchVote(
-    log: string,
-    received: number,
-    who: string,
-    ceiling: Ceiling,
-    words: CarriedDispatch,
-    { title = 'Send it on', why = 'The coalitions should hear.' } = {},
-  ): string {
-    const body = { target: { kind: 'dispatch', ceiling } as const, title, why, dispatch: words };
-    return this.add(log, received, who, { type: 'proposal', body });
-  }
-
-  /** `who` posts the promotion record `body` in the coalition `log` (#126). */
-  promoteIn(log: string, received: number, who: string, body: PromoteProposalBody): string {
     return this.add(log, received, who, { type: 'proposal', body });
   }
 

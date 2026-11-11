@@ -18,6 +18,7 @@ import { createPushRelay } from '../net/push';
 import { createDoorKeeper } from '../door/keeper';
 import { createRelay } from '../net/relay';
 import { browserPushPort } from '../platform/pushPort';
+import type { Random } from '../store/carry';
 import { type ChatBot, createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
 import type { MailboxAt } from '../store/mailbox';
@@ -49,6 +50,8 @@ export interface TestDevice {
 export interface TestDeviceOptions {
   /** A group's mailbox at a relay minute, for push (#99): the store's own unless a test stubs it. */
   readonly mailboxAt?: MailboxAt;
+  /** Random bytes for each carried score's minute (#126): the CSPRNG unless a test fixes them. */
+  readonly random?: Random;
 }
 
 /** A desktop browser's user agent, which `prfTrusted` trusts. */
@@ -103,6 +106,7 @@ export async function testDevice(
     relay,
     seal: xchachaSeal,
     clock: now,
+    ...(options.random === undefined ? {} : { random: options.random }),
     chatBot,
     push,
     door,
