@@ -29,6 +29,10 @@ export type Route =
   | { readonly name: 'linkThis' }
   /** Choose recovery contacts, or choose again (#109). */
   | { readonly name: 'recovery' }
+  /** Recover with my contacts, on a new device (#118). */
+  | { readonly name: 'recover' }
+  /** Help someone recover, on a recovery contact's device (#118). */
+  | { readonly name: 'helpRecover' }
   | { readonly name: 'join'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
@@ -185,14 +189,18 @@ const INVITE_PREFIX = '#join/';
 
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
- * the two sides of linking a device (#96), and Choose recovery contacts
- * (#109). A linking code never travels in a route: it's shown, scanned or
- * pasted, and held only in memory. Nor does a recovery contact.
+ * the two sides of linking a device (#96), Choose recovery contacts (#109),
+ * and the two sides of recovering with contacts (#118). A linking code never
+ * travels in a route: it's shown, scanned or pasted, and held only in
+ * memory. Nor does a recovery contact, or a recovery code.
  */
 /** A page that takes no argument. */
 export type BareRoute = Extract<
   Route,
-  { readonly name: 'create' | 'settings' | 'linkNew' | 'linkThis' | 'recovery' }
+  {
+    readonly name:
+      'create' | 'settings' | 'linkNew' | 'linkThis' | 'recovery' | 'recover' | 'helpRecover';
+  }
 >;
 
 /** Each page that takes no argument, and the path it writes after `#/`. */
@@ -202,6 +210,8 @@ const BARE_PATHS: ReadonlyMap<BareRoute['name'], string> = new Map([
   ['linkNew', 'link-new'],
   ['linkThis', 'link-this'],
   ['recovery', 'recovery'],
+  ['recover', 'recover'],
+  ['helpRecover', 'help-recover'],
 ]);
 
 /** Each page that takes no argument, by its path after `#/`. */

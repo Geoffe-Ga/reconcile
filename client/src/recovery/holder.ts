@@ -85,6 +85,16 @@ export interface ReleaseServices {
   readonly now: () => number;
 }
 
+/**
+ * Where a hold stands, as Help someone recover says it: waiting for the
+ * relay to take the alert (`soon`), holding until a relay minute, `ready` to
+ * go on the next complete sync pass, `sent`, or `stopped` by a cancel, which
+ * it reads as soon as this device has seen one.
+ */
+export type HoldStatus =
+  | { readonly kind: 'soon' | 'ready' | 'sent' | 'stopped' }
+  | { readonly kind: 'holding'; readonly until: number };
+
 /** One hold as Help someone recover shows it. */
 export interface HoldView {
   /** The alert's event id. */
@@ -92,10 +102,7 @@ export interface HoldView {
   readonly groupId: string;
   /** The person's name in the group. */
   readonly name: string;
-  /** The relay minute the hold ends, or null until the relay has the alert. */
-  readonly until: number | null;
-  /** How it ended, or null while it holds: stopped as soon as this device sees a cancel. */
-  readonly ended: HoldEnd['kind'] | null;
+  readonly status: HoldStatus;
 }
 
 /** The person's encryption key in `state`, or null when they have none or have gone. */
@@ -237,18 +244,33 @@ export async function afterEveryPass(
   await afterSyncPass(services);
 }
 
-/** Every hold on this device, group by group in the store's order, oldest first, as Help someone recover shows them. */
-export function holdViews(groups: readonly Group[]): HoldView[] {
+/** Where `hold` stands in `state` by `relayNow`, the group's relay minute as this device estimates it. */
+function statusOf(state: GroupState, hold: RecoveryHold, relayNow: number): HoldStatus {
+  if (hold.ended !== undefined) return { kind: hold.ended.kind };
+  if (isCancelled(state, hold)) return { kind: 'stopped' };
+  const until = holdEnd(state, hold);
+  if (until === null) return { kind: 'soon' };
+  return relayNow < until ? { kind: 'holding', until } : { kind: 'ready' };
+}
+
+/**
+ * Every hold on this device, group by group in the store's order, oldest
+ * first, as Help someone recover shows them, each read at `relayNow(group)`.
+ */
+export function holdViews(
+  groups: readonly Group[],
+  relayNow: (group: Group) => number,
+): HoldView[] {
   return groups.flatMap((group) => {
     const holds = group.recoveryHolds ?? [];
     if (holds.length === 0) return [];
     const state = foldGroup(group);
+    const now = relayNow(group);
     return holds.map((hold) => ({
       alert: hold.alert,
       groupId: group.groupId,
       name: displayName(state, hold.person) ?? '',
-      until: holdEnd(state, hold),
-      ended: hold.ended?.kind ?? (isCancelled(state, hold) ? 'stopped' : null),
+      status: statusOf(state, hold, now),
     }));
   });
 }

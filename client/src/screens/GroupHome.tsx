@@ -75,6 +75,11 @@ export interface GroupHomeProps {
    * once each; none when absent, or once the group has dissolved (#108).
    */
   readonly recoveryCard?: ReactNode;
+  /**
+   * The recovery alert (#118), while a recovery of this person waits, first
+   * among the quiet cards; none when absent, or once the group has dissolved.
+   */
+  readonly alertCard?: ReactNode;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -900,14 +905,15 @@ function OpenSections(props: OpenSectionsProps) {
 
 /**
  * The quiet cards a group that goes on may show, after the last list of open
- * Proposals: a backup (#78), then the recovery shares this device holds there
- * (#109). None once it has dissolved: no backup file carries its read-only
+ * Proposals: the recovery alert while a recovery of this person waits (#118),
+ * a backup (#78), then the recovery shares this device holds there (#109). None once it has dissolved: no backup file carries its read-only
  * copy, and no share held there can go back to anyone (#108).
  */
 function QuietCards({ props }: { readonly props: GroupHomeProps }) {
   if (props.state.dissolved !== null) return null;
   return (
     <>
+      {props.alertCard}
       {props.backupCard}
       {props.recoveryCard}
     </>

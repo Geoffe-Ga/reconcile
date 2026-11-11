@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { messages } from '../app/messages';
 import { axeViolations } from '../test/axe';
 import { RecoveryContacts, type RecoveryContactsProps } from './RecoveryContacts';
 
@@ -251,6 +252,19 @@ describe('RecoveryContacts', () => {
     });
     expect(screen.getByRole('button', { name: 'Save recovery contacts' })).toBeEnabled();
     expect(screen.getByRole('checkbox', { name: 'Cal' })).toBeChecked();
+  });
+
+  it('after a recovery, asks the person to choose again, as a notice, and passes axe (#118)', async () => {
+    setup({ recovered: true });
+    const notice = screen.getByText(messages.recovery.recovered);
+    expect(notice).toHaveClass('notice');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Choose recovery contacts');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of a recovery on a device that wasn’t recovered', () => {
+    setup();
+    expect(screen.queryByText(messages.recovery.recovered)).toBeNull();
   });
 
   it('says plainly when no one can hold a share yet, with nothing to save', async () => {

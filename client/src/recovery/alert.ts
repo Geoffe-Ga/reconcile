@@ -82,21 +82,38 @@ function answerable(group: Group, state: GroupState): boolean {
   return group.archived === undefined && group.leaving === undefined && present;
 }
 
-/** The alerts in `group` that open for this device and haven't ended by `relayNow`. */
-function alertsIn(group: Group, relayNow: number): SeenAlert[] {
+/** The alerts in `group` that open for this device, ended or not. */
+function alertsIn(group: Group): SeenAlert[] {
   const { kxKey } = group;
   if (kxKey === undefined) return [];
   const state = foldGroup(group);
   if (!answerable(group, state)) return [];
   const cancelled = cancelledTags(group, state);
   return state.recoveryAlerts.flatMap((alert) => {
-    const completes = alert.received + HOLD_MINUTES;
     const tag = alert.by === group.me.author ? null : tagIn(group, alert, kxKey);
-    if (tag === null || relayNow >= completes) return [];
+    if (tag === null) return [];
+    const completes = alert.received + HOLD_MINUTES;
     return [
       { id: alert.id, groupId: group.groupId, completes, tag, cancelled: cancelled.has(tag) },
     ];
   });
+}
+
+/**
+ * Every alert this device opens, group by group in the store's order, ended
+ * or not: what a screen folds once per store change, then filters by the
+ * clock with {@link stillRunning}.
+ */
+export function openedAlerts(groups: readonly Group[]): SeenAlert[] {
+  return groups.flatMap(alertsIn);
+}
+
+/** The alerts whose hold hasn't ended by `relayNow(groupId)`, the relay's minute as this device estimates it there. */
+export function stillRunning(
+  alerts: readonly SeenAlert[],
+  relayNow: (groupId: string) => number,
+): SeenAlert[] {
+  return alerts.filter(({ groupId, completes }) => relayNow(groupId) < completes);
 }
 
 /**
@@ -108,7 +125,11 @@ export function recoveryAlerts(
   groups: readonly Group[],
   relayNow: (group: Group) => number,
 ): SeenAlert[] {
-  return groups.flatMap((group) => alertsIn(group, relayNow(group)));
+  const byId = new Map(groups.map((group) => [group.groupId, group]));
+  return stillRunning(openedAlerts(groups), (groupId) => {
+    const group = byId.get(groupId);
+    return group === undefined ? Infinity : relayNow(group);
+  });
 }
 
 /**

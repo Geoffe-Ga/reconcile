@@ -1,5 +1,5 @@
 /**
- * Group home's slots for the backup card (#78) and the recovery card (#109):
+ * Group home's slots for the recovery alert (#118), the backup card (#78) and the recovery card (#109):
  * right after the open Proposals, ahead of the focus when it would follow them
  * (#107), and before the Document.
  */
@@ -83,6 +83,20 @@ describe('GroupHome', () => {
     expect(
       recovery.compareDocumentPosition(documentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('shows the recovery alert it’s given first among the quiet cards, before the backup card (#118)', () => {
+    renderHome({
+      alertCard: <p>The recovery alert</p>,
+      backupCard: <p>The backup card</p>,
+      recoveryCard: <p>The recovery card</p>,
+    });
+
+    const alert = screen.getByText('The recovery alert');
+    const open = screen.getByRole('region', { name: 'Open Proposals' });
+    const backup = screen.getByText('The backup card');
+    expect(open.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(alert.compareDocumentPosition(backup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows no recovery card once the group has dissolved (#108, #109)', () => {

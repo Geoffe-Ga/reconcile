@@ -207,6 +207,24 @@ describe('Settings', () => {
     expect(within(section).getByRole('listitem')).toHaveTextContent(
       'You’re holding a recovery share for Ana (Riverside Tenants)',
     );
+    // A contact can help the person back in from here (#118).
+    expect(within(section).getByRole('link', { name: 'Help someone recover' })).toHaveAttribute(
+      'href',
+      '#/help-recover',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Help someone recover only to a device that holds a share (#118)', () => {
+    setup({ recovery: { status: null, held: [], canChoose: true } });
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).queryByRole('link', { name: 'Help someone recover' })).toBeNull();
+  });
+
+  it('asks a device recovered with contacts to choose again, as a notice (#118)', async () => {
+    setup({ recovery: { status: null, held: [], canChoose: true, recovered: true } });
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).getByText(/You’re back in/)).toHaveClass('notice');
     expect(await axeViolations()).toEqual([]);
   });
 

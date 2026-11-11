@@ -187,6 +187,33 @@ describe('holding a share for someone recovering', DEVICES, () => {
     expect(after.recoveryHolds).toBeUndefined();
   });
 
+  it('reads as holding soon until the relay has the alert, and stopped once a cancel is seen', async () => {
+    const { fake, world, code, check, ana } = await setUp();
+    const { ben, groupId } = world;
+    fake.offline = true;
+    await approveRecovery(ben.services, { code, groupId, person: ana, check });
+    const status = async () =>
+      holdViews(await ben.services.store.listGroups(), () => fake.minute)[0]?.status;
+    expect(await status()).toEqual({ kind: 'soon' });
+
+    fake.offline = false;
+    await ben.services.sync.syncOnce();
+    expect(await status()).toMatchObject({ kind: 'holding' });
+    const tag = await holdTag(ben, groupId);
+    const anaGroup = await groupOn(world.ana, groupId);
+    const cancel = signEvent(anaGroup.signingKey, {
+      type: 'recovery-cancel',
+      group: groupId,
+      ts: 0,
+      body: { alert: tag },
+    });
+    await world.ana.services.store.enqueue(groupId, cancel.record);
+    await world.ana.services.sync.syncOnce();
+    // Ben's GET brings the cancel; the hold reads stopped at once, as the pass after it ends it.
+    await ben.services.sync.syncOnce();
+    expect(await status()).toEqual({ kind: 'stopped' });
+  });
+
   it('takes the number with spaces, as it was read out in two groups of three', async () => {
     const { world, code, check, ana } = await setUp();
     const { ben, groupId } = world;
@@ -231,11 +258,14 @@ describe('holding a share for someone recovering', DEVICES, () => {
     expect(alertBox).not.toContain(ana);
     expect(alertBox).not.toContain(code.slice(4, 20));
 
-    const [view] = holdViews(await ben.services.store.listGroups());
+    const groups = await ben.services.store.listGroups();
     const received = await alertReceived(ben, groupId);
-    expect(view).toMatchObject({ groupId, name: 'Ana', until: received + HOLD, ended: null });
+    const at = (minute: number) => holdViews(groups, () => minute)[0]?.status;
+    expect(holdViews(groups, () => 0)[0]).toMatchObject({ groupId, name: 'Ana' });
+    expect(at(received + HOLD - 1)).toEqual({ kind: 'holding', until: received + HOLD });
+    expect(at(received + HOLD)).toEqual({ kind: 'ready' });
     await passAt(fake, received + HOLD, ben);
-    const [sent] = holdViews(await ben.services.store.listGroups());
-    expect(sent).toMatchObject({ name: 'Ana', ended: 'sent' });
+    const [sent] = holdViews(await ben.services.store.listGroups(), () => received + HOLD);
+    expect(sent?.status).toEqual({ kind: 'sent' });
   });
 });

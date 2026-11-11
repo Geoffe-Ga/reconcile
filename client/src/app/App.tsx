@@ -97,7 +97,14 @@ import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
 import { chooseContacts } from '../store/recovery';
+import { approveRecovery, holdViews } from '../recovery/holder';
+import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
+import { HelpRecover } from '../screens/HelpRecover';
+import { RecoverStart } from '../screens/RecoverStart';
+import { messages } from './messages';
+import { RecoveryAlert } from './RecoveryAlert';
 import { useRecovery } from './useRecovery';
+import { useRecoveryAlert } from './useRecoveryAlert';
 import { useRelayBackupStatus } from './useRelayBackup';
 
 /** Props for {@link App}. */
@@ -116,8 +123,19 @@ interface StartScreenProps {
   readonly persistence: Persistence | null;
 }
 
+/**
+ * The recovery alert (#118) while a recovery of this person waits, with
+ * Cancel this recovery; null when there is none. Start shows it first, and
+ * every group home first among its quiet cards.
+ */
+function useAlertCard(services: AppServices): ReactNode {
+  const { summary, cancel } = useRecoveryAlert(services);
+  return summary === null ? null : <RecoveryAlert summary={summary} onCancel={cancel} />;
+}
+
 function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
   const groups = useGroupList(services.store);
+  const alert = useAlertCard(services);
   const onRestore = useCallback(
     (bytes: Uint8Array, passphrase: string) => restoreBackup(services, bytes, passphrase),
     [services],
@@ -128,6 +146,7 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
       onOpenInvite={onOpenInvite}
       persistence={persistence}
       onRestore={onRestore}
+      alert={alert}
     />
   );
 }
@@ -189,6 +208,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
         status: recovery.status,
         held: recovery.held,
         canChoose: recovery.groups.length > 0,
+        recovered: recovery.recovered,
       }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
@@ -214,10 +234,71 @@ function RecoveryScreen({ services }: { readonly services: AppServices }) {
     <RecoveryContacts
       groups={recovery.groups}
       current={recovery.status}
+      recovered={recovery.recovered && recovery.status === null}
       onSave={async (choice) => {
         await chooseContacts(services, choice);
         replaceRoute({ name: 'settings' });
       }}
+    />
+  );
+}
+
+/** A stored group as it is, for `useGroups`. */
+const wholeGroup = (group: Group): Group => group;
+
+/**
+ * Recover with my contacts (#118), on a new device: keeps a request and
+ * shows its code, shares it with fixed words and the app's address beside
+ * it (the code's whole point is to reach the person's contacts), and polls
+ * until a backup opens. Then it syncs and opens the picker, which asks the
+ * person to choose their contacts again. Stop recovering forgets the code.
+ */
+function RecoverScreen({ services }: { readonly services: AppServices }) {
+  const start = useCallback(() => startRecovery(services), [services]);
+  const session = useMemo(() => recoverSession(services), [services]);
+  const onShare = useCallback(
+    (code: string) =>
+      shareOrCopy(
+        { text: `${messages.recover.message} ${code}`, url: `${services.origin}/` },
+        services,
+      ),
+    [services],
+  );
+  const onRestored = useCallback(() => {
+    void services.sync.syncOnce();
+    replaceRoute({ name: 'recovery' });
+  }, [services]);
+  const onStop = useCallback(async () => {
+    await stopRecovery(services);
+    replaceRoute({ name: 'start' });
+  }, [services]);
+  return (
+    <RecoverStart
+      start={start}
+      poll={session.poll}
+      onShare={onShare}
+      onRestored={onRestored}
+      onStop={onStop}
+    />
+  );
+}
+
+/**
+ * Help someone recover (#118), on a recovery contact's device: the shares it
+ * holds, each recovery it's helping with read at the relay's minute as this
+ * device estimates it, and Approve.
+ */
+function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  const groups = useGroups(services.store, wholeGroup);
+  const deviceNow = useNow(services.now);
+  if (recovery === null || groups === null) return null;
+  const holds = holdViews(groups, (group) => relayMinuteNow(group, deviceNow));
+  return (
+    <HelpRecover
+      held={recovery.held}
+      holds={holds}
+      onApprove={(approval) => approveRecovery(services, approval)}
     />
   );
 }
@@ -410,6 +491,7 @@ interface GroupScreenProps {
 
 function GroupScreen({ services, groupId }: GroupScreenProps) {
   const deviceNow = useNow(services.now);
+  const alert = useAlertCard(services);
   return (
     <GroupGate groupId={groupId}>
       {(group) => (
@@ -433,6 +515,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
             ) : null
           }
+          alertCard={alert === null ? null : <div className="backup-slot">{alert}</div>}
           recoveryCard={
             <HeldShareCard
               held={group.newShares}
@@ -847,7 +930,10 @@ interface BareScreenProps {
   readonly guide: GuideOffer;
 }
 
-/** A page that takes no argument: Create group, Settings, either side of linking, or the recovery picker. */
+/**
+ * A page that takes no argument: Create group, Settings, either side of
+ * linking, the recovery picker, or either side of recovering with contacts.
+ */
 function BareScreen({ route, services, guide }: BareScreenProps) {
   switch (route.name) {
     case 'create':
@@ -860,6 +946,10 @@ function BareScreen({ route, services, guide }: BareScreenProps) {
       return <LinkThisScreen services={services} />;
     case 'recovery':
       return <RecoveryScreen services={services} />;
+    case 'recover':
+      return <RecoverScreen services={services} />;
+    case 'helpRecover':
+      return <HelpRecoverScreen services={services} />;
   }
 }
 

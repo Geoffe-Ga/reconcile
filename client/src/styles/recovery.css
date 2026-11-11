@@ -101,3 +101,50 @@
 .recovery-card .recovery-held {
   color: var(--body);
 }
+
+/* After a recovery with contacts (#118), the notice to choose again: the stack's gap spaces it. */
+.recovery-again {
+  max-width: 34em;
+}
+
+.stack > .notice.recovery-again {
+  margin-block-start: 0;
+}
+
+/*
+ * The recovery alert (#118) on Start and group home: a notice with a warning
+ * rule, the issue's words in ui type, then Cancel this recovery (secondary).
+ * Never a modal or a banner. Once cancelled, the rule turns hairline and the
+ * words say so, so the state never rests on color alone.
+ */
+.recovery-alert {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.recovery-alert > p {
+  margin: 0;
+}
+
+.recovery-alert-cancelled {
+  border-inline-start-color: var(--hairline);
+}
+
+@media (min-width: 40rem) {
+  .backup-slot > .recovery-alert {
+    grid-column: 2;
+  }
+}
+
+/* The new device's wait (#118), in caption type, at the lede's measure. */
+.recover-wait {
+  max-width: 37em;
+}
