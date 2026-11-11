@@ -14,12 +14,13 @@ import { NewcomerProgress, WaitingNote } from '../app/Newcomer';
 import { routeHref } from '../app/router';
 import { RulesLink } from '../app/RulesLink';
 import { SendStatus } from '../app/SendStatus';
+import { ShareLink } from '../app/ShareLink';
 import { formatDay } from '../app/format';
 import { StewardSeats } from '../app/StewardSeats';
 import { SuspendedNote } from '../app/stewards';
 import { SuspendDialog } from '../app/SuspendDialog';
 import { formatDate, formatMinute, formatSyncedAt, minuteIso } from '../app/time';
-import { BackLink, Field, PageHeader } from '../app/ui';
+import { BackLink, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
 import { VouchDialog } from '../app/VouchDialog';
 import { vouchWanted } from '../engine/admission';
@@ -762,91 +763,16 @@ function LeavingNote() {
   );
 }
 
-/** Where Copy invite link has got to. */
-type InviteStatus =
-  | { readonly kind: 'idle' }
-  | { readonly kind: 'making' }
-  | { readonly kind: 'failed' }
-  | { readonly kind: 'made'; readonly link: string; readonly copied: boolean };
-
-/** The status line for each step. */
-function statusLine(status: InviteStatus): string {
-  switch (status.kind) {
-    case 'idle':
-      return '';
-    case 'making':
-      return messages.home.making;
-    case 'failed':
-      return messages.home.makeFailed;
-    case 'made':
-      return status.copied ? messages.home.copied : messages.home.copyFailed;
-  }
-}
-
-interface InviteProps {
-  readonly makeInviteLink: GroupHomeProps['makeInviteLink'];
-  readonly copyText: GroupHomeProps['copyText'];
-}
-
-/**
- * Copy invite link, with spec §9's warning beside it. Each press makes a new
- * link: the clipboard write starts at the press and waits for the link, and
- * the link appears only once the relay holds the whole envelope. When making
- * it fails, nothing is copied and the line says so.
- */
-function Invite({ makeInviteLink, copyText }: InviteProps) {
-  const [status, setStatus] = useState<InviteStatus>({ kind: 'idle' });
-  const warning = useId();
-  const making = status.kind === 'making';
-  const copy = () => {
-    if (making) return;
-    setStatus({ kind: 'making' });
-    const link = makeInviteLink();
-    const copied = copyText(link);
-    link.then(
-      (made) => {
-        copied.then(
-          () => {
-            setStatus({ kind: 'made', link: made, copied: true });
-          },
-          () => {
-            setStatus({ kind: 'made', link: made, copied: false });
-          },
-        );
-      },
-      () => {
-        copied.catch(() => undefined);
-        setStatus({ kind: 'failed' });
-      },
-    );
-  };
-  return (
-    <div className="stack">
-      <p id={warning} className="lede">
-        {messages.home.inviteWarning}
-      </p>
-      <Button className="button button-primary" onPress={copy} aria-describedby={warning}>
-        {messages.home.copyInvite}
-      </Button>
-      <div className="field-status">
-        {status.kind === 'made' ? (
-          <Field
-            label={messages.home.inviteField}
-            value={status.link}
-            isReadOnly
-            inputClassName="input-link"
-            onFocus={(event) => {
-              event.currentTarget.select();
-            }}
-          />
-        ) : null}
-        <p role="status" className="status">
-          {statusLine(status)}
-        </p>
-      </div>
-    </div>
-  );
-}
+/** Copy invite link's words, with spec §9's warning beside it (#73). */
+const INVITE_WORDS = {
+  warning: messages.home.inviteWarning,
+  button: messages.home.copyInvite,
+  field: messages.home.inviteField,
+  making: messages.home.making,
+  failed: messages.home.makeFailed,
+  copied: messages.home.copied,
+  copyFailed: messages.home.copyFailed,
+};
 
 /**
  * The front door's Applications (#121), given only while the door is open
@@ -864,7 +790,7 @@ function InviteSections(props: GroupHomeProps & { readonly current: boolean }) {
       )}
       {can(state, me, 'invite') && current ? (
         <Section title={messages.home.invite}>
-          <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
+          <ShareLink words={INVITE_WORDS} makeLink={makeInviteLink} copyText={copyText} />
         </Section>
       ) : null}
     </>

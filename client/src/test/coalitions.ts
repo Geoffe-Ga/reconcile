@@ -176,10 +176,21 @@ export class Logs {
     return this.add('coalition', received, who, { type: 'proposal', body });
   }
 
-  /** `who`'s motion in the coalition: new text for its first Atom. */
-  motion(received: number, who: string, text = 'We keep the river and its banks clean.'): string {
+  /** `who`'s motion in the coalition: new text for its first Atom, carrying `dispatch` when given (#124). */
+  motion(
+    received: number,
+    who: string,
+    text = 'We keep the river and its banks clean.',
+    dispatch?: { readonly title: string; readonly text: string },
+  ): string {
     const atom = `${this.ids.coalition ?? ''}.0`;
-    const body = { atom, title: 'Banks too', why: 'The banks matter.', text };
+    const body = {
+      atom,
+      title: 'Banks too',
+      why: 'The banks matter.',
+      text,
+      ...(dispatch === undefined ? {} : { dispatch }),
+    };
     return this.add('coalition', received, who, { type: 'proposal', body });
   }
 

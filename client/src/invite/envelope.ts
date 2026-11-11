@@ -209,19 +209,21 @@ export function encodeHeader(header: InviteHeader): Uint8Array {
   );
 }
 
-type Json = Readonly<Record<string, unknown>>;
+/** A JSON object as an envelope's header holds it. */
+export type Json = Readonly<Record<string, unknown>>;
 
-function isObject(value: unknown): value is Json {
+/** Whether `value` is a JSON object, not a list or null. */
+export function isObject(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Text of at most `max` code points plus a "…", or null. */
-function textUpTo(value: unknown, max: number): string | null {
+export function textUpTo(value: unknown, max: number): string | null {
   return typeof value === 'string' && codePointLength(value) <= max + 1 ? value : null;
 }
 
 /** 43 base64url characters that encode exactly 32 bytes, or null. */
-function parseSecret(value: unknown): Uint8Array | null {
+export function parseSecret(value: unknown): Uint8Array | null {
   if (typeof value !== 'string' || !SECRET.test(value)) return null;
   const bytes = fromBase64url(value);
   // Re-encoding catches a final character whose spare bits aren't zero.
@@ -256,7 +258,8 @@ function parseCleared(value: unknown): string[] | null {
   return ids.length === list.length ? ids : null;
 }
 
-function parseJson(bytes: Uint8Array): unknown {
+/** The JSON in UTF-8 `bytes`, or undefined when they aren't UTF-8 JSON. */
+export function parseJson(bytes: Uint8Array): unknown {
   try {
     const value: unknown = JSON.parse(decoder.decode(bytes));
     return value;
@@ -290,12 +293,57 @@ function isEpoch(value: unknown): value is number {
 /** The envelope's blobs, in the order they're posted: the header, then each chunk. */
 export function sealEnvelope(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   envelope: Envelope,
 ): Uint8Array<ArrayBuffer>[] {
   const chunks = packEntries(envelope.entries);
   const header = encodeHeader({ ...envelope, chunkCount: chunks.length });
+  return sealChunked(seal, channel, header, chunks);
+}
+
+/**
+ * The blobs of any M2-03 envelope, in the order they're posted: `header`,
+ * then each chunk, each sealed under `channel`'s key with its mailbox id.
+ * An invite, a reconcile card (#114) and a follow link (#124) all post one.
+ */
+export function sealChunked(
+  seal: Seal,
+  { mailbox, key }: InviteChannel,
+  header: Uint8Array,
+  chunks: readonly Uint8Array[],
+): Uint8Array<ArrayBuffer>[] {
   return [header, ...chunks].map((plaintext) => seal.seal(mailbox, key, plaintext));
+}
+
+/**
+ * Any M2-03 envelope in `blobs`, its mailbox's records in relay order: the
+ * header `decode` reads, and the entries of its chunks. Null unless every
+ * blob opens, the first decodes, and exactly its chunk count of chunks
+ * follow, each holding whole entries: all or nothing, so a sender learns
+ * nothing of why.
+ */
+export function openChunked<Header extends { readonly chunkCount: number }>(
+  seal: Seal,
+  { mailbox, key }: InviteChannel,
+  blobs: readonly Uint8Array[],
+  decode: (bytes: Uint8Array) => Header | null,
+): { readonly header: Header; readonly entries: LogRecord[] } | null {
+  const opened: Uint8Array[] = [];
+  for (const blob of blobs) {
+    const plaintext = seal.open(mailbox, key, blob);
+    if (plaintext === null) return null;
+    opened.push(plaintext);
+  }
+  const [first, ...chunks] = opened;
+  const header = first === undefined ? null : decode(first);
+  if (header === null || header.chunkCount !== chunks.length) return null;
+  const entries: LogRecord[] = [];
+  for (const chunk of chunks) {
+    const read = unpackChunk(chunk);
+    if (read === null) return null;
+    entries.push(...read);
+  }
+  return { header, entries };
 }
 
 /**
@@ -305,24 +353,11 @@ export function sealEnvelope(
  */
 export function openEnvelope(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   blobs: readonly Uint8Array[],
 ): Envelope | null {
-  const opened: Uint8Array[] = [];
-  for (const blob of blobs) {
-    const plaintext = seal.open(mailbox, key, blob);
-    if (plaintext === null) return null;
-    opened.push(plaintext);
-  }
-  const [first, ...chunks] = opened;
-  const header = first === undefined ? null : decodeHeader(first);
-  if (header === null || header.chunkCount !== chunks.length) return null;
-  const entries: LogRecord[] = [];
-  for (const chunk of chunks) {
-    const read = unpackChunk(chunk);
-    if (read === null) return null;
-    entries.push(...read);
-  }
-  const { groupSecret, epoch, preview, token, cleared } = header;
-  return { groupSecret, epoch, preview, token, entries, cleared };
+  const opened = openChunked(seal, channel, blobs, decodeHeader);
+  if (opened === null) return null;
+  const { groupSecret, epoch, preview, token, cleared } = opened.header;
+  return { groupSecret, epoch, preview, token, entries: opened.entries, cleared };
 }

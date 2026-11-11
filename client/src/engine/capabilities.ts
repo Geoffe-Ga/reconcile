@@ -68,6 +68,19 @@ export const DEFAULT_JOIN_LEVEL: Level = 'collaborator';
  */
 export const PARTICIPANT_LEVEL: Level = 'co-creator';
 
+/**
+ * The level a coalition's followers read at (#124; ADR-0003, ADR-0021): the
+ * Member level, which follows and reads but doesn't govern. A follower
+ * writes nothing to the coalition's log, so no roster names them and `can()`
+ * never sees them: the screens ask {@link followerCan} instead.
+ */
+export const FOLLOWER_LEVEL: Level = 'member';
+
+/** Whether a coalition's follower may do `capability` (#124): what the Member level grants. */
+export function followerCan(capability: Capability): boolean {
+  return (LEVEL_CAPABILITIES[FOLLOWER_LEVEL] as readonly Capability[]).includes(capability);
+}
+
 /** True when `value` is one of {@link LEVELS}. */
 export function isLevel(value: unknown): value is Level {
   return LEVELS.some((level) => level === value);

@@ -25,6 +25,16 @@ import { type Bar, DAY_MINUTES, type ProposalClass, type Rules } from './rules';
 /** How long after a motion's deadline its results still count: 7 days, in relay minutes. */
 export const RESULT_GRACE_MINUTES = 7 * DAY_MINUTES;
 
+/**
+ * The relay minute a motion's outcome turns final at the latest: its
+ * deadline plus {@link RESULT_GRACE_MINUTES}, when results on it stop
+ * counting and a pass can no longer be contested into a fail. A pass is
+ * final only then, and so is a coalition Dispatch it carries (#124).
+ */
+export function settlesAt(motion: { readonly deadline: number }): number {
+  return motion.deadline + RESULT_GRACE_MINUTES;
+}
+
 /** The largest coalition in which every seat must pass. From one more, two-thirds will do. */
 export const UNANIMOUS_UP_TO = 4;
 

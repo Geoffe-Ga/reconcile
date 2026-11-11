@@ -32,6 +32,8 @@ export type Route =
   | { readonly name: 'join'; readonly payload: string | null }
   /** A reconcile card (#114): its seed as written after `#reconcile/`, or null once read. */
   | { readonly name: 'card'; readonly payload: string | null }
+  /** A coalition's follow link (#124): its seed as written after `#follow/`, or null once read. */
+  | { readonly name: 'follow'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
   /** A group's front door (#121): what follows `#door/`, as written. */
@@ -236,11 +238,17 @@ const INVITE_PREFIX = '#join/';
 /** A reconcile card's own form (#114): `#reconcile/{seed}`, with no slash after `#`. */
 const CARD_PREFIX = '#reconcile/';
 
-/** `#reconcile/{seed}`: the card, or Start for anything with more after the seed. */
-function cardRoute(rest: readonly string[]): Route {
+/** A follow link's own form (#124): `#follow/{seed}`, with no slash after `#`. */
+const FOLLOW_PREFIX = '#follow/';
+
+/**
+ * `#reconcile/{seed}` or `#follow/{seed}`: the card's or the follow link's
+ * page, named `name`, or Start for anything with more after the seed.
+ */
+function seedRoute(name: 'card' | 'follow', rest: readonly string[]): Route {
   const [payload] = rest;
   return rest.length === 1 && payload !== undefined && SEGMENT.test(payload)
-    ? { name: 'card', payload }
+    ? { name, payload }
     : START;
 }
 
@@ -256,6 +264,8 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['link-this', { name: 'linkThis' }],
   // A card once its seed has left the address bar (#114).
   ['card', { name: 'card', payload: null }],
+  // A follow link once its seed has left the address bar (#124).
+  ['follow', { name: 'follow', payload: null }],
 ]);
 
 /** The pages after `#/` that read what follows them: Join, a group, Personal (#93) and a coalition (#120). */
@@ -275,7 +285,8 @@ const DOOR_PREFIX = '#door/';
 /**
  * A link's own route, with no slash after `#`: a share link's page (#105) or
  * a front door (#121), each reading its payload itself, an invite's (spec
- * §3) or a reconcile card's (#114); null for any other hash.
+ * §3), a reconcile card's (#114) or a follow link's (#124); null for any
+ * other hash.
  */
 function linkRoute(hash: string): Route | null {
   if (hash.startsWith(SHARE_PREFIX))
@@ -286,7 +297,12 @@ function linkRoute(hash: string): Route | null {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
   }
-  if (hash.startsWith(CARD_PREFIX)) return cardRoute(hash.slice(CARD_PREFIX.length).split('/'));
+  if (hash.startsWith(CARD_PREFIX)) {
+    return seedRoute('card', hash.slice(CARD_PREFIX.length).split('/'));
+  }
+  if (hash.startsWith(FOLLOW_PREFIX)) {
+    return seedRoute('follow', hash.slice(FOLLOW_PREFIX.length).split('/'));
+  }
   return null;
 }
 
@@ -396,6 +412,8 @@ function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
       return joinHref(route.payload);
     case 'card':
       return route.payload === null ? '#/card' : `${CARD_PREFIX}${route.payload}`;
+    case 'follow':
+      return route.payload === null ? '#/follow' : `${FOLLOW_PREFIX}${route.payload}`;
     case 'shared':
       return `${SHARE_PREFIX}${route.payload}`;
     case 'door':
