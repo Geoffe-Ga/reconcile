@@ -12,7 +12,9 @@ import {
   type SentApplication,
   withApplications,
 } from './applications';
-import { type Group, openStore } from './db';
+import { vaultKeyFromPrf } from '../crypto/keyVault';
+import { type Group, openStore, VaultLocked } from './db';
+import type { VaultLock } from './vault';
 
 freshIndexedDBPerTest();
 
@@ -171,5 +173,42 @@ describe('the applications this device sent, in a store of their own (#121)', ()
     await store.addSent(sent('a', 1));
     expect(await store.listSent()).toHaveLength(1);
     store.close();
+  });
+});
+
+describe('the front door under a passkey vault (#95, #121)', () => {
+  const SALT = new Uint8Array(32).fill(0x33);
+  const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+  const LOCK: VaultLock = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+  it('keeps a group’s inbox, which holds no key, through sealing, a locked launch and unlocking', async () => {
+    const store = await openStore();
+    await store.addGroup(GROUP);
+    await store.updateInbox('group-1', () => withApplications(INBOX, [received('a', 1)]));
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+
+    const locked = await openStore();
+    await locked.updateInbox('group-1', (held) =>
+      withApplications(held ?? INBOX, [received('b', 2)]),
+    );
+    await expect(locked.getGroup('group-1')).rejects.toThrow(VaultLocked);
+    expect(await locked.unlock(KEY)).toBe(true);
+    const door = (await locked.getGroup('group-1'))?.door;
+    expect(door?.applications.map((application) => application.id)).toEqual(['a', 'b']);
+    locked.close();
+  });
+
+  it('keeps the applications this device sent readable while the keys are locked, outside the vault', async () => {
+    const store = await openStore();
+    await store.addGroup(GROUP);
+    await store.addSent(sent('a', 1));
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+
+    const locked = await openStore();
+    expect((await locked.listSent()).map((application) => application.id)).toEqual(['a']);
+    await expect(locked.listGroups()).rejects.toThrow(VaultLocked);
+    locked.close();
   });
 });
