@@ -522,8 +522,9 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
         eyebrow={eyebrowOf(proposal, true)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
-      />
-      <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      >
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      </PageHeader>
       <div className="stack">
         <div className="meta-lines">
           <p className="meta">
@@ -592,8 +593,9 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         eyebrow={eyebrowOf(proposal, proposal.final)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
-      />
-      <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      >
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      </PageHeader>
       {proposal.final ? (
         <ResultView
           state={state}
@@ -721,8 +723,9 @@ function Waiting({ state, me, id, body, pending, reachable }: WaitingProps) {
         eyebrow={messages.proposal.eyebrowNew}
         title={body.title}
         pageTitle={messages.proposal.pageTitle}
-      />
-      <DocumentLine lead={waitingLead(state, id, body)} groupId={state.group ?? ''} />
+      >
+        <DocumentLine lead={waitingLead(state, id, body)} groupId={state.group ?? ''} />
+      </PageHeader>
       <p className="lede" dir="auto">
         {body.why}
       </p>

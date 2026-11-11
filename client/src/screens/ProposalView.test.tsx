@@ -790,6 +790,9 @@ describe('ProposalView, several Documents (#92)', () => {
     const lead = screen.getByRole('link', { name: 'Mission statement' });
     expect(lead).toHaveAttribute('href', `#/g/${log.group}/doc/${log.group}`);
     expect(lead.closest('.document-of')).not.toBeNull();
+    // It sits with the title, right under the h1, in the page's header.
+    const header = lead.closest('header');
+    expect(header?.querySelector('h1 + .document-of')).toBe(lead.closest('.document-of'));
     expect(screen.getByRole('region', { name: 'Changes to section 1' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
