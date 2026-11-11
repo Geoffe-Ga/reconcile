@@ -36,8 +36,12 @@
  * no Dispatch. A removal (#115) runs a fixed 14 days at its own bar without
  * the person it names, who may post one response; from its final pass they
  * only read, and the first valid `remove` takes them out as a leave would, so
- * the key changes once. The fold is pure: no I/O, no clock, no randomness, so
- * every device that folds the same records builds the same state.
+ * the key changes once. A `result` records a decided Proposal's counts and a
+ * commitment to its ballots (#111): with the ballots held, the fold checks it
+ * against them, and once a device has cleared them, the Proposal closes,
+ * counts and decides by the result it reads ahead. The fold is pure: no I/O,
+ * no clock, no randomness, so every device that folds the same records builds
+ * the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
@@ -73,6 +77,7 @@ import {
   recordResult,
   seatKeyFor,
 } from './coalition';
+import { ballotCommit, commitEntries, scoreCounts, scoresOf } from './commit';
 import { optionFor } from './composeOption';
 import { type Dispatch, dispatchFits, maySendDispatch } from './dispatches';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
@@ -103,13 +108,17 @@ import {
   isStewardProposal,
   type LevelBody,
   type NarrowBody,
+  type ParsedEvent,
   parseRecord,
   type ProposalBody,
   type ProposalEventBody,
   type ReconcileProposalBody,
+  type RecordedOutcome,
   type RemovalProposalBody,
   type RemovalResponseBody,
   type RemoveBody,
+  type ResultBody,
+  type ResultVersion,
   type RulesProposalBody,
   type Score,
   type StewardProposalBody,
@@ -164,7 +173,7 @@ import {
   suspensionEnd,
   vacate,
 } from './stewards';
-import { type TallyDetail, tallyDetail, type TallyOutcome } from './tally';
+import { type TallyDetail, tallyDetail, type TallyOutcome, type TallyVersion } from './tally';
 import { codePointLength } from './text';
 
 /** The longest Proposal title, in code points. */
@@ -251,6 +260,24 @@ export interface Ballot {
   readonly voter: string;
   readonly scores: Readonly<Record<string, Score>>;
   readonly note: string | null;
+  /** The ballot's salt (#111), or `""` for one cast before salts. */
+  readonly salt: string;
+}
+
+/**
+ * The `result` the fold accepted for a Proposal (#111): the first valid one
+ * in relay order. Its `closedAt` is when the Proposal closed, its early
+ * close's minute or its deadline, and `versions` holds each version's counts
+ * in ballot order.
+ */
+export interface DecisionRecord {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly author: string;
+  readonly closedAt: number;
+  readonly versions: readonly ResultVersion[];
+  readonly commit: string;
 }
 
 /**
@@ -288,6 +315,12 @@ export interface Ballot {
  * is settled only when `final`. A Proposal still open when its group
  * dissolved (#108) is never final, so it has no outcome. `dispatch` is the
  * Dispatch it sends to the group if it passes (#112), or null.
+ *
+ * `result` is the decision record the fold accepted, or null (#111).
+ * `cleared` is true once this device has deleted the Proposal's ballots:
+ * `ballots` is then empty, and its early close, counts and outcome come from
+ * `result`. `mismatched` names, once each, the members whose results don't
+ * match the ballots on this device.
  */
 export interface Proposal {
   readonly id: string;
@@ -311,6 +344,9 @@ export interface Proposal {
   readonly final: boolean;
   readonly outcome: TallyOutcome;
   readonly dispatch: CarriedDispatch | null;
+  readonly result: DecisionRecord | null;
+  readonly cleared: boolean;
+  readonly mismatched: readonly string[];
 }
 
 /**
@@ -418,15 +454,32 @@ interface Receipt {
   readonly received: number;
 }
 
-/** A Proposal while the fold runs: its versions, ballots and early close still change. */
+/**
+ * A cleared Proposal's record, read ahead (#111): its first `result` after it
+ * in relay order, with that result's id and receipt.
+ */
+interface ReadAhead {
+  readonly id: string;
+  readonly received: number;
+  readonly body: ResultBody;
+}
+
+/** A Proposal while the fold runs: its versions, ballots, early close and result still change. */
 interface OpenProposal extends Omit<
   Proposal,
-  'versions' | 'ballots' | 'closedAt' | 'final' | 'outcome'
+  'versions' | 'ballots' | 'closedAt' | 'final' | 'outcome' | 'result' | 'mismatched'
 > {
   readonly versions: Version[];
   ballots: Ballot[];
   closedAt: number | null;
+  result: DecisionRecord | null;
+  readonly mismatched: string[];
+  /** A cleared Proposal's record, read ahead and checked when it opened; null for any other. */
+  readonly readAhead: ReadAhead | null;
 }
+
+/** An open Proposal as it is pushed, before #111's clearing fields are added. */
+type Opening = Omit<OpenProposal, 'cleared' | 'readAhead' | 'result' | 'mismatched'>;
 
 /** The Document at some relay minute, and the closed Proposals it was worked out from. */
 interface DocumentAt {
@@ -475,6 +528,12 @@ interface Draft {
   readonly dispatched: Set<string>;
   dissolved: Dissolution | null;
   coalition: CoalitionDraft | null;
+  /** The Proposals whose ballots this device has cleared (#111). */
+  readonly cleared: ReadonlySet<string>;
+  /** Each cleared Proposal's first result after it in relay order, found before the fold starts. */
+  readonly firstResults: ReadonlyMap<string, FirstResult>;
+  /** Cleared Proposals whose read-ahead result didn't hold up where it sits: read nothing ahead. */
+  readonly distrusted: ReadonlySet<string>;
 }
 
 /** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
@@ -672,10 +731,14 @@ function departs(draft: Draft, author: string): boolean {
 
 /**
  * True while a Proposal takes versions and ballots at relay minute `received`:
- * before its deadline, and before any early close.
+ * before its deadline, and before any early close. A cleared Proposal's early
+ * close is its read-ahead result's (#111), so it closes at the start of that
+ * minute.
  */
 function isOpenAt(proposal: OpenProposal, received: number): boolean {
-  return proposal.closedAt === null && received < proposal.deadline;
+  if (received >= proposal.deadline) return false;
+  if (proposal.cleared) return proposal.closedAt === null || received < proposal.closedAt;
+  return proposal.closedAt === null;
 }
 
 /** The Proposal open on `atom` at relay minute `received`, if any. An Atom has at most one. */
@@ -791,6 +854,89 @@ function opening(draft: Draft, body: ProposalEventBody, author: string, at: Rece
   };
 }
 
+/** Two outcomes are the same: the same kind, and on a pass the same version. */
+function sameOutcome(tallied: TallyOutcome, recorded: RecordedOutcome): boolean {
+  if (tallied.kind !== 'pass' || recorded.kind !== 'pass') return tallied.kind === recorded.kind;
+  return tallied.version === recorded.version;
+}
+
+/** True when the outcome a result names is what its own counts give at `bar`. */
+function outcomeFollows(body: ResultBody, bar: Bar): boolean {
+  const { outcome } = tallyDetail({
+    eligible: body.eligible,
+    versions: body.versions.map((v) => ({ id: v.id, scores: scoresOf(v.counts) })),
+    bar,
+  });
+  return sameOutcome(outcome, body.outcome);
+}
+
+/**
+ * True when a result's counts could close a Proposal when it says: no version
+ * scored by more than the eligible set, and, for an early close, every
+ * version scored by all of it.
+ */
+function closeIsPossible(body: ResultBody, deadline: number): boolean {
+  const early = body.closedAt < deadline;
+  return body.versions.every((version) => {
+    const scorers = version.counts.reduce((sum, n) => sum + n, 0);
+    return early ? scorers === body.eligible : scorers <= body.eligible;
+  });
+}
+
+/**
+ * True when a result read ahead can be a Proposal's record (#111): it arrived
+ * in a later minute than its close, closes the Proposal between its receipt
+ * and its deadline as its counts allow, counts the Proposal's eligible set
+ * from version 1 on, and names the outcome its counts give at the
+ * Proposal's bar.
+ */
+function recordFits(found: ReadAhead, opened: Opening, bar: Bar): boolean {
+  const { body } = found;
+  const { deadline } = opened;
+  return (
+    found.received > body.closedAt &&
+    body.closedAt >= opened.received &&
+    body.closedAt <= deadline &&
+    body.eligible === opened.eligible.length &&
+    body.versions[0]?.id === opened.id &&
+    closeIsPossible(body, deadline) &&
+    outcomeFollows(body, bar)
+  );
+}
+
+/**
+ * A cleared Proposal's record: its first result after it, when that result
+ * is for this group and fits (`recordFits`). Null for any other Proposal.
+ */
+function readAheadFor(draft: Draft, opened: Opening): ReadAhead | null {
+  const { id } = opened;
+  if (!draft.cleared.has(id) || draft.distrusted.has(id)) return null;
+  const found = draft.firstResults.get(id);
+  if (found === undefined || found.group !== draft.group) return null;
+  const fits = recordFits(found, opened, barOf(opened, draft.rules));
+  return fits ? { id: found.id, received: found.received, body: found.body } : null;
+}
+
+/**
+ * Opens a Proposal (#111): adds whether its ballots are cleared, its
+ * read-ahead record and an early close the record gives, then keeps it, in
+ * relay order, and returns it.
+ */
+function openProposal(draft: Draft, opened: Opening): OpenProposal {
+  const readAhead = readAheadFor(draft, opened);
+  const early = readAhead !== null && readAhead.body.closedAt < opened.deadline;
+  const proposal: OpenProposal = {
+    ...opened,
+    cleared: draft.cleared.has(opened.id),
+    readAhead,
+    closedAt: early ? readAhead.body.closedAt : null,
+    result: null,
+    mismatched: [],
+  };
+  draft.proposals.push(proposal);
+  return proposal;
+}
+
 /**
  * Opens an edit at its class's bar, for the window its proposer chose within
  * the class's bounds, or the class default (#106), and returns it. A window
@@ -807,16 +953,14 @@ function openEdit(
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return null;
-  const proposal: OpenProposal = {
+  return openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: body.atom,
     target: { kind: 'edit' },
     text: body.text,
     eligible: eligibleNow(draft, null),
     versions: [{ id: at.id, author, text: body.text }],
-  };
-  draft.proposals.push(proposal);
-  return proposal;
+  });
 }
 
 /**
@@ -829,7 +973,7 @@ function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Recei
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
-  draft.proposals.push({
+  openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: at.id,
     target: body.target,
@@ -858,7 +1002,7 @@ function applySteward(
   if (!mayProposeSteward(draft, author, body.target)) return false;
   const { holder } = seatAt(draft, seat);
   const cls = targetClass(draft, body);
-  draft.proposals.push({
+  openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window: draft.rules.windows[cls].default }),
     atom: '',
     target: { kind: 'steward', seat, member, holder },
@@ -884,7 +1028,7 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
-  draft.proposals.push({
+  openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: '',
     target,
@@ -912,7 +1056,7 @@ function applyDissolveProposal(
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
-  draft.proposals.push({
+  openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: '',
     target: body.target,
@@ -940,16 +1084,16 @@ function applyRemovalProposal(
   const { member } = body.target;
   if (!fieldsAreValid(body) || !mayProposeRemoval(draft, author, member)) return false;
   const cls = targetClass(draft, body);
-  const proposal: OpenProposal = {
+  const proposal = openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window: draft.rules.windows[cls].default }),
     atom: '',
     target: { kind: 'remove', member },
     text: '',
     eligible: eligibleNow(draft, member),
     versions: [{ id: at.id, author, text: '' }],
-  };
-  draft.proposals.push(proposal);
-  // The suspension of them running now, if any, lasts until this vote closes.
+  });
+  // The suspension of them running now, if any, lasts until this vote closes:
+  // a cleared one's early close comes from its result, read ahead (#111).
   extendSuspension(draft, proposal, (s) => s.member === member && draft.at < s.until);
   return true;
 }
@@ -976,7 +1120,7 @@ function applyReconcile(
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
-  draft.proposals.push({
+  openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: '',
     target: { ...body.target, key },
@@ -1177,12 +1321,25 @@ function applyDispatch(draft: Draft, body: DispatchBody, author: string, at: Rec
 }
 
 /**
+ * True when a cleared Proposal's record puts this version on its ballot: it
+ * arrived in the minute of the early close, before the closing ballot (#111).
+ */
+function listedAtClose(proposal: OpenProposal, at: Receipt): boolean {
+  return (
+    proposal.readAhead !== null &&
+    at.received === proposal.closedAt &&
+    proposal.readAhead.body.versions.some((version) => version.id === at.id)
+  );
+}
+
+/**
  * Adds a version to an open Proposal's ballot, in relay order, while it holds
  * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
  */
 function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
-  if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
+  if (proposal === undefined) return false;
+  if (!isOpenAt(proposal, at.received) && !listedAtClose(proposal, at)) return false;
   if (!versionTextFits(proposal, body.text)) return false;
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
@@ -1240,15 +1397,18 @@ export function everyoneHasScored(proposal: ScoredProposal): boolean {
 }
 
 /**
- * Keeps a voter's latest valid ballot. The ballot after which everyone
- * eligible has scored every version closes the Proposal early, and a
+ * Keeps a voter's latest valid ballot, toward an uncleared Proposal only: a
+ * cleared one's counts come from its result (#111). The ballot after which
+ * everyone eligible has scored every version closes the Proposal early, and a
  * suspension a removal vote extends then ends at the later of its own end and
  * that close (ADR-0059, #115).
  */
 function applyVote(draft: Draft, body: VoteBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
-  if (proposal === undefined || !ballotIsValid(draft, proposal, body, author, at)) return false;
-  const ballot = { ...at, voter: author, scores: body.scores, note: body.note ?? null };
+  if (proposal === undefined || proposal.cleared) return false;
+  if (!ballotIsValid(draft, proposal, body, author, at)) return false;
+  const note = body.note ?? null;
+  const ballot = { ...at, voter: author, scores: body.scores, note, salt: body.salt ?? '' };
   proposal.ballots = [...proposal.ballots.filter((b) => b.voter !== author), ballot];
   if (everyoneHasScored(proposal)) {
     proposal.closedAt = at.received;
@@ -1288,6 +1448,97 @@ function applyRemove(draft: Draft, body: RemoveBody, author: string, at: Receipt
   const { id, seq, received } = at;
   draft.removals[index] = { ...removal, removed: { id, seq, received, by: author } };
   return departs(draft, removal.member);
+}
+
+/** True when two lists hold the same items in the same order. */
+function sameList(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+
+/** A result's versions as one flat list: each id, then its five counts. */
+function lines(versions: readonly ResultVersion[]): (string | number)[] {
+  return versions.flatMap((version) => [version.id, ...version.counts]);
+}
+
+/** True when a result lists the Proposal's versions, in ballot order. */
+function listsVersions(proposal: OpenProposal, body: ResultBody): boolean {
+  return sameList(
+    body.versions.map((version) => version.id),
+    proposal.versions.map((version) => version.id),
+  );
+}
+
+/**
+ * What a Proposal's own ballots give a result, apart from its outcome: the
+ * close, the eligible count, each version's counts and the commitment. A
+ * device posts this (with the outcome) and checks results against it.
+ */
+export function heldRecord(
+  proposal: Pick<Proposal, 'id' | 'closedAt' | 'deadline' | 'eligible' | 'versions' | 'ballots'>,
+): Omit<ResultBody, 'outcome'> {
+  const ids = proposal.versions.map((version) => version.id);
+  return {
+    proposal: proposal.id,
+    closedAt: closeTime(proposal),
+    eligible: proposal.eligible.length,
+    versions: ids.map((id) => ({ id, counts: scoreCounts(proposal.ballots, id) })),
+    commit: ballotCommit(commitEntries(ids, proposal.ballots)),
+  };
+}
+
+/** True when a result checks out against the ballots this device holds. */
+function matchesBallots(draft: Draft, proposal: OpenProposal, body: ResultBody): boolean {
+  const own = heldRecord(proposal);
+  return (
+    body.eligible === own.eligible &&
+    listsVersions(proposal, body) &&
+    body.closedAt === own.closedAt &&
+    body.commit === own.commit &&
+    sameList(lines(body.versions), lines(own.versions)) &&
+    outcomeFollows(body, barOf(proposal, draft.rules))
+  );
+}
+
+/** Notes a member whose result doesn't match this device's ballots, once. */
+function flag(proposal: OpenProposal, author: string): void {
+  if (!proposal.mismatched.includes(author)) proposal.mismatched.push(author);
+}
+
+/**
+ * Checks a result against the ballots this device holds (#111): it must
+ * arrive after the Proposal's close, in a later minute, and match them. One
+ * that doesn't is flagged; of those that do, the first counts.
+ */
+function heldResultCounts(
+  proposal: OpenProposal,
+  draft: Draft,
+  author: string,
+  at: Receipt,
+  body: ResultBody,
+): boolean {
+  if (at.received <= closeTime(proposal)) return false;
+  if (!matchesBallots(draft, proposal, body)) {
+    flag(proposal, author);
+    return false;
+  }
+  return proposal.result === null;
+}
+
+/**
+ * Accepts the first valid `result` per Proposal, from a current member (#111).
+ * A cleared Proposal takes only the result it read ahead, once that result
+ * also lists its versions.
+ */
+function applyResult(draft: Draft, body: ResultBody, author: string, at: Receipt): boolean {
+  const proposal = draft.proposals.find((p) => p.id === body.proposal);
+  if (proposal === undefined || !can(draft, author, 'read')) return false;
+  const counts = proposal.cleared
+    ? proposal.readAhead?.id === at.id && listsVersions(proposal, body)
+    : heldResultCounts(proposal, draft, author, at, body);
+  if (!counts) return false;
+  const { closedAt, versions, commit } = body;
+  proposal.result = { ...at, author, closedAt, versions, commit };
+  return true;
 }
 
 /** Genesis must carry `""` and come first; every other event must carry the genesis id. */
@@ -1345,12 +1596,15 @@ function admits(draft: Draft, event: GroupEvent): boolean {
 }
 
 /**
- * The events that act on a Proposal: proposing, wording, voting, dissolving
- * on a pass (#108), and a removal's response and `remove` (#115).
+ * The events that act on a Proposal: proposing, wording, voting, its result
+ * (#111), dissolving on a pass (#108), and a removal's response and `remove`
+ * (#115).
  */
 type ProposalEvent = Extract<
   GroupEvent,
-  { type: 'proposal' | 'version' | 'vote' | 'dissolve' | 'removal-response' | 'remove' }
+  {
+    type: 'proposal' | 'version' | 'vote' | 'result' | 'dissolve' | 'removal-response' | 'remove';
+  }
 >;
 
 /** Applies one admitted event that acts on a Proposal, or returns false to ignore it. */
@@ -1362,6 +1616,8 @@ function applyProposalEvent(draft: Draft, event: ProposalEvent, at: Receipt): bo
       return applyVersion(draft, event.body, event.author, at);
     case 'vote':
       return applyVote(draft, event.body, event.author, at);
+    case 'result':
+      return applyResult(draft, event.body, event.author, at);
     case 'dissolve':
       return applyDissolve(draft, event.body, event.author, at);
     case 'removal-response':
@@ -1513,37 +1769,59 @@ function scoresFor(ballots: readonly Ballot[], id: string): Score[] {
   );
 }
 
-/** What {@link proposalTally} reads of a Proposal: who could vote, its versions, its ballots and its bar. */
-export type TalliedProposal = Pick<Proposal, 'eligible' | 'versions' | 'ballots' | 'outcome'>;
+/**
+ * What {@link proposalTally} reads of a Proposal: who could vote, its
+ * versions, its ballots, its bar, and, once its ballots are cleared, its result.
+ */
+export type TalliedProposal = Pick<
+  Proposal,
+  'eligible' | 'versions' | 'ballots' | 'outcome' | 'cleared' | 'result'
+>;
 
-/** A Proposal's ballots so far, tallied version by version at `bar`. */
-function tallyAt(proposal: Omit<TalliedProposal, 'outcome'>, bar: Bar): TallyDetail {
-  return tallyDetail({
-    eligible: proposal.eligible.length,
-    versions: proposal.versions.map((v) => ({
-      id: v.id,
-      scores: scoresFor(proposal.ballots, v.id),
-    })),
-    bar,
+/**
+ * Each version's scores: from the ballots, or, given `counts` (a cleared
+ * Proposal's, #111), from each version's counts there.
+ */
+function versionScores(
+  proposal: Pick<Proposal, 'versions' | 'ballots'>,
+  counts: readonly ResultVersion[] | null,
+): TallyVersion[] {
+  return proposal.versions.map((v) => {
+    if (counts === null) return { id: v.id, scores: scoresFor(proposal.ballots, v.id) };
+    const line = counts.find((candidate) => candidate.id === v.id);
+    return { id: v.id, scores: line === undefined ? [] : scoresOf(line.counts) };
   });
+}
+
+/** A Proposal's scores so far, tallied version by version at `bar`. */
+function tallyAt(
+  proposal: Pick<Proposal, 'eligible' | 'versions' | 'ballots'>,
+  counts: readonly ResultVersion[] | null,
+  bar: Bar,
+): TallyDetail {
+  const versions = versionScores(proposal, counts);
+  return tallyDetail({ eligible: proposal.eligible.length, versions, bar });
 }
 
 /**
  * Tallies a folded Proposal's ballots so far, version by version (spec §5),
  * at the bar its outcome carries, which its class set: each version's
  * scorers, sum, zeros and quorum, its pass flags, the bar, and the outcome.
- * The fold settles every outcome the same way, so the consent meter and the
- * result, which read this, can never disagree with the fold.
+ * A cleared Proposal is tallied from its result's counts (#111), which give
+ * the same numbers. The fold settles every outcome the same way, so the
+ * consent meter and the result, which read this, can never disagree with
+ * the fold.
  */
 export function proposalTally(proposal: TalliedProposal): TallyDetail {
-  return tallyAt(proposal, proposal.outcome.bar);
+  const counts = proposal.cleared ? (proposal.result?.versions ?? []) : null;
+  return tallyAt(proposal, counts, proposal.outcome.bar);
 }
 
 /**
  * The bar a Proposal's ballots are tallied at: its class's, or for a coalition
  * motion the bar the coalition set (#100).
  */
-function barOf(proposal: OpenProposal, rules: Rules): Bar {
+function barOf(proposal: Pick<Proposal, 'target' | 'class'>, rules: Rules): Bar {
   return proposal.target.kind === 'motion' ? proposal.target.bar : rules.bars[proposal.class];
 }
 
@@ -1555,7 +1833,7 @@ function barOf(proposal: OpenProposal, rules: Rules): Bar {
  * lapse, as a Proposal no one has scored does.
  */
 function settleMotion(
-  proposal: OpenProposal,
+  proposal: Omit<OpenProposal, 'readAhead'>,
   coalition: CoalitionDraft,
   bar: Bar,
   relayNow: number | null,
@@ -1571,19 +1849,22 @@ function settleMotion(
 }
 
 /**
- * Fixes a Proposal's finality and tallies its ballots at its bar; in a
- * coalition, decides a motion by its seats' results instead (#100).
+ * Fixes a Proposal's finality and tallies it at its bar: from its ballots, or
+ * from the record it read ahead once they're cleared (#111). In a coalition,
+ * it decides a motion by its seats' results instead (#100).
  */
 function settle(
   proposal: OpenProposal,
   draft: Pick<Draft, 'rules' | 'coalition'>,
   relayNow: number | null,
 ): Proposal {
-  const bar = barOf(proposal, draft.rules);
-  if (draft.coalition !== null) return settleMotion(proposal, draft.coalition, bar, relayNow);
-  const final = proposal.closedAt !== null || (relayNow !== null && relayNow >= proposal.deadline);
-  const { outcome } = tallyAt(proposal, bar);
-  return { ...proposal, final, outcome };
+  const { readAhead, ...rest } = proposal;
+  const bar = barOf(rest, draft.rules);
+  if (draft.coalition !== null) return settleMotion(rest, draft.coalition, bar, relayNow);
+  const final = rest.closedAt !== null || (relayNow !== null && relayNow >= rest.deadline);
+  const counts = rest.cleared ? (readAhead?.body.versions ?? []) : null;
+  const { outcome } = tallyAt(rest, counts, bar);
+  return { ...rest, final, outcome };
 }
 
 /** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
@@ -1785,12 +2066,113 @@ function applyPasses(
  * window, deadline and bar, and the group's ballots decide it as any other.
  * A coalition's own log takes none. `relayNow` should be the relay's latest
  * `now` from any mailbox: it is one clock.
+ *
+ * `cleared` lists the Proposals whose ballots this device has deleted (#111).
+ * Each closes, counts and decides by its first result after it, read ahead,
+ * so its early close falls where its ballots put it; a ballot still in the
+ * log for one is ignored. When a read-ahead result turns out not to hold up
+ * where it sits, the fold runs once more without reading it ahead. Every
+ * record is verified and parsed once, before either pass.
  */
 export function fold(
   records: readonly LogRecord[],
   relayNow: number | null,
   outside: readonly Motion[] = [],
+  cleared: readonly string[] = [],
 ): GroupState {
+  const reads = records.map(({ seq, received, bytes, epoch = 0 }) => ({
+    seq,
+    received,
+    epoch,
+    parsed: parseRecord(bytes),
+  }));
+  const clearedSet = new Set(cleared);
+  const pass = {
+    reads,
+    relayNow,
+    outside,
+    cleared: clearedSet,
+    firstResults: firstResults(reads, clearedSet, outside),
+    distrusted: new Set<string>(),
+  };
+  const first = foldPass(pass);
+  if (first.distrusted.length === 0) return first.state;
+  return foldPass({ ...pass, distrusted: new Set(first.distrusted) }).state;
+}
+
+/** A record read once: its place in the relay's log, its mailbox's epoch, and its event, or null when it doesn't verify. */
+interface Read {
+  readonly seq: number;
+  readonly received: number;
+  readonly epoch: number;
+  readonly parsed: ParsedEvent | null;
+}
+
+/** A cleared Proposal's first result after it, read ahead, with the group its event names. */
+type FirstResult = ReadAhead & { readonly group: string };
+
+/**
+ * Notes, in `opened`, the cleared Proposals that have opened by the time the
+ * fold reaches `read`: each cleared motion from `outside` with a lower seq
+ * (#100), which it takes from the front of `waiting`, in seq order, and the
+ * cleared Proposal `read` itself opens.
+ */
+function markOpened(
+  read: Read,
+  cleared: ReadonlySet<string>,
+  waiting: Motion[],
+  opened: Set<string>,
+) {
+  while (waiting.length > 0 && (waiting[0]?.seq ?? read.seq) < read.seq) {
+    const motion = waiting.shift();
+    if (motion !== undefined) opened.add(motion.id);
+  }
+  const { parsed } = read;
+  if (parsed?.event.type === 'proposal' && cleared.has(parsed.id)) opened.add(parsed.id);
+}
+
+/**
+ * Each cleared Proposal's first `result` after it opens, in relay order, with
+ * that result's receipt, which the fold reads ahead (#111). A coalition
+ * motion opens where `outside` puts it (#100).
+ */
+function firstResults(
+  reads: readonly Read[],
+  cleared: ReadonlySet<string>,
+  outside: readonly Motion[],
+): Map<string, FirstResult> {
+  const waiting = outside.filter((m) => cleared.has(m.id)).sort((a, b) => a.seq - b.seq);
+  const opened = new Set<string>();
+  const first = new Map<string, FirstResult>();
+  for (const read of reads) {
+    markOpened(read, cleared, waiting, opened);
+    const { received, parsed } = read;
+    if (parsed?.event.type !== 'result') continue;
+    const { event, id } = parsed;
+    const { body, group } = event;
+    if (opened.has(body.proposal) && !first.has(body.proposal)) {
+      first.set(body.proposal, { id, received, body, group });
+    }
+  }
+  return first;
+}
+
+/** What one pass of the fold reads: the records, read once, the motions from outside, and what #111 has cleared. */
+interface Pass {
+  readonly reads: readonly Read[];
+  readonly relayNow: number | null;
+  readonly outside: readonly Motion[];
+  readonly cleared: ReadonlySet<string>;
+  readonly firstResults: Draft['firstResults'];
+  readonly distrusted: ReadonlySet<string>;
+}
+
+/**
+ * One pass over the records. It also returns the cleared Proposals whose
+ * read-ahead result didn't hold up where it sits in the log, such as one
+ * from someone who wasn't a member then.
+ */
+function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const draft: Draft = {
     group: null,
     rules: DEFAULT_RULES,
@@ -1821,24 +2203,31 @@ export function fold(
     dispatched: new Set(),
     dissolved: null,
     coalition: null,
+    cleared: pass.cleared,
+    firstResults: pass.firstResults,
+    distrusted: pass.distrusted,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
-  const motions = [...outside].sort((a, b) => a.seq - b.seq);
-  for (const record of records) {
-    openMotionsBefore(draft, motions, record.seq);
-    if (!foldRecord(draft, record, seen)) ignored.push({ seq: record.seq, id: idOf(record) });
+  const motions = [...pass.outside].sort((a, b) => a.seq - b.seq);
+  for (const read of pass.reads) {
+    openMotionsBefore(draft, motions, read.seq);
+    if (!foldRecord(draft, read, seen))
+      ignored.push({ seq: read.seq, id: read.parsed?.id ?? null });
   }
   openMotionsBefore(draft, motions, Infinity);
-  const now = endTime(draft, relayNow);
+  const now = endTime(draft, pass.relayNow);
   draft.at = now ?? draft.at;
   advanceAll(draft);
+  const distrusted = draft.proposals
+    .filter((p) => p.readAhead !== null && p.result === null)
+    .map((p) => p.id);
   const proposals = draft.proposals.map((p) => settle(p, draft, now));
   const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
   const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
   const { dispatches, epoch, rotations, rotationDue } = draft;
-  return {
+  const state = {
     group,
     rules,
     optIns: effectiveOptIns({ rules, proposals, narrowings, at }),
@@ -1867,6 +2256,7 @@ export function fold(
     coalition: draft.coalition,
     ignored,
   };
+  return { state, distrusted };
 }
 
 /**
@@ -1917,7 +2307,7 @@ function openMotion(draft: Draft, motion: Motion): void {
   if (draft.proposals.some((p) => p.id === motion.id)) return;
   advanceTo(draft, motion.received);
   const { id, seq, received, coalition, bar, window, deadline } = motion;
-  draft.proposals.push({
+  openProposal(draft, {
     id,
     seq,
     received,
@@ -1938,11 +2328,6 @@ function openMotion(draft: Draft, motion: Motion): void {
     number: 0,
     dispatch: null,
   });
-}
-
-/** The id of the event a record holds, or null when it doesn't verify or hold one. */
-function idOf(record: LogRecord): string | null {
-  return parseRecord(record.bytes)?.id ?? null;
 }
 
 /**
@@ -1971,11 +2356,10 @@ function advanceTo(draft: Draft, received: number): void {
  * and the removals, seats, opt-ins and carried Dispatches catch up to it
  * before the event is checked. A repeated event id is ignored.
  */
-function foldRecord(draft: Draft, record: LogRecord, seen: Set<string>): boolean {
-  const { seq, received, bytes, epoch = 0 } = record;
+function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
+  const { seq, received, epoch, parsed } = read;
   if (epoch !== draft.epoch) return false;
   if (!hasEnded(draft)) advanceTo(draft, received);
-  const parsed = parseRecord(bytes);
   if (parsed === null) return false;
   const { event, id } = parsed;
   const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });

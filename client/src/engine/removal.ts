@@ -19,7 +19,7 @@
  */
 import { can, isOusted, isSuspended, type Roster } from './capabilities';
 import type { Dissolution } from './dissolve';
-import { type Rules } from './rules';
+import { DAY_MINUTES, type Rules } from './rules';
 import { type Suspension, suspensionEnd } from './stewards';
 import { codePointLength } from './text';
 
@@ -58,6 +58,8 @@ export interface RemovalProposalState {
   readonly target: { readonly kind: string; readonly member?: string | null };
   readonly deadline: number;
   readonly closedAt: number | null;
+  /** True once this device cleared its ballots (#111): its close then comes from its result. */
+  readonly cleared?: boolean;
 }
 
 /** What the removal rules read of a group, at relay minute `at`. */
@@ -76,7 +78,9 @@ export function removalTarget(proposal: Pick<RemovalProposalState, 'target'>): s
 
 /** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
 function isOpen(proposal: RemovalProposalState, at: number): boolean {
-  return proposal.closedAt === null && at < proposal.deadline;
+  if (at >= proposal.deadline) return false;
+  // A cleared removal knows its early close from the start, so it is open until that minute (#111).
+  return proposal.closedAt === null || (proposal.cleared === true && at < proposal.closedAt);
 }
 
 /** True when `person` is in the group now. */
@@ -176,6 +180,21 @@ export function removalDue(state: RemovalState): string | null {
   if (state.dissolved !== null) return null;
   const due = state.removals.find((removal) => waitingRemoval(state, removal.proposal));
   return due?.proposal ?? null;
+}
+
+/**
+ * The relay minute a removed member's copy clears its ballots, notes and
+ * responses (#111, #115): `ballotExpiryDays` after the `remove` that took
+ * them out, which the device's own clock counts, since no relay time reaches
+ * a copy that no longer syncs. Every ballot it holds expires by then on the
+ * devices still in the group. Null until a `remove` has folded.
+ */
+export function removedClearMinute(
+  rules: Pick<Rules, 'ballotExpiryDays'>,
+  removal: Pick<Removal, 'removed'>,
+): number | null {
+  const { removed } = removal;
+  return removed === null ? null : removed.received + rules.ballotExpiryDays * DAY_MINUTES;
 }
 
 /** The removal that took `person` out of the group, once its `remove` has folded. */

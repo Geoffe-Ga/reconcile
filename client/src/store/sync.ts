@@ -33,16 +33,24 @@
  *    archive (#108) posts none.
  *
  * After a pass in which every group synced, and unless the loop is halted,
- * three things follow, in this order:
+ * four things follow, in this order:
  *
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
- * 2. push upkeep, which keeps each group with push on registered at the
+ * 2. results and expiry (#111, ./expiry.ts): for each group that isn't a
+ *    read-only archive, a result for each closed Proposal that still has
+ *    none after the pass before found none too, so the device has synced
+ *    once more to be sure, is queued for the next pass to post; then every
+ *    ballot that has expired is cleared. Folding the log for this costs a
+ *    signature check per record, so a group is settled once per relay minute
+ *    unless a result is owed: the duty waits for the minute after a close,
+ *    and expiry for a minute, anyway;
+ * 3. push upkeep, which keeps each group with push on registered at the
  *    relay (#99), under the weekly mailboxes of its current key for the next
  *    30 days, so a phone is under a new mailbox as soon as the pass that
  *    moved it. A read-only archive gets no upkeep: its registration is left
  *    to expire at the relay, so no request names its mailbox again;
- * 3. `afterPass`: in the app, the relay backup's daily refresh (#97,
+ * 4. `afterPass`: in the app, the relay backup's daily refresh (#97,
  *    ./relayBackup.ts), last because it may send the largest request of the
  *    day, and so that its snapshot holds each group after its key change.
  *    It waits while a key change this device should write is still due
@@ -101,7 +109,7 @@ import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys'
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
-import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import type { GroupState, LogRecord } from '../engine/fold';
 import { wakeForRecord } from '../engine/wake';
 import { settleDissolve } from './archive';
 import { settleRemoval } from './removal';
@@ -118,6 +126,7 @@ import {
   passesFreeze,
 } from './epochs';
 import { eventIdOf } from './eventId';
+import { clearExpiredBallots, foldGroup, resultsDue, signResults } from './expiry';
 import { keptWeeks, pollWeeks } from './mailbox';
 import type { PushUpkeep } from './push';
 
@@ -251,7 +260,7 @@ export interface SyncOptions {
   seal: Seal;
   /** An event's id, for dedupe (default: the engine's, via `parseEvent`). */
   idOf?: EventIdOf;
-  /** The device clock in milliseconds, for `lastSyncAt` (default: `Date.now`). */
+  /** The device clock in milliseconds, for `lastSyncAt` and a result's `ts` (default: `Date.now`). */
   clock?: () => number;
   /** The timers the poller uses (default: the window's). */
   timers?: Timers;
@@ -310,7 +319,7 @@ export function createSync(options: SyncOptions): Sync {
     let posted: 'posted' | 'none' = 'none';
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
-      before ??= fold(current.log, current.relayNow);
+      before ??= foldGroup(current);
       const wake = wakeForRecord(before, bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
       if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
@@ -384,7 +393,7 @@ export function createSync(options: SyncOptions): Sync {
    * epoch (#98), else `stayed`.
    */
   async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
-    const frozen = isFrozen(fold(group.log, group.relayNow), group);
+    const frozen = isFrozen(foldGroup(group), group);
     const { first, cursors } = await firstRead(group);
     const week = weekOf(first.now);
     const outcome = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
@@ -449,7 +458,7 @@ export function createSync(options: SyncOptions): Sync {
 
   /** Queues this member's `kx` when the fold has no encryption key for them (#98). */
   async function queueKx(group: Group): Promise<void> {
-    const state = fold(group.log, group.relayNow);
+    const state = foldGroup(group);
     if (state.group === null || !needsKx(group, state)) return;
     const kxKey = await store.ensureKx(group.groupId, group.kxKey ?? newKxKey());
     await store.enqueue(group.groupId, kxRecord(group, state.group, kxKey, clock()));
@@ -463,12 +472,12 @@ export function createSync(options: SyncOptions): Sync {
    */
   async function rotateIfDue(groupId: string): Promise<void> {
     const group = await store.getGroup(groupId);
-    if (group === undefined || !hasDuty(group, fold(group.log, group.relayNow))) return;
+    if (group === undefined || !hasDuty(group, foldGroup(group))) return;
     if (!(await syncGroup(group))) return;
     const fresh = await store.getGroup(groupId);
     // A group that just synced has a relay minute; one without never writes a key change.
     if (fresh === undefined || fresh.relayNow === null) return;
-    const state = fold(fresh.log, fresh.relayNow);
+    const state = foldGroup(fresh);
     if (!hasDuty(fresh, state)) return;
     const { mailbox, key } = channelOf(fresh.secret, weekOf(fresh.relayNow));
     const record = keyRotateRecord(fresh, state, clock());
@@ -487,13 +496,50 @@ export function createSync(options: SyncOptions): Sync {
   }
 
   /**
-   * What follows a pass in which every group synced and its key changes were
-   * made, unless halted: push upkeep (#99), then, last, the relay backup's
-   * refresh (#97), so each sees every group at the epoch it moved to (#98).
+   * What follows a pass in which every group synced and its key changes,
+   * results and clearing were made, unless halted: push upkeep (#99), then,
+   * last, the relay backup's refresh (#97), so each sees every group at the
+   * epoch it moved to (#98), with its expired ballots gone (#111).
    */
   async function afterComplete(): Promise<void> {
     if (!halted) await push?.upkeep();
     if (!halted) await afterPass?.().catch(() => undefined);
+  }
+
+  /** The relay minute each group's results and expiry were last settled at (#111). */
+  const settled = new Map<string, number | null>();
+  /** By group, the Proposals a settle found a result due for, which the next queues if still due. */
+  const owed = new Map<string, readonly string[]>();
+
+  /**
+   * Settles a group's results and expiry (#111), after a complete pass: a
+   * result due on this pass and on the one before, so the device has synced
+   * once more since it first saw none, is queued, and the next pass posts it
+   * and reads it back; then every ballot that has expired is cleared. A
+   * read-only archive (#108) posts nothing, and its own sweep clears it.
+   * Folding costs a signature check per record, so a group already settled in
+   * this relay minute, with nothing owed, is skipped, and one that just
+   * queued results is settled again on the next pass, which clears by them.
+   */
+  async function settleExpiry(groupId: string): Promise<void> {
+    const group = await store.getGroup(groupId);
+    if (group === undefined || group.archived !== undefined) return;
+    const noted = owed.get(groupId) ?? [];
+    if (settled.get(groupId) === group.relayNow && noted.length === 0) return;
+    const state = foldGroup(group);
+    const due = resultsDue(state, group);
+    const now = due.filter((p) => noted.includes(p.id));
+    owed.set(
+      groupId,
+      due.filter((p) => !noted.includes(p.id)).map((p) => p.id),
+    );
+    if (now.length > 0) {
+      await store.enqueueAll(groupId, signResults(state, group, now, clock()));
+      settled.delete(groupId);
+    } else {
+      settled.set(groupId, group.relayNow);
+    }
+    await clearExpiredBallots(store, groupId, state);
   }
 
   async function pass(): Promise<boolean> {
@@ -502,6 +548,8 @@ export function createSync(options: SyncOptions): Sync {
       ok = await eachGroup(syncGroup);
       // Only after a complete pass: a device that missed records mustn't write a key change.
       if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));
+      // Then results and expiry (#111), at each group's epoch after any key change.
+      if (ok) ok = await eachGroup((group) => settleExpiry(group.groupId));
     } catch {
       ok = false;
     }

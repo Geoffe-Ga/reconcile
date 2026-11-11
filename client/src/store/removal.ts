@@ -14,9 +14,9 @@
  * the fold takes the first, and the key changes once.
  */
 import { parseRecord, signEvent } from '../engine/event';
-import { fold } from '../engine/fold';
 import { mayRemove, removalDue, removedFrom } from '../engine/removal';
 import type { Group, Store } from './db';
+import { foldGroup } from './expiry';
 
 /** True when this member's own `remove` of `proposal` already waits in the outbox. */
 function removeQueued(group: Group, proposal: string): boolean {
@@ -43,7 +43,8 @@ export async function settleRemoval(
 ): Promise<void> {
   const group = await store.getGroup(groupId);
   if (group === undefined || group.archived !== undefined) return;
-  const state = fold(group.log, group.relayNow);
+  // As the screens fold it: a removal whose ballots this device cleared keeps its pass (#111).
+  const state = foldGroup(group);
   const me = group.me.author;
   if (removedFrom(state, me) !== undefined) {
     forget(group);

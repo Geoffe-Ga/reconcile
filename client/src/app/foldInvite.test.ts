@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { parseRecord } from '../engine/event';
+import { resultFor } from '../engine/expiry';
 import { fold, type LogRecord } from '../engine/fold';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { foldInvite, genesisDocument } from './foldInvite';
@@ -51,6 +53,22 @@ describe('foldInvite', () => {
     expect(foldInvite({ records: noisy, relayNow: deadline })).toEqual(
       foldInvite({ records: log.records, relayNow: deadline }),
     );
+  });
+
+  it('reads a section whose ballots the inviter cleared as its result records it, given their cleared list (#111)', () => {
+    const { log, deadline } = twoPasses();
+    const early = log.state(deadline).proposals[0];
+    if (early === undefined) throw new Error('Expected the first Proposal.');
+    log.minute += 1;
+    log.result('Ben', resultFor(early));
+    const kept = log.records.filter((record) => {
+      const event = parseRecord(record.bytes)?.event;
+      return event?.type !== 'vote' || event.body.proposal !== early.id;
+    });
+    const relayNow = deadline + 43_200;
+    expect(foldInvite({ records: kept, relayNow, cleared: [early.id] })?.[0]?.text).toBe(FIRST);
+    // Without it, a result with no ballots reads as nobody voting.
+    expect(foldInvite({ records: kept, relayNow })?.[0]?.text).toBe('Quiet hours start at ten.');
   });
 
   it('finds no Document when the entries hold no genesis that verifies', () => {

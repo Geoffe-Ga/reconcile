@@ -10,7 +10,10 @@
  * history may be missing. Format 2 (#98) adds the encryption key, the
  * secret's epoch, and each record's epoch when it isn't 0; a format 1 file,
  * as #78 saved it, reads as epoch 0 with no encryption key, and the sync loop
- * then makes one. It leaves out the outbox and drafts, so a restore
+ * then makes one. A group whose device has cleared ballots (#111) also lists
+ * those Proposals as `cleared`, with no new format number: a file without it
+ * clears nothing, and a restore folds each listed Proposal's outcome from
+ * its result. It leaves out the outbox and drafts, so a restore
  * never sends stale intent, and it leaves out a group this device is
  * leaving, and one whose genesis the relay hasn't returned yet, since
  * neither has anything to come back to. It leaves out a dissolved group's
@@ -60,11 +63,12 @@ import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../cryp
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
-import { fold, type LogRecord } from '../engine/fold';
+import type { LogRecord } from '../engine/fold';
 import { removedFrom } from '../engine/removal';
 import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
 import { epochOf, secretFits } from './epochs';
 import { eventIdOf } from './eventId';
+import { foldGroup } from './expiry';
 import {
   isPersonalDocument,
   isShareState,
@@ -110,8 +114,8 @@ export interface SavedBackup {
 }
 
 /** Whether the relay has returned the group's genesis: its log folds to the group itself. */
-function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow'>): boolean {
-  return fold(group.log, group.relayNow).group === group.groupId;
+function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow' | 'cleared'>): boolean {
+  return foldGroup(group).group === group.groupId;
 }
 
 /**
@@ -136,6 +140,9 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
       instance: group.instance,
       lastSyncAt: group.lastSyncAt,
       missingHistory: group.missingHistory === true,
+      ...(group.cleared === undefined || group.cleared.length === 0
+        ? {}
+        : { cleared: [...group.cleared] }),
     }));
 }
 
@@ -207,6 +214,9 @@ export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8
       instance: group.instance,
       lastSyncAt: group.lastSyncAt,
       missingHistory: group.missingHistory,
+      ...(group.cleared === undefined || group.cleared.length === 0
+        ? {}
+        : { cleared: group.cleared }),
     })),
     personal: personal.map(personalJson),
     ...(backupKey === undefined ? {} : { backupKey: base64url(backupKey) }),
@@ -513,7 +523,8 @@ function groupIn(value: unknown): BackedUpGroup | null {
   const log = logIn(value.log);
   if (secret === null || signingKey === null || log === null || !hasSyncState(value)) return null;
   const me = meIn(value.me, signingKey);
-  if (me === null) return null;
+  const cleared = clearedIn(value.cleared);
+  if (me === null || cleared === null) return null;
   return restoredAs({
     groupId: value.groupId,
     secret,
@@ -525,7 +536,22 @@ function groupIn(value: unknown): BackedUpGroup | null {
     instance: value.instance as string | null,
     lastSyncAt: value.lastSyncAt as number | null,
     missingHistory: value.missingHistory as boolean,
+    ...cleared,
   });
+}
+
+/**
+ * The Proposals a group's device had cleared (#111), as the group keeps
+ * them: none for a file without them, as every file from before #111 is, or
+ * an empty list, and null unless it's a list of distinct event ids.
+ */
+function clearedIn(value: unknown): Pick<BackedUpGroup, 'cleared'> | null {
+  if (value === undefined) return {};
+  if (!Array.isArray(value)) return null;
+  const list: readonly unknown[] = value;
+  const ids = list.filter((id): id is string => typeof id === 'string' && GROUP_ID.test(id));
+  if (ids.length !== list.length || new Set(ids).size !== ids.length) return null;
+  return ids.length === 0 ? {} : { cleared: ids };
 }
 
 /** A dissolved group's read-only mark (#108). */
@@ -540,7 +566,7 @@ const REMOVED: Archive = { reason: 'removed' };
  * so does one holding a `remove` of this member (#115).
  */
 function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   if (state.group !== group.groupId) return null;
   if (state.dissolved !== null) return { ...group, archived: DISSOLVED };
   return removedFrom(state, group.me.author) === undefined
@@ -559,7 +585,7 @@ function groupWithKeysIn(value: unknown): BackedUpGroup | null {
   const { epoch } = value;
   const kxKey = value.kxKey === undefined ? undefined : keyIn(value.kxKey);
   if (kxKey === null || !(epoch === 0 || isLaterEpoch(epoch))) return null;
-  if (!secretFits(fold(group.log, group.relayNow), epoch, group.secret)) return null;
+  if (!secretFits(foldGroup(group), epoch, group.secret)) return null;
   return {
     ...group,
     ...(kxKey === undefined ? {} : { kxKey }),

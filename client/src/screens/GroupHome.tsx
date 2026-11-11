@@ -210,7 +210,8 @@ function Unfinished({
 
 /**
  * Decided: the group's history, each closed Proposal with its title, its
- * outcome in a word, and its close date, opening its result.
+ * outcome in a word, and its close date, opening its result, and "Scores
+ * cleared" once this device has deleted its individual ballots (#111).
  */
 function Decided({
   groupId,
@@ -241,6 +242,9 @@ function Decided({
               <time dateTime={minuteIso(closeTime(proposal))}>
                 {formatDay(closeTime(proposal))}
               </time>
+              {proposal.cleared ? (
+                <span className="decided-cleared">{messages.decided.cleared}</span>
+              ) : null}
             </span>
           </Link>
         </li>

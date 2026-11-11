@@ -15,14 +15,18 @@ import { sealBackup } from '../crypto/backup';
 import { deriveSealKey, deriveWeekMailboxId, WEEK_MINUTES, weekOf } from '../crypto/groupKeys';
 import { open, xchachaSeal } from '../crypto/seal';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
+import { resultFor } from '../engine/expiry';
 import { fold } from '../engine/fold';
+import { removedClearMinute } from '../engine/removal';
+import { DAY_MINUTES } from '../engine/rules';
 import { newSigningKeys } from '../crypto/sign';
 import { createRelay, type Fetch } from '../net/relay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
-import { shownState } from './archive';
+import { MINUTE_MS, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
+import { foldGroup } from './expiry';
 import type { PushUpkeep } from './push';
 import { fetchRelayBackup, startRelayBackup } from './relayBackup';
 import { settleRemoval } from './removal';
@@ -475,6 +479,83 @@ describe('a removal beside a shared personal Document (#105)', () => {
 
     expect((await device.store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
     expect(await device.store.getPersonal(statement.id)).toEqual(before);
+  });
+});
+
+describe('a removal beside ballot expiry (#111)', () => {
+  /** The removal's result, as Ana's device would sign it from what `device` holds. */
+  async function resultOf(device: { store: Store }, groupId: string, removal: string) {
+    const held = (await device.store.getGroup(groupId)) ?? never();
+    const proposal = foldGroup(held).proposals.find((p) => p.id === removal) ?? never();
+    return signedAs('ana', {
+      type: 'result',
+      group: groupId,
+      ts: TS,
+      body: resultFor(proposal),
+    });
+  }
+
+  it('archives a removed device on a remove that arrives after it cleared the removal’s ballots', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, removal, last, remove } = history(group);
+    const device = await openDevice(fake.fetch);
+    await keep(device, group, 'cal', [...events, last]);
+    fake.minute += 1;
+    await device.store.enqueue(groupId, (await resultOf(device, groupId, removal.id)).record);
+    expect(await device.sync.syncOnce()).toBe(true);
+    // Thirty days on, the device clears the removal's ballots, keeping its result.
+    fake.minute += 30 * DAY_MINUTES;
+    expect(await device.sync.syncOnce()).toBe(true);
+    const cleared = (await device.store.getGroup(groupId)) ?? never();
+    expect(cleared.cleared).toContain(removal.id);
+    expect(cleared.archived).toBeUndefined();
+
+    await device.store.enqueue(groupId, remove('ben').record);
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    const held = (await device.store.getGroup(groupId)) ?? never();
+    expect(held.archived).toEqual({ reason: 'removed' });
+    expect(foldGroup(held).former.map((m) => m.author)).toEqual([authorOf('cal')]);
+  });
+
+  /** Cal's device, removed after posting his response, with its archived state and the minute it clears. */
+  async function removedCopy() {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, removal, last, remove } = history(group);
+    const response = signedAs('cal', {
+      type: 'removal-response',
+      group: groupId,
+      ts: TS,
+      body: { proposal: removal.id, text: 'I disagree.' },
+    });
+    const device = await openDevice(fake.fetch);
+    await keep(device, group, 'cal', [...events, response, last, remove('ben')]);
+    const archived = (await device.store.getGroup(groupId)) ?? never();
+    const state = foldGroup(archived);
+    const at = removedClearMinute(state.rules, state.removals[0] ?? never()) ?? never();
+    return { store: device.store, groupId, removal: removal.id, archived, state, at };
+  }
+
+  it('clears a removed copy’s ballots, notes and response by the device clock, ballotExpiryDays after the remove', async () => {
+    const { store, groupId, removal, archived, state, at } = await removedCopy();
+    expect(archived.archived).toEqual({ reason: 'removed' });
+    expect(state.responses).toHaveLength(1);
+
+    await sweepArchives(store, () => (at - 1) * MINUTE_MS);
+    expect((await store.getGroup(groupId))?.archived?.cleared).toBeUndefined();
+    await sweepArchives(store, () => at * MINUTE_MS);
+
+    const cleared = ((await store.getGroup(groupId)) ?? never()).archived?.cleared ?? never();
+    expect(cleared.at).toBe(at * MINUTE_MS);
+    expect(cleared.state.proposals.flatMap((p) => p.ballots)).toEqual([]);
+    expect(cleared.state.responses).toEqual([]);
+    expect(cleared.state.removals).toEqual(state.removals);
+    expect(cleared.tallies[removal]?.outcome.kind).toBe('pass');
   });
 });
 

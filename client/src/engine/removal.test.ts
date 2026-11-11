@@ -4,8 +4,9 @@ import { folded, foldLogs, Logs } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder, START_MINUTE } from '../test/votes';
 import { LEVELS } from './capabilities';
-import type { RemovalProposalBody } from './event';
-import { fold } from './fold';
+import { parseRecord, type RemovalProposalBody } from './event';
+import { expiryKeyOf, resultFor } from './expiry';
+import { fold, type LogRecord } from './fold';
 import {
   extendedBy,
   mayProposeRemoval,
@@ -14,6 +15,7 @@ import {
   openRemovalOf,
   removalDue,
   removalTarget,
+  removedClearMinute,
   removedFrom,
   RESPONSE_MAX,
   responseFits,
@@ -380,5 +382,100 @@ describe('a removal beside coalitions (#100)', () => {
     expect(state.ignored.map((r) => r.id)).toEqual([proposal, response, remove]);
     expect(state.proposals).toEqual([]);
     expect(state.members.map((m) => m.author)).toContain(KIM);
+  });
+});
+
+describe('a removal beside ballot expiry (#111)', () => {
+  const THIRTY_DAYS = 30 * DAY_MINUTES;
+
+  /** `records` without what expires with `proposal`'s ballots, but its result `kept`: what a device keeps once they clear. */
+  function clearedOf(records: readonly LogRecord[], proposal: string, kept: string): LogRecord[] {
+    return records.filter((record) => {
+      const key = expiryKeyOf(record.bytes);
+      return key === null || key.proposal !== proposal || key.id === kept;
+    });
+  }
+
+  /** Five; Ana suspends Kim, Ben proposes removing her, she responds, and four 4s pass it; Cal posts the remove and Dee the result. */
+  function decided() {
+    const log = five();
+    log.suspend('Ana', 'Kim', 'Threats in the chat.');
+    log.minute += 1;
+    const removal = log.proposeRemoval('Ben', 'Kim');
+    log.minute += 1;
+    const response = log.respond('Kim', removal, 'I disagree.');
+    log.minute += 1;
+    for (const voter of ['Ana', 'Ben', 'Cal', 'Dee']) log.vote(voter, removal, 4);
+    log.minute += 1;
+    const remove = log.remove('Cal', removal);
+    log.minute += 1;
+    const proposal = log.state().proposals.find((p) => p.id === removal);
+    if (proposal === undefined) throw new Error('Expected the removal.');
+    const result = log.result('Dee', resultFor(proposal));
+    return { log, removal, response, remove, result };
+  }
+
+  it('keeps a cleared removal’s pass, so the person stays removed, and the suspension it extended ends as it did', () => {
+    const { log, removal, result } = decided();
+    const now = log.minute + THIRTY_DAYS;
+    const held = log.state(now);
+
+    const state = fold(clearedOf(log.records, removal, result), now, [], [removal]);
+
+    expect(state.proposals.find((p) => p.id === removal)).toMatchObject({
+      cleared: true,
+      final: true,
+      outcome: { kind: 'pass' },
+    });
+    expect(state.removals).toEqual(held.removals);
+    expect(state.removals[0]?.removed).not.toBeNull();
+    expect(state.members).toEqual(held.members);
+    expect(state.former.map((m) => m.author)).toEqual([KIM]);
+    expect(state.suspensions).toEqual(held.suspensions);
+    expect(state.rotationDue).toBe(held.rotationDue);
+    // Her response expires with the ballots; it was there before.
+    expect(held.responses).toHaveLength(1);
+    expect(state.responses).toEqual([]);
+  });
+
+  it('ignores a second removal of her while the first is open, on a cleared device too', () => {
+    const log = five();
+    const removal = log.proposeRemoval('Ben', 'Kim');
+    log.minute += 1;
+    log.proposeRemoval('Cal', 'Kim', { title: 'Remove Kim now' });
+    log.minute += 1;
+    for (const voter of ['Ana', 'Ben', 'Cal', 'Dee']) log.vote(voter, removal, 4);
+    log.minute += 1;
+    const proposal = log.state().proposals.find((p) => p.id === removal);
+    if (proposal === undefined) throw new Error('Expected the removal.');
+    const result = log.result('Dee', resultFor(proposal));
+    const now = log.minute + THIRTY_DAYS;
+
+    const state = fold(clearedOf(log.records, removal, result), now, [], [removal]);
+
+    expect(log.state(now).proposals.map((p) => p.id)).toEqual([removal]);
+    expect(state.proposals.map((p) => p.id)).toEqual([removal]);
+  });
+
+  it('expires the response with the ballots, and never the remove, which keeps her out', () => {
+    const { log, removal, response, remove } = decided();
+    const recordOf = (id: string) =>
+      log.records.find((r) => parseRecord(r.bytes)?.id === id)?.bytes ?? new Uint8Array();
+    expect(expiryKeyOf(recordOf(response))).toEqual({
+      id: response,
+      proposal: removal,
+      result: false,
+    });
+    expect(expiryKeyOf(recordOf(remove))).toBeNull();
+  });
+
+  it('clears a removed copy ballotExpiryDays after the remove that took them out, by its receipt', () => {
+    const { log } = decided();
+    const removed = log.state().removals[0];
+    if (removed === undefined) throw new Error('Expected the removal.');
+    expect(removedClearMinute(DEFAULT_RULES, removed)).toBe(
+      (removed.removed?.received ?? 0) + THIRTY_DAYS,
+    );
+    expect(removedClearMinute(DEFAULT_RULES, { ...removed, removed: null })).toBeNull();
   });
 });
