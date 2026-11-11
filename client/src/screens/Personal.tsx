@@ -38,14 +38,18 @@ function DocumentCard({
   );
 }
 
-/** Every Document by title, then New document. */
+/** Every Document by title, a shared one marked as such (#105), then New document. */
 function DocumentList({ documents, newId }: PersonalProps) {
   return (
     <div className="stack">
       <ul className="card-list">
         {documents.map((document) => (
           <li key={document.id}>
-            <DocumentCard id={document.id} title={document.title} />
+            <DocumentCard
+              id={document.id}
+              title={document.title}
+              {...(document.share === undefined ? {} : { line: messages.personal.sharedLine })}
+            />
           </li>
         ))}
       </ul>
@@ -63,7 +67,8 @@ function DocumentList({ documents, newId }: PersonalProps) {
  * Personal (`#/me`; #93), reached from Start: this device's personal
  * Documents, one list, each opening at `#/me/{id}`, then New document. With
  * none yet, it offers My mission statement with one prompt line, and nothing
- * is stored until its first save. One line says what stays on this device.
+ * is stored until its first save. A Document shared by link says so under
+ * its title (#105). One line says what stays on this device.
  */
 export function Personal({ documents, newId }: PersonalProps) {
   const { personal } = messages;

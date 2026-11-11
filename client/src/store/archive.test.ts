@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sealBackup } from '../crypto/backup';
 import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
+import { newSigningKeys } from '../crypto/sign';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
@@ -338,6 +339,25 @@ describe('a dissolve beside personal Documents (#93)', () => {
 
     expect(await store.getGroup(groupId)).toBeUndefined();
     expect(await store.listPersonal()).toEqual([statement]);
+  });
+
+  it('leaves a shared Document’s share by link (#105) as it was when it wipes the group', async () => {
+    const { store, groupId } = await dissolvedDevice(true);
+    await store.savePersonal(statement);
+    const share = {
+      seed: new Uint8Array(32).fill(4),
+      ...newSigningKeys(),
+      n: 2,
+      lastPostedAt: TS,
+      pending: false,
+    };
+    await store.updateShare(statement.id, () => share);
+    const before = await store.getPersonal(statement.id);
+
+    await sweepArchives(store, clockAt(DISSOLVED + 7 * DAY_MINUTES));
+
+    expect(await store.getGroup(groupId)).toBeUndefined();
+    expect(await store.getPersonal(statement.id)).toEqual(before);
   });
 
   it('leaves every personal Document on the device when it clears the archive at 30 days', async () => {
