@@ -16,7 +16,7 @@ import { createRelay } from '../net/relay';
 import type { Store } from '../store/db';
 import { openStore } from '../store/db';
 import { mailboxAt } from '../store/mailbox';
-import type { PersonalDocument } from '../store/personal';
+import type { PersonalDocument, ShareState } from '../store/personal';
 import { exportGroups, importGroups } from '../store/snapshot';
 import { TEST_NOW, TEST_ORIGIN } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -26,6 +26,7 @@ import {
   keepSharesAlive,
   keepSharing,
   parseShareLink,
+  pauseOf,
   postCopy,
   postEdits,
   readShare,
@@ -784,6 +785,23 @@ describe('keepSharesAlive', () => {
     ]);
   });
 
+  it('posts a share last posted just under 30 days ago, and pauses one posted 30 days ago, which may have been stopped elsewhere (#339)', async () => {
+    const fake = createFakeRelay();
+    const { services, clock } = await owner(fake);
+    expect(SHARE_TTL_DAYS).toBe(30);
+    const older = await sharedLink(services);
+    clock.now = TEST_NOW + 1;
+    const other = statement({ id: 'T3RoZXIgc3RhdGVtZW50IQ', title: 'Other' });
+    const newer = await sharedLink(services, other);
+    clock.now = TEST_NOW + SHARE_TTL_DAYS * DAY_MS;
+
+    expect(await keepSharesAlive(services)).toEqual([[other.id, 'posted']]);
+    expect(await postCopy(services, statement().id)).toBe('paused');
+
+    expect(blobsOf(fake, older)).toHaveLength(1);
+    expect(blobsOf(fake, newer)).toHaveLength(2);
+  });
+
   it('posts an edit made while the relay was down at the next run, and clears pending', async () => {
     const fake = createFakeRelay();
     const { store, services } = await owner(fake);
@@ -819,5 +837,32 @@ describe('keepSharesAlive', () => {
 
     expect(puts(fake)).toHaveLength(before + 1);
     expect(await shownText(fake, otherLink)).toBe('Other, edited.\n');
+  });
+});
+
+describe('pauseOf', () => {
+  const live: ShareState = {
+    seed: new Uint8Array(32).fill(1),
+    secretKey: new Uint8Array(32).fill(2),
+    publicKey: new Uint8Array(32).fill(3),
+    n: 3,
+    lastPostedAt: TEST_NOW,
+    pending: false,
+  };
+  const lifetime = SHARE_TTL_DAYS * DAY_MS;
+
+  it('is null for a share last posted under 30 days ago, and idle from 30 days on (#339)', () => {
+    expect(pauseOf(live, TEST_NOW + lifetime - 1)).toBeNull();
+    expect(pauseOf(live, TEST_NOW + lifetime)).toBe('idle');
+    expect(pauseOf({ ...live, pending: true }, TEST_NOW + lifetime + DAY_MS)).toBe('idle');
+  });
+
+  it('says restored for a share a restore paused, however recently it was posted (#328)', () => {
+    expect(pauseOf({ ...live, paused: true }, TEST_NOW)).toBe('restored');
+    expect(pauseOf({ ...live, paused: true }, TEST_NOW + lifetime)).toBe('restored');
+  });
+
+  it('is null for a share never posted, whose link no one could have opened', () => {
+    expect(pauseOf({ ...live, lastPostedAt: null }, TEST_NOW + lifetime)).toBeNull();
   });
 });

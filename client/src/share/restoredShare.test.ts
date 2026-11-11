@@ -12,6 +12,11 @@
  * unlock screen (#95). A linked device's copy (#96) carries no share
  * (`withoutShares`), and the relay copy linked devices keep (#247) is
  * covered in `app/linkedBackup.test.ts`.
+ *
+ * A device needn't restore anything to miss a Stop (#339): two devices can
+ * hold one live share, and the one not opened until the tombstone lapsed has
+ * nothing to tell it the link was stopped. So a share this device hasn't
+ * posted to for the tombstone's lifetime is paused too.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -325,5 +330,121 @@ describe('a share a restore brings back (#328)', () => {
     expect(held?.seed).toEqual(own?.share?.seed);
     expect(await postCopy(laptop.services, STATEMENT.id)).toBe('posted');
     expect((await shows(fake, link)).kind).toBe('shown');
+  });
+});
+
+/** The fake relay's clock when a test begins: day 0 of the tests below. */
+const DAY_ZERO = createFakeRelay().minute;
+
+/** Moves the relay's clock to `days` days after day 0, and hands back a device's time then. */
+function onDay(fake: FakeRelay, days: number): number {
+  fake.minute = DAY_ZERO + days * DAY_MINUTES;
+  return TEST_NOW + days * DAY_MS;
+}
+
+/**
+ * Ana's phone and laptop both hold her statement's live share (#339): the
+ * phone shared it on day 0, and the laptop restored the phone's backup and
+ * she kept sharing there. She stops sharing on the laptop on `stoppedOn`,
+ * and the phone isn't opened again until `openedOn`. Hands back the phone,
+ * its clock on `openedOn`, and how many posts the link had taken by then.
+ */
+async function stoppedElsewhere(fake: FakeRelay, stoppedOn: number, openedOn: number) {
+  const phone = await device(fake, 'phone');
+  const link = await shared(phone);
+  const laptop = await device(fake, 'laptop');
+  await (
+    await backupFile(phone)
+  )(laptop);
+  expect(await keepSharing(laptop.services, STATEMENT.id)).toBe('posted');
+  laptop.clock.now = onDay(fake, stoppedOn);
+  expect(await stopSharing(laptop.services, STATEMENT.id)).toBe('stopped');
+  phone.clock.now = onDay(fake, openedOn);
+  return { link, phone, posts: postsTo(fake, link).length };
+}
+
+describe('a share another device stopped (#339)', () => {
+  it('posts nothing from a device not opened until the tombstone lapsed, until the person keeps sharing there', async () => {
+    const fake = createFakeRelay();
+    const { link, phone, posts } = await stoppedElsewhere(fake, 0, LAPSED_DAYS);
+    const { store, services, clock } = phone;
+    expect(fake.blobs(shareChannelOf(link.seed).mailbox)).toEqual([]);
+    // No restore paused it: the phone just hasn't posted for the tombstone's lifetime.
+    expect((await store.getPersonal(STATEMENT.id))?.share?.paused).toBeUndefined();
+
+    // Each way a copy goes out: at launch, on leaving the editor after an edit, and directly.
+    expect(await keepSharesAlive(services)).toEqual([]);
+    await store.savePersonal({ ...STATEMENT, text: 'Written on the phone.\n' });
+    expect(await postEdits(services, STATEMENT.id)).toBe('paused');
+    expect(await postCopy(services, STATEMENT.id)).toBe('paused');
+    expect(postsTo(fake, link)).toHaveLength(posts);
+    expect(await shows(fake, link)).toEqual({ kind: 'gone' });
+
+    expect(await keepSharing(services, STATEMENT.id)).toBe('posted');
+
+    expect(postsTo(fake, link)).toHaveLength(posts + 1);
+    expect(await shows(fake, link)).toEqual({
+      kind: 'shown',
+      title: STATEMENT.title,
+      text: 'Written on the phone.\n',
+    });
+    clock.now += REFRESH_AFTER_DAYS * DAY_MS;
+    expect(await keepSharesAlive(services)).toEqual([[STATEMENT.id, 'posted']]);
+  });
+
+  it('finds the tombstone when the person keeps sharing while the relay still holds it, and posts nothing', async () => {
+    const fake = createFakeRelay();
+    // Stopped on day 10, so its tombstone outlives the phone's own 30 days.
+    const { link, phone, posts } = await stoppedElsewhere(fake, 10, SHARE_TTL_DAYS + 5);
+
+    expect(await keepSharesAlive(phone.services)).toEqual([]);
+    expect(await keepSharing(phone.services, STATEMENT.id)).toBe('stopped');
+
+    expect(postsTo(fake, link)).toHaveLength(posts);
+    expect((await phone.store.getPersonal(STATEMENT.id))?.share).toBeUndefined();
+    expect(await shows(fake, link)).toEqual({ kind: 'gone' });
+  });
+
+  it('keeps the person’s choice when the relay can’t be reached, and posts at the next launch', async () => {
+    const fake = createFakeRelay();
+    const { link, phone, posts } = await stoppedElsewhere(fake, 0, LAPSED_DAYS);
+    fake.offline = true;
+
+    expect(await keepSharing(phone.services, STATEMENT.id)).toBe('failed');
+
+    expect((await phone.store.getPersonal(STATEMENT.id))?.share?.pending).toBe(true);
+    fake.offline = false;
+    phone.clock.now += DAY_MS;
+    expect(await keepSharesAlive(phone.services)).toEqual([[STATEMENT.id, 'posted']]);
+    expect(postsTo(fake, link)).toHaveLength(posts + 1);
+  });
+
+  it('asks again when a choice made offline still hasn’t posted 30 days later', async () => {
+    const fake = createFakeRelay();
+    const { link, phone, posts } = await stoppedElsewhere(fake, 0, LAPSED_DAYS);
+    fake.offline = true;
+    expect(await keepSharing(phone.services, STATEMENT.id)).toBe('failed');
+    fake.offline = false;
+
+    phone.clock.now += SHARE_TTL_DAYS * DAY_MS;
+
+    expect(await keepSharesAlive(phone.services)).toEqual([]);
+    expect(await postCopy(phone.services, STATEMENT.id)).toBe('paused');
+    expect(postsTo(fake, link)).toHaveLength(posts);
+  });
+
+  it('Stop sharing posts only a tombstone, and nothing goes to the link after it', async () => {
+    const fake = createFakeRelay();
+    const { link, phone, posts } = await stoppedElsewhere(fake, 0, LAPSED_DAYS);
+    const { store, services, clock } = phone;
+
+    expect(await stopSharing(services, STATEMENT.id)).toBe('stopped');
+
+    expect(postsTo(fake, link)).toHaveLength(posts + 1);
+    expect(await shows(fake, link)).toEqual({ kind: 'gone' });
+    expect((await store.getPersonal(STATEMENT.id))?.share).toBeUndefined();
+    clock.now += REFRESH_AFTER_DAYS * DAY_MS;
+    expect(await keepSharesAlive(services)).toEqual([]);
+    expect(postsTo(fake, link)).toHaveLength(posts + 1);
   });
 });

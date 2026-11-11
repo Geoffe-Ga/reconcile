@@ -30,6 +30,11 @@
  * until the person chooses on that Document: {@link keepSharing} posts its
  * latest version, still finding any tombstone first, and Stop sharing posts
  * only a tombstone.
+ *
+ * A share this device hasn't posted to for the tombstone's whole lifetime,
+ * {@link SHARE_TTL_DAYS} days, is paused the same way (#339, `pauseOf`):
+ * another device holding the same share may have stopped it, and the
+ * tombstone that said so may have lapsed. Keep sharing starts its days again.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import type { Seal } from '../crypto/seal';
@@ -99,10 +104,16 @@ export type StartOutcome =
  * How one post went: posted; too large to share, or failed to reach the
  * relay, both leaving the share pending; stopped, when the mailbox already
  * held a tombstone; unshared, when there was nothing to post; or paused,
- * when a restore brought the share back and the person hasn't kept it yet
- * (#328), so nothing went.
+ * when the share waits for the person ({@link pauseOf}), so nothing went.
  */
 export type PostOutcome = 'posted' | 'too-large' | 'failed' | 'stopped' | 'unshared' | 'paused';
+
+/**
+ * Why nothing goes to a share's link until the person chooses: a restore
+ * brought it back (#328), or this device hasn't posted to it for
+ * {@link SHARE_TTL_DAYS} days (#339).
+ */
+export type SharePause = 'restored' | 'idle';
 
 /** How Stop sharing went: stopped, or failed and changed nothing. */
 export type StopOutcome = 'stopped' | 'failed';
@@ -310,16 +321,16 @@ function postedAs(
 
 /**
  * Posts the latest copy of Document `id`, if it is shared and not paused
- * (#328). A Document that has grown too large, or a relay that can't be
- * reached, leaves the share pending for `keepSharesAlive`; a tombstone
- * already in the mailbox drops the share and posts nothing.
+ * ({@link pauseOf}). A Document that has grown too large, or a relay that
+ * can't be reached, leaves the share pending for `keepSharesAlive`; a
+ * tombstone already in the mailbox drops the share and posts nothing.
  */
 export function postCopy(services: ShareServices, id: string): Promise<PostOutcome> {
   return inTurn(id, async () => {
     const document = await services.store.getPersonal(id);
     const share = document?.share;
     if (document === undefined || share === undefined) return 'unshared';
-    if (share.paused === true) return 'paused';
+    if (pauseOf(share, services.now()) !== null) return 'paused';
     const words = wordsOf(document);
     if (!fitsShare(words)) {
       await markPending(services, id, share);
@@ -394,15 +405,18 @@ export function startSharing(services: ShareServices, id: string): Promise<Start
 }
 
 /**
- * Keep sharing for Document `id`, once a restore has paused its share
- * (#328): records the person's choice, then posts the latest copy, which
- * still reads the mailbox first, so a tombstone there drops the share and
- * nothing goes. A post that fails leaves the share pending, so the next
- * launch sends it. A Document that isn't shared is left alone.
+ * Keep sharing for Document `id`, once its share is paused ({@link pauseOf}):
+ * records the person's choice, then posts the latest copy, which still reads
+ * the mailbox first, so a tombstone there drops the share and nothing goes.
+ * The choice counts as a post towards the share's {@link SHARE_TTL_DAYS}
+ * days (#339), so a post that fails leaves the share pending and the next
+ * launch sends it, unless that launch is so late that the share is idle
+ * again. A Document that isn't shared is left alone.
  */
 export async function keepSharing(services: ShareServices, id: string): Promise<PostOutcome> {
+  const at = services.now();
   const kept = await services.store.updateShare(id, (held) =>
-    held.share === undefined ? undefined : resumedShare(held.share),
+    held.share === undefined ? undefined : { ...resumedShare(held.share), lastPostedAt: at },
   );
   return kept?.share === undefined ? 'unshared' : postCopy(services, id);
 }
@@ -427,8 +441,9 @@ export function stopSharing(services: ShareServices, id: string): Promise<StopOu
 }
 
 /**
- * Whether `share`'s link may still open at `now`: its last copy went out
- * less than {@link SHARE_TTL_DAYS} days ago, so the relay may still keep it.
+ * Whether `share`'s link may still open at `now`: its last copy went out, or
+ * the person kept sharing (#339), less than {@link SHARE_TTL_DAYS} days ago,
+ * so the relay may still keep it.
  * A share never posted has no link anyone could open. The relay backup's
  * merge asks it of a share it can't tell from one this device stopped
  * (#247).
@@ -438,12 +453,27 @@ export function mayStillOpen(share: ShareState, now: number): boolean {
 }
 
 /**
+ * Why `share` waits for the person at `now`, or null while posts may go to
+ * its link: `'restored'` while a restore has it paused (#328), else `'idle'`
+ * once this device's last post to it is {@link SHARE_TTL_DAYS} or more days
+ * old, so its link may no longer open ({@link mayStillOpen}; #339). A
+ * tombstone lasts only as long as the relay keeps it, so by then another
+ * device holding the share may have stopped it with nothing left to say so.
+ * `now` is the device clock, which stamped the post. A share never posted
+ * has no link anyone could open.
+ */
+export function pauseOf(share: ShareState, now: number): SharePause | null {
+  if (share.paused === true) return 'restored';
+  return share.lastPostedAt !== null && !mayStillOpen(share, now) ? 'idle' : null;
+}
+
+/**
  * Whether `share` needs posting at launch: an edit to post, never posted, or
- * posted {@link REFRESH_AFTER_DAYS} or more days ago, and never while a
- * restore has it paused (#328).
+ * posted {@link REFRESH_AFTER_DAYS} or more days ago, and never while it
+ * waits for the person ({@link pauseOf}).
  */
 function isDue(share: ShareState, now: number): boolean {
-  if (share.paused === true) return false;
+  if (pauseOf(share, now) !== null) return false;
   if (share.pending || share.lastPostedAt === null) return true;
   return now - share.lastPostedAt >= REFRESH_AFTER_DAYS * DAY_MS;
 }
@@ -451,8 +481,8 @@ function isDue(share: ShareState, now: number): boolean {
 /**
  * Posts the latest copy of every shared Document that is pending or due, one
  * after another, at app start, so a share that stays on outlives the relay's
- * 30-day retention. A paused share (#328) waits for the person. Returns each
- * one's id and how its post went.
+ * 30-day retention. A paused share ({@link pauseOf}) waits for the person.
+ * Returns each one's id and how its post went.
  */
 export async function keepSharesAlive(
   services: ShareServices,
