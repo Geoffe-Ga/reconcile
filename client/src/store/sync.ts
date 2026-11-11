@@ -95,16 +95,21 @@
  *
  * A group's key changes when someone leaves (#98, `epochs.ts`). Each record
  * read is tagged with the epoch of the mailboxes it came from. While a key
- * change is due, the outbox sends only `key-rotate` and `leave`. After a pass
- * in which every group synced, a device that sees a key change due syncs that
- * group once more and, if none has landed, posts one to the outgoing epoch's
- * mailbox for this week. A pull that brings a canonical key change this
- * member's wrap opens moves the group to the new epoch's mailboxes, in the
- * same store change, and they are read at once, from the key change's seq.
- * The old epoch's are read no more, so whatever reaches any week of them
- * after the key change stays ignored. A member with no encryption key posts
- * one. A dissolve ends all of this (#108): the fold makes no key change due
- * once a group has dissolved, and an archive neither writes one nor posts a key.
+ * change is due, the outbox sends only `key-rotate`, `leave`, `unwrap-failed`
+ * and `key-taken`. After a pass in which every group synced, a device that
+ * sees a key change due syncs that group once more and, if none has landed,
+ * posts one to the outgoing epoch's mailbox for this week. A pull that brings
+ * a key change this member's wrap opens, every other wrap of which is the one
+ * its secret makes (#224), moves the group to the new epoch's mailboxes, in
+ * the same store change, and they are read at once, from the key change's
+ * seq. The old epoch's are read no more, so whatever reaches any week of them
+ * after the key change stays ignored. A pull that brings a key change that
+ * doesn't check out queues an `unwrap-failed` naming it, which the next pass
+ * posts to the old epoch's mailbox; once it folds, the key change is refused,
+ * one is due again, and its author may write no other (#224). A member with
+ * no encryption key posts one. A dissolve ends all of this (#108): the fold
+ * makes no key change due once a group has dissolved, and an archive neither
+ * writes one nor posts a key. A coalition has no key of its own (#100).
  */
 
 import { newKxKey } from '../crypto/box';
@@ -126,11 +131,11 @@ import {
   type Store,
 } from './db';
 import {
-  advanceFor,
   epochOf,
   hasDuty,
   isFrozen,
   keyRotateRecord,
+  keyStepFor,
   kxRecord,
   needsKx,
   passesFreeze,
@@ -416,7 +421,9 @@ export function createSync(options: SyncOptions): Sync {
    * outbox to this week's mailbox, then reads each week `pollWeeks` names and
    * saves what they held in one pull: `left` once the group's leave is posted
    * and the group purged, `moved` when the pull took the group to its next
-   * epoch (#98), else `stayed`.
+   * epoch (#98), else `stayed`. When the pull brings a key change that doesn't
+   * check out here, it queues this member's `unwrap-failed` for the next pass
+   * to post to the old epoch's mailbox (#224).
    */
   async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
     const frozen = isFrozen(foldGroup(group), group);
@@ -427,18 +434,19 @@ export function createSync(options: SyncOptions): Sync {
     const pass = { first, cursors, week, posted: outcome === 'posted' };
     const reads = await readWeeks(group, pass);
     const { records, relayNow } = openReads(seal, group, reads);
-    const advance = advanceFor(group, records, relayNow);
+    const step = keyStepFor(group, records, relayNow, clock());
     const pull: Pull = {
       records,
       cursors: cursorsAfter(group.secret, pass, reads),
       relayNow,
       instance: first.instance,
       lastSyncAt: clock(),
-      ...(advance === null ? {} : { advance }),
+      ...(step?.kind === 'move' ? { advance: step.advance } : {}),
     };
     await store.applyPull(group.groupId, pull, idOf);
+    if (step?.kind === 'refuse') await store.enqueue(group.groupId, step.record);
     await settleAfter(group, pull);
-    return advance === null ? 'stayed' : 'moved';
+    return step?.kind === 'move' ? 'moved' : 'stayed';
   }
 
   /**

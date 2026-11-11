@@ -6,20 +6,23 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { base64url, fromBase64url } from '../crypto/base64url';
+import { BOX_OVERHEAD } from '../crypto/box';
+import { epochCommit, newEpochSecret, wrapEpochSecret } from '../crypto/epoch';
 import { newGroupSecret } from '../crypto/groupKeys';
-import { type EventDraft } from '../engine/event';
-import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { type EventDraft, parseRecord } from '../engine/event';
+import { fold, type GroupState, keyHolders, type LogRecord } from '../engine/fold';
 import { utf8 } from '../test/bytes';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import type { Group } from './db';
 import {
   adoptionFor,
-  advanceFor,
   epochOf,
   hasDuty,
   isFrozen,
   keyChangeOf,
   keyRotateRecord,
+  keyStepFor,
   needsKx,
   passesFreeze,
   secretFits,
@@ -92,6 +95,12 @@ function afterLeave(): Log {
   return log;
 }
 
+/** The move `keyStepFor` finds for `group` after `records`, or null for anything else. */
+function advanceFor(group: Group, records: readonly LogRecord[], relayNow: number) {
+  const step = keyStepFor(group, records, relayNow, TS);
+  return step?.kind === 'move' ? step.advance : null;
+}
+
 /** {@link afterLeave}, then Ana's device writes the key change. */
 function afterRotation(): Log {
   const log = afterLeave();
@@ -108,7 +117,7 @@ describe('the freeze', () => {
     expect(isFrozen(afterRotation().state(), { epoch: 1 })).toBe(false);
   });
 
-  it('lets only a key-rotate or a leave through', () => {
+  it('lets only a key-rotate, a leave, an unwrap-failed or a key-taken through (#224)', () => {
     const log = afterLeave();
     const rotate = keyRotateRecord(device('ana', log), log.state(), TS);
     const leave = signedAs('ben', { type: 'leave', group: log.group, ts: TS, body: {} }).record;
@@ -118,12 +127,14 @@ describe('the freeze', () => {
       ts: TS,
       body: { level: 'x' },
     });
-    expect([rotate, leave, level.record, utf8('not a record')].map(passesFreeze)).toEqual([
-      true,
-      true,
-      false,
-      false,
-    ]);
+    const body = { rotation: 'r' };
+    const failed = signedAs('ben', { type: 'unwrap-failed', group: log.group, ts: TS, body });
+    const taken = signedAs('ben', { type: 'key-taken', group: log.group, ts: TS, body });
+    expect(
+      [rotate, leave, failed.record, taken.record, level.record, utf8('not a record')].map(
+        passesFreeze,
+      ),
+    ).toEqual([true, true, true, true, false, false]);
   });
 });
 
@@ -235,5 +246,195 @@ describe('what group home says once the key moved on', () => {
     expect(
       keyChangeOf({ me: { author: authorOf('cal'), name: 'cal' } }, afterLeave().state()),
     ).toBeNull();
+  });
+});
+
+/** Each current key holder's wrap: garbage for each named in `poisoned`, the rule's for the rest. */
+function wrapsOf(
+  state: GroupState,
+  epoch: number,
+  secret: Uint8Array,
+  poisoned: readonly string[],
+) {
+  const groupId = state.group ?? '';
+  const commit = epochCommit(groupId, epoch, secret);
+  const garbage = (): string => base64url(new Uint8Array(BOX_OVERHEAD + 32).fill(7));
+  const wraps = Object.fromEntries(
+    keyHolders(state).map(({ author, kx }) => [
+      author,
+      poisoned.includes(author)
+        ? garbage()
+        : wrapEpochSecret({
+            groupId,
+            epoch,
+            member: author,
+            commit,
+            kx: fromBase64url(kx),
+            secret,
+          }),
+    ]),
+  );
+  return { commit, wraps };
+}
+
+/** `log` with `name`'s key change into the fold's next epoch, wrapped to everyone but poisoned for `poisoned`. */
+function poisonedBy(log: Log, name: string, poisoned: readonly string[]): string {
+  const state = log.state();
+  const epoch = state.nextEpoch;
+  const { commit, wraps } = wrapsOf(state, epoch, newEpochSecret(), poisoned);
+  const record = log.add(name, { type: 'key-rotate', body: { epoch, commit, wraps } });
+  return parseRecord(record)?.id ?? '';
+}
+
+/** Ana, Ben, Cal and Zed; Cal leaves, and Zed writes a key change whose wraps for `poisoned` don't open. */
+function poisonedLog(poisoned: readonly string[]): { log: Log; rotation: string } {
+  const log = Log.founded('ben', 'cal', 'zed');
+  log.add('cal', { type: 'leave', body: {} });
+  const rotation = poisonedBy(log, 'zed', poisoned);
+  return { log, rotation };
+}
+
+/** The `unwrap-failed` or `key-taken` in `bytes`, by its author and the key change it names. */
+function checkIn(bytes: Uint8Array | undefined) {
+  const event = bytes === undefined ? undefined : parseRecord(bytes)?.event;
+  if (event?.type !== 'unwrap-failed' && event?.type !== 'key-taken') return null;
+  return {
+    type: event.type,
+    author: event.author,
+    group: event.group,
+    rotation: event.body.rotation,
+  };
+}
+
+describe('a key change that doesn’t open (#224)', () => {
+  const everyone = [authorOf('ana'), authorOf('ben'), authorOf('zed')];
+
+  it('makes a device whose wrap doesn’t open say so, once, naming the key change', () => {
+    const { log, rotation } = poisonedLog(everyone);
+    const before = device('ben', log);
+    const step = keyStepFor(before, [], R + 100, TS);
+    expect(step?.kind).toBe('refuse');
+    const record = step?.kind === 'refuse' ? step.record : undefined;
+    expect(checkIn(record)).toEqual({
+      type: 'unwrap-failed',
+      author: authorOf('ben'),
+      group: log.group,
+      rotation,
+    });
+    expect(parseRecord(record ?? new Uint8Array())?.event.ts).toBe(TS);
+    // Once it is queued it isn't said again; once it is in the log the fold refuses the key change.
+    expect(
+      keyStepFor({ ...before, outbox: [record ?? new Uint8Array()] }, [], R + 100, TS),
+    ).toBeNull();
+    const said = {
+      seq: log.records.length + 1,
+      received: R + 100,
+      bytes: record ?? new Uint8Array(),
+    };
+    expect(keyStepFor(device('ben', log), [said], R + 100, TS)).toBeNull();
+    const refusedNow = fold([...log.records, said], null);
+    expect(refusedNow.refused.map((r) => r.id)).toEqual([rotation]);
+  });
+
+  it('makes a device whose own wrap opens say so too when anyone else’s isn’t the secret’s', () => {
+    const { log, rotation } = poisonedLog([authorOf('ben')]);
+    const step = keyStepFor(device('ana', log), [], R + 100, TS);
+    expect(step?.kind === 'refuse' ? checkIn(step.record) : step).toEqual({
+      type: 'unwrap-failed',
+      author: authorOf('ana'),
+      group: log.group,
+      rotation,
+    });
+    expect(keyStepFor(device('ben', log), [], R + 100, TS)?.kind).toBe('refuse');
+  });
+
+  it('says nothing from a device that can’t judge: its key isn’t the group’s for it, or it has no wrap', () => {
+    const { log } = poisonedLog(everyone);
+    const otherKey = device('ben', log, { kxKey: testKx('kim').kxKey });
+    expect(keyStepFor(otherKey, [], R + 100, TS)).toBeNull();
+    expect(keyStepFor(withoutKx(device('ben', log)), [], R + 100, TS)).toBeNull();
+    expect(keyStepFor(device('cal', log), [], R + 100, TS)).toBeNull();
+  });
+
+  it('takes up a key change every wrap of which is the secret’s, with nothing more to post', () => {
+    const log = afterRotation();
+    const step = keyStepFor(device('ben', afterLeave()), log.records.slice(-1), R + 100, TS);
+    expect(step?.kind === 'move' ? [step.advance.epoch, step.advance.repost] : step).toEqual([
+      1,
+      [],
+    ]);
+  });
+
+  it('takes up a refused key change that checks out here, and posts a key-taken naming it first', () => {
+    const log = afterRotation();
+    const state = log.state();
+    const rotation = state.rotations[0]?.id ?? '';
+    // Cal, who left, can't refuse it; Ben's word does, though his wrap opens.
+    log.add('ben', { type: 'unwrap-failed', body: { rotation } });
+    expect(log.state().refused.map((r) => r.id)).toEqual([rotation]);
+    const late = log.add('ana', { type: 'level', body: { level: 'x' } });
+    const step = keyStepFor(device('ana', log), [], R + 100, TS);
+    if (step?.kind !== 'move') throw new Error('a move');
+    expect(step.advance.epoch).toBe(1);
+    expect(step.advance.cursor).toBe(state.rotations[0]?.seq);
+    const [first, ...rest] = step.advance.repost;
+    expect(checkIn(first)).toEqual({
+      type: 'key-taken',
+      author: authorOf('ana'),
+      group: log.group,
+      rotation,
+    });
+    expect(rest).toEqual([late]);
+  });
+
+  it('passes over a refused key change it can’t take up, to the one after it', () => {
+    const { log, rotation } = poisonedLog(everyone);
+    log.add('ben', { type: 'unwrap-failed', body: { rotation } });
+    const refused = log.state();
+    expect([refused.epoch, refused.nextEpoch, refused.rotationDue]).toEqual([0, 2, true]);
+    const record = keyRotateRecord(device('ana', log), refused, TS);
+    log.records.push({ seq: log.records.length + 1, received: R + 99, bytes: record });
+    const step = keyStepFor(device('ben', log), [], R + 100, TS);
+    expect(step?.kind === 'move' ? step.advance.epoch : step).toBe(2);
+    expect(log.state().rotations.map((r) => r.epoch)).toEqual([2]);
+  });
+
+  it('never posts again a key check of its own that reached the old mailbox after the key change it takes up', () => {
+    const { log, rotation } = poisonedLog(everyone);
+    log.add('ana', { type: 'unwrap-failed', body: { rotation } });
+    const record = keyRotateRecord(device('ana', log), log.state(), TS);
+    log.records.push({ seq: log.records.length + 1, received: R + 99, bytes: record });
+    // Ben's word, and a stray key-taken of his, land in the old mailbox after the fresh key change.
+    log.add('ben', { type: 'unwrap-failed', body: { rotation } });
+    log.add('ben', { type: 'key-taken', body: { rotation } });
+    const late = log.add('ben', { type: 'level', body: { level: 'x' } });
+    const step = keyStepFor(device('ben', log), [], R + 100, TS);
+    expect(step?.kind === 'move' ? [step.advance.epoch, step.advance.repost] : step).toEqual([
+      2,
+      [late],
+    ]);
+  });
+
+  it('gives the duty to no one whose key change was refused, and the next one names the epoch past it', () => {
+    const { log, rotation } = poisonedLog(everyone);
+    log.add('ana', { type: 'unwrap-failed', body: { rotation } });
+    const state = log.state();
+    expect(hasDuty(device('zed', log), state)).toBe(false);
+    expect(hasDuty(device('ben', log), state)).toBe(true);
+    const record = keyRotateRecord(device('ben', log), state, TS);
+    const event = parseRecord(record)?.event;
+    expect(event?.type === 'key-rotate' ? event.body.epoch : null).toBe(2);
+  });
+
+  it('adopts an invite’s secret only for a key change every wrap of which is that secret’s', () => {
+    const log = Log.founded('ben', 'cal', 'zed');
+    log.add('cal', { type: 'leave', body: {} });
+    const state = log.state();
+    const secret = newEpochSecret();
+    const { commit, wraps } = wrapsOf(state, 1, secret, [authorOf('ben')]);
+    log.add('zed', { type: 'key-rotate', body: { epoch: 1, commit, wraps } });
+    // The commit fits, but Ben's wrap isn't the secret's: an invite from Zed doesn't move anyone.
+    expect(secretFits(log.state(), 1, secret)).toBe(true);
+    expect(adoptionFor(device('dee', log), 1, secret)).toBeNull();
   });
 });
