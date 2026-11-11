@@ -278,9 +278,10 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
         expect(fields).not.toContain('kxKey');
       }
     }
-    // Ana's relay backup record keeps its state, and the vault its key.
+    // Ana's relay backup record keeps its state, the ids of the Documents it uploaded (#247),
+    // and the vault its key.
     expect((await rawDatabase(ana.page)).backupFields).toEqual([
-      ['checkedDay', 'digest', 'tooLarge', 'uploadedAt'],
+      ['checkedDay', 'digest', 'tooLarge', 'uploaded', 'uploadedAt'],
     ]);
   });
 
