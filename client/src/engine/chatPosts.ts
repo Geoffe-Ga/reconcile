@@ -2,8 +2,9 @@
  * The chat bot's claims (#119; ADR-0039 step 1, ADR-0074; docs/spec/phase-1-spec.md §4, Chat bot).
  *
  * Once a group turns its Discord bot on by Proposal, its channel hears of each
- * Proposal three times: when it opens, when its last day starts, and when it
- * is decided. No server holds the webhook, so a member's device posts each
+ * of the group's own Proposals three times: when it opens, when its last day
+ * starts, and when it is decided; never of a coalition motion it votes on
+ * (#100). No server holds the webhook, so a member's device posts each
  * notice, and the group's log decides which one: every device that sees a
  * moment come due claims it with a `chat-posted` event, the fold keeps the
  * first claim per (Proposal, moment) in relay order, and only the device that
@@ -172,8 +173,11 @@ function mayAct(state: Roster, author: string): boolean {
 /**
  * Whether `author` may claim `moment` on `proposal` at `state.at`: they are a
  * member who isn't suspended, the bot is on in effect (not off, nor narrowed
- * by a steward), the Proposal is known and `moment` is the one due, and
- * nobody has claimed it yet.
+ * by a steward), the Proposal is the group's own and `moment` is the one due,
+ * and nobody has claimed it yet. A coalition motion the group votes on (#100)
+ * is never claimed: it isn't the group's own, has no number to name a thread,
+ * and a device without the coalition's log, as the bot's fold is, doesn't
+ * know it. So no thread is ever recorded for one either.
  */
 export function mayClaim(
   state: ChatPostState,
@@ -184,6 +188,7 @@ export function mayClaim(
   const target = state.proposals.find((p) => p.id === proposal);
   return (
     target !== undefined &&
+    target.target.kind !== 'motion' &&
     mayAct(state, author) &&
     effectiveOptIn(state, 'chatBot') !== null &&
     dueMoment(target, state.at) === moment &&

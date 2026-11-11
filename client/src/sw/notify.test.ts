@@ -6,6 +6,7 @@ import {
   NOTIFICATION_TAG,
   type NotifyRegistration,
   openApp,
+  replacesByTag,
   showSomethingNew,
   SOMETHING_NEW,
   type WindowClients,
@@ -76,11 +77,69 @@ function fakeClients(windows: number) {
   return clients;
 }
 
+/**
+ * A registration as Chromium keeps one: a tag names one notification, so a
+ * new one under it replaces the last, and closing any object under the tag
+ * closes whichever one shows under it now, the new one included.
+ */
+function replacingRegistration() {
+  const byTag = new Map<string, { title: string; serial: number }>();
+  let serial = 0;
+  let closes = 0;
+  const registration = {
+    get closes() {
+      return closes;
+    },
+    showing: (tag: string) => byTag.get(tag),
+    getNotifications: ({ tag }: { tag: string }) =>
+      Promise.resolve(
+        byTag.has(tag)
+          ? [
+              {
+                close: () => {
+                  closes += 1;
+                  byTag.delete(tag);
+                },
+              },
+            ]
+          : [],
+      ),
+    showNotification: (title: string, options: { tag: string }) => {
+      serial += 1;
+      byTag.set(options.tag, { title, serial });
+      return Promise.resolve();
+    },
+  } satisfies NotifyRegistration & Record<string, unknown>;
+  return registration;
+}
+
+describe('replacesByTag: whether this browser replaces a notification under its tag', () => {
+  it('is true where notifications have renotify, which only replacement gives meaning', () => {
+    expect(replacesByTag({ prototype: { renotify: false } })).toBe(true);
+  });
+
+  it('is false where they have none, as in Safari and Firefox, or there is no Notification', () => {
+    expect(replacesByTag({ prototype: {} })).toBe(false);
+    expect(replacesByTag(undefined)).toBe(false);
+  });
+});
+
 describe('showSomethingNew: what one push shows (#99, ADR-0012)', () => {
-  it('closes the open one first, then shows exactly one notification with only its tag', async () => {
+  it('where the browser replaces by tag, shows the new one without closing the last', async () => {
+    const reg = replacingRegistration();
+
+    await showSomethingNew(reg, true);
+    await showSomethingNew(reg, true);
+
+    // Closing first would close under the tag the new one shares (Chromium 153 can apply it late).
+    expect(reg.closes).toBe(0);
+    expect(reg.showing('reconcile')).toEqual({ title: SOMETHING_NEW, serial: 2 });
+  });
+
+  it('where it doesn’t, closes the open one first, then shows exactly one with only its tag', async () => {
     const reg = fakeRegistration([{ tag: 'reconcile' }]);
 
-    await showSomethingNew(reg);
+    await showSomethingNew(reg, false);
 
     expect(reg.closedCount).toBe(1);
     expect(reg.shown).toEqual([
@@ -100,11 +159,12 @@ describe('showSomethingNew: what one push shows (#99, ADR-0012)', () => {
   it('leaves another tag’s notification alone and never sets the app badge', async () => {
     const reg = fakeRegistration([{ tag: 'other' }, { tag: 'reconcile' }, { tag: 'reconcile' }]);
 
-    await showSomethingNew(reg);
-    await showSomethingNew(reg);
+    await showSomethingNew(reg, false);
+    await showSomethingNew(reg, false);
+    await showSomethingNew(reg, true);
 
     expect(reg.closedCount).toBe(3);
-    expect(reg.shown).toHaveLength(2);
+    expect(reg.shown).toHaveLength(3);
     expect(reg.badges).toEqual([]);
   });
 });

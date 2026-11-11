@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { folded, foldLogs, Logs } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder, START_MINUTE } from '../test/votes';
 import { LEVELS } from './capabilities';
@@ -309,5 +310,64 @@ describe('a removal beside Dispatches (#112)', () => {
     log.minute += 1;
     const [sent] = log.state().dispatches;
     expect(sent).toMatchObject({ id, by: { proposal: id }, ...dispatch, doc: null });
+  });
+});
+
+describe('a removal beside coalitions (#100)', () => {
+  const R = 29_375_000;
+  const CAL = authorOf('cal');
+  const removalOf = (member: string) => ({
+    target: { kind: 'remove', member },
+    title: 'Remove them',
+    why: 'They broke the agreement.',
+  });
+
+  /**
+   * Group A (ana, ben, cal) passes its reconcile Proposal for seat A, and Ana
+   * proposes removing Cal; `scores` are the removal's ballots. A coalition of
+   * A and B then forms, and zed moves.
+   */
+  function scene(scores: Readonly<Record<string, 0 | 1 | 2 | 3 | 4>>) {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben', 'cal']);
+    const reconcile = logs.reconcile('A', R + 3, 'ana', 'A');
+    for (const voter of ['ana', 'ben', 'cal']) logs.vote('A', R + 4, voter, reconcile, 4);
+    const removal = logs.add('A', R + 5, 'ana', { type: 'proposal', body: removalOf(CAL) });
+    for (const [voter, score] of Object.entries(scores))
+      logs.vote('A', R + 6, voter, removal, score);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'zed');
+    return { logs, removal, motion };
+  }
+
+  const motionIn = (logs: Logs, id: string) =>
+    folded(foldLogs(logs.logs, R + 100), 'A').state.proposals.find((p) => p.id === id);
+
+  it('leaves the person a passed removal names out of a motion the group opens', () => {
+    const { logs, motion } = scene({ ana: 4, ben: 4 });
+    expect(motionIn(logs, motion)?.eligible).toEqual([authorOf('ana'), authorOf('ben')]);
+  });
+
+  it('keeps the person a removal only names, while it is open, in a motion’s eligible set', () => {
+    const { logs, motion } = scene({ ana: 4 });
+    expect(motionIn(logs, motion)?.eligible).toEqual([authorOf('ana'), authorOf('ben'), CAL]);
+  });
+
+  it('ignores a removal, a response and a remove in a coalition’s own log', () => {
+    const logs = new Logs();
+    const at = logs.formed(R, ['A', 'B'], ['kim', 'zed']);
+    const proposal = logs.add('coalition', at, 'zed', {
+      type: 'proposal',
+      body: removalOf(KIM),
+    });
+    const response = logs.add('coalition', at + 1, 'kim', {
+      type: 'removal-response',
+      body: { proposal, text: 'I disagree.' },
+    });
+    const remove = logs.add('coalition', at + 2, 'zed', { type: 'remove', body: { proposal } });
+    const state = fold(logs.logs.coalition ?? [], at + 3);
+    expect(state.ignored.map((r) => r.id)).toEqual([proposal, response, remove]);
+    expect(state.proposals).toEqual([]);
+    expect(state.members.map((m) => m.author)).toContain(KIM);
   });
 });

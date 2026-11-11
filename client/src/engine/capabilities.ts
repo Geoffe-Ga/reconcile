@@ -75,6 +75,13 @@ export const FOUNDER_LEVEL: Level = 'co-creator';
 /** The level of a `join` that names none, and the one Join preselects. */
 export const DEFAULT_JOIN_LEVEL: Level = 'collaborator';
 
+/**
+ * The level every coalition participant holds (#100): they propose motions
+ * and post their group's results, and groups, not people, decide. #124's
+ * followers write no join, so they hold none.
+ */
+export const PARTICIPANT_LEVEL: Level = 'co-creator';
+
 /** True when `value` is one of {@link LEVELS}. */
 export function isLevel(value: unknown): value is Level {
   return LEVELS.some((level) => level === value);

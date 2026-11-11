@@ -20,6 +20,7 @@
  * this file reads only the few fields it names.
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
+import type { MotionTarget, ReconcileChange } from './coalition';
 import type { DissolveTarget, RemoveTarget } from './event';
 import {
   effectiveOptIn,
@@ -98,9 +99,17 @@ export interface StewardChange {
 /**
  * What a Proposal changes: an Atom's text (#63, #72), a steward seat (#102),
  * an opt-in (#117), whether the group goes on (#108), or who is in it (#115).
+ * Or it reconciles the group into a coalition, or is a coalition's motion,
+ * which its seats decide (#100).
  */
 export type ProposalTarget =
-  { readonly kind: 'edit' } | StewardChange | RulesChange | DissolveTarget | RemoveTarget;
+  | { readonly kind: 'edit' }
+  | StewardChange
+  | RulesChange
+  | DissolveTarget
+  | RemoveTarget
+  | ReconcileChange
+  | MotionTarget;
 
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that
