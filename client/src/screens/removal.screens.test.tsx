@@ -332,7 +332,9 @@ describe('a removal’s ballot', () => {
     await user.click(screen.getByRole('button', { name: 'Post your response' }));
     expect(onRespond).not.toHaveBeenCalled();
     expect(field).toHaveAccessibleDescription(/Write your response first\./);
-    await user.type(field, `${'a'.repeat(1_000)}🌿`);
+    // Pasted, not typed: 1,001 keystrokes would outlast the test's time under load.
+    await user.click(field);
+    await user.paste(`${'a'.repeat(1_000)}🌿`);
     await user.click(screen.getByRole('button', { name: 'Post your response' }));
     expect(onRespond).not.toHaveBeenCalled();
     expect(field).toHaveAccessibleDescription(/Keep your response to 1,000 characters or fewer\./);

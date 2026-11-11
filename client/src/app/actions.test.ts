@@ -247,7 +247,9 @@ describe('createGroup', () => {
 
     const [put] = fake.requests.filter((request) => request.method === 'PUT');
     const blob = put?.body ?? new Uint8Array();
-    expect(blob).toHaveLength(1024);
+    // The genesis carries every founding rule, removal's bar and window (#115) among them,
+    // which takes even this small group's genesis past the 1 KiB blob into the 4 KiB one.
+    expect(blob).toHaveLength(4096);
     const readable = [
       ...['Riverside Tenants', 'Ana', 'House rules', 'Quiet hours start at ten.'].map(utf8),
       ...[group.groupId, group.me.author, base64url(group.secret)].map(utf8),
