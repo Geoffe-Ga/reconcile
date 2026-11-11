@@ -28,12 +28,16 @@
  *    only while the group has its bot on and hasn't dissolved, and never once
  *    the loop is halted (#78). Nothing the bot does, or fails to do, changes
  *    whether the pass succeeded;
- * 6. posts the push nudges due for this device's own open Proposals (#99,
+ * 6. keeps the group's front door (#121, src/door/keeper.ts): posts its
+ *    page when it's due and reads its inbox while the door is open, closes
+ *    the page of a door no longer open, a dissolved group's included (#108),
+ *    and never fails the pass;
+ * 7. posts the push nudges due for this device's own open Proposals (#99,
  *    ./push.ts), each once, which likewise never fails the pass. A read-only
  *    archive (#108) posts none.
  *
  * After a pass in which every group synced, and unless the loop is halted,
- * four things follow, in this order:
+ * five things follow, in this order:
  *
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
@@ -50,7 +54,9 @@
  *    30 days, so a phone is under a new mailbox as soon as the pass that
  *    moved it. A read-only archive gets no upkeep: its registration is left
  *    to expire at the relay, so no request names its mailbox again;
- * 4. `afterPass`: in the app, the relay backup's daily refresh (#97,
+ * 4. replies to the front-door applications this device sent (#121), which
+ *    runs on a device in no group too, and never fails the pass;
+ * 5. `afterPass`: in the app, the relay backup's daily refresh (#97,
  *    ./relayBackup.ts), last because it may send the largest request of the
  *    day, and so that its snapshot holds each group after its key change.
  *    It waits while a key change this device should write is still due
@@ -134,6 +140,17 @@ export const MAX_WAIT_MS = 30_000;
 
 /** How long the relay keeps a group's events, in days (ADR-0057). */
 export const GROUP_TTL_DAYS = 30;
+
+/**
+ * The front door's work in a pass (#121): `createDoorKeeper` in src/door/,
+ * kept apart from this module so sync needs nothing of the door's.
+ */
+export interface DoorUpkeep {
+  /** Keeps `groupId`'s door after the group synced. */
+  run(groupId: string): Promise<void>;
+  /** Looks for replies to this device's applications, after a complete pass. */
+  replies(): Promise<void>;
+}
 
 /** The timer functions the poller uses; tests hand in ones they control. */
 export interface Timers {
@@ -264,6 +281,8 @@ export interface SyncOptions {
   chatBot?: Pick<ChatBot, 'run'>;
   /** Push's nudges, upkeep and Leave's forget (#99); without it, nothing is registered or nudged. */
   push?: PushUpkeep;
+  /** The front door's keeper (#121); without it, no page is kept and no inbox or reply read. */
+  door?: DoorUpkeep;
   /**
    * Run after each pass in which every group synced, unless halted, once the
    * pass's key changes (#98) and push upkeep (#99) are done: the relay
@@ -291,7 +310,7 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
-  const { chatBot, push, afterPass } = options;
+  const { chatBot, push, door, afterPass } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let halted = false;
@@ -446,6 +465,7 @@ export function createSync(options: SyncOptions): Sync {
     // Once halted (Erase, #78), the bot neither claims nor posts, and no nudge goes.
     if (halted) return true;
     await chatBot?.run(group.groupId).catch(() => undefined);
+    await door?.run(group.groupId).catch(() => undefined);
     await push?.nudge(group.groupId).catch(() => undefined);
     return true;
   }
@@ -491,12 +511,14 @@ export function createSync(options: SyncOptions): Sync {
 
   /**
    * What follows a pass in which every group synced and its key changes,
-   * results and clearing were made, unless halted: push upkeep (#99), then,
-   * last, the relay backup's refresh (#97), so each sees every group at the
-   * epoch it moved to (#98), with its expired ballots gone (#111).
+   * results and clearing were made, unless halted: push upkeep (#99), the
+   * front door's replies (#121), then, last, the relay backup's refresh
+   * (#97), so each sees every group at the epoch it moved to (#98), with its
+   * expired ballots gone (#111).
    */
   async function afterComplete(): Promise<void> {
     if (!halted) await push?.upkeep();
+    if (!halted) await door?.replies().catch(() => undefined);
     if (!halted) await afterPass?.().catch(() => undefined);
   }
 

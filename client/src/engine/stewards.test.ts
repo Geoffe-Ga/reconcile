@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog, START_MINUTE } from '../test/votes';
 import { LEVELS } from './capabilities';
@@ -263,7 +264,7 @@ describe('narrowing an opt-in (ADR-0040, ADR-0075 §3)', () => {
 
   it('refuses a narrow beside an on-Proposal, or once the off-Proposal has closed', () => {
     const log = group(['Ben', 'Cal']);
-    const on = log.rules('Ana', 'frontDoor', true);
+    const on = log.rules('Ana', 'frontDoor', DOOR);
     expect(mayNarrow(log.state(), ANA, { optIn: 'frontDoor', proposal: on })).toBe(false);
     const closed = botOn();
     const off = closed.rules('Ana', 'chatBot', null);

@@ -6,15 +6,20 @@
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { Level } from '../engine/capabilities';
+import { apply, type ApplyValues, forgetJoined } from '../door/apply';
+import { sendInvite } from '../door/inbox';
+import type { OpenPage } from '../door/page';
+import { can, type Level } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
+import { Applications } from '../screens/Applications';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
 import { DissolveComposer } from '../screens/DissolveComposer';
 import { type AddPlace, DocumentView } from '../screens/DocumentView';
+import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
@@ -35,8 +40,9 @@ import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
-import { Start } from '../screens/Start';
+import { Start, type StartRequest } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
+import { dismissed } from '../store/applications';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import { foldGroup } from '../store/expiry';
@@ -87,6 +93,7 @@ import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { useSentApplications } from './useSent';
 import { useRelayBackupStatus } from './useRelayBackup';
 
 /** Props for {@link App}. */
@@ -105,19 +112,60 @@ interface StartScreenProps {
   readonly persistence: Persistence | null;
 }
 
+/** Opens a front door link pasted into Start (#121). */
+function openDoor(payload: string): void {
+  navigate({ name: 'door', payload });
+}
+
 function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
   const groups = useGroupList(services.store);
+  const sent = useSentApplications(services.store);
+  const requests = useMemo(
+    () =>
+      (sent ?? []).map((application): StartRequest => ({
+        id: application.id,
+        groupName: application.groupName,
+        sentAt: application.sentAt,
+        invite: application.invite ?? null,
+      })),
+    [sent],
+  );
   const onRestore = useCallback(
     (bytes: Uint8Array, passphrase: string) => restoreBackup(services, bytes, passphrase),
     [services],
   );
-  return groups === null ? null : (
+  return groups === null || sent === null ? null : (
     <Start
       groups={groups}
+      requests={requests}
       onOpenInvite={onOpenInvite}
+      onOpenDoor={openDoor}
       persistence={persistence}
       onRestore={onRestore}
     />
+  );
+}
+
+/** A group's front door (#121): its page, and Send, which keeps its reply key on this device. */
+function DoorScreen({
+  services,
+  payload,
+}: {
+  readonly services: AppServices;
+  readonly payload: string;
+}) {
+  const sent = useSentApplications(services.store);
+  const asked = useCallback(
+    (address: string) => (sent ?? []).some((application) => application.door === address),
+    [sent],
+  );
+  const onApply = useCallback(
+    (address: Uint8Array, page: OpenPage, values: ApplyValues) =>
+      apply(services, address, page, values),
+    [services],
+  );
+  return sent === null ? null : (
+    <FrontDoor payload={payload} reader={services} asked={asked} onApply={onApply} />
   );
 }
 
@@ -270,12 +318,14 @@ function JoinScreen(props: JoinScreenProps) {
   const onJoin = useCallback(
     async (group: FoundGroup, name: string, level: Level) => {
       const groupId = await joinGroup(services, group, name, level);
+      // An invite a front door's reply brought is spent once joined (#121).
+      if (heldSeed !== null) await forgetJoined(services.store, heldSeed).catch(() => undefined);
       releaseSeed();
       offerGuide(groupId);
       replaceRoute({ name: 'group', groupId });
       return true;
     },
-    [services, releaseSeed, offerGuide],
+    [services, heldSeed, releaseSeed, offerGuide],
   );
   // Not now (#91): the held seed goes, and leaving Join drops the opened envelope with it.
   const onNotNow = useCallback(() => {
@@ -372,12 +422,43 @@ interface GroupScreenProps {
   readonly groupId: string;
 }
 
+/**
+ * The front door's Applications for group home (#121), while the door is
+ * open in effect and this member may invite; otherwise none.
+ */
+function applicationsFor(services: AppServices, group: GroupView & { state: GroupState; me: Me }) {
+  const { state, me } = group;
+  const groupId = state.group ?? '';
+  const open = state.dissolved === null && state.optIns.frontDoor !== false;
+  if (!open || !can(state, me.author, 'invite')) return undefined;
+  return (
+    <Applications
+      state={state}
+      me={me.author}
+      applications={group.applications}
+      onInvite={(id) =>
+        sendInvite(
+          { ...services, makeInvite: () => makeInvite(services, groupId, services.origin) },
+          groupId,
+          id,
+        )
+      }
+      onDismiss={(id) =>
+        services.store.updateInbox(groupId, (held) =>
+          held === undefined ? held : dismissed(held, id),
+        )
+      }
+    />
+  );
+}
+
 function GroupScreen({ services, groupId }: GroupScreenProps) {
   const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
       {(group) => (
         <GroupHome
+          applications={applicationsFor(services, group)}
           state={group.state}
           me={group.me.author}
           makeInviteLink={() => makeInvite(services, groupId, services.origin)}
@@ -648,10 +729,17 @@ function StewardScreen({ services, groupId, seat, recall }: StewardScreenProps) 
   );
 }
 
-function RulesScreen({ groupId }: { readonly groupId: string }) {
+function RulesScreen({ services, groupId }: GroupScreenProps) {
   return (
     <GroupGate groupId={groupId} writes>
-      {({ state, me }) => <GroupRules state={state} me={me.author} />}
+      {({ state, me }) => (
+        <GroupRules
+          state={state}
+          me={me.author}
+          origin={services.origin}
+          copyText={services.copyText}
+        />
+      )}
     </GroupGate>
   );
 }
@@ -763,7 +851,7 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
     case 'rules':
-      return <RulesScreen groupId={groupId} />;
+      return <RulesScreen services={services} groupId={groupId} />;
     case 'dispatches':
       return <DispatchesScreen groupId={groupId} />;
     default:
@@ -826,17 +914,19 @@ interface ScreenProps {
   readonly guide: GuideOffer;
 }
 
-function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: ScreenProps) {
-  const releaseSeed = useCallback(() => {
-    holdSeed(null);
-  }, [holdSeed]);
-  const openInvite = useCallback(
-    (seed: Uint8Array) => {
-      holdSeed(seed);
-      navigate({ name: 'join', payload: null });
-    },
-    [holdSeed],
-  );
+/** A route that names no group and carries no link: the device's own pages. */
+type PlainRoute = Exclude<Route, GroupRoute | { readonly payload: unknown }>;
+
+/** A route that carries a link's payload: Join (#73), a shared page (#105) and a front door (#121). */
+type LinkRoute = Extract<Route, { readonly payload: unknown }>;
+
+interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'holdSeed'> {
+  readonly route: PlainRoute;
+  readonly openInvite: (seed: Uint8Array) => void;
+}
+
+/** Start, Create group, Settings, Personal and the two sides of linking a device. */
+function PlainScreen({ route, services, persistence, guide, openInvite }: PlainScreenProps) {
   switch (route.name) {
     case 'start':
       return (
@@ -851,13 +941,26 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
-    case 'shared':
-      // Root shows a share link's page before first run; App shows it too, on the same relay.
-      return <SharedPage payload={route.payload} reader={services} />;
     case 'linkNew':
       return <LinkNewScreen services={services} />;
     case 'linkThis':
       return <LinkThisScreen services={services} />;
+  }
+}
+
+interface LinkScreenProps extends Omit<ScreenProps, 'route' | 'holdSeed' | 'persistence'> {
+  readonly route: LinkRoute;
+  readonly releaseSeed: () => void;
+}
+
+/** Join, a shared page and a front door: each reads what follows its link's `#`. */
+function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScreenProps) {
+  switch (route.name) {
+    case 'shared':
+      // Root shows a share link's page before first run; App shows it too, on the same relay.
+      return <SharedPage payload={route.payload} reader={services} />;
+    case 'door':
+      return <DoorScreen services={services} payload={route.payload} />;
     case 'join':
       return (
         <JoinScreen
@@ -868,14 +971,48 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
           offerGuide={guide.offer}
         />
       );
-    default:
-      return (
-        <>
-          <GroupRouteScreen route={route} services={services} />
-          <GroupGuide route={route} guide={guide} />
-        </>
-      );
   }
+}
+
+function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: ScreenProps) {
+  const releaseSeed = useCallback(() => {
+    holdSeed(null);
+  }, [holdSeed]);
+  const openInvite = useCallback(
+    (seed: Uint8Array) => {
+      holdSeed(seed);
+      navigate({ name: 'join', payload: null });
+    },
+    [holdSeed],
+  );
+  if ('groupId' in route) {
+    return (
+      <>
+        <GroupRouteScreen route={route} services={services} />
+        <GroupGuide route={route} guide={guide} />
+      </>
+    );
+  }
+  if ('payload' in route) {
+    return (
+      <LinkScreen
+        route={route}
+        services={services}
+        heldSeed={heldSeed}
+        releaseSeed={releaseSeed}
+        guide={guide}
+      />
+    );
+  }
+  return (
+    <PlainScreen
+      route={route}
+      services={services}
+      persistence={persistence}
+      guide={guide}
+      openInvite={openInvite}
+    />
+  );
 }
 
 /** The current route's screen, with the store and sync loop provided to `useGroup`. */

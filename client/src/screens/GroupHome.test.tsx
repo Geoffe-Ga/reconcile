@@ -10,6 +10,7 @@ import { createEvent, type ParsedEvent, parseEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
+import { DOOR } from '../test/door';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
@@ -914,7 +915,7 @@ describe('Leave this group', () => {
 describe('GroupHome: the group’s rules (#117)', () => {
   it('links to the rules, saying where the chat bot and the front door stand', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const door = log.rules('Ana', 'frontDoor', true);
+    const door = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
     renderHome(log.state(), { me: authorOf('ben') });
     const rules = section('Rules');
@@ -922,5 +923,42 @@ describe('GroupHome: the group’s rules (#117)', () => {
     expect(link).toHaveAttribute('href', `#/g/${log.group}/rules`);
     expect(link).toHaveTextContent('Chat bot: Off · Front door: Open');
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('GroupHome: the front door’s Applications (#121)', () => {
+  it('shows them under their own heading, before Invite people', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    renderHome(log.state(), { applications: <p>Kim’s card</p> });
+    const applications = section('Applications');
+    expect(within(applications).getByText('Kim’s card')).toBeVisible();
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings.indexOf('Applications')).toBe(headings.indexOf('Invite people') - 1);
+  });
+
+  it('shows none while this member’s leave waits for the relay, nor when none are given', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const { rerender } = renderHome(log.state(), {
+      applications: <p>Kim’s card</p>,
+      leaving: true,
+    });
+    expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
+    rerender({ applications: undefined, leaving: false });
+    expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
+  });
+});
+
+describe('GroupHome: the front door beside Dispatches (#112, #121)', () => {
+  it('keeps Dispatches and Applications each in its own section, Applications before Invite people', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.dispatch('Ana', { title: 'Our front door is open', text: 'Share the link.' });
+    renderHome(log.state(), { applications: <p>Kim’s card</p> });
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toContain('Dispatches');
+    expect(headings.indexOf('Applications')).toBe(headings.indexOf('Invite people') - 1);
+    expect(within(section('Dispatches')).getByText('Our front door is open')).toBeVisible();
+    expect(within(section('Applications')).getByText('Kim’s card')).toBeVisible();
   });
 });

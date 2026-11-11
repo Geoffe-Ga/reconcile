@@ -551,6 +551,77 @@ describe('the chat bot in a pass (#119)', () => {
   });
 });
 
+describe('the front door keeper in a pass (#121)', () => {
+  it('runs for each group after its pull is saved, then looks for replies once the pass is complete', async () => {
+    const fake = createFakeRelay();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
+    const order: string[] = [];
+    const sync = createSync({
+      store: ana.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      door: {
+        run: async (groupId) => {
+          const relayNow = (await ana.store.getGroup(groupId))?.relayNow ?? null;
+          order.push(`run ${groupId} at ${String(relayNow)}`);
+        },
+        replies: () => {
+          order.push('replies');
+          return Promise.resolve();
+        },
+      },
+      afterPass: () => {
+        order.push('afterPass');
+        return Promise.resolve();
+      },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect(order).toEqual([`run ${GROUP} at 29000000`, 'replies', 'afterPass']);
+  });
+
+  it('looks for replies on a device in no group, and never fails a pass, however it fails', async () => {
+    const fake = createFakeRelay();
+    const store = await openStore('kim');
+    const run = vi.fn(() => Promise.reject(new Error('the page mailbox is full')));
+    const replies = vi.fn(() => Promise.reject(new Error('offline')));
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      door: { run, replies },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+    expect(replies).toHaveBeenCalledTimes(1);
+    expect(sync.isReachable()).toBe(true);
+  });
+
+  it('runs nothing for a group that failed, nor once halted (#78)', async () => {
+    const run = vi.fn(() => Promise.resolve());
+    const replies = vi.fn(() => Promise.resolve());
+    const fake = createFakeRelay();
+    const store = await openStore('ana');
+    const me = { author: authorOf(ANA), name: 'Ana' };
+    const signingKey = testKeys(ANA).secretKey;
+    await store.addGroup({ groupId: 'broken', secret: new Uint8Array(31), signingKey, me });
+    const relay = createRelay({ fetch: fake.fetch });
+    const broken = createSync({ store, relay, seal: xchachaSeal, door: { run, replies } });
+    opened.push(broken);
+    expect(await broken.syncOnce()).toBe(false);
+    expect([run.mock.calls.length, replies.mock.calls.length]).toEqual([0, 0]);
+
+    await store.purgeGroup('broken');
+    await broken.halt();
+    expect(await broken.syncOnce()).toBe(false);
+    expect(replies).not.toHaveBeenCalled();
+  });
+});
+
 describe('after a pass (#97)', () => {
   it('runs once a pass in which every group synced, after the pulls are saved', async () => {
     const fake = createFakeRelay();

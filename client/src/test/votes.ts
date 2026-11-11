@@ -104,6 +104,8 @@ export interface LogBuilder {
   vouch(name: string, who: string): string;
   /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
+  /** Adds `name`'s record of an invite sent to the front door's `application` (#121), returning its id. */
+  doorInvited(name: string, application: string): string;
   /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
   chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
@@ -303,6 +305,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
       const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
       return add(name, { type: 'chat-posted', group, ts: 0, body });
+    },
+    doorInvited(name: string, application: string) {
+      return add(name, { type: 'door-invited', group, ts: 0, body: { application } });
     },
     chatThread(name: string, proposal: string, url: string) {
       return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
