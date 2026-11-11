@@ -191,6 +191,10 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Beside it on wide screens, under it on phones, the same code as selectable `mono` text on `sunken`, which selects as a whole, and Copy the code (secondary).
   - The six-digit number both devices show sits in a `surface` card with a `hairline` border: the prompt (heading-3), then the digits in two groups of three, in JetBrains Mono at `display` size.
   - Match is the one primary action on the existing device. The new device shows the number with only Cancel.
+- **Recovery contacts** (#109; ADR-0008, ADR-0043): trust, never growth. Nothing counts, ranks or invites anyone.
+  - Settings shows what contacts are, then "<n> recovery contacts · <t> needed" (heading-3) over one line per contact: the name (ui, `ink`), then "in <group>" (caption, `muted`). A contact who has gone carries "No longer in a shared group" as caption words on a `sunken` chip, never a color alone. Below t, a notice with a `warning` rule asks the person to choose again. Choose (secondary) opens the picker.
+  - The picker (`#/recovery`) puts the issue's words on whom to pick in body text, then two counts as number fields with a step either side, "People to pick" (3–7, 5 to start) and "Needed to help you back in" (2–5, 3 to start), and one line saying what they mean. Each group is a card on `surface` with a `hairline` border: "People in <group>" (heading-3), then a checkbox per person. A live line counts the picks, and Save recovery contacts (primary) is ready once they match.
+  - A held share is one line, "You're holding a recovery share for <name> (<group>)": listed under "Shares you hold" in Settings, and once on that group's home on the backup card's `sunken` ground, with OK (quiet) to put it away. Never a modal.
 - **Gift prompt** (ADR-0025):
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line

@@ -4,11 +4,11 @@
  * key keeps the relay backup fresh (ADR-0075 §4), and the relay learns
  * nothing from it.
  *
- * No screen makes a backup key yet: #109 starts the relay backup when
- * someone chooses recovery contacts. So Ana saves a backup file from
- * Settings, and the test opens it with her passphrase, adds a random backup
- * key, as a file saved on a device that keeps one holds it, and seals it
- * again. A fresh phone restores that file from Start. Its first complete
+ * Choosing recovery contacts (#109) starts the relay backup, and
+ * `recovery.spec.ts` takes that path. Here the key comes from a file: Ana
+ * saves a backup file from Settings, and the test opens it with her
+ * passphrase, adds a random backup key, as a file saved on a device that
+ * keeps one holds it, and seals it again. A fresh phone restores that file from Start. Its first complete
  * sync pass uploads one blob, and Settings says "Backed up to the relay".
  *
  * The blob the relay serves is one of the five sizes and opens under the

@@ -8,6 +8,7 @@ import './styles/proposals.css';
 import './styles/firstRun.css';
 import './styles/backup.css';
 import './styles/link.css';
+import './styles/recovery.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

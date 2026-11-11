@@ -424,10 +424,10 @@ describe('where the person’s contacts stand', () => {
     ]);
   });
 
-  it('marks a contact who left as no longer shared, and asks to choose again below t', async () => {
+  it('marks a contact who left as no longer shared, and asks to choose again only below t', async () => {
     const { groupId, device, devices } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
     const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
-    await chooseContacts(ana.services, await choice(groupId, 3, [ben, cal, dee]));
+    await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
     const status = async () =>
       recoveryStatus(
         await ana.services.store.getRecoveryPlan(),
@@ -437,6 +437,12 @@ describe('where the person’s contacts stand', () => {
     await leaveGroup(cal.services, groupId);
     await syncAll(devices);
     expect((await status())?.contacts.map(({ shared }) => shared)).toEqual([true, false, true]);
+    // Exactly t are left: they can still help, so nothing asks yet.
+    expect((await status())?.chooseAgain).toBe(false);
+
+    await leaveGroup(dee.services, groupId);
+    await syncAll(devices);
+    expect((await status())?.contacts.map(({ shared }) => shared)).toEqual([true, false, false]);
     expect((await status())?.chooseAgain).toBe(true);
   });
 

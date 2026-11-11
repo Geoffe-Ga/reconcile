@@ -137,10 +137,16 @@ describe('RecoveryContacts', () => {
     const people = numberField('People to pick');
     const needed = numberField('Needed to help you back in');
 
+    // Needed comes down with the people to pick, never above them.
+    await user.click(screen.getByRole('button', { name: 'Increase Needed to help you back in' }));
+    expect(needed).toHaveValue('4');
     await user.clear(people);
     await user.type(people, '3');
     await user.tab();
     expect(needed).toHaveValue('3');
+    expect(
+      screen.getByText('Any 3 of the 3 people you pick can help you back in together.'),
+    ).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Increase Needed to help you back in' }));
     expect(needed).toHaveValue('3');
     await user.click(screen.getByRole('button', { name: 'Decrease Needed to help you back in' }));

@@ -247,7 +247,7 @@ export function RecoveryContacts(props: RecoveryContactsProps) {
       />
       <div className="stack recovery-about">
         <p className="lede">{recovery.lede}</p>
-        <p>{recovery.pick}</p>
+        <p className="lede">{recovery.pick}</p>
         {again ? <p className="caption">{recovery.again}</p> : null}
       </div>
       {props.groups.length === 0 ? (
