@@ -35,6 +35,13 @@ import { fetchRelayBackup } from './relayBackup';
 
 freshIndexedDBPerTest();
 
+/**
+ * Each test runs four or five real devices: real stores, sync passes, relay
+ * backups and crypto on the fake relay, which take longer than the default
+ * 5 seconds on a busy machine.
+ */
+const DEVICES = { timeout: 30_000 };
+
 const opened: TestDevice[] = [];
 
 afterEach(() => {
@@ -124,7 +131,7 @@ function shareCanaries(label: string, share: RecoveryShare): Canary[] {
   ];
 }
 
-describe('choosing recovery contacts', () => {
+describe('choosing recovery contacts', DEVICES, () => {
   it('gives each contact, and only each contact, a share they see as held for the person', async () => {
     const { fake, groupId, device, devices } = await group(['Ana', 'Ben', 'Cal', 'Dee', 'Eve']);
     const [ana, ben, cal, dee, eve] = [
@@ -338,7 +345,7 @@ describe('choosing recovery contacts', () => {
   });
 });
 
-describe('after each complete sync pass', () => {
+describe('after each complete sync pass', DEVICES, () => {
   it('refreshes the relay backup, then overwrites every retired id the relay takes', async () => {
     const { groupId, device } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
     const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
@@ -375,7 +382,7 @@ describe('after each complete sync pass', () => {
   });
 });
 
-describe('the picker’s groups and people', () => {
+describe('the picker’s groups and people', DEVICES, () => {
   it('lists each group’s current members by their name there, never yourself, nor a group you are leaving', async () => {
     const fake = createFakeRelay();
     const { groupId, device, devices } = await group(['Ana', 'Ben', 'Cal'], fake);
@@ -405,7 +412,7 @@ describe('the picker’s groups and people', () => {
   });
 });
 
-describe('where the person’s contacts stand', () => {
+describe('where the person’s contacts stand', DEVICES, () => {
   it('says nothing before a choice, then n contacts with t needed', async () => {
     const { groupId, device } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
     const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
@@ -462,7 +469,7 @@ describe('where the person’s contacts stand', () => {
   });
 });
 
-describe('the shares a device holds', () => {
+describe('the shares a device holds', DEVICES, () => {
   it('keeps the latest share per person and group, and drops one from someone who has left', async () => {
     const { groupId, device, devices } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
     const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];

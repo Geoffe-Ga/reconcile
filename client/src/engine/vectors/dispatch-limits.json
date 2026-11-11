@@ -1,0 +1,448 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dispatch-title: a title of 80 code points is kept and one of 81 is ignored; 80 astral characters count as 80; an empty title is ignored; and the fold counts code points as received, never normalizing, so 40 decomposed é (80 code points) is kept and 41 (82) is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000060000,
+            "body": {
+              "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000120000,
+            "body": {
+              "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400003,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000180000,
+            "body": {
+              "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400004,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000240000,
+            "body": {
+              "title": "",
+              "text": "No title."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400005,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000300000,
+            "body": {
+              "title": "éééééééééééééééééééééééééééééééééééééééé",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400006,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000360000,
+            "body": {
+              "title": "ééééééééééééééééééééééééééééééééééééééééé",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29400010,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@2",
+            "by": "%ana",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "text": "",
+            "doc": null,
+            "received": 29400001
+          },
+          {
+            "id": "@4",
+            "by": "%ana",
+            "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "text": "",
+            "doc": null,
+            "received": 29400003
+          },
+          {
+            "id": "@6",
+            "by": "%ana",
+            "title": "éééééééééééééééééééééééééééééééééééééééé",
+            "text": "",
+            "doc": null,
+            "received": 29400005
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 5, 7]
+    },
+    {
+      "name": "dispatch-text: a text of 500 code points is kept and one of 501 is ignored; an empty text is kept, and a text keeps its line breaks, spaces and marks exactly as written",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000060000,
+            "body": {
+              "title": "Long",
+              "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000120000,
+            "body": {
+              "title": "Too long",
+              "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400003,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000180000,
+            "body": {
+              "title": "Empty",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400004,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000240000,
+            "body": {
+              "title": "Lines",
+              "text": "Line one\nLine two\n\n  indented, **not bold**, https://example.org"
+            }
+          }
+        }
+      ],
+      "relayNow": 29400010,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@2",
+            "by": "%ana",
+            "title": "Long",
+            "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "doc": null,
+            "received": 29400001
+          },
+          {
+            "id": "@4",
+            "by": "%ana",
+            "title": "Empty",
+            "text": "",
+            "doc": null,
+            "received": 29400003
+          },
+          {
+            "id": "@5",
+            "by": "%ana",
+            "title": "Lines",
+            "text": "Line one\nLine two\n\n  indented, **not bold**, https://example.org",
+            "doc": null,
+            "received": 29400004
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "dispatch-doc: a doc that names the group's Document is kept; one that names an Atom, a Proposal, nothing, or another group's Document is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000060000,
+            "body": {
+              "atom": "@1.0",
+              "title": "A clearer line",
+              "why": "We talked it over on Sunday.",
+              "text": "Quiet after 10pm.\n"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000120000,
+            "body": {
+              "title": "Read the rules",
+              "text": "",
+              "doc": "@1"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400003,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000180000,
+            "body": {
+              "title": "An Atom",
+              "text": "",
+              "doc": "@1.0"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400004,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000240000,
+            "body": {
+              "title": "A Proposal",
+              "text": "",
+              "doc": "@2"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400005,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000300000,
+            "body": {
+              "title": "Nothing",
+              "text": "",
+              "doc": ""
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400006,
+          "elsewhere": true,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%zed",
+            "ts": 1764000360000,
+            "body": {
+              "name": "Northside Garden",
+              "founder": "Zed",
+              "title": "Plot rules",
+              "atoms": ["Water before nine.\n"]
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29400007,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000420000,
+            "body": {
+              "title": "Another group",
+              "text": "",
+              "doc": "@7"
+            }
+          }
+        }
+      ],
+      "relayNow": 29400010,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": "%ana",
+            "title": "Read the rules",
+            "text": "",
+            "doc": "@1",
+            "received": 29400002
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          }
+        ]
+      },
+      "unchangedWithout": [4, 5, 6, 8]
+    }
+  ]
+}
