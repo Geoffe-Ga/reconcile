@@ -24,7 +24,9 @@ import { GroupHome } from '../screens/GroupHome';
 import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
+import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
 import type { OptIn } from '../engine/optIns';
@@ -62,6 +64,18 @@ import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
 import { HeldShareCard } from './HeldShares';
+import { CoalitionSection } from './CoalitionSection';
+import { coalitionRows, withMotionWords } from './coalitionLines';
+import {
+  admitCard,
+  bringCard,
+  type CardValues,
+  type FoundCard,
+  lookupCard,
+  makeCard,
+  postCard,
+  takePart,
+} from './reconcile';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
 import type { Passkey } from './passkey';
@@ -127,6 +141,7 @@ export interface AppProps {
 interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (seed: Uint8Array) => void;
+  readonly onOpenCard: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
 }
 
@@ -145,7 +160,8 @@ function openDoor(payload: string): void {
   navigate({ name: 'door', payload });
 }
 
-function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
+function StartScreen(props: StartScreenProps) {
+  const { services, onOpenInvite, onOpenCard, persistence } = props;
   const groups = useGroupList(services.store);
   const alert = useAlertCard(services);
   const sent = useSentApplications(services.store);
@@ -169,6 +185,7 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
       requests={requests}
       onOpenInvite={onOpenInvite}
       onOpenDoor={openDoor}
+      onOpenCard={onOpenCard}
       persistence={persistence}
       onRestore={onRestore}
       alert={alert}
@@ -531,7 +548,8 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (state.group === null) return <GroupSettingUp />;
   if (writes && state.dissolved !== null)
     return <GroupArchived groupId={groupId} name={state.name} />;
-  return children({ ...group, state, me });
+  // A coalition motion takes its title and why from its coalition (#114).
+  return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
 
 interface GroupScreenProps {
@@ -615,9 +633,90 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             await services.store.purgeGroup(groupId);
             replaceRoute({ name: 'start' });
           }}
+          coalitions={<Coalitions services={services} group={group} />}
         />
       )}
     </GroupGate>
+  );
+}
+
+/**
+ * Group home's Coalitions (#114): each coalition the group proposed or
+ * joined, and Reconcile with another group for whoever may start one, while
+ * the group takes new things and this device reads its current key.
+ */
+function Coalitions({ services, group }: { services: AppServices; group: ReadyGroup }) {
+  const { state, me, coalitions, leaving, keyChange } = group;
+  const groupId = state.group ?? '';
+  const open = !leaving && state.dissolved === null && keyChange === null;
+  return (
+    <CoalitionSection
+      groupId={groupId}
+      rows={coalitionRows(state, me.author, coalitions)}
+      starts={open && can(state, me.author, 'propose')}
+      onTakePart={(entryId, name) => takePart(services, entryId, groupId, name)}
+      makeCardLink={async (entryId) =>
+        postCard(services, await admitCard(services, entryId, groupId), services.origin)
+      }
+      copyText={services.copyText}
+    />
+  );
+}
+
+/** Reconcile with another group (#114): the card's form, then its link. */
+function ReconcileScreen({ services, groupId }: GroupScreenProps) {
+  const onMake = async (values: CardValues): Promise<CardStep> => {
+    const made = await makeCard(services, groupId, values);
+    if (made.outcome === 'too-large') return { kind: 'too-large' };
+    const { card, proposalId } = made;
+    return { kind: 'queued', proposalId, post: () => postCard(services, card, services.origin) };
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state }) => (
+        <ReconcileCard
+          groupId={groupId}
+          groupName={state.name}
+          onMake={onMake}
+          copyText={services.copyText}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+interface BringScreenProps {
+  readonly services: AppServices;
+  readonly payload: string | null;
+  readonly heldSeed: Uint8Array | null;
+  /** Lets go of the seed held in memory, once Bring or Not now is done with it. */
+  readonly releaseSeed: () => void;
+}
+
+/** Bring a card (#114): the card, then the group it goes to, whose new Proposal opens after. */
+function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenProps) {
+  const lookup = useCallback((seed: Uint8Array) => lookupCard(services, seed), [services]);
+  const onBring = useCallback(
+    async (found: FoundCard, groupId: string, name: string) => {
+      const proposalId = await bringCard(services, found, groupId, name);
+      releaseSeed();
+      replaceRoute({ name: 'proposal', groupId, proposalId });
+      return true;
+    },
+    [services, releaseSeed],
+  );
+  const onNotNow = useCallback(() => {
+    releaseSeed();
+    replaceRoute({ name: 'start' });
+  }, [releaseSeed]);
+  return (
+    <BringCard
+      payload={payload}
+      heldSeed={heldSeed}
+      lookup={lookup}
+      onBring={onBring}
+      onNotNow={onNotNow}
+    />
   );
 }
 
@@ -774,6 +873,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
             {...(group.cleared === null ? {} : { cleared: group.cleared })}
+            coalitions={group.coalitions}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
             onTell={onTell}
@@ -960,7 +1060,8 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
 
 /** A route inside one group whose screen is a form of its own. */
 type FormRoute =
-  Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' }> | ComposeRoute;
+  | Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'reconcile' }>
+  | ComposeRoute;
 
 /**
  * The screen for a route inside one group that opens a form of its own: the
@@ -994,6 +1095,8 @@ function FormRouteScreen({ route, services }: { route: FormRoute; services: AppS
       return <DissolveScreen services={services} groupId={groupId} />;
     case 'sendDispatch':
       return <SendDispatchScreen services={services} groupId={groupId} />;
+    case 'reconcile':
+      return <ReconcileScreen services={services} groupId={groupId} />;
     default:
       return (
         <ComposeScreen services={services} groupId={groupId}>
@@ -1044,21 +1147,32 @@ function BareScreen({ route, services, guide }: BareScreenProps) {
 /** A route that names no group and carries no link: the device's own pages. */
 type PlainRoute = Exclude<Route, GroupRoute | { readonly payload: unknown }>;
 
-/** A route that carries a link's payload: Join (#73), a shared page (#105) and a front door (#121). */
+/**
+ * A route that carries a link's payload: Join (#73), a shared page (#105), a
+ * front door (#121) and a reconcile card (#114).
+ */
 type LinkRoute = Extract<Route, { readonly payload: unknown }>;
 
 interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'holdSeed'> {
   readonly route: PlainRoute;
   readonly openInvite: (seed: Uint8Array) => void;
+  /** Opens a reconcile card pasted into Start (#114), its seed held in memory. */
+  readonly openCard: (seed: Uint8Array) => void;
 }
 
 /** Start, Personal, and the pages that take no argument (`BareScreen`). */
-function PlainScreen({ route, services, persistence, guide, openInvite }: PlainScreenProps) {
+function PlainScreen(props: PlainScreenProps) {
+  const { route, services, persistence, guide, openInvite, openCard } = props;
   if (isBare(route)) return <BareScreen route={route} services={services} guide={guide} />;
   switch (route.name) {
     case 'start':
       return (
-        <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
+        <StartScreen
+          services={services}
+          onOpenInvite={openInvite}
+          onOpenCard={openCard}
+          persistence={persistence}
+        />
       );
     case 'personal':
       return <PersonalScreen services={services} />;
@@ -1073,9 +1187,18 @@ interface LinkScreenProps extends Omit<ScreenProps, 'route' | 'holdSeed' | 'pers
   readonly releaseSeed: () => void;
 }
 
-/** Join, a shared page and a front door: each reads what follows its link's `#`. */
+/** Join, a shared page, a front door and a card: each reads what follows its link's `#`. */
 function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScreenProps) {
   switch (route.name) {
+    case 'card':
+      return (
+        <BringScreen
+          services={services}
+          payload={route.payload}
+          heldSeed={heldSeed}
+          releaseSeed={releaseSeed}
+        />
+      );
     case 'shared':
       // Root shows a share link's page before first run; App shows it too, on the same relay.
       return <SharedPage payload={route.payload} reader={services} />;
@@ -1105,6 +1228,13 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
+  const openCard = useCallback(
+    (seed: Uint8Array) => {
+      holdSeed(seed);
+      navigate({ name: 'card', payload: null });
+    },
+    [holdSeed],
+  );
   if ('groupId' in route) {
     return (
       <>
@@ -1131,6 +1261,7 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       persistence={persistence}
       guide={guide}
       openInvite={openInvite}
+      openCard={openCard}
     />
   );
 }

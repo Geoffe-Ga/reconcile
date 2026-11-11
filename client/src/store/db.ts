@@ -135,10 +135,53 @@ export interface PushRegistration {
   readonly at: number;
 }
 
-/** Everything the device keeps about one group. */
-export interface Group {
-  /** The group's id. */
+/**
+ * What a coalition entry means to do once it can (#114): join under the seat
+ * of a group on this device, and propose admitting a group whose reconcile
+ * Proposal passes.
+ */
+export interface CoalitionPlan {
+  /**
+   * The id of the group on this device whose seat this device joins the
+   * coalition under once the coalition names that seat: the maker's group,
+   * and a group being admitted. Absent once joined, or with nothing to join.
+   */
+  joinAs?: string;
+  /**
+   * The group this device brought a formed coalition's card to, and its
+   * reconcile Proposal: once that passes, this device proposes admitting the
+   * group into the coalition. Absent once proposed, or once it didn't pass.
+   */
+  admitting?: Admitting;
+}
+
+/**
+ * An admission this device will propose (#114): the group it brought a
+ * formed coalition's card to, that group's reconcile Proposal, and the title
+ * and why the admit motion will carry.
+ */
+export interface Admitting {
+  readonly group: string;
+  readonly proposal: string;
+  readonly title: string;
+  readonly why: string;
+}
+
+/**
+ * Everything the device keeps about one group, or about one coalition whose
+ * secret a group on the device holds (#114): its `kind` says which.
+ */
+export interface Group extends CoalitionPlan {
+  /**
+   * The group's id; for a coalition, its entry id, derived from its secret
+   * (`crypto/card.ts`), since a device keeps it before its genesis exists.
+   */
   groupId: string;
+  /**
+   * `coalition` for a coalition's entry (#114): its own log, cursors, outbox
+   * and `me`, synced like a group's. Absent for a group.
+   */
+  kind?: 'coalition';
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
@@ -332,6 +375,7 @@ export class VaultLocked extends Error {
  */
 export type BackedUpGroup = Pick<
   Group,
+  | 'kind'
   | 'groupId'
   | 'secret'
   | 'signingKey'
@@ -361,7 +405,23 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
  * inviter has cleared (#111).
  */
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
-  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared'>>;
+  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
+
+/** True for a coalition's entry (#114), false for a group. */
+export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'coalition';
+}
+
+/**
+ * A change to a coalition entry's plan and name (#114): each field given
+ * replaces it, and null clears it.
+ */
+export interface PlanChange {
+  /** The name this device joins the coalition under. */
+  readonly name?: string;
+  readonly joinAs?: string | null;
+  readonly admitting?: CoalitionPlan['admitting'] | null;
+}
 
 /**
  * A move to the group's next epoch (#98): its secret, the cursor to read its
@@ -562,12 +622,19 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
  */
 export interface Store
   extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, SentStore {
-  /** Every group on the device. */
+  /** Every group on the device: never a coalition's entry (#114). */
   listGroups(): Promise<Group[]>;
-  /** One group, or `undefined` when the device isn't in it. */
+  /** Every coalition entry on the device (#114). */
+  listCoalitions(): Promise<Group[]>;
+  /** One group or coalition entry, or `undefined` when the device has none by that id. */
   getGroup(groupId: string): Promise<Group | undefined>;
-  /** Keep a new group; refuses an id the device already has. */
+  /** Keep a new group or coalition entry; refuses an id the device already has. */
   addGroup(group: NewGroup): Promise<Group>;
+  /**
+   * Change a coalition entry's plan and the name it joins under, in one change
+   * (#114). Refuses an entry that isn't a coalition's.
+   */
+  planCoalition(groupId: string, change: PlanChange): Promise<void>;
   /**
    * Queue a signed record for the relay, after the ones already queued. A
    * Proposal or version names the `draft` target it came from, and that draft
@@ -946,7 +1013,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
   };
 
   return {
-    listGroups: () => readWhole(db, session, null),
+    listGroups: async () =>
+      (await readWhole(db, session, null)).filter((group) => !isCoalitionEntry(group)),
+    listCoalitions: async () => (await readWhole(db, session, null)).filter(isCoalitionEntry),
     getGroup: async (groupId) => {
       const [group] = await readWhole(db, session, groupId);
       return group;
@@ -971,6 +1040,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       return stored;
     },
     enqueue: (groupId, bytes, draft) => enqueueAll(groupId, [bytes], draft),
+    planCoalition: (groupId, plan) =>
+      change(groupId, (group) => {
+        if (!isCoalitionEntry(group)) throw new Error('This isn’t a coalition’s entry.');
+        replan(group, plan);
+      }),
     enqueueAll,
     async readDraft(groupId, target) {
       const group = await db.get(GROUPS, groupId);
@@ -1778,6 +1852,15 @@ async function writeKeys<T>(
  * then notifies. An edit that throws, like a missing group, changes nothing.
  * No edit touches key material, which only `keepKeys` writes.
  */
+/** Applies a {@link PlanChange} to a coalition entry's record. */
+function replan(group: StoredGroup, { name, joinAs, admitting }: PlanChange): void {
+  if (name !== undefined) group.me = { ...group.me, name };
+  if (joinAs === null) delete group.joinAs;
+  else if (joinAs !== undefined) group.joinAs = joinAs;
+  if (admitting === null) delete group.admitting;
+  else if (admitting !== undefined) group.admitting = admitting;
+}
+
 function changer(
   db: IDBPDatabase<Schema>,
   notify: (groupId: string) => void,

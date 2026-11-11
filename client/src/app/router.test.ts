@@ -187,6 +187,15 @@ describe('share links and Dispatches (#105, #112)', () => {
   });
 });
 
+describe('reconcile cards (#114)', () => {
+  it.each([`#reconcile/abc/def`, `#reconcile/`, `#reconcile/a+b`, `#/card/abc`])(
+    'sends %j to Start',
+    (hash) => {
+      expect(parseRoute(hash)).toEqual({ name: 'start' });
+    },
+  );
+});
+
 describe('routeHref', () => {
   it.each<[Route, string]>([
     [{ name: 'start' }, '#/'],
@@ -226,6 +235,9 @@ describe('routeHref', () => {
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
     [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
     [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
+    [{ name: 'reconcile', groupId: GROUP }, `#/g/${GROUP}/reconcile`],
+    [{ name: 'card', payload: null }, '#/card'],
+    [{ name: 'card', payload: 'abc-def' }, '#reconcile/abc-def'],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

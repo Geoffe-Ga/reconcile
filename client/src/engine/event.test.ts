@@ -15,6 +15,7 @@ import {
   fromBase64url,
   isCoalitionGenesis,
   isDissolveProposal,
+  isAdmitProposal,
   isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
@@ -1326,6 +1327,46 @@ describe('coalitions (#100)', () => {
     ['atoms that aren’t strings', { ...RECONCILE, atoms: [1] }],
   ])('refuses a reconcile Proposal with %s', (_label, target) => {
     const body = { target, title: 'Join C', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  const ADMIT = { kind: 'admit', seat: { name: 'Oak St', key: KEY }, proof: PROOF };
+
+  it('reads an admit Proposal (#114), keeping its window and dropping text and unknown keys', () => {
+    const body = {
+      target: { ...ADMIT, seat: { ...ADMIT.seat, secret: SEAT }, extra: 1 },
+      title: 'Admit Oak St',
+      why: 'W',
+      text: 'x',
+      window: 5,
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({
+      target: ADMIT,
+      title: 'Admit Oak St',
+      why: 'W',
+      window: 5,
+    });
+    const proposal = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+    expect(proposal !== null && isAdmitProposal(proposal)).toBe(true);
+    expect(proposal !== null && isReconcileProposal(proposal)).toBe(false);
+    const reconcile = parseEvent(
+      json(envelope('proposal', { target: RECONCILE, title: 'T', why: 'W' })),
+    );
+    const other = reconcile?.event.type === 'proposal' ? reconcile.event.body : null;
+    expect(other !== null && isAdmitProposal(other)).toBe(false);
+  });
+
+  it.each([
+    ['no seat', { ...ADMIT, seat: undefined }],
+    ['a seat without a name', { ...ADMIT, seat: { key: KEY } }],
+    ['a seat whose key is short', { ...ADMIT, seat: { name: 'Oak St', key: KEY.slice(1) } }],
+    ['no proof', { ...ADMIT, proof: undefined }],
+    ['a short proof', { ...ADMIT, proof: PROOF.slice(1) }],
+    ['a proof with a character base64url lacks', { ...ADMIT, proof: `${PROOF.slice(0, 85)}+` }],
+    ['a numeric proof', { ...ADMIT, proof: 6 }],
+  ])('refuses an admit Proposal with %s (#114)', (_label, target) => {
+    const body = { target, title: 'Admit Oak St', why: 'W' };
     expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
   });
 

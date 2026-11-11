@@ -6,7 +6,9 @@
  * same on every device that has synced the same records. Events still in the
  * outbox are listed as pending and never folded: the relay hasn't ordered or
  * timed them yet. A dissolved group whose ballots this device has cleared
- * shows the state it kept instead (#108).
+ * shows the state it kept instead (#108). A group that holds a seat in a
+ * coalition on this device folds with the coalition's motions its seat
+ * decides, so its members vote on them as on its own Proposals (#114).
  */
 
 import {
@@ -22,7 +24,8 @@ import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { ReceivedApplication } from '../store/applications';
-import { shownState } from '../store/archive';
+import { foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
+import { foldGroup } from '../store/expiry';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
 import { type HeldShare, heldSharesIn } from '../store/recovery';
@@ -32,6 +35,7 @@ export interface GroupServices {
   /** The store (`openStore`), or anything that reads and announces groups like it. */
   readonly store: {
     readonly getGroup: Store['getGroup'];
+    readonly listCoalitions: Store['listCoalitions'];
     readonly subscribe: Store['subscribe'];
   };
   /** The sync loop (`createSync`), or anything that reports reachability like it. */
@@ -97,6 +101,8 @@ export interface GroupView {
    * dismissed ones included, oldest first: none until it has read one.
    */
   applications: readonly ReceivedApplication[];
+  /** Every coalition on this device, each with its log folded (#114). */
+  coalitions: readonly HeldCoalition[];
 }
 
 /** No shares: one shared empty list, so it never looks changed. */
@@ -124,8 +130,12 @@ const NO_RECORDS: readonly LogRecord[] = [];
 export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
   const { group, loaded } = useStoredGroup(store, groupId);
+  const coalitions = useCoalitions(store);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
-  const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
+  const state = useMemo(() => {
+    if (group === undefined) return null;
+    return group.archived?.cleared?.state ?? foldWithCoalitions(group, coalitions);
+  }, [group, coalitions]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   const newShares = useMemo(() => newSharesIn(group, state), [group, state]);
   return {
@@ -140,7 +150,48 @@ export function useGroup(groupId: string): GroupView {
     cleared: clearedOf(group),
     newShares,
     applications: group?.door?.applications ?? NO_APPLICATIONS,
+    coalitions,
   };
+}
+
+/** No coalitions: one shared empty list, so it never looks changed. */
+const NO_COALITIONS: readonly HeldCoalition[] = [];
+
+/**
+ * Every coalition entry on this device, each with its log folded (#114),
+ * read again whenever the store says anything changed.
+ */
+export function useCoalitions(
+  store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
+): readonly HeldCoalition[] {
+  const [coalitions, setCoalitions] = useState<readonly HeldCoalition[]>(NO_COALITIONS);
+  useEffect(() => {
+    let live = true;
+    let latest = 0;
+    const load = (): void => {
+      latest += 1;
+      const ticket = latest;
+      store.listCoalitions().then(
+        (entries) => {
+          if (!live || ticket !== latest) return;
+          setCoalitions(
+            entries.length === 0
+              ? NO_COALITIONS
+              : entries.map((entry) => ({ entry, state: foldGroup(entry) })),
+          );
+        },
+        // A failed read keeps the last list; the next change reads again.
+        () => undefined,
+      );
+    };
+    load();
+    const unsubscribe = store.subscribe(load);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [store]);
+  return coalitions;
 }
 
 /**

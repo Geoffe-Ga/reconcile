@@ -47,7 +47,7 @@ export async function makeBackup(
   services: {
     readonly store: Pick<
       Store,
-      'listGroups' | 'listPersonal' | 'getRelayBackup' | 'requireUnlocked'
+      'listGroups' | 'listCoalitions' | 'listPersonal' | 'getRelayBackup' | 'requireUnlocked'
     >;
     readonly now: () => number;
   },

@@ -2,6 +2,7 @@ import { type ReactNode, type SyntheticEvent, useId } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
 import { parseInviteLink } from '../app/invite';
+import { parseCardLink } from '../coalition/card';
 import { messages } from '../app/messages';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
@@ -39,6 +40,8 @@ export interface StartProps {
   readonly requests?: readonly StartRequest[];
   /** Opens a pasted invite's seed. It travels in memory, never through the address bar. */
   readonly onOpenInvite: (seed: Uint8Array) => void;
+  /** Opens a pasted reconcile card's seed (#114), in memory likewise. */
+  readonly onOpenCard?: (seed: Uint8Array) => void;
   /** Opens a pasted front door link's page (#121), by the address after `#door/`. */
   readonly onOpenDoor?: (payload: string) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
@@ -87,9 +90,14 @@ function PersonalCard() {
   );
 }
 
-/** M2-03's expired-or-damaged line for anything that isn't an invite link. It never repeats the text. */
+/**
+ * M2-03's expired-or-damaged line for anything that is neither an invite
+ * link nor a reconcile card's (#114). It never repeats the text.
+ */
 function checkInvite(text: string): string | null {
-  return parseInviteLink(text) === null ? messages.join.badLink : null;
+  return parseInviteLink(text) === null && parseCardLink(text) === null
+    ? messages.join.badLink
+    : null;
 }
 
 /**
@@ -238,15 +246,18 @@ function RecoverSection() {
  * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
 export function Start(props: StartProps) {
-  const { groups, requests = [], onOpenInvite, onOpenDoor, persistence = null } = props;
-  const { onRestore, alert } = props;
+  const { groups, requests = [], onOpenInvite, onOpenDoor, onOpenCard } = props;
+  const { persistence = null, onRestore, alert } = props;
   const inviteHeading = useId();
 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const text = new FormData(event.currentTarget).get('invite');
-    const seed = typeof text === 'string' ? parseInviteLink(text) : null;
+    const value = new FormData(event.currentTarget).get('invite');
+    const text = typeof value === 'string' ? value : '';
+    const seed = parseInviteLink(text);
     if (seed !== null) onOpenInvite(seed);
+    const card = parseCardLink(text);
+    if (card !== null) onOpenCard?.(card);
   };
 
   return (
