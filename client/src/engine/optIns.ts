@@ -191,7 +191,8 @@ export interface OptInProposalState {
   readonly id: string;
   readonly author: string;
   readonly target:
-    { readonly kind: 'edit' | 'steward' | 'dissolve' | 'reconcile' | 'motion' } | RulesChange;
+    | { readonly kind: 'edit' | 'steward' | 'dissolve' | 'reconcile' | 'motion' | 'admit' }
+    | RulesChange;
   readonly deadline: number;
   readonly closedAt: number | null;
 }

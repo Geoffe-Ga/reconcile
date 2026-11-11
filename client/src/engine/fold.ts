@@ -61,6 +61,8 @@ import {
   expireFormation,
   type Motion,
   motionOutcome,
+  admitSeat,
+  mayAdmit,
   newCoalition,
   RESULT_GRACE_MINUTES,
   recordResult,
@@ -86,6 +88,7 @@ import {
   type InviteToken,
   isCoalitionGenesis,
   isDissolveProposal,
+  isAdmitProposal,
   isReconcileProposal,
   isRulesProposal,
   type KeyRotateBody,
@@ -96,6 +99,7 @@ import {
   parseRecord,
   type ProposalBody,
   type ProposalEventBody,
+  type AdmitProposalBody,
   type ReconcileProposalBody,
   type RulesProposalBody,
   type Score,
@@ -849,11 +853,12 @@ function applyReconcile(
 /**
  * Opens a coalition motion (#100): once the coalition has formed, an edit of
  * one of its Atoms, by the group fold's own rules, deadline and bar included,
- * with the seats it holds now as the snapshot that decides it. Every other
- * target waits: a steward, rules or dissolve change would take effect in the
- * fold while a pass can still be contested, and reconciling a coalition is
- * #122's. So does a motion carrying a Dispatch (#112): its pass, once closed,
- * can still be contested into a fail, and a coalition's followers are #124's.
+ * or admitting a group (#114, {@link applyAdmit}), with the seats it holds
+ * now as the snapshot that decides it. Every other target waits: a steward,
+ * rules or dissolve change would take effect in the fold while a pass can
+ * still be contested, and reconciling a coalition is #122's. So does a motion
+ * carrying a Dispatch (#112): its pass, once closed, can still be contested
+ * into a fail, and a coalition's followers are #124's.
  */
 function applyMotion(
   draft: Draft,
@@ -862,13 +867,52 @@ function applyMotion(
   author: string,
   at: Receipt,
 ): boolean {
-  if (coalition.status !== 'formed' || 'target' in body || body.dispatch !== undefined) {
-    return false;
-  }
+  if (coalition.status !== 'formed' || body.dispatch !== undefined) return false;
+  if ('target' in body)
+    return isAdmitProposal(body) && applyAdmit(draft, coalition, body, author, at);
   const motion = openEdit(draft, body, author, at);
   if (motion === null) return false;
   const seats = coalition.seats.map((s) => s.key);
-  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats });
+  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
+  return true;
+}
+
+/**
+ * Opens a motion to admit a group into a formed coalition (#114; ADR-0036):
+ * the one motion the fold takes from someone who isn't a participant, when
+ * its seat's proof for their key verifies and no seat or earlier admit
+ * motion holds that seat (coalition.ts). It is ordinary, for the window its
+ * proposer chose or the default, with one version that has no text, and
+ * every seat in its snapshot must pass it, whatever their number. Once its
+ * pass is final, the group takes its seat ({@link advanceAdmissions}).
+ */
+function applyAdmit(
+  draft: Draft,
+  coalition: CoalitionDraft,
+  body: AdmitProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (draft.group === null || hasJoined(draft, author) || !fieldsAreValid(body)) return false;
+  if (!mayAdmit(coalition, draft.group, author, body.target)) return false;
+  const window = chosenWindow(draft.rules, 'ordinary', body.window);
+  if (window === null) return false;
+  const proposal: OpenProposal = {
+    ...opening(draft, body, author, at, { cls: 'ordinary', window }),
+    atom: '',
+    target: { kind: 'admit', seat: body.target.seat },
+    text: '',
+    eligible: [],
+    versions: [{ id: at.id, author, text: '' }],
+  };
+  draft.proposals.push(proposal);
+  const seats = coalition.seats.map((s) => s.key);
+  coalition.motions.push({
+    id: at.id,
+    deadline: proposal.deadline,
+    seats,
+    admit: body.target.seat,
+  });
   return true;
 }
 
@@ -883,6 +927,8 @@ function applyProposal(
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
+  // Admitting a group is a coalition's motion (#114): a group's own log takes none.
+  if (isAdmitProposal(body)) return false;
   return openEdit(draft, body, author, at) !== null;
 }
 
@@ -1524,6 +1570,7 @@ export function fold(
   openMotionsBefore(draft, motions, Infinity);
   const now = endTime(draft, relayNow);
   draft.at = now ?? draft.at;
+  if (draft.coalition !== null) advanceAdmissions(draft, draft.coalition);
   advanceSeats(draft);
   advanceOptIns(draft);
   advanceDispatches(draft);
@@ -1638,16 +1685,37 @@ function idOf(record: LogRecord): string | null {
 }
 
 /**
+ * Seats each group whose admit motion's pass has become final by `draft.at`
+ * (#114), once, in order of when it became final, deadline + 10,080, and
+ * then relay order: a later motion's snapshot, and a later join, see it.
+ */
+function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
+  const due = coalition.motions
+    .filter((m) => m.admit !== null && draft.at >= m.deadline + RESULT_GRACE_MINUTES)
+    .sort((a, b) => a.deadline - b.deadline);
+  for (const motion of due) {
+    const proposal = draft.proposals.find((p) => p.id === motion.id);
+    if (proposal === undefined) continue;
+    // Results on it have stopped counting, so its outcome is final here.
+    const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
+    if (settled.outcome.kind === 'pass') {
+      admitSeat(coalition, motion, motion.deadline + RESULT_GRACE_MINUTES);
+    }
+  }
+}
+
+/**
  * Moves relay time on to `received`, never back, and brings the seats,
  * opt-ins and carried Dispatches up to it (#112). A coalition still forming
  * when it reaches its `formsBy` is declined there, and relay time stops at
- * that minute (#100).
+ * that minute (#100). A coalition seats each group admitted by then (#114).
  */
 function advanceTo(draft: Draft, received: number): void {
   draft.at = Math.max(draft.at, received);
   if (draft.coalition !== null) {
     expireFormation(draft.coalition, draft.at);
     draft.at = draft.coalition.declinedAt ?? draft.at;
+    advanceAdmissions(draft, draft.coalition);
   }
   advanceSeats(draft);
   advanceOptIns(draft);

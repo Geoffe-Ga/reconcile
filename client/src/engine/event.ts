@@ -252,16 +252,45 @@ export interface ReconcileProposalBody {
 }
 
 /**
+ * Admitting a further group into a formed coalition (#114; ADR-0036): the
+ * group's seat, its name there and public seat key, and that seat's proof for
+ * the author's key (`crypto/seat.ts`), which shows that the author holds the
+ * group's seat secret.
+ */
+export interface AdmitTarget {
+  readonly kind: 'admit';
+  readonly seat: SeatEntry;
+  readonly proof: string;
+}
+
+/**
+ * Proposes admitting a group into a coalition (#114): a coalition motion with
+ * a title, a justification, an optional discussion link and an optional
+ * voting window in whole days, whose target is the group's seat. Someone from
+ * that group posts it once the group has passed its own reconcile Proposal.
+ * The fold ignores one that carries a Dispatch, as it does any motion's.
+ */
+export interface AdmitProposalBody {
+  readonly target: AdmitTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
  * What a `proposal` event carries: new text for an Atom, a steward seat
- * (#102), an opt-in (#117), dissolving the group (#108), or reconciling into
- * a coalition (#100).
+ * (#102), an opt-in (#117), dissolving the group (#108), reconciling into
+ * a coalition (#100), or, in a coalition, admitting a group (#114).
  */
 export type ProposalEventBody =
   | ProposalBody
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
-  | ReconcileProposalBody;
+  | ReconcileProposalBody
+  | AdmitProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -281,6 +310,11 @@ export function isDissolveProposal(body: ProposalEventBody): body is DissolvePro
 /** True when a Proposal's body proposes reconciling into a coalition (#100). */
 export function isReconcileProposal(body: ProposalEventBody): body is ReconcileProposalBody {
   return 'target' in body && body.target.kind === 'reconcile';
+}
+
+/** True when a Proposal's body proposes admitting a group into a coalition (#114). */
+export function isAdmitProposal(body: ProposalEventBody): body is AdmitProposalBody {
+  return 'target' in body && body.target.kind === 'admit';
 }
 
 /**
@@ -716,24 +750,35 @@ function parseReconcileTarget(value: unknown): ReconcileTarget | null {
   return { kind: 'reconcile', secret, inner, seat, name, title, atoms };
 }
 
+/** An admit target's kind, seat and proof, or null for any other shape (#114). */
+function parseAdmitTarget(value: unknown): AdmitTarget | null {
+  if (!isObject(value) || value.kind !== 'admit') return null;
+  const seat = parseSeat(value.seat);
+  const { proof } = value;
+  if (seat === null || !isString(proof) || !SIGNATURE.test(proof)) return null;
+  return { kind: 'admit', seat, proof };
+}
+
 /**
  * The target a Proposal names other than a steward seat: an opt-in (#117),
- * dissolving (#108), or reconciling (#100).
+ * dissolving (#108), reconciling (#100), or admitting a group (#114).
  */
 function parseWindowedProposal(
   body: Json,
   fields: Omit<StewardProposalBody, 'target'>,
-): RulesProposalBody | DissolveProposalBody | ReconcileProposalBody | null {
+): Exclude<ProposalEventBody, ProposalBody | StewardProposalBody> | null {
   const dissolve = parseDissolveTarget(body.target);
   if (dissolve !== null) return withWindow(dissolve, body, fields);
   const reconcile = parseReconcileTarget(body.target);
   if (reconcile !== null) return withWindow(reconcile, body, fields);
+  const admit = parseAdmitTarget(body.target);
+  if (admit !== null) return withWindow(admit, body, fields);
   return withWindow(parseRulesTarget(body.target), body, fields);
 }
 
 /**
- * A steward (#102), rules (#117), dissolve (#108) or reconcile (#100)
- * Proposal carries `target` and no `atom`; any `text` is dropped, and so is a
+ * A steward (#102), rules (#117), dissolve (#108), reconcile (#100) or admit
+ * (#114) Proposal carries `target` and no `atom`; any `text` is dropped, and so is a
  * steward Proposal's `window` (#106).
  */
 function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
