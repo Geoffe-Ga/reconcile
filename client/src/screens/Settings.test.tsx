@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { messages } from '../app/messages';
 import { axeViolations } from '../test/axe';
 import { Settings, type SettingsProps } from './Settings';
 
@@ -18,6 +19,11 @@ function setup(props: Partial<SettingsProps> = {}) {
     onSave: vi.fn(() => Promise.resolve('downloaded' as const)),
     onRestore: vi.fn(() => Promise.resolve(1)),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
+    passkey: {
+      state: 'offered',
+      onCreate: vi.fn(() => Promise.resolve(Uint8Array.of(1))),
+      onProtect: vi.fn(() => Promise.resolve('protected' as const)),
+    },
     relayBackup: { kind: 'off' },
     recovery: { status: null, held: [], canChoose: true },
     ...props,
@@ -47,6 +53,57 @@ describe('Settings', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers a passkey, saying the phone asks twice, and keeps the result in place of the offer', async () => {
+    const { user } = setup();
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+    const regions = screen
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-labelledby'));
+    const names = regions.map((id) => document.getElementById(id ?? '')?.textContent);
+    expect(names).toEqual([
+      'Notifications',
+      'Back up your groups',
+      'Recovery contacts',
+      'Restore a backup',
+      'Link a new device',
+      'Lock with a passkey',
+      'Erase this device',
+    ]);
+    for (const line of [messages.passkey.lede, messages.passkey.twice, messages.passkey.privacy]) {
+      expect(within(section).getByText(line)).toBeVisible();
+    }
+    expect(await axeViolations()).toEqual([]);
+
+    const make = within(section).getByRole('button', { name: 'Make a passkey' });
+    // Settings' one primary action is Make a backup file (DESIGN.md).
+    expect(make).toHaveClass('button-secondary');
+    await user.click(make);
+    await user.click(await within(section).findByRole('button', { name: 'Confirm your passkey' }));
+
+    expect(await within(section).findByText(messages.passkey.locked)).toBeVisible();
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('says the keys are locked with a passkey, offering nothing to turn it off', async () => {
+    setup({ passkey: { state: 'locked', onCreate: vi.fn(), onProtect: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(section).toHaveTextContent(messages.passkey.locked);
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says plainly where a passkey can’t protect the keys, offering no setup', async () => {
+    setup({ passkey: { state: 'unavailable', onCreate: vi.fn(), onProtect: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(section).toHaveTextContent(
+      'This device’s passkey can’t protect your keys, so they stay on this device as before.',
+    );
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('offers Link a new device under its heading, which opens the linking screen (#96)', async () => {
     setup();
 
@@ -58,7 +115,7 @@ describe('Settings', () => {
       'href',
       '#/link-new',
     );
-    // Linking comes after the backup and before Erase, with Notifications (#99) first.
+    // Linking comes after the backup and before the passkey (#95) and Erase, with Notifications (#99) first.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
     expect(headings).toEqual([
       'Notifications',
@@ -66,6 +123,7 @@ describe('Settings', () => {
       'Recovery contacts',
       'Restore a backup',
       'Link a new device',
+      'Lock with a passkey',
       'Erase this device',
     ]);
     expect(await axeViolations()).toEqual([]);

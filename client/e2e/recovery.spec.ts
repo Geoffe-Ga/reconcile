@@ -142,6 +142,14 @@ async function shareOf(person: Person, author: string): Promise<RecoveryShare> {
   return latest;
 }
 
+/** The split of the latest share `person` holds from `author`, or null before one has synced. */
+async function heldSplit(person: Person, author: string): Promise<string | null> {
+  return shareOf(person, author).then(
+    (share) => share.split,
+    () => null,
+  );
+}
+
 /** Ana picks `names` at `t` of their number in the picker, and saves. */
 async function pick(ana: Person, t: number, names: readonly string[]): Promise<void> {
   const { page } = ana;
@@ -301,12 +309,10 @@ test('contacts each hold a sealed share of the backup key, and nothing leaves in
     const scrubbed = await (await request.get(`/v1/backup/${oldId}`)).body();
     expect(openRelayBackup(oldKey, scrubbed)).toBeNull();
 
-    await expect
-      .poll(async () => (await shareOf(ben, author)).split, SYNCED)
-      .not.toBe(shares.ben.split);
-    await expect
-      .poll(async () => (await shareOf(eve, author)).split, SYNCED)
-      .toBe((await shareOf(ben, author)).split);
+    // Each new contact's device opens its new share once a sync pass brings it.
+    await expect.poll(() => heldSplit(ben, author), SYNCED).not.toBe(shares.ben.split);
+    const split = await heldSplit(ben, author);
+    await expect.poll(() => heldSplit(eve, author), SYNCED).toBe(split);
     const bensNew = await shareOf(ben, author);
     const evesNew = await shareOf(eve, author);
     const oldPair = await combineShares([shares.cal.share, shares.ben.share]);

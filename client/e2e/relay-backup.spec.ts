@@ -21,13 +21,13 @@
  * relay is meant to keep.
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 import type { Page } from '@playwright/test';
 
-import { openBackup, sealBackup } from '../src/crypto/backup';
 import { openRelayBackup } from '../src/crypto/relayBackup';
+import { noFileSharing, withBackupKey } from './support/backupFile';
 import {
   acceptNotice,
   expect,
@@ -52,11 +52,6 @@ const LAPTOP = { width: 1280, height: 800 };
 const SIZES = [65536, 262144, 1048576, 4194304, 16777216];
 const DAY_MS = 86_400_000;
 
-/** Says the share sheet takes no files, so the app downloads the backup, as Android Chrome's does. */
-function noFileSharing(): void {
-  Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => false });
-}
-
 /** Opens Settings from Start's link. */
 async function openSettings(page: Page): Promise<void> {
   await page.goto('/#/');
@@ -76,18 +71,6 @@ async function saveBackup(ana: Person): Promise<string> {
   const save = section.getByRole('button', { name: 'Save the file' });
   const [download] = await Promise.all([page.waitForEvent('download'), save.click()]);
   return download.path();
-}
-
-/**
- * The file at `path` with `key` added as its relay backup key, sealed again
- * under the passphrase: what a device keeping that key would have saved.
- */
-async function withBackupKey(path: string, key: Uint8Array): Promise<Uint8Array> {
-  const plaintext = await openBackup(readFileSync(path), PASSPHRASE);
-  const snapshot = JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>;
-  expect(snapshot).not.toHaveProperty('backupKey');
-  const keyed = { ...snapshot, backupKey: Buffer.from(key).toString('base64url') };
-  return sealBackup(new TextEncoder().encode(JSON.stringify(keyed)), PASSPHRASE);
 }
 
 /** A fresh profile restores the file at `path` from Start. */
@@ -127,7 +110,7 @@ test('a restored device keeps the relay backup fresh, and the relay learns nothi
       founder: CANARY.founder,
     });
     const keyed = testInfo.outputPath('backup-with-key.bin');
-    writeFileSync(keyed, await withBackupKey(await saveBackup(ana), key));
+    writeFileSync(keyed, await withBackupKey(await saveBackup(ana), key, PASSPHRASE));
     await restore(phone, keyed);
   });
 

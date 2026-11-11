@@ -134,7 +134,7 @@ All text tokens meet WCAG 2.2 AA (4.5:1) on every surface in both themes, and sc
 | display, heading-1/2 | Newsreader | page titles, Document titles, Atom headings |
 | document | Newsreader 19px / 1.6 | all Atom text, ballot versions, diffs |
 | heading-3, body, ui, caption | Public Sans | everything interactive or explanatory |
-| eyebrow | Public Sans caps, 0.08em tracking | section labels ("OPEN PROPOSAL", "ENTRENCHED") |
+| eyebrow | Public Sans caps, 0.08em tracking | section labels ("PROPOSAL 3 · OPEN", "ENTRENCHED") |
 | mono | JetBrains Mono | version hashes, ids, recovery phrase |
 
 Keep running text to 60–70 characters per line. Use `text-wrap: balance` on headings.

@@ -30,8 +30,10 @@
  *
  * A group counts here only while it goes on for this device: its genesis is
  * back, it hasn't dissolved (#108) or turned read-only, this device isn't
- * leaving it (#77), and this membership is still in it. Passkey unlock (#95)
- * will gate choosing and holding, since both read the device's keys.
+ * leaving it (#77), and this membership is still in it. Choosing and
+ * holding both read the device's keys, so on a device locked with a passkey
+ * (#95) they wait behind the unlock screen: the store refuses those reads
+ * with `VaultLocked` until it opens.
  */
 import { fromBase64url } from '../crypto/base64url';
 import { isAllowedThreshold } from '../crypto/recoveryPolicy';

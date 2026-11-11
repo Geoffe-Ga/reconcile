@@ -4,7 +4,7 @@
  * Screens only show things and report what people did. This file turns those
  * reports into actions on the store and the relay, and moves between routes.
  */
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
 import { fold, type GroupState } from '../engine/fold';
@@ -27,7 +27,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
 import { SendDispatch } from '../screens/SendDispatch';
-import { type NotifyGroup, Settings } from '../screens/Settings';
+import { type NotifyGroup, Settings, type SettingsPasskey } from '../screens/Settings';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
@@ -54,6 +54,7 @@ import { BackupCard } from './BackupCard';
 import { HeldShareCard } from './HeldShares';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
+import type { Passkey } from './passkey';
 import {
   addVersion,
   castBallot,
@@ -125,6 +126,23 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
   );
 }
 
+/** Whether this device's keys are locked with a passkey, or one can be set up (#95); null until read. */
+function usePasskeyState(passkey: Passkey): SettingsPasskey['state'] | null {
+  const [locked, setLocked] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void passkey.isProtected().then((protectedNow) => {
+      if (live) setLocked(protectedNow);
+    });
+    return () => {
+      live = false;
+    };
+  }, [passkey]);
+  if (locked === null) return null;
+  if (locked) return 'locked';
+  return passkey.available ? 'offered' : 'unavailable';
+}
+
 /**
  * A group's push switch (#99): named once its genesis is back, and gone while
  * it's leaving or once it's a read-only archive (#108).
@@ -139,18 +157,19 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
 }
 
 /**
- * Settings (#78, #96, #99): Notifications, Save a backup with the relay
- * backup's line (#97), Restore a backup, Link a new device, and Erase.
+ * Settings (#78, #95, #96, #99, #109): Notifications, Save a backup with the
+ * relay backup's line (#97), Recovery contacts (#109), Restore a backup, Link
+ * a new device, Lock with a passkey, and Erase.
  */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
   const relayBackup = useRelayBackupStatus(services.store);
   const recovery = useRecovery(services.store);
-  const { push } = services;
-  if (recovery === null) return null;
-  const { status, held } = recovery;
-  return groups === null || switches === null || relayBackup === null ? null : (
+  const { push, passkey } = services;
+  const passkeyState = usePasskeyState(passkey);
+  const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
+  return !loaded || passkeyState === null ? null : (
     <Settings
       notify={{
         availability: push.availability(),
@@ -160,11 +179,20 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       }}
       hasGroups={groups.length > 0}
       relayBackup={relayBackup}
-      recovery={{ status, held, canChoose: recovery.groups.length > 0 }}
+      recovery={{
+        status: recovery.status,
+        held: recovery.held,
+        canChoose: recovery.groups.length > 0,
+      }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
+      passkey={{
+        state: passkeyState,
+        onCreate: () => passkey.create(),
+        onProtect: (id) => passkey.protect(id),
+      }}
     />
   );
 }
@@ -218,10 +246,14 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
   );
 }
 
-/** Link a new device (#96), on the existing device: a fresh code each time it opens. */
+/**
+ * Link a new device (#96), on the existing device: a fresh code each time it
+ * opens, once this session holds the unlocked keys (#95).
+ */
 function LinkNewScreen({ services }: { readonly services: AppServices }) {
+  const ready = useCallback(() => services.store.requireUnlocked(), [services]);
   const start = useCallback(() => offerLink(services), [services]);
-  return <LinkNewDevice start={start} copyText={services.copyText} />;
+  return <LinkNewDevice ready={ready} start={start} copyText={services.copyText} />;
 }
 
 /** Link to my other device (#96), on the new device: syncs once the groups are in. */

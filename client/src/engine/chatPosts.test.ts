@@ -10,8 +10,14 @@ import {
   dueClaims,
   dueMoment,
   isBotMoment,
+  isDiscordId,
+  isThreadUrl,
   mayClaim,
+  mayRecordThread,
   NOTICE_MINUTES,
+  threadFor,
+  threadIdOf,
+  threadUrl,
 } from './chatPosts';
 import { DAY_MINUTES } from './rules';
 
@@ -200,6 +206,157 @@ describe('mayClaim and dueClaims: what the fold keeps and what a device claims',
   });
 });
 
+const GUILD = '1188000000000000001';
+const THREAD = '1309000000000000003';
+const THREAD_URL = `https://discord.com/channels/${GUILD}/${THREAD}`;
+
+describe('a Proposal’s Discord thread link (#123)', () => {
+  it('is discord.com/channels/ with a server id and a thread id, each 17 to 20 digits', () => {
+    expect(threadUrl(GUILD, THREAD)).toBe(THREAD_URL);
+    expect(isThreadUrl(THREAD_URL)).toBe(true);
+    expect(threadIdOf(THREAD_URL)).toBe(THREAD);
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^\d{17,20}$/),
+        fc.stringMatching(/^\d{17,20}$/),
+        (guild, thread) => {
+          expect(isDiscordId(guild)).toBe(true);
+          expect(threadUrl(guild, thread)).toBe(`https://discord.com/channels/${guild}/${thread}`);
+          expect(threadIdOf(threadUrl(guild, thread))).toBe(thread);
+        },
+      ),
+    );
+  });
+
+  it.each([
+    ['an id of 16 digits', '1188000000000001', THREAD],
+    ['an id of 21 digits', GUILD, '130900000000000000031'],
+    ['an id with a letter', GUILD, '1309000000000000x03'],
+    ['an empty id', GUILD, ''],
+    ['an id with a path', GUILD, `${THREAD}/1`],
+  ])('is never made from %s', (_name, guild, thread) => {
+    expect(threadUrl(guild, thread)).toBeNull();
+  });
+
+  it.each([
+    ['another host', `https://example.com/channels/${GUILD}/${THREAD}`],
+    ['discordapp.com', `https://discordapp.com/channels/${GUILD}/${THREAD}`],
+    ['a look-alike host', `https://discord.com.example.com/channels/${GUILD}/${THREAD}`],
+    ['http:', `http://discord.com/channels/${GUILD}/${THREAD}`],
+    ['a path past the thread id', `${THREAD_URL}/1400000000000000001`],
+    ['a trailing slash', `${THREAD_URL}/`],
+    ['a query', `${THREAD_URL}?x=1`],
+    ['a fragment', `${THREAD_URL}#x`],
+    ['short ids', 'https://discord.com/channels/1188/1309'],
+    ['a server id of 16 digits', `https://discord.com/channels/1188000000000001/${THREAD}`],
+    ['a thread id of 21 digits', `https://discord.com/channels/${GUILD}/130900000000000000031`],
+    ['any character for the dot', `https://discordxcom/channels/${GUILD}/${THREAD}`],
+    ['a direct-message link', `https://discord.com/channels/@me/${THREAD}`],
+    ['a capital in the host', `https://Discord.com/channels/${GUILD}/${THREAD}`],
+    ['a line break after it', `${THREAD_URL}\n`],
+    ['a number', 1309],
+    ['an object that prints as a link', { toString: () => THREAD_URL }],
+    ['nothing', null],
+  ])('is refused for %s', (_name, url) => {
+    expect(isThreadUrl(url)).toBe(false);
+    expect(threadIdOf(url)).toBeNull();
+  });
+
+  it('takes only an id of 17 to 20 digits as a Discord id', () => {
+    for (const id of ['12345678901234567', '12345678901234567890'])
+      expect(isDiscordId(id)).toBe(true);
+    for (const id of ['1234567890123456', '123456789012345678901', ' 12345678901234567', 17]) {
+      expect(isDiscordId(id)).toBe(false);
+    }
+  });
+});
+
+describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123)', () => {
+  /** The bot on, Ben's edit, and Cal's winning claim of its opening. */
+  function opened() {
+    const log = botOn();
+    const edit = log.propose('Ben');
+    log.chatPosted('Cal', edit, 'open');
+    return { log, edit };
+  }
+
+  it('lets the member who won the open claim record it, once', () => {
+    const { log, edit } = opened();
+    expect(mayRecordThread(log.state(), authorOf('cal'), edit)).toBe(true);
+    expect(threadFor(log.state(), edit)).toBeUndefined();
+
+    const id = log.chatThread('Cal', edit, THREAD_URL);
+    const state = log.state();
+    expect(threadFor(state, edit)).toEqual({
+      id,
+      seq: log.records.length,
+      received: log.minute,
+      by: authorOf('cal'),
+      proposal: edit,
+      url: THREAD_URL,
+    });
+    expect(mayRecordThread(state, authorOf('cal'), edit)).toBe(false);
+  });
+
+  it('lets nobody else record it, nor anyone before an open claim has won', () => {
+    const log = botOn();
+    const edit = log.propose('Ben');
+    expect(mayRecordThread(log.state(), authorOf('ben'), edit)).toBe(false);
+    log.chatPosted('Cal', edit, 'open');
+    for (const name of ['ana', 'ben', 'zed']) {
+      expect(mayRecordThread(log.state(), authorOf(name), edit)).toBe(false);
+    }
+    expect(mayRecordThread(log.state(), authorOf('cal'), 'no-such-proposal')).toBe(false);
+  });
+
+  it('lets nobody record one from a winning claim of a later moment', () => {
+    const log = botOn();
+    const edit = log.propose('Ben', { window: 3 });
+    // A 3-day vote is closing from its second day, and nobody claimed its opening.
+    log.minute += 2 * DAY_MINUTES;
+    log.chatPosted('Cal', edit, 'closing');
+    expect(claimFor(log.state(), edit, 'closing')?.by).toBe(authorOf('cal'));
+    expect(mayRecordThread(log.state(), authorOf('cal'), edit)).toBe(false);
+  });
+
+  it('lets the open claimant record nothing while the bot is narrowed, off, or they have left or are suspended', () => {
+    const narrowed = opened();
+    const off = narrowed.log.rules('Ana', 'chatBot', null);
+    narrowed.log.narrow('Ana', 'chatBot', off);
+    expect(mayRecordThread(narrowed.log.state(), authorOf('cal'), narrowed.edit)).toBe(false);
+
+    const left = opened();
+    left.log.leave('Cal');
+    expect(mayRecordThread(left.log.state(), authorOf('cal'), left.edit)).toBe(false);
+
+    const suspended = opened();
+    suspended.log.suspend('Ana', 'Cal');
+    expect(mayRecordThread(suspended.log.state(), authorOf('cal'), suspended.edit)).toBe(false);
+  });
+
+  it('keeps at most one thread per Proposal, from its open claimant, with a valid link, however records arrive', () => {
+    const who = fc.constantFrom('Ana', 'Ben', 'Cal', 'Zed');
+    const link = fc.oneof(
+      fc
+        .tuple(fc.stringMatching(/^\d{17,20}$/), fc.stringMatching(/^\d{17,20}$/))
+        .map(([guild, thread]) => `https://discord.com/channels/${guild}/${thread}`),
+      fc.constantFrom(`${THREAD_URL}/1`, `http://discord.com/channels/${GUILD}/${THREAD}`, ''),
+    );
+    fc.assert(
+      fc.property(fc.array(fc.tuple(who, link), { maxLength: 6 }), (records) => {
+        const { log, edit } = opened();
+        for (const [name, url] of records) log.chatThread(name, edit, url);
+        const state = log.state();
+        expect(state.chatThreads.length).toBeLessThanOrEqual(1);
+        const first = records.find(([name, url]) => name === 'Cal' && isThreadUrl(url));
+        expect(threadFor(state, edit)?.url).toBe(first?.[1]);
+        for (const thread of state.chatThreads) expect(thread.by).toBe(authorOf('cal'));
+      }),
+      { numRuns: 60 },
+    );
+  });
+});
+
 describe('a claim after the group dissolves (#108)', () => {
   it('is ignored, even a claim of the dissolve’s own result while it is still due', () => {
     const log = botOn();
@@ -218,5 +375,47 @@ describe('a claim after the group dissolves (#108)', () => {
     expect(dueMoment(dissolve, state.at)).toBe('result');
     expect(state.chatPosts).toEqual([]);
     expect(state.ignored.map((record) => record.id)).toContain(late);
+  });
+
+  it('records no thread either, even from the open claimant of a Proposal still open (#123)', () => {
+    const log = botOn();
+    const edit = log.propose('Ben');
+    log.chatPosted('Cal', edit, 'open');
+    log.minute += 1;
+    const motion = log.proposeDissolve('Ana', false);
+    log.minute += 1;
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('Ben', motion);
+    log.minute += 1;
+    const late = log.chatThread('Cal', edit, THREAD_URL);
+
+    const state = log.state();
+    expect(state.dissolved).not.toBeNull();
+    expect(state.chatThreads).toEqual([]);
+    expect(state.ignored.map((record) => record.id)).toContain(late);
+  });
+});
+
+describe('Dispatches beside Proposal numbers and threads (#112, #123)', () => {
+  it('numbers only Proposals, and a Proposal carrying a Dispatch keeps its number and thread through its pass', () => {
+    const log = botOn();
+    const sent = log.dispatch('Ana', { title: 'Meet on Sunday', text: '' });
+    log.minute += 1;
+    const edit = log.propose('Ben', { dispatch: { title: 'Updated: House rules', text: '' } });
+    log.chatPosted('Cal', edit, 'open');
+    log.chatThread('Cal', edit, THREAD_URL);
+    log.minute += 1;
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, edit, 4);
+
+    const state = log.state();
+    // The bot's own rules Proposal is 1; the Dispatch between them takes no number.
+    expect(state.proposals.map((p) => [p.id, p.number])).toEqual([
+      [state.proposals[0]?.id, 1],
+      [edit, 2],
+    ]);
+    expect(state.dispatches.map((dispatch) => dispatch.id)).toEqual([sent, edit]);
+    expect(threadFor(state, edit)?.url).toBe(THREAD_URL);
+    expect(state.chatThreads).toHaveLength(1);
   });
 });

@@ -6,6 +6,7 @@
  * On iOS, the installed app has storage of its own, so the notice is accepted
  * there, after the install gate.
  */
+import { deviceFlag } from './deviceFlag';
 
 /** The `localStorage` key that holds the accepted notice's version. */
 export const NOTICE_KEY = 'reconcile.pilot-notice';
@@ -23,24 +24,15 @@ export interface NoticeRecord {
 
 /**
  * The record in `storage()`, which defaults to `localStorage`. A browser that
- * blocks site data throws from either call; that reads as not accepted, and
- * the app asks again at the next launch.
+ * blocks site data reads as not accepted, and the app asks again at the next
+ * launch.
  */
-export function noticeRecord(storage: () => Storage = () => window.localStorage): NoticeRecord {
+export function noticeRecord(storage?: () => Storage): NoticeRecord {
+  const flag = deviceFlag(NOTICE_KEY, NOTICE_VERSION, storage);
   return {
-    accepted() {
-      try {
-        return storage().getItem(NOTICE_KEY) === NOTICE_VERSION;
-      } catch {
-        return false;
-      }
-    },
-    accept() {
-      try {
-        storage().setItem(NOTICE_KEY, NOTICE_VERSION);
-      } catch {
-        // Nothing is kept, so the notice shows again at the next launch.
-      }
+    accepted: () => flag.isSet(),
+    accept: () => {
+      flag.set();
     },
   };
 }
