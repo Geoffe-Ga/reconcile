@@ -75,7 +75,11 @@ async function openRoom(person: Person, group: string, coalition: string): Promi
   await expect(page).toHaveURL(/#\/c\/[\w-]{43}\/room$/);
 }
 
-/** Writes `text` in the room's box and sends it, then waits for the relay to have it. */
+/**
+ * Writes `text` in the room's box and sends it, then waits for the relay to
+ * have it and for the room to list the relay's copy: a sent message leaves the
+ * outbox a moment before the pull that brings it back is saved.
+ */
 async function write(person: Person, text: string): Promise<void> {
   const { page } = person;
   await page.getByRole('textbox', { name: 'Message' }).fill(text);
@@ -84,6 +88,7 @@ async function write(person: Person, text: string): Promise<void> {
   const list = page.getByRole('list', { name: 'Messages' });
   await expect(list.getByText(text, { exact: true })).toBeVisible();
   await expect(list.getByText('Sending…')).toHaveCount(0, { timeout: 45_000 });
+  await expect(list.getByText(text, { exact: true })).toBeVisible({ timeout: 45_000 });
 }
 
 /** The room's messages on `page`, each as "name: text". */
