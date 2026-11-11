@@ -514,6 +514,12 @@ function hasSyncState(value: Record<string, unknown>): boolean {
   );
 }
 
+/** A coalition entry's kind (#114) as its own field, none for a group, or null for any other. */
+function kindIn(value: unknown): Pick<BackedUpGroup, 'kind'> | null {
+  if (value === undefined) return {};
+  return value === 'coalition' ? { kind: value } : null;
+}
+
 /** One backed-up group in `value`, or null when any part of it doesn't check out. */
 function groupIn(value: unknown): BackedUpGroup | null {
   if (!isObject(value) || typeof value.groupId !== 'string' || !GROUP_ID.test(value.groupId)) {
@@ -524,10 +530,10 @@ function groupIn(value: unknown): BackedUpGroup | null {
   const log = logIn(value.log);
   if (secret === null || signingKey === null || log === null || !hasSyncState(value)) return null;
   const me = meIn(value.me, signingKey);
-  const { kind } = value;
-  if (me === null || (kind !== undefined && kind !== 'coalition')) return null;
+  const kind = kindIn(value.kind);
+  if (me === null || kind === null) return null;
   return restoredAs({
-    ...(kind === undefined ? {} : { kind }),
+    ...kind,
     groupId: value.groupId,
     secret,
     signingKey,

@@ -52,18 +52,19 @@ async function setUp() {
     me: { author: authorOf('kim'), name: 'Kim' },
   });
   const chatBot = { run: vi.fn(() => Promise.resolve()) };
+  const nudge = vi.fn(() => Promise.resolve());
   const push = {
-    nudge: vi.fn(() => Promise.resolve()),
+    nudge,
     upkeep: vi.fn(() => Promise.resolve()),
     forget: vi.fn(),
   } as unknown as PushUpkeep;
   const sync = createSync({ store, relay, seal: xchachaSeal, clock: () => 1, chatBot, push });
-  return { fake, relay, store, sync, chatBot, push };
+  return { fake, relay, store, sync, chatBot, nudge };
 }
 
 describe('a coalition’s entry in the sync loop', () => {
   it('reads its weekly mailbox like a group’s, and posts no key, chat or nudge of a group’s', async () => {
-    const { fake, relay, store, sync, chatBot, push } = await setUp();
+    const { fake, relay, store, sync, chatBot, nudge } = await setUp();
     const logs = new Logs();
     logs.formed(MINUTE, ['A', 'B'], ['kim', 'zed']);
     const mailbox = await post(
@@ -80,7 +81,7 @@ describe('a coalition’s entry in the sync loop', () => {
     expect(after.every((request) => request.method === 'GET')).toBe(true);
     expect(after.some((request) => request.url.includes(mailbox))).toBe(true);
     expect(chatBot.run).not.toHaveBeenCalled();
-    expect(vi.mocked(push.nudge)).not.toHaveBeenCalled();
+    expect(nudge).not.toHaveBeenCalled();
   });
 
   it('posts what its outbox holds without asking the relay to wake anyone', async () => {

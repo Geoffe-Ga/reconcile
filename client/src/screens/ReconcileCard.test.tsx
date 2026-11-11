@@ -39,8 +39,7 @@ async function fillIn(user: ReturnType<typeof userEvent.setup>, name = 'Eastside
 describe('ReconcileCard', () => {
   it('sends the entries trimmed, then shows the link, Copy and the way to the Proposal', async () => {
     const user = userEvent.setup();
-    const onMake = vi.fn((values: CardValues) => {
-      void values;
+    const onMake = vi.fn<(values: CardValues) => Promise<CardStep>>(() => {
       return Promise.resolve<CardStep>({
         kind: 'queued',
         proposalId: 'p1',
