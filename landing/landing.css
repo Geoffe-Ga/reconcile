@@ -1,0 +1,841 @@
+/*
+ * The Reconcile landing page. Colors and type come from ../DESIGN.md; the scene
+ * colors below (sky, leaves, bark, soil, threads) extend that palette for the
+ * illustration only. Change DESIGN.md first, then mirror it here.
+ *
+ * Layout: one scene read top to bottom. Full-width illustration bands
+ * (inline SVG, stretched to the page width) alternate with text set on the
+ * flat color the band above ends in. The four trees sit at the same
+ * percentage of the width in every band, so trunks and roots line up.
+ */
+
+@font-face {
+  font-family: 'Newsreader Variable';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('fonts/newsreader-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Newsreader Variable';
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('fonts/newsreader-latin-wght-italic.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Public Sans Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/public-sans-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+:root {
+  color-scheme: light;
+
+  /* DESIGN.md tokens */
+  --canvas: #f6f1e7;
+  --surface: #fffdf8;
+  --hairline: #ddd5c4;
+  --ink: #1d1c19;
+  --body: #3d3a33;
+  --muted: #6b665b;
+  --primary: #1f4a33;
+  --on-primary: #f6f1e7;
+  --ochre: #a8741a;
+  --score-0: #b3362a;
+  --score-1: #a85a35;
+  --score-2: #76705f;
+  --score-3: #4f7746;
+  --score-4: #1f4a33;
+
+  /* Scene: sky */
+  --sky: #bfd9e4;
+  --cloud: #e4eff0;
+  --sun: #f4e6c1;
+  /* Scene: canopy, far to near. --leaf-4 is `primary`, the ground the canopy text sits on. */
+  --leaf-1: #86a886;
+  --leaf-2: #4f7746;
+  --leaf-3: #2f6b45;
+  --leaf-4: #1f4a33;
+  --leaf-deep: #1a402c;
+  --leaf-bright: #a9c59f;
+  --on-leaf: #f6f1e7;
+  --on-leaf-soft: #d5e0d0;
+  --on-leaf-accent: #e9c57c;
+  --branch: #b58f6e;
+  --bark: #5b3d30;
+  /* Scene: underground, shallow to deep */
+  --soil-1: #6a4a37;
+  --soil-2: #493327;
+  --soil-3: #35251c;
+  --soil-4: #221812;
+  --stone: #5d4636;
+  --root: #c79a7c;
+  --hypha: #ead9ae;
+  --spore: #d9a54a;
+  --glow: #ffe6a3;
+  /* Text and action on soil: DESIGN.md's dark tokens, in both themes */
+  --on-soil: #f1ece0;
+  --on-soil-body: #d6d0c2;
+  --on-soil-accent: #e2b663;
+  --soil-primary: #8fbf98;
+  --on-soil-primary: #10170f;
+  --soil-rule: #5d4636;
+
+  --font-serif: 'Newsreader Variable', 'Newsreader', 'Iowan Old Style', Georgia, serif;
+  --font-sans:
+    'Public Sans Variable', 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --gutter: clamp(16px, 4vw, 32px);
+}
+
+/* Dark: dusk over a darker wood. Two blocks so an explicit theme choice wins either way. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --canvas: #15140f;
+    --surface: #1e1d17;
+    --hairline: #3a372d;
+    --ink: #f1ece0;
+    --body: #d6d0c2;
+    --muted: #a39d8f;
+    --primary: #8fbf98;
+    --on-primary: #10170f;
+    --ochre: #d9a54a;
+    --score-0: #e0705f;
+    --score-1: #d9946a;
+    --score-2: #a39d8f;
+    --score-3: #93b986;
+    --score-4: #8fbf98;
+    --sky: #1d2e36;
+    --cloud: #2a3f48;
+    --sun: #ece3cb;
+    --leaf-1: #3f5e48;
+    --leaf-2: #2f4d38;
+    --leaf-3: #223d2c;
+    --leaf-4: #172c20;
+    --leaf-deep: #13251b;
+    --leaf-bright: #5f8467;
+    --on-leaf: #f1ece0;
+    --on-leaf-soft: #c5cfc0;
+    --on-leaf-accent: #e2b663;
+    --branch: #8d6f58;
+    --bark: #3b2a22;
+    --soil-1: #33241b;
+    --soil-2: #281c15;
+    --soil-3: #1e1510;
+    --soil-4: #140e0a;
+    --stone: #3a2a20;
+    --root: #a57f66;
+    --soil-rule: #3a2a20;
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #15140f;
+  --surface: #1e1d17;
+  --hairline: #3a372d;
+  --ink: #f1ece0;
+  --body: #d6d0c2;
+  --muted: #a39d8f;
+  --primary: #8fbf98;
+  --on-primary: #10170f;
+  --ochre: #d9a54a;
+  --score-0: #e0705f;
+  --score-1: #d9946a;
+  --score-2: #a39d8f;
+  --score-3: #93b986;
+  --score-4: #8fbf98;
+  --sky: #1d2e36;
+  --cloud: #2a3f48;
+  --sun: #ece3cb;
+  --leaf-1: #3f5e48;
+  --leaf-2: #2f4d38;
+  --leaf-3: #223d2c;
+  --leaf-4: #172c20;
+  --leaf-deep: #13251b;
+  --leaf-bright: #5f8467;
+  --on-leaf: #f1ece0;
+  --on-leaf-soft: #c5cfc0;
+  --on-leaf-accent: #e2b663;
+  --branch: #8d6f58;
+  --bark: #3b2a22;
+  --soil-1: #33241b;
+  --soil-2: #281c15;
+  --soil-3: #1e1510;
+  --soil-4: #140e0a;
+  --stone: #3a2a20;
+  --root: #a57f66;
+  --soil-rule: #3a2a20;
+}
+
+/* ---------- Base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--body);
+  font: 400 17px/1.55 var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+p,
+ol,
+ul,
+dl,
+dd {
+  margin: 0;
+}
+
+ol,
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+h1,
+h2 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: clamp(42px, 8.4vw, 80px);
+  line-height: 1.02;
+}
+
+h2 {
+  font-size: clamp(30px, 4.6vw, 46px);
+  line-height: 1.1;
+}
+
+h3 {
+  font: 650 18px/1.3 var(--font-sans);
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ochre);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.wrap {
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
+}
+
+.prose {
+  display: grid;
+  gap: 16px;
+  max-width: 42rem;
+}
+
+.eyebrow {
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.caption {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.wordmark {
+  font: 500 24px/1 var(--font-serif);
+  letter-spacing: -0.01em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 28px;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: 600 16px/1.2 var(--font-sans);
+  text-decoration: none;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.quiet-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 500 15px/1.4 var(--font-sans);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+/* ---------- Illustration bands ---------- */
+
+.band {
+  display: block;
+  width: 100%;
+}
+
+/* Bands stretch sideways with the page; strokes keep their weight. */
+.band path {
+  vector-effect: non-scaling-stroke;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.band .leaf-1 {
+  fill: var(--leaf-1);
+}
+.band .leaf-2 {
+  fill: var(--leaf-2);
+}
+.band .leaf-3 {
+  fill: var(--leaf-3);
+}
+.band .leaf-4 {
+  fill: var(--leaf-4);
+}
+.band .leaf-deep {
+  fill: var(--leaf-deep);
+}
+.band .bark {
+  fill: var(--bark);
+}
+.band .soil-1 {
+  fill: var(--soil-1);
+}
+.band .soil-2 {
+  fill: var(--soil-2);
+}
+.band .soil-3 {
+  fill: var(--soil-3);
+}
+.band .soil-4 {
+  fill: var(--soil-4);
+}
+.band .stone {
+  fill: var(--stone);
+}
+
+.band .bird {
+  stroke: var(--ink);
+  stroke-width: 2px;
+}
+
+.band-canopy {
+  height: clamp(170px, 27vw, 400px);
+  margin-bottom: -1px;
+}
+
+.band-branches {
+  height: clamp(180px, 30vw, 440px);
+}
+.band .knock {
+  stroke: var(--leaf-4);
+  stroke-width: 15px;
+  stroke-linecap: butt;
+}
+.band .branch {
+  stroke: var(--branch);
+  stroke-width: 7px;
+  stroke-linecap: butt;
+}
+.band .branch.thin {
+  stroke-width: 4.5px;
+}
+.band .twig {
+  stroke: var(--branch);
+  stroke-width: 2px;
+}
+.band .leaf-a,
+.band .leaf-b,
+.band .leaf-c {
+  stroke-width: 6px;
+}
+.band .leaf-a {
+  stroke: var(--leaf-1);
+}
+.band .leaf-b {
+  stroke: var(--leaf-bright);
+}
+.band .leaf-c {
+  stroke: var(--on-leaf-accent);
+}
+
+.band-underside {
+  height: clamp(170px, 22vw, 320px);
+}
+.band .bough {
+  stroke: var(--bark);
+  stroke-width: 6px;
+}
+
+.band-ground {
+  height: clamp(230px, 26vw, 380px);
+  margin-bottom: -1px;
+}
+.band .grass {
+  stroke: var(--leaf-2);
+  stroke-width: 2.5px;
+}
+.band .grass.alt {
+  stroke: var(--leaf-3);
+}
+.band .root {
+  stroke: var(--root);
+  stroke-width: 5px;
+}
+.band .root.tap {
+  stroke-width: 4px;
+  stroke-linecap: butt;
+}
+.band .root.fine {
+  stroke-width: 2.5px;
+}
+
+.band-mycelium {
+  height: clamp(340px, 46vw, 660px);
+  background: var(--soil-2);
+  margin-bottom: -1px;
+}
+.band .hypha {
+  stroke: var(--hypha);
+  stroke-width: 1.25px;
+  opacity: 0.7;
+}
+.band .hypha.faint {
+  opacity: 0.35;
+}
+.band .node {
+  stroke: var(--spore);
+  stroke-width: 5px;
+}
+.band .node.big {
+  stroke-width: 9px;
+}
+.band .node.tip {
+  stroke: var(--root);
+  stroke-width: 8px;
+}
+
+/* What the roots pass along: a point of light travelling a thread between two trees. */
+.band .pulse {
+  stroke: var(--glow);
+  stroke-width: 5px;
+  stroke-dasharray: 1.6 98.4;
+  stroke-dashoffset: 0;
+  animation: travel 9s linear infinite;
+}
+.band .pulse.p2 {
+  animation-duration: 11s;
+  animation-delay: -3s;
+}
+.band .pulse.p3 {
+  animation-duration: 8s;
+  animation-delay: -5s;
+}
+.band .pulse.p4 {
+  animation-duration: 13s;
+  animation-direction: reverse;
+  animation-delay: -2s;
+}
+.band .pulse.p5 {
+  animation-duration: 15s;
+  animation-direction: reverse;
+  animation-delay: -8s;
+}
+.band .pulse.p6 {
+  animation-duration: 19s;
+  animation-delay: -11s;
+}
+
+@keyframes travel {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+/* ---------- Sky ---------- */
+
+.sky {
+  position: relative;
+  overflow: hidden;
+  background: var(--sky);
+  color: var(--body);
+}
+
+.sky-inner {
+  position: relative;
+}
+
+.sun,
+.cloud {
+  position: absolute;
+  border-radius: 9999px;
+}
+
+.sky {
+  --sun-top: clamp(56px, 8.4vw, 120px);
+  --sun-size: clamp(64px, 12vw, 170px);
+}
+
+.sun {
+  top: var(--sun-top);
+  right: clamp(24px, 12vw, 200px);
+  width: var(--sun-size);
+  aspect-ratio: 1;
+  background: var(--sun);
+}
+
+.cloud {
+  height: clamp(18px, 3vw, 40px);
+  background: var(--cloud);
+}
+.cloud-a {
+  top: calc(var(--sun-top) + var(--sun-size) * 0.47);
+  right: clamp(-20px, 6vw, 110px);
+  width: clamp(120px, 22vw, 300px);
+}
+.cloud-b {
+  top: calc(var(--sun-top) + var(--sun-size) * 0.75);
+  right: clamp(40px, 14vw, 240px);
+  width: clamp(80px, 13vw, 180px);
+}
+.cloud-c {
+  bottom: clamp(176px, 31vw, 460px);
+  left: 46%;
+  width: clamp(90px, 16vw, 220px);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 16px;
+  color: var(--ink);
+}
+
+.hero {
+  display: grid;
+  gap: 20px;
+  max-width: 44rem;
+  padding-block: clamp(72px, 9vw, 112px) clamp(32px, 5vw, 64px);
+}
+
+.hero h1 {
+  color: var(--ink);
+}
+
+.hero .eyebrow {
+  color: var(--primary);
+}
+
+.lede {
+  max-width: 36rem;
+  font: 400 clamp(19px, 2.2vw, 22px) / 1.5 var(--font-serif);
+  color: var(--ink);
+}
+
+.hero .actions {
+  padding-top: 8px;
+  color: var(--ink);
+}
+
+/* ---------- Canopy ---------- */
+
+.canopy {
+  background: var(--leaf-4);
+  color: var(--on-leaf-soft);
+  padding-block: clamp(32px, 6vw, 72px) clamp(56px, 8vw, 104px);
+}
+
+.canopy h2,
+.canopy h3 {
+  color: var(--on-leaf);
+}
+
+.canopy .eyebrow {
+  color: var(--on-leaf-accent);
+}
+
+.canopy .prose p:not(.eyebrow) {
+  font: 400 clamp(19px, 2vw, 21px) / 1.55 var(--font-serif);
+}
+
+.band-branches {
+  margin-block: clamp(24px, 4vw, 48px);
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 32px 24px;
+  padding-top: 32px;
+  counter-reset: step;
+}
+
+.steps li {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--leaf-1);
+  counter-increment: step;
+}
+
+.steps li::before {
+  content: counter(step);
+  font: 500 40px/1 var(--font-serif);
+  color: var(--on-leaf-accent);
+}
+
+.pullquote {
+  max-width: 34rem;
+  padding-top: clamp(40px, 6vw, 64px);
+  font: italic 400 clamp(22px, 3vw, 30px) / 1.3 var(--font-serif);
+  color: var(--on-leaf);
+  text-wrap: balance;
+}
+
+/* ---------- Understory: trunks ---------- */
+
+.understory {
+  background: var(--canvas);
+}
+
+.understory-mid {
+  position: relative;
+  padding-block: 8px 40px;
+}
+
+/* The trunks between the two bands: the same four, stretched behind the notice. */
+.trunks,
+.taproots {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  height: calc(100% + 2px);
+}
+
+.notice {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  max-width: 42rem;
+  margin-inline: auto;
+  padding: clamp(24px, 4vw, 40px);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+
+.notice h2 {
+  color: var(--ink);
+}
+
+.notice .eyebrow {
+  color: var(--muted);
+}
+
+.scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-block: 8px;
+}
+
+.scale li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px 0 12px;
+  border-radius: 9999px;
+  color: var(--surface);
+  font: 500 14px/1.2 var(--font-sans);
+}
+.scale b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.scale .s0 {
+  background: var(--score-0);
+}
+.scale .s1 {
+  background: var(--score-1);
+}
+.scale .s2 {
+  background: var(--score-2);
+}
+.scale .s3 {
+  background: var(--score-3);
+}
+.scale .s4 {
+  background: var(--score-4);
+}
+
+.levels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 16px 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+.levels div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.levels dt {
+  font: 650 15px/1.4 var(--font-sans);
+  color: var(--ink);
+}
+
+.levels dd {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* ---------- Underground ---------- */
+
+.earth {
+  color: var(--on-soil-body);
+}
+
+.earth h2,
+.earth h3 {
+  color: var(--on-soil);
+}
+
+.earth .eyebrow {
+  color: var(--on-soil-accent);
+}
+
+.earth .button {
+  background: var(--soil-primary);
+  color: var(--on-soil-primary);
+}
+
+.earth :focus-visible {
+  outline-color: var(--on-soil-accent);
+}
+
+.soil {
+  position: relative;
+  background: var(--soil-2);
+}
+
+/* The text covers the roots that pass behind it. */
+.cover {
+  position: relative;
+  margin-inline: auto;
+  padding-block: clamp(24px, 5vw, 56px) clamp(40px, 6vw, 72px);
+  background: var(--soil-2);
+}
+
+.soil .cover > p:not(.eyebrow),
+.network .prose > p:not(.eyebrow) {
+  font: 400 clamp(19px, 2vw, 21px) / 1.55 var(--font-serif);
+}
+
+.plain {
+  display: grid;
+  gap: 20px;
+  padding-top: 16px;
+}
+
+.plain li {
+  display: grid;
+  gap: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--soil-rule);
+}
+
+.network {
+  background: var(--soil-4);
+}
+
+.network .prose {
+  padding-block: clamp(16px, 3vw, 32px) clamp(56px, 8vw, 96px);
+}
+
+.bedrock {
+  background: var(--soil-4);
+}
+
+.bedrock .prose {
+  padding-block: clamp(48px, 7vw, 80px);
+  border-top: 1px solid var(--soil-rule);
+}
+
+.bedrock .actions {
+  padding-top: 8px;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding-block: 24px 32px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.foot .wordmark {
+  color: var(--on-soil);
+}
+
+/* ---------- Motion ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .band .pulse {
+    animation: none;
+  }
+}

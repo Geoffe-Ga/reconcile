@@ -125,6 +125,7 @@ reconcile/
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)
 ├── plans/                # Working implementation plans
 ├── client/               # TypeScript PWA (see client/CLAUDE.md)
+├── landing/              # Static landing page: no scripts, no third parties (see landing/README.md)
 ├── reconcile/            # Python package: the blind mailbox relay (reconcile/relay/, ADR-0028)
 ├── DESIGN.md             # Visual system and voice (client tokens and /decide sheets read it)
 ├── tests/                # pytest suite
