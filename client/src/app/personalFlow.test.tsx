@@ -8,7 +8,13 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { readShare, startSharing, stopSharing } from '../share/shareLink';
+import {
+  keepSharing,
+  readShare,
+  SHARE_TTL_DAYS,
+  startSharing,
+  stopSharing,
+} from '../share/shareLink';
 import { exportGroups, importGroups } from '../store/snapshot';
 import { testDevice, type TestDevice, TEST_NOW } from '../test/appServices';
 import { axeViolations } from '../test/axe';
@@ -192,6 +198,57 @@ describe('Personal in the app', () => {
     const listed = await screen.findByRole('link', { name: /My mission statement/ });
     expect(listed).not.toHaveTextContent(messages.personal.pausedLine);
     expect(listed).not.toHaveTextContent(messages.personal.sharedLine);
+  });
+});
+
+describe('a share another device stopped, in the app (#339)', () => {
+  it('pauses the share on a device not opened until the tombstone lapsed, says why, and posts once the person keeps it', async () => {
+    const user = userEvent.setup();
+    const fake = createFakeRelay();
+    let clock = TEST_NOW;
+    const phone = await testDevice(fake, 'ana-phone', () => clock);
+    devices.push(phone);
+    const id = 'Q2FuYXJ5IHN0YXRlbWVudA';
+    await phone.services.store.savePersonal({
+      id,
+      title: 'My mission statement',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const started = await startSharing(phone.services, id);
+    if (started.kind !== 'shared') throw new Error(`Expected a share, not ${started.kind}.`);
+    // The laptop restores the phone's backup and keeps sharing, then stops sharing there.
+    const { file } = await exportGroups(phone.services.store, 'a long walk to the river', 4);
+    const laptop = await testDevice(fake, 'ana-laptop', () => clock);
+    devices.push(laptop);
+    await importGroups(laptop.services.store, file, 'a long walk to the river');
+    expect(await keepSharing(laptop.services, id)).toBe('posted');
+    expect(await stopSharing(laptop.services, id)).toBe('stopped');
+    // The phone isn't opened again until the tombstone has lapsed at the relay.
+    const lapsed = SHARE_TTL_DAYS + 2;
+    fake.minute += lapsed * 24 * 60;
+    clock += lapsed * 24 * 60 * 60 * 1000;
+    const posts = fake.requests.filter(({ method }) => method === 'PUT').length;
+    window.history.replaceState(null, '', '#/me');
+    render(<App services={phone.services} />);
+    const { share } = messages.personal;
+
+    const item = await screen.findByRole('link', { name: /My mission statement/ });
+    expect(item).toHaveTextContent(messages.personal.idleLine);
+    await user.click(item);
+    expect(await screen.findByText(share.pausedIdle)).toBeVisible();
+    expect(fake.requests.filter(({ method }) => method === 'PUT')).toHaveLength(posts);
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.kept)).toBeVisible();
+    expect(fake.requests.filter(({ method }) => method === 'PUT')).toHaveLength(posts + 1);
+    expect((await readShare(phone.services, started.link)).kind).toBe('shown');
+    await user.click(screen.getByRole('link', { name: /Personal/ }));
+    const listed = await screen.findByRole('link', { name: /My mission statement/ });
+    expect(listed).toHaveTextContent(messages.personal.sharedLine);
   });
 });
 

@@ -17,6 +17,7 @@ import { createRelay } from '../net/relay';
 import {
   parseShareLink,
   readShare,
+  SHARE_TTL_DAYS,
   shareLinkOf,
   startSharing,
   stopSharing,
@@ -997,5 +998,82 @@ describe('PersonalDocument, a share a restore paused (#328)', () => {
     });
     expect(await linkShows(link)).toEqual({ kind: 'gone' });
     expect(await store.listPersonal()).toEqual([]);
+  });
+});
+
+describe('PersonalDocument, a share this device hasn’t posted to for 30 days (#339)', () => {
+  const { share } = messages.personal;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  /**
+   * Ana's statement, shared by link from this device, which then isn't
+   * opened for 30 days: another device may have stopped the share meanwhile,
+   * and its tombstone lapsed. Hands back the link.
+   */
+  async function idle(): Promise<string> {
+    await store.savePersonal(STATEMENT);
+    const services = {
+      store,
+      relay: createRelay({ fetch: relay.fetch }),
+      seal: xchachaSeal,
+      now: () => clock,
+    };
+    const started = await startSharing(services, ID);
+    if (started.kind !== 'shared') throw new Error(`Expected a share, not ${started.kind}.`);
+    clock += SHARE_TTL_DAYS * DAY_MS;
+    return shareLinkOf(ORIGIN, started.link);
+  }
+
+  it('asks before anything goes to the link, saying why, with no link to copy', async () => {
+    await idle();
+    const before = relay.requests.length;
+    open();
+
+    const section = await shareSection();
+    expect(within(section).getByText(share.pausedIdle)).toBeVisible();
+    expect(within(section).queryByText(share.paused)).not.toBeInTheDocument();
+    expect(within(section).getByText(share.pausedNote)).toBeVisible();
+    const keep = within(section).getByRole('button', { name: share.keep });
+    const stop = within(section).getByRole('button', { name: share.stop });
+    expect(keep).toHaveAccessibleDescription(`${share.pausedIdle} ${share.pausedNote}`);
+    expect(stop).toHaveAccessibleDescription(share.pausedIdle);
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+    expect(screen.queryByText(messages.personal.sharedPrivacy)).not.toBeInTheDocument();
+    expect(relay.requests).toHaveLength(before);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('Keep sharing sends the latest version, then shows the link as shared', async () => {
+    const link = await idle();
+    const { user } = open();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.kept)).toBeVisible();
+    expect(linkField()).toHaveValue(link);
+    expect(screen.queryByText(share.pausedIdle)).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.sharedPrivacy)).toBeVisible();
+    expect(await linkShows(link)).toEqual({
+      kind: 'shown',
+      title: STATEMENT.title,
+      text: STATEMENT.text,
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps the share paused, and asks again, when Stop sharing can’t reach the relay', async () => {
+    await idle();
+    const { user } = open();
+    await shareSection();
+    relay.offline = true;
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.pausedStopFailed)).toBeVisible();
+    expect(screen.getByText(share.pausedIdle)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.keep })).toBeEnabled();
+    expect(await axeViolations()).toEqual([]);
   });
 });

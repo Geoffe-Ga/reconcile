@@ -1,8 +1,8 @@
 /**
  * `useShareByLink`: one personal Document's share, as its editor holds it
  * (#105): read once when the editor opens, then turned on, sent on and
- * stopped from there, one press at a time. A share a restore paused (#328)
- * is kept or stopped from there too.
+ * stopped from there, one press at a time. A paused share (#328, #339) is
+ * kept or stopped from there too.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -45,7 +45,7 @@ export interface ShareByLinkState {
   readonly send: () => Promise<void>;
   /** Stop sharing. */
   readonly stop: () => Promise<void>;
-  /** Keep sharing, once a restore has paused the share (#328): posts the latest copy. */
+  /** Keep sharing, once the share is paused (#328, #339): posts the latest copy. */
   readonly keep: () => Promise<void>;
   /**
    * Stops sharing before a delete.
@@ -96,7 +96,7 @@ export function useShareByLink(
       const started = await sharing.start(id);
       if (started.kind === 'too-large') return 'too-large';
       if (started.kind === 'failed') return 'start-failed';
-      if (live.current) setView({ link: started.link, pending: false, paused: false });
+      if (live.current) setView({ link: started.link, pending: false, paused: null });
       return sharing.send(started.link);
     });
 
@@ -105,7 +105,7 @@ export function useShareByLink(
   const stop = () =>
     once('stopping', async () => {
       if ((await sharing.stop(id)) === 'failed') {
-        return view?.paused === true ? 'paused-stop-failed' : 'stop-failed';
+        return (view?.paused ?? null) === null ? 'stop-failed' : 'paused-stop-failed';
       }
       if (live.current) setView(null);
       return 'stopped';
@@ -116,7 +116,7 @@ export function useShareByLink(
       const link = view?.link;
       if (link === undefined) return 'idle';
       const kept = await sharing.keep(id);
-      const shared = { link, pending: kept === 'pending', paused: false };
+      const shared = { link, pending: kept === 'pending', paused: null };
       if (live.current) setView(kept === 'stopped' ? null : shared);
       return KEPT[kept];
     });

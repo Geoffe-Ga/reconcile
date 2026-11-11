@@ -2,14 +2,17 @@
  * What a personal Document's editor asks of sharing by link (#105), on the
  * app's services: read whether it's shared, Share link, send the link on,
  * Stop sharing, post an edit once the editor closes, and Keep sharing a
- * share a restore paused (#328).
+ * share that waits for the person: one a restore paused (#328), or one this
+ * device hasn't posted to for 30 days (#339).
  *
  * The link goes out through `shareOrCopy` with fixed words beside it, never
  * the Document's title or text, and only once the relay holds the first copy.
  */
 import {
   keepSharing,
+  pauseOf,
   postEdits,
+  type SharePause,
   type ShareServices,
   shareLinkOf,
   startSharing,
@@ -25,8 +28,12 @@ export interface ShareView {
   readonly link: string;
   /** Whether an edit, or a failed post, hasn't reached the link yet. */
   readonly pending: boolean;
-  /** Whether a restore brought the share back and nothing goes to the link until the person chooses (#328). */
-  readonly paused: boolean;
+  /**
+   * Why nothing goes to the link until the person chooses: a restore brought
+   * the share back (#328), or this device hasn't posted to it for 30 days
+   * (#339). Null while the share is live.
+   */
+  readonly paused: SharePause | null;
 }
 
 /** How Share link went: shared, with the link, or why not. */
@@ -52,7 +59,7 @@ export interface PersonalSharing {
   send(link: string): Promise<ShareOutcome>;
   /** Stop sharing: posts a tombstone and drops the share, or changes nothing. */
   stop(id: string): Promise<StopOutcome>;
-  /** Keep sharing a share a restore paused (#328): records the choice, then posts the latest copy. */
+  /** Keep sharing a paused share (#328, #339): records the choice, then posts the latest copy. */
   keep(id: string): Promise<SharingKeep>;
   /** Posts Document `id`'s latest copy in the background if an edit waits for its link. */
   leave(id: string): void;
@@ -73,7 +80,11 @@ export function personalSharing(services: SharingServices): PersonalSharing {
     async read(id) {
       const share = (await services.store.getPersonal(id))?.share;
       if (share === undefined) return null;
-      return { link: linkOf(share), pending: share.pending, paused: share.paused === true };
+      return {
+        link: linkOf(share),
+        pending: share.pending,
+        paused: pauseOf(share, services.now()),
+      };
     },
     async start(id) {
       const started = await startSharing(services, id);
