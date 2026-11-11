@@ -41,7 +41,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
-import { backupKeyOn, deviceRecord, shareOf } from './support/recovery';
+import { backupKeyOn, deviceRecord, postedEvents, shareOf } from './support/recovery';
 import {
   type Canary,
   describeFinding,
@@ -50,7 +50,7 @@ import {
   scan,
   textCanary,
 } from './support/scan';
-import { storedGroups } from './support/stored';
+import { storedGroups, storedLogs } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const DOCUMENT = 'House rules';
@@ -169,6 +169,12 @@ function moveAlertsBack(page: Page, skip: readonly number[], minutes: number): P
     },
     { skip, minutes },
   );
+}
+
+/** How many `recovery-alert` events `page`'s device holds in its one group's log. */
+async function alertsOn(page: Page): Promise<number> {
+  const [stored] = await storedLogs(page);
+  return stored === undefined ? 0 : postedEvents(stored.log, 'recovery-alert').length;
 }
 
 /** Moves the relay's own receipt of the blobs at `seqs` back by `minutes`, in its SQLite file. */
@@ -293,6 +299,8 @@ test('a new device recovers Ana through two contacts after the wait, and her can
 
   await test.step('Ana’s Start and group home show the alert, and she cancels it', async () => {
     const { page } = ana;
+    // A cancel answers the alerts the device holds: wait until both contacts' have reached it.
+    await expect.poll(() => alertsOn(page), SYNCED).toBe(2);
     await visit(page, '/#/');
     const alert = page.locator('.recovery-alert');
     await expect(alert).toContainText(
@@ -314,9 +322,10 @@ test('a new device recovers Ana through two contacts after the wait, and her can
 
   const moved: number[] = [];
   await test.step('after the cancel, moving the alerts back 72 hours releases nothing', async () => {
-    // Each contact has synced Ana's cancel before its alerts move.
+    // Each contact has synced Ana's cancel, and both alerts, before its alerts move.
     for (const contact of [ben, cal]) {
       await expect(holdsOf(contact)).toContainText('this recovery was cancelled', SYNCED);
+      await expect.poll(() => moveAlertsBack(contact.page, moved, 0), SYNCED).toHaveLength(2);
     }
     const seqs = await moveAlertsBack(ben.page, moved, HOLD);
     expect(seqs).toHaveLength(2);
@@ -335,7 +344,9 @@ test('a new device recovers Ana through two contacts after the wait, and her can
     await approve(cal, code, check);
     await expect(holdsOf(cal)).toContainText(`Holding ${NAMES.ana}’s share until`, SYNCED);
     // Both new alerts are on both contacts' devices before they move.
-    await expect.poll(() => moveAlertsBack(ben.page, moved, 0), SYNCED).toHaveLength(2);
+    for (const contact of [ben, cal]) {
+      await expect.poll(() => moveAlertsBack(contact.page, moved, 0), SYNCED).toHaveLength(2);
+    }
     const seqs = await moveAlertsBack(ben.page, moved, HOLD);
     expect(await moveAlertsBack(cal.page, moved, HOLD)).toEqual(seqs);
     moveRelayBack(relay.db, seqs, HOLD);
