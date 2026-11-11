@@ -5,6 +5,7 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { members } from '../test/members';
+import { VaultLocked } from '../store/db';
 import { makeBackup, passphraseProblem, restoreBackup, saveBackup } from './backup';
 import type { FileTargets } from './share';
 
@@ -80,6 +81,22 @@ describe('makeBackup and saveBackup', () => {
 
     expect(await saveBackup(services, backup)).toBe('cancelled');
     expect((await ana.services.store.getGroup(groupId))?.backup).toBeUndefined();
+  });
+});
+
+describe('makeBackup on a locked device (#95)', () => {
+  it('checks the session holds the unlocked keys before it reads any group', async () => {
+    const { ana } = await group();
+    const listGroups = vi.spyOn(ana.services.store, 'listGroups');
+    const store = {
+      ...ana.services.store,
+      listGroups,
+      requireUnlocked: () => Promise.reject(new VaultLocked()),
+    };
+
+    await expect(makeBackup({ ...ana.services, store }, PASSPHRASE)).rejects.toThrow(VaultLocked);
+
+    expect(listGroups).not.toHaveBeenCalled();
   });
 });
 

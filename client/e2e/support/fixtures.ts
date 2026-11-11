@@ -291,26 +291,61 @@ export async function pick(page: Page, name: string, within?: Locator): Promise<
  */
 export const GUIDE_KEY = 'reconcile.first-run-guide';
 
+/**
+ * The `localStorage` key of the passkey offer's answer (`src/platform/passkeyOffer.ts`,
+ * #95), spelled here for the same reason.
+ */
+export const PASSKEY_OFFER_KEY = 'reconcile.passkey-offer';
+
+/** The passkey offer's heading (#95). */
+export const PASSKEY_OFFER = 'Lock your keys with a passkey';
+
 /** What first run leaves for later in a profile. */
 export interface FirstRunOptions {
   /** True to meet the first-run guide (#91) after the profile's first create or join. */
   readonly guide?: boolean;
+  /** True to stop at the passkey offer (#95), which the profile otherwise answers Not now. */
+  readonly passkey?: boolean;
+}
+
+/** What first run showed a profile. */
+export interface FirstRun {
+  /** Whether the passkey offer (#95) followed the notice. */
+  readonly passkeyOffered: boolean;
 }
 
 /**
  * First run (#76): a new profile's pilot notice, checked by axe, then
- * accepted. Unless `guide` is true, the profile then counts the first-run
- * guide (#91) as seen, as its Skip leaves it, so a spec about something else
- * isn't stopped by the guide's dialog after its first create or join.
+ * accepted. Where the browser can lock keys with a passkey, the passkey
+ * offer follows (#95): unless `passkey` is true, it is checked by axe and
+ * answered Not now, so a spec about something else goes on to the app.
+ * Unless `guide` is true, the profile then counts the first-run guide (#91)
+ * as seen, as its Skip leaves it, so a spec about something else isn't
+ * stopped by the guide's dialog after its first create or join.
  */
-export async function acceptNotice(person: Person, options: FirstRunOptions = {}): Promise<void> {
-  await expect(heading(person.page, 'Before you start')).toBeVisible();
+export async function acceptNotice(
+  person: Person,
+  options: FirstRunOptions = {},
+): Promise<FirstRun> {
+  const { page } = person;
+  await expect(heading(page, 'Before you start')).toBeVisible();
   await expectAccessible(person, 'Pilot notice');
-  await person.page.getByRole('button', { name: 'I understand' }).click();
-  if (options.guide === true) return;
-  await person.page.evaluate((key) => {
-    window.localStorage.setItem(key, '1');
-  }, GUIDE_KEY);
+  await page.getByRole('button', { name: 'I understand' }).click();
+  await expect(heading(page, 'Before you start')).toBeHidden();
+  // The offer renders in the same commit that takes the notice away, so this reads it once.
+  const offer = heading(page, PASSKEY_OFFER);
+  const passkeyOffered = await offer.isVisible();
+  if (passkeyOffered && options.passkey !== true) {
+    await expectAccessible(person, 'Passkey offer');
+    await page.getByRole('button', { name: 'Not now' }).click();
+    await expect(offer).toBeHidden();
+  }
+  if (options.guide !== true) {
+    await page.evaluate((key) => {
+      window.localStorage.setItem(key, '1');
+    }, GUIDE_KEY);
+  }
+  return { passkeyOffered };
 }
 
 /** The keys in the origin's `localStorage` on `page`, sorted. */

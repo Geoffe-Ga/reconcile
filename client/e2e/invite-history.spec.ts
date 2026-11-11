@@ -27,10 +27,12 @@ import {
   acceptNotice,
   expect,
   expectAccessible,
+  type FirstRun,
   type FirstRunOptions,
   GUIDE_KEY,
   heading,
   localKeys,
+  PASSKEY_OFFER_KEY,
   type Person,
   pick,
   storedRecords,
@@ -94,14 +96,22 @@ function seedOf(link: string): Buffer {
   return Buffer.from(new URL(link).hash.slice('#join/'.length), 'base64url');
 }
 
-/** Opens `link` in a new profile, through the pilot notice, and checks Join's preview. */
-async function openInvite(person: Person, link: string, options?: FirstRunOptions): Promise<void> {
+/**
+ * Opens `link` in a new profile, through the pilot notice (and the passkey
+ * offer, #95), and checks Join's preview. Returns what first run showed.
+ */
+async function openInvite(
+  person: Person,
+  link: string,
+  options?: FirstRunOptions,
+): Promise<FirstRun> {
   const { page } = person;
   await page.goto(link);
-  await acceptNotice(person, options);
+  const firstRun = await acceptNotice(person, options);
   await expect(heading(page, GROUP)).toBeVisible();
   await expect(page).toHaveURL(/#\/join$/);
   await expect(page.getByText('From Ana’s invite')).toBeVisible();
+  return firstRun;
 }
 
 /** Joins from the Join screen as `person.name` at Join's preselected level. */
@@ -265,6 +275,7 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     }
   });
 
+  const firstRunKeys: string[] = [];
   await test.step('C reads the whole current Document before any key exists, and taps Not now', async () => {
     await ana.page.goto('/');
     await ana.page.getByRole('link', { name: GROUP }).click();
@@ -275,13 +286,15 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     const inviteGet = [`GET /v1/mailbox/${inviteMailbox}`];
 
     const reading = await relayRequestsDuring(page, async () => {
-      await openInvite(cal, link, { guide: true });
+      const { passkeyOffered } = await openInvite(cal, link, { guide: true });
+      // First run's own device flags: the notice's, and the passkey offer's answer where it showed (#95).
+      firstRunKeys.push(...(passkeyOffered ? [PASSKEY_OFFER_KEY, NOTICE_KEY] : [NOTICE_KEY]));
       const document = page.getByRole('article');
       await expect(document.getByRole('paragraph')).toHaveText([NEW_TEXT, SECOND_ATOM]);
       await expect(page.getByRole('heading', { level: 2, name: TITLE })).toBeFocused();
       await expect(page.getByRole('heading', { level: 2, name: QUESTION })).toBeVisible();
       expect(await storedRecords(page)).toBe(0);
-      expect(await localKeys(page)).toEqual([NOTICE_KEY]);
+      expect(await localKeys(page)).toEqual(firstRunKeys);
       await expectAccessible(cal, 'Join, with the whole Document');
       await page.getByRole('button', { name: 'Not now' }).click();
       await expect(heading(page, 'Your groups')).toBeVisible();
@@ -289,7 +302,7 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     // Reading the Document and Not now sent nothing beyond the invite GET, and wrote nothing.
     expect(reading).toEqual(inviteGet);
     expect(await storedRecords(page)).toBe(0);
-    expect(await localKeys(page)).toEqual([NOTICE_KEY]);
+    expect(await localKeys(page)).toEqual(firstRunKeys);
   });
 
   await test.step('C opens the link again, joins, walks the guide, and sees what A and B see', async () => {

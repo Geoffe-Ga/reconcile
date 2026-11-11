@@ -1,7 +1,10 @@
 /**
  * Link a new device (`#/link-new`; #96), on the existing device (A).
  *
- * Opening it makes a fresh code, shown as a QR code with the same text and
+ * Opening it first checks that this session holds the unlocked keys
+ * (`Store.requireUnlocked`, #95), as Save a backup does: on a device whose
+ * keys are locked with a passkey it makes no code and says to unlock first.
+ * Then it makes a fresh code, shown as a QR code with the same text and
  * Copy the code beside it, for a laptop with no camera. It looks at the relay
  * every 2 seconds for the new device's key; once that arrives, it shows the
  * six-digit number and asks "Does your new device show the same number?",
@@ -9,7 +12,7 @@
  * key, and closing the screen, Don't match, the 10 minutes running out or a
  * failed send each drop every secret. Make a new code starts again.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Link } from 'react-aria-components';
 
 import { LinkNumber } from '../app/LinkNumber';
@@ -22,6 +25,11 @@ import type { LinkOffer, OfferStep } from '../link/session';
 
 /** Props for {@link LinkNewDevice}. */
 export interface LinkNewDeviceProps {
+  /**
+   * Resolves once this session may hand the device's keys on, and rejects
+   * while they're locked with a passkey (`Store.requireUnlocked`, #95).
+   */
+  readonly ready: () => Promise<void>;
   /** Starts a link: a fresh seed, key and code, with nothing sent yet. */
   readonly start: () => LinkOffer;
   /** Puts the code's text on the clipboard; rejects when the browser blocks it. */
@@ -131,12 +139,35 @@ function EndedView({
   );
 }
 
+/** Whether this session may hand the keys on: unknown until `ready` answers. */
+type Readiness = 'checking' | 'open' | 'locked';
+
+/** What `ready` answered, once it has; it asks once for each `ready`. */
+function useReadiness(ready: () => Promise<void>): Readiness {
+  const [readiness, setReadiness] = useState<Readiness>('checking');
+  useEffect(() => {
+    let live = true;
+    ready().then(
+      () => {
+        if (live) setReadiness('open');
+      },
+      () => {
+        if (live) setReadiness('locked');
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [ready]);
+  return readiness;
+}
+
 /** One code's round, from showing it to how it ended. Remounted for each new code. */
 function Round({
   start,
   copyText,
   onAgain,
-}: LinkNewDeviceProps & { readonly onAgain: () => void }) {
+}: Omit<LinkNewDeviceProps, 'ready'> & { readonly onAgain: () => void }) {
   const offer = useHeld(start);
   const [ended, setEnded] = useState<Ended | null>(null);
   const { step } = usePolling(ended === null && offer !== null ? offer.poll : null, lookAgain);
@@ -173,9 +204,13 @@ function Round({
   return <ShowCode offer={offer} copyText={copyText} />;
 }
 
-/** Link a new device: the code, then the number to check, then Match. */
-export function LinkNewDevice({ start, copyText }: LinkNewDeviceProps) {
+/**
+ * Link a new device: once the keys are unlocked, the code, then the number
+ * to check, then Match.
+ */
+export function LinkNewDevice({ ready, start, copyText }: LinkNewDeviceProps) {
   const [round, setRound] = useState(0);
+  const readiness = useReadiness(ready);
   const again = useCallback(() => {
     setRound((now) => now + 1);
   }, []);
@@ -183,7 +218,14 @@ export function LinkNewDevice({ start, copyText }: LinkNewDeviceProps) {
     <main className="shell">
       <BackLink to={{ name: 'settings' }} label={messages.link.backToSettings} />
       <PageHeader title={messages.link.newTitle} pageTitle={messages.link.newPageTitle} />
-      <Round key={round} start={start} copyText={copyText} onAgain={again} />
+      {readiness === 'open' ? (
+        <Round key={round} start={start} copyText={copyText} onAgain={again} />
+      ) : null}
+      {readiness === 'locked' ? (
+        <p role="alert" className="lede">
+          {messages.link.locked}
+        </p>
+      ) : null}
     </main>
   );
 }

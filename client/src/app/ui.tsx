@@ -2,7 +2,7 @@
  * Small building blocks the screens share, on React Aria Components (ADR-0022)
  * and styled from DESIGN.md tokens in src/styles/app.css.
  */
-import { useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useRef } from 'react';
 import {
   FieldError,
   Input,
@@ -53,6 +53,26 @@ export function PageHeader({ eyebrow, title, pageTitle, takesFocus = true }: Pag
         <bdi>{title}</bdi>
       </h1>
     </header>
+  );
+}
+
+/** Props for {@link Section}. */
+export interface SectionProps {
+  /** The section's heading, set as an eyebrow. */
+  readonly title: string;
+  readonly children: ReactNode;
+}
+
+/** A labelled section of a screen: a hairline above, its eyebrow heading beside it on wide screens. */
+export function Section({ title, children }: SectionProps) {
+  const heading = useId();
+  return (
+    <section className="section" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 

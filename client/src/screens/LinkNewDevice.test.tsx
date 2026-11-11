@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LINK_POLL_MS } from '../app/useLink';
 import { linkCode, newLinkKeys, newLinkSeed } from '../crypto/link';
 import type { LinkOffer, OfferStep } from '../link/session';
+import { VaultLocked } from '../store/db';
 import { axeViolations } from '../test/axe';
 import { LinkNewDevice } from './LinkNewDevice';
 
@@ -38,16 +39,25 @@ async function wait(ms = 0): Promise<void> {
   });
 }
 
-/** Renders the screen on a fresh fake link for each round; returns every link it made. */
-function setup(copyText = vi.fn(() => Promise.resolve())) {
+/**
+ * Says this device may hand its keys on, as `Store.requireUnlocked` does on
+ * an open device (#95).
+ */
+const unlocked = (): Promise<void> => Promise.resolve();
+
+/**
+ * Renders the screen on a fresh fake link for each round; returns every link
+ * it made. `ready` stands in for `Store.requireUnlocked` (#95).
+ */
+function setup(copyText = vi.fn(() => Promise.resolve()), ready = vi.fn(unlocked)) {
   const made: ReturnType<typeof fakeOffer>[] = [];
   const start = vi.fn(() => {
     const next = fakeOffer();
     made.push(next);
     return next.offer;
   });
-  const view = render(<LinkNewDevice start={start} copyText={copyText} />);
-  return { made, start, copyText, view };
+  const view = render(<LinkNewDevice ready={ready} start={start} copyText={copyText} />);
+  return { made, start, copyText, ready, view };
 }
 
 /** The one link made so far. */
@@ -95,6 +105,41 @@ describe('LinkNewDevice', () => {
     await wait();
     expect(copyText).toHaveBeenCalledExactlyOnceWith(offer.code);
     expect(screen.getByText('Copied. Paste it on your new device.')).toBeVisible();
+  });
+
+  it('checks the keys are unlocked (#95) before it makes or shows any code', async () => {
+    let open = (): void => undefined;
+    const ready = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          open = resolve;
+        }),
+    );
+    const { made, start } = setup(undefined, ready);
+    await wait();
+
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+    expect(screen.queryByRole('img', { name: 'Linking code' })).not.toBeInTheDocument();
+    open();
+    await wait();
+
+    expect(screen.getByText(only(made).offer.code)).toBeVisible();
+  });
+
+  it('says to unlock first, making no code, when this device’s keys are locked with a passkey (#95)', async () => {
+    const ready = vi.fn(() => Promise.reject(new VaultLocked()));
+    const { start } = setup(undefined, ready);
+    await wait();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it, then link a new device.',
+    );
+    expect(start).not.toHaveBeenCalled();
+    expect(screen.queryByRole('img', { name: 'Linking code' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Settings/ })).toHaveAttribute('href', '#/settings');
+    vi.useRealTimers();
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('says to select the code when the browser blocks the clipboard', async () => {
@@ -244,7 +289,7 @@ describe('LinkNewDevice', () => {
     });
     render(
       <StrictMode>
-        <LinkNewDevice start={start} copyText={vi.fn(() => Promise.resolve())} />
+        <LinkNewDevice ready={unlocked} start={start} copyText={vi.fn(() => Promise.resolve())} />
       </StrictMode>,
     );
     await wait();

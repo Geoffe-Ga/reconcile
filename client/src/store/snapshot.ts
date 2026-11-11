@@ -259,6 +259,21 @@ export async function exportGroups(
 }
 
 /**
+ * Everything in `file`, opened under `passphrase` and every part checked.
+ *
+ * @throws {BackupUnreadable} for a wrong passphrase, a damaged or oversized
+ *   file, or contents that don't check out.
+ */
+async function readBackup(file: Uint8Array, passphrase: string): Promise<Snapshot> {
+  if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
+  const plaintext = await openBackup(file, passphrase);
+  const snapshot = decodeSnapshot(plaintext);
+  plaintext.fill(0);
+  if (snapshot === null) throw new BackupUnreadable();
+  return snapshot;
+}
+
+/**
  * Opens `file` under `passphrase`, checks every group and personal Document
  * in it, and keeps them all in one transaction. Returns how many groups the
  * file held.
@@ -301,6 +316,28 @@ export async function importSnapshot(
   if (decoded === null) throw new BackupUnreadable();
   const snapshot = from === 'link' ? withoutShares(decoded) : decoded;
   await store.restoreGroups(snapshot.groups, snapshot.personal, from);
+  if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
+  return snapshot.groups.length;
+}
+
+/**
+ * Opens and checks `file` as {@link importGroups} does, then puts its groups
+ * in place of every group on the device and its vault, in one transaction
+ * (#95): Restore on the unlock screen, once the passkey no longer opens the
+ * vault and so nothing in it can be read. The relay backup's key (#97) went
+ * with the vault, so its state goes too, and the file's key, if it holds
+ * one, is kept instead. Its personal Documents, which hold no key, merge as
+ * {@link importGroups} merges them. Returns how many groups the file held.
+ *
+ * @throws {BackupUnreadable} as {@link importGroups} does; nothing is written then.
+ */
+export async function replaceWithBackup(
+  store: Pick<Store, 'replaceGroups' | 'adoptRelayBackupKey'>,
+  file: Uint8Array,
+  passphrase: string,
+): Promise<number> {
+  const snapshot = await readBackup(file, passphrase);
+  await store.replaceGroups(snapshot.groups, snapshot.personal);
   if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
   return snapshot.groups.length;
 }
