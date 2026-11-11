@@ -15,11 +15,19 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { readShare, type ShareLink, startSharing, stopSharing } from '../share/shareLink';
+import { shareChannelOf } from '../crypto/share';
+import {
+  keepSharesAlive,
+  readShare,
+  SHARE_TTL_DAYS,
+  type ShareLink,
+  startSharing,
+  stopSharing,
+} from '../share/shareLink';
 import type { PersonalDocument } from '../store/personal';
 import { fetchRelayBackup, startRelayBackup } from '../store/relayBackup';
 import { importSnapshot } from '../store/snapshot';
-import { testDevice, type TestDevice } from '../test/appServices';
+import { TEST_NOW, testDevice, type TestDevice } from '../test/appServices';
 import { local } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -86,9 +94,10 @@ async function nextDay(fake: FakeRelay, device: TestDevice): Promise<void> {
 /**
  * A new device that restores the relay copy under `key` after every other
  * device is lost, as recovery (#118) does: it reads the copy, then keeps it.
+ * Its clock reads `now`.
  */
-async function restoredFrom(fake: FakeRelay, key: Uint8Array): Promise<TestDevice> {
-  const device = await testDevice(fake, `restored-${String(opened.length)}`);
+async function restoredFrom(fake: FakeRelay, key: Uint8Array, now = TEST_NOW): Promise<TestDevice> {
+  const device = await testDevice(fake, `restored-${String(opened.length)}`, () => now);
   opened.push(device);
   const plaintext = await fetchRelayBackup(device.services.relay, key);
   if (plaintext === null) throw new Error('Expected the relay copy.');
@@ -183,12 +192,40 @@ describe('two linked devices and one relay backup (#247)', () => {
     await nextDay(fake, phone);
     await nextDay(fake, laptop);
 
-    // The later copy holds no share, so it keeps the phone's, marked pending, as a restore does.
+    // The later copy holds no share, so it keeps the phone's, marked pending; restored, it's paused (#328).
     const restored = await restoredFrom(fake, key);
     const held = await restored.services.store.getPersonal(STATEMENT.id);
-    expect(held).toEqual({ ...edited, share: { ...phoneShare, pending: true } });
+    expect(held).toEqual({ ...edited, share: { ...phoneShare, pending: true, paused: true } });
     expect(local(held?.share?.seed ?? new Uint8Array())).toEqual(local(link.seed));
     expect(await stopSharing(restored.services, STATEMENT.id)).toBe('stopped');
     expect(await readShare(phone.services, link)).toEqual({ kind: 'gone' });
+  });
+
+  it('pauses a share the phone stopped, which the copy still holds, so a restore after its tombstone lapses posts nothing (#328)', async () => {
+    const fake = createFakeRelay();
+    const { phone, laptop } = await phoneAndLaptop(fake);
+    const key = await keyOf(phone);
+    const outcome = await startSharing(phone.services, STATEMENT.id);
+    if (outcome.kind !== 'shared') throw new Error(`Expected a share, not ${outcome.kind}.`);
+    const { mailbox } = shareChannelOf(outcome.link.seed);
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    expect(await stopSharing(phone.services, STATEMENT.id)).toBe('stopped');
+    // The phone can't tell the laptop's copy of its share from a linked device's live link (#247).
+    await nextDay(fake, phone);
+
+    // Both devices are lost, and recovery runs once the tombstone has lapsed at the relay.
+    const lapsed = SHARE_TTL_DAYS + 2;
+    fake.minute += lapsed * DAY;
+    expect(fake.blobs(mailbox)).toEqual([]);
+    const restored = await restoredFrom(fake, key, TEST_NOW + lapsed * DAY * 60_000);
+    const posts = fake.requests.filter(({ url }) => url.startsWith(`/v1/mailbox/${mailbox}?`));
+
+    expect((await restored.services.store.getPersonal(STATEMENT.id))?.share?.paused).toBe(true);
+    expect(await keepSharesAlive(restored.services)).toEqual([]);
+    expect(fake.requests.filter(({ url }) => url.startsWith(`/v1/mailbox/${mailbox}?`))).toEqual(
+      posts,
+    );
+    expect(await readShare(restored.services, outcome.link)).toEqual({ kind: 'gone' });
   });
 });

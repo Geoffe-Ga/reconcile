@@ -15,6 +15,11 @@
  * record, so a backup carries it, and `src/share/shareLink.ts` posts the
  * Document's latest version, signed and sealed, to a mailbox of the share's
  * own. Only `updateShare` sets or drops it; the editor's saves keep it.
+ *
+ * A share a restore brings back starts paused (#328): the backup may predate
+ * Stop sharing, and once the relay's tombstone has lapsed nothing there would
+ * say so. So nothing posts to a paused share's link until the person keeps
+ * it on that Document (`keepSharing`), or stops it.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { publicKeyOf } from '../crypto/sign';
@@ -38,6 +43,12 @@ export interface ShareState {
   readonly lastPostedAt: number | null;
   /** Whether the link may show less than the Document holds: an edit not posted yet, or a post that failed. */
   readonly pending: boolean;
+  /**
+   * Present only while a share a restore brought back waits for the person
+   * to keep it or stop it (#328): nothing posts to its link meanwhile. A
+   * backup never carries it, since every restore pauses each share it brings.
+   */
+  readonly paused?: true;
 }
 
 /** One personal Document, as the device keeps it and a backup file carries it. */
@@ -143,15 +154,25 @@ function isKeypair(secretKey: Uint8Array, publicKey: Uint8Array): boolean {
 }
 
 /**
+ * Whether `share`'s flags are ones the device keeps: pending true or false,
+ * and paused either absent or true, while a restored share waits for the
+ * person (#328).
+ */
+function isFlagged({ pending, paused }: Record<string, unknown>): boolean {
+  return typeof pending === 'boolean' && (paused === undefined || paused === true);
+}
+
+/**
  * Whether `value` is a share the device can keep (#105): a 32-byte seed, a
  * keypair whose public key is its secret key's own, a whole `n` from 0 up,
- * a whole post time or null, and a pending flag.
+ * a whole post time or null, and its flags (`isFlagged`).
  */
 export function isShareState(value: unknown): value is ShareState {
   if (typeof value !== 'object' || value === null) return false;
-  const { seed, secretKey, publicKey, n, lastPostedAt, pending } = value as Record<string, unknown>;
+  const share = value as Record<string, unknown>;
+  const { seed, secretKey, publicKey, n, lastPostedAt } = share;
   const counted = isTime(n) && (lastPostedAt === null || isTime(lastPostedAt));
-  if (!counted || typeof pending !== 'boolean') return false;
+  if (!counted || !isFlagged(share)) return false;
   return isKey(seed) && isKey(secretKey) && isKey(publicKey) && isKeypair(secretKey, publicKey);
 }
 
@@ -207,13 +228,37 @@ export function keepsHeldCopy(
  * device's `held` one: the file's copy, but with the device's share when the
  * file's copy holds none, marked pending so its link catches up (#105). A
  * live link is never lost to a restore, so the person can still stop it.
+ *
+ * A share the backup brings starts paused (#328), since the person may have
+ * stopped it after the backup was made, and its tombstone may have lapsed
+ * at the relay. Only the device's own share, unpaused, is left as it was,
+ * even when the backup holds the same one: no restore brought it.
  */
 export function restoredCopy(
   held: PersonalDocument | undefined,
   restored: PersonalDocument,
 ): PersonalDocument {
-  if (restored.share !== undefined || held?.share === undefined) return restored;
-  return { ...restored, share: { ...held.share, pending: true } };
+  const own = held?.share;
+  const brought = restored.share;
+  if (own !== undefined && (brought === undefined || ownsLive(own, brought))) {
+    return { ...restored, share: { ...own, pending: true } };
+  }
+  return brought === undefined ? restored : { ...restored, share: { ...brought, paused: true } };
+}
+
+/** Whether `own` is the device's live, unpaused share `brought` names: the same seed. */
+function ownsLive(own: ShareState, brought: ShareState): boolean {
+  return own.paused !== true && base64url(own.seed) === base64url(brought.seed);
+}
+
+/**
+ * `share` as Keep sharing leaves it (#328): no longer paused, and pending, so
+ * its next post sends the Document's latest version.
+ */
+export function resumedShare(share: ShareState): ShareState {
+  const resumed: { -readonly [K in keyof ShareState]: ShareState[K] } = { ...share, pending: true };
+  delete resumed.paused;
+  return resumed;
 }
 
 /** Oldest first, then by id, so the order never depends on how the store returned them. */
