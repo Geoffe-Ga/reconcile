@@ -46,10 +46,10 @@ import {
   RelayBackupTooLarge,
   sealRelayBackup,
 } from '../crypto/relayBackup';
-import { fold } from '../engine/fold';
 import type { Relay } from '../net/relay';
 import type { RelayBackupState, Store } from './db';
 import { hasDuty } from './epochs';
+import { foldGroup } from './expiry';
 import { deviceSnapshot, encodeSnapshot, type Snapshot } from './snapshot';
 
 /** Minutes in a UTC day: a relay minute's day is ⌊minute / 1,440⌋. */
@@ -113,7 +113,7 @@ async function uploadUnlessChanging(services: RelayBackupServices, key: Uint8Arr
  */
 async function keyChangeDue(store: Pick<Store, 'listGroups'>): Promise<boolean> {
   const groups = await store.listGroups();
-  return groups.some((group) => hasDuty(group, fold(group.log, group.relayNow)));
+  return groups.some((group) => hasDuty(group, foldGroup(group)));
 }
 
 /**

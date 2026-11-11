@@ -5,11 +5,13 @@
  * An envelope is a header blob, then one blob per chunk, each sealed under the
  * invite key (`crypto/invite.ts`) with the `Seal` the group's own blobs use.
  *
- * - The header is JSON `{groupSecret, epoch, preview, token, chunkCount}`: the
- *   group's current secret in base64url and its epoch (#98), the preview a
- *   joiner sees before choosing a name (ADR-0052), the inviter's token, and
- *   how many chunks follow. Every preview field is cut to a limit, so the
- *   header always fits one small blob.
+ * - The header is JSON `{groupSecret, epoch, preview, token, chunkCount,
+ *   cleared}`: the group's current secret in base64url and its epoch (#98),
+ *   the preview a joiner sees before choosing a name (ADR-0052), the
+ *   inviter's token, how many chunks follow, and the Proposals whose ballots
+ *   the inviter's device has cleared (#111), so the joiner folds their
+ *   outcomes from their results. Every preview field is cut to a limit, so
+ *   the header stays small: `cleared` adds an id per cleared Proposal.
  * - Each chunk packs log entries, `seq (8 bytes) ‖ received (8) ‖ epoch (4) ‖
  *   length (4) ‖ record`, big-endian, up to the 65,492 bytes a blob carries.
  *   `received` travels with each record because vote deadlines run on it, and
@@ -54,6 +56,8 @@ export interface Envelope {
   readonly token: InviteToken;
   /** The relay-accepted log, in seq order. */
   readonly entries: readonly LogRecord[];
+  /** The Proposals whose ballots the inviter's device has cleared (#111), which the joiner keeps. */
+  readonly cleared: readonly string[];
 }
 
 /** An envelope's first blob: everything but the entries, and how many chunks hold them. */
@@ -187,7 +191,7 @@ export function unpackChunk(chunk: Uint8Array): LogRecord[] | null {
 
 /** The header's JSON bytes, each preview field cut to its limit. */
 export function encodeHeader(header: InviteHeader): Uint8Array {
-  const { groupSecret, epoch, preview, token, chunkCount } = header;
+  const { groupSecret, epoch, preview, token, chunkCount, cleared } = header;
   return encoder.encode(
     JSON.stringify({
       groupSecret: base64url(groupSecret),
@@ -200,6 +204,7 @@ export function encodeHeader(header: InviteHeader): Uint8Array {
       },
       token: { by: token.by, sig: token.sig },
       chunkCount,
+      cleared,
     }),
   );
 }
@@ -242,6 +247,15 @@ function parseToken(value: unknown): InviteToken | null {
   return TOKEN_KEY.test(by) && TOKEN_SIG.test(sig) ? { by, sig } : null;
 }
 
+/** A list of Proposal ids, or none for a header written before #111; null for anything else. */
+function parseCleared(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const list: readonly unknown[] = value;
+  const ids = list.filter((id): id is string => typeof id === 'string');
+  return ids.length === list.length ? ids : null;
+}
+
 function parseJson(bytes: Uint8Array): unknown {
   try {
     const value: unknown = JSON.parse(decoder.decode(bytes));
@@ -258,12 +272,14 @@ export function decodeHeader(bytes: Uint8Array): InviteHeader | null {
   const groupSecret = parseSecret(raw.groupSecret);
   const preview = parsePreview(raw.preview);
   const token = parseToken(raw.token);
+  const cleared = parseCleared(raw.cleared);
   const { chunkCount, epoch } = raw;
-  if (groupSecret === null || preview === null || token === null || !isEpoch(epoch)) return null;
+  if (groupSecret === null || preview === null || token === null || cleared === null) return null;
+  if (!isEpoch(epoch)) return null;
   if (!Number.isSafeInteger(chunkCount) || typeof chunkCount !== 'number' || chunkCount < 1) {
     return null;
   }
-  return { groupSecret, epoch, preview, token, chunkCount };
+  return { groupSecret, epoch, preview, token, chunkCount, cleared };
 }
 
 /** Whether `value` is an epoch: a whole number a u32 holds. */
@@ -307,6 +323,6 @@ export function openEnvelope(
     if (read === null) return null;
     entries.push(...read);
   }
-  const { groupSecret, epoch, preview, token } = header;
-  return { groupSecret, epoch, preview, token, entries };
+  const { groupSecret, epoch, preview, token, cleared } = header;
+  return { groupSecret, epoch, preview, token, entries, cleared };
 }

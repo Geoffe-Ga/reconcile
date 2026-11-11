@@ -14,6 +14,7 @@ import {
 } from '../crypto/groupKeys';
 import { open, type Seal, seal, xchachaSeal } from '../crypto/seal';
 import { parseRecord } from '../engine/event';
+import { resultFor } from '../engine/expiry';
 import type { Score, SignedEvent } from '../engine/event';
 import { LEVELS } from '../engine/capabilities';
 import { fold } from '../engine/fold';
@@ -1550,3 +1551,134 @@ describe('weekly mailboxes (#110)', () => {
     );
   });
 });
+describe('the result duty (#111)', () => {
+  /** Ana's group of Ana and Ben, with a Proposal both have scored, closing it early in this minute. */
+  async function closedEarly() {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const keys = newKeys();
+    const ana = await device('ana', relay, keys);
+    const founding = genesis();
+    const quietLater = proposal(founding, 'Quiet after 11pm.');
+    await ana.store.enqueueAll(GROUP, [
+      founding.record,
+      join(founding, BEN, 'Ben').record,
+      quietLater.record,
+    ]);
+    await ana.sync.syncOnce();
+    fake.minute += 1;
+    await ana.store.enqueueAll(GROUP, [
+      vote(founding, ANA, quietLater, 3).record,
+      vote(founding, BEN, quietLater, 4).record,
+    ]);
+    await ana.sync.syncOnce();
+    return { fake, keys, ana, founding, quietLater };
+  }
+
+  /** The event type each PUT since request `from` carried, opened for the mailbox it went to. */
+  function putTypes(fake: FakeRelay, keys: Keys, from: number): string[] {
+    return fake.requests
+      .slice(from)
+      .filter((request) => request.method === 'PUT')
+      .map((request) => {
+        const bytes = open(mailboxIn(request.url), keys.key, request.body ?? new Uint8Array());
+        return parseRecord(bytes ?? new Uint8Array())?.event.type ?? '?';
+      });
+  }
+
+  it('queues nothing in the close’s own minute', async () => {
+    const { fake, keys, ana } = await closedEarly();
+    const from = fake.requests.length;
+    await ana.sync.syncOnce();
+    await ana.sync.syncOnce();
+    expect(putTypes(fake, keys, from)).toEqual([]);
+    expect((await ana.group()).outbox).toEqual([]);
+    expect((await ana.state()).proposals[0]).toMatchObject({ final: true, result: null });
+  });
+
+  it('a minute later, syncs once more, queues one result, and posts it on the next pass, which the fold takes', async () => {
+    const { fake, keys, ana, quietLater } = await closedEarly();
+    fake.minute += 1;
+    const from = fake.requests.length;
+
+    await ana.sync.syncOnce();
+    expect((await ana.group()).outbox).toEqual([]);
+    await ana.sync.syncOnce();
+    expect(types((await ana.group()).outbox.map((bytes) => ({ bytes })))).toEqual(['result']);
+    expect(putTypes(fake, keys, from)).toEqual([]);
+    await ana.sync.syncOnce();
+
+    expect(putTypes(fake, keys, from)).toEqual(['result']);
+    const [decided] = (await ana.state()).proposals;
+    expect(decided?.result).toMatchObject({ author: authorOf(ANA), closedAt: fake.minute - 1 });
+    expect(decided?.id).toBe(quietLater.id);
+    expect(types((await ana.group()).log)).toEqual([
+      'genesis',
+      'join',
+      'proposal',
+      'vote',
+      'vote',
+      'result',
+    ]);
+    expect((await ana.group()).outbox).toEqual([]);
+  });
+
+  it('queues none when another member’s result turns up on the pass after it found none', async () => {
+    const { fake, keys, ana, founding, quietLater } = await closedEarly();
+    fake.minute += 1;
+    const from = fake.requests.length;
+    await ana.sync.syncOnce();
+    const bens = signedAs(BEN, {
+      type: 'result',
+      group: founding.id,
+      ts: TS,
+      body: heldResultOf(await ana.state(), quietLater.id),
+    });
+    const direct = createRelay({ fetch: fake.fetch });
+    await direct.putBlob(keys.mailbox, sealedFor(keys, bens.record), 30);
+
+    await ana.sync.syncOnce();
+    await ana.sync.syncOnce();
+
+    expect(putTypes(fake, keys, from)).toEqual(['result']);
+    expect((await ana.group()).outbox).toEqual([]);
+    expect((await ana.state()).proposals[0]?.result?.author).toBe(authorOf(BEN));
+  });
+
+  it('queues none from a device whose key isn’t a member of the group', async () => {
+    const { fake, keys } = await closedEarly();
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    fake.minute += 1;
+    const from = fake.requests.length;
+    for (let pass = 0; pass < 3; pass += 1) await kim.sync.syncOnce();
+    fake.minute += 1;
+    await kim.sync.syncOnce();
+    expect(putTypes(fake, keys, from)).toEqual([]);
+    expect((await kim.group()).outbox).toEqual([]);
+  });
+
+  it('owes nothing more once the result is in, as relay time moves on', async () => {
+    const { fake, keys, ana } = await closedEarly();
+    fake.minute += 1;
+    for (let pass = 0; pass < 3; pass += 1) await ana.sync.syncOnce();
+    const from = fake.requests.length;
+    await ana.sync.syncOnce();
+    fake.minute += 1;
+    await ana.sync.syncOnce();
+    await ana.sync.syncOnce();
+    expect(putTypes(fake, keys, from)).toEqual([]);
+    expect((await ana.group()).outbox).toEqual([]);
+  });
+});
+
+/** Each signed record's event type, in order. */
+function types(records: readonly { readonly bytes: Uint8Array }[]): string[] {
+  return records.map((record) => parseRecord(record.bytes)?.event.type ?? '?');
+}
+
+/** The result a device holding the ballots would post for `proposalId`. */
+function heldResultOf(state: GroupState, proposalId: string) {
+  const found = state.proposals.find((candidate) => candidate.id === proposalId);
+  if (found === undefined) throw new Error('Expected the Proposal.');
+  return resultFor(found);
+}

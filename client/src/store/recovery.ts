@@ -41,10 +41,11 @@ import { newScrubBlob } from '../crypto/relayBackup';
 import { newSplitId, openShare, type RecoveryShare, sealShare, splitKey } from '../crypto/shares';
 import { can } from '../engine/capabilities';
 import { signEvent } from '../engine/event';
-import { fold, type GroupState, type SealedShare } from '../engine/fold';
+import type { GroupState, SealedShare } from '../engine/fold';
 import { displayName } from '../engine/names';
 import type { Relay } from '../net/relay';
 import type { ChosenContact, Group, RecoveryPlan, Store } from './db';
+import { foldGroup } from './expiry';
 import { refreshRelayBackup, type RelayBackupServices, startRelayBackup } from './relayBackup';
 import type { Sync } from './sync';
 
@@ -136,12 +137,13 @@ interface Sealable extends ChosenContact {
  * The group's state when it goes on for this device and this member is still
  * in it, or null: genesis not back, dissolved (#108), read-only, leaving
  * (#77), or this membership gone, as when it left on another device.
- * `folded` is the group's log already folded at its `relayNow`, when the
- * caller has it, so it isn't folded twice.
+ * `folded` is the group's log already folded as `foldGroup` folds it (#111:
+ * at its `relayNow`, with its cleared Proposals), when the caller has it, so
+ * it isn't folded twice.
  */
 function liveState(group: Group, folded?: GroupState): GroupState | null {
   if (group.archived !== undefined || group.leaving !== undefined) return null;
-  const state = folded ?? fold(group.log, group.relayNow);
+  const state = folded ?? foldGroup(group);
   const present = state.members.some((m) => m.author === group.me.author);
   return state.group === null || state.dissolved !== null || !present ? null : state;
 }
