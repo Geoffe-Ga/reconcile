@@ -12,7 +12,7 @@
  * it early; a device posts the remove, and the first remaining device to see
  * it writes a new key, wrapped to Ana and Ben. Cal's profile shows the
  * removed line, saying plainly that he keeps what he had (axe on it), and his
- * device keeps the group read-only and never names its mailbox again.
+ * device keeps the group read-only and never names its mailboxes again.
  *
  * Ana then proposes with a canary title, and Ben finds it. The test opens
  * every blob the relay holds, in any mailbox, with keys derived from Cal's
@@ -39,7 +39,7 @@ import {
   visit,
 } from './support/fixtures';
 import { type Canary, describeFinding, keyCanaries, scan, textCanary } from './support/scan';
-import { derive, onlyGroup, storedLogs } from './support/stored';
+import { derive, groupMailboxes, onlyGroup, storedLogs } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -238,14 +238,16 @@ test('Ana and Ben remove Cal: his device keeps what it had, and nothing after op
     expect(calsLogs).not.toContain(Buffer.from(canary).toString('hex'));
   });
 
-  await test.step('Cal’s device names the group’s mailbox no more', async () => {
-    const mailbox = derive(calsSecret, 'reconcile/v1/mailbox').toString('base64url');
-    // The control: his device did name it while he was in the group.
-    expect(calsRequests.slice(0, mark).some((url) => url.includes(mailbox))).toBe(true);
+  await test.step('Cal’s device names the group’s mailboxes no more', async () => {
+    // Its weekly mailboxes (#110), whichever week this run fell in.
+    const mailboxes = groupMailboxes(calsSecret);
+    const names = (url: string) => mailboxes.some((mailbox) => url.includes(mailbox));
+    // The control: his device did name one while he was in the group.
+    expect(calsRequests.slice(0, mark).some(names)).toBe(true);
     await cal.page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await cal.page.waitForTimeout(7_000);
     await cal.page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    expect(calsRequests.slice(mark).filter((url) => url.includes(mailbox))).toEqual([]);
+    expect(calsRequests.slice(mark).filter(names)).toEqual([]);
   });
 
   await test.step('the relay stops, and holds neither secret, any encryption key, nor the response', async () => {

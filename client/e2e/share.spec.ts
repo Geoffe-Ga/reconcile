@@ -38,7 +38,7 @@ import {
   scan,
   textCanary,
 } from './support/scan';
-import { derive, onlyGroup } from './support/stored';
+import { derive, groupMailboxes, onlyGroup } from './support/stored';
 
 /** A random tag, so no two runs plant the same canaries. */
 const TAG = randomBytes(6).toString('hex');
@@ -239,7 +239,7 @@ test('a mission statement shared by link reads in a browser that never opened Re
 
   const group = await onlyGroup(page);
   const groupSecret = Uint8Array.from(group.secret);
-  const groupMailbox = derive(groupSecret, 'reconcile/v1/mailbox').toString('base64url');
+  const groupMailboxIds = groupMailboxes(groupSecret);
 
   await test.step('no request carried a share key, a group’s id or secret, or the text', () => {
     const keys: Canary[] = [
@@ -276,7 +276,8 @@ test('a mission statement shared by link reads in a browser that never opened Re
       );
     }
     // No share request names the group's mailbox, and no group request the share's.
-    expect(shareCalls.filter((request) => request.url().includes(groupMailbox))).toEqual([]);
+    const namesGroup = (url: string) => groupMailboxIds.some((id) => url.includes(id));
+    expect(shareCalls.filter((request) => namesGroup(request.url()))).toEqual([]);
   });
 
   await test.step('the stopped relay’s database, WAL, shared memory and log hold no trace of the text', async () => {

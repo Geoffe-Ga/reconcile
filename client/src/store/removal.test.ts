@@ -6,14 +6,14 @@
  * key change follows it, wrapped to everyone but the person removed (#98).
  * The removed member's own device archives the group once the `remove`
  * folds: its outbox goes, its push registration is forgotten (#99), and no
- * request names the mailbox again. A file holding such a log comes back
+ * request names any of its weekly mailboxes again (#110). A file holding such a log comes back
  * read-only.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { sealBackup } from '../crypto/backup';
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
-import { xchachaSeal } from '../crypto/seal';
+import { deriveSealKey, deriveWeekMailboxId, WEEK_MINUTES, weekOf } from '../crypto/groupKeys';
+import { open, xchachaSeal } from '../crypto/seal';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { newSigningKeys } from '../crypto/sign';
@@ -57,7 +57,9 @@ function founding() {
     },
   });
   const secret = new Uint8Array(32).fill(9);
-  return { genesis, secret, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+  // The fake relay's first week, which these tests stay in (#110).
+  const mailbox = deriveWeekMailboxId(secret, weekOf(START));
+  return { genesis, secret, mailbox, key: deriveSealKey(secret) };
 }
 
 type Founded = ReturnType<typeof founding>;
@@ -137,9 +139,32 @@ function never(): never {
   throw new Error('expected a group');
 }
 
-/** How many requests named `mailbox`. */
-function mailboxRequests(fake: FakeRelay, mailbox: string): number {
-  return fake.requests.filter((request) => request.url.includes(mailbox)).length;
+/** The mailbox id a relay request names, or '' for none. */
+function mailboxIn(url: string): string {
+  return /\/v1\/mailbox\/([A-Za-z0-9_-]{43})/.exec(url)?.[1] ?? '';
+}
+
+/** The ids `secret` gives its mailboxes, from five weeks before START's to the week after (#110). */
+function weeksOf(secret: Uint8Array): string[] {
+  const week = weekOf(START);
+  return [-5, -4, -3, -2, -1, 0, 1].map((offset) => deriveWeekMailboxId(secret, week + offset));
+}
+
+/** How many requests named any of `secret`'s weekly mailboxes. */
+function groupRequests(fake: FakeRelay, secret: Uint8Array): number {
+  const ids = weeksOf(secret);
+  return fake.requests.filter((request) => ids.includes(mailboxIn(request.url))).length;
+}
+
+/** The type and mailbox of each PUT the fake relay took that opens under `secret`'s key, oldest first. */
+function putsUnder(fake: FakeRelay, secret: Uint8Array): { type: string; mailbox: string }[] {
+  const key = deriveSealKey(secret);
+  return fake.requests.flatMap((request) => {
+    if (request.method !== 'PUT') return [];
+    const mailbox = mailboxIn(request.url);
+    const bytes = open(mailbox, key, request.body ?? new Uint8Array());
+    return bytes === null ? [] : [{ type: parseRecord(bytes)?.event.type ?? '?', mailbox }];
+  });
 }
 
 describe('removing a member on this device (#115)', () => {
@@ -176,6 +201,30 @@ describe('removing a member on this device (#115)', () => {
     expect(held.secret).not.toEqual(group.secret);
   });
 
+  it('posts the remove and then its key change to the outgoing epoch’s mailbox for the week the relay is in (#110)', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last } = history(group);
+    const device = await openDevice(fake.fetch);
+    await keep(device, group, 'ana', events);
+
+    // A week on, with the removal still open, Ben's 4 closes it early.
+    fake.minute += WEEK_MINUTES;
+    await device.store.enqueue(groupId, last.record);
+    expect(await device.sync.syncOnce()).toBe(true);
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    const nextWeek = deriveWeekMailboxId(group.secret, weekOf(START) + 1);
+    expect(putsUnder(fake, group.secret).slice(-3)).toEqual([
+      { type: 'vote', mailbox: nextWeek },
+      { type: 'remove', mailbox: nextWeek },
+      { type: 'key-rotate', mailbox: nextWeek },
+    ]);
+    expect((await device.store.getGroup(groupId))?.epoch).toBe(1);
+  });
+
   it('archives the removed member’s device once the remove folds, forgetting its push first, and sends nothing after', async () => {
     const fake = createFakeRelay({ minute: START });
     const group = founding();
@@ -202,10 +251,14 @@ describe('removing a member on this device (#115)', () => {
     expect(held.outbox).toEqual([]);
     expect(forgot.map((g) => g.groupId)).toEqual([groupId]);
     expect(shownState(held).former.map((m) => m.author)).toEqual([authorOf('cal')]);
-    const requests = mailboxRequests(fake, group.mailbox);
+    const requests = groupRequests(fake, group.secret);
+    // The control: the device did name them while Cal was in the group.
+    expect(requests).toBeGreaterThan(0);
     fake.minute += 5;
     expect(await device.sync.syncOnce()).toBe(true);
-    expect(mailboxRequests(fake, group.mailbox)).toBe(requests);
+    fake.minute += WEEK_MINUTES;
+    expect(await device.sync.syncOnce()).toBe(true);
+    expect(groupRequests(fake, group.secret)).toBe(requests);
     await expect(device.store.enqueue(groupId, last.record)).rejects.toThrow('read-only');
   });
 
@@ -302,9 +355,9 @@ describe('a removed member’s group and backup files (#78)', () => {
 
     const restored = (await other.getGroup(groupId)) ?? never();
     expect(restored.archived).toEqual({ reason: 'removed' });
-    const requests = mailboxRequests(fake, group.mailbox);
+    const requests = groupRequests(fake, group.secret);
     expect(await sync.syncOnce()).toBe(true);
-    expect(mailboxRequests(fake, group.mailbox)).toBe(requests);
+    expect(groupRequests(fake, group.secret)).toBe(requests);
   });
 });
 

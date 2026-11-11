@@ -4,6 +4,7 @@ import { folded, foldLogs, Logs } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder, START_MINUTE } from '../test/votes';
 import { LEVELS } from './capabilities';
+import type { RemovalProposalBody } from './event';
 import { fold } from './fold';
 import {
   extendedBy,
@@ -316,7 +317,7 @@ describe('a removal beside Dispatches (#112)', () => {
 describe('a removal beside coalitions (#100)', () => {
   const R = 29_375_000;
   const CAL = authorOf('cal');
-  const removalOf = (member: string) => ({
+  const removalOf = (member: string): RemovalProposalBody => ({
     target: { kind: 'remove', member },
     title: 'Remove them',
     why: 'They broke the agreement.',

@@ -288,7 +288,7 @@ describe('push on a linked device (#96, #99)', () => {
     expect(await phone.services.push.turnOn(groupId)).toBe('on');
     await phone.services.sync.syncOnce();
     const phonePush = (await held(phone, groupId)).push;
-    const mailbox = mailboxAt(await held(phone, groupId), 0);
+    const mailbox = mailboxAt(await held(phone, groupId), fake.minute);
     expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
 
     const laptop = await laptopOf(fake, phone);

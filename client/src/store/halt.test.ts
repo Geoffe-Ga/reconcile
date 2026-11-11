@@ -83,10 +83,12 @@ describe('halt', () => {
     release();
     await halting;
 
-    expect(urls).toHaveLength(1);
+    // The first group's pass: week 0's GET, which gives the week, then last week's and this
+    // week's (#110). Nothing for the second group.
+    expect(urls).toHaveLength(3);
     expect(await passing).toBe(true);
     expect(await sync.syncOnce()).toBe(false);
-    expect(urls).toHaveLength(1);
+    expect(urls).toHaveLength(3);
     expect(manual.waits()).toEqual([]);
   });
 
@@ -146,7 +148,8 @@ describe('halt', () => {
       timers: manual.timers,
     });
     sync.start();
-    await expect.poll(() => urls.length).toBe(2);
+    // Three GETs for each of the two groups (#110).
+    await expect.poll(() => urls.length).toBe(6);
     await expect.poll(() => manual.waits().length).toBe(1);
 
     await sync.halt();
@@ -156,6 +159,6 @@ describe('halt', () => {
     await Promise.resolve();
 
     expect(manual.waits()).toEqual([]);
-    expect(urls).toHaveLength(2);
+    expect(urls).toHaveLength(6);
   });
 });

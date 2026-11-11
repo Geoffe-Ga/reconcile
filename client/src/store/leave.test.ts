@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { open, xchachaSeal } from '../crypto/seal';
 import { parseRecord, type SignedEvent } from '../engine/event';
 import { createRelay, type Relay } from '../net/relay';
@@ -48,7 +48,9 @@ function founding(name: string, fill: number) {
     },
   });
   const secret = new Uint8Array(32).fill(fill);
-  return { genesis, secret, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+  // The fake relay's first week, which these tests stay in (#110).
+  const mailbox = deriveWeekMailboxId(secret, weekOf(29_000_000));
+  return { genesis, secret, mailbox, key: deriveSealKey(secret) };
 }
 
 type Founded = ReturnType<typeof founding>;
@@ -181,7 +183,8 @@ describe('leaving a group on this device', () => {
     const requests = fake.requests.length;
     expect(await refusing.syncOnce()).toBe(true);
     expect(refusing.isReachable()).toBe(true);
-    expect(fake.requests.slice(requests).map((request) => request.method)).toEqual(['PUT']);
+    // The GET that gives the week (#110), then the leave, and nothing read after it.
+    expect(fake.requests.slice(requests).map((request) => request.method)).toEqual(['GET', 'PUT']);
     expect(await store.getGroup(group.genesis.id)).toBeUndefined();
   });
 });
