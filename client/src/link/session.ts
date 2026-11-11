@@ -19,8 +19,10 @@
  *    checks the bundle and keeps its groups and personal Documents
  *    (`importSnapshot`, as from a link), and the relay backup key (#97) if it
  *    has none, through the store's one key-writing path, so a B whose keys
- *    are locked with a passkey seals them in its vault. Neither side carries
- *    a Document's share by link (#105): it stays on A alone.
+ *    are locked with a passkey seals them in its vault. A group entry that
+ *    doesn't check out is left out, and B says how many (#336), as a restore
+ *    does. Neither side carries a Document's share by link (#105): it stays
+ *    on A alone.
  *
  * Every blob is sealed and padded, and every PUT uses `ttl_days=1`. Each
  * handshake message is a 1-byte tag (who posted it) and a 32-byte key. Each
@@ -119,7 +121,7 @@ export interface LinkOffer {
 export type JoinStep =
   | { readonly kind: 'waiting' }
   | { readonly kind: 'compare'; readonly number: string }
-  | { readonly kind: 'linked'; readonly groups: number }
+  | { readonly kind: 'linked'; readonly groups: number; readonly skipped: number }
   | { readonly kind: 'mismatch' | 'damaged' | 'expired' | 'closed' };
 
 /** The new device's side of a link. It has no way to confirm: only the existing device can. */
@@ -384,15 +386,20 @@ export async function joinLink(
   };
 }
 
-/** Keeps the bundle's groups, as from a link, and says how many groups the device now has. */
+/**
+ * Keeps the bundle's groups, as from a link, and says how many groups the
+ * device now has, and how many of the bundle's group entries it left out
+ * because they didn't check out (#336).
+ */
 async function keep(store: LinkServices['store'], plaintext: Uint8Array): Promise<Ended<JoinStep>> {
+  let skipped: number;
   try {
-    await importSnapshot(store, plaintext, 'link');
+    ({ skipped } = await importSnapshot(store, plaintext, 'link'));
   } catch (error) {
     if (error instanceof BackupUnreadable) return { kind: 'damaged' };
     throw error;
   } finally {
     plaintext.fill(0);
   }
-  return { kind: 'linked', groups: (await store.listGroups()).length };
+  return { kind: 'linked', groups: (await store.listGroups()).length, skipped };
 }

@@ -17,7 +17,7 @@ function setup(props: Partial<SettingsProps> = {}) {
     hasGroups: true,
     onMake: vi.fn(() => Promise.reject(new Error('unused'))),
     onSave: vi.fn(() => Promise.resolve('downloaded' as const)),
-    onRestore: vi.fn(() => Promise.resolve(1)),
+    onRestore: vi.fn(() => Promise.resolve({ groups: 1, skipped: 0 })),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
     passkey: {
       state: 'offered',

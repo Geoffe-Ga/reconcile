@@ -33,23 +33,27 @@
  *   devices, so a group one joins after the link is on that one alone. The
  *   upload keeps the relay copy's entry for a group this device doesn't hold
  *   in any state ({@link carriedGroups}), as the copy held it: this device
- *   reads only its id and author, and never keeps, folds or syncs it. A group
- *   it does hold goes as this device has it, or not at all while it's
- *   leaving or a read-only archive (#108). One it uploaded before and holds
- *   no longer stays out, since it left or removed it, or a dissolve wiped
- *   it: the state notes a keyed tag of each group it uploaded
- *   (`uploadedGroups`, `groupTagFor`), never its id, and drops a tag once a
- *   read finds the copy without that group. A purge sets the day back (`Store.purgeGroup`), so the next
+ *   reads its id and author, checks it as a restore would read it, and never
+ *   keeps, folds into its own state or syncs it. An entry a restore would
+ *   leave out, as anyone else holding the key could plant, isn't carried, and
+ *   the copy is written again without it (#336). A group it does hold goes
+ *   as this device has it, or not at all while it's leaving or a read-only
+ *   archive (#108). One it uploaded before and holds no longer stays out,
+ *   since it left or removed it, or a dissolve wiped it: the state notes a
+ *   keyed tag of each group it uploaded (`uploadedGroups`, `groupTagFor`),
+ *   never its id, and drops a tag once a read finds the copy without that
+ *   group. A purge sets the day back (`Store.purgeGroup`), so the next
  *   complete pass, the leave's own, takes the group out of the copy at once.
  * - **The schedule.** Once a key exists, after the first sync pass of each
  *   UTC day by relay time in which every group synced, the device reads the
  *   relay copy and uploads if what it would upload has changed since its
  *   last upload, the relay holds nothing under the id, or the relay copy's
- *   personal Documents or group ids aren't the merge's: never on every
- *   change. The relay day is the latest `relayNow` among the device's
- *   groups, so with no synced group there is no day and nothing is
- *   scheduled; a purge sets the checked day back (#327). A failed upload
- *   tries again after the next complete pass.
+ *   personal Documents or group ids aren't the merge's, or it holds a group
+ *   entry the device couldn't read (#336): never on every change. The relay
+ *   day is the latest `relayNow` among the device's groups, so with no
+ *   synced group there is no day and nothing is scheduled; a purge sets the
+ *   checked day back (#327). A failed upload tries again after the next
+ *   complete pass.
  * - **Key changes (#98).** The refresh runs after the pass's key changes, so
  *   its copy holds each group at the epoch it moved to. While any group
  *   still has a key change due that this device should write (`hasDuty`),
@@ -85,6 +89,7 @@ import {
   encodeSnapshot,
   type RelayCopy,
   type RelayGroup,
+  restorable,
   type Snapshot,
 } from './snapshot';
 
@@ -307,19 +312,22 @@ export interface CarryContext {
 /**
  * The relay copy's group entries an upload carries through, in the copy's
  * order (#327): each for a group this device doesn't hold, in any state, and
- * hasn't uploaded before, as a linked device's join after the link. This
- * device never holds, reads or syncs one; it keeps it in the copy so a
- * restore brings it back. A group this device holds goes as it has it, or
- * not at all while it's leaving or a read-only archive (#108); one it
- * uploaded and holds no longer stays out, since it left or removed it, or a
- * dissolve wiped it.
+ * hasn't uploaded before, as a linked device's join after the link, that a
+ * restore would read (`restorable`, #336). This device never holds or syncs
+ * one; it keeps it in the copy so a restore brings it back. One a restore
+ * would leave out, as anyone else holding the key could plant, goes no
+ * further, so it can't keep a restore saying one was left out for good; of
+ * two for one group, the first a restore reads goes. A group this device
+ * holds goes as it has it, or not at all while it's leaving or a read-only
+ * archive (#108); one it uploaded and holds no longer stays out, since it
+ * left or removed it, or a dissolve wiped it.
  */
 export function carriedGroups(
   relay: readonly RelayGroup[],
   { held, left, key }: CarryContext,
 ): RelayGroup[] {
   const tag = tagOf(key);
-  return relay.filter((group) => !held.has(group.groupId) && !left.has(tag(group)));
+  return restorable(relay.filter((group) => !held.has(group.groupId) && !left.has(tag(group))));
 }
 
 /** The tag under `key` of a group as its member: what `uploadedGroups` notes (#327). */
@@ -353,13 +361,16 @@ function groupTags(
  * Whether the relay already holds what an upload of `copy` would, as far as
  * the digest can't tell (#247): it does unless it holds nothing, or a copy
  * whose personal Documents or groups aren't `copy`'s, as when a linked
- * device wrote its own (#327). One this device can't read counts as held, as
- * before #247, so only a change here uploads over it.
+ * device wrote its own (#327), or one with a group entry this device
+ * couldn't read (#336), which the upload leaves out. One this device can't
+ * read at all counts as held, as before #247, so only a change here uploads
+ * over it.
  */
 function holdsAlready(onRelay: OnRelay, copy: Snapshot): boolean {
   if (onRelay.kind !== 'copy') return onRelay.kind === 'unreadable';
   const planned = [...copy.groups, ...(copy.carried ?? [])];
   return (
+    onRelay.skipped === 0 &&
     personalDigest(onRelay.personal) === personalDigest(copy.personal) &&
     sameIds(onRelay.groups, planned)
   );

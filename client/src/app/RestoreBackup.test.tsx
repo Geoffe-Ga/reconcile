@@ -2,15 +2,18 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAX_BACKUP_BYTES } from '../store/snapshot';
+import { MAX_BACKUP_BYTES, type Restored } from '../store/snapshot';
 import { axeViolations } from '../test/axe';
 import { RestoreBackup } from './RestoreBackup';
 
-type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<number>;
+type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<Restored>;
+
+/** What a restore of `groups` groups, leaving out `skipped` group entries, resolves to. */
+const restored = (groups: number, skipped = 0): Restored => ({ groups, skipped });
 
 const FILE = new File([Uint8Array.of(82, 67, 66, 49)], 'reconcile-backup-2026-11-08.bin');
 
-function setup(onRestore = vi.fn<OnRestore>(() => Promise.resolve(2))) {
+function setup(onRestore = vi.fn<OnRestore>(() => Promise.resolve(restored(2)))) {
   document.title = 'Settings · Reconcile';
   render(
     <main>
@@ -100,7 +103,10 @@ describe('RestoreBackup', () => {
   });
 
   it('says how many came back for one group, and for none', async () => {
-    const onRestore = vi.fn<OnRestore>().mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const onRestore = vi
+      .fn<OnRestore>()
+      .mockResolvedValueOnce(restored(1))
+      .mockResolvedValueOnce(restored(0));
     const { user } = setup(onRestore);
 
     await user.upload(fileInput(), FILE);
@@ -114,5 +120,57 @@ describe('RestoreBackup', () => {
     await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
     await user.click(screen.getByRole('button', { name: 'Restore' }));
     expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
+  });
+
+  /** Chooses the file again, as Choose backup file lets, and restores it under its passphrase. */
+  async function restoreAgain(user: ReturnType<typeof userEvent.setup>) {
+    // Choose backup file clears the input first, so the same file can be chosen again.
+    await user.click(screen.getByRole('button', { name: 'Choose backup file' }));
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+  }
+
+  it('says how many group entries it left out after how many came back, in the one status line (#336)', async () => {
+    const onRestore = vi
+      .fn<OnRestore>()
+      .mockResolvedValueOnce(restored(2, 1))
+      .mockResolvedValueOnce(restored(1, 3));
+    const { user } = setup(onRestore);
+
+    await restoreAgain(user);
+    expect(
+      await screen.findByText(
+        '2 groups are back on this device. One group in this backup couldn’t be read and was left out.',
+      ),
+    ).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+
+    await restoreAgain(user);
+    expect(
+      await screen.findByText(
+        '1 group is back on this device. 3 groups in this backup couldn’t be read and were left out.',
+      ),
+    ).toHaveAttribute('role', 'status');
+  });
+
+  it('says only what it left out when no group came back (#336)', async () => {
+    const onRestore = vi
+      .fn<OnRestore>()
+      .mockResolvedValueOnce(restored(0, 1))
+      .mockResolvedValueOnce(restored(0, 2));
+    const { user } = setup(onRestore);
+
+    await restoreAgain(user);
+    expect(
+      await screen.findByText('One group in this backup couldn’t be read and was left out.'),
+    ).toHaveAttribute('role', 'status');
+
+    await restoreAgain(user);
+    expect(
+      await screen.findByText('2 groups in this backup couldn’t be read and were left out.'),
+    ).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(/holds no groups/)).not.toBeInTheDocument();
   });
 });
