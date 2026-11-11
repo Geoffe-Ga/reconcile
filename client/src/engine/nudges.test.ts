@@ -12,12 +12,14 @@ describe('nudgesFor: the wakes a proposer’s device schedules (#99)', () => {
   it('gives my open Proposal with deadline D a wake at D − 1,440 (closing soon) and at D (its result)', () => {
     const log = groupLog({ members: ['Ben'] });
     log.minute += 10;
+    const opened = log.minute;
     const proposal = log.propose('Ana');
     const deadline = deadlineOf(log.minute);
 
+    // Each carries the minute its Proposal opened, whose week's mailbox it goes to (#110).
     expect(nudgesFor(log.state(), ANA)).toEqual([
-      { proposal, minute: deadline - DAY_MINUTES },
-      { proposal, minute: deadline },
+      { proposal, opened, minute: deadline - DAY_MINUTES },
+      { proposal, opened, minute: deadline },
     ]);
     expect(DAY_MINUTES).toBe(1440);
   });

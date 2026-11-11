@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { openDB } from 'idb';
 
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey } from '../crypto/groupKeys';
 import {
   deriveInviteKey,
   inviteChannelOf,
@@ -28,6 +28,7 @@ import { type Envelope, INVITE_TTL_DAYS, openEnvelope, sealEnvelope } from '../i
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { keyChangeOf } from '../store/epochs';
+import { mailboxAt } from '../store/mailbox';
 import { createSync, type Sync } from '../store/sync';
 import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -107,7 +108,7 @@ function secretsOf(group: Group): Set<string> {
   ]);
   return new Set([
     group.groupId,
-    deriveMailboxId(group.secret),
+    ...(group.relayNow === null ? [] : [mailboxAt(group, group.relayNow)]),
     base64url(deriveSealKey(group.secret)),
     base64url(group.secret),
     base64url(group.signingKey),
@@ -191,7 +192,7 @@ describe('createGroup', () => {
     await ana.sync.syncOnce();
 
     const group = await stored(ana, groupId);
-    expect(fake.blobs(deriveMailboxId(group.secret))).toHaveLength(1);
+    expect(fake.blobs(mailboxAt(group, fake.minute))).toHaveLength(1);
     expect(group.outbox).toEqual([]);
     expect(fold(group.log, group.relayNow).title).toBe('House rules');
   });
@@ -235,7 +236,7 @@ describe('createGroup', () => {
     const two = await stored(ana, await created(ana));
     expect(one.groupId).not.toBe(two.groupId);
     expect(base64url(one.secret)).not.toBe(base64url(two.secret));
-    expect(deriveMailboxId(one.secret)).not.toBe(deriveMailboxId(two.secret));
+    expect(mailboxAt(one, 29_000_000)).not.toBe(mailboxAt(two, 29_000_000));
     expect(base64url(deriveSealKey(one.secret))).not.toBe(base64url(deriveSealKey(two.secret)));
   });
 
@@ -480,7 +481,8 @@ describe('lookupInvite', () => {
         token: envelopeAt(fake, link)?.token,
         page: {
           records: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
-          cursor: group.cursor,
+          // The highest seq among the entries: Ana's own base cursor is 0 (#110).
+          cursor: Math.max(...group.log.map((record) => record.seq)),
           relayNow: fake.minute,
           instance: fake.instance,
         },
@@ -642,7 +644,7 @@ describe('joinGroup', () => {
     await joinBy(ben, await linkTo(ana, groupId), 'Ben');
     await ben.sync.syncOnce();
     await ana.sync.syncOnce();
-    const mailbox = deriveMailboxId((await stored(ana, groupId)).secret);
+    const mailbox = mailboxAt(await stored(ana, groupId), fake.minute);
     fake.drop(mailbox, 2);
     expect(fake.blobs(mailbox)).toEqual([]);
 
@@ -660,6 +662,35 @@ describe('joinGroup', () => {
       (await stored(ana, groupId)).me.author,
       (await stored(ben, groupId)).me.author,
     ]);
+  });
+
+  it('takes the week from the invite GET’s now: its first pass starts there and posts the join there (#110)', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId } = await anaWithGroup(fake);
+    const link = await linkTo(ana, groupId);
+    const ben = await device(fake, 'ben');
+    // Ana's genesis went to the last week; Ben opens the link in the next one.
+    fake.minute += 200;
+    const lookup = await lookupInvite(ben, seedOf(link));
+    if (lookup.kind !== 'found') throw new Error('Expected to find the group.');
+    const before = fake.requests.length;
+
+    await joinGroup(ben, lookup.group, 'Ben', DEFAULT_JOIN_LEVEL);
+    await ben.sync.syncOnce();
+
+    const group = await stored(ben, groupId);
+    const [lastWeek, thisWeek] = [mailboxAt(group, 29_000_000), mailboxAt(group, fake.minute)];
+    expect(lastWeek).not.toBe(thisWeek);
+    expect(
+      fake.requests.slice(before).map((r) => `${r.method} ${r.url.split('?')[0] ?? ''}`),
+    ).toEqual([
+      `GET /v1/mailbox/${thisWeek}`,
+      `PUT /v1/mailbox/${thisWeek}`,
+      `GET /v1/mailbox/${lastWeek}`,
+      `GET /v1/mailbox/${thisWeek}`,
+    ]);
+    await ana.sync.syncOnce();
+    expect(await folded(ana, groupId)).toEqual(['Ana', 'Ben']);
   });
 
   it('never adds a second join for the same group', async () => {

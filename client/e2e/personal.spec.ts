@@ -25,7 +25,7 @@ import {
   test,
 } from './support/fixtures';
 import { describeFinding, findIn, scan, textCanary } from './support/scan';
-import { derive, onlyGroup } from './support/stored';
+import { groupMailboxes, onlyGroup } from './support/stored';
 
 /** A random tag, so no two runs plant the same canaries. */
 const TAG = randomBytes(6).toString('hex');
@@ -233,7 +233,8 @@ test('a personal mission statement stays on the device: no request or relay reco
   });
 
   const { secret } = await onlyGroup(page);
-  const mailbox = derive(Uint8Array.from(secret), 'reconcile/v1/mailbox').toString('base64url');
+  // Its weekly mailboxes (#110), whichever week this run fell in.
+  const mailboxes = groupMailboxes(Uint8Array.from(secret));
 
   await test.step('the stopped relay’s database, WAL, shared memory and log hold no trace', async () => {
     await page.context().setOffline(true);
@@ -241,7 +242,7 @@ test('a personal mission statement stays on the device: no request or relay reco
     const files = [relay.db, `${relay.db}-wal`, `${relay.db}-shm`, relay.log];
     expect(scan(files, CANARIES).map(describeFinding)).toEqual([]);
     // The control: the scan reads what the relay stored.
-    const mailboxes = scan(files, [textCanary('the group’s mailbox id', mailbox)]);
-    expect(mailboxes.map(({ encoding }) => encoding)).toContain('bytes');
+    const ids = mailboxes.map((id) => textCanary('the group’s mailbox id', id));
+    expect(scan(files, ids).map(({ encoding }) => encoding)).toContain('bytes');
   });
 });

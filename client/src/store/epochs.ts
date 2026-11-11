@@ -15,8 +15,8 @@
  * - **Switch.** Once the fold has a canonical key change past this device's
  *   epoch, and this member's wrap opens to the secret its commit names, the
  *   device moves to the new epoch: its secret, a cursor at the key change's
- *   seq, and its own records that reached the old mailbox after the key
- *   changed, to post again there.
+ *   seq, and its own records that reached any of the old epoch's weekly
+ *   mailboxes after the key changed, to post again in the new one's.
  * - **No wrap.** Otherwise the device stays where it is, and the group says
  *   why: this membership left on another device, or this device missed the
  *   new key.
@@ -30,6 +30,7 @@ import { epochCommit, newEpochSecret, unwrapEpochSecret, wrapEpochSecret } from 
 import { parseRecord, signEvent } from '../engine/event';
 import { fold, type GroupState, keyHolders, type LogRecord, type Rotation } from '../engine/fold';
 import type { EpochAdvance, Group } from './db';
+import { placedInLog } from './logOrder';
 
 /** Why a device can't read what its group writes now (#98), or null when it can. */
 export type KeyChange = 'left' | 'missed';
@@ -123,7 +124,7 @@ function unwrapped(group: Group, groupId: string, rotation: Rotation): Uint8Arra
 }
 
 /**
- * This member's records in `log` that were read from epoch `epoch`'s mailbox
+ * This member's records in `log` that were read from epoch `epoch`'s mailboxes
  * after the key change at `seq`, oldest first, each event once: the fold
  * ignores them there, so they go again to the new mailbox. A late `key-rotate`
  * is left out, since it lost.
@@ -147,8 +148,9 @@ function lateRecords(
 }
 
 /**
- * The move to the next epoch that `group`'s log, with `records` read after it,
- * calls for, or null: none when the fold has no key change past the device's
+ * The move to the next epoch that `group`'s log, with `records` read after it
+ * put in relay order as the store puts them (`logOrder.ts`, #110), calls
+ * for, or null: none when the fold has no key change past the device's
  * epoch, or this member's wrap doesn't open to the secret its commit names.
  */
 export function advanceFor(
@@ -156,7 +158,7 @@ export function advanceFor(
   records: readonly LogRecord[],
   relayNow: number,
 ): EpochAdvance | null {
-  const log = [...group.log, ...records];
+  const log = placedInLog(group.log, records);
   const state = fold(log, relayNow);
   const rotation = nextRotation(group, state);
   if (rotation === undefined || state.group === null) return null;
