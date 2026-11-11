@@ -122,8 +122,16 @@ export function stewardView(
   return { motion, line };
 }
 
-/** A Proposal's versions in ballot order, each numbered and named. */
-export function versionViews(state: GroupState, proposal: Proposal): VersionView[] {
+/**
+ * A Proposal's versions in ballot order, each numbered and named by `names`:
+ * the group's members, or for a coalition motion (#120), the coalition's
+ * participants, whose names the group's own fold doesn't hold.
+ */
+export function versionViews(
+  state: GroupState,
+  proposal: Proposal,
+  names: Pick<GroupState, 'members' | 'former'> = state,
+): VersionView[] {
   const change = stewardChangeOf(proposal);
   const rules = rulesChangeOf(proposal);
   const { target } = proposal;
@@ -132,7 +140,7 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
     return {
       id: version.id,
       number: index + 1,
-      author: displayName(state, version.author) ?? '',
+      author: displayName(names, version.author) ?? '',
       text: version.text,
       ...(does === null ? {} : { does }),
       ...(change === null ? {} : { steward: stewardView(state, change) }),
@@ -146,9 +154,11 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
 
 /**
  * What a reconcile Proposal's or a coalition motion's ballot decides (#114):
- * the coalition it would form, or the motion as the coalition titled it.
+ * the coalition it would form, or a motion with no text, as admitting a
+ * group is, as the coalition titled it. A motion that rewords a section
+ * shows its change instead, as any edit does (#120).
  */
-export function decisionOf(proposal: Pick<Proposal, 'target' | 'title'>): {
+export function decisionOf(proposal: Pick<Proposal, 'target' | 'title' | 'text'>): {
   readonly decision?: DissolveView;
 } {
   const { target } = proposal;
@@ -156,7 +166,7 @@ export function decisionOf(proposal: Pick<Proposal, 'target' | 'title'>): {
     const title = messages.card.proposalTitle(target.name);
     return { decision: { title, line: messages.coalitions.reconcileLine } };
   }
-  if (target.kind === 'motion') {
+  if (target.kind === 'motion' && proposal.text === '') {
     return { decision: { title: proposal.title, line: messages.coalitions.motionLine } };
   }
   return {};

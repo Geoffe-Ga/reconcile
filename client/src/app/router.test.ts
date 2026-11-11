@@ -203,6 +203,46 @@ describe('reconcile cards (#114)', () => {
   );
 });
 
+describe('coalitions (#120)', () => {
+  const COALITION = 'c'.repeat(43);
+
+  it('reads a coalition’s home, its Document and its composer', () => {
+    expect(parseRoute(`#/c/${COALITION}`)).toEqual({ name: 'coalition', coalitionId: COALITION });
+    expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}`)).toEqual({
+      name: 'coalitionDocument',
+      coalitionId: COALITION,
+      documentId: COALITION,
+    });
+    expect(parseRoute(`#/c/${COALITION}/propose/${COALITION}.2`)).toEqual({
+      name: 'coalitionPropose',
+      coalitionId: COALITION,
+      atomId: `${COALITION}.2`,
+    });
+  });
+
+  it('reads a later Document’s id, as several Documents name it (#92)', () => {
+    expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}:1`)).toEqual({
+      name: 'coalitionDocument',
+      coalitionId: COALITION,
+      documentId: `${COALITION}:1`,
+    });
+  });
+
+  it.each([
+    '#/c',
+    '#/c/',
+    `#/c/${COALITION}/doc`,
+    `#/c/${COALITION}/doc/a+b`,
+    `#/c/${COALITION}/doc/${COALITION}/more`,
+    `#/c/${COALITION}/propose`,
+    `#/c/${COALITION}/propose/a.b`,
+    `#/c/${COALITION}/p/${COALITION}`,
+    '#/c/a+b',
+  ])('sends %j to Start', (hash) => {
+    expect(parseRoute(hash)).toEqual({ name: 'start' });
+  });
+});
+
 describe('routeHref', () => {
   it.each<[Route, string]>([
     [{ name: 'start' }, '#/'],
@@ -246,6 +286,15 @@ describe('routeHref', () => {
     [{ name: 'reconcile', groupId: GROUP }, `#/g/${GROUP}/reconcile`],
     [{ name: 'card', payload: null }, '#/card'],
     [{ name: 'card', payload: 'abc-def' }, '#reconcile/abc-def'],
+    [{ name: 'coalition', coalitionId: GROUP }, `#/c/${GROUP}`],
+    [
+      { name: 'coalitionDocument', coalitionId: GROUP, documentId: GROUP },
+      `#/c/${GROUP}/doc/${GROUP}`,
+    ],
+    [
+      { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
+      `#/c/${GROUP}/propose/${ATOM}`,
+    ],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

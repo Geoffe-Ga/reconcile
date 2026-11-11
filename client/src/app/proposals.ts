@@ -161,11 +161,16 @@ function allFit(events: readonly SignedEvent[]): boolean {
  * Proposed again (#74), it carries the lapsed Proposal's other versions: one
  * `version` of the new Proposal for each, queued after it in the same change,
  * which clears the draft kept under {@link againDraft} instead.
+ *
+ * `log` is the id the event names: the group's own, or for a coalition's
+ * entry on this device (#120), whose store key is its entry id, the
+ * coalition's genesis id, so the motion goes to the coalition's outbox.
  */
 export async function propose(
   services: ProposalServices,
   groupId: string,
   values: ProposalValues,
+  log: string = groupId,
 ): Promise<ProposeResult> {
   const { title, why, link, window, versions = [], dispatch } = values;
   const text = normalizeAtomText(values.text);
@@ -182,7 +187,7 @@ export async function propose(
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
-    group: groupId,
+    group: log,
     ts: services.now(),
     body,
   });

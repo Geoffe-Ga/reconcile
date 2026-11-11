@@ -13,7 +13,13 @@ import { foldWithCoalitions } from '../store/coalitions';
 import type { Group } from '../store/db';
 import { COALITION_STATEMENT, Logs, testSecret } from '../test/coalitions';
 import { authorOf } from '../test/keys';
-import { coalitionRows, motionWords, reconcileView, withMotionWords } from './coalitionLines';
+import {
+  coalitionRows,
+  motionView,
+  motionWords,
+  reconcileView,
+  withMotionWords,
+} from './coalitionLines';
 
 const R = 29_375_000;
 const WEEK = 10_080;
@@ -61,6 +67,7 @@ describe('coalitionRows', () => {
     const [row] = coalitionRows(groupState(logs, 'A', R + 10, held), authorOf('ana'), [held]);
     expect(row).toMatchObject({
       name: COALITION_STATEMENT.name,
+      coalitionId: null,
       status: 'forming',
       lines: [{ kind: 'waiting', group: 'Riverside' }, { kind: 'waiting-card' }],
       members: [],
@@ -100,6 +107,7 @@ describe('coalitionRows', () => {
     const state = groupState(logs, 'A', R + 20, held);
     const [row] = coalitionRows(state, authorOf('ana'), [held]);
     expect(row).toMatchObject({
+      coalitionId: logs.ids.coalition,
       status: 'forming',
       lines: [{ kind: 'waiting', group: 'B' }],
       me: { kind: 'may-take-part' },
@@ -167,6 +175,28 @@ describe('coalitionRows', () => {
     });
     const dissolved = { ...state, dissolved: { received: R + 50, wipe: false } };
     expect(coalitionRows(dissolved, authorOf('ana'), [held])[0]?.makesCards).toBe(false);
+  });
+
+  it('still lists the coalition on a removed member’s copy, and makes no cards from it (#115)', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const target = { kind: 'remove', member: authorOf('ben') } as const;
+    const body = { target, title: 'Remove Ben', why: 'Threats in the chat.' };
+    const removal = logs.add('A', at, 'ana', { type: 'proposal', body });
+    logs.vote('A', at + 1, 'ana', removal, 4);
+    logs.add('A', at + 2, 'ana', { type: 'remove', body: { proposal: removal } });
+    const held = heldCoalition(logs, at + 10);
+    const state = groupState(logs, 'A', at + 10, held);
+
+    expect(state.former.map((m) => m.author)).toEqual([authorOf('ben')]);
+    expect(coalitionRows(state, authorOf('ben'), [held])[0]).toMatchObject({
+      status: 'formed',
+      members: ['A', 'B'],
+      me: { kind: 'in', name: 'kim' },
+      makesCards: false,
+    });
+    expect(coalitionRows(state, authorOf('ana'), [held])[0]?.makesCards).toBe(true);
   });
 
   it('counts the results recorded for the group’s seat that don’t match its vote', () => {
@@ -258,7 +288,11 @@ describe('motion words', () => {
       title: 'Admit Elm Row',
       why: 'They share the river.',
       coalition: COALITION_STATEMENT.name,
+      coalitionId: logs.ids.coalition,
       admits: 'Elm Row',
+      text: '',
+      link: null,
+      author: authorOf('dee'),
     });
     expect(motionWords(opened, [])).toBeNull();
     expect(motionWords({ id: 'x', target: { kind: 'edit' } }, [held])).toBeNull();
@@ -283,5 +317,81 @@ describe('motion words', () => {
     const opened = groupState(logs, 'A', at + 1, held).proposals.find((p) => p.id === motion);
     if (opened === undefined) throw new Error('Expected the motion in group A.');
     expect(motionWords(opened, [held])?.admits).toBeNull();
+  });
+
+  it('carries an edit motion’s text and link into the group, so its ballot shows the change (#120)', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'kim', 'We keep the river and its banks clean.');
+    const held = heldCoalition(logs, at + 1);
+    const state = withMotionWords(groupState(logs, 'A', at + 1, held), [held]);
+    const opened = state.proposals.find((p) => p.id === motion);
+
+    expect(opened).toMatchObject({
+      title: 'Banks too',
+      why: 'The banks matter.',
+      text: 'We keep the river and its banks clean.',
+      link: null,
+      versions: [
+        { id: motion, text: 'We keep the river and its banks clean.', author: authorOf('kim') },
+      ],
+    });
+  });
+});
+
+describe('motionView (#120)', () => {
+  /** Riverside and B in a formed coalition, kim for A and zed for B, with kim's motion. */
+  function withMotion() {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'kim', 'We keep the river and its banks clean.');
+    return { logs, at, motion };
+  }
+
+  it('reads the coalition, the motion, its progress for the group’s seat, and the section it rewords', () => {
+    const { logs, at, motion } = withMotion();
+    logs.result(at + 1, 'kim', motion, 'A', 'pass');
+    const held = heldCoalition(logs, at + 2);
+    const state = groupState(logs, 'A', at + 2, held);
+    const opened = state.proposals.find((p) => p.id === motion);
+    if (opened === undefined) throw new Error('Expected the motion in group A.');
+
+    const view = motionView(opened, state, [held]);
+    expect(view).toMatchObject({
+      coalitionId: logs.ids.coalition,
+      coalition: COALITION_STATEMENT.name,
+      author: 'kim',
+      section: { number: 1, text: COALITION_STATEMENT.atoms[0] },
+      progress: { seats: 2, passed: 1, mine: 'pass', deciding: ['B'] },
+    });
+    expect(view?.motion.id).toBe(motion);
+    expect(view?.state).toBe(held.state);
+  });
+
+  it('is null for any other Proposal, or a motion whose coalition this device doesn’t hold', () => {
+    const { logs, at, motion } = withMotion();
+    const held = heldCoalition(logs, at + 1);
+    const state = groupState(logs, 'A', at + 1, held);
+    const opened = state.proposals.find((p) => p.id === motion);
+    if (opened === undefined) throw new Error('Expected the motion in group A.');
+    expect(motionView(opened, state, [])).toBeNull();
+    const own = state.proposals.find((p) => p.target.kind === 'reconcile');
+    if (own === undefined) throw new Error('Expected the reconcile Proposal.');
+    expect(motionView(own, state, [held])).toBeNull();
+  });
+
+  it('has no section for a motion that admits a group', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.admit(at, 'dee', 'C', 'Elm Row');
+    const held = heldCoalition(logs, at + 1);
+    const state = groupState(logs, 'A', at + 1, held);
+    const opened = state.proposals.find((p) => p.id === motion);
+    if (opened === undefined) throw new Error('Expected the admit motion in group A.');
+    expect(motionView(opened, state, [held])?.section).toBeNull();
+    expect(motionView(opened, state, [held])?.author).toBe('');
   });
 });

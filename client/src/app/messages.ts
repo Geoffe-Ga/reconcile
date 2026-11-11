@@ -1464,5 +1464,65 @@ export const messages = {
     motionLine:
       'Every group in the coalition votes on this. Only your group’s pass or fail goes back.',
     from: 'From the coalition',
+    /** A coalition motion's own lapse in a group (#120): it goes to the coalition as a fail. */
+    motionLapsed:
+      'Not enough people in your group weighed in, so the coalition counts your group as not passing it.',
+    /** Opens the coalition's home from group home's row (#120). */
+    open: 'Open the coalition',
+    /** Over a coalition motion in a group's lists and on its page, before the coalition's name (#120). */
+    voteTag: 'Coalition vote',
+    tagSeparator: '·',
+    /** The coalition's home (#120). */
+    missingTitle: 'This coalition isn’t on this device',
+    missing: 'Go back to your groups, and open it from a group that’s in it.',
+    homeEyebrow: 'Coalition',
+    homePageTitle: 'Coalition',
+    groups: 'Member groups',
+    /** Beside a member group this person is in. */
+    yourGroup: 'Your group',
+    documents: 'Documents',
+    openMotions: 'Open Proposals',
+    noOpen: 'Nothing is open in the coalition right now.',
+    /** A motion this device proposed, before the relay has it. */
+    pending: 'Saved on this device. Every group sees it once the relay has it.',
+    /** The progress of a coalition motion (#120): only whether each group passed, never a count of people. */
+    progressTitle: 'Across the coalition',
+    passedOf: (passed: number, seats: number) =>
+      `${count(passed)} of ${count(seats)} groups ${passed === 1 ? 'has' : 'have'} passed.`,
+    /** Before the groups still deciding, each in its own `<bdi>`, as in "Waiting for Oak St Co-op." */
+    waitingFor: 'Waiting for',
+    /** Between the last two names in a list. */
+    and: 'and',
+    listSeparator: ',',
+    end: '.',
+    twoThirds: (needed: number, seats: number, passed: number, failed: number) =>
+      `Needs ${count(needed)} of ${count(seats)} · ${count(passed)} passed${
+        failed === 0 ? '' : `, ${count(failed)} didn’t`
+      }`,
+    mine: { pass: 'Your group passed this.', fail: 'Your group didn’t pass this.' },
+    waitingMore: (groups: number) =>
+      groups === 1 ? 'Waiting for 1 more group.' : `Waiting for ${count(groups)} more groups.`,
+    passed: 'The coalition passed this.',
+    /** "The coalition passed this. It takes effect on <day>.", the day in a `<time>` element (#250). */
+    takesEffect: 'The coalition passed this. It takes effect on',
+    nowReads: 'The coalition passed this. It now reads:',
+    failedEvery: 'Not every group passed.',
+    failedTwoThirds: 'Fewer than two-thirds of the groups passed.',
+    resultTitle: 'The coalition’s result',
+    eachGroup: 'Each group',
+    standing: { pass: 'Passed', fail: 'Didn’t pass', deciding: 'Still deciding' },
+    /** The coalition's Document and its composer (#120). */
+    documentEyebrow: 'Coalition Document',
+    takePartFirst: 'To propose a change to the coalition’s Document, take part in it first.',
+    cantPropose:
+      'Changes here are proposed by people who can propose in a member group and take part in the coalition.',
+    sectionOpen: 'A change to this section is open for a vote.',
+    composerLede:
+      'Every group in the coalition votes on this inside the group. Only each group’s pass or fail comes back.',
+    composerWhyHint: 'Tell every group in the coalition what this fixes or makes better.',
+    composerTextHint: 'If the coalition passes it, this replaces the section.',
+    composerLinkHint: 'Where the groups can talk it over.',
+    composerVisibility:
+      'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
   },
 } as const;

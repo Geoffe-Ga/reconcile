@@ -57,11 +57,18 @@ import { isPriority, optionId } from '../engine/priority';
 import { removalTarget, removedFrom } from '../engine/removal';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
-import { motionWords, reconcileView, type ReconcileView } from '../app/coalitionLines';
+import {
+  motionView,
+  type MotionView,
+  motionWords,
+  reconcileView,
+  type ReconcileView,
+} from '../app/coalitionLines';
+import { CoalitionProgress } from '../app/CoalitionProgress';
 import { decisionOf } from '../app/versionViews';
 import type { HeldCoalition } from '../store/coalitions';
 import { ConsentMeter } from './ConsentMeter';
-import { ResultView } from './ResultView';
+import { CoalitionResult, ResultView } from './ResultView';
 
 /** Props for {@link ProposalView}. */
 export interface ProposalViewProps {
@@ -190,6 +197,24 @@ function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): C
   return writesText(proposal)
     ? comparisonFor(state, changedAtom(proposal), passed)
     : STEWARD_BALLOT;
+}
+
+/**
+ * What a coalition motion's one version is shown against (#120): the section
+ * it rewords, as the coalition's Document reads now, under "Changes to
+ * section N"; once the coalition's pass is final, or for an admission, the
+ * version as it reads.
+ */
+function motionComparison(motion: MotionView): Comparison {
+  const { section, progress } = motion;
+  if (section === null || (progress.outcome === 'pass' && progress.final)) return STEWARD_BALLOT;
+  return { title: messages.proposal.changes(section.number), current: section.text };
+}
+
+/** What the ballot's versions are shown against: the group's section, or a coalition motion's (#120). */
+function voteComparison(state: GroupState, proposal: Proposal, motion: MotionView | null) {
+  if (motion !== null) return motionComparison(motion);
+  return comparisonOf(state, proposal, proposal.final && proposal.outcome.kind === 'pass');
 }
 
 /** A rules ballot opens with its opt-in's warning: what the outside platform would hold (#117). */
@@ -365,6 +390,8 @@ interface VoteProps {
   readonly props: ProposalViewProps;
   readonly proposal: Proposal;
   readonly versions: readonly VersionView[];
+  /** The coalition motion it opens in the group (#120), or null for the group's own. */
+  readonly motion: MotionView | null;
 }
 
 /**
@@ -398,10 +425,9 @@ function ballotShown(reason: string | null, proposal: Proposal): boolean {
  * cleared a Proposal's ballots (#111), there's no ballot left to show, so the
  * versions or options stand alone.
  */
-function Vote({ props, proposal, versions }: VoteProps) {
+function Vote({ props, proposal, versions, motion }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
-  const passed = proposal.final && proposal.outcome.kind === 'pass';
-  const comparison = comparisonOf(state, proposal, passed);
+  const comparison = voteComparison(state, proposal, motion);
   const layout = layoutOf(comparison);
   const reason = whyNoVote(props, proposal);
   const closed = proposal.final || now >= proposal.deadline;
@@ -519,7 +545,7 @@ function discussionLink(state: GroupState, proposal: Proposal): string | null {
  * group's Proposals (#123), or for a priority vote, "Proposal N · Priority
  * vote" or "Proposal N · Closed priority vote" (#107).
  */
-function eyebrowOf(proposal: Proposal, closed: boolean): string {
+function eyebrowOf(proposal: Proposal, closed: boolean): ReactNode {
   const words = messages.proposal;
   if (isPriority(proposal)) {
     return (closed ? words.eyebrowPriorityClosed : words.eyebrowPriority)(proposal.number);
@@ -660,24 +686,80 @@ function ReconcileStatement({ view }: { readonly view: ReconcileView | null }) {
   );
 }
 
+/** "Coalition vote · <coalition>", the coalition's name in its own `<bdi>` (#120). */
+function MotionTag({ coalition }: { readonly coalition: string }) {
+  const { voteTag, tagSeparator } = messages.coalitions;
+  return (
+    <>
+      {voteTag} {tagSeparator} <bdi>{coalition}</bdi>
+    </>
+  );
+}
+
+/**
+ * The coalition's own result once it has decided a motion (#120), above the
+ * group's: what changed, and each group's pass or fail.
+ */
+function MotionResult({ motion }: { readonly motion: MotionView | null }) {
+  if (motion?.progress.outcome === undefined) return null;
+  return (
+    <CoalitionResult progress={motion.progress} text={motion.motion.text} author={motion.author} />
+  );
+}
+
+/** A coalition motion's progress while the coalition is still deciding it (#120). */
+function MotionProgress({ motion }: { readonly motion: MotionView | null }) {
+  if (motion === null || motion.progress.outcome !== undefined) return null;
+  return <CoalitionProgress progress={motion.progress} />;
+}
+
+/** A removal's response block on its ballot (#115): the response, or the one-time form to its target. */
+function Response(props: { props: ProposalViewProps; proposal: Proposal; readOnly: boolean }) {
+  const { props: view, proposal, readOnly } = props;
+  return (
+    <RemovalResponse
+      state={view.state}
+      me={view.me}
+      proposal={proposal}
+      pending={view.pending}
+      reachable={view.reachable}
+      now={view.now}
+      readOnly={readOnly}
+      {...(view.onRespond === undefined ? {} : { onRespond: view.onRespond })}
+    />
+  );
+}
+
 /**
  * A Proposal the relay has ordered: open with its ballot, or closed with its
  * outcome first. A removal's response follows its justification (#115), and a
- * reconcile Proposal's coalition, as its card set it, follows that (#114).
+ * reconcile Proposal's coalition, as its card set it, follows that (#114). A
+ * coalition motion (#120) is tagged with its coalition, its version is a word
+ * diff against the coalition's text, and it shows the coalition's progress
+ * while it decides, then the coalition's result first.
  */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  const { state, now } = props;
+  const { state } = props;
   const cutOff = cutOffOf(props, proposal);
   if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
   const readOnly = props.leaving === true || isArchived(state, props.me);
-  const versions = versionViews(state, proposal);
+  const motion = motionView(proposal, state, props.coalitions ?? []);
+  const names = motion?.state ?? state;
+  const versions = versionViews(state, proposal, names);
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={eyebrowOf(proposal, proposal.final)}
+        eyebrow={
+          motion === null ? (
+            eyebrowOf(proposal, proposal.final)
+          ) : (
+            <MotionTag coalition={motion.coalition} />
+          )
+        }
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
+      <MotionResult motion={motion} />
       {proposal.final ? (
         <ResultView
           state={state}
@@ -687,6 +769,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
           leaving={readOnly}
+          names={names}
           {...clearedOf(props, proposal)}
         />
       ) : null}
@@ -694,21 +777,13 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         <Byline props={props} proposal={proposal} />
         <Why why={proposal.why} />
       </div>
-      <RemovalResponse
-        state={state}
-        me={props.me}
-        proposal={proposal}
-        pending={props.pending}
-        reachable={props.reachable}
-        now={now}
-        readOnly={readOnly}
-        {...(props.onRespond === undefined ? {} : { onRespond: props.onRespond })}
-      />
+      <Response props={props} proposal={proposal} readOnly={readOnly} />
+      <MotionProgress motion={motion} />
       <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
-      <Vote props={props} proposal={proposal} versions={versions} />
+      <Vote props={props} proposal={proposal} versions={versions} motion={motion} />
       <PendingVersions props={props} proposal={proposal} />
     </Screen>
   );
@@ -782,7 +857,8 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
   }
   // A reconcile Proposal (#100) changes no section: its ballot decides the coalition (#114).
   if (isReconcileProposal(body)) {
-    const decision = decisionOf({ target: { ...body.target, key: '' }, title: body.title });
+    const target = { ...body.target, key: '' };
+    const decision = decisionOf({ target, title: body.title, text: '' });
     const versions = [{ id: '', number: 1, author, text: '', ...decision }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
