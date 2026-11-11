@@ -8,6 +8,13 @@
  * one both edited, and the share by link (#105) the phone made, which it
  * can then stop.
  *
+ * Joins don't travel between linked devices either (#327): a group the phone
+ * joins after the link stays on the phone. So the laptop carries the relay
+ * copy's entry for it through its own uploads, sealed as it was, without
+ * ever taking it in, and a restore brings it back whichever device uploaded
+ * last. Once the phone leaves it, it stays out of the copy for good, even
+ * when the phone is erased the same day.
+ *
  * Everything runs through the app's real services on one fake relay: the
  * link's whole handshake, each device's sync loop with its daily refresh,
  * and the restore that recovery (#118) runs, `fetchRelayBackup` then
@@ -15,6 +22,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { backupIdFor } from '../crypto/relayBackup';
+import { createRelay } from '../net/relay';
 import { readShare, type ShareLink, startSharing, stopSharing } from '../share/shareLink';
 import type { PersonalDocument } from '../store/personal';
 import { fetchRelayBackup, startRelayBackup } from '../store/relayBackup';
@@ -25,6 +34,8 @@ import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { linkDevice } from '../test/link';
 import { members } from '../test/members';
+import { createGroup, joinGroup, leaveGroup, lookupInvite, makeInvite } from './actions';
+import { parseInviteLink } from './invite';
 
 freshIndexedDBPerTest();
 
@@ -192,3 +203,140 @@ describe('two linked devices and one relay backup (#247)', () => {
     expect(await readShare(phone.services, link)).toEqual({ kind: 'gone' });
   });
 });
+
+/** The ids of the groups `device` holds, sorted. */
+async function groupIds(device: TestDevice): Promise<string[]> {
+  return (await device.services.store.listGroups()).map((group) => group.groupId).sort();
+}
+
+/** `ids`, sorted, as {@link groupIds} lists them. */
+function sorted(...ids: string[]): string[] {
+  return ids.sort();
+}
+
+/**
+ * Bea founds a group on a device of her own, and Ana's phone joins it from
+ * Bea's invite, after the phone and laptop linked: the laptop never holds it.
+ */
+async function joinedOnThePhone(fake: FakeRelay, phone: TestDevice): Promise<string> {
+  const bea = await testDevice(fake, 'bea');
+  opened.push(bea);
+  const created = await createGroup(bea.services, {
+    groupName: 'Allotment Society',
+    yourName: 'Bea',
+    title: 'Plot rules',
+    text: 'Water before nine.',
+    chat: null,
+  });
+  if (created.outcome !== 'created') throw new Error('Expected Bea’s group.');
+  await bea.services.sync.syncOnce();
+  const seed = parseInviteLink(await makeInvite(bea.services, created.groupId, 'https://r.test'));
+  if (seed === null) throw new Error('Expected an invite link.');
+  const found = await lookupInvite(phone.services, seed);
+  if (found.kind !== 'found') throw new Error('Expected the invite to open.');
+  await joinGroup(phone.services, found.group, 'Ana', 'co-creator');
+  expect(await phone.services.sync.syncOnce()).toBe(true);
+  return created.groupId;
+}
+
+/** The ids of the groups a device restored from the relay copy under `key` holds. */
+async function restoredGroups(fake: FakeRelay, key: Uint8Array): Promise<string[]> {
+  return groupIds(await restoredFrom(fake, key));
+}
+
+describe('a group joined on one linked device after the link (#327)', () => {
+  it.each([
+    ['the laptop', 'phone', 'laptop'],
+    ['the phone', 'laptop', 'phone'],
+  ] as const)(
+    'comes back in a restore when %s uploads last, and the laptop never takes it in',
+    async (_, first, last) => {
+      const fake = createFakeRelay();
+      const devices = await phoneAndLaptop(fake);
+      const { phone, laptop } = devices;
+      const key = await keyOf(phone);
+      const founded = await groupIds(phone);
+      const joined = await joinedOnThePhone(fake, phone);
+      expect(await groupIds(laptop)).toEqual(founded);
+
+      await nextDay(fake, devices[first]);
+      await nextDay(fake, devices[last]);
+      expect(await restoredGroups(fake, key)).toEqual(sorted(...founded, joined));
+
+      // A day later, the first refreshes last: still there.
+      await nextDay(fake, devices[first]);
+      expect(await restoredGroups(fake, key)).toEqual(sorted(...founded, joined));
+      // The laptop carried it through sealed, and never held, read or synced it.
+      expect(await groupIds(laptop)).toEqual(founded);
+      expect(await laptop.services.store.getGroup(joined)).toBeUndefined();
+    },
+  );
+
+  it('stays out once the phone leaves it, even when the laptop’s late upload brings it back', async () => {
+    const fake = createFakeRelay();
+    const { phone, laptop } = await phoneAndLaptop(fake);
+    const key = await keyOf(phone);
+    const founded = await groupIds(phone);
+    const joined = await joinedOnThePhone(fake, phone);
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    await nextDay(fake, phone);
+    // The laptop read the copy before the leave, and its upload lands after it.
+    const stale = Uint8Array.from(fake.backup(backupIdFor(key)) ?? []);
+
+    // Later on the phone's refresh day, it leaves: the leave's own pass takes the group out.
+    await leaveGroup(phone.services, joined);
+    expect(await phone.services.sync.syncOnce()).toBe(true);
+    expect(await groupIds(phone)).toEqual(founded);
+    expect(await restoredGroups(fake, key)).toEqual(founded);
+    await createRelay({ fetch: fake.fetch }).putBackup(backupIdFor(key), stale);
+    expect(await restoredGroups(fake, key)).toEqual(sorted(...founded, joined));
+
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    expect(await restoredGroups(fake, key)).toEqual(founded);
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    expect(await restoredGroups(fake, key)).toEqual(founded);
+  });
+
+  it('stays out when the phone leaves it and is erased the same day', async () => {
+    const fake = createFakeRelay();
+    const { phone, laptop } = await phoneAndLaptop(fake);
+    const key = await keyOf(phone);
+    const founded = await groupIds(phone);
+    const joined = await joinedOnThePhone(fake, phone);
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    await nextDay(fake, phone);
+
+    // Later on the phone's refresh day, it leaves, and then Erase deletes everything on it.
+    await leaveGroup(phone.services, joined);
+    expect(await phone.services.sync.syncOnce()).toBe(true);
+    await erased(phone, 'ana');
+
+    await nextDay(fake, laptop);
+    expect(await restoredGroups(fake, key)).toEqual(founded);
+  });
+});
+
+/**
+ * Erases `device`, whose database is `name`, as Erase does (#78): its sync
+ * loop halted and its store closed, then its database deleted, with nothing
+ * sent. Erase itself deletes every database the origin holds, which here
+ * would take the other devices' too.
+ */
+async function erased(device: TestDevice, name: string): Promise<void> {
+  await device.services.sync.halt();
+  device.services.store.close();
+  opened.splice(opened.indexOf(device), 1);
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => {
+      resolve();
+    };
+    request.onerror = () => {
+      reject(request.error ?? new Error(`Expected ${name} to go.`));
+    };
+  });
+}

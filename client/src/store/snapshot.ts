@@ -33,7 +33,10 @@
  * backup fresh. A restoring device that already keeps a key keeps its own. A
  * file from before #97 has no `backupKey`, and brings no key. The plaintext
  * the relay backup seals is this same snapshot without the key
- * (`relayBackup.ts`), and `importSnapshot` reads it back.
+ * (`relayBackup.ts`), and `importSnapshot` reads it back. Its upload may also
+ * carry group entries from the relay copy that a linked device wrote (#327):
+ * `decodeRelayCopy` reads only each one's id and author, and `encodeSnapshot`
+ * writes it back after the device's own groups, as it was.
  *
  * Restoring opens the file, then checks everything before it writes
  * anything: the shape of every field, that each key makes its author, that
@@ -93,6 +96,9 @@ export const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
 /** A group id: a SHA-256 event id in unpadded base64url. */
 const GROUP_ID = /^[A-Za-z0-9_-]{43}$/;
 
+/** A member's author: their 32-byte public key in unpadded base64url. */
+const AUTHOR = /^[A-Za-z0-9_-]{43}$/;
+
 /** A group's secret and signing key are 32 bytes each. */
 const KEY_BYTES = 32;
 
@@ -105,6 +111,31 @@ export interface Snapshot {
   readonly personal: readonly PersonalDocument[];
   /** The device's relay backup key; absent when it keeps none, and from the relay's own copy. */
   readonly backupKey?: Uint8Array;
+  /**
+   * Group entries carried through from the relay copy (#327), written after
+   * `groups` as the copy held them: only a relay backup upload holds any.
+   */
+  readonly carried?: readonly RelayGroup[];
+}
+
+/**
+ * A group entry in the relay copy as the relay backup reads it before an
+ * upload (#327): its group id, the member it names (`me.author`), and the
+ * entry itself, which the device carries through as it was and never reads
+ * further: not its keys, its log or its name.
+ */
+export interface RelayGroup {
+  readonly groupId: string;
+  readonly author: string;
+  readonly entry: Readonly<Record<string, unknown>>;
+}
+
+/** What the relay backup reads of the relay copy before an upload (#247, #327). */
+export interface RelayCopy {
+  /** Its personal Documents, each checked as a restore checks it. */
+  readonly personal: readonly PersonalDocument[];
+  /** Its group entries, in its order. */
+  readonly groups: readonly RelayGroup[];
 }
 
 /** A saved backup: the sealed file, and the groups it holds. */
@@ -202,33 +233,43 @@ function personalJson(document: PersonalDocument) {
   return { ...textOf(document), ...(share === undefined ? {} : { share: shareJson(share) }) };
 }
 
-/** `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
-export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8Array<ArrayBuffer> {
+/**
+ * `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded
+ * base64url, with any entries carried from the relay copy (#327) after its
+ * own groups, as the copy held them.
+ */
+export function encodeSnapshot({
+  groups,
+  personal,
+  backupKey,
+  carried = [],
+}: Snapshot): Uint8Array<ArrayBuffer> {
+  const own = groups.map((group) => ({
+    ...(group.kind === undefined ? {} : { kind: group.kind }),
+    groupId: group.groupId,
+    secret: base64url(group.secret),
+    signingKey: base64url(group.signingKey),
+    ...(group.kxKey === undefined ? {} : { kxKey: base64url(group.kxKey) }),
+    epoch: epochOf(group),
+    me: { author: group.me.author, name: group.me.name },
+    log: group.log.map(({ seq, received, bytes, epoch = 0 }) => ({
+      seq,
+      received,
+      bytes: base64url(bytes),
+      ...(epoch === 0 ? {} : { epoch }),
+    })),
+    cursor: group.cursor,
+    relayNow: group.relayNow,
+    instance: group.instance,
+    lastSyncAt: group.lastSyncAt,
+    missingHistory: group.missingHistory,
+    ...(group.cleared === undefined || group.cleared.length === 0
+      ? {}
+      : { cleared: group.cleared }),
+  }));
   const json = {
     format: SNAPSHOT_FORMAT,
-    groups: groups.map((group) => ({
-      ...(group.kind === undefined ? {} : { kind: group.kind }),
-      groupId: group.groupId,
-      secret: base64url(group.secret),
-      signingKey: base64url(group.signingKey),
-      ...(group.kxKey === undefined ? {} : { kxKey: base64url(group.kxKey) }),
-      epoch: epochOf(group),
-      me: { author: group.me.author, name: group.me.name },
-      log: group.log.map(({ seq, received, bytes, epoch = 0 }) => ({
-        seq,
-        received,
-        bytes: base64url(bytes),
-        ...(epoch === 0 ? {} : { epoch }),
-      })),
-      cursor: group.cursor,
-      relayNow: group.relayNow,
-      instance: group.instance,
-      lastSyncAt: group.lastSyncAt,
-      missingHistory: group.missingHistory,
-      ...(group.cleared === undefined || group.cleared.length === 0
-        ? {}
-        : { cleared: group.cleared }),
-    })),
+    groups: [...own, ...carried.map((group) => group.entry)],
     personal: personal.map(personalJson),
     ...(backupKey === undefined ? {} : { backupKey: base64url(backupKey) }),
   };
@@ -393,15 +434,32 @@ export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
 }
 
 /**
- * Only the personal Documents in a backup's plaintext, each checked as a
- * restore checks it, or null when the plaintext isn't a snapshot a restore
- * reads or any of them doesn't check out. The relay backup reads the relay
- * copy with it before an upload (#247): it merges only that copy's
- * Documents, so it checks none of its groups.
+ * What the relay backup reads of the relay copy's plaintext before an upload
+ * (#247, #327), or null when it isn't a format 2 snapshot, any personal
+ * Document doesn't check out as a restore checks it, or any group entry
+ * lacks a well-formed id or author, or shares its id with another. Of each
+ * group it reads only the id and author, and keeps the entry as it was: the
+ * device carries a group it doesn't hold through to its upload, and never
+ * reads its keys or log, let alone folds or syncs it. Every relay copy has
+ * been format 2, since #98 came before #97, and a format 1 group carried into
+ * a format 2 upload wouldn't restore, so a format 1 copy reads as nothing.
  */
-export function decodePersonal(plaintext: Uint8Array): PersonalDocument[] | null {
+export function decodeRelayCopy(plaintext: Uint8Array): RelayCopy | null {
   const json = snapshotJson(plaintext);
-  return json === null ? null : personalOf(json);
+  if (json?.format !== SNAPSHOT_FORMAT || !Array.isArray(json.groups)) return null;
+  const personal = personalOf(json);
+  const groups = allUnique(json.groups, relayGroupIn, (group) => group.groupId);
+  return personal === null || groups === null ? null : { personal, groups };
+}
+
+/** One group entry of the relay copy in `value`: only its id and author read (#327), or null. */
+function relayGroupIn(value: unknown): RelayGroup | null {
+  if (!isObject(value) || !isObject(value.me)) return null;
+  const { groupId } = value;
+  const { author } = value.me;
+  if (typeof groupId !== 'string' || !GROUP_ID.test(groupId)) return null;
+  if (typeof author !== 'string' || !AUTHOR.test(author)) return null;
+  return { groupId, author, entry: value };
 }
 
 /** Each of `values` read by `read`, or null when any is null or two share a key. */

@@ -101,6 +101,7 @@ function freshBackup(key: Uint8Array) {
     uploadedAt: null,
     tooLarge: false,
     uploaded: [],
+    uploadedGroups: [],
   };
 }
 
@@ -523,12 +524,29 @@ describe('#97’s relay backup key under the vault', () => {
       'tooLarge',
       'uploaded',
       'uploadedAt',
+      'uploadedGroups',
     ]);
     expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));
     expect(backupOf(await store.getRelayBackup())).toEqual({
       ...freshBackup(BACKUP_KEY),
       digest: 'd1',
       checkedDay: 7,
+      uploadedAt: 9,
+    });
+  });
+
+  it('sets the day back when a group is purged (#327), leaving the key in the vault', async () => {
+    const store = await sealedDevice();
+    await store.adoptRelayBackupKey(BACKUP_KEY);
+    await store.updateRelayBackup(BACKUP_KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9 });
+
+    await store.purgeGroup(ANA.groupId);
+
+    expect(findCanaries(await rawDatabase(), [...secretsOf(ANA), ...backupCanaries])).toEqual([]);
+    expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));
+    expect(backupOf(await store.getRelayBackup())).toEqual({
+      ...freshBackup(BACKUP_KEY),
+      digest: 'd1',
       uploadedAt: 9,
     });
   });

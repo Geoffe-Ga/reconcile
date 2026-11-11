@@ -447,7 +447,10 @@ export interface RelayBackupState {
   readonly key: Uint8Array;
   /** The SHA-256, in hex, of what the last upload held, or null before one. */
   readonly digest: string | null;
-  /** The relay's UTC day of the last daily check, or null before one. */
+  /**
+   * The relay's UTC day of the last daily check, or null before one, and
+   * again once a group is purged (#327), so the next complete pass checks.
+   */
   readonly checkedDay: number | null;
   /** When the last upload succeeded, in device milliseconds, or null before one. */
   readonly uploadedAt: number | null;
@@ -460,6 +463,16 @@ export interface RelayBackupState {
    * device wrote. Absent on a record from before #247.
    */
   readonly uploaded?: readonly string[];
+  /**
+   * A tag of each group this device held at a successful upload, sorted
+   * (#327): `groupTagFor` of the backup key, the group's id and this
+   * member's author, never the id itself. A later upload leaves out a group
+   * the relay copy holds whose tag is here and that this device no longer
+   * holds, since it left or removed it, or a dissolve wiped it, and keeps
+   * one only a linked device joined. A tag goes once a read finds the copy
+   * without its group. Absent on a record from before #327.
+   */
+  readonly uploadedGroups?: readonly string[];
 }
 
 /** What a relay backup update may change: everything but the key. */
@@ -568,7 +581,11 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
    * calls it once the relay has returned a seq for the group's leave, a
    * dissolved group's wipe calls it, and so does Remove from this device
-   * (#108). A group that is already gone is left alone.
+   * (#108). A group that is already gone is left alone. In the same
+   * transaction it sets the relay backup's `checkedDay` back to null (#327),
+   * so the next complete pass, the leave's own, reads the relay copy and
+   * takes the group out of it, and Erase or a lost phone later that day
+   * can't leave it there for a linked device to carry.
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
@@ -922,6 +939,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       const found = await writeKeys(db, async (tx) => {
         if ((await tx.objectStore(GROUPS).getKey(groupId)) === undefined) return false;
         await keepKeys(tx, session, { drop: [groupId] });
+        await checkBackupAgain(tx);
         return true;
       });
       if (found) notify(groupId);
@@ -1201,6 +1219,7 @@ function relayBackupStore(
     uploadedAt: null,
     tooLarge: false,
     uploaded: [],
+    uploadedGroups: [],
   });
   return {
     getRelayBackup: () => backupIn(db.transaction([DEVICE, VAULT]), session),
@@ -1570,6 +1589,18 @@ async function keepGroups(
     });
     await records.put(sealed === null ? group : rest);
   }
+}
+
+/**
+ * Sets the relay backup's `checkedDay` back to null in `tx`, when the device
+ * keeps one, so the next complete pass reads and checks the relay copy
+ * (#327). It touches nothing else of the record, so it needs no key, and no
+ * listener hears of it: Settings shows nothing of the day.
+ */
+async function checkBackupAgain(tx: KeyTransaction): Promise<void> {
+  const records = tx.objectStore(DEVICE);
+  const record = await records.get(RELAY_BACKUP);
+  if (record !== undefined) await records.put({ ...record, checkedDay: null }, RELAY_BACKUP);
 }
 
 /**
