@@ -9,10 +9,10 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { leaveGroup } from '../app/actions';
 import { fromBase64url } from '../crypto/base64url';
 import { backupIdFor, openRelayBackup } from '../crypto/relayBackup';
 import { combineShares, type RecoveryShare } from '../crypto/shares';
+import { signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { local } from '../test/bytes';
 import type { TestDevice } from '../test/appServices';
@@ -74,6 +74,18 @@ async function groupOn(device: TestDevice, groupId: string): Promise<Group> {
 /** The member key of `device` in `groupId`. */
 async function keyOf(device: TestDevice, groupId: string): Promise<string> {
   return (await groupOn(device, groupId)).me.author;
+}
+
+/**
+ * `device` leaves `groupId` as Leave does (#77): its signed `leave` queued
+ * and the group marked leaving, then a sync pass. Store tests stay apart
+ * from the app's actions (dependency-cruiser), so this is written here.
+ */
+async function leaveGroup(device: TestDevice, groupId: string): Promise<void> {
+  const kept = await groupOn(device, groupId);
+  const draft = { type: 'leave', group: groupId, ts: 0, body: {} } as const;
+  await device.services.store.markLeaving(groupId, signEvent(kept.signingKey, draft).record);
+  await device.services.sync.syncOnce();
 }
 
 /** The choice of the named people in `groupId`, `t` needed. */
@@ -406,7 +418,7 @@ describe('the picker’s groups and people', DEVICES, () => {
       'Riverside Tenants',
     ]);
 
-    await leaveGroup(ana.services, allotment);
+    await leaveGroup(ana, allotment);
     const after = contactGroups(await ana.services.store.listGroups());
     expect(after.map((option) => option.groupId)).toEqual([groupId]);
   });
@@ -441,13 +453,13 @@ describe('where the person’s contacts stand', DEVICES, () => {
         await ana.services.store.listGroups(),
       );
 
-    await leaveGroup(cal.services, groupId);
+    await leaveGroup(cal, groupId);
     await syncAll(devices);
     expect((await status())?.contacts.map(({ shared }) => shared)).toEqual([true, false, true]);
     // Exactly t are left: they can still help, so nothing asks yet.
     expect((await status())?.chooseAgain).toBe(false);
 
-    await leaveGroup(dee.services, groupId);
+    await leaveGroup(dee, groupId);
     await syncAll(devices);
     expect((await status())?.contacts.map(({ shared }) => shared)).toEqual([true, false, false]);
     expect((await status())?.chooseAgain).toBe(true);
@@ -458,7 +470,7 @@ describe('where the person’s contacts stand', DEVICES, () => {
     const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
     await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
 
-    await leaveGroup(ana.services, groupId);
+    await leaveGroup(ana, groupId);
     await syncAll(devices);
     const status = recoveryStatus(
       await ana.services.store.getRecoveryPlan(),
@@ -490,7 +502,7 @@ describe('the shares a device holds', DEVICES, () => {
 
     const deeKey = await keyOf(dee, groupId);
     expect(openHeldShare(await groupOn(ben, groupId), deeKey)).not.toBeNull();
-    await leaveGroup(dee.services, groupId);
+    await leaveGroup(dee, groupId);
     await syncAll(devices);
     expect(heldSharesIn(await groupOn(ben, groupId)).map(({ name }) => name)).toEqual(['Ana']);
     expect(openHeldShare(await groupOn(ben, groupId), deeKey)).toBeNull();
