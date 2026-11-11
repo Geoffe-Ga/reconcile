@@ -10,6 +10,7 @@ import { messages } from './messages';
 const ROW: CoalitionRow = {
   entryId: 'entry-1',
   proposal: 'proposal-1',
+  coalitionId: 'coalition-1',
   name: 'Eastside Housing',
   status: 'formed',
   lines: [],
@@ -42,8 +43,10 @@ describe('CoalitionSection', () => {
     render(<CoalitionSection {...props()} />);
 
     expect(section()).toHaveTextContent(
-      'CoalitionsFormedEastside HousingRiverside Tenants, Oak St Co-opYou take part as Ana E.',
+      'CoalitionsFormedEastside HousingRiverside Tenants, Oak St Co-opOpen the coalition→You take part as Ana E.',
     );
+    const home = within(section()).getByRole('link', { name: 'Open the coalition' });
+    expect(home).toHaveAttribute('href', '#/c/coalition-1');
     expect(
       within(section()).getByRole('heading', { level: 3, name: 'Eastside Housing' }),
     ).toBeVisible();

@@ -10,9 +10,11 @@ import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { can } from '../engine/capabilities';
 import { seatResult } from '../engine/coalition';
-import { resultMismatches } from '../engine/crossing';
+import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
+import { resultMismatches, seatIn } from '../engine/crossing';
 import type { ReconcileTarget, SeatEntry } from '../engine/event';
 import type { GroupState, HeldSeat, Proposal } from '../engine/fold';
+import { displayName } from '../engine/names';
 import type { HeldCoalition } from '../store/coalitions';
 
 /** One line under a coalition's name: whom it waits for, or who didn't pass it. */
@@ -35,6 +37,8 @@ export interface CoalitionRow {
   readonly entryId: string;
   /** The group's reconcile Proposal it came from. */
   readonly proposal: string;
+  /** The coalition's genesis id, whose home opens from the row (#120), or null before one. */
+  readonly coalitionId: string | null;
   /** Its name: the genesis's once there is one, else the Proposal's. */
   readonly name: string;
   readonly status: 'forming' | 'formed' | 'declined';
@@ -158,6 +162,7 @@ function rowOf(
   return {
     entryId: entry.entry.groupId,
     proposal: held.proposal,
+    coalitionId: coalition.group,
     name: coalition.group === null ? held.name : coalition.name,
     ...standing,
     ...membership(state, coalition, standing.status === 'formed', me),
@@ -221,12 +226,33 @@ export function reconcileView(
   };
 }
 
-/** A coalition motion's words, from the coalition's log: its title, why, the coalition, and any group it admits. */
+/**
+ * A coalition motion's words, from the coalition's log: its title, why, the
+ * coalition's name and id, any group it admits, its proposer's key there,
+ * and, for an edit, its new text and discussion link (#120).
+ */
 export interface MotionWords {
   readonly title: string;
   readonly why: string;
   readonly coalition: string;
+  readonly coalitionId: string;
   readonly admits: string | null;
+  readonly text: string;
+  readonly link: string | null;
+  /** The proposer's key in the coalition, whose name only the coalition's own state holds. */
+  readonly author: string;
+}
+
+/** The coalition `target` names, and its own Proposal `id` there, or null when this device lacks either. */
+function motionIn(
+  id: string,
+  target: Proposal['target'],
+  coalitions: readonly HeldCoalition[],
+): { readonly coalition: GroupState; readonly motion: Proposal } | null {
+  if (target.kind !== 'motion') return null;
+  const coalition = coalitions.find(({ state }) => state.group === target.coalition)?.state;
+  const motion = coalition?.proposals.find((p) => p.id === id);
+  return coalition === undefined || motion === undefined ? null : { coalition, motion };
 }
 
 /** The words of the coalition motion `proposal`, or null for any other Proposal, or one not read yet. */
@@ -234,18 +260,28 @@ export function motionWords(
   proposal: Pick<Proposal, 'id' | 'target'>,
   coalitions: readonly HeldCoalition[],
 ): MotionWords | null {
-  const { target } = proposal;
-  if (target.kind !== 'motion') return null;
-  const coalition = coalitions.find(({ state }) => state.group === target.coalition)?.state;
-  const motion = coalition?.proposals.find((p) => p.id === proposal.id);
-  if (coalition === undefined || motion === undefined) return null;
+  const found = motionIn(proposal.id, proposal.target, coalitions);
+  if (found === null) return null;
+  const { coalition, motion } = found;
   const admits = motion.target.kind === 'admit' ? motion.target.seat.name : null;
-  return { title: motion.title, why: motion.why, coalition: coalition.name, admits };
+  return {
+    title: motion.title,
+    why: motion.why,
+    coalition: coalition.name,
+    coalitionId: coalition.group ?? '',
+    admits,
+    text: motion.text,
+    link: motion.link,
+    author: motion.author,
+  };
 }
 
 /**
- * `state` with each coalition motion's title and why read from its
- * coalition (#114), so every list and card names it as the coalition does.
+ * `state` with each coalition motion's title, why, text and link read from
+ * its coalition (#114, #120), so every list, card and ballot shows it as the
+ * coalition wrote it: an edit's one version carries its new text, and its
+ * proposer's coalition key, which the screens name from the coalition's
+ * state (`versionViews`' `names`).
  */
 export function withMotionWords(
   state: GroupState,
@@ -254,7 +290,60 @@ export function withMotionWords(
   if (!state.proposals.some((p) => p.target.kind === 'motion')) return state;
   const proposals = state.proposals.map((p) => {
     const words = motionWords(p, coalitions);
-    return words === null ? p : { ...p, title: words.title, why: words.why };
+    if (words === null) return p;
+    const { title, why, text, link, author } = words;
+    const versions = p.versions.map((v, i) => (i === 0 ? { ...v, text, author } : v));
+    return { ...p, title, why, text, link, versions };
   });
   return { ...state, proposals };
+}
+
+/**
+ * A coalition motion as a member group's Proposal view shows it (#120): the
+ * coalition's id, name and folded state, its own Proposal there, its
+ * progress read for the group's seat, the proposer's coalition name, and
+ * the section it rewords as the coalition's Document reads now, numbered
+ * within its Document, or null for an admission or a section that's gone.
+ */
+export interface MotionView {
+  readonly coalitionId: string;
+  readonly coalition: string;
+  readonly state: GroupState;
+  readonly motion: Proposal;
+  readonly progress: CoalitionProgress;
+  readonly author: string;
+  readonly section: { readonly number: number; readonly text: string } | null;
+}
+
+/** The section of the coalition's Document that `motion` rewords, as it reads now, or null. */
+function sectionOf(coalition: GroupState, motion: Proposal): MotionView['section'] {
+  const atom = coalition.atoms.find((a) => a.id === motion.atom);
+  if (atom === undefined) return null;
+  const sections = coalition.atoms.filter((a) => a.documentId === atom.documentId);
+  return { number: sections.indexOf(atom) + 1, text: atom.text };
+}
+
+/**
+ * The coalition motion `proposal` as group `group` sees it, or null for any
+ * other Proposal, or one whose coalition this device hasn't read.
+ */
+export function motionView(
+  proposal: Pick<Proposal, 'id' | 'target'>,
+  group: Pick<GroupState, 'coalitions'>,
+  coalitions: readonly HeldCoalition[],
+): MotionView | null {
+  const found = motionIn(proposal.id, proposal.target, coalitions);
+  if (found === null) return null;
+  const { coalition, motion } = found;
+  const progress = coalitionProgress(coalition, motion.id, seatIn(group, coalition) ?? undefined);
+  if (progress === null) return null;
+  return {
+    coalitionId: coalition.group ?? '',
+    coalition: coalition.name,
+    state: coalition,
+    motion,
+    progress,
+    author: displayName(coalition, motion.author) ?? '',
+    section: sectionOf(coalition, motion),
+  };
 }

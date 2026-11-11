@@ -79,3 +79,85 @@
 .coalition > .result-mismatch {
   margin-block-start: var(--space-1);
 }
+
+/* A coalition's own screens (#120) ---------------------------------------- */
+
+/* "Coalition vote · <coalition>" over a motion's title on a group's cards. */
+.card-link-tag {
+  overflow-wrap: anywhere;
+}
+
+/* A motion card the device can't open: no group here decides it. */
+.card-link-static:hover {
+  border-color: var(--hairline);
+}
+
+/* A motion's progress line: only groups, in words. */
+.coalition-progress-line {
+  color: var(--body);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.coalition-progress-line time {
+  white-space: nowrap;
+}
+
+/* On a coalition vote's page: what the coalition has heard so far. */
+.coalition-progress {
+  gap: var(--space-2);
+}
+
+.coalition-progress > .coalition-progress-line {
+  color: var(--ink);
+  font: var(--type-body);
+}
+
+/* A motion this device sent, while the relay doesn't have it yet. */
+.coalition-pending {
+  gap: var(--space-1);
+}
+
+.coalition-pending > .heading-3 {
+  overflow-wrap: anywhere;
+}
+
+/* The member groups, each on its own hairline row, "Your group" beside this device's. */
+.coalition-groups {
+  display: grid;
+  max-width: 30rem;
+  padding: 0;
+  list-style: none;
+}
+
+.coalition-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.coalition-group:first-child {
+  padding-block-start: 0;
+}
+
+/* Take part on a coalition's home: the form follows its line, with no rule
+ * between them as inside group home's row. */
+.coalition-join > .coalition-take-part {
+  margin-block-start: 0;
+  padding-block-start: 0;
+  border-top: 0;
+}
+
+/* On a coalition's Document, Take part fills its note, as a form does. */
+.level-note.coalition-join {
+  justify-items: stretch;
+  gap: var(--space-3);
+  padding-block-end: var(--space-4);
+}

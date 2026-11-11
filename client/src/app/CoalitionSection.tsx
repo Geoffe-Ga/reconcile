@@ -68,7 +68,7 @@ function Members({ names }: { readonly names: readonly string[] }) {
 const checkName = (value: string) => (value.trim() === '' ? coalitions.nameMissing : null);
 
 /** Take part: your name in the coalition, and the button that joins under the group's seat. */
-function TakePart({ onTakePart }: { readonly onTakePart: (name: string) => Promise<void> }) {
+export function TakePart({ onTakePart }: { readonly onTakePart: (name: string) => Promise<void> }) {
   const [failed, setFailed] = useState(false);
   const busy = useRef(false);
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -197,9 +197,26 @@ function Me({ row, props }: RowProps) {
   }
 }
 
+/** "Open the coalition →", to its home (#120), once it has formed. */
+function OpenCoalition({ row }: { readonly row: CoalitionRow }) {
+  if (row.status !== 'formed' || row.coalitionId === null) return null;
+  return (
+    <p>
+      <Link
+        className="forward-link"
+        href={routeHref({ name: 'coalition', coalitionId: row.coalitionId })}
+      >
+        {coalitions.open}
+        <span aria-hidden="true">{messages.app.forward}</span>
+      </Link>
+    </p>
+  );
+}
+
 /**
  * One coalition: whether it's forming, formed or didn't form, its name, its
- * member groups once formed, whom it waits for or who didn't pass it, any
+ * member groups and a link to its home once formed (#120), whom it waits
+ * for or who didn't pass it, any
  * result that doesn't match the group's own vote, and how this person takes
  * part.
  */
@@ -211,6 +228,7 @@ function Row({ row, props }: RowProps) {
         <bdi>{row.name}</bdi>
       </h3>
       {row.members.length > 0 ? <Members names={row.members} /> : null}
+      <OpenCoalition row={row} />
       {row.lines.length > 0 ? (
         <div className="coalition-lines">
           {row.lines.map((line, index) => (

@@ -88,7 +88,15 @@ export interface GroupHomeProps {
   readonly applications?: ReactNode;
   /** The group's Coalitions (#114), after Decided; none when absent. */
   readonly coalitions?: ReactNode;
+  /**
+   * Each coalition's name by its genesis id (#120), which tags its motions in
+   * the lists as "Coalition vote · <name>"; none when absent.
+   */
+  readonly coalitionNames?: CoalitionNames;
 }
+
+/** Each coalition's name by its genesis id (#120). */
+export type CoalitionNames = Readonly<Record<string, string>>;
 
 /** Whether the relay answers, and when this device last synced. */
 export interface SyncStatus {
@@ -126,10 +134,27 @@ interface ProposalCardsProps {
   readonly now: number;
   /** What each card says under its title in place of its countdown, such as why it closed (#108). */
   readonly line?: string;
+  /** Each coalition's name, for its motions' tags (#120). */
+  readonly names?: CoalitionNames | undefined;
+}
+
+/**
+ * "Coalition vote · <coalition>" over a coalition motion's title (#120), the
+ * name in its own `<bdi>`; nothing for the group's own Proposals.
+ */
+function MotionTag({ proposal, names }: { proposal: Proposal; names: CoalitionNames | undefined }) {
+  const { target } = proposal;
+  if (target.kind !== 'motion') return null;
+  const { voteTag, tagSeparator } = messages.coalitions;
+  return (
+    <span className="eyebrow card-link-tag">
+      {voteTag} {tagSeparator} <bdi>{names?.[target.coalition] ?? ''}</bdi>
+    </span>
+  );
 }
 
 /** Open Proposals as cards, each with its title and countdown, opening its ballot. */
-function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
+function ProposalCards({ groupId, proposals, now, line, names }: ProposalCardsProps) {
   return (
     <ul className="card-list">
       {proposals.map((proposal) => (
@@ -138,6 +163,7 @@ function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <MotionTag proposal={proposal} names={names} />
             <span className="card-link-title">
               <span className="heading-3">
                 <bdi>{proposal.title}</bdi>
@@ -169,6 +195,8 @@ interface OpenListsProps {
   /** The other open Proposals, or every open one while they're leaving. */
   readonly otherOpen: readonly Proposal[];
   readonly now: number;
+  /** Each coalition's name, for its motions' tags (#120). */
+  readonly names?: CoalitionNames | undefined;
 }
 
 /**
@@ -179,7 +207,7 @@ interface OpenListsProps {
  * Needs your vote, ahead of the focus, when nothing else is open.
  */
 function OpenLists(props: OpenListsProps) {
-  const { groupId, needsYourVote, otherOpen, now, children, after } = props;
+  const { groupId, needsYourVote, otherOpen, now, children, after, names } = props;
   const { home } = messages;
   const waits = needsYourVote.length > 0;
   const others = otherOpen.length > 0;
@@ -189,14 +217,14 @@ function OpenLists(props: OpenListsProps) {
     <>
       {waits ? (
         <Section title={home.needsYourVote}>
-          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} />
+          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} names={names} />
         </Section>
       ) : null}
       {lastIsWaits ? after : null}
       {children}
       {others ? (
         <Section title={waits ? home.otherOpen : home.openProposals}>
-          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} />
+          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} names={names} />
         </Section>
       ) : null}
       {waits || others ? null : (
@@ -214,12 +242,18 @@ function OpenLists(props: OpenListsProps) {
  * under "Not decided", each saying it closed then, with no outcome. Nothing
  * when there were none.
  */
-function Unfinished({ groupId, proposals, now }: Omit<ProposalCardsProps, 'line'>) {
+function Unfinished({ groupId, proposals, now, names }: Omit<ProposalCardsProps, 'line'>) {
   if (proposals.length === 0) return null;
   const { archive } = messages;
   return (
     <Section title={archive.unfinished}>
-      <ProposalCards groupId={groupId} proposals={proposals} now={now} line={archive.closed} />
+      <ProposalCards
+        groupId={groupId}
+        proposals={proposals}
+        now={now}
+        line={archive.closed}
+        names={names}
+      />
     </Section>
   );
 }
@@ -250,9 +284,11 @@ function TopOption({ proposal }: { readonly proposal: Proposal }) {
 function Decided({
   groupId,
   closed,
+  names,
 }: {
   readonly groupId: string;
   readonly closed: readonly Proposal[];
+  readonly names?: CoalitionNames | undefined;
 }) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
   return (
@@ -263,6 +299,7 @@ function Decided({
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <MotionTag proposal={proposal} names={names} />
             <span className="card-link-title">
               <span className="heading-3">
                 <bdi>{proposal.title}</bdi>
@@ -901,6 +938,8 @@ interface OpenSectionsProps {
   readonly children: ReactNode;
   /** The backup card (#78), after the open Proposals; none in a dissolved group. */
   readonly after: ReactNode;
+  /** Each coalition's name, for its motions' tags (#120). */
+  readonly names?: CoalitionNames | undefined;
 }
 
 /**
@@ -909,11 +948,11 @@ interface OpenSectionsProps {
  * still open when it dissolved, as closed (#108), then the focus it had.
  */
 function OpenSections(props: OpenSectionsProps) {
-  const { groupId, state, lists, now, leaving, children, after } = props;
+  const { groupId, state, lists, now, leaving, children, after, names } = props;
   if (state.dissolved !== null) {
     return (
       <>
-        <Unfinished groupId={groupId} proposals={lists.open} now={now} />
+        <Unfinished groupId={groupId} proposals={lists.open} now={now} names={names} />
         {children}
       </>
     );
@@ -925,6 +964,7 @@ function OpenSections(props: OpenSectionsProps) {
       otherOpen={leaving ? lists.open : lists.otherOpen}
       now={now}
       after={after}
+      names={names}
     >
       {children}
     </OpenLists>
@@ -996,6 +1036,7 @@ export function GroupHome(props: GroupHomeProps) {
           now={now}
           leaving={leaving}
           after={<QuietCards props={props} />}
+          names={props.coalitionNames}
         >
           <Focus state={state} me={me} readOnly={readOnly} />
         </OpenSections>
@@ -1013,7 +1054,7 @@ export function GroupHome(props: GroupHomeProps) {
           </Link>
         </Section>
         <Section title={messages.decided.title}>
-          <Decided groupId={groupId} closed={lists.decided} />
+          <Decided groupId={groupId} closed={lists.decided} names={props.coalitionNames} />
         </Section>
         {props.coalitions}
         <MemberSections {...props} leaving={readOnly} />

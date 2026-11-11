@@ -99,8 +99,10 @@ import {
   type VersionValues,
   vouch,
 } from './proposals';
+import { CoalitionRouteScreen } from './CoalitionScreens';
 import {
   type BareRoute,
+  type CoalitionRoute,
   type GroupRoute,
   isBare,
   navigate,
@@ -634,9 +636,17 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             replaceRoute({ name: 'start' });
           }}
           coalitions={<Coalitions services={services} group={group} />}
+          coalitionNames={coalitionNames(group.coalitions)}
         />
       )}
     </GroupGate>
+  );
+}
+
+/** Each coalition on this device's name by its genesis id, which tags its motions (#120). */
+function coalitionNames(coalitions: GroupView['coalitions']): Record<string, string> {
+  return Object.fromEntries(
+    coalitions.flatMap(({ state }) => (state.group === null ? [] : [[state.group, state.name]])),
   );
 }
 
@@ -1144,8 +1154,8 @@ function BareScreen({ route, services, guide }: BareScreenProps) {
   }
 }
 
-/** A route that names no group and carries no link: the device's own pages. */
-type PlainRoute = Exclude<Route, GroupRoute | { readonly payload: unknown }>;
+/** A route that names no group or coalition and carries no link: the device's own pages. */
+type PlainRoute = Exclude<Route, GroupRoute | CoalitionRoute | { readonly payload: unknown }>;
 
 /**
  * A route that carries a link's payload: Join (#73), a shared page (#105), a
@@ -1243,6 +1253,8 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       </>
     );
   }
+  // A coalition's home, Document and composer (#120).
+  if ('coalitionId' in route) return <CoalitionRouteScreen route={route} services={services} />;
   if ('payload' in route) {
     return (
       <LinkScreen

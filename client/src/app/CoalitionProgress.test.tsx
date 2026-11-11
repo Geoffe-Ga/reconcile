@@ -1,0 +1,124 @@
+import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import type { CoalitionProgress as Progress } from '../engine/coalitionProgress';
+import { axeViolations } from '../test/axe';
+import { CoalitionProgress, NameList, ProgressLine } from './CoalitionProgress';
+import { formatDay } from './format';
+import { messages } from './messages';
+
+/** A motion's progress, three groups by default, nobody in yet. */
+function progress(overrides: Partial<Progress> = {}): Progress {
+  return {
+    seats: 3,
+    passed: 0,
+    failed: 0,
+    needed: 3,
+    deciding: ['Riverside Tenants', 'Oak St Co-op', 'Elm Row'],
+    groups: [],
+    final: false,
+    settles: 30_000_000,
+    ...overrides,
+  };
+}
+
+/** The progress line's text for `value`. */
+function lineFor(value: Progress): string {
+  const { container } = render(<ProgressLine progress={value} />);
+  return container.textContent;
+}
+
+beforeEach(() => {
+  document.title = 'Banks too · Reconcile';
+});
+
+describe('ProgressLine', () => {
+  it('says how many of up to 4 groups passed, naming the groups still deciding', () => {
+    expect(lineFor(progress({ passed: 2, deciding: ['Oak St Co-op'] }))).toBe(
+      '2 of 3 groups have passed. Waiting for Oak St Co-op.',
+    );
+    expect(lineFor(progress({ passed: 1, deciding: ['Oak St Co-op', 'Elm Row'] }))).toContain(
+      '1 of 3 groups has passed. Waiting for Oak St Co-op and Elm Row.',
+    );
+    expect(lineFor(progress())).toContain(
+      '0 of 3 groups have passed. Waiting for Riverside Tenants, Oak St Co-op and Elm Row.',
+    );
+  });
+
+  it('puts each group’s name in its own bdi', () => {
+    render(<ProgressLine progress={progress({ passed: 1, deciding: ['אלון', 'Elm Row'] })} />);
+    expect(screen.getByText('אלון').tagName).toBe('BDI');
+    expect(screen.getByText('Elm Row').tagName).toBe('BDI');
+  });
+
+  it('reads two-thirds from 5 groups: what it needs, how many passed, and how many didn’t', () => {
+    const five = progress({ seats: 5, needed: 4, deciding: ['Pine Row'] });
+    expect(lineFor({ ...five, passed: 3, failed: 1 })).toBe('Needs 4 of 5 · 3 passed, 1 didn’t');
+    expect(lineFor({ ...five, passed: 2 })).toBe('Needs 4 of 5 · 2 passed');
+  });
+
+  it('names every group a motion needs, at any size, when it needs them all (#114)', () => {
+    const every = progress({ seats: 5, needed: 5, passed: 4, deciding: ['Pine Row'] });
+    expect(lineFor(every)).toBe('4 of 5 groups have passed. Waiting for Pine Row.');
+  });
+
+  it('says what the viewer’s own group reported, and how many more passes it waits for', () => {
+    expect(lineFor(progress({ passed: 2, mine: 'pass', deciding: ['Oak St Co-op'] }))).toBe(
+      'Your group passed this. Waiting for 1 more group.',
+    );
+    const five = progress({ seats: 5, needed: 4, passed: 2, failed: 1, mine: 'fail' });
+    expect(lineFor(five)).toBe('Your group didn’t pass this. Waiting for 2 more groups.');
+  });
+
+  it('gives the coalition’s outcome sentence once it has decided', () => {
+    expect(lineFor(progress({ outcome: 'fail', failed: 1 }))).toBe(messages.coalitions.failedEvery);
+    const five = progress({ seats: 5, needed: 4, failed: 2, outcome: 'fail', final: true });
+    expect(lineFor(five)).toBe('Fewer than two-thirds of the groups passed.');
+    expect(lineFor(progress({ passed: 3, outcome: 'pass', final: true }))).toBe(
+      'The coalition passed this.',
+    );
+  });
+
+  it('says on what day a pass takes effect, while results can still change it (#250)', () => {
+    const settles = 29_400_000;
+    render(<ProgressLine progress={progress({ passed: 3, outcome: 'pass', settles })} />);
+    const day = screen.getByText(formatDay(settles));
+    expect(day.tagName).toBe('TIME');
+    expect(day.parentElement).toHaveTextContent(
+      `The coalition passed this. It takes effect on ${formatDay(settles)}.`,
+    );
+  });
+
+  it('never counts people: only groups', () => {
+    const lines = [
+      progress({ passed: 2, deciding: ['Oak St Co-op'] }),
+      progress({ seats: 5, needed: 4, passed: 3, failed: 1 }),
+      progress({ passed: 2, mine: 'pass' }),
+    ].map(lineFor);
+    for (const line of lines) expect(line).not.toMatch(/\b(people|person|scored|vote[sd]?)\b/i);
+  });
+});
+
+describe('NameList', () => {
+  it('joins one, two and three names', () => {
+    const joined = (names: string[]) => render(<NameList names={names} />).container.textContent;
+    expect(joined(['A'])).toBe('A');
+    expect(joined(['A', 'B'])).toBe('A and B');
+    expect(joined(['A', 'B', 'C'])).toBe('A, B and C');
+  });
+});
+
+describe('CoalitionProgress', () => {
+  it('heads the line “Across the coalition”, says what crosses, and passes axe', async () => {
+    render(
+      <main>
+        <h1>Banks too</h1>
+        <CoalitionProgress progress={progress({ passed: 2, deciding: ['Oak St Co-op'] })} />
+      </main>,
+    );
+    const block = screen.getByRole('region', { name: 'Across the coalition' });
+    expect(block).toHaveTextContent('2 of 3 groups have passed. Waiting for Oak St Co-op.');
+    expect(block).toHaveTextContent(messages.coalitions.motionLine);
+    expect(await axeViolations()).toEqual([]);
+  });
+});

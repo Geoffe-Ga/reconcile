@@ -164,7 +164,17 @@ const NO_COALITIONS: readonly HeldCoalition[] = [];
 export function useCoalitions(
   store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
 ): readonly HeldCoalition[] {
-  const [coalitions, setCoalitions] = useState<readonly HeldCoalition[]>(NO_COALITIONS);
+  return useCoalitionList(store) ?? NO_COALITIONS;
+}
+
+/**
+ * As {@link useCoalitions}, but null until the store has first answered, so
+ * a coalition's screens can tell loading from missing (#120).
+ */
+export function useCoalitionList(
+  store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
+): readonly HeldCoalition[] | null {
+  const [coalitions, setCoalitions] = useState<readonly HeldCoalition[] | null>(null);
   useEffect(() => {
     let live = true;
     let latest = 0;
