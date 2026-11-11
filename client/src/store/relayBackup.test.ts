@@ -27,7 +27,8 @@ import { signedAs, testKeys } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
 import { keepSharesAlive } from '../share/shareLink';
-import { type Group, openStore, type Store } from './db';
+import { scanDb } from '../test/scanDb';
+import { type Group, openStore, type Store, VaultLocked } from './db';
 import { hasDuty } from './epochs';
 import { eventIdOf } from './eventId';
 import { newPersonalId, type PersonalDocument, type ShareState } from './personal';
@@ -430,6 +431,67 @@ describe('the schedule', () => {
     expect(uploads(fake)).toHaveLength(1);
     expect(fake.backup(backupIdFor(key))).toEqual(good);
     expect(relayBackupStatus(await device.store.getRelayBackup())).toEqual({ kind: 'too-large' });
+  });
+});
+
+describe('on a device whose keys are locked with a passkey (#95)', () => {
+  const LOCK = { credentialId: Uint8Array.of(7), prfSalt: new Uint8Array(32).fill(3) };
+  const VAULT_KEY = new Uint8Array(32).fill(9);
+
+  /** Everything the store `name` holds, raw, as text and bytes, for a before-and-after check. */
+  async function raw(name: string): Promise<unknown> {
+    const { text: words, bytes } = await scanDb(name);
+    return { words, bytes: bytes.map((held) => Array.from(held)) };
+  }
+
+  /** `device`'s keys locked with a passkey, then the app closed and opened again: locked. */
+  async function lockAndReopen(fake: FakeRelay, device: Device, name: string): Promise<Device> {
+    await device.store.sealKeys(LOCK, VAULT_KEY);
+    device.sync.stop();
+    device.store.close();
+    return openDevice(fake, name);
+  }
+
+  it('uploads nothing, makes no key and reads none while locked, then refreshes once unlocked', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    await startRelayBackup(device.services);
+    await change(device, founding, 'One');
+    const key = await keyOf(device.store);
+    fake.minute += DAY;
+    const locked = await lockAndReopen(fake, device, 'ana');
+    const before = await raw('ana');
+
+    expect(await locked.sync.syncOnce()).toBe(false);
+    await expect(refreshRelayBackup(locked.services)).rejects.toThrow(VaultLocked);
+    await expect(startRelayBackup(locked.services)).rejects.toThrow(VaultLocked);
+    await expect(startRelayBackup(locked.services, { newKey: true })).rejects.toThrow(VaultLocked);
+
+    expect(uploads(fake)).toEqual([backupIdFor(key)]);
+    expect(await raw('ana')).toEqual(before);
+    expect(await locked.store.unlock(VAULT_KEY)).toBe(true);
+    expect(await locked.sync.syncOnce()).toBe(true);
+    expect(uploads(fake)).toEqual([backupIdFor(key), backupIdFor(key)]);
+    expect(relayBackupStatus(await locked.store.getRelayBackup())).toEqual({
+      kind: 'saved',
+      at: TS,
+    });
+  });
+
+  it('uploads nothing while locked even with no group to fail the pass, not even on start', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'empty');
+    await device.store.setRelayBackupKey(new Uint8Array(32).fill(0xb1));
+    const locked = await lockAndReopen(fake, device, 'empty');
+    const before = await raw('empty');
+
+    expect(await locked.sync.syncOnce()).toBe(true);
+    await expect(startRelayBackup(locked.services)).rejects.toThrow(VaultLocked);
+    await expect(startRelayBackup(locked.services, { newKey: true })).rejects.toThrow(VaultLocked);
+
+    expect(uploads(fake)).toEqual([]);
+    expect(await raw('empty')).toEqual(before);
   });
 });
 

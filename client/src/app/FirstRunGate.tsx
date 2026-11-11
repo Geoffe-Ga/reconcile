@@ -6,10 +6,16 @@
  *    keys or stores anything.
  * 2. **The pilot notice** (ADR-0056). Everywhere else, the notice comes first
  *    until this device has accepted it.
- * 3. **The app**, with any invite link still in hand.
+ * 3. **The unlock screen** (#95). A device whose keys are locked with a
+ *    passkey opens nothing, syncs nothing and signs nothing until the
+ *    passkey unlocks them (`passkey.ts`).
+ * 4. **The passkey offer** (#95), once, where a passkey can lock the keys
+ *    and this device hasn't answered it yet: right after the notice on a new
+ *    device, and at the next launch on one that accepted the notice before.
+ * 5. **The app**, with any invite link still in hand.
  *
  * It wraps the whole app, so every later screen sits behind it. An invite
- * link the gate or the notice holds leaves the address bar at once and waits
+ * link opened while any step shows leaves the address bar at once and waits
  * in memory (spec §9: secrets stay after `#`, and not even there for long).
  * Once the notice is accepted, at that moment and at each launch after, the
  * app asks the browser to keep its data (ADR-0029).
@@ -18,11 +24,15 @@ import { type ReactNode, useEffect, useState } from 'react';
 
 import { canCreateKeys, type PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
+import type { PasskeyOfferRecord } from '../platform/passkeyOffer';
 import type { Persistence } from '../platform/persist';
 import { type Arrival, InstallGuide } from '../screens/InstallGuide';
+import { PasskeyOffer } from '../screens/PasskeyOffer';
 import { PilotNotice } from '../screens/PilotNotice';
+import { UnlockScreen } from '../screens/UnlockScreen';
 import type { InviteLookup } from './actions';
 import { parseInvitePayload } from './invite';
+import type { DeviceLock, Passkey } from './passkey';
 import { parseRoute, replaceRoute } from './router';
 
 /** What first run reads and records on this device, built once by `main.tsx`. */
@@ -33,6 +43,10 @@ export interface FirstRunServices {
   readonly notice: NoticeRecord;
   /** Asks the browser to keep the app's data. Never throws. */
   readonly requestPersistence: () => Promise<Persistence>;
+  /** Whether this device's keys are locked with a passkey, and the way to unlock them (#95). */
+  readonly lock: DeviceLock;
+  /** Whether this device answered the passkey offer (#95). */
+  readonly passkeyOffer: PasskeyOfferRecord;
 }
 
 /** What the app opens with. */
@@ -51,6 +65,10 @@ export interface FirstRunGateProps extends FirstRunServices {
   readonly copyText: (text: string) => Promise<void>;
   /** Opens an invite's envelope, for the guide's preview (#73's `lookupInvite`). */
   readonly lookup: (seed: Uint8Array) => Promise<InviteLookup>;
+  /** Passkey setup, for the offer (#95). */
+  readonly passkey: Passkey;
+  /** Erases all of Reconcile's data on this device, for the unlock screen (#95). */
+  readonly onErase: () => Promise<void>;
   /** The app, once first run is through. */
   readonly children: (opened: OpenedApp) => ReactNode;
 }
@@ -128,34 +146,92 @@ function usePersistence(
   return persistence;
 }
 
-/** Shows the install guide, then the pilot notice, then the app. */
-export function FirstRunGate(props: FirstRunGateProps) {
-  const { platform, notice, requestPersistence, origin, copyText, lookup, children } = props;
-  const open = canCreateKeys(platform);
-  const [acceptedAtLaunch] = useState(() => notice.accepted());
-  const [accepted, setAccepted] = useState(acceptedAtLaunch);
-  // Once the notice was accepted at launch, Join reads any link itself, as it always has.
-  const { arrival, visit } = useHeldArrival(!open || !accepted, open);
-  const persistence = usePersistence(open && accepted, requestPersistence);
+/** Which first-run step shows. */
+type Step = 'install' | 'notice' | 'unlock' | 'offer' | 'app';
 
-  if (!open) {
-    return (
-      <InstallGuide
-        key={visit}
-        arrival={arrival}
-        origin={origin}
-        lookup={lookup}
-        copyText={copyText}
-      />
-    );
-  }
-  if (!accepted) {
-    const accept = () => {
+/** What decides the step: the install gate, the notice, the lock and the offer. */
+interface StepInputs {
+  readonly open: boolean;
+  readonly accepted: boolean;
+  readonly locked: boolean;
+  readonly offering: boolean;
+}
+
+/** The step for `inputs`, in first run's order. */
+function stepOf({ open, accepted, locked, offering }: StepInputs): Step {
+  if (!open) return 'install';
+  if (!accepted) return 'notice';
+  if (locked) return 'unlock';
+  return offering ? 'offer' : 'app';
+}
+
+/** The notice, the lock and the offer, as they stand at launch and as each is answered. */
+function useSteps(props: FirstRunGateProps, open: boolean) {
+  const { notice, lock, passkey, passkeyOffer } = props;
+  const [accepted, setAccepted] = useState(() => notice.accepted());
+  const [locked, setLocked] = useState(lock.lockedAtLaunch);
+  const [offering, setOffering] = useState(
+    () => passkey.available && !lock.lockedAtLaunch && !passkeyOffer.answered(),
+  );
+  const step = stepOf({ open, accepted, locked, offering });
+  const [gatedAtLaunch] = useState(step !== 'app');
+  return {
+    step,
+    accepted,
+    gatedAtLaunch,
+    accept: () => {
       notice.accept();
       setAccepted(true);
-    };
-    return <PilotNotice onAccept={accept} />;
+    },
+    unlock: async () => {
+      const opened = await lock.unlock();
+      if (opened) setLocked(false);
+      return opened;
+    },
+    restore: async (file: Uint8Array, passphrase: string) => {
+      const restored = await lock.restore(file, passphrase);
+      setLocked(false);
+      return restored;
+    },
+    answerOffer: () => {
+      passkeyOffer.answer();
+      setOffering(false);
+    },
+  };
+}
+
+/** Shows the install guide, the pilot notice, the unlock screen or the passkey offer, then the app. */
+export function FirstRunGate(props: FirstRunGateProps) {
+  const { platform, requestPersistence, origin, copyText, lookup, children } = props;
+  const open = canCreateKeys(platform);
+  const steps = useSteps(props, open);
+  const { step } = steps;
+  // Once nothing stood in the way at launch, Join reads any link itself, as it always has.
+  const { arrival, visit } = useHeldArrival(step !== 'app', open);
+  const persistence = usePersistence(open && steps.accepted, requestPersistence);
+
+  switch (step) {
+    case 'install':
+      return (
+        <InstallGuide
+          key={visit}
+          arrival={arrival}
+          origin={origin}
+          lookup={lookup}
+          copyText={copyText}
+        />
+      );
+    case 'notice':
+      return <PilotNotice onAccept={steps.accept} />;
+    case 'unlock':
+      return (
+        <UnlockScreen onUnlock={steps.unlock} onRestore={steps.restore} onErase={props.onErase} />
+      );
+    case 'offer':
+      return <PasskeyOffer passkey={props.passkey} onDone={steps.answerOffer} />;
+    case 'app': {
+      const heldSeed = steps.gatedAtLaunch && arrival.kind === 'invite' ? arrival.seed : null;
+      return children({ heldSeed, persistence });
+    }
   }
-  const heldSeed = !acceptedAtLaunch && arrival.kind === 'invite' ? arrival.seed : null;
-  return children({ heldSeed, persistence });
 }
