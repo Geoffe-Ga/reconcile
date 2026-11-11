@@ -215,7 +215,8 @@ interface DecidedProps {
 /**
  * Decided: the group's history, each closed Proposal led by the Document it
  * changed or created (#92), with its title, its outcome in a word, and its
- * close date, opening its result.
+ * close date, opening its result, and "Scores cleared" once this device has
+ * deleted its individual ballots (#111).
  */
 function Decided({ state, groupId, closed }: DecidedProps) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
@@ -241,6 +242,9 @@ function Decided({ state, groupId, closed }: DecidedProps) {
               <time dateTime={minuteIso(closeTime(proposal))}>
                 {formatDay(closeTime(proposal))}
               </time>
+              {proposal.cleared ? (
+                <span className="decided-cleared">{messages.decided.cleared}</span>
+              ) : null}
             </span>
           </Link>
         </li>

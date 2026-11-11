@@ -28,8 +28,9 @@ import { base64url, fromBase64url } from '../crypto/base64url';
 import { kxPublicKeyOf } from '../crypto/box';
 import { epochCommit, newEpochSecret, unwrapEpochSecret, wrapEpochSecret } from '../crypto/epoch';
 import { parseRecord, signEvent } from '../engine/event';
-import { fold, type GroupState, keyHolders, type LogRecord, type Rotation } from '../engine/fold';
+import { type GroupState, keyHolders, type LogRecord, type Rotation } from '../engine/fold';
 import type { EpochAdvance, Group } from './db';
+import { foldGroup } from './expiry';
 import { placedInLog } from './logOrder';
 
 /** Why a device can't read what its group writes now (#98), or null when it can. */
@@ -159,7 +160,7 @@ export function advanceFor(
   relayNow: number,
 ): EpochAdvance | null {
   const log = placedInLog(group.log, records);
-  const state = fold(log, relayNow);
+  const state = foldGroup({ ...group, log, relayNow });
   const rotation = nextRotation(group, state);
   if (rotation === undefined || state.group === null) return null;
   const secret = unwrapped(group, state.group, rotation);
@@ -189,7 +190,7 @@ export function secretFits(state: GroupState, epoch: number, secret: Uint8Array)
  */
 export function adoptionFor(group: Group, epoch: number, secret: Uint8Array): EpochAdvance | null {
   if (epoch <= epochOf(group)) return null;
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   const rotation = state.rotations.find((r) => r.epoch === epoch);
   if (rotation === undefined || !secretFits(state, epoch, secret)) return null;
   // Key changes are numbered from 1 in order, so this is the one into the device's next epoch.

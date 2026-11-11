@@ -21,15 +21,16 @@
 import { can, isSuspended } from '../engine/capabilities';
 import { clearMinute, dissolveDue, wipeMinute } from '../engine/dissolve';
 import { parseRecord, signEvent } from '../engine/event';
-import { fold, type GroupState, proposalTally } from '../engine/fold';
+import { type GroupState, proposalTally } from '../engine/fold';
 import type { ClearedArchive, Group, Store } from './db';
+import { foldGroup } from './expiry';
 
 /** One minute in device milliseconds: the device clock counts the archive's days in relay minutes. */
 export const MINUTE_MS = 60_000;
 
 /** What the device shows for a group: a cleared archive's kept state, or its log folded. */
 export function shownState(group: Group): GroupState {
-  return group.archived?.cleared?.state ?? fold(group.log, group.relayNow);
+  return group.archived?.cleared?.state ?? foldGroup(group);
 }
 
 /** True when this member's own `dissolve` already waits in the outbox. */
@@ -51,7 +52,7 @@ export async function settleDissolve(
 ): Promise<void> {
   const group = await store.getGroup(groupId);
   if (group === undefined) return;
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   if (state.dissolved !== null) {
     await store.markArchived(groupId, 'dissolved');
     return;
@@ -90,7 +91,7 @@ export function clearedArchive(state: GroupState, at: number): ClearedArchive {
 export async function sweepArchives(store: Store, clock: () => number = Date.now): Promise<void> {
   for (const group of await store.listGroups()) {
     if (group.archived === undefined || group.archived.cleared !== undefined) continue;
-    const state = fold(group.log, group.relayNow);
+    const state = foldGroup(group);
     const { dissolved } = state;
     if (dissolved === null) continue;
     const now = clock();

@@ -426,6 +426,34 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('adds “Scores cleared” to a decided entry once this device has cleared its ballots (#111)', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const cleared = log.propose('ana', { title: 'Later quiet hours' });
+    const kept = log.propose('ana', { title: 'Paint the hall', atom: 1 });
+    log.minute += 2;
+    log.result('ana', {
+      proposal: cleared,
+      closedAt: START_MINUTE + 1,
+      eligible: 2,
+      versions: [{ id: cleared, counts: [0, 0, 0, 1, 1] }],
+      outcome: { kind: 'pass', version: cleared },
+      commit: 'kept',
+    });
+    const now = deadlineOf(START_MINUTE) + 5;
+    renderHome(log.state(now, [cleared]), { now });
+
+    const cards = within(section('Decided')).getAllByRole('link');
+    expect(cards.map((card) => card.getAttribute('href'))).toEqual([
+      `#/g/${log.group}/p/${kept}`,
+      `#/g/${log.group}/p/${cleared}`,
+    ]);
+    expect(cards.map((card) => card.textContent)).toEqual([
+      `House rulesPaint the hall→Lapsed${formatDay(deadlineOf(START_MINUTE))}`,
+      `House rulesLater quiet hours→Passed${formatDay(START_MINUTE + 1)}${messages.decided.cleared}`,
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('offers Propose a new Document only to someone who may propose, and not while leaving (#92)', () => {
     const log = groupLog({ members: ['Ben'], levels: { Ben: VOTING } });
     renderHome(log.state(), { me: authorOf('ben') });

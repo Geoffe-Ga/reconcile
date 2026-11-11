@@ -10,6 +10,7 @@ import type {
   DispatchBody,
   EventDraft,
   FoundingDocument,
+  ResultBody,
   Score,
 } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
@@ -71,13 +72,16 @@ export interface LogBuilder {
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
   version(name: string, proposal: string, text: string): string;
-  /** Adds `name`'s ballot on `proposal`, scoring each version it names. */
+  /** Adds `name`'s ballot on `proposal`, scoring each version it names, with an optional salt. */
   ballot(
     name: string,
     proposal: string,
     scores: Readonly<Record<string, Score>>,
     note?: string,
+    salt?: string,
   ): void;
+  /** Adds `name`'s result for a decided Proposal (#111), returning its id. */
+  result(name: string, body: ResultBody): string;
   /** Adds `name`'s steward Proposal for `seat`: electing `nominee` by name, or a recall for null. */
   steward(name: string, seat: number, nominee: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s suspension of the person named `who`, with an optional reason. */
@@ -100,8 +104,11 @@ export interface LogBuilder {
   dispatch(name: string, body: DispatchBody): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
-  /** The folded state, with the relay's `now` (default: the current minute). */
-  state(relayNow?: number): GroupState;
+  /**
+   * The folded state, with the relay's `now` (default: the current minute) and
+   * the Proposals whose ballots the device has cleared (#111).
+   */
+  state(relayNow?: number, cleared?: readonly string[]): GroupState;
 }
 
 /**
@@ -212,9 +219,23 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     version(name: string, proposal: string, text: string) {
       return add(name, { type: 'version', group, ts: 0, body: { proposal, text } });
     },
-    ballot(name: string, proposal: string, scores: Readonly<Record<string, Score>>, note?: string) {
-      const vote = { proposal, scores, ...(note === undefined ? {} : { note }) };
+    ballot(
+      name: string,
+      proposal: string,
+      scores: Readonly<Record<string, Score>>,
+      note?: string,
+      salt?: string,
+    ) {
+      const vote = {
+        proposal,
+        scores,
+        ...(note === undefined ? {} : { note }),
+        ...(salt === undefined ? {} : { salt }),
+      };
       add(name, { type: 'vote', group, ts: 0, body: vote });
+    },
+    result(name: string, body: ResultBody) {
+      return add(name, { type: 'result', group, ts: 0, body });
     },
     steward(name: string, seat: number, nominee: string | null, entry: ProposalEntry = {}) {
       const member = nominee === null ? null : authorOf(nominee.toLowerCase());
@@ -270,8 +291,8 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     dispatch(name: string, body: DispatchBody) {
       return add(name, { type: 'dispatch', group, ts: 0, body });
     },
-    state(relayNow?: number) {
-      return fold(records, relayNow ?? builder.minute);
+    state(relayNow?: number, cleared: readonly string[] = []) {
+      return fold(records, relayNow ?? builder.minute, [], cleared);
     },
   });
   for (const member of members) log.join(member, start.levels?.[member]);

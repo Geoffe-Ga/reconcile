@@ -39,6 +39,7 @@ import type { Relay } from '../net/relay';
 import type { Me, Store } from '../store/db';
 import { adoptionFor, epochOf, secretFits } from '../store/epochs';
 import { eventIdOf } from '../store/eventId';
+import { foldGroup } from '../store/expiry';
 import type { Sync } from '../store/sync';
 import { inviteLink } from './invite';
 import { plainText } from './text/markdown';
@@ -130,6 +131,8 @@ export interface FoundGroup {
   readonly epoch: number;
   /** The inviter's token, which the join carries. */
   readonly token: InviteToken;
+  /** The Proposals whose ballots the inviter's device has cleared (#111), kept on Join. */
+  readonly cleared: readonly string[];
   /**
    * The envelope's entries, the highest seq among them, and the invite GET's
    * relay time and instance: what Join keeps, so the Document shows at once.
@@ -183,12 +186,14 @@ export async function makeInvite(
   const seed = newInviteSeed();
   const channel = inviteChannelOf(seed);
   const sig = base64url(signInviteToken(group.signingKey, groupId));
+  const cleared = group.cleared ?? [];
   const blobs = sealEnvelope(services.seal, channel, {
     groupSecret: group.secret,
     epoch: epochOf(group),
-    preview: previewOf(fold(group.log, group.relayNow), group.me),
+    preview: previewOf(foldGroup(group), group.me),
     token: { by: group.me.author, sig },
     entries: group.log,
+    cleared,
   });
   for (const blob of blobs) {
     await services.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
@@ -235,7 +240,7 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
   }
   const blobs = page.records.map((record) => record.data);
   const envelope = openEnvelope(services.seal, channel, blobs);
-  const state = envelope === null ? null : fold(envelope.entries, page.now);
+  const state = envelope === null ? null : fold(envelope.entries, page.now, [], envelope.cleared);
   const groupId = state?.group ?? null;
   if (envelope === null || state === null || groupId === null) return { kind: 'missing' };
   if (!secretFits(state, envelope.epoch, envelope.groupSecret)) return { kind: 'missing' };
@@ -243,7 +248,7 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
     await mergeInvite(services, groupId, envelope);
     return { kind: 'joined', groupId };
   }
-  const { preview, groupSecret: secret, epoch, token, entries } = envelope;
+  const { preview, groupSecret: secret, epoch, token, entries, cleared } = envelope;
   const cursor = highestSeq(entries);
   return {
     kind: 'found',
@@ -253,6 +258,7 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
       secret,
       epoch,
       token,
+      cleared,
       page: { records: entries, cursor, relayNow: page.now, instance: page.instance },
     },
   };
@@ -262,8 +268,10 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
  * Joins under `name`, at the involvement level the person chose, with a fresh
  * keypair for this group: keeps the group with the invite's secret and its
  * whole history, read through the same dedupe sync uses, with the cursor at
- * its highest seq, so the Document shows at once. Then queues the signed
- * `join`, carrying the inviter's token, and sends it.
+ * its highest seq, so the Document shows at once. It keeps the Proposals the
+ * inviter has cleared as its own `cleared` (#111), so it folds their outcomes
+ * from their results. Then queues the signed `join`, carrying the inviter's
+ * token, and sends it.
  */
 export async function joinGroup(
   services: Services,
@@ -271,7 +279,7 @@ export async function joinGroup(
   name: string,
   level: Level,
 ): Promise<string> {
-  const { groupId, secret, epoch, token, page } = found;
+  const { groupId, secret, epoch, token, cleared, page } = found;
   const keys = newSigningKeys();
   const kxKey = newKxKey();
   const kx = base64url(kxPublicKeyOf(kxKey));
@@ -283,7 +291,8 @@ export async function joinGroup(
   });
   const me = { author: base64url(keys.publicKey), name };
   const signingKey = keys.secretKey;
-  await services.store.addGroup({ groupId, secret, signingKey, kxKey, epoch, me });
+  const kept = cleared.length === 0 ? {} : { cleared: [...cleared] };
+  await services.store.addGroup({ groupId, secret, signingKey, kxKey, epoch, me, ...kept });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };
   await services.store.applyPull(groupId, pull, eventIdOf);
   await services.store.enqueue(groupId, join.record);

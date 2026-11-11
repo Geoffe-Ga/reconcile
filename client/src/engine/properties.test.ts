@@ -9,7 +9,9 @@
  * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
  * mailbox changes nothing, not even relay time. And of coalitions (#100): a motion's outcome
  * doesn't depend on the order distinct seats' results arrive in, and nothing a group reports
- * carries a name, note, score or key from inside it.
+ * carries a name, note, score or key from inside it. And of ballot expiry (#111): a device that
+ * has cleared a closed Proposal's ballots, keeping its result, folds the same Document and
+ * outcomes as one that still holds them.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -21,7 +23,8 @@ import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
 import { resultsToReport } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
-import { fold, type LogRecord } from './fold';
+import { expiringProposal, resultFor } from './expiry';
+import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { tally, type TallyInput } from './tally';
 
@@ -850,6 +853,180 @@ describe('properties of the bars', () => {
         const input = ballots(eligible, versions, rows);
         const lapses = (bar: Bar) => tally({ ...input, bar }).kind === 'lapse';
         expect(lapses(ENTRENCHED)).toBe(lapses(ORDINARY));
+      }),
+    );
+  });
+});
+
+/** One event of a ballot-expiry scenario before it is signed: when it arrives, who signs it, what. */
+interface Planned {
+  readonly received: number;
+  readonly author: string;
+  readonly input: Unstamped;
+}
+
+/** Signs `planned` in relay order (stable by receipt minute) into a log of `group`. */
+function signAll(group: string, genesis: LogRecord, planned: readonly Planned[]): LogRecord[] {
+  const ordered = [...planned].sort((a, b) => a.received - b.received);
+  return [
+    genesis,
+    ...ordered.map(({ received, author, input }, i) => {
+      const draft = { ...input, group, ts: received * 60_000 };
+      return { seq: i + 2, received, bytes: signedAs(author, draft).record };
+    }),
+  ];
+}
+
+/** What two devices must agree on: the Document, and each Proposal's ballot, close and outcome. */
+function decided(state: GroupState) {
+  return {
+    atoms: state.atoms,
+    proposals: state.proposals.map((p) => ({
+      id: p.id,
+      versions: p.versions,
+      eligible: p.eligible,
+      deadline: p.deadline,
+      closedAt: p.closedAt,
+      final: p.final,
+      outcome: p.outcome,
+      result: p.result?.id ?? null,
+    })),
+  };
+}
+
+/** A ballot-expiry scenario: members, extra versions and ballots on P, then a later Proposal Q. */
+const expiryScenario = fc.record({
+  count: fc.integer({ min: 1, max: 5 }),
+  // Each extra version arrives `at` minutes in; a removal's text is `""` (#75).
+  versions: fc.array(fc.record({ at: fc.integer({ min: 0, max: 40 }), removal: fc.boolean() }), {
+    maxLength: 3,
+  }),
+  ballots: fc.array(
+    fc.record({
+      voter: fc.nat({ max: 4 }),
+      at: fc.integer({ min: 0, max: 40 }),
+      scores: fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }),
+    }),
+    { maxLength: 12 },
+  ),
+  again: fc.option(
+    fc.record({
+      after: fc.integer({ min: 0, max: 30 }),
+      votes: fc.array(fc.record({ voter: fc.nat({ max: 4 }), value: score }), { maxLength: 5 }),
+    }),
+    { nil: null },
+  ),
+  resultDelay: fc.integer({ min: 1, max: 60 }),
+  later: fc.integer({ min: 0, max: 30_000 }),
+});
+
+describe('properties of ballot expiry', { timeout: 60_000 }, () => {
+  it('folds the same Atoms and outcomes from the cleared log as from the full one', () => {
+    fc.assert(
+      fc.property(expiryScenario, (scenario) => {
+        const start = Log.founded(scenario.count);
+        const group = start.group;
+        const [genesis, ...joins] = start.records;
+        if (genesis === undefined) throw new Error('Expected a genesis.');
+        const p0 = R + 20;
+        const proposalInput: Unstamped = {
+          type: 'proposal',
+          body: { atom: `${group}.0`, title: 'T', why: 'W', text: 'P text' },
+        };
+        const pId = signedAs(member(0), { ...proposalInput, group, ts: p0 * 60_000 }).id;
+        const planned: Planned[] = joins.map((record, i) => ({
+          received: record.received,
+          author: member(i + 1),
+          input: { type: 'join', body: { name: member(i + 1) } },
+        }));
+        planned.push({ received: p0, author: member(0), input: proposalInput });
+        const versionIds = [pId];
+        scenario.versions.forEach(({ at, removal }, v) => {
+          const text = removal ? '' : `Version ${String(v + 2)}`;
+          const input: Unstamped = { type: 'version', body: { proposal: pId, text } };
+          const received = p0 + at;
+          planned.push({ received, author: member(0), input });
+          versionIds.push(signedAs(member(0), { ...input, group, ts: received * 60_000 }).id);
+        });
+        let last = p0;
+        for (const ballot of scenario.ballots) {
+          const scores = Object.fromEntries(
+            ballot.scores.flatMap((value, v) =>
+              value === null || versionIds[v] === undefined ? [] : [[versionIds[v], value]],
+            ),
+          );
+          const note = Object.values(scores).includes(0) ? { note: 'A reason.' } : {};
+          const salt = { salt: `salt-${String(ballot.voter)}-${String(ballot.at)}` };
+          const received = p0 + ballot.at;
+          last = Math.max(last, received);
+          planned.push({
+            received,
+            author: member(ballot.voter % scenario.count),
+            input: { type: 'vote', body: { proposal: pId, scores, ...note, ...salt } },
+          });
+        }
+        if (scenario.again !== null) {
+          // Q follows every ballot on P, so in P's closing minute it comes after the closing ballot.
+          const q0 = last + scenario.again.after;
+          const qInput: Unstamped = {
+            type: 'proposal',
+            body: { atom: `${group}.0`, title: 'Q', why: 'W', text: 'Q text' },
+          };
+          planned.push({ received: q0, author: member(0), input: qInput });
+          const qId = signedAs(member(0), { ...qInput, group, ts: q0 * 60_000 }).id;
+          scenario.again.votes.forEach(({ voter, value }, i) => {
+            const note = value === 0 ? { note: 'A reason.' } : {};
+            planned.push({
+              received: q0 + 1 + i,
+              author: member(voter % scenario.count),
+              input: { type: 'vote', body: { proposal: qId, scores: { [qId]: value }, ...note } },
+            });
+          });
+        }
+        const before = signAll(group, genesis, planned);
+        const deadline = p0 + WINDOW;
+        const p = fold(before, deadline + 1).proposals.find((candidate) => candidate.id === pId);
+        if (p === undefined) throw new Error('Expected P to open.');
+        // A device posts P's result once the relay's minute is past P's close.
+        const resultAt = (p.closedAt ?? p.deadline) + scenario.resultDelay;
+        planned.push({
+          received: resultAt,
+          author: member(0),
+          input: { type: 'result', body: resultFor(p) },
+        });
+        const full = signAll(group, genesis, planned);
+        const cleared = full.filter((record) => {
+          const event = parseRecord(record.bytes)?.event;
+          return event === undefined || event.type !== 'vote' || expiringProposal(event) !== pId;
+        });
+        const now = Math.max(resultAt, ...full.map((record) => record.received)) + scenario.later;
+        const held = fold(full, now);
+        expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
+        expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));
+      }),
+    );
+  });
+
+  it('gives the same commitment whatever order distinct voters’ ballots arrive in', () => {
+    const scenario = electorate.chain(({ count, ballots }) =>
+      fc.record({
+        count: fc.constant(count),
+        first: fc.constant(ballots),
+        second: fc.shuffledSubarray(ballots, { minLength: ballots.length }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ count, first, second }) => {
+        const commitOf = (order: readonly { voter: number; value: Score }[]) => {
+          const log = Log.founded(count);
+          const proposal = log.propose(R + 20, `${log.group}.0`, 'New text');
+          order.forEach(({ voter, value }, i) => log.vote(R + 30 + i, voter, proposal, value));
+          const p = fold(log.records, R + WINDOW + 100).proposals[0];
+          if (p === undefined) throw new Error('Expected the Proposal.');
+          return heldRecord(p);
+        };
+        const { commit, versions } = commitOf(first);
+        expect(commitOf(second)).toMatchObject({ commit, versions });
       }),
     );
   });
