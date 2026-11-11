@@ -917,6 +917,41 @@ describe('PersonalDocument, a share a restore paused (#328)', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('holds both buttons while Keep sharing runs, and says so', async () => {
+    await restored();
+    const finishes: ((kept: 'posted') => void)[] = [];
+    const slow = {
+      ...sharing(),
+      keep: () =>
+        new Promise<'posted'>((resolve) => {
+          finishes.push(resolve);
+        }),
+    };
+    render(
+      <PersonalDocument
+        id={ID}
+        documents={store}
+        now={() => clock}
+        onDeleted={vi.fn()}
+        sharing={slow}
+        relayBackup={false}
+      />,
+    );
+    const user = userEvent.setup();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.keeping)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.keep })).toBeDisabled();
+    expect(screen.getByRole('button', { name: share.stop })).toBeDisabled();
+    act(() => {
+      finishes[0]?.('posted');
+    });
+    expect(await screen.findByText(share.kept)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.stop })).toBeEnabled();
+  });
+
   it('keeps the share paused when Stop sharing can’t reach the relay, and says so', async () => {
     await restored();
     const { user } = open();
