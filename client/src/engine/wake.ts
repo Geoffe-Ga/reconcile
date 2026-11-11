@@ -1,12 +1,14 @@
 /**
- * Which events wake the group's phones (#99; ADR-0012, ADR-0074).
+ * Which events wake the group's phones (#99, #112; ADR-0012, ADR-0074).
  *
  * Push carries no content, so the only question is when to send one. A
  * device asks the relay to wake its group's mailbox (`wake=1` on the PUT) for
- * the two events other members need to hear of at once: a new Proposal, and
- * the ballot that closes one early, since its result is then in. The other
- * two moments, a vote's last day and its result at the deadline, come from
- * nudges the proposer's device schedules (`nudges.ts`).
+ * the events other members need to hear of at once: a new Proposal, the
+ * ballot that closes one early, since its result is then in, and a Dispatch
+ * (#112), which every level follows (ADR-0003). The other two moments, a
+ * vote's last day and its result at the deadline, come from nudges the
+ * proposer's device schedules (`nudges.ts`). A Dispatch a Proposal carries
+ * rides its result's wake, so it needs none of its own.
  *
  * Every device marks wakes, whether or not its own push is on: the wake is
  * for the others' phones.
@@ -33,12 +35,14 @@ function closesEarly(before: GroupState, vote: Extract<GroupEvent, { type: 'vote
 
 /**
  * Whether sending `event` should wake the group's phones: true for a
- * Proposal, and for a ballot after which this device's fold, as it stands at
- * `before`, closes the Proposal early. Nothing else wakes anyone.
+ * Proposal and a Dispatch (#112), and for a ballot after which this device's
+ * fold, as it stands at `before`, closes the Proposal early. Nothing else
+ * wakes anyone.
  */
 export function wakeFor(before: GroupState, event: GroupEvent): boolean {
   switch (event.type) {
     case 'proposal':
+    case 'dispatch':
       return true;
     case 'vote':
       return closesEarly(before, event);

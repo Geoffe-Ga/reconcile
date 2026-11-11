@@ -15,6 +15,9 @@
  * - **The relay backup (#97).** Its key rides in the bundle, and the laptop
  *   keeps it unless it holds one of its own, so its first complete pass keeps
  *   the same backup fresh.
+ * - **Dispatches (#112).** They live in the group's log, so the laptop reads
+ *   the ones already sent and sends as the same member, with its own wake; a
+ *   Dispatch drafted on the phone's composer stays there, as every draft does.
  * - **Shares by link (#105).** A share belongs to the device that made it,
  *   since personal Documents don't sync, so the bundle leaves it out
  *   (`withoutShares`): the laptop gets the Document unshared, posts nothing
@@ -46,6 +49,7 @@ import { keepSharesAlive, readShare, type ShareLink, startSharing } from '../sha
 import { FOUNDING, go, members, type MountedApp, mountApp } from '../test/members';
 import { groupLog } from '../test/votes';
 import { leaveGroup } from './actions';
+import { sendDispatch } from './proposals';
 
 freshIndexedDBPerTest();
 
@@ -225,6 +229,54 @@ describe('personal Documents in a link (#96, #93)', () => {
       groupId,
     ]);
     expect(await phone.services.store.listPersonal()).toEqual(STATEMENTS);
+  });
+});
+
+describe('Dispatches on a linked device (#96, #112)', () => {
+  it('reads the phone’s Dispatch, sends one as the same member with a wake, and leaves the phone’s draft behind', async () => {
+    const fake = createFakeRelay();
+    const { phone, groupId, devices } = await phoneIn(fake, ['Ana', 'Ben']);
+    const [, ben] = devices;
+    if (ben === undefined) throw new Error('Expected Ben’s device.');
+    const first = await sendDispatch(phone.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+    });
+    await phone.services.sync.syncOnce();
+    const draft = {
+      title: 'Later quiet hours',
+      why: 'Weekends run late.',
+      text: 'Quiet after 11pm.',
+      link: '',
+      dispatch: { title: 'Updated: House rules', text: 'Drafted on the phone.' },
+    };
+    await phone.services.store.writeDraft(groupId, `${groupId}.0`, draft);
+
+    const laptop = await laptopOf(fake, phone);
+    const onLaptop = await held(laptop, groupId);
+    expect(fold(onLaptop.log, onLaptop.relayNow).dispatches.map((d) => d.id)).toEqual([first]);
+    expect(await laptop.services.store.readDraft(groupId, `${groupId}.0`)).toBeUndefined();
+    expect(await phone.services.store.readDraft(groupId, `${groupId}.0`)).toEqual(draft);
+
+    const before = fake.requests.length;
+    const second = await sendDispatch(laptop.services, groupId, {
+      title: 'Sent from my laptop',
+      text: '',
+      doc: groupId,
+    });
+    await laptop.services.sync.syncOnce();
+    const puts = fake.requests
+      .slice(before)
+      .filter((request) => request.method === 'PUT' && request.url.startsWith('/v1/mailbox/'));
+    expect(puts.map((request) => request.url.endsWith('&wake=1'))).toEqual([true]);
+    await ben.services.sync.syncOnce();
+    const onBen = await held(ben, groupId);
+    const state = fold(onBen.log, onBen.relayNow);
+    expect(state.dispatches.map((d) => [d.id, d.by])).toEqual([
+      [first, onLaptop.me.author],
+      [second, onLaptop.me.author],
+    ]);
   });
 });
 
