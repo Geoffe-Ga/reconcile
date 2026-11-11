@@ -90,6 +90,10 @@ describe('recovering with contacts through the app', { timeout: 60_000 }, () => 
     expect(await axeViolations()).toEqual([]);
     unmountAll();
 
+    // Test devices don't poll: two passes, as the poller would make, the first maybe joined
+    // to one that was already on its way when the cancel was queued.
+    await world.ana.services.sync.syncOnce();
+    await world.ana.services.sync.syncOnce();
     await world.ben.services.sync.syncOnce();
     go('#/help-recover');
     app = mount(world.ben, 'b2');
