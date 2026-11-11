@@ -123,12 +123,37 @@ export interface CarriedDispatch {
 /**
  * Proposes new text for one Atom, with a title, a justification, an optional
  * discussion link, an optional voting window in whole days (#106) and an
- * optional Dispatch to send if it passes (#112). The window is kept as
- * written: the fold checks it against the bounds of the Proposal's class, and
- * a Proposal without one runs the class default.
+ * optional Dispatch to send if it passes (#112). Empty text proposes removing
+ * the Atom (#75). The window is kept as written: the fold checks it against
+ * the bounds of the Proposal's class, and a Proposal without one runs the
+ * class default.
  */
 export interface ProposalBody {
   readonly atom: string;
+  readonly title: string;
+  readonly why: string;
+  readonly text: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * Where an add puts its new section (#75): right after the Atom `after`, or
+ * first when it's null. The new Atom's id is the Proposal's own id.
+ */
+export interface AddTarget {
+  readonly kind: 'add';
+  readonly after: string | null;
+}
+
+/**
+ * Proposes a new section (#75): it carries `target` in place of an Atom, its
+ * text, and, like an edit, an optional voting window in whole days (#106) and
+ * an optional Dispatch to send if it passes (#112).
+ */
+export interface AddProposalBody {
+  readonly target: AddTarget;
   readonly title: string;
   readonly why: string;
   readonly text: string;
@@ -252,12 +277,13 @@ export interface ReconcileProposalBody {
 }
 
 /**
- * What a `proposal` event carries: new text for an Atom, a steward seat
- * (#102), an opt-in (#117), dissolving the group (#108), or reconciling into
- * a coalition (#100).
+ * What a `proposal` event carries: new text for an Atom, a new section (#75),
+ * a steward seat (#102), an opt-in (#117), dissolving the group (#108), or
+ * reconciling into a coalition (#100).
  */
 export type ProposalEventBody =
   | ProposalBody
+  | AddProposalBody
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
@@ -266,6 +292,11 @@ export type ProposalEventBody =
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
   return 'target' in body && body.target.kind === 'steward';
+}
+
+/** True when a Proposal's body adds a new section (#75). */
+export function isAddProposal(body: ProposalEventBody): body is AddProposalBody {
+  return 'target' in body && body.target.kind === 'add';
 }
 
 /** True when a Proposal's body targets an opt-in (#117). */
@@ -647,6 +678,23 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
+/** An add's target, keeping only its kind and anchor, or null for any other shape (#75). */
+function parseAddTarget(value: unknown): AddTarget | null {
+  if (!isObject(value) || value.kind !== 'add') return null;
+  const { after } = value;
+  return after === null || isString(after) ? { kind: 'add', after } : null;
+}
+
+/** An add carries `target` in place of `atom`, never both, its text, and any window (#75, #106). */
+function parseAddProposal(body: Json): AddProposalBody | null {
+  const { atom, target, title, why, text } = body;
+  const parsed = parseAddTarget(target);
+  if (parsed === null || atom !== undefined || !isString(text)) return null;
+  if (!isString(title) || !isString(why)) return null;
+  const options = editOptions(body);
+  return options === null ? null : { target: parsed, title, why, text, ...options };
+}
+
 /** A steward target's kind, seat and member, or null for any other shape (#102). */
 function parseStewardTarget(value: unknown): StewardTarget | null {
   if (!isObject(value) || value.kind !== 'steward') return null;
@@ -744,8 +792,19 @@ function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalB
 }
 
 /**
- * An edit's optional fields: a discussion link, a voting window (#106) and a
- * Dispatch (#112), each kept when present, or null when one is a bad shape.
+ * A Proposal with a `target` in place of an Atom: an add (#75), a steward
+ * seat (#102), an opt-in (#117) or dissolving the group (#108).
+ */
+function parseTargeted(body: Json): ProposalEventBody | null {
+  return isObject(body.target) && body.target.kind === 'add'
+    ? parseAddProposal(body)
+    : parseTargetedProposal(body);
+}
+
+/**
+ * An edit's or an add's optional fields (#75): a discussion link, a voting
+ * window (#106) and a Dispatch (#112), each kept when present, or null when
+ * one is a bad shape.
  */
 function editOptions(body: Json): Pick<ProposalBody, 'link' | 'window' | 'dispatch'> | null {
   const { link, window } = body;
@@ -759,7 +818,7 @@ function editOptions(body: Json): Pick<ProposalBody, 'link' | 'window' | 'dispat
 }
 
 function parseProposal(body: Json): ProposalEventBody | null {
-  if (body.target !== undefined) return parseTargetedProposal(body);
+  if (body.target !== undefined) return parseTargeted(body);
   const { atom, title, why, text } = body;
   if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
   const options = editOptions(body);

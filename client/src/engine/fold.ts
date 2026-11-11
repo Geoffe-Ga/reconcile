@@ -6,8 +6,11 @@
  * breaks one lands in `ignored` and changes nothing. Votes run on relay time
  * (`received`, in whole minutes); the author's `ts` plays no part. Genesis
  * founds the group with its rules, and each Proposal's class, set when it
- * opens, picks its bar and bounds the window its proposer chose. A
- * Document's text changes only when a Proposal's pass is final. Steward seats
+ * opens, picks its bar and bounds the window its proposer chose. A Document
+ * changes only when a Proposal's pass is final: an edit sets an Atom's text
+ * or, with `""`, removes it, and an add puts a new Atom after its anchor
+ * (#75). Final passes apply in order of close time, then the Proposals' relay
+ * order. Steward seats
  * change when a steward Proposal's pass is final, and a suspension narrows
  * `can()` until it ends (#102): the fold keeps `at`, the relay minute it has
  * reached, and brings the seats up to it before each event. An opt-in's
@@ -84,6 +87,8 @@ import {
   type GroupResultBody,
   type GroupResultValue,
   type InviteToken,
+  type AddProposalBody,
+  isAddProposal,
   isCoalitionGenesis,
   isDissolveProposal,
   isReconcileProposal,
@@ -204,7 +209,10 @@ export interface Rotation {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
-/** A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`. */
+/**
+ * A unit of the Document. Genesis Atom `i` has the id `${genesisId}.${i}`, and
+ * an added Atom has its add Proposal's id (#75). `documentId` is the genesis id.
+ */
 export interface Atom {
   readonly id: string;
   readonly documentId: string;
@@ -229,14 +237,17 @@ export interface Ballot {
 }
 
 /**
- * A proposed change to one Atom, a steward seat, an opt-in, or whether the
- * group goes on, with its vote.
+ * A proposed change to the Document (an Atom's text, a new Atom, or a
+ * removal), a steward seat, an opt-in, or whether the group goes on, with its
+ * vote.
  *
- * `target` says which: an edit of `atom`, a steward change (#102), a rules
- * change to an opt-in (#117), or dissolving the group (#108). A steward,
- * rules or dissolve Proposal's `atom` and `text` are `""`, and its one
- * version, under its own id, has no text. A recall's eligible set leaves out
- * the steward it would remove.
+ * `target` says which: an edit of `atom`, where a winning `""` removes the
+ * Atom; an add (#75), whose `atom` is its own id, the Atom it would create
+ * after its anchor; a steward change (#102); a rules change to an opt-in
+ * (#117); or dissolving the group (#108). A steward, rules or dissolve
+ * Proposal's `atom` and `text` are `""`, and its one version, under its own
+ * id, has no text. A recall's eligible set leaves out the steward it would
+ * remove.
  *
  * `number` is its 1-based place among the group's Proposals in relay order,
  * counting only the ones the fold kept (#123): the name of its Discord thread
@@ -394,12 +405,21 @@ interface OpenProposal extends Omit<
   closedAt: number | null;
 }
 
+/** The Document at some relay minute, and the closed Proposals it was worked out from. */
+interface DocumentAt {
+  /** The closed Proposals' ids, in relay order, joined by spaces. */
+  readonly closed: string;
+  readonly atoms: readonly Atom[];
+}
+
 /**
  * The state the fold builds up, one event at a time. `seated` holds the ids
  * of the closed steward Proposals whose outcome the seats already show,
  * `ruled` those of the closed rules Proposals the opt-ins already show, and
  * `dispatched` those of the closed Proposals carrying a Dispatch that
- * `dispatches` already reflects (#112).
+ * `dispatches` already reflects (#112). `founded` is the Document genesis
+ * founded, before any pass, and `document` the Document as the latest
+ * Proposal found it, kept until another closes.
  */
 interface Draft {
   group: string | null;
@@ -409,7 +429,8 @@ interface Draft {
   title: string;
   readonly members: Member[];
   readonly former: Member[];
-  atoms: Atom[];
+  founded: readonly Atom[];
+  document: DocumentAt;
   readonly proposals: OpenProposal[];
   at: number;
   stewards: readonly Seat[];
@@ -448,7 +469,8 @@ function applyCoalitionGenesis(draft: Draft, body: CoalitionGenesisBody, at: Rec
   draft.name = body.name;
   draft.chat = body.chat ?? null;
   draft.title = body.title;
-  draft.atoms = genesisAtoms(body.atoms, at.id);
+  draft.founded = genesisAtoms(body.atoms, at.id);
+  draft.document = { closed: '', atoms: draft.founded };
   draft.coalition = coalition;
   return true;
 }
@@ -492,7 +514,8 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
-  draft.atoms = genesisAtoms(body.atoms, at.id);
+  draft.founded = genesisAtoms(body.atoms, at.id);
+  draft.document = { closed: '', atoms: draft.founded };
   return true;
 }
 
@@ -644,11 +667,49 @@ function fieldsAreValid(body: ProposalEventBody): boolean {
   );
 }
 
+/**
+ * The Document as an event received at relay minute `received` finds it: the
+ * founded Atoms with every pass that is final by then applied, in pass order
+ * (#75). In a group it's worked out again only when the set of closed
+ * Proposals changes. A coalition's is worked out every time: a closed
+ * motion's results can still be contested, and its pass turns final only
+ * once results stop counting, so its outcome moves while that set holds still
+ * (#100).
+ */
+function documentAt(draft: Draft, received: number): readonly Atom[] {
+  const closed = draft.proposals.filter((p) => !isOpenAt(p, received));
+  const key = closed.map((p) => p.id).join(' ');
+  if (key !== draft.document.closed || draft.coalition !== null) {
+    const settled = closed.map((p) => settle(p, draft, received));
+    draft.document = { closed: key, atoms: applyPasses(draft.founded, settled, draft.group) };
+  }
+  return draft.document.atoms;
+}
+
+/** True when the Atom `id` is in the Document an event received at `received` finds. */
+function inDocument(draft: Draft, id: string, received: number): boolean {
+  return documentAt(draft, received).some((a) => a.id === id);
+}
+
 function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   return (
     can(draft, author, 'propose') &&
-    draft.atoms.some((a) => a.id === body.atom) &&
+    inDocument(draft, body.atom, at.received) &&
     optionFor(openOn(draft, body.atom, at.received)) === 'propose' &&
+    fieldsAreValid(body)
+  );
+}
+
+/**
+ * An add's anchor is in the Document, or null for the start, and its text
+ * isn't empty: only an edit can carry `""`, which removes its Atom (#75).
+ */
+function addIsValid(draft: Draft, body: AddProposalBody, author: string, at: Receipt): boolean {
+  const { after } = body.target;
+  return (
+    can(draft, author, 'propose') &&
+    body.text !== '' &&
+    (after === null || inDocument(draft, after, at.received)) &&
     fieldsAreValid(body)
   );
 }
@@ -728,6 +789,27 @@ function openEdit(
   };
   draft.proposals.push(proposal);
   return proposal;
+}
+
+/**
+ * Opens an add (#75): its Atom, created on a pass, takes the Proposal's own
+ * id. Like an edit, it runs the window its proposer chose within its class's
+ * bounds, or the class default, and one outside them is ignored (#106).
+ */
+function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Receipt): boolean {
+  if (!addIsValid(draft, body, author, at)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  draft.proposals.push({
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: at.id,
+    target: body.target,
+    text: body.text,
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: body.text }],
+  });
+  return true;
 }
 
 /**
@@ -854,6 +936,9 @@ function applyReconcile(
  * fold while a pass can still be contested, and reconciling a coalition is
  * #122's. So does a motion carrying a Dispatch (#112): its pass, once closed,
  * can still be contested into a fail, and a coalition's followers are #124's.
+ * An add (#75) has a target, so it waits too, and so does a removal, an edit
+ * whose text is `""`: for now a motion only rewords one of the coalition's
+ * Atoms.
  */
 function applyMotion(
   draft: Draft,
@@ -865,6 +950,8 @@ function applyMotion(
   if (coalition.status !== 'formed' || 'target' in body || body.dispatch !== undefined) {
     return false;
   }
+  // Nor does a removal (#75), whose `""` would take out one of the coalition's Atoms.
+  if (body.text === '') return false;
   const motion = openEdit(draft, body, author, at);
   if (motion === null) return false;
   const seats = coalition.seats.map((s) => s.key);
@@ -883,7 +970,9 @@ function applyProposal(
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  return openEdit(draft, body, author, at) !== null;
+  return isAddProposal(body)
+    ? applyAdd(draft, body, author, at)
+    : openEdit(draft, body, author, at) !== null;
 }
 
 /**
@@ -970,6 +1059,16 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 }
 
 /**
+ * Whether a version's text fits its Proposal: a steward, rules or dissolve
+ * Proposal has no text, so it takes none (#102, #117, #108), and only an
+ * edit's version may be `""`, a removal; an add's needs text (#75).
+ */
+function versionTextFits(proposal: OpenProposal, text: string): boolean {
+  const { kind } = proposal.target;
+  return kind === 'edit' || (kind === 'add' && text !== '');
+}
+
+/**
  * Keeps a Proposal's Discord thread (#123) when its author may record it at
  * its receipt (chatPosts.ts): a member who isn't suspended and made the
  * Proposal's winning `open` claim, the bot on in effect, and no thread kept
@@ -985,11 +1084,13 @@ function applyChatThread(draft: Draft, body: ChatThreadBody, author: string, at:
 
 /**
  * Keeps a Co-Creator's Dispatch at its receipt (#112), when its author may
- * send it now and it fits (dispatches.ts). A Dispatch with no `doc` points to
- * no Document.
+ * send it now and it fits (dispatches.ts). Any `doc` must name a Document as
+ * the Dispatch finds it, after every pass final by then (#75). A Dispatch
+ * with no `doc` points to no Document.
  */
 function applyDispatch(draft: Draft, body: DispatchBody, author: string, at: Receipt): boolean {
-  if (!maySendDispatch(draft, author, body)) return false;
+  const state = { ...draft, atoms: documentAt(draft, at.received) };
+  if (!maySendDispatch(state, author, body)) return false;
   const { title, text, doc = null } = body;
   draft.dispatches.push({ id: at.id, by: author, title, text, doc, received: at.received });
   return true;
@@ -1002,8 +1103,7 @@ function applyDispatch(draft: Draft, body: DispatchBody, author: string, at: Rec
 function applyVersion(draft: Draft, body: VersionBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal === undefined || !isOpenAt(proposal, at.received)) return false;
-  // A steward, rules or dissolve Proposal has no text, so it takes no versions (#102, #117, #108).
-  if (proposal.target.kind !== 'edit') return false;
+  if (!versionTextFits(proposal, body.text)) return false;
   if (!can(draft, author, 'propose') || optionFor(proposal) !== 'add-version') return false;
   proposal.versions.push({ id: at.id, author, text: body.text });
   return true;
@@ -1345,14 +1445,6 @@ function settle(
   return { ...proposal, final, outcome };
 }
 
-/** The `[atom, text]` an edit sets: its winning version's text once its pass is final, else none. */
-function finalUpdate(proposal: Proposal): [string, string][] {
-  if (proposal.target.kind !== 'edit') return [];
-  if (!proposal.final || proposal.outcome.kind !== 'pass') return [];
-  const winner = proposal.outcome.version;
-  return proposal.versions.filter((v) => v.id === winner).map((v) => [proposal.atom, v.text]);
-}
-
 /** When a closed Proposal closed: early, or at its deadline, in relay minutes. */
 export function closeTime(proposal: Pick<Proposal, 'closedAt' | 'deadline'>): number {
   return proposal.closedAt ?? proposal.deadline;
@@ -1415,13 +1507,55 @@ function advanceOptIns(draft: Draft): void {
   }
 }
 
+/** The winning version's text once a Proposal's pass is final, else null. */
+function passedText(proposal: Proposal): string | null {
+  if (!proposal.final || proposal.outcome.kind !== 'pass') return null;
+  const winner = proposal.outcome.version;
+  return proposal.versions.find((v) => v.id === winner)?.text ?? null;
+}
+
+/** `atoms` with `atom` right after the Atom `after`, first for null, or last when `after` is gone. */
+function insertAfter(atoms: readonly Atom[], after: string | null, atom: Atom): readonly Atom[] {
+  if (after === null) return [atom, ...atoms];
+  const index = atoms.findIndex((a) => a.id === after);
+  if (index === -1) return [...atoms, atom];
+  return [...atoms.slice(0, index + 1), atom, ...atoms.slice(index + 1)];
+}
+
 /**
- * The Document a Proposal changes (#112): its Atom's, for an edit. A steward,
- * rules or dissolve Proposal's `atom` is `""`, which names no Atom, so it
+ * The Atoms after one Proposal's pass, or as they were when it hasn't passed
+ * or changes no Atom (a steward or rules Proposal, #102, #117): an edit sets
+ * its Atom's text or, with `""`, removes it; an add puts its Atom after its
+ * anchor (#75).
+ */
+function applyPass(
+  atoms: readonly Atom[],
+  proposal: Proposal,
+  documentId: string,
+): readonly Atom[] {
+  const text = passedText(proposal);
+  const { target } = proposal;
+  if (text === null) return atoms;
+  if (target.kind === 'add') {
+    return insertAfter(atoms, target.after, { id: proposal.id, documentId, text });
+  }
+  if (target.kind !== 'edit') return atoms;
+  if (text === '') return atoms.filter((a) => a.id !== proposal.atom);
+  return atoms.map((a) => (a.id === proposal.atom ? { ...a, text } : a));
+}
+
+/**
+ * The Document a Proposal changes (#112): its Atom's, for an edit or a
+ * removal, and the one Document an add's new Atom joins (#75), as
+ * {@link applyPasses} gives it. An Atom that genesis didn't found came from
+ * an add, so it's in that Document too. A steward, rules or dissolve Proposal
  * changes none.
  */
 function documentOf(draft: Draft, proposal: OpenProposal): string | null {
-  return draft.atoms.find((atom) => atom.id === proposal.atom)?.documentId ?? null;
+  const { kind } = proposal.target;
+  if (kind !== 'edit' && kind !== 'add') return null;
+  const founded = draft.founded.find((atom) => atom.id === proposal.atom);
+  return founded?.documentId ?? draft.group;
 }
 
 /**
@@ -1448,16 +1582,19 @@ function advanceDispatches(draft: Draft): void {
   }
 }
 
-/** Applies final passes to the Atoms in order of close time, then the Proposals' relay order. */
-function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): readonly Atom[] {
+/**
+ * Applies final passes to the founded Atoms in order of close time, then the
+ * Proposals' relay order. When two adds share an anchor, the one applied later
+ * ends up directly after it. A new Atom joins the one Document, `documentId`.
+ */
+function applyPasses(
+  founded: readonly Atom[],
+  proposals: readonly Proposal[],
+  documentId: string | null,
+): readonly Atom[] {
   // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
   const byClose = [...proposals].sort((a, b) => closeTime(a) - closeTime(b));
-  // A later entry for the same Atom replaces an earlier one, so the last pass to close wins.
-  const texts = new Map(byClose.flatMap(finalUpdate));
-  return atoms.map((atom) => {
-    const text = texts.get(atom.id);
-    return text === undefined ? atom : { ...atom, text };
-  });
+  return byClose.reduce((atoms, p) => applyPass(atoms, p, documentId ?? ''), founded);
 }
 
 /**
@@ -1495,7 +1632,8 @@ export function fold(
     title: '',
     members: [],
     former: [],
-    atoms: [],
+    founded: [],
+    document: { closed: '', atoms: [] },
     proposals: [],
     at: 0,
     stewards: EMPTY_SEATS,
@@ -1528,7 +1666,7 @@ export function fold(
   advanceOptIns(draft);
   advanceDispatches(draft);
   const proposals = draft.proposals.map((p) => settle(p, draft, now));
-  const atoms = applyPasses(draft.atoms, proposals);
+  const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
   const { narrowings, vouches, chatPosts, chatThreads, dispatches, epoch, rotations, rotationDue } =
     draft;
