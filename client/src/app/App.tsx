@@ -26,6 +26,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
 import { type NotifyGroup, Settings } from '../screens/Settings';
+import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
@@ -46,6 +47,7 @@ import {
   makeInvite,
 } from './actions';
 import { makeBackup, restoreBackup, saveBackup } from './backup';
+import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
 import { HeldShareCard } from './HeldShares';
 import type { Scores } from './Ballot';
@@ -66,7 +68,15 @@ import {
   type VersionValues,
   vouch,
 } from './proposals';
-import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
+import {
+  type BareRoute,
+  type GroupRoute,
+  isBare,
+  navigate,
+  replaceRoute,
+  type Route,
+  useRoute,
+} from './router';
 import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
@@ -187,13 +197,20 @@ interface PersonalDocumentScreenProps {
   readonly id: string;
 }
 
-/** One personal Document (#93); deleting it goes back to Personal in its place. */
+/** One personal Document (#93), shareable by link (#105); deleting it goes back to Personal in its place. */
 function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
   const onDeleted = useCallback(() => {
     replaceRoute({ name: 'personal' });
   }, []);
+  const sharing = useMemo(() => personalSharing(services), [services]);
   return (
-    <PersonalDocument id={id} documents={services.store} now={services.now} onDeleted={onDeleted} />
+    <PersonalDocument
+      id={id}
+      documents={services.store}
+      now={services.now}
+      onDeleted={onDeleted}
+      sharing={sharing}
+    />
   );
 }
 
@@ -639,6 +656,28 @@ interface ScreenProps {
   readonly guide: GuideOffer;
 }
 
+interface BareScreenProps {
+  readonly route: BareRoute;
+  readonly services: AppServices;
+  readonly guide: GuideOffer;
+}
+
+/** A page that takes no argument: Create group, Settings, either side of linking, or the recovery picker. */
+function BareScreen({ route, services, guide }: BareScreenProps) {
+  switch (route.name) {
+    case 'create':
+      return <CreateScreen services={services} offerGuide={guide.offer} />;
+    case 'settings':
+      return <SettingsScreen services={services} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
+    case 'recovery':
+      return <RecoveryScreen services={services} />;
+  }
+}
+
 function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: ScreenProps) {
   const releaseSeed = useCallback(() => {
     holdSeed(null);
@@ -650,26 +689,20 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
+  if (isBare(route)) return <BareScreen route={route} services={services} guide={guide} />;
   switch (route.name) {
     case 'start':
       return (
         <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
       );
-    case 'create':
-      return <CreateScreen services={services} offerGuide={guide.offer} />;
-    case 'settings':
-      return <SettingsScreen services={services} />;
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
-    case 'linkNew':
-      return <LinkNewScreen services={services} />;
-    case 'linkThis':
-      return <LinkThisScreen services={services} />;
-    case 'recovery':
-      return <RecoveryScreen services={services} />;
+    case 'shared':
+      // Root shows a share link's page before first run; App shows it too, on the same relay.
+      return <SharedPage payload={route.payload} reader={services} />;
     case 'join':
       return (
         <JoinScreen

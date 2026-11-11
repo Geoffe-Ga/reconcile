@@ -5,7 +5,9 @@
  * invite's seed in `#join/{seed}` stays on the device. The Join screen
  * replaces that entry with `#/join` once it has read the seed. The tracer's
  * `#/join/{payload}` form still reads as Join, so an old link says plainly
- * that it no longer works.
+ * that it no longer works. A share link's `#share/{seed}.{publicKey}` (#105)
+ * reads as the shared page whatever follows it, and stays in the address
+ * bar, so a reload reads it again; the page reads a damaged one as not shared.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -28,6 +30,8 @@ export type Route =
   /** Choose recovery contacts, or choose again (#109). */
   | { readonly name: 'recovery' }
   | { readonly name: 'join'; readonly payload: string | null }
+  /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
+  | { readonly name: 'shared'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
@@ -138,13 +142,30 @@ const INVITE_PREFIX = '#join/';
  * (#109). A linking code never travels in a route: it's shown, scanned or
  * pasted, and held only in memory. Nor does a recovery contact.
  */
-const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
-  ['create', { name: 'create' }],
-  ['settings', { name: 'settings' }],
-  ['link-new', { name: 'linkNew' }],
-  ['link-this', { name: 'linkThis' }],
-  ['recovery', { name: 'recovery' }],
+/** A page that takes no argument. */
+export type BareRoute = Extract<
+  Route,
+  { readonly name: 'create' | 'settings' | 'linkNew' | 'linkThis' | 'recovery' }
+>;
+
+/** Each page that takes no argument, and the path it writes after `#/`. */
+const BARE_PATHS: ReadonlyMap<BareRoute['name'], string> = new Map([
+  ['create', 'create'],
+  ['settings', 'settings'],
+  ['linkNew', 'link-new'],
+  ['linkThis', 'link-this'],
+  ['recovery', 'recovery'],
 ]);
+
+/** Each page that takes no argument, by its path after `#/`. */
+const PAGES: ReadonlyMap<string, Route> = new Map(
+  [...BARE_PATHS].map(([name, path]): [string, Route] => [path, { name }]),
+);
+
+/** Whether `route` is a page that takes no argument. */
+export function isBare(route: Route): route is BareRoute {
+  return [...BARE_PATHS.keys()].some((name) => name === route.name);
+}
 
 /** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
 const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
@@ -153,8 +174,13 @@ const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map(
   ['me', personalRoute],
 ]);
 
+/** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
+const SHARE_PREFIX = '#share/';
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
+  if (hash.startsWith(SHARE_PREFIX))
+    return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
@@ -208,25 +234,18 @@ function groupPath(route: GroupRoute): string {
 
 /** The `href` of a route, starting with `#`. */
 export function routeHref(route: Route): string {
+  if (isBare(route)) return `#/${BARE_PATHS.get(route.name) ?? ''}`;
   switch (route.name) {
     case 'start':
       return '#/';
-    case 'create':
-      return '#/create';
-    case 'settings':
-      return '#/settings';
     case 'personal':
       return '#/me';
     case 'personalDocument':
       return `#/me/${route.id}`;
-    case 'linkNew':
-      return '#/link-new';
-    case 'linkThis':
-      return '#/link-this';
-    case 'recovery':
-      return '#/recovery';
     case 'join':
       return joinHref(route.payload);
+    case 'shared':
+      return `${SHARE_PREFIX}${route.payload}`;
     default:
       return `#/g/${route.groupId}${groupPath(route)}`;
   }

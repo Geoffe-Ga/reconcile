@@ -15,8 +15,10 @@ import { createRoot } from 'react-dom/client';
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
 import { botNotice } from './app/chatMessages';
 import { Root } from './app/Root';
+import { parseRoute } from './app/router';
 import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
+import { SharedRoot } from './app/SharedRoot';
 import { xchachaSeal } from './crypto/seal';
 import { postWebhook } from './net/discord';
 import { createPushRelay } from './net/push';
@@ -33,6 +35,7 @@ import { eraseDevice } from './store/erase';
 import { createPush } from './store/push';
 import { afterSyncPass } from './store/recovery';
 import { createSync } from './store/sync';
+import { keepSharesAlive } from './share/shareLink';
 
 const root = document.getElementById('root');
 if (root === null) {
@@ -51,7 +54,10 @@ if (root === null) {
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
  * key (#97), and any backup id an earlier choice of recovery contacts
- * retired is overwritten (#109).
+ * retired is overwritten (#109). Each launch also posts again any shared
+ * personal Document whose link is due a fresh copy or has an edit waiting
+ * (#105). That runs beside the sync loop, not in its pass: a share has its
+ * own mailbox and keys, so no group's key change or freeze touches it.
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
@@ -67,6 +73,8 @@ async function start(container: HTMLElement): Promise<void> {
   const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, afterPass });
   closeWhenVisible(port, document);
   sync.start();
+  // A share whose post fails stays pending, and the next launch tries again.
+  void keepSharesAlive({ store, relay, seal: xchachaSeal, now }).catch(() => undefined);
   const services = {
     store,
     relay,
@@ -89,10 +97,29 @@ async function start(container: HTMLElement): Promise<void> {
   );
 }
 
-void start(root);
+/**
+ * A share link opened fresh (#105) gets its page alone: no store, sync, keys
+ * or service worker, so a reader's browser keeps nothing of Reconcile's.
+ */
+function startShared(container: HTMLElement): void {
+  const reader = { relay: createRelay(), seal: xchachaSeal };
+  const reload = () => {
+    window.location.reload();
+  };
+  createRoot(container).render(
+    <StrictMode>
+      <SharedRoot reader={reader} reload={reload} />
+    </StrictMode>,
+  );
+}
 
-registerServiceWorker({
-  production: import.meta.env.PROD,
-  container: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
-  afterLoad,
-});
+if (parseRoute(window.location.hash).name === 'shared') {
+  startShared(root);
+} else {
+  void start(root);
+  registerServiceWorker({
+    production: import.meta.env.PROD,
+    container: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+    afterLoad,
+  });
+}
