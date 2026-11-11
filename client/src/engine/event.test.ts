@@ -13,7 +13,9 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  isCoalitionGenesis,
   isDissolveProposal,
+  isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -985,5 +987,151 @@ describe('encryption keys and key changes (#98)', () => {
     ['an empty wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: '' } }],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
+  });
+});
+
+describe('coalitions (#100)', () => {
+  /** 32-byte values in base64url, as seat keys, secrets and inner are spelled. */
+  const KEY = base64url(new Uint8Array(32).fill(9));
+  const SECRET = base64url(new Uint8Array(32).fill(3));
+  const INNER = base64url(new Uint8Array(32).fill(4));
+  const SEAT = base64url(new Uint8Array(32).fill(5));
+  const PROOF = base64url(new Uint8Array(64).fill(6));
+  const SEATS = [
+    { name: 'Riverside', key: KEY },
+    { name: 'Hillside', key: SECRET },
+  ];
+  const COALITION = { kind: 'coalition', name: 'C', title: 'T', atoms: ['One.'], seats: SEATS };
+  const RECONCILE = {
+    kind: 'reconcile',
+    secret: SECRET,
+    inner: INNER,
+    seat: SEAT,
+    name: 'C',
+    title: 'T',
+    atoms: ['One.'],
+  };
+
+  it('reads a coalition genesis as its seats and a group genesis body, dropping founder and kx', () => {
+    const body = { ...COALITION, founder: 'Nobody', kx: KEY, rules: { vouches: 2 }, chat: 'x' };
+    const parsed = parseEvent(json(envelope('genesis', body, { group: '' })));
+    expect(parsed?.event.body).toEqual({ ...COALITION, rules: { vouches: 2 }, chat: 'x' });
+    const genesis = parsed?.event.type === 'genesis' ? parsed.event.body : null;
+    expect(genesis !== null && isCoalitionGenesis(genesis)).toBe(true);
+    const group = parseEvent(
+      json(envelope('genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] })),
+    );
+    const founded = group?.event.type === 'genesis' ? group.event.body : null;
+    expect(founded !== null && isCoalitionGenesis(founded)).toBe(false);
+  });
+
+  it('drops anything but a seat’s name and key', () => {
+    const seats = [{ name: 'Riverside', key: KEY, secret: SEAT }, SEATS[1]];
+    const parsed = parseEvent(json(envelope('genesis', { ...COALITION, seats })));
+    expect(parsed?.event.body).toEqual(COALITION);
+  });
+
+  it.each([
+    ['without seats', { ...COALITION, seats: undefined }],
+    ['whose seats are no list', { ...COALITION, seats: { a: SEATS[0] } }],
+    ['with a seat that isn’t an object', { ...COALITION, seats: [KEY, SEATS[1]] }],
+    ['with a seat without a name', { ...COALITION, seats: [{ key: KEY }, SEATS[1]] }],
+    ['with a seat whose key is short', { ...COALITION, seats: [{ name: 'R', key: 'abc' }] }],
+    [
+      'with a seat whose key isn’t canonical',
+      { ...COALITION, seats: [{ name: 'R', key: `${KEY.slice(0, 42)}B` }] },
+    ],
+    ['without a title', { ...COALITION, title: undefined }],
+    ['without atoms', { ...COALITION, atoms: undefined }],
+    ['without a name', { ...COALITION, name: undefined }],
+    ['of another kind', { ...COALITION, kind: 'federation' }],
+  ])('refuses a coalition genesis %s', (_label, body) => {
+    expect(parseEvent(json(envelope('genesis', body)))).toBeNull();
+  });
+
+  it('keeps a join’s well-shaped seat and proof, and drops any other, keeping the join', () => {
+    const parsed = parseEvent(json(envelope('join', { name: 'Kim', seat: KEY, proof: PROOF })));
+    expect(parsed?.event.body).toEqual({ name: 'Kim', seat: KEY, proof: PROOF });
+    for (const [seat, proof] of [
+      [KEY.slice(1), PROOF],
+      [KEY, PROOF.slice(1)],
+      [KEY, `${PROOF.slice(0, 85)}+`],
+      [7, PROOF],
+      [KEY, null],
+    ]) {
+      const join = parseEvent(json(envelope('join', { name: 'Kim', seat, proof })));
+      expect(join?.event.body, JSON.stringify([seat, proof])).toEqual({
+        name: 'Kim',
+        ...(typeof seat === 'string' && seat === KEY ? { seat } : {}),
+        ...(typeof proof === 'string' && proof === PROOF ? { proof } : {}),
+      });
+    }
+  });
+
+  it('reads a reconcile Proposal, keeping its window and dropping text and unknown keys', () => {
+    const body = {
+      target: { ...RECONCILE, extra: 1 },
+      title: 'Join C',
+      why: 'W',
+      text: 'x',
+      window: 5,
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({ target: RECONCILE, title: 'Join C', why: 'W', window: 5 });
+    const proposal = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+    expect(proposal !== null && isReconcileProposal(proposal)).toBe(true);
+    const edit = parseEvent(json(envelope('proposal', PROPOSAL.body)));
+    const steward = parseEvent(
+      json(
+        envelope('proposal', {
+          target: { kind: 'steward', seat: 1, member: ANA },
+          title: 'T',
+          why: 'W',
+        }),
+      ),
+    );
+    for (const other of [edit, steward]) {
+      const body = other?.event.type === 'proposal' ? other.event.body : null;
+      expect(body !== null && isReconcileProposal(body)).toBe(false);
+    }
+  });
+
+  it.each([
+    ['a short secret', { ...RECONCILE, secret: SECRET.slice(1) }],
+    ['no inner', { ...RECONCILE, inner: undefined }],
+    ['a numeric seat', { ...RECONCILE, seat: 5 }],
+    ['a seat that isn’t canonical', { ...RECONCILE, seat: `${SEAT.slice(0, 42)}B` }],
+    ['no name', { ...RECONCILE, name: undefined }],
+    ['a numeric title', { ...RECONCILE, title: 1 }],
+    ['atoms that aren’t strings', { ...RECONCILE, atoms: [1] }],
+  ])('refuses a reconcile Proposal with %s', (_label, target) => {
+    const body = { target, title: 'Join C', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  it('reads a group-result with exactly its motion, seat and result', () => {
+    for (const result of ['pass', 'fail']) {
+      const body = { motion: 'm1', seat: KEY, result };
+      expect(parseEvent(json(envelope('group-result', body)))?.event).toEqual({
+        v: 1,
+        type: 'group-result',
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body,
+      });
+    }
+  });
+
+  it.each([
+    ['an extra key such as scores', { motion: 'm1', seat: KEY, result: 'pass', scores: {} }],
+    ['an extra key such as note', { motion: 'm1', seat: KEY, result: 'fail', note: 'n' }],
+    ['a result that is neither pass nor fail', { motion: 'm1', seat: KEY, result: 'lapse' }],
+    ['no motion', { seat: KEY, result: 'pass' }],
+    ['a numeric motion', { motion: 1, seat: KEY, result: 'pass' }],
+    ['a short seat', { motion: 'm1', seat: KEY.slice(1), result: 'pass' }],
+    ['no result', { motion: 'm1', seat: KEY }],
+  ])('refuses a group-result with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('group-result', body)))).toBeNull();
   });
 });
