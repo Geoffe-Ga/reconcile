@@ -7,14 +7,16 @@
  * with bytes in unpadded base64url:
  *
  * ```json
- * {"format": 1, "groups": [{"groupId": "…", "secret": "…", "signingKey": "…", "kxKey": "…"}]}
+ * {"format": 1, "groups": [{"groupId": "…", "secret": "…", "signingKey": "…", "kxKey": "…"}], "backupKey": "…"}
  * ```
  *
  * Today that is each group's secret (its current epoch's, #98), signing key
- * and, once it has one, its X25519 encryption key (#98). Later secrets (#97's relay backup key, #105's share seeds and keys,
- * the recovery shares this device holds for others, #109) join them here
- * under a new format number, so the vault keeps covering every secret.
- * Each plaintext is zeroed once sealed or read.
+ * and, once it has one, its X25519 encryption key (#98), and the device's
+ * relay backup key (#97) once it keeps one. #97 landed before the vault
+ * shipped, so format 1 holds its key, as an optional field. Later secrets
+ * (#105's share seeds and keys, the recovery shares this device holds for
+ * others, #109) join them here under a new format number, so the vault keeps
+ * covering every secret. Each plaintext is zeroed once sealed or read.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { openVault, sealVault } from '../crypto/keyVault';
@@ -35,6 +37,14 @@ export interface GroupKeys {
   readonly kxKey?: Uint8Array;
 }
 
+/** Everything the vault holds: each group's keys, and the device's relay backup key (#97). */
+export interface VaultKeys {
+  /** Each group's keys, by its id. */
+  readonly groups: Map<string, GroupKeys>;
+  /** The relay backup's 32-byte key, once the device keeps one. */
+  backupKey?: Uint8Array;
+}
+
 /** What the vault says in the clear: the passkey that opens it, and the salt it's asked with. */
 export interface VaultLock {
   readonly credentialId: Uint8Array;
@@ -48,20 +58,23 @@ export interface VaultRecord extends VaultLock {
   readonly sealed: Uint8Array;
 }
 
-/** A group's secret and signing key are 32 bytes each. */
+/** Every key the vault holds is 32 bytes. */
 const KEY_BYTES = 32;
 
 /** `keys` as the vault's plaintext. */
-export function encodeVaultKeys(keys: ReadonlyMap<string, GroupKeys>): Uint8Array<ArrayBuffer> {
-  const groups = [...keys].map(([groupId, { secret, signingKey, kxKey }]) => ({
+export function encodeVaultKeys({ groups, backupKey }: VaultKeys): Uint8Array<ArrayBuffer> {
+  const entries = [...groups].map(([groupId, { secret, signingKey, kxKey }]) => ({
     groupId,
     secret: base64url(secret),
     signingKey: base64url(signingKey),
     ...(kxKey === undefined ? {} : { kxKey: base64url(kxKey) }),
   }));
-  return Uint8Array.from(
-    new TextEncoder().encode(JSON.stringify({ format: VAULT_FORMAT, groups })),
-  );
+  const json = {
+    format: VAULT_FORMAT,
+    groups: entries,
+    ...(backupKey === undefined ? {} : { backupKey: base64url(backupKey) }),
+  };
+  return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
 
 /** Whether `value` is a plain JSON object. */
@@ -99,22 +112,28 @@ function parseJson(bytes: Uint8Array): unknown {
   }
 }
 
-/** The keys in a vault's plaintext, or null when anything in it doesn't check out. */
-export function decodeVaultKeys(bytes: Uint8Array): Map<string, GroupKeys> | null {
-  const json = parseJson(bytes);
-  if (!isObject(json) || json.format !== VAULT_FORMAT || !Array.isArray(json.groups)) return null;
-  const entries = json.groups.map(entryIn);
+/** Each group's keys in `value`, or null when it isn't a list of valid entries, each group once. */
+function groupsIn(value: unknown): Map<string, GroupKeys> | null {
+  if (!Array.isArray(value)) return null;
+  const entries = value.map(entryIn);
   if (entries.some((entry) => entry === null)) return null;
-  const keys = new Map(entries.filter((entry) => entry !== null));
-  return keys.size === entries.length ? keys : null;
+  const groups = new Map(entries.filter((entry) => entry !== null));
+  return groups.size === entries.length ? groups : null;
+}
+
+/** The keys in a vault's plaintext, or null when anything in it doesn't check out. */
+export function decodeVaultKeys(bytes: Uint8Array): VaultKeys | null {
+  const json = parseJson(bytes);
+  if (!isObject(json) || json.format !== VAULT_FORMAT) return null;
+  const groups = groupsIn(json.groups);
+  if (groups === null) return null;
+  if (!('backupKey' in json)) return { groups };
+  const backupKey = keyIn(json.backupKey);
+  return backupKey === null ? null : { groups, backupKey };
 }
 
 /** `vault` with `keys` sealed in it under `key`, under a fresh nonce. */
-export function resealKeys(
-  vault: VaultRecord,
-  key: Uint8Array,
-  keys: ReadonlyMap<string, GroupKeys>,
-): VaultRecord {
+export function resealKeys(vault: VaultRecord, key: Uint8Array, keys: VaultKeys): VaultRecord {
   const plaintext = encodeVaultKeys(keys);
   try {
     return { ...vault, sealed: sealVault(key, vault.credentialId, plaintext) };
@@ -131,11 +150,11 @@ export function newVault(lock: VaultLock, key: Uint8Array): VaultRecord {
     prfSalt: Uint8Array.from(lock.prfSalt),
     sealed: new Uint8Array(0),
   };
-  return resealKeys(empty, key, new Map());
+  return resealKeys(empty, key, { groups: new Map() });
 }
 
 /** The keys `vault` holds, opened under `key`, or null when it doesn't open or doesn't check out. */
-export function openKeys(vault: VaultRecord, key: Uint8Array): Map<string, GroupKeys> | null {
+export function openKeys(vault: VaultRecord, key: Uint8Array): VaultKeys | null {
   const plaintext = openVault(key, vault.credentialId, vault.sealed);
   if (plaintext === null) return null;
   try {

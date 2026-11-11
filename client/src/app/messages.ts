@@ -917,6 +917,9 @@ export const messages = {
     expired: 'This code has expired. Nothing was sent.',
     sendFailed: 'Your groups couldn’t be sent. Make a new code to try again.',
     again: 'Make a new code',
+    // A tab whose keys another tab locked with a passkey (#95) shows no code until it's unlocked.
+    locked:
+      'Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it, then link a new device.',
     backToSettings: 'Settings',
     // The new device.
     thisPageTitle: 'Link to your other device',

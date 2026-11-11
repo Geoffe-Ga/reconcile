@@ -35,7 +35,10 @@ import type { Sync } from '../store/sync';
 
 /** What passkey setup and unlock run on. */
 export interface PasskeyDeps {
-  readonly store: Pick<Store, 'readVault' | 'sealKeys' | 'unlock' | 'replaceGroups'>;
+  readonly store: Pick<
+    Store,
+    'readVault' | 'sealKeys' | 'unlock' | 'replaceGroups' | 'adoptRelayBackupKey'
+  >;
   /** The browser's WebAuthn, or undefined where it has none. */
   readonly webauthn: WebAuthn | undefined;
   /** What the browser reports, for `prfTrusted`. */

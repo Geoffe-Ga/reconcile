@@ -196,10 +196,14 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
   );
 }
 
-/** Link a new device (#96), on the existing device: a fresh code each time it opens. */
+/**
+ * Link a new device (#96), on the existing device: a fresh code each time it
+ * opens, once this session holds the unlocked keys (#95).
+ */
 function LinkNewScreen({ services }: { readonly services: AppServices }) {
+  const ready = useCallback(() => services.store.requireUnlocked(), [services]);
   const start = useCallback(() => offerLink(services), [services]);
-  return <LinkNewDevice start={start} copyText={services.copyText} />;
+  return <LinkNewDevice ready={ready} start={start} copyText={services.copyText} />;
 }
 
 /** Link to my other device (#96), on the new device: syncs once the groups are in. */

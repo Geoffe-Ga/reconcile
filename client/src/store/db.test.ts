@@ -722,6 +722,60 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
     store.close();
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
+  it('upgrades version 5 as #97 left it, adding only the vault (#95), and keeps its groups, Documents and relay backup', async () => {
+    const push = { endpoint: 'https://push.example/1', mailboxes: ['m'], instance: 'i', at: 1 };
+    const rotated = storedGroup({
+      groupId: 'rotated',
+      kxKey: new Uint8Array(32).fill(4),
+      epoch: 1,
+      log: [
+        { seq: 1, received: 9, bytes: utf8('{"g":1}') },
+        { seq: 2, received: 10, bytes: utf8('{"p":1}'), epoch: 1 },
+      ],
+      backup: 'saved',
+      push,
+    });
+    const backup = {
+      key: new Uint8Array(32).fill(8),
+      digest: 'ab12',
+      checkedDay: 20_400,
+      uploadedAt: 1_762_650_000_000,
+      tooLarge: false,
+    };
+    const old = await openDB('reconcile', 5, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+        database.createObjectStore('device');
+      },
+    });
+    await old.put('groups', rotated);
+    await old.put('groups', storedGroup());
+    await old.put('personal', statement);
+    await old.put('device', backup, 'relay-backup');
+    old.close();
+
+    const store = await openStore();
+
+    const plain = (held: Group | undefined) => ({
+      ...comparable(held),
+      kxKey: Array.from(held?.kxKey ?? []),
+    });
+    expect((await store.listGroups()).map(plain)).toEqual([storedGroup(), rotated].map(plain));
+    expect(await store.listPersonal()).toEqual([statement]);
+    const state = await store.getRelayBackup();
+    expect(state === undefined ? undefined : { ...state, key: local(state.key) }).toEqual({
+      ...backup,
+      key: local(backup.key),
+    });
+    expect(await store.readVault()).toBeNull();
+    // The upgraded store still writes: a new group, and the relay backup's next day.
+    await store.addGroup({ ...group, groupId: 'group-2' });
+    expect(await store.updateRelayBackup(backup.key, { checkedDay: 20_401 })).toBe(true);
+    expect((await store.getRelayBackup())?.checkedDay).toBe(20_401);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
 });
 
 describe('markArchived', () => {

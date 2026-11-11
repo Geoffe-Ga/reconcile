@@ -12,9 +12,17 @@ import { concat, local, text, utf8 } from '../test/bytes';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { findCanaries, keyCanaries } from '../test/scan';
 import { scanDb } from '../test/scanDb';
-import { type BackedUpGroup, DATABASE_NAME, type Group, type NewGroup, openStore } from './db';
+import {
+  type BackedUpGroup,
+  DATABASE_NAME,
+  type Group,
+  type NewGroup,
+  openStore,
+  RELAY_BACKUP_CHANGED,
+  type RelayBackupState,
+  VaultLocked,
+} from './db';
 import { openKeys, type VaultLock, type VaultRecord } from './vault';
-import { VaultLocked } from './db';
 
 freshIndexedDBPerTest();
 
@@ -58,6 +66,35 @@ async function rawVault(): Promise<VaultRecord | undefined> {
   } finally {
     db.close();
   }
+}
+
+/** The relay backup's record (#97) as IndexedDB holds it, read with no store in between. */
+async function rawRelayBackup(): Promise<Record<string, unknown> | undefined> {
+  const db = await openDB(DATABASE_NAME);
+  try {
+    return (await db.get('device', 'relay-backup')) as Record<string, unknown> | undefined;
+  } finally {
+    db.close();
+  }
+}
+
+/** The relay backup's key in the vault, opened under {@link KEY}, in the test's realm. */
+async function vaultBackupKey(): Promise<Uint8Array | undefined> {
+  const vault = await rawVault();
+  if (vault === undefined) throw new Error('Expected a vault.');
+  const opened = openKeys(vault, KEY);
+  if (opened === null) throw new Error('Expected the vault to open.');
+  return opened.backupKey === undefined ? undefined : local(opened.backupKey);
+}
+
+/** The relay backup's state with its key in the test's realm, so `toEqual` can compare it. */
+function backupOf(state: RelayBackupState | undefined) {
+  return state === undefined ? undefined : { ...state, key: local(state.key) };
+}
+
+/** A fresh relay backup state for `key`, as `backupOf` spells it. */
+function freshBackup(key: Uint8Array) {
+  return { key: local(key), digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
 }
 
 /** A group's keys and name, in the test's realm, so `toEqual` can compare them. */
@@ -138,7 +175,7 @@ describe('sealKeys', () => {
     const vault = await rawVault();
     if (vault === undefined) throw new Error('Expected a vault.');
     const opened = openKeys(vault, KEY);
-    expect([...(opened?.keys() ?? [])]).toEqual([ANA.groupId, BEN.groupId]);
+    expect([...(opened?.groups.keys() ?? [])]).toEqual([ANA.groupId, BEN.groupId]);
     expect(openKeys(vault, WRONG_KEY)).toBeNull();
   });
 
@@ -373,7 +410,7 @@ describe('every later write of key material, with a vault', () => {
 
     const vault = await rawVault();
     if (vault === undefined) throw new Error('Expected a vault.');
-    expect([...(openKeys(vault, KEY)?.keys() ?? [])]).toEqual([BEN.groupId]);
+    expect([...(openKeys(vault, KEY)?.groups.keys() ?? [])]).toEqual([BEN.groupId]);
     expect((await store.listGroups()).map((group) => group.groupId)).toEqual([BEN.groupId]);
   });
 
@@ -389,7 +426,7 @@ describe('every later write of key material, with a vault', () => {
     expect(groups.map(keysOf)).toEqual([keysOf(newerAna), keysOf(BEN), keysOf(cal)]);
     const vault = await rawVault();
     if (vault === undefined) throw new Error('Expected a vault.');
-    expect([...(openKeys(vault, KEY)?.keys() ?? [])].sort()).toEqual(
+    expect([...(openKeys(vault, KEY)?.groups.keys() ?? [])].sort()).toEqual(
       [ANA.groupId, BEN.groupId, cal.groupId].sort(),
     );
   });
@@ -451,6 +488,116 @@ describe('every later write of key material, with a vault', () => {
   });
 });
 
+describe('#97’s relay backup key under the vault', () => {
+  const BACKUP_KEY = new Uint8Array(32).fill(0xb7);
+  const NEW_BACKUP_KEY = new Uint8Array(32).fill(0xb8);
+  const backupCanaries = [
+    ...keyCanaries('backup key', BACKUP_KEY),
+    ...keyCanaries('new backup key', NEW_BACKUP_KEY),
+  ];
+
+  it('moves the backup key into the vault when the device seals its keys, keeping the rest of its state', async () => {
+    const store = await openStore();
+    await store.addGroup(ANA);
+    await store.setRelayBackupKey(BACKUP_KEY);
+    await store.updateRelayBackup(BACKUP_KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9 });
+
+    await store.sealKeys(LOCK, KEY);
+
+    expect(findCanaries(await rawDatabase(), [...secretsOf(ANA), ...backupCanaries])).toEqual([]);
+    expect(Object.keys((await rawRelayBackup()) ?? {}).sort()).toEqual([
+      'checkedDay',
+      'digest',
+      'tooLarge',
+      'uploadedAt',
+    ]);
+    expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));
+    expect(backupOf(await store.getRelayBackup())).toEqual({
+      ...freshBackup(BACKUP_KEY),
+      digest: 'd1',
+      checkedDay: 7,
+      uploadedAt: 9,
+    });
+  });
+
+  it('seals every later backup key into the vault, adopted, updated or replaced, and never writes it plain', async () => {
+    const store = await sealedDevice();
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    expect(await store.adoptRelayBackupKey(BACKUP_KEY)).toBe(true);
+    expect(await store.adoptRelayBackupKey(NEW_BACKUP_KEY)).toBe(false);
+    expect(await store.updateRelayBackup(NEW_BACKUP_KEY, { digest: 'other' })).toBe(false);
+    expect(await store.updateRelayBackup(BACKUP_KEY, { digest: 'd1', uploadedAt: 9 })).toBe(true);
+    expect(findCanaries(await rawDatabase(), backupCanaries)).toEqual([]);
+    expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));
+    const replaced = await store.setRelayBackupKey(NEW_BACKUP_KEY);
+
+    expect(backupOf(replaced)).toEqual({ ...freshBackup(BACKUP_KEY), digest: 'd1', uploadedAt: 9 });
+    expect(findCanaries(await rawDatabase(), [...secretsOf(ANA, BEN), ...backupCanaries])).toEqual(
+      [],
+    );
+    expect(await vaultBackupKey()).toEqual(local(NEW_BACKUP_KEY));
+    expect(backupOf(await store.getRelayBackup())).toEqual(freshBackup(NEW_BACKUP_KEY));
+    expect((await store.listGroups()).map(keysOf)).toEqual([keysOf(ANA), keysOf(BEN)]);
+    expect(heard).toEqual([RELAY_BACKUP_CHANGED, RELAY_BACKUP_CHANGED, RELAY_BACKUP_CHANGED]);
+  });
+
+  it('keeps its own copy of a key it seals, so the caller can zero theirs', async () => {
+    const store = await sealedDevice();
+    const key = Uint8Array.from(BACKUP_KEY);
+
+    await store.setRelayBackupKey(key);
+    key.fill(0);
+
+    expect(backupOf(await store.getRelayBackup())).toEqual(freshBackup(BACKUP_KEY));
+  });
+
+  it('refuses to read or write the backup key while locked, writing nothing, and reads it once unlocked', async () => {
+    const sealed = await sealedDevice();
+    await sealed.setRelayBackupKey(BACKUP_KEY);
+    sealed.close();
+    const store = await openStore();
+    const before = await rawDatabase();
+
+    await expect(store.getRelayBackup()).rejects.toThrow(VaultLocked);
+    await expect(store.setRelayBackupKey(NEW_BACKUP_KEY)).rejects.toThrow(VaultLocked);
+    await expect(store.adoptRelayBackupKey(NEW_BACKUP_KEY)).rejects.toThrow(VaultLocked);
+    await expect(store.updateRelayBackup(BACKUP_KEY, { digest: 'd1' })).rejects.toThrow(
+      VaultLocked,
+    );
+
+    expect(local(await rawDatabase())).toEqual(local(before));
+    expect(await store.unlock(KEY)).toBe(true);
+    expect(backupOf(await store.getRelayBackup())).toEqual(freshBackup(BACKUP_KEY));
+  });
+
+  it('refuses while locked even on a device that keeps no backup key yet, so a lock never reads as no backup', async () => {
+    (await sealedDevice()).close();
+    const store = await openStore();
+    const before = await rawDatabase();
+
+    await expect(store.getRelayBackup()).rejects.toThrow(VaultLocked);
+    await expect(store.adoptRelayBackupKey(BACKUP_KEY)).rejects.toThrow(VaultLocked);
+
+    expect(local(await rawDatabase())).toEqual(local(before));
+  });
+
+  it('drops the relay backup’s state when a backup file replaces the vault, since its key went with it', async () => {
+    const sealed = await sealedDevice();
+    await sealed.setRelayBackupKey(BACKUP_KEY);
+    sealed.close();
+    const store = await openStore();
+
+    await store.replaceGroups([backedUp(newGroup('group-cal', 3), 1)]);
+
+    expect(await store.getRelayBackup()).toBeUndefined();
+    expect(await rawRelayBackup()).toBeUndefined();
+    expect(await store.adoptRelayBackupKey(NEW_BACKUP_KEY)).toBe(true);
+    expect(backupOf(await store.getRelayBackup())).toEqual(freshBackup(NEW_BACKUP_KEY));
+  });
+});
+
 describe('replaceGroups: a backup file in place of a vault that won’t open', () => {
   it('replaces every group and the vault with the file’s groups, kept plain, in one go', async () => {
     (await sealedDevice()).close();
@@ -480,6 +627,65 @@ describe('replaceGroups: a backup file in place of a vault that won’t open', (
 });
 
 describe('the database upgrade that adds the vault', () => {
+  it('keeps version 5’s groups, personal Documents and relay backup state (#97), and seals the backup key with the rest', async () => {
+    const backupKey = new Uint8Array(32).fill(0xb9);
+    const old = await openDB(DATABASE_NAME, 5, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+        database.createObjectStore('device');
+      },
+    });
+    const stored: Group = {
+      ...ANA,
+      kxKey: new Uint8Array(32).fill(0xc6),
+      log: [],
+      cursor: 3,
+      relayNow: 29_000_002,
+      instance: 'relay-1',
+      outbox: [],
+      lastSyncAt: 4,
+    };
+    const statement = {
+      id: 'personal-1',
+      title: 'Mine',
+      text: 'Kind.',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const state = {
+      key: backupKey,
+      digest: 'd5',
+      checkedDay: 20_000,
+      uploadedAt: 8,
+      tooLarge: false,
+    };
+    await old.put('groups', stored);
+    await old.put('personal', statement);
+    await old.put('device', state, 'relay-backup');
+    old.close();
+
+    const store = await openStore();
+
+    expect(await store.readVault()).toBeNull();
+    expect(keysOf(await store.getGroup(ANA.groupId))).toEqual(keysOf(ANA));
+    expect(await store.listPersonal()).toEqual([statement]);
+    expect(backupOf(await store.getRelayBackup())).toEqual(backupOf(state));
+    await store.sealKeys(LOCK, KEY);
+    const canaries = [
+      ...secretsOf(ANA),
+      ...keyCanaries('kx key', stored.kxKey ?? new Uint8Array()),
+      ...keyCanaries('backup key', backupKey),
+    ];
+    expect(findCanaries(await rawDatabase(), canaries)).toEqual([]);
+    store.close();
+    const reopened = await openStore();
+    await reopened.unlock(KEY);
+    expect(keysOf(await reopened.getGroup(ANA.groupId))).toEqual(keysOf(ANA));
+    expect(backupOf(await reopened.getRelayBackup())).toEqual(backupOf(state));
+    expect(await reopened.listPersonal()).toEqual([statement]);
+  });
+
   it('keeps version 4’s groups and personal Documents', async () => {
     const old = await openDB(DATABASE_NAME, 4, {
       upgrade(database) {

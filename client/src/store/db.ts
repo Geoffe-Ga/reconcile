@@ -21,7 +21,8 @@
  * more is queued, claimed or sent for it, and its ballots and notes can be
  * cleared while its outcomes stay. The relay backup's key and state (#97) are
  * one record in a store of their own, in no group, so no group's record ever
- * holds the key.
+ * holds the key. Under a vault that record keeps its state, and the vault
+ * its key.
  *
  * Once the device locks its keys with a passkey (#95), every secret leaves
  * the group records for one sealed vault record (`./vault.ts`), and the
@@ -30,9 +31,11 @@
  * in memory for the session, opens the vault inside each read's transaction
  * and hands back whole groups, so nothing else in the app changes. Every
  * write of key material (Create group and Join, a backup's or a link's
- * import, a group leaving or removed) goes through one function, `keepKeys`,
- * which seals the keys into the vault when there is one and refuses while
- * it's locked, in the same transaction as the records it writes.
+ * import, a group leaving or removed, and the relay backup's key) goes
+ * through one function, `keepKeys`, which seals the keys into the vault when
+ * there is one and refuses while it's locked, in the same transaction as the
+ * records it writes. Every read of the relay backup's state opens the vault
+ * too, so a locked device neither reads nor writes its key.
  */
 
 import { openDB } from 'idb';
@@ -49,6 +52,7 @@ import {
   openKeys,
   resealKeys,
   VAULT_ID,
+  type VaultKeys,
   type VaultLock,
   type VaultRecord,
 } from './vault';
@@ -212,6 +216,12 @@ export type RestoredFrom = 'backup' | 'link';
  */
 type StoredGroup = Omit<Group, keyof GroupKeys> & Partial<GroupKeys>;
 
+/**
+ * The relay backup's state (#97) as its IndexedDB record holds it: without
+ * its key once the device has a vault (#95), which holds the key instead.
+ */
+type StoredRelayBackup = Omit<RelayBackupState, 'key'> & { readonly key?: Uint8Array };
+
 /** Thrown when key material is read or written while the vault is locked (#95). */
 export class VaultLocked extends Error {
   /** Say the keys are locked. */
@@ -313,7 +323,11 @@ export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
  */
 export const RELAY_BACKUP_CHANGED = 'relay-backup';
 
-/** The relay backup's one device-wide record (#97). */
+/**
+ * The relay backup's one device-wide record (#97). Its key is a secret like a
+ * group's (#95): with a vault, every call opens it, and each one fails with
+ * {@link VaultLocked}, reading and writing nothing, while it's locked.
+ */
 export interface RelayBackupStore {
   /** The relay backup's state, or undefined while the device keeps none. */
   getRelayBackup(): Promise<RelayBackupState | undefined>;
@@ -476,8 +490,9 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   readVault(): Promise<VaultLock | null>;
   /**
    * Seal every secret on the device under the vault `key`, for the passkey
-   * `lock`, and delete the plain copies, in one transaction (#95). From then
-   * on this session holds the key, and every later secret goes into the vault.
+   * `lock`, and delete the plain copies, in one transaction (#95): each
+   * group's keys and the relay backup's key (#97). From then on this session
+   * holds the key, and every later secret goes into the vault.
    *
    * @throws {Error} when the device already has a vault; nothing changes.
    */
@@ -491,9 +506,9 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   /**
    * Resolve when this session may read and hand on key material: the device
    * has no vault, or this session sealed or unlocked it (#95). Anything that
-   * hands keys anywhere calls it first: Save a backup today, and #96's Link
-   * a new device. Erase never does, so a device whose passkey is lost can
-   * still start over.
+   * hands keys anywhere calls it first: Save a backup, and Link a new device
+   * (#96) before it shows a code and again before it sends. Erase never
+   * does, so a device whose passkey is lost can still start over.
    *
    * @throws {VaultLocked} when the device has a vault this session hasn't opened.
    */
@@ -502,9 +517,10 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
    * Replace every group on the device and the vault with a backup file's
    * groups, in one transaction: Restore when the passkey no longer unlocks
    * the vault (#95). Each is kept as a restore keeps a new group, its keys in
-   * its record, since no vault is left to seal them in. The file's personal
-   * Documents, which hold no key, merge as {@link Store.restoreGroups} merges
-   * them.
+   * its record, since no vault is left to seal them in. The relay backup's
+   * state goes too (#97), since its key went with the vault. The file's
+   * personal Documents, which hold no key, merge as
+   * {@link Store.restoreGroups} merges them.
    */
   replaceGroups(
     groups: readonly BackedUpGroup[],
@@ -522,7 +538,7 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
   personal: { key: string; value: PersonalDocument };
-  device: { key: string; value: RelayBackupState };
+  device: { key: string; value: StoredRelayBackup };
   vault: { key: string; value: VaultRecord };
 }
 
@@ -547,8 +563,11 @@ const DEVICE = 'device';
 const RELAY_BACKUP = 'relay-backup';
 const VAULT = 'vault';
 
-/** The stores a key transaction spans: the records, the personal Documents and the vault. */
-type Stores = ('groups' | 'personal' | 'vault')[];
+/**
+ * The stores a key transaction spans: the records, the personal Documents,
+ * the relay backup's record and the vault.
+ */
+type Stores = ('groups' | 'personal' | 'device' | 'vault')[];
 
 /** A read-write transaction over those stores, the only kind that writes key material. */
 type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
@@ -798,7 +817,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await db.put(PERSONAL, document);
     },
     deletePersonal: (id) => db.delete(PERSONAL, id),
-    ...relayBackupStore(db, () => {
+    ...relayBackupStore(db, session, () => {
       notify(RELAY_BACKUP_CHANGED);
     }),
     resetCursor: (groupId, instance) =>
@@ -822,7 +841,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
           }
           await vaults.put(newVault(lock, key));
           const records = await tx.objectStore(GROUPS).getAll();
-          await keepKeys(tx, sealing, { put: records.map((record) => wholeGroup(record, null)) });
+          const backup = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+          await keepKeys(tx, sealing, {
+            put: records.map((record) => wholeGroup(record, null)),
+            ...(backup === undefined ? {} : { relayBackup: wholeBackup(backup, null) }),
+          });
         });
       } catch (error) {
         sealing.key?.fill(0);
@@ -842,14 +865,20 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
     },
     async replaceGroups(groups, personal = []) {
-      await writeKeys(db, async (tx) => {
+      const dropped = await writeKeys(db, async (tx) => {
         await tx.objectStore(GROUPS).clear();
         await tx.objectStore(VAULT).clear();
+        // The relay backup's key went with the vault, so its state goes too (#97).
+        const backups = tx.objectStore(DEVICE);
+        const held = (await backups.getKey(RELAY_BACKUP)) !== undefined;
+        await backups.delete(RELAY_BACKUP);
         await restoreInto(tx, session, { groups, personal, from: 'backup' });
+        return held;
       });
       session.key?.fill(0);
       session.key = null;
       for (const { groupId } of groups) notify(groupId);
+      if (dropped) notify(RELAY_BACKUP_CHANGED);
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -873,19 +902,32 @@ function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   group.lastSyncAt = pull.lastSyncAt;
 }
 
-/** The relay backup's record in `db`'s device store (#97), telling `changed` after each write. */
-function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayBackupStore {
-  /** Writes `next(held)` in one transaction, unless it's undefined; returns the state held before. */
+/**
+ * The relay backup's record in `db`'s device store (#97), telling `changed`
+ * after each write. Every read and write opens the vault in its transaction,
+ * and every write goes through `keepKeys`, so with a vault the key is sealed
+ * there and never written plain, and a locked session gets {@link VaultLocked}.
+ */
+function relayBackupStore(
+  db: IDBPDatabase<Schema>,
+  session: Session,
+  changed: () => void,
+): RelayBackupStore {
+  /**
+   * Writes `next(held)` in one key transaction, unless it's undefined;
+   * returns the state held before.
+   */
   const write = async (
     next: (held: RelayBackupState | undefined) => RelayBackupState | undefined,
   ): Promise<{ held: RelayBackupState | undefined; wrote: boolean }> => {
-    const tx = db.transaction(DEVICE, 'readwrite');
-    const held = await tx.store.get(RELAY_BACKUP);
-    const state = next(held);
-    if (state !== undefined) await tx.store.put(state, RELAY_BACKUP);
-    await tx.done;
-    if (state !== undefined) changed();
-    return { held, wrote: state !== undefined };
+    const result = await writeKeys(db, async (tx) => {
+      const held = await backupIn(tx, session);
+      const state = next(held);
+      if (state !== undefined) await keepKeys(tx, session, { relayBackup: state });
+      return { held, wrote: state !== undefined };
+    });
+    if (result.wrote) changed();
+    return result;
   };
   const fresh = (key: Uint8Array): RelayBackupState => ({
     key: Uint8Array.from(key),
@@ -895,7 +937,7 @@ function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayB
     tooLarge: false,
   });
   return {
-    getRelayBackup: () => db.get(DEVICE, RELAY_BACKUP),
+    getRelayBackup: () => backupIn(db.transaction([DEVICE, VAULT]), session),
     async setRelayBackupKey(key) {
       return (await write(() => fresh(key))).held;
     },
@@ -1025,7 +1067,7 @@ interface Session {
 /** The opened vault: its record, the keys it holds, and the key that opened it. */
 interface OpenedVault {
   readonly vault: VaultRecord;
-  readonly keys: Map<string, GroupKeys>;
+  readonly keys: VaultKeys;
   readonly key: Uint8Array;
 }
 
@@ -1061,7 +1103,7 @@ function hasKeys(record: StoredGroup): boolean {
 
 /** `record` with its keys: its own without a vault, or the vault's. */
 function wholeGroup(record: StoredGroup, opened: OpenedVault | null): Group {
-  const keys = opened === null ? record : opened.keys.get(record.groupId);
+  const keys = opened === null ? record : opened.keys.groups.get(record.groupId);
   if (keys?.secret === undefined || keys.signingKey === undefined) {
     throw new Error('A group’s keys are missing from this device.');
   }
@@ -1072,6 +1114,31 @@ function wholeGroup(record: StoredGroup, opened: OpenedVault | null): Group {
     signingKey: keys.signingKey,
     ...(kxKey === undefined ? {} : { kxKey }),
   };
+}
+
+/**
+ * The relay backup's state from its `record`, with its key: the record's own
+ * without a vault, or the vault's.
+ */
+function wholeBackup(record: StoredRelayBackup, opened: OpenedVault | null): RelayBackupState {
+  const key = opened === null ? record.key : opened.keys.backupKey;
+  if (key === undefined) throw new Error('The relay backup’s key is missing from this device.');
+  return { ...record, key };
+}
+
+/**
+ * The relay backup's state read in `tx`, with its key, or undefined while the
+ * device keeps none. With a vault it opens the vault first, kept or not.
+ *
+ * @throws {VaultLocked} when the device has a vault this session hasn't opened.
+ */
+async function backupIn<Mode extends IDBTransactionMode>(
+  tx: IDBPTransaction<Schema, Stores, Mode>,
+  session: Session,
+): Promise<RelayBackupState | undefined> {
+  const opened = await vaultKeys(tx, session);
+  const record = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+  return record === undefined ? undefined : wholeBackup(record, opened);
 }
 
 /**
@@ -1096,40 +1163,74 @@ async function readWhole(
   return read.flatMap((record) => (record === undefined ? [] : [wholeGroup(record, keys)]));
 }
 
-/** What one write of key material does: the groups to put, whole, and the ones to delete. */
+/**
+ * What one write of key material does: the groups to put, whole, the ones to
+ * delete, and the relay backup's state to keep, key and all (#97).
+ */
 interface KeyChange {
   readonly put?: readonly Group[];
   readonly drop?: readonly string[];
+  readonly relayBackup?: RelayBackupState;
 }
 
 /**
  * The one write path for key material (#95). Inside `tx`, deletes each group
- * in `drop` and puts each in `put`. Without a vault, each record holds its
- * own keys, as before the vault. With one, every key goes into the vault,
- * resealed under the session's key in the same transaction, and each record
- * goes without them, so no secret is ever written outside it.
+ * in `drop`, puts each in `put`, and keeps `relayBackup`. Without a vault,
+ * each record holds its own keys, as before the vault. With one, every key
+ * goes into the vault, resealed under the session's key in the same
+ * transaction, and each record goes without them, so no secret is ever
+ * written outside it.
  *
  * @throws {VaultLocked} when the device has a vault this session hasn't opened.
  */
 async function keepKeys(tx: KeyTransaction, session: Session, change: KeyChange): Promise<void> {
-  const records = tx.objectStore(GROUPS);
   const opened = await vaultKeys(tx, session);
-  for (const groupId of change.drop ?? []) {
-    await records.delete(groupId);
-    opened?.keys.delete(groupId);
-  }
-  for (const group of change.put ?? []) {
-    const { secret, signingKey, kxKey, ...rest } = group;
-    opened?.keys.set(group.groupId, {
-      secret,
-      signingKey,
-      ...(kxKey === undefined ? {} : { kxKey }),
-    });
-    await records.put(opened === null ? group : rest);
+  await keepGroups(tx, opened?.keys ?? null, change);
+  if (change.relayBackup !== undefined) {
+    await keepBackup(tx, opened?.keys ?? null, change.relayBackup);
   }
   if (opened !== null) {
     await tx.objectStore(VAULT).put(resealKeys(opened.vault, opened.key, opened.keys));
   }
+}
+
+/**
+ * `keepKeys`' groups: each deleted or put in `tx`, its keys into `sealed`
+ * when the device has a vault.
+ */
+async function keepGroups(
+  tx: KeyTransaction,
+  sealed: VaultKeys | null,
+  change: KeyChange,
+): Promise<void> {
+  const records = tx.objectStore(GROUPS);
+  for (const groupId of change.drop ?? []) {
+    await records.delete(groupId);
+    sealed?.groups.delete(groupId);
+  }
+  for (const group of change.put ?? []) {
+    const { secret, signingKey, kxKey, ...rest } = group;
+    sealed?.groups.set(group.groupId, {
+      secret,
+      signingKey,
+      ...(kxKey === undefined ? {} : { kxKey }),
+    });
+    await records.put(sealed === null ? group : rest);
+  }
+}
+
+/**
+ * `keepKeys`' relay backup: its record put in `tx`, its key into `sealed`
+ * when the device has a vault.
+ */
+async function keepBackup(
+  tx: KeyTransaction,
+  sealed: VaultKeys | null,
+  state: RelayBackupState,
+): Promise<void> {
+  const { key, ...rest } = state;
+  if (sealed !== null) sealed.backupKey = Uint8Array.from(key);
+  await tx.objectStore(DEVICE).put(sealed === null ? state : rest, RELAY_BACKUP);
 }
 
 /**
@@ -1141,7 +1242,7 @@ async function writeKeys<T>(
   db: IDBPDatabase<Schema>,
   work: (tx: KeyTransaction) => Promise<T>,
 ): Promise<T> {
-  const tx = db.transaction([GROUPS, PERSONAL, VAULT], 'readwrite');
+  const tx = db.transaction([GROUPS, PERSONAL, DEVICE, VAULT], 'readwrite');
   try {
     const result = await work(tx);
     await tx.done;

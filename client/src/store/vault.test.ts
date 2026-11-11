@@ -16,6 +16,7 @@ import {
   openKeys,
   resealKeys,
   VAULT_FORMAT,
+  type VaultKeys,
   type VaultRecord,
 } from './vault';
 
@@ -39,17 +40,21 @@ const entry = (groupId: string) => ({ groupId, secret: ZEROS, signingKey: ONES }
 const vaultJson = (groups: readonly unknown[], format = 1): string =>
   JSON.stringify({ format, groups });
 
-/** A map's entries with their bytes in the test's realm, so `toEqual` can compare them. */
-function comparable(keys: ReadonlyMap<string, GroupKeys> | null) {
-  if (keys === null) return null;
-  return [...keys].map(([id, { secret, signingKey }]) => [id, local(secret), local(signingKey)]);
+/** A vault's contents holding only `groups`, as a device without a relay backup key has. */
+const only = (groups: Map<string, GroupKeys>): VaultKeys => ({ groups });
+
+/** The groups' entries with their bytes in the test's realm, so `toEqual` can compare them. */
+function comparable(keys: VaultKeys | Map<string, GroupKeys> | null | undefined) {
+  if (keys === null || keys === undefined) return null;
+  const groups = keys instanceof Map ? keys : keys.groups;
+  return [...groups].map(([id, { secret, signingKey }]) => [id, local(secret), local(signingKey)]);
 }
 
 describe('encodeVaultKeys and decodeVaultKeys', () => {
   it('write each group’s keys as unpadded base64url JSON, under a format number', () => {
     const keys = new Map([['group-1', keysOf(0)]]);
 
-    const json: unknown = JSON.parse(text(encodeVaultKeys(keys)));
+    const json: unknown = JSON.parse(text(encodeVaultKeys(only(keys))));
 
     expect(VAULT_FORMAT).toBe(1);
     expect(json).toEqual({
@@ -74,7 +79,9 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
             }),
           );
 
-          expect(comparable(decodeVaultKeys(encodeVaultKeys(keys)))).toEqual(comparable(keys));
+          expect(comparable(decodeVaultKeys(encodeVaultKeys(only(keys))))).toEqual(
+            comparable(keys),
+          );
         },
       ),
     );
@@ -104,14 +111,40 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
     const kx = new Uint8Array(32).fill(0xc5);
     const keys = new Map([['g', { ...keysOf(0), kxKey: kx }]]);
 
-    const decoded = decodeVaultKeys(encodeVaultKeys(keys));
+    const decoded = decodeVaultKeys(encodeVaultKeys(only(keys)));
 
-    expect(local(decoded?.get('g')?.kxKey ?? new Uint8Array())).toEqual(local(kx));
+    expect(local(decoded?.groups.get('g')?.kxKey ?? new Uint8Array())).toEqual(local(kx));
     expect(
-      decodeVaultKeys(encodeVaultKeys(new Map([['g', keysOf(0)]])))?.get('g')?.kxKey,
+      decodeVaultKeys(encodeVaultKeys(only(new Map([['g', keysOf(0)]]))))?.groups.get('g')?.kxKey,
     ).toBeUndefined();
     expect(decodeVaultKeys(utf8(vaultJson([{ ...entry('g'), kxKey: ZEROS.slice(2) }])))).toBeNull();
     expect(decodeVaultKeys(utf8(vaultJson([{ ...entry('g'), kxKey: 7 }])))).toBeNull();
+  });
+
+  it('carries the device’s relay backup key (#97) beside the groups, and reads a bad one as nothing', () => {
+    const backupKey = new Uint8Array(32).fill(0xb7);
+    const keys: VaultKeys = { groups: new Map([['g', keysOf(0)]]), backupKey };
+
+    const json: unknown = JSON.parse(text(encodeVaultKeys(keys)));
+    const decoded = decodeVaultKeys(encodeVaultKeys(keys));
+
+    expect(json).toEqual({
+      format: 1,
+      groups: [{ groupId: 'g', secret: ZEROS, signingKey: ONES }],
+      backupKey: base64url(backupKey),
+    });
+    expect(local(decoded?.backupKey ?? new Uint8Array())).toEqual(local(backupKey));
+    expect(comparable(decoded)).toEqual(comparable(keys));
+    expect(decodeVaultKeys(encodeVaultKeys(only(new Map())))).toEqual({ groups: new Map() });
+    const withKey = (backup: unknown) =>
+      JSON.stringify({ format: 1, groups: [], backupKey: backup });
+    expect(decodeVaultKeys(utf8(withKey(ZEROS.slice(2))))).toBeNull();
+    expect(decodeVaultKeys(utf8(withKey(`${ZEROS}=`)))).toBeNull();
+    expect(decodeVaultKeys(utf8(withKey(7)))).toBeNull();
+    expect(decodeVaultKeys(utf8(withKey(null)))).toBeNull();
+    expect(local(decodeVaultKeys(utf8(withKey(ONES)))?.backupKey ?? new Uint8Array())).toEqual(
+      local(new Uint8Array(32).fill(1)),
+    );
   });
 
   it('reads the valid entry these tests break, so each refusal is the change’s', () => {
@@ -130,21 +163,22 @@ describe('newVault, openKeys and resealKeys', () => {
     expect(local(vault.credentialId)).toEqual(local(LOCK.credentialId));
     expect(local(vault.prfSalt)).toEqual(local(LOCK.prfSalt));
     expect(comparable(openKeys(vault, KEY))).toEqual([]);
+    expect(openKeys(vault, KEY)?.backupKey).toBeUndefined();
   });
 
   it('keep the keys sealed under the vault key, with the credential id as associated data', () => {
     const keys = new Map([['group-1', keysOf(5)]]);
 
-    const vault = resealKeys(newVault(LOCK, KEY), KEY, keys);
+    const vault = resealKeys(newVault(LOCK, KEY), KEY, only(keys));
 
     const opened = openVault(KEY, LOCK.credentialId, vault.sealed);
-    expect(decodeVaultKeys(opened ?? new Uint8Array(0))?.get('group-1')?.secret[0]).toBe(5);
+    expect(decodeVaultKeys(opened ?? new Uint8Array(0))?.groups.get('group-1')?.secret[0]).toBe(5);
     expect(openVault(KEY, Uint8Array.of(9, 8), vault.sealed)).toBeNull();
     expect(comparable(openKeys(vault, KEY))).toEqual(comparable(keys));
   });
 
   it('open nothing under another key, a changed byte, or a vault that holds no keys', () => {
-    const vault = resealKeys(newVault(LOCK, KEY), KEY, new Map([['g', keysOf(1)]]));
+    const vault = resealKeys(newVault(LOCK, KEY), KEY, only(new Map([['g', keysOf(1)]])));
     const changed = Uint8Array.from(vault.sealed);
     changed[30] = (changed[30] ?? 0) ^ 1;
     const notKeys: VaultRecord = {
@@ -162,8 +196,8 @@ describe('newVault, openKeys and resealKeys', () => {
     const keys = new Map([['g', keysOf(1)]]);
     const vault = newVault(LOCK, KEY);
 
-    const first = resealKeys(vault, KEY, keys);
-    const second = resealKeys(vault, KEY, keys);
+    const first = resealKeys(vault, KEY, only(keys));
+    const second = resealKeys(vault, KEY, only(keys));
 
     expect(local(first.sealed)).not.toEqual(local(second.sealed));
   });

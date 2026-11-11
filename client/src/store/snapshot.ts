@@ -279,19 +279,21 @@ export async function importSnapshot(
  * Opens and checks `file` as {@link importGroups} does, then puts its groups
  * in place of every group on the device and its vault, in one transaction
  * (#95): Restore on the unlock screen, once the passkey no longer opens the
- * vault and so nothing in it can be read. Its personal Documents, which hold
- * no key, merge as {@link importGroups} merges them. Returns how many groups
- * the file held.
+ * vault and so nothing in it can be read. The relay backup's key (#97) went
+ * with the vault, so its state goes too, and the file's key, if it holds
+ * one, is kept instead. Its personal Documents, which hold no key, merge as
+ * {@link importGroups} merges them. Returns how many groups the file held.
  *
  * @throws {BackupUnreadable} as {@link importGroups} does; nothing is written then.
  */
 export async function replaceWithBackup(
-  store: Pick<Store, 'replaceGroups'>,
+  store: Pick<Store, 'replaceGroups' | 'adoptRelayBackupKey'>,
   file: Uint8Array,
   passphrase: string,
 ): Promise<number> {
   const snapshot = await readBackup(file, passphrase);
   await store.replaceGroups(snapshot.groups, snapshot.personal);
+  if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
   return snapshot.groups.length;
 }
 

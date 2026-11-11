@@ -12,11 +12,14 @@
  *    nobody can pick their key after seeing A's.
  * 4. **B** takes the first `E_A` in relay order and stops unless its hash is
  *    the code's commitment, so nobody else can stand in for A.
- * 5. Both show the six-digit number. Only A can confirm: on Match it posts
- *    the bundle (`bundle.ts`) under K; on Don't match, or when it closes, it
- *    drops every secret and sends nothing under K. B checks the bundle and
- *    keeps its groups and personal Documents (`importSnapshot`, as from a
- *    link), and the relay backup key (#97) if it has none.
+ * 5. Both show the six-digit number. Only A can confirm: on Match it checks
+ *    that this session holds the unlocked keys (`Store.requireUnlocked`,
+ *    #95), then posts the bundle (`bundle.ts`) under K; on Don't match, or
+ *    when it closes, it drops every secret and sends nothing under K. B
+ *    checks the bundle and keeps its groups and personal Documents
+ *    (`importSnapshot`, as from a link), and the relay backup key (#97) if it
+ *    has none, through the store's one key-writing path, so a B whose keys
+ *    are locked with a passkey seals them in its vault.
  *
  * Every blob is sealed and padded, and every PUT uses `ttl_days=1`. Each
  * handshake message is a 1-byte tag (who posted it) and a 32-byte key. Each
@@ -65,12 +68,18 @@ export interface LinkServices {
   readonly relay: Relay;
   readonly seal: Seal;
   /**
-   * A's groups, personal Documents and relay backup key (#97) go out of it;
-   * B's come into it, the key kept only if B has none.
+   * A's groups, personal Documents and relay backup key (#97) go out of it,
+   * once it says this session holds the unlocked keys (#95); B's come into
+   * it, the key kept only if B has none, sealed in B's vault if B has one.
    */
   readonly store: Pick<
     Store,
-    'listGroups' | 'listPersonal' | 'getRelayBackup' | 'restoreGroups' | 'adoptRelayBackupKey'
+    | 'listGroups'
+    | 'listPersonal'
+    | 'getRelayBackup'
+    | 'requireUnlocked'
+    | 'restoreGroups'
+    | 'adoptRelayBackupKey'
   >;
   /** The device clock in milliseconds, for the 10 minutes. */
   readonly now: () => number;
@@ -96,6 +105,8 @@ export interface LinkOffer {
    *
    * @throws {Error} before there is a number, once closed, or when a PUT
    *   fails, which closes the link too.
+   * @throws {VaultLocked} when this session hasn't unlocked the device's
+   *   keys (#95); it sends nothing, and closes the link.
    */
   readonly confirm: () => Promise<'sent' | 'expired'>;
   /** Don't match, or the screen closed: zeroes every secret, and sends nothing more. */
@@ -237,6 +248,8 @@ export function offerLink(services: LinkServices, keys: LinkKeys = newLinkKeys()
   });
 
   const send = async (secrets: LinkSecrets): Promise<void> => {
+    // Like Save a backup, nothing hands keys on before this session holds them unlocked (#95).
+    await services.store.requireUnlocked();
     const { plaintext } = await takeSnapshot(services.store);
     try {
       if (ended !== null) throw new LinkClosed();

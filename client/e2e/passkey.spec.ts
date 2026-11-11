@@ -6,15 +6,18 @@
  * on or off. A passkey's relying party must be a domain, never an IP
  * address, so these profiles open the app at `localhost` on the same port.
  *
- * - With PRF, Ana locks her keys from Settings after founding a group, and
- *   Ben locks his from the offer after the notice, before he joins. Then
- *   neither device's IndexedDB holds a signing key, encryption key (#98) or
- *   group secret outside the vault, as raw bytes or base64url, and no group
- *   record carries one.
- *   Ana proposes. A reload shows the unlock screen; PRF output whose flags
- *   say the user wasn't verified leaves it locked, with Try again, Restore a
- *   backup file and Erase;
- *   unlocking brings back voting, and Ben's tally counts Ana's vote.
+ * - With PRF, Ana founds a group and restores her own backup file, carrying
+ *   a relay backup key (#97), so her device keeps one and backs up to the
+ *   relay. She locks her keys from Settings, and Ben locks his from the offer
+ *   after the notice, before he joins. Then neither device's IndexedDB holds
+ *   a signing key, encryption key (#98), group secret or relay backup key
+ *   outside the vault, as raw bytes or base64url, and no group record or
+ *   relay backup record carries one.
+ *   Ana proposes. A reload shows the unlock screen, and the page sends the
+ *   relay nothing while it's locked; PRF output whose flags say the user
+ *   wasn't verified leaves it locked, with Try again, Restore a backup file
+ *   and Erase; unlocking brings back voting, Settings reads the relay
+ *   backup's line again, and Ben's tally counts Ana's vote.
  * - Without PRF, Cal's keys stay plain and the no-PRF line shows, with Save a
  *   backup, and a reload opens the app with no unlock screen.
  *
@@ -23,7 +26,12 @@
  * there; the offer itself still meets WebKit in every other spec's
  * `acceptNotice`.
  */
+import { randomBytes } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+
 import type { CDPSession, Page } from '@playwright/test';
+
+import { noFileSharing, withBackupKey } from './support/backupFile';
 
 import {
   acceptNotice,
@@ -41,6 +49,9 @@ import { onlyGroup } from './support/stored';
 
 const GROUP = 'Canary Lane Allotments';
 const TITLE = 'Canary title: water at dusk';
+const PASSPHRASE = 'a long walk to the river, then bread';
+/** The relay backup's line once an upload landed (#97). */
+const BACKED_UP = /^Backed up to the relay /;
 
 /** The record kinds IndexedDB holds once a device's keys are sealed. */
 interface RawDatabase {
@@ -48,6 +59,8 @@ interface RawDatabase {
   readonly bytes: Buffer;
   /** Each group record's field names. */
   readonly groupFields: readonly string[][];
+  /** Each relay backup record's field names (#97). */
+  readonly backupFields: readonly string[][];
   /** The object stores, by name. */
   readonly stores: readonly string[];
 }
@@ -120,16 +133,23 @@ async function rawDatabase(page: Page): Promise<RawDatabase> {
         walk(await request(store.getAllKeys()));
         walk(await request(store.getAll()));
       }
-      const groups = (await request(
-        db.transaction('groups').objectStore('groups').getAll(),
-      )) as object[];
-      return { parts, stores, groupFields: groups.map((group) => Object.keys(group).sort()) };
+      const fieldsOf = async (name: string) =>
+        ((await request(db.transaction(name).objectStore(name).getAll())) as object[]).map(
+          (record) => Object.keys(record).sort(),
+        );
+      return {
+        parts,
+        stores,
+        groupFields: await fieldsOf('groups'),
+        backupFields: await fieldsOf('device'),
+      };
     } finally {
       db.close();
     }
   });
   const bytes = Buffer.concat(read.parts.flatMap((part) => [Buffer.from(part), Buffer.of(0)]));
-  return { bytes, stores: read.stores, groupFields: read.groupFields };
+  const { stores, groupFields, backupFields } = read;
+  return { bytes, stores, groupFields, backupFields };
 }
 
 /** Locks `person`'s keys with a passkey in two taps, from the offer or Settings, and checks the line. */
@@ -152,12 +172,45 @@ async function openSettings(page: Page): Promise<void> {
   await expect(heading(page, 'Settings')).toBeVisible();
 }
 
+/**
+ * `person` saves a backup from Settings through the download path, and
+ * restores that file with `key` added as its relay backup key (#97), so the
+ * device keeps the key and backs up to the relay at its next sync.
+ */
+async function keepRelayBackupKey(person: Person, key: Uint8Array, path: string): Promise<void> {
+  const { page } = person;
+  await openSettings(page);
+  const save = page.getByRole('region', { name: 'Back up your groups' });
+  await save.getByLabel('Passphrase', { exact: true }).fill(PASSPHRASE);
+  await save.getByLabel('Passphrase again').fill(PASSPHRASE);
+  await save.getByRole('button', { name: 'Make a backup file' }).click();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    save.getByRole('button', { name: 'Save the file' }).click(),
+  ]);
+  writeFileSync(path, await withBackupKey(await download.path(), key, PASSPHRASE));
+  const restore = page.getByRole('region', { name: 'Restore a backup' });
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    restore.getByRole('button', { name: 'Choose backup file' }).click(),
+  ]);
+  await chooser.setFiles(path);
+  await restore.getByLabel('Its passphrase').fill(PASSPHRASE);
+  await restore.getByRole('button', { name: 'Restore' }).click();
+  await expect(restore.getByText('1 group is back on this device.')).toBeVisible();
+  await expect(save.getByRole('status').filter({ hasText: BACKED_UP })).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
 test('with PRF, the keys live only in the vault, and the passkey unlocks voting after a reload', async ({
   openProfile,
   baseURL,
-}) => {
+}, testInfo) => {
   const origin = localhostOf(baseURL);
   const ana = await openProfile('Ana', { baseURL: origin });
+  await ana.page.context().addInitScript(noFileSharing);
+  const backupKey = randomBytes(32);
   const ben = await openProfile('Ben', { baseURL: origin, viewport: { width: 390, height: 844 } });
   const anaKey = await addAuthenticator(ana.page, true);
   await addAuthenticator(ben.page, true);
@@ -173,6 +226,10 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     });
   });
   const plain = await onlyGroup(ana.page);
+
+  await test.step('Ana keeps a relay backup key (#97), from her own backup file', async () => {
+    await keepRelayBackupKey(ana, backupKey, testInfo.outputPath('backup-with-key.bin'));
+  });
 
   await test.step('Ana locks her keys from Settings', async () => {
     await openSettings(ana.page);
@@ -203,6 +260,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     const canaries = [
       ...keyCanaries('Ana’s signing key', Uint8Array.from(plain.signingKey)),
       ...keyCanaries('group secret', Uint8Array.from(plain.secret)),
+      ...keyCanaries('Ana’s relay backup key', Uint8Array.from(backupKey)),
       ...(plain.kxKey === null
         ? []
         : keyCanaries('Ana’s encryption key', Uint8Array.from(plain.kxKey))),
@@ -220,6 +278,10 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
         expect(fields).not.toContain('kxKey');
       }
     }
+    // Ana's relay backup record keeps its state, and the vault its key.
+    expect((await rawDatabase(ana.page)).backupFields).toEqual([
+      ['checkedDay', 'digest', 'tooLarge', 'uploadedAt'],
+    ]);
   });
 
   await test.step('Ana proposes, so there is something to vote on after the reload', async () => {
@@ -242,6 +304,11 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
       authenticatorId: anaKey.id,
       isBadUV: true,
     });
+    const whileLocked: string[] = [];
+    const record = (request: { url: () => string }) => {
+      if (new URL(request.url()).pathname.startsWith('/v1/')) whileLocked.push(request.url());
+    };
+    page.on('request', record);
     await page.goto('/');
     await expect(heading(page, 'Unlock Reconcile')).toBeVisible();
     await expect(page.getByRole('link', { name: new RegExp(GROUP) })).toHaveCount(0);
@@ -251,6 +318,9 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     await expect(page.getByRole('region', { name: 'Restore a backup' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Erase this device' })).toBeVisible();
     await expectAccessible(ana, 'Unlock, failed');
+    // Nothing syncs while locked, so neither a group nor the relay backup (#97) reaches the relay.
+    page.off('request', record);
+    expect(whileLocked).toEqual([]);
   });
 
   await test.step('the passkey unlocks the keys, and Ana votes', async () => {
@@ -267,6 +337,13 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     await expect(
       page.getByRole('region', { name: 'Lock with a passkey' }).getByRole('button'),
     ).toHaveCount(0);
+    // The relay backup's state reads again, its key from the vault (#97).
+    await expect(
+      page
+        .getByRole('region', { name: 'Back up your groups' })
+        .getByRole('status')
+        .filter({ hasText: BACKED_UP }),
+    ).toBeVisible();
   });
 
   await test.step('Ben’s tally counts Ana’s vote', async () => {

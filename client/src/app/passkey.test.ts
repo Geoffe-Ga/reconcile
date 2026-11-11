@@ -10,8 +10,13 @@ import { fakeAuthenticator } from '../test/fakeAuthenticator';
 import { freshIndexedDBPerTest } from '../test/idb';
 import type { PlatformEnv } from '../platform/installGate';
 import { PasskeyUnanswered, type WebAuthn, webAuthn } from '../platform/webauthn';
+import { xchachaSeal } from '../crypto/seal';
+import { createRelay } from '../net/relay';
+import { createFakeRelay } from '../test/fakeRelay';
 import { type NewGroup, openStore, type Store, VaultLocked } from '../store/db';
+import { refreshRelayBackup } from '../store/relayBackup';
 import { exportGroups } from '../store/snapshot';
+import { createSync } from '../store/sync';
 import { openDeviceLock, passkeyOn, type PasskeyDeps, whenOpen } from './passkey';
 
 freshIndexedDBPerTest();
@@ -45,10 +50,17 @@ function deps(store: Store, calls = fakeAuthenticator().calls, platform = ANDROI
   return { store, webauthn: webAuthn(calls), platform, rpId: RP_ID };
 }
 
-/** A device holding Ana's group, locked with a passkey on `authenticator`, then reopened. */
-async function lockedDevice(authenticator = fakeAuthenticator()) {
+/**
+ * A device holding Ana's group, locked with a passkey on `authenticator`, then
+ * reopened. `before` runs on it first, before the keys are locked.
+ */
+async function lockedDevice(
+  authenticator = fakeAuthenticator(),
+  before: (store: Store) => Promise<unknown> = () => Promise.resolve(),
+) {
   const store = await openStore();
   await store.addGroup(ANA);
+  await before(store);
   const passkey = passkeyOn(deps(store, authenticator.calls));
   expect(await passkey.protect(await passkey.create())).toBe('protected');
   store.close();
@@ -272,5 +284,35 @@ describe('whenOpen', () => {
     expect(sweep).toHaveBeenCalledTimes(1);
     await expect(sweep.mock.results[0]?.value).resolves.toBeUndefined();
     expect(sync.start).toHaveBeenCalledTimes(1);
+  });
+  it('lets the sync loop refresh the relay backup (#97) only once the passkey unlocks the keys', async () => {
+    const backupKey = new Uint8Array(32).fill(0xb2);
+    const { store, authenticator } = await lockedDevice(fakeAuthenticator(), (held) =>
+      held.setRelayBackupKey(backupKey),
+    );
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const refreshed: unknown[] = [];
+    const afterPass = vi.fn(async () => {
+      refreshed.push(local((await store.getRelayBackup())?.key ?? new Uint8Array()));
+      await refreshRelayBackup({ store, relay, now: () => 0 });
+    });
+    const sync = createSync({ store, relay, seal: xchachaSeal, afterPass });
+    const lock = await openDeviceLock({
+      ...deps(store, authenticator.calls),
+      open: whenOpen(store, sync, () => Promise.resolve()),
+    });
+
+    // Even a pass something else asks for fails while locked, so nothing follows it.
+    expect(await sync.syncOnce()).toBe(false);
+    expect(afterPass).not.toHaveBeenCalled();
+    await expect(refreshRelayBackup({ store, relay, now: () => 0 })).rejects.toThrow(VaultLocked);
+    expect(await lock.unlock()).toBe(true);
+    expect(await sync.syncOnce()).toBe(true);
+    sync.stop();
+
+    expect(afterPass).toHaveBeenCalled();
+    await expect(afterPass.mock.results[0]?.value).resolves.toBeUndefined();
+    expect(refreshed[0]).toEqual(local(backupKey));
   });
 });
