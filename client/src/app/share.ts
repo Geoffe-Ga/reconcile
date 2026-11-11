@@ -11,6 +11,9 @@
  * one share, and the app's address, `location.origin + '/'`. It never carries
  * Document text, a group name, a member's name, a link fragment or a secret,
  * and Web Share never gets a `title`, because some apps use it as a subject line.
+ * The one exception is Share link (#105, `personalSharing.ts`), whose whole
+ * point is the link's fragment: it goes beside fixed words, never the
+ * Document's title or text.
  */
 import { type ChatDetails, type ChatMoment, chatMessage } from './chatMessages';
 
