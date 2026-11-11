@@ -453,6 +453,13 @@ export interface RelayBackupState {
   readonly uploadedAt: number | null;
   /** Whether the last try found the groups too large for the largest backup. */
   readonly tooLarge: boolean;
+  /**
+   * The id of every personal Document this device held at a successful
+   * upload, sorted (#247), so a later upload can leave out one the relay
+   * copy still holds but this device deleted, and keep one only a linked
+   * device wrote. Absent on a record from before #247.
+   */
+  readonly uploaded?: readonly string[];
 }
 
 /** What a relay backup update may change: everything but the key. */
@@ -1193,6 +1200,7 @@ function relayBackupStore(
     checkedDay: null,
     uploadedAt: null,
     tooLarge: false,
+    uploaded: [],
   });
   return {
     getRelayBackup: () => backupIn(db.transaction([DEVICE, VAULT]), session),

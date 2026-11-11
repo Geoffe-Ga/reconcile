@@ -396,6 +396,17 @@ export function stopSharing(services: ShareServices, id: string): Promise<StopOu
   });
 }
 
+/**
+ * Whether `share`'s link may still open at `now`: its last copy went out
+ * less than {@link SHARE_TTL_DAYS} days ago, so the relay may still keep it.
+ * A share never posted has no link anyone could open. The relay backup's
+ * merge asks it of a share it can't tell from one this device stopped
+ * (#247).
+ */
+export function mayStillOpen(share: ShareState, now: number): boolean {
+  return share.lastPostedAt !== null && now - share.lastPostedAt < SHARE_TTL_DAYS * DAY_MS;
+}
+
 /** Whether `share` needs posting at launch: an edit to post, never posted, or posted {@link REFRESH_AFTER_DAYS} or more days ago. */
 function isDue(share: ShareState, now: number): boolean {
   if (share.pending || share.lastPostedAt === null) return true;
