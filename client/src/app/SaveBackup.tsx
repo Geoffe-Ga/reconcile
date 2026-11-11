@@ -11,6 +11,7 @@ import { type SyntheticEvent, useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 
 import { type BackupToSave, passphraseProblem } from './backup';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import type { SaveOutcome } from './share';
 import { Field } from './ui';
@@ -87,7 +88,7 @@ function PassphraseForm({ making, onMake }: PassphraseFormProps) {
         isRequired
         validate={mismatch}
       />
-      <div>
+      <div onPointerDownCapture={holdPresses(making)}>
         <Button type="submit" className="button button-primary" isDisabled={making}>
           {messages.backup.make}
         </Button>
