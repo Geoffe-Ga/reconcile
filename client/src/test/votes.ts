@@ -68,6 +68,8 @@ export interface LogBuilder {
   addSection(name: string, after: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s Proposal of a new Document titled `title` (#92), its entry's text its first sections. */
   newDocument(name: string, title: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal moving the Atom `atom` right after `after`, or first for null (#103). */
+  move(name: string, atom: string, after: string | null, entry?: ProposalEntry): string;
   /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
   ask(
     name: string,
@@ -215,6 +217,18 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         title,
         why,
         text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    move(name: string, atom: string, after: string | null, entry: ProposalEntry = {}) {
+      const { title = 'Move a section', why = 'It reads better there.' } = entry;
+      const proposal = {
+        target: { kind: 'move', atom, after } as const,
+        title,
+        why,
         ...(entry.link === undefined ? {} : { link: entry.link }),
         ...(entry.window === undefined ? {} : { window: entry.window }),
         ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),

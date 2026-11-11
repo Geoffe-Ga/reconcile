@@ -17,6 +17,7 @@ import {
   isCoalitionGenesis,
   isDissolveProposal,
   isAdmitProposal,
+  isMoveProposal,
   isNewDocumentProposal,
   isReconcileProposal,
   isRulesProposal,
@@ -573,6 +574,51 @@ describe('parseEvent', () => {
         dispatch: { title: 'u' },
       },
     ],
+    [
+      'move without an Atom (#103)',
+      'proposal',
+      { target: { kind: 'move', after: null }, title: 't', why: 'w' },
+    ],
+    [
+      'move with a numeric Atom (#103)',
+      'proposal',
+      { target: { kind: 'move', atom: 0, after: null }, title: 't', why: 'w' },
+    ],
+    [
+      'move with no anchor (#103)',
+      'proposal',
+      { target: { kind: 'move', atom: 'a.1' }, title: 't', why: 'w' },
+    ],
+    [
+      'move with a numeric anchor (#103)',
+      'proposal',
+      { target: { kind: 'move', atom: 'a.1', after: 0 }, title: 't', why: 'w' },
+    ],
+    [
+      'move that also names an atom (#103)',
+      'proposal',
+      { atom: 'a.1', target: { kind: 'move', atom: 'a.1', after: null }, title: 't', why: 'w' },
+    ],
+    [
+      'move without a why (#103)',
+      'proposal',
+      { target: { kind: 'move', atom: 'a.1', after: null }, title: 't' },
+    ],
+    [
+      'move with its window as text (#103)',
+      'proposal',
+      { target: { kind: 'move', atom: 'a.1', after: null }, title: 't', why: 'w', window: '7' },
+    ],
+    [
+      'move whose dispatch has no text (#103)',
+      'proposal',
+      {
+        target: { kind: 'move', atom: 'a.1', after: null },
+        title: 't',
+        why: 'w',
+        dispatch: { title: 'u' },
+      },
+    ],
     ['a steward target that is a list', 'proposal', { target: [], title: 't', why: 'w' }],
     [
       'a target of an unknown kind',
@@ -888,6 +934,42 @@ describe('parseEvent', () => {
 
   it('keeps a new-Document Proposal whose title or text is blank, for the fold to refuse (#92)', () => {
     const body = { target: { kind: 'new-document', title: '' }, title: 't', why: 'w', text: '' };
+    expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual(body);
+  });
+
+  it.each([
+    ['an anchor', 'a.2'],
+    ['no anchor, for the start', null],
+  ])(
+    'reads a move with %s, keeping only its kind, Atom and anchor, and dropping any text (#103)',
+    (_label, after) => {
+      const body = {
+        target: { kind: 'move', atom: 'a.1', after, document: 'd', extra: 'x' },
+        title: 'Move it',
+        why: 'It reads better first.',
+        text: 'Ignored.\n',
+        link: 'https://l',
+        window: 10,
+        dispatch: { title: 'Updated: House rules', text: 'Moved.', doc: 'g1' },
+      };
+      const parsed = parseEvent(json(envelope('proposal', body)));
+      expect(parsed?.event.body).toEqual({
+        target: { kind: 'move', atom: 'a.1', after },
+        title: 'Move it',
+        why: 'It reads better first.',
+        link: 'https://l',
+        window: 10,
+        dispatch: { title: 'Updated: House rules', text: 'Moved.' },
+      });
+      const read = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+      expect(read !== null && isMoveProposal(read)).toBe(true);
+      expect(read !== null && isAddProposal(read)).toBe(false);
+      expect(read !== null && isStewardProposal(read)).toBe(false);
+    },
+  );
+
+  it('keeps a move anchored on its own Atom, for the fold to refuse (#103)', () => {
+    const body = { target: { kind: 'move', atom: 'a.1', after: 'a.1' }, title: 't', why: 'w' };
     expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual(body);
   });
 

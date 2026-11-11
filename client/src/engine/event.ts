@@ -197,6 +197,32 @@ export interface NewDocumentProposalBody {
 }
 
 /**
+ * Where a move puts a section (#103): the Atom `atom` comes out of its place
+ * and goes right after the Atom `after`, in the same Document, or first in it
+ * when that's null.
+ */
+export interface MoveTarget {
+  readonly kind: 'move';
+  readonly atom: string;
+  readonly after: string | null;
+}
+
+/**
+ * Proposes moving one section (#103): it carries `target` in place of an
+ * Atom, and no text, so its ballot has one version, under the Proposal's id.
+ * Like an add, it may name a voting window in whole days (#106) and carry a
+ * Dispatch to send if it passes (#112).
+ */
+export interface MoveProposalBody {
+  readonly target: MoveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
  * A steward seat a Proposal fills or empties (ADR-0049, #102): its member is the
  * nominee, or null for a recall of whoever holds `seat`. The fold checks the
  * seat and the member.
@@ -363,14 +389,16 @@ export interface AdmitProposalBody {
 
 /**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
- * a new Document (#92), a steward seat (#102), an opt-in (#117), dissolving
- * the group (#108), reconciling into a coalition (#100), a priority vote's
- * question and options (#107), or, in a coalition, admitting a group (#114).
+ * a new Document (#92), a section's new place (#103), a steward seat (#102),
+ * an opt-in (#117), dissolving the group (#108), reconciling into a coalition
+ * (#100), a priority vote's question and options (#107), or, in a coalition,
+ * admitting a group (#114).
  */
 export type ProposalEventBody =
   | ProposalBody
   | AddProposalBody
   | NewDocumentProposalBody
+  | MoveProposalBody
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
@@ -391,6 +419,11 @@ export function isAddProposal(body: ProposalEventBody): body is AddProposalBody 
 /** True when a Proposal's body proposes a new Document (#92). */
 export function isNewDocumentProposal(body: ProposalEventBody): body is NewDocumentProposalBody {
   return 'target' in body && body.target.kind === 'new-document';
+}
+
+/** True when a Proposal's body moves a section (#103). */
+export function isMoveProposal(body: ProposalEventBody): body is MoveProposalBody {
+  return 'target' in body && body.target.kind === 'move';
 }
 
 /** True when a Proposal's body is a priority vote (#107). */
@@ -940,6 +973,13 @@ function parseReconcileTarget(value: unknown): ReconcileTarget | null {
   return { kind: 'reconcile', secret, inner, seat, name, title, atoms };
 }
 
+/** A move's target, keeping only its kind, Atom and anchor, or null for any other shape (#103). */
+function parseMoveTarget(value: unknown): MoveTarget | null {
+  if (!isObject(value) || value.kind !== 'move' || !isString(value.atom)) return null;
+  const { atom, after } = value;
+  return after === null || isString(after) ? { kind: 'move', atom, after } : null;
+}
+
 /** An admit target's kind, seat and proof, or null for any other shape (#114). */
 function parseAdmitTarget(value: unknown): AdmitTarget | null {
   if (!isObject(value) || value.kind !== 'admit') return null;
@@ -951,12 +991,15 @@ function parseAdmitTarget(value: unknown): AdmitTarget | null {
 
 /**
  * The target a Proposal names other than a steward seat: an opt-in (#117),
- * dissolving (#108), reconciling (#100), or admitting a group (#114).
+ * dissolving (#108), reconciling (#100), admitting a group (#114), or moving
+ * a section (#103).
  */
 function parseWindowedProposal(
   body: Json,
   fields: Omit<StewardProposalBody, 'target'>,
 ): Exclude<ProposalEventBody, ProposalBody | StewardProposalBody> | null {
+  const move = parseMoveTarget(body.target);
+  if (move !== null) return withWindow(move, body, fields);
   const dissolve = parseDissolveTarget(body.target);
   if (dissolve !== null) return withWindow(dissolve, body, fields);
   const reconcile = parseReconcileTarget(body.target);
@@ -967,9 +1010,9 @@ function parseWindowedProposal(
 }
 
 /**
- * A steward (#102), rules (#117), dissolve (#108), reconcile (#100) or admit
- * (#114) Proposal carries `target` and no `atom`; any `text` is dropped, and so is a
- * steward Proposal's `window` (#106).
+ * A steward (#102), rules (#117), dissolve (#108), reconcile (#100), admit
+ * (#114) or move (#103) Proposal carries `target` and no `atom`; any `text`
+ * is dropped, and so is a steward Proposal's `window` (#106).
  */
 function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
   const fields = parseTargetedFields(body);

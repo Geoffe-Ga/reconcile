@@ -1,0 +1,296 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "move-cleared: a cleared move takes its early close and pass from its result, and still moves its section, and sends its Dispatch at that close",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": [
+                    "Quiet after 11pm.\n",
+                    "Bins out on Sunday.\n",
+                    "Guests leave by ten.\n"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "move",
+                "atom": "@1:1.2",
+                "after": null
+              },
+              "title": "Move a section",
+              "why": "It reads better there.",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Guests come first now."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": true,
+            "ballots": [],
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.2",
+            "documentId": "@1:1",
+            "text": "Guests leave by ten.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "doc": "@1:1",
+            "received": 29375021
+          }
+        ]
+      }
+    },
+    {
+      "name": "move-cleared-fail: a cleared move whose result records a fail closes and decides by it, and leaves the Document as it was",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": [
+                    "Quiet after 11pm.\n",
+                    "Bins out on Sunday.\n",
+                    "Guests leave by ten.\n"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "move",
+                "atom": "@1:1.2",
+                "after": null
+              },
+              "title": "Move a section",
+              "why": "It reads better there."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [2, 0, 0, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "fail"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": true,
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "fail"
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          },
+          {
+            "id": "@1:1.2",
+            "documentId": "@1:1",
+            "text": "Guests leave by ten.\n"
+          }
+        ]
+      }
+    }
+  ]
+}

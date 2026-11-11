@@ -257,6 +257,7 @@ export interface OptInProposalState {
           | 'edit'
           | 'add'
           | 'new-document'
+          | 'move'
           | 'steward'
           | 'dissolve'
           | 'reconcile'
