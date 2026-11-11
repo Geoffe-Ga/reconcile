@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { deriveWeekMailboxId, newGroupSecret, weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
+import { FOUNDER_LEVEL } from '../engine/capabilities';
 import { parseRecord, type SignedEvent } from '../engine/event';
 import { fold, proposalTally } from '../engine/fold';
 import { createRelay, type Relay } from '../net/relay';
@@ -303,7 +304,7 @@ describe('ballot expiry on a device', () => {
       type: 'level',
       group: parseRecord(proposal.record)?.event.group ?? '',
       ts: TS,
-      body: { level: 'member' },
+      body: { level: FOUNDER_LEVEL },
     });
     for (const record of [ballots[1]?.record ?? new Uint8Array(), level.record]) {
       await relay.putBlob(week.mailbox, xchachaSeal.seal(week.mailbox, week.key, record), 30);
