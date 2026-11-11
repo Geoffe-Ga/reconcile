@@ -741,3 +741,18 @@ describe('GroupHome: the front door’s Applications (#121)', () => {
     expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
   });
 });
+
+describe('GroupHome: the front door beside Dispatches (#112, #121)', () => {
+  it('keeps Dispatches and Applications each in its own section, Applications before Invite people', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.dispatch('Ana', { title: 'Our front door is open', text: 'Share the link.' });
+    renderHome(log.state(), { applications: <p>Kim’s card</p> });
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toContain('Dispatches');
+    expect(headings.indexOf('Applications')).toBe(headings.indexOf('Invite people') - 1);
+    expect(within(section('Dispatches')).getByText('Our front door is open')).toBeVisible();
+    expect(within(section('Applications')).getByText('Kim’s card')).toBeVisible();
+  });
+});
