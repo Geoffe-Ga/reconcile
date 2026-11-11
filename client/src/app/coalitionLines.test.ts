@@ -249,7 +249,7 @@ describe('reconcileView', () => {
   });
 
   it('is null for any other Proposal', () => {
-    expect(reconcileView({ target: { kind: 'edit' } }, [])).toBeNull();
+    expect(reconcileView({ id: 'p', target: { kind: 'edit' } }, [])).toBeNull();
   });
 });
 
@@ -267,7 +267,10 @@ describe('motion words', () => {
       why: 'They share the river.',
       coalition: COALITION_STATEMENT.name,
       coalitionId: logs.ids.coalition,
+      through: [],
       admits: 'Elm Row',
+      admitsLevel: 0,
+      admitsGroups: [],
       text: '',
       link: null,
       author: authorOf('dee'),

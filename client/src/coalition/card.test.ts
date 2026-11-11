@@ -170,6 +170,27 @@ describe('a card’s envelope', () => {
       'a seat with a short key',
       (json: Record<string, unknown>) => ({ ...json, seat: { name: 'R', key: 'x' } }),
     ],
+    [
+      'a seat level of 3, a coalition that can’t join another (#122)',
+      (json: Record<string, unknown>) => ({
+        ...json,
+        seat: { name: 'R', key: SEAT_KEY, level: 3 },
+      }),
+    ],
+    [
+      'a seat level of 0 written out, which a group’s card never writes (#122)',
+      (json: Record<string, unknown>) => ({
+        ...json,
+        seat: { name: 'R', key: SEAT_KEY, level: 0 },
+      }),
+    ],
+    [
+      'a seat level as text (#122)',
+      (json: Record<string, unknown>) => ({
+        ...json,
+        seat: { name: 'R', key: SEAT_KEY, level: '1' },
+      }),
+    ],
     ['a negative chunk count', (json: Record<string, unknown>) => ({ ...json, chunkCount: -1 })],
     ['a fractional chunk count', (json: Record<string, unknown>) => ({ ...json, chunkCount: 0.5 })],
     ['a chunk count as text', (json: Record<string, unknown>) => ({ ...json, chunkCount: '0' })],
@@ -177,6 +198,26 @@ describe('a card’s envelope', () => {
   ])('reads as damaged with %s', (_label, change) => {
     const seed = newCardSeed();
     expect(openCard(stubSeal, cardChannelOf(seed), [headerBlob(seed, change)])).toBeNull();
+  });
+});
+
+describe('a coalition’s card (#122)', () => {
+  it.each([1, 2])('carries its seat’s level %i, and a group’s card states none', (level) => {
+    const seed = newCardSeed();
+    const seat = { name: 'Eastside Housing', key: SEAT_KEY, level };
+    const opened = openCard(
+      xchachaSeal,
+      cardChannelOf(seed),
+      sealCard(xchachaSeal, cardChannelOf(seed), card({ seat })),
+    );
+    expect(opened?.seat).toEqual(seat);
+    const group = { name: 'Riverside Tenants', key: SEAT_KEY, level: 0 };
+    const plain = openCard(
+      xchachaSeal,
+      cardChannelOf(seed),
+      sealCard(xchachaSeal, cardChannelOf(seed), card({ seat: group })),
+    );
+    expect(plain?.seat).toEqual({ name: 'Riverside Tenants', key: SEAT_KEY });
   });
 });
 

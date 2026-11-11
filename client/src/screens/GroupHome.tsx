@@ -10,6 +10,7 @@ import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
+import { MotionTagText } from '../app/MotionTag';
 import { NewcomerProgress, WaitingNote } from '../app/Newcomer';
 import { routeHref } from '../app/router';
 import { RulesLink } from '../app/RulesLink';
@@ -130,15 +131,17 @@ interface ProposalCardsProps {
 
 /**
  * "Coalition vote · <coalition>" over a coalition motion's title (#120), the
- * name in its own `<bdi>`; nothing for the group's own Proposals.
+ * name in its own `<bdi>`, with the route of one from further up (#122);
+ * nothing for the group's own Proposals.
  */
 function MotionTag({ proposal, names }: { proposal: Proposal; names: CoalitionNames | undefined }) {
   const { target } = proposal;
   if (target.kind !== 'motion') return null;
-  const { voteTag, tagSeparator } = messages.coalitions;
+  // A motion from further up names the coalitions it came through, nearest first (#122).
+  const route = [target.coalition, ...target.chain].map((id) => names?.[id] ?? '');
   return (
     <span className="eyebrow card-link-tag">
-      {voteTag} {tagSeparator} <bdi>{names?.[target.coalition] ?? ''}</bdi>
+      <MotionTagText coalition={route.at(-1) ?? ''} through={route.slice(0, -1)} />
     </span>
   );
 }

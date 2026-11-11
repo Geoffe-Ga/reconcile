@@ -70,8 +70,10 @@ import {
   expireFormation,
   type Motion,
   motionOutcome,
+  type ReconcileChange,
   admitSeat,
   mayAdmit,
+  mayReconcile,
   newCoalition,
   RESULT_GRACE_MINUTES,
   recordResult,
@@ -102,6 +104,7 @@ import {
   isCoalitionGenesis,
   isDissolveProposal,
   isAdmitProposal,
+  isSealedReconcileProposal,
   isPriorityProposal,
   isReconcileProposal,
   isRulesProposal,
@@ -116,6 +119,8 @@ import {
   type ProposalBody,
   type ProposalEventBody,
   type AdmitProposalBody,
+  type SealedReconcileProposalBody,
+  type SealedReconcileTarget,
   type ReconcileProposalBody,
   type RecordedOutcome,
   type ResultBody,
@@ -1106,13 +1111,49 @@ function applyDissolveProposal(
   return true;
 }
 
+/** Whether a reconcile Proposal here already holds the seat key `key`: each seat is one Proposal's. */
+function holdsSeatKey(draft: Pick<Draft, 'proposals'>, key: string): boolean {
+  return draft.proposals.some((p) => p.target.kind === 'reconcile' && p.target.key === key);
+}
+
+/** This coalition's own seat keys in coalitions above it: each of its reconcile motions' (#122). */
+function seatKeysAbove(draft: Pick<Draft, 'proposals'>): string[] {
+  return draft.proposals.flatMap((p) => (p.target.kind === 'reconcile' ? [p.target.key] : []));
+}
+
 /**
- * Opens a reconcile Proposal (#100; ADR-0036) when its author may propose:
- * ordinary, for the window its proposer chose or the default, with one
- * version that has no text. The fold keeps its target as written, secrets
- * included, with the public seat key its seat secret makes. A seat key another
- * reconcile Proposal here already holds is ignored, so each seat is one
- * Proposal's.
+ * Opens a reconcile Proposal, a group's (#100) or a coalition's (#122), when
+ * its author may propose: ordinary, for the window its proposer chose or the
+ * default, with one version that has no text, keeping `target`. A seat key
+ * another reconcile Proposal here already holds is ignored, so each seat is
+ * one Proposal's.
+ */
+function openReconcile(
+  draft: Draft,
+  body: ReconcileProposalBody | SealedReconcileProposalBody,
+  author: string,
+  at: Receipt,
+  target: ReconcileChange | SealedReconcileTarget,
+): OpenProposal | null {
+  if (!fieldsAreValid(body) || !can(draft, author, 'propose')) return null;
+  if (holdsSeatKey(draft, target.key)) return null;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return null;
+  return openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: '',
+    target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+}
+
+/**
+ * Opens a group's reconcile Proposal (#100; ADR-0036). The fold keeps its
+ * target as written, secrets included, with the public seat key its seat
+ * secret makes.
  */
 function applyReconcile(
   draft: Draft,
@@ -1120,32 +1161,42 @@ function applyReconcile(
   author: string,
   at: Receipt,
 ): boolean {
-  if (!fieldsAreValid(body) || !can(draft, author, 'propose')) return false;
   const key = seatKeyFor(body.target);
-  if (draft.proposals.some((p) => p.target.kind === 'reconcile' && p.target.key === key)) {
-    return false;
-  }
-  const cls = targetClass(draft, body);
-  const window = chosenWindow(draft.rules, cls, body.window);
-  if (window === null) return false;
-  openProposal(draft, {
-    ...opening(draft, body, author, at, { cls, window }),
-    atom: '',
-    target: { ...body.target, key },
-    text: '',
-    eligible: eligibleNow(draft, null),
-    versions: [{ id: at.id, author, text: '' }],
-  });
+  return openReconcile(draft, body, author, at, { ...body.target, key }) !== null;
+}
+
+/**
+ * Opens a coalition's motion to take a seat in a coalition above it (#122):
+ * its sealed reconcile target, as written, which holds no readable secret.
+ * Its seats decide it as any motion, from a snapshot at receipt. It is
+ * ignored when one more level would put the coalition above it past level 3,
+ * or when its key is one of this coalition's own seats, whose secret a member
+ * group holds and could act on above without the coalition.
+ */
+function applySealedReconcile(
+  draft: Draft,
+  coalition: CoalitionDraft,
+  body: SealedReconcileProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!mayReconcile(coalition, body.target.key)) return false;
+  const motion = openReconcile(draft, body, author, at, body.target);
+  if (motion === null) return false;
+  const seats = coalition.seats.map((s) => s.key);
+  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
   return true;
 }
 
 /**
  * Opens a coalition motion (#100): once the coalition has formed, an edit of
  * one of its Atoms, by the group fold's own rules, deadline and bar included,
- * or admitting a group (#114, {@link applyAdmit}), with the seats it holds
- * now as the snapshot that decides it. Every other target waits: a steward,
- * rules or dissolve change would take effect in the fold while a pass can
- * still be contested, and reconciling a coalition is #122's. So does a motion
+ * admitting a group (#114, {@link applyAdmit}), or taking a seat above (#122,
+ * {@link applySealedReconcile}), with the seats it holds now as the snapshot
+ * that decides it. Every other target waits: a steward, rules or dissolve
+ * change would take effect in the fold while a pass can still be contested,
+ * and a reconcile target carrying its secrets readable, as a group's does,
+ * would show them to the coalition's followers. So does a motion
  * carrying a Dispatch (#112): its pass, once closed, can still be contested
  * into a fail, and a coalition's followers are #124's. An add (#75) has a
  * target, so it waits too, and so does a removal, an edit whose text is
@@ -1160,6 +1211,9 @@ function applyMotion(
   at: Receipt,
 ): boolean {
   if (coalition.status !== 'formed' || body.dispatch !== undefined) return false;
+  if (isSealedReconcileProposal(body)) {
+    return applySealedReconcile(draft, coalition, body, author, at);
+  }
   if ('target' in body)
     return isAdmitProposal(body) && applyAdmit(draft, coalition, body, author, at);
   // Nor does a removal (#75), whose `""` would take out one of the coalition's Atoms.
@@ -1175,7 +1229,9 @@ function applyMotion(
  * Opens a motion to admit a group into a formed coalition (#114; ADR-0036):
  * the one motion the fold takes from someone who isn't a participant, when
  * its seat's proof for their key verifies and no seat or earlier admit
- * motion holds that seat (coalition.ts). It is ordinary, for the window its
+ * motion holds that seat (coalition.ts). A coalition asking in states its
+ * level and member groups (#122); a level that would put this coalition past
+ * level 3, or this coalition's own seat key above, is ignored. It is ordinary, for the window its
  * proposer chose or the default, with one version that has no text, and
  * every seat in its snapshot must pass it, whatever their number. Once its
  * pass is final, the group takes its seat ({@link advanceAdmissions}).
@@ -1188,13 +1244,13 @@ function applyAdmit(
   at: Receipt,
 ): boolean {
   if (draft.group === null || hasJoined(draft, author) || !fieldsAreValid(body)) return false;
-  if (!mayAdmit(coalition, draft.group, author, body.target)) return false;
+  if (!mayAdmit(coalition, draft.group, author, body.target, seatKeysAbove(draft))) return false;
   const window = chosenWindow(draft.rules, 'ordinary', body.window);
   if (window === null) return false;
   const proposal = openProposal(draft, {
     ...opening(draft, body, author, at, { cls: 'ordinary', window }),
     atom: '',
-    target: { kind: 'admit', seat: body.target.seat },
+    target: { kind: 'admit', seat: body.target.seat, groups: body.target.groups ?? [] },
     text: '',
     eligible: [],
     versions: [{ id: at.id, author, text: '' }],
@@ -1221,8 +1277,9 @@ function applyProposal(
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  // Admitting a group is a coalition's motion (#114): a group's own log takes none.
-  if (isAdmitProposal(body)) return false;
+  // Admitting a group is a coalition's motion (#114), and so is a sealed reconcile
+  // target (#122): a group has no inner to seal under. A group's own log takes neither.
+  if (isAdmitProposal(body) || isSealedReconcileProposal(body)) return false;
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
@@ -2082,7 +2139,9 @@ function focusOf(proposals: readonly Proposal[]): Focus | null {
  * from crossing.ts's `motionsFor`: each opens as a Proposal of the group's
  * right after its records with a lower relay seq, with the coalition's class,
  * window, deadline and bar, and the group's ballots decide it as any other.
- * A coalition's own log takes none. `relayNow` should be the relay's latest
+ * A formed coalition's log takes the motions its seats above decide (#122),
+ * which its own seats then decide from their results, as they do its own
+ * motions (crossing.ts's `foldTogether`). `relayNow` should be the relay's latest
  * `now` from any mailbox: it is one clock.
  *
  * `cleared` lists the Proposals whose ballots this device has deleted (#111).
@@ -2270,7 +2329,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations,
     rotationDue,
     dissolved: draft.dissolved,
-    coalitions: heldSeats(proposals),
+    coalitions: heldSeats(proposals, draft.coalition !== null),
     coalition: draft.coalition,
     focus: focusOf(proposals),
     ignored,
@@ -2289,24 +2348,39 @@ function endTime(draft: Draft, relayNow: number | null): number | null {
   return draft.dissolved?.received ?? draft.coalition?.declinedAt ?? relayNow;
 }
 
-/** The group's reconcile Proposals as seats (#100): each one's key, statement and outcome. */
-function heldSeats(proposals: readonly Proposal[]): HeldSeat[] {
+/**
+ * A reconcile Proposal's outcome as its seat crosses: a group's once its vote
+ * is final, a lapse as `fail`. A coalition's (#122) passes as soon as its
+ * seats' pass is certain, before results on it stop counting, since a pass
+ * that waited for that would reach the coalition above too late; a contest
+ * that later turns it into a fail crosses as a fail.
+ */
+function heldOutcome(proposal: Proposal, certain: boolean): HeldSeat['outcome'] {
+  const pass = proposal.outcome.kind === 'pass';
+  if (certain && pass) return 'pass';
+  if (!proposal.final) return 'open';
+  return pass ? 'pass' : 'fail';
+}
+
+/**
+ * The reconcile Proposals as seats (#100): each one's key, statement and
+ * outcome, a coalition's (#122) as soon as it is certain.
+ */
+function heldSeats(proposals: readonly Proposal[], certain: boolean): HeldSeat[] {
   return proposals.flatMap((p) => {
     if (p.target.kind !== 'reconcile') return [];
     const { key, name, title, atoms } = p.target;
-    const pass = p.outcome.kind === 'pass';
-    const outcome = p.final ? (pass ? 'pass' : 'fail') : 'open';
-    return [{ proposal: p.id, key, name, title, atoms, outcome }];
+    return [{ proposal: p.id, key, name, title, atoms, outcome: heldOutcome(p, certain) }];
   });
 }
 
 /**
- * Opens, in a group, each coalition motion whose relay seq is below `seq`
- * that hasn't opened yet (#100), taking it from the front of `motions`, which
- * is in seq order. Relay time moves on to its receipt first, as for a record,
- * so its eligible set is everyone `wouldVote` lets in there. A group that
- * hasn't been founded or has dissolved opens none, and a coalition's own log
- * takes none (#122 nests them).
+ * Opens each coalition motion whose relay seq is below `seq` that hasn't
+ * opened yet (#100), taking it from the front of `motions`, which is in seq
+ * order. Relay time moves on to its receipt first, as for a record, so in a
+ * group its eligible set is everyone `wouldVote` lets in there. A group that
+ * hasn't been founded or has dissolved opens none; nor does a coalition
+ * before it forms or once declined (#122).
  */
 function openMotionsBefore(draft: Draft, motions: Motion[], seq: number): void {
   while (motions.length > 0 && (motions[0]?.seq ?? seq) < seq) {
@@ -2315,24 +2389,31 @@ function openMotionsBefore(draft: Draft, motions: Motion[], seq: number): void {
   }
 }
 
+/** Whether this log opens motions from above now: a founded group that goes on, or a formed coalition (#122). */
+function opensMotions(draft: Draft): boolean {
+  if (draft.group === null || hasEnded(draft)) return false;
+  return draft.coalition === null || draft.coalition.status === 'formed';
+}
+
 /**
- * Opens one coalition motion as a group Proposal, with the coalition's class,
- * window, deadline and bar. It isn't the group's own: it has no number (0,
+ * Opens one coalition motion as a Proposal, with the coalition's class,
+ * window, deadline and bar. It isn't the log's own: it has no number (0,
  * #123), no title, text or author, and carries no Dispatch (#112), since its
- * words are the coalition's.
+ * words are the coalition's. In a coalition (#122), its seats decide it, as
+ * they do its own motions, from a snapshot of them now, and it has no
+ * ballots, so no eligible set.
  */
 function openMotion(draft: Draft, motion: Motion): void {
-  if (draft.group === null || draft.coalition !== null || draft.dissolved !== null) return;
-  if (draft.proposals.some((p) => p.id === motion.id)) return;
+  if (!opensMotions(draft) || draft.proposals.some((p) => p.id === motion.id)) return;
   advanceTo(draft, motion.received);
-  const { id, seq, received, coalition, bar, window, deadline } = motion;
+  const { id, seq, received, coalition, chain, bar, window, deadline } = motion;
   openProposal(draft, {
     id,
     seq,
     received,
     author: '',
     atom: '',
-    target: { kind: 'motion', coalition, bar },
+    target: { kind: 'motion', coalition, chain, bar },
     title: '',
     why: '',
     text: '',
@@ -2347,6 +2428,8 @@ function openMotion(draft: Draft, motion: Motion): void {
     number: 0,
     dispatch: null,
   });
+  const seats = draft.coalition?.seats.map((s) => s.key);
+  if (seats !== undefined) draft.coalition?.motions.push({ id, deadline, seats, admit: null });
 }
 
 /**

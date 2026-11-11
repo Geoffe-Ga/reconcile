@@ -161,3 +161,56 @@
   gap: var(--space-3);
   padding-block-end: var(--space-4);
 }
+
+/* Nested coalitions (#122) ------------------------------------------------ */
+
+/* The coalitions above one of the group's, under its row, set apart by a
+ * hairline as Take part and a card are: each its status, then the chain of
+ * names from the group up to it, then what it waits for. */
+.coalition-above {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.coalition-above-list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.coalition-above-item {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--body);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+/* "Riverside Tenants · in Eastside Housing · in Metro Renters". */
+.coalition-chain {
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+/* A nested motion's progress: one line per coalition on its way up, each
+ * under its name, nearest first. */
+.coalition-progress-step {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.coalition-progress-step > .coalition-progress-line {
+  color: var(--ink);
+  font: var(--type-body);
+}
+
+/* A coalition asking to join: its name, level and member groups. */
+.admits-coalition {
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}

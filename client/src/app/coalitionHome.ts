@@ -9,14 +9,18 @@
  * Nothing here reads a person's key in one log to find them in another.
  */
 import { can } from '../engine/capabilities';
+import { MAX_LEVEL, seatLevel } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { openProposalOn } from '../engine/composeOption';
-import { seatIn } from '../engine/crossing';
 import { type ParsedEvent, parseRecord } from '../engine/event';
 import type { Atom, GroupState } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
 
-/** A group on this device, as the coalition's screens read it. */
+/**
+ * A group on this device, as the coalition's screens read it; or a coalition
+ * this device holds an entry for (`kind: 'coalition'`, #122), which may hold
+ * a seat in a coalition above it as a group does.
+ */
 export interface DeviceGroup {
   readonly groupId: string;
   /** This person's author id in the group. */
@@ -25,12 +29,18 @@ export interface DeviceGroup {
   readonly state: GroupState;
   /** Whether this device's leave waits for the relay (#77). */
   readonly leaving: boolean;
+  readonly kind?: 'coalition';
 }
 
-/** One of the coalition's member groups, and whether a group on this device holds its seat. */
+/**
+ * One of the coalition's members, whether a group or coalition on this device
+ * holds its seat, and whether it is a coalition, by the level its seat
+ * states (#122).
+ */
 export interface MemberGroup {
   readonly name: string;
   readonly mine: boolean;
+  readonly coalition: boolean;
 }
 
 /** One of the coalition's Documents, by its id and title. */
@@ -148,14 +158,34 @@ export function standingIn(held: HeldCoalition, groups: readonly DeviceGroup[]):
   return from === undefined ? { kind: 'reads' } : { kind: 'take-part', groupId: from.groupId };
 }
 
+/**
+ * A group on this device whose vote reaches one of `seats`: one holding a
+ * seat itself, or one below a coalition on this device that holds one (#122),
+ * up to level 3.
+ */
+function deciderOf(
+  seats: readonly string[],
+  groups: readonly DeviceGroup[],
+  depth = 1,
+): DeviceGroup | undefined {
+  const holding = groups.filter((group) => seats.some((seat) => holds(group, seat)));
+  const direct = holding.find((group) => group.kind !== 'coalition');
+  if (direct !== undefined || depth >= MAX_LEVEL) return direct;
+  for (const coalition of holding) {
+    const below = (coalition.state.coalition?.seats ?? []).map((seat) => seat.key);
+    const found = deciderOf(below, groups, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 /** Each motion of the coalition with its progress, and a group on this device that decides it. */
 function motionItems(state: GroupState, groups: readonly DeviceGroup[]): MotionItem[] {
-  const seatOf = new Map(groups.map((group) => [group.groupId, seatIn(group.state, state)]));
   return state.proposals.flatMap((proposal) => {
     const progress = coalitionProgress(state, proposal.id);
     const snapshot = state.coalition?.motions.find((m) => m.id === proposal.id)?.seats ?? [];
     if (progress === null) return [];
-    const decider = groups.find((group) => snapshot.includes(seatOf.get(group.groupId) ?? ''));
+    const decider = deciderOf(snapshot, groups);
     return [
       {
         id: proposal.id,
@@ -197,6 +227,7 @@ export function coalitionHome(
     members: state.coalition.seats.map((seat) => ({
       name: seat.name,
       mine: groups.some((group) => holds(group, seat.key)),
+      coalition: seatLevel(seat) > 0,
     })),
     documents: coalitionDocuments(state),
     open: motions.filter((m) => !m.progress.final).sort((a, b) => a.deadline - b.deadline),

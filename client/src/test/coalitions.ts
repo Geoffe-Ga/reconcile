@@ -8,8 +8,9 @@
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
+import { sealSeatSecrets } from '../crypto/innerSeal';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
-import { motionsFor, seatIn } from '../engine/crossing';
+import { foldTogether, motionsFor, seatIn } from '../engine/crossing';
 import type { EventDraft, GroupResultValue } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { authorOf, signedAs } from './keys';
@@ -205,3 +206,131 @@ export const COALITION_STATEMENT = {
   title: 'Shared ground',
   atoms: ['We keep the river clean.'],
 } as const;
+
+/** A coalition's name and statement, as a genesis and the reconcile targets into it carry them. */
+export interface Statement {
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/** One seat a nested genesis names: the test seat's name, and the level it states, if any (#122). */
+export type NestedSeat = readonly [seat: string, level?: number];
+
+/**
+ * Logs with coalitions in coalitions (#122): each coalition is a log of its
+ * own, by name, where {@link Logs} has one called "coalition". A coalition
+ * `X`'s secret is `testSecret(X)`, its inner `testSecret("inner" + X)`, and
+ * the seat it holds above is the test seat `X`.
+ */
+export class NestedLogs extends Logs {
+  /** A coalition genesis in `log` naming `seats`, by `author`, with `statement`. */
+  coalitionIn(
+    log: string,
+    received: number,
+    seats: readonly NestedSeat[],
+    statement: Statement = COALITION_STATEMENT,
+    author = 'kim',
+  ): string {
+    const body = {
+      kind: 'coalition',
+      ...statement,
+      seats: seats.map(([seat, level]) => ({
+        name: seat,
+        key: seatKey(seat),
+        ...(level === undefined ? {} : { level }),
+      })),
+    } as const;
+    return this.add(log, received, author, { type: 'genesis', body });
+  }
+
+  /** `who` joins the coalition `log` under `seat`, with that seat's proof for their key. */
+  joinIn(log: string, received: number, who: string, seat: string): string {
+    const id = this.ids[log] ?? '';
+    const proof = base64url(signSeatProof(seatSecret(seat), id, fromBase64url(authorOf(who))));
+    const body = { name: who, seat: seatKey(seat), proof };
+    return this.add(log, received, who, { type: 'join', body });
+  }
+
+  /** `who` posts `result` for `seat` on `motion` in the coalition `log`. */
+  resultIn(
+    log: string,
+    received: number,
+    who: string,
+    motion: string,
+    seat: string,
+    result: GroupResultValue,
+  ): string {
+    const body = { motion, seat: seatKey(seat), result };
+    return this.add(log, received, who, { type: 'group-result', body });
+  }
+
+  /** `who`'s motion in the coalition `log`: new text for its first Atom. */
+  motionIn(log: string, received: number, who: string, text: string): string {
+    const body = {
+      atom: `${this.ids[log] ?? ''}.0`,
+      title: 'Say it better',
+      why: 'Clearer.',
+      text,
+    };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /** A formed coalition `log` of `seats`, `participants[i]` joining under seat i and passing. */
+  formedIn(
+    log: string,
+    received: number,
+    seats: readonly NestedSeat[],
+    participants: readonly string[],
+    statement: Statement = COALITION_STATEMENT,
+  ): number {
+    this.coalitionIn(log, received, seats, statement);
+    seats.forEach(([seat], i) => this.joinIn(log, received + 1, participants[i] ?? '', seat));
+    const genesis = this.ids[log] ?? '';
+    seats.forEach(([seat], i) =>
+      this.resultIn(log, received + 2, participants[i] ?? '', genesis, seat, 'pass'),
+    );
+    return received + 3;
+  }
+
+  /** Group `log`'s plain reconcile Proposal into the coalition `into`, for seat `seat`. */
+  reconcileInto(
+    log: string,
+    received: number,
+    who: string,
+    into: string,
+    seat: string,
+    statement: Statement,
+  ): string {
+    const target = {
+      kind: 'reconcile',
+      secret: testSecret(into),
+      inner: testSecret(`inner${into}`),
+      seat: base64url(seatSecret(seat)),
+      ...statement,
+    } as const;
+    const body = { target, title: `Reconcile into ${statement.name}`, why: 'Neighbours.' };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /** Coalition `log`'s sealed reconcile motion into the coalition `into`, under its seat `log`. */
+  sealedInto(log: string, received: number, who: string, into: string, statement: Statement) {
+    const sealed = sealSeatSecrets(this.ids[log] ?? '', fromBase64url(testSecret(`inner${log}`)), {
+      secret: fromBase64url(testSecret(into)),
+      inner: fromBase64url(testSecret(`inner${into}`)),
+      seat: seatSecret(log),
+    });
+    const target = { kind: 'reconcile', sealed, key: seatKey(log), ...statement } as const;
+    const body = { target, title: `Reconcile into ${statement.name}`, why: 'Neighbours.' };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /** Every log folded together, as a device holding them all folds them, by name. */
+  foldAll(relayNow: number | null): Record<string, GroupState> {
+    const names = Object.keys(this.logs);
+    const states = foldTogether(
+      names.map((name) => ({ records: this.logs[name] ?? [], relayNow })),
+    );
+    return Object.fromEntries(names.map((name, i) => [name, states[i] ?? fold([], relayNow)]));
+  }
+}

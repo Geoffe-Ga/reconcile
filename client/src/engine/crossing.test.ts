@@ -45,6 +45,7 @@ describe('motionsFor', () => {
       {
         id: motion,
         coalition: logs.ids.coalition,
+        chain: [],
         seq: record?.seq,
         received: at,
         class: 'ordinary',
@@ -76,6 +77,7 @@ describe("fold's outside motions", () => {
   ): Motion => ({
     id,
     coalition: 'c',
+    chain: [],
     seq,
     received: R + 10 + seq,
     class: 'ordinary',
@@ -108,12 +110,39 @@ describe("fold's outside motions", () => {
     expect(opened?.outcome).toEqual({ kind: 'fail', bar: DEFAULT_RULES.bars.entrenched });
   });
 
-  it('opens none before the group’s genesis, and none in a coalition’s own log', () => {
+  it('opens none before the group’s genesis, nor in a coalition still forming or declined', () => {
     const { logs } = scene();
     const before = fold(logs.logs.A ?? [], R + 100, [motion('early', 0)]);
     expect(before.proposals.some((p) => p.id === 'early')).toBe(false);
+    const forming = new Logs();
+    forming.coalition(R, ['A', 'B']);
+    const notYet = fold(forming.logs.coalition ?? [], R + 100, [motion('m', 100)]);
+    expect(notYet.proposals).toEqual([]);
+    expect(notYet.coalition?.motions).toEqual([]);
+    const declined = new Logs();
+    const at = declined.formed(R, ['A', 'B'], ['kim', 'zed']);
+    declined.result(at, 'kim', declined.ids.coalition ?? '', 'A', 'fail');
+    const over = fold(declined.logs.coalition ?? [], R + 100, [motion('m', 100)]);
+    expect(over.coalition?.status).toBe('declined');
+    expect(over.proposals).toEqual([]);
+  });
+
+  it('opens one in a formed coalition (#122), with no ballots, its seats deciding it from a snapshot', () => {
+    const { logs } = scene();
     const coalition = fold(logs.logs.coalition ?? [], R + 100, [motion('m', 100)]);
-    expect(coalition.proposals.some((p) => p.id === 'm')).toBe(false);
+    const opened = coalition.proposals.find((p) => p.id === 'm');
+    expect(opened).toMatchObject({
+      number: 0,
+      eligible: [],
+      target: { kind: 'motion', coalition: 'c', chain: [] },
+    });
+    expect(coalition.coalition?.motions.at(-1)).toEqual({
+      id: 'm',
+      deadline: R + 110 + WEEK,
+      seats: [seatKey('A'), seatKey('B')],
+      admit: null,
+    });
+    expect(coalition.atoms).toEqual(fold(logs.logs.coalition ?? [], R + 100).atoms);
   });
 
   it('leaves a group with no outside motions exactly as it folds without any', () => {

@@ -11,10 +11,19 @@ import { deriveCoalitionEntryId } from '../crypto/card';
 import { verifySeatProof } from '../crypto/seat';
 import { parseRecord, type ParsedEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
-import { COALITION_STATEMENT, Logs, seatKey, testSecret } from '../test/coalitions';
+import {
+  COALITION_STATEMENT,
+  Logs,
+  NestedLogs,
+  seatKey,
+  seatSecret,
+  testSecret,
+} from '../test/coalitions';
+import { sealSeatSecrets } from '../crypto/innerSeal';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import {
+  coalitionKeys,
   ensureEntries,
   foldWithCoalitions,
   heldCoalitions,
@@ -401,5 +410,75 @@ describe('a group whose ballots have expired (#111)', () => {
     expect(kept.proposals.find((p) => p.id === reconcile)?.cleared).toBe(false);
     expect(cleared.coalitions.map((c) => c.key)).toEqual(kept.coalitions.map((c) => c.key));
     expect(cleared.proposals.map((p) => p.id)).toContain(motion);
+  });
+});
+
+describe('coalitionKeys (#122)', () => {
+  const STATEMENT_D = {
+    name: 'Metro Renters',
+    title: 'Shared ground',
+    atoms: ['Rent stays fair.'],
+  };
+
+  /** Group A's log, reconciling into C, and C's log, formed, with its sealed motion into D. */
+  function nestedLogs(seat = 'C') {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', COALITION_STATEMENT);
+    logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee']);
+    const into = logs.sealedInto('C', R + 6, 'cal', 'D', STATEMENT_D);
+    return { logs, into, seat };
+  }
+
+  /** Group A and coalition C as a device keeps them, the entry's id derived from C's secret. */
+  function asGroups(logs: NestedLogs) {
+    const group = { groupId: 'A', log: logs.logs.A ?? [], outbox: [], relayNow: R + 10 };
+    const secret = fromBase64url(testSecret('C'));
+    const entry = {
+      kind: 'coalition' as const,
+      groupId: deriveCoalitionEntryId(secret),
+      secret,
+      log: logs.logs.C ?? [],
+      outbox: [],
+      relayNow: R + 10,
+    };
+    return { group: group as unknown as Group, entry: entry as unknown as Group };
+  }
+
+  it('opens a coalition’s sealed seat above under the inner a group’s target carries', () => {
+    const { logs, into } = nestedLogs();
+    const { group, entry } = asGroups(logs);
+    const keys = coalitionKeys([group], [entry]);
+    const c = keys.get(entry.groupId);
+    expect(c?.from).toEqual([{ holder: 'A', proposal: expect.any(String) as string }]);
+    expect([...(c?.seats.keys() ?? [])]).toEqual([seatKey('A')]);
+    const d = keys.get(deriveCoalitionEntryId(fromBase64url(testSecret('D'))));
+    expect(d?.from).toEqual([{ holder: entry.groupId, proposal: into }]);
+    expect(base64url(d?.inner ?? new Uint8Array())).toBe(testSecret('innerD'));
+    expect([...(d?.seats.keys() ?? [])]).toEqual([seatKey('C')]);
+  });
+
+  it('opens nothing for a coalition whose inner no group on the device holds, as a follower’s', () => {
+    const { logs } = nestedLogs();
+    const { entry } = asGroups(logs);
+    expect(coalitionKeys([], [entry]).size).toBe(0);
+  });
+
+  it('leaves out a sealed seat whose secret doesn’t make the key its motion states', () => {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', COALITION_STATEMENT);
+    logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee']);
+    const sealed = sealSeatSecrets(logs.ids.C ?? '', fromBase64url(testSecret('innerC')), {
+      secret: fromBase64url(testSecret('D')),
+      inner: fromBase64url(testSecret('innerD')),
+      seat: seatSecret('X'),
+    });
+    const target = { kind: 'reconcile', sealed, key: seatKey('C'), ...STATEMENT_D } as const;
+    logs.add('C', R + 6, 'cal', { type: 'proposal', body: { target, title: 'Into D', why: 'W' } });
+    const { group, entry } = asGroups(logs);
+    const keys = coalitionKeys([group], [entry]);
+    expect(keys.has(deriveCoalitionEntryId(fromBase64url(testSecret('D'))))).toBe(false);
+    expect(keys.has(entry.groupId)).toBe(true);
   });
 });

@@ -41,8 +41,8 @@ const VIEW: CoalitionHomeView = {
   entryId: 'entry-1',
   name: 'Eastside Housing',
   members: [
-    { name: 'Riverside Tenants', mine: true },
-    { name: 'Oak St Co-op', mine: false },
+    { name: 'Riverside Tenants', mine: true, coalition: false },
+    { name: 'Oak St Co-op', mine: false, coalition: false },
   ],
   documents: [{ id: 'coalition-1', title: 'Mission statement' }],
   open: [motion('m1')],
@@ -62,6 +62,23 @@ function props(overrides: Partial<CoalitionHomeProps> = {}): CoalitionHomeProps 
 }
 
 const region = (name: string) => screen.getByRole('region', { name });
+
+describe('CoalitionHome, with a coalition among its members (#122)', () => {
+  it('marks a member coalition, and says Your coalition for one this device takes part through', async () => {
+    const members = [
+      { name: 'Eastside Housing', mine: true, coalition: true },
+      { name: 'Hill Coalition', mine: false, coalition: true },
+      { name: 'Elm Row', mine: false, coalition: false },
+    ];
+    render(<CoalitionHome {...props({ view: { ...VIEW, name: 'Metro Renters', members } })} />);
+    const list = screen.getByRole('region', { name: messages.coalitions.groups });
+    const [eastside, hill, elm] = within(list).getAllByRole('listitem');
+    expect(eastside).toHaveTextContent(`Eastside Housing${messages.coalitions.yourCoalition}`);
+    expect(hill).toHaveTextContent(`Hill Coalition${messages.coalitions.coalitionSeat}`);
+    expect(elm).toHaveTextContent(/^Elm Row$/);
+    expect(await axeViolations()).toEqual([]);
+  });
+});
 
 describe('CoalitionHome', () => {
   it('names the coalition and lists its open Proposals, Documents, Decided and member groups', async () => {

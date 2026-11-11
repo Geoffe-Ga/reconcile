@@ -14,7 +14,8 @@
  *   chunkCount}`: the coalition secret and `inner`, each 32 bytes in
  *   base64url, the maker's seat (their group's name there and its public
  *   seat key, never its seat secret, which stays in the group's own sealed
- *   log), and the coalition's name and statement.
+ *   log; for a coalition's card, #122, its level too, which the genesis
+ *   states), and the coalition's name and statement.
  * - A card for a coalition still to form carries no log. A card from a
  *   formed coalition (admitting a group) carries the coalition's log, packed
  *   as an invite packs a group's (`invite/envelope.ts`), so the device that
@@ -39,7 +40,7 @@ export interface Card {
   readonly secret: Uint8Array;
   /** The coalition's 32 `inner` bytes, which followers never get (#100). */
   readonly inner: Uint8Array;
-  /** The maker's seat: their group's name in the coalition and its public seat key. */
+  /** The maker's seat: their group's or coalition's name there, its public seat key, and a coalition's level (#122). */
   readonly seat: SeatEntry;
   /** The coalition's name, 1–120 code points. */
   readonly name: string;
@@ -98,6 +99,11 @@ function nameText(value: unknown, max = NAME_MAX): string | null {
   return length >= 1 && length <= max ? value : null;
 }
 
+/** A seat's `level` as the header writes it: none for a group's (#122). */
+function levelField(level: number | undefined): { readonly level?: number } {
+  return level === undefined || level === 0 ? {} : { level };
+}
+
 /** The header's JSON bytes. */
 function encodeHeader(header: CardHeader): Uint8Array {
   const { secret, inner, seat, name, title, atoms, chunkCount } = header;
@@ -105,7 +111,7 @@ function encodeHeader(header: CardHeader): Uint8Array {
     JSON.stringify({
       secret: base64url(secret),
       inner: base64url(inner),
-      seat: { name: seat.name, key: seat.key },
+      seat: { name: seat.name, key: seat.key, ...levelField(seat.level) },
       name,
       title,
       atoms,
@@ -123,15 +129,24 @@ function parseJson(bytes: Uint8Array): unknown {
   }
 }
 
+/** A coalition seat's level, 1 or 2, the only levels a card can carry (#122); 0 or none for a group's. */
+function levelOfSeat(value: unknown): number | null {
+  if (value === undefined) return 0;
+  return value === 1 || value === 2 ? value : null;
+}
+
 /**
  * The maker's seat: a group name of 1–120 code points, or 120 and the "…"
- * a longer one is cut to (`clip`), and a public seat key; or null.
+ * a longer one is cut to (`clip`), a public seat key, and a coalition's level
+ * (#122); or null.
  */
 function parseSeat(value: unknown): SeatEntry | null {
   if (!isObject(value)) return null;
   const name = nameText(value.name, NAME_MAX + 1);
   const key = key32(value.key);
-  return name === null || key === null ? null : { name, key };
+  const level = levelOfSeat(value.level);
+  if (name === null || key === null || level === null) return null;
+  return { name, key, ...levelField(level) };
 }
 
 /** A list of strings, or null. */

@@ -210,6 +210,13 @@ describe('coalitions (#120)', () => {
     });
   });
 
+  it('reads Reconcile with another coalition (#122)', () => {
+    expect(parseRoute(`#/c/${COALITION}/reconcile`)).toEqual({
+      name: 'coalitionReconcile',
+      coalitionId: COALITION,
+    });
+  });
+
   it('reads a later Document’s id, as several Documents name it (#92)', () => {
     expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}:1`)).toEqual({
       name: 'coalitionDocument',
@@ -227,6 +234,7 @@ describe('coalitions (#120)', () => {
     `#/c/${COALITION}/propose`,
     `#/c/${COALITION}/propose/a.b`,
     `#/c/${COALITION}/p/${COALITION}`,
+    `#/c/${COALITION}/reconcile/more`,
     '#/c/a+b',
   ])('sends %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
@@ -281,6 +289,7 @@ describe('routeHref', () => {
       { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
       `#/c/${GROUP}/propose/${ATOM}`,
     ],
+    [{ name: 'coalitionReconcile', coalitionId: GROUP }, `#/c/${GROUP}/reconcile`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

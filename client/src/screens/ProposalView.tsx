@@ -56,11 +56,13 @@ import type { TallyDetail } from '../engine/tally';
 import {
   motionView,
   type MotionView,
+  type MotionWords,
   motionWords,
   reconcileView,
   type ReconcileView,
 } from '../app/coalitionLines';
 import { CoalitionProgress } from '../app/CoalitionProgress';
+import { MotionTagText } from '../app/MotionTag';
 import { decisionOf } from '../app/versionViews';
 import type { HeldCoalition } from '../store/coalitions';
 import { ConsentMeter } from './ConsentMeter';
@@ -611,6 +613,29 @@ function Why({ why }: { readonly why: string }) {
 }
 
 /**
+ * A coalition asking into the coalition this motion is from (#122): its
+ * name, its level and its member groups, as its admit motion states them,
+ * which each group's vote checks.
+ */
+function AdmitsCoalition({ words }: { readonly words: MotionWords | null }) {
+  if (words === null || words.admits === null || words.admitsLevel === 0) return null;
+  const { coalitions } = messages;
+  return (
+    <Block title={coalitions.admitsTitle} className="card admits-coalition">
+      <p className="heading-3">
+        <bdi>{words.admits}</bdi>
+      </p>
+      <p className="caption">{coalitions.admitsLevel(words.admitsLevel)}</p>
+      {words.admitsGroups.length === 0 ? null : (
+        <p>
+          {coalitions.admitsCoalition} <bdi>{words.admitsGroups.join(', ')}</bdi>
+        </p>
+      )}
+    </Block>
+  );
+}
+
+/**
  * A reconcile Proposal's coalition (#114): its name and statement as the
  * card set them, then, once its genesis names them, the other groups it
  * reconciles with.
@@ -642,16 +667,6 @@ function ReconcileStatement({ view }: { readonly view: ReconcileView | null }) {
   );
 }
 
-/** "Coalition vote · <coalition>", the coalition's name in its own `<bdi>` (#120). */
-function MotionTag({ coalition }: { readonly coalition: string }) {
-  const { voteTag, tagSeparator } = messages.coalitions;
-  return (
-    <>
-      {voteTag} {tagSeparator} <bdi>{coalition}</bdi>
-    </>
-  );
-}
-
 /**
  * The coalition's own result once it has decided a motion (#120), above the
  * group's: what changed, and each group's pass or fail.
@@ -663,10 +678,15 @@ function MotionResult({ motion }: { readonly motion: MotionView | null }) {
   );
 }
 
-/** A coalition motion's progress while the coalition is still deciding it (#120). */
+/**
+ * A coalition motion's progress while the coalition is still deciding it
+ * (#120), and for one from further up, each coalition it came through (#122).
+ */
 function MotionProgress({ motion }: { readonly motion: MotionView | null }) {
   if (motion === null || motion.progress.outcome !== undefined) return null;
-  return <CoalitionProgress progress={motion.progress} />;
+  return (
+    <CoalitionProgress progress={motion.progress} steps={motion.steps} top={motion.coalition} />
+  );
 }
 
 /**
@@ -689,7 +709,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           motion === null ? (
             eyebrowOf(proposal, proposal.final)
           ) : (
-            <MotionTag coalition={motion.coalition} />
+            <MotionTagText coalition={motion.coalition} through={motion.through} />
           )
         }
         title={proposal.title}
@@ -715,6 +735,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
       </div>
       <MotionProgress motion={motion} />
       <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
+      <AdmitsCoalition words={motionWords(proposal, props.coalitions ?? [])} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />

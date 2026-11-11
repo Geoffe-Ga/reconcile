@@ -24,8 +24,8 @@ const FOUND: FoundCard = {
   mode: 'found',
   log: { records: [], cursor: 0, relayNow: 29_000_000, instance: 'i' },
   groups: [
-    { groupId: 'oak', name: 'Oak St Co-op' },
-    { groupId: 'elm', name: 'Elm Row' },
+    { groupId: 'oak', name: 'Oak St Co-op', kind: 'group' },
+    { groupId: 'elm', name: 'Elm Row', kind: 'group' },
   ],
 };
 
@@ -42,6 +42,32 @@ function props(overrides: Partial<BringCardProps> = {}): BringCardProps {
 
 afterEach(() => {
   window.history.replaceState(null, '', '#/');
+});
+
+describe('BringCard, into a coalition (#122)', () => {
+  it('lists a coalition this person takes part in, marked as one, beside the groups', async () => {
+    const user = userEvent.setup();
+    const onBring = vi.fn(() => Promise.resolve(true));
+    const groups = [
+      ...FOUND.groups,
+      { groupId: 'eastside', name: 'Eastside Housing', kind: 'coalition' as const },
+    ];
+    const lookup = vi.fn(() =>
+      Promise.resolve<CardLookup>({ kind: 'found', found: { ...FOUND, groups } }),
+    );
+    render(<BringCard {...props({ lookup, onBring })} />);
+    const picker = await screen.findByRole('radiogroup', {
+      name: messages.bring.groupOrCoalitionLabel,
+    });
+    expect(screen.getByText(messages.bring.groupOrCoalitionHint)).toBeVisible();
+    const coalition = within(picker).getByRole('radio', { name: 'Eastside Housing' });
+    expect(within(picker).getAllByText(messages.bring.coalitionOption)).toHaveLength(1);
+    expect(await axeViolations()).toEqual([]);
+    await user.click(coalition);
+    await user.type(screen.getByRole('textbox', { name: 'Your name in the coalition' }), 'Ana');
+    await user.click(screen.getByRole('button', { name: 'Bring to my group' }));
+    expect(onBring).toHaveBeenCalledWith({ ...FOUND, groups }, 'eastside', 'Ana');
+  });
 });
 
 describe('BringCard', () => {

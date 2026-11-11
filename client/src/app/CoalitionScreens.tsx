@@ -9,10 +9,12 @@
  */
 import { type ReactNode, useCallback, useMemo } from 'react';
 
+import { MAX_LEVEL } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
 import { CoalitionHome } from '../screens/CoalitionHome';
 import { CoalitionComposer, type ComposeOutcome } from '../screens/Composer';
 import { CoalitionDocumentView } from '../screens/DocumentView';
+import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { shownState } from '../store/archive';
 import type { HeldCoalition } from '../store/coalitions';
 import type { Group } from '../store/db';
@@ -28,7 +30,7 @@ import {
 } from './coalitionHome';
 import { messages } from './messages';
 import { propose, type ProposalValues } from './proposals';
-import { takePart } from './reconcile';
+import { type CardValues, makeCard, postCard, takePart } from './reconcile';
 import { type CoalitionRoute, navigate, replaceRoute } from './router';
 import type { AppServices } from './services';
 import { relayMinuteNow } from './time';
@@ -73,13 +75,24 @@ interface GateProps {
   readonly children: (ready: Ready) => ReactNode;
 }
 
-/** Renders `children` once the coalition and this device's groups are read, or says it isn't here. */
+/** A coalition on this device as its screens read one above it (#122): it may hold a seat there. */
+function deviceCoalitionOf({ entry, state }: HeldCoalition): DeviceGroup {
+  return { groupId: entry.groupId, me: entry.me.author, state, leaving: false, kind: 'coalition' };
+}
+
+/**
+ * Renders `children` once the coalition and this device's groups are read, or
+ * says it isn't here. The groups include each other coalition on this
+ * device, which may hold a seat in this one (#122).
+ */
 function CoalitionGate({ services, coalitionId, children }: GateProps) {
   const coalitions = useCoalitionList(services.store);
-  const groups = useGroups(services.store, deviceGroupOf);
-  if (coalitions === null || groups === null) return null;
+  const own = useGroups(services.store, deviceGroupOf);
+  if (coalitions === null || own === null) return null;
   const held = coalitionById(coalitions, coalitionId);
   if (held === undefined) return <CoalitionMissing />;
+  const others = coalitions.filter((each) => each !== held).map(deviceCoalitionOf);
+  const groups = [...own, ...others];
   const onTakePart = (groupId: string, name: string) =>
     takePart(services, held.entry.groupId, groupId, name);
   return children({ held, groups, onTakePart });
@@ -87,7 +100,9 @@ function CoalitionGate({ services, coalitionId, children }: GateProps) {
 
 /** The group whose seat this device holds that Back returns to, or null for Your groups. */
 function backFor(held: HeldCoalition, groups: readonly DeviceGroup[]) {
-  const group = groups.find((each) => seatIn(each.state, held.state) !== null);
+  const group = groups.find(
+    (each) => each.kind !== 'coalition' && seatIn(each.state, held.state) !== null,
+  );
   return group === undefined ? null : { groupId: group.groupId, name: group.state.name };
 }
 
@@ -195,6 +210,58 @@ function ProposeScreen({ services, coalitionId, atomId }: ProposeScreenProps) {
   );
 }
 
+/** Whether this person may make the coalition's card for another coalition (#122). */
+function reconcilesFrom(ready: Ready): boolean {
+  const level = ready.held.state.coalition?.level ?? MAX_LEVEL;
+  return standingIn(ready.held, ready.groups).kind === 'proposes' && level < MAX_LEVEL;
+}
+
+/**
+ * Reconcile with another coalition (#122): the card's form, from the
+ * coalition's entry, for someone who proposes in it while one more level
+ * stays within 3.
+ */
+function ReconcileScreen({ services, coalitionId }: Omit<GateProps, 'children'>) {
+  return (
+    <CoalitionGate services={services} coalitionId={coalitionId}>
+      {(ready) => {
+        const entryId = ready.held.entry.groupId;
+        if (!reconcilesFrom(ready)) return <CantReconcile coalitionId={coalitionId} />;
+        const onMake = async (values: CardValues): Promise<CardStep> => {
+          const made = await makeCard(services, entryId, values);
+          if (made.outcome === 'too-large') return { kind: 'too-large' };
+          const { card, proposalId } = made;
+          return {
+            kind: 'queued',
+            proposalId,
+            post: () => postCard(services, card, services.origin),
+          };
+        };
+        return (
+          <ReconcileCard
+            groupId={entryId}
+            groupName={ready.held.state.name}
+            coalitionId={coalitionId}
+            onMake={onMake}
+            copyText={services.copyText}
+          />
+        );
+      }}
+    </CoalitionGate>
+  );
+}
+
+/** Why there's no card form here: this person can't make the coalition's card (#122). */
+function CantReconcile({ coalitionId }: { readonly coalitionId: string }) {
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'coalition', coalitionId }} label={messages.coalitions.homeEyebrow} />
+      <PageHeader title={messages.card.coalitionTitle} pageTitle={messages.card.coalitionTitle} />
+      <p className="lede">{messages.card.coalitionCant}</p>
+    </main>
+  );
+}
+
 /** The screen for a route inside one coalition (#120). */
 export function CoalitionRouteScreen({
   route,
@@ -217,5 +284,7 @@ export function CoalitionRouteScreen({
       );
     case 'coalitionPropose':
       return <ProposeScreen services={services} coalitionId={coalitionId} atomId={route.atomId} />;
+    case 'coalitionReconcile':
+      return <ReconcileScreen services={services} coalitionId={coalitionId} />;
   }
 }

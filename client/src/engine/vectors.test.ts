@@ -13,14 +13,16 @@ import {
   buildRecords,
   COALITION_VECTORS,
   FOLD_VECTORS,
+  NESTED_VECTORS,
+  type NestedVector,
   publicKeyNamed,
   resolve,
   SEEDS,
   TALLY_VECTORS,
   VECTOR_FILES,
 } from '../test/vectors';
-import { resultMismatches, resultsToReport } from './crossing';
-import { fold } from './fold';
+import { foldTogether, resultMismatches, resultsToReport, seatIn } from './crossing';
+import { fold, type GroupState, type LogRecord } from './fold';
 import { DEFAULT_RULES } from './rules';
 import { rank, tally } from './tally';
 
@@ -77,6 +79,10 @@ describe('vector files', () => {
       'levels-eligible-count.json',
       'levels-step-down.json',
       'levels-step-up-after-open.json',
+      'nested-forgery.json',
+      'nested-levels.json',
+      'nested-three-levels.json',
+      'nested-two-levels.json',
       'optin-class.json',
       'optin-ignored.json',
       'optin-narrow.json',
@@ -177,6 +183,10 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'nested',
+      'nested',
+      'nested',
+      'nested',
       'fold',
       'fold',
       'fold',
@@ -239,7 +249,7 @@ describe('vector files', () => {
     ]);
   });
 
-  it('name ten keys, each derived as a second implementation (WebCrypto) derives it', async () => {
+  it('name twelve keys, each derived as a second implementation (WebCrypto) derives it', async () => {
     expect([...SEEDS.keys()]).toEqual([
       'ana',
       'ben',
@@ -251,6 +261,8 @@ describe('vector files', () => {
       'fay',
       'gus',
       'hal',
+      'ivy',
+      'jon',
     ]);
     for (const [name, seed] of SEEDS) {
       const pkcs8 = concat(fromHex('302e020100300506032b657004220420'), seed);
@@ -656,6 +668,97 @@ describe('coalition vector files (#100)', () => {
       expect(Object.values(vector.unchangedWithout ?? {}).flat(), vector.name).not.toEqual([]);
     }
   });
+});
+
+/** A nested vector's logs, each folded as a device holding them all folds it (#122), by name. */
+function foldNested(logs: Readonly<Record<string, readonly LogRecord[]>>, relayNow: number | null) {
+  const names = Object.keys(logs);
+  const states = foldTogether(names.map((name) => ({ records: logs[name] ?? [], relayNow })));
+  return new Map(names.map((name, i) => [name, states[i] ?? fold([], relayNow)]));
+}
+
+/** The state folded for `log`, failing the test when there is none. */
+function stateOf(states: ReadonlyMap<string, GroupState>, log: string): GroupState {
+  const state = states.get(log);
+  if (state === undefined) throw new Error(`no log is named "${log}"`);
+  return state;
+}
+
+/** What `lower` owes `upper` for the seat it holds there, or null when it holds none (#122). */
+function owed(states: ReadonlyMap<string, GroupState>, lower: string, upper: string) {
+  const below = stateOf(states, lower);
+  const above = stateOf(states, upper);
+  const seat = seatIn(below, above);
+  return seat === null ? null : resultsToReport(below, above, seat);
+}
+
+describe('nested vector files (#122)', () => {
+  it.each([
+    'two-levels-pass',
+    'two-levels-fail',
+    'two-levels-owed-groups',
+    'two-levels-owed-coalition',
+    'forgery-straight-to-higher',
+    'three-levels',
+    'level-3-reconcile',
+    'level-2-reconcile',
+    'genesis-level-4',
+    'genesis-level-3',
+    'genesis-level-stated',
+    'genesis-level-misstated',
+    'admit-level',
+    'admit-level-open',
+    'forgery-admit-level-4',
+    'forgery-admit-a-seat-here',
+    'forgery-admit-own-seat-above',
+    'forgery-reconcile-plain-in-coalition',
+    'forgery-reconcile-sealed-and-plain',
+    'forgery-reconcile-sealed-short',
+    'forgery-reconcile-own-seat',
+    'forgery-reconcile-dispatch',
+    'forgery-reconcile-non-participant',
+    'forgery-reconcile-repeat-key',
+    'forgery-reconcile-forming',
+    'forgery-reconcile-sealed-in-group',
+  ])('include "%s"', (name) => {
+    expect(NESTED_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('pin every forgery as a removal that changes nothing', () => {
+    const forgeries = NESTED_VECTORS.filter((vector) => vector.name.startsWith('forgery-'));
+    expect(forgeries.length).toBeGreaterThan(10);
+    for (const vector of forgeries) {
+      expect(Object.values(vector.unchangedWithout ?? {}).flat(), vector.name).not.toEqual([]);
+    }
+  });
+});
+
+describe('nested vectors (#122)', () => {
+  it.each(NESTED_VECTORS.map((vector) => [vector.name, vector] as const))(
+    '%s',
+    (_name, vector: NestedVector) => {
+      const { logs, ids } = buildLogs(vector);
+      const states = foldNested(logs, vector.relayNow);
+      for (const [log, expected] of Object.entries(vector.expect)) {
+        expect(stateOf(states, log), log).toMatchObject(resolve(expected, ids) as object);
+      }
+      for (const [lower, uppers] of Object.entries(vector.report ?? {})) {
+        for (const [upper, expected] of Object.entries(uppers)) {
+          expect(owed(states, lower, upper), `${lower} → ${upper}`).toEqual(resolve(expected, ids));
+        }
+      }
+      for (const [log, seqs] of Object.entries(vector.unchangedWithout ?? {})) {
+        const kept = (logs[log] ?? []).filter((record) => !seqs.includes(record.seq));
+        const without = foldNested({ ...logs, [log]: kept }, vector.relayNow);
+        for (const [name, state] of states) {
+          expect({ ...stateOf(without, name), ignored: [] }, name).toEqual({
+            ...state,
+            ignored: [],
+          });
+        }
+      }
+    },
+  );
 });
 
 describe('tally vectors', () => {

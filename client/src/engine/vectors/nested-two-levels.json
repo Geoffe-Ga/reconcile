@@ -1,0 +1,3285 @@
+{
+  "kind": "nested",
+  "vectors": [
+    {
+      "name": "two-levels-pass: A and B form C, and C and group E form D; a motion in D opens in C and E, and through C in A and B; A and B pass it, so C reports pass to D, E passes, and D passes it once results stop counting",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "ANA",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!A",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500300000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500780000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 26,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501560000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 2,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Oak St",
+                "founder": "BEN",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!B",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@4",
+                "scores": {
+                  "@4": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 27,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762501620000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Shared ground",
+                "atoms": ["Everyone has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500480000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500540000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%dee"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": {
+                    "$sealed": ["@7", "~innerC", "~D", "~innerD", "C"]
+                  },
+                  "key": "^C",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500900000,
+              "body": {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500960000,
+              "body": {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 29,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762501740000,
+              "body": {
+                "motion": "@25",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 30,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762501800000,
+              "body": {
+                "motion": "@25",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "E": [
+          {
+            "seq": 17,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%eve",
+              "ts": 1762501020000,
+              "body": {
+                "name": "Elm Row",
+                "founder": "EVE",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501080000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~D",
+                  "inner": "~innerD",
+                  "seat": "!E",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501140000,
+              "body": {
+                "proposal": "@18",
+                "scores": {
+                  "@18": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 28,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501680000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "D": [
+          {
+            "seq": 20,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762501200000,
+              "body": {
+                "kind": "coalition",
+                "name": "Metro Renters",
+                "title": "Shared ground",
+                "atoms": ["Rent stays fair."],
+                "seats": [
+                  {
+                    "name": "Eastside Housing",
+                    "key": "^C",
+                    "level": 1
+                  },
+                  {
+                    "name": "Elm Row",
+                    "key": "^E"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501260000,
+              "body": {
+                "name": "FAY",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@20", "%fay"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 22,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501320000,
+              "body": {
+                "name": "HAL",
+                "seat": "^E",
+                "proof": {
+                  "$seatProof": ["E", "@20", "%hal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501380000,
+              "body": {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501440000,
+              "body": {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501500000,
+              "body": {
+                "atom": "@20.0",
+                "title": "Say it better",
+                "why": "Clearer.",
+                "text": "Rent stays fair for everyone."
+              }
+            }
+          },
+          {
+            "seq": 31,
+            "received": 29375015,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501860000,
+              "body": {
+                "motion": "@25",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 32,
+            "received": 29375015,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501920000,
+              "body": {
+                "motion": "@25",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29395172,
+      "expect": {
+        "D": {
+          "coalition": {
+            "status": "formed",
+            "level": 2,
+            "seats": [
+              {
+                "name": "Eastside Housing",
+                "key": "^C",
+                "level": 1
+              },
+              {
+                "name": "Elm Row",
+                "key": "^E"
+              }
+            ],
+            "results": [
+              {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass",
+                "by": "%fay"
+              },
+              {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass",
+                "by": "%hal"
+              },
+              {
+                "motion": "@25",
+                "seat": "^C",
+                "result": "pass",
+                "by": "%fay"
+              },
+              {
+                "motion": "@25",
+                "seat": "^E",
+                "result": "pass",
+                "by": "%hal"
+              }
+            ],
+            "motions": [
+              {
+                "id": "@25",
+                "seats": ["^C", "^E"],
+                "admit": null
+              }
+            ]
+          },
+          "proposals": [
+            {
+              "id": "@25",
+              "final": true,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ],
+          "atoms": [
+            {
+              "text": "Rent stays fair for everyone."
+            }
+          ]
+        },
+        "C": {
+          "coalition": {
+            "status": "formed",
+            "level": 1,
+            "motions": [
+              {
+                "id": "@12",
+                "seats": ["^A", "^B"],
+                "admit": null
+              },
+              {
+                "id": "@25",
+                "seats": ["^A", "^B"],
+                "admit": null
+              }
+            ],
+            "results": [
+              {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass",
+                "by": "%cal"
+              },
+              {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass",
+                "by": "%dee"
+              },
+              {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass",
+                "by": "%cal"
+              },
+              {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass",
+                "by": "%dee"
+              },
+              {
+                "motion": "@25",
+                "seat": "^A",
+                "result": "pass",
+                "by": "%cal"
+              },
+              {
+                "motion": "@25",
+                "seat": "^B",
+                "result": "pass",
+                "by": "%dee"
+              }
+            ]
+          },
+          "coalitions": [
+            {
+              "proposal": "@12",
+              "key": "^C",
+              "name": "Metro Renters",
+              "outcome": "pass"
+            }
+          ],
+          "proposals": [
+            {
+              "id": "@12",
+              "target": {
+                "kind": "reconcile",
+                "key": "^C",
+                "name": "Metro Renters"
+              },
+              "outcome": {
+                "kind": "pass"
+              }
+            },
+            {
+              "id": "@25",
+              "number": 0,
+              "target": {
+                "kind": "motion",
+                "coalition": "@20",
+                "chain": []
+              },
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ],
+          "atoms": [
+            {
+              "text": "Everyone has a safe home."
+            }
+          ]
+        },
+        "A": {
+          "proposals": [
+            {
+              "target": {
+                "kind": "reconcile"
+              },
+              "final": true,
+              "outcome": {
+                "kind": "pass"
+              }
+            },
+            {
+              "id": "@12",
+              "number": 0,
+              "target": {
+                "kind": "motion",
+                "coalition": "@7",
+                "chain": []
+              }
+            },
+            {
+              "id": "@25",
+              "number": 0,
+              "target": {
+                "kind": "motion",
+                "coalition": "@7",
+                "chain": ["@20"]
+              },
+              "final": true,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ]
+        },
+        "E": {
+          "proposals": [
+            {
+              "target": {
+                "kind": "reconcile"
+              }
+            },
+            {
+              "id": "@25",
+              "number": 0,
+              "target": {
+                "kind": "motion",
+                "coalition": "@20",
+                "chain": []
+              },
+              "final": true,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ]
+        }
+      },
+      "report": {
+        "A": {
+          "C": [],
+          "D": null
+        },
+        "B": {
+          "C": []
+        },
+        "C": {
+          "D": []
+        },
+        "E": {
+          "D": []
+        }
+      }
+    },
+    {
+      "name": "two-levels-fail: B fails the motion in D, so C reports fail, and D fails it at once, since a coalition of 2 seats needs both; its text stays",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "ANA",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!A",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500300000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500780000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 26,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501560000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 2,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Oak St",
+                "founder": "BEN",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!B",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@4",
+                "scores": {
+                  "@4": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 27,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762501620000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 0
+                },
+                "note": "Not with them."
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Shared ground",
+                "atoms": ["Everyone has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500480000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500540000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%dee"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": {
+                    "$sealed": ["@7", "~innerC", "~D", "~innerD", "C"]
+                  },
+                  "key": "^C",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500900000,
+              "body": {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500960000,
+              "body": {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 29,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762501740000,
+              "body": {
+                "motion": "@25",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 30,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762501800000,
+              "body": {
+                "motion": "@25",
+                "seat": "^B",
+                "result": "fail"
+              }
+            }
+          }
+        ],
+        "E": [
+          {
+            "seq": 17,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%eve",
+              "ts": 1762501020000,
+              "body": {
+                "name": "Elm Row",
+                "founder": "EVE",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501080000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~D",
+                  "inner": "~innerD",
+                  "seat": "!E",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501140000,
+              "body": {
+                "proposal": "@18",
+                "scores": {
+                  "@18": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 28,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501680000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "D": [
+          {
+            "seq": 20,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762501200000,
+              "body": {
+                "kind": "coalition",
+                "name": "Metro Renters",
+                "title": "Shared ground",
+                "atoms": ["Rent stays fair."],
+                "seats": [
+                  {
+                    "name": "Eastside Housing",
+                    "key": "^C",
+                    "level": 1
+                  },
+                  {
+                    "name": "Elm Row",
+                    "key": "^E"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501260000,
+              "body": {
+                "name": "FAY",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@20", "%fay"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 22,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501320000,
+              "body": {
+                "name": "HAL",
+                "seat": "^E",
+                "proof": {
+                  "$seatProof": ["E", "@20", "%hal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501380000,
+              "body": {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501440000,
+              "body": {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501500000,
+              "body": {
+                "atom": "@20.0",
+                "title": "Say it better",
+                "why": "Clearer.",
+                "text": "Rent stays fair for everyone."
+              }
+            }
+          },
+          {
+            "seq": 31,
+            "received": 29375015,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501860000,
+              "body": {
+                "motion": "@25",
+                "seat": "^C",
+                "result": "fail"
+              }
+            }
+          },
+          {
+            "seq": 32,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501920000,
+              "body": {
+                "motion": "@25",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "D": {
+          "coalition": {
+            "status": "formed",
+            "results": [
+              {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              },
+              {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              },
+              {
+                "motion": "@25",
+                "seat": "^C",
+                "result": "fail",
+                "by": "%fay"
+              },
+              {
+                "motion": "@25",
+                "seat": "^E",
+                "result": "pass",
+                "by": "%hal"
+              }
+            ]
+          },
+          "proposals": [
+            {
+              "id": "@25",
+              "final": true,
+              "closedAt": 29375015,
+              "outcome": {
+                "kind": "fail"
+              }
+            }
+          ],
+          "atoms": [
+            {
+              "text": "Rent stays fair."
+            }
+          ]
+        },
+        "C": {
+          "proposals": [
+            {},
+            {
+              "id": "@25",
+              "final": true,
+              "closedAt": 29375014,
+              "outcome": {
+                "kind": "fail"
+              }
+            }
+          ]
+        },
+        "A": {
+          "proposals": [
+            {},
+            {},
+            {
+              "id": "@25",
+              "target": {
+                "kind": "motion",
+                "coalition": "@7",
+                "chain": ["@20"]
+              },
+              "final": true,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ]
+        },
+        "B": {
+          "proposals": [
+            {},
+            {},
+            {
+              "id": "@25",
+              "final": true,
+              "outcome": {
+                "kind": "fail"
+              }
+            }
+          ]
+        }
+      },
+      "report": {
+        "A": {
+          "C": []
+        },
+        "B": {
+          "C": []
+        },
+        "C": {
+          "D": []
+        },
+        "E": {
+          "D": []
+        }
+      }
+    },
+    {
+      "name": "forgery-straight-to-higher: a result for seat A posted to D counts nowhere: cal can’t join D under A’s seat, and fay, bound to C’s seat, can’t report for A, so D holds results only from C and E",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "ANA",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!A",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500300000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500780000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 2,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Oak St",
+                "founder": "BEN",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!B",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@4",
+                "scores": {
+                  "@4": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Shared ground",
+                "atoms": ["Everyone has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500480000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500540000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%dee"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": {
+                    "$sealed": ["@7", "~innerC", "~D", "~innerD", "C"]
+                  },
+                  "key": "^C",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500900000,
+              "body": {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500960000,
+              "body": {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "E": [
+          {
+            "seq": 17,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%eve",
+              "ts": 1762501020000,
+              "body": {
+                "name": "Elm Row",
+                "founder": "EVE",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501080000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~D",
+                  "inner": "~innerD",
+                  "seat": "!E",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501140000,
+              "body": {
+                "proposal": "@18",
+                "scores": {
+                  "@18": 4
+                }
+              }
+            }
+          }
+        ],
+        "D": [
+          {
+            "seq": 20,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762501200000,
+              "body": {
+                "kind": "coalition",
+                "name": "Metro Renters",
+                "title": "Shared ground",
+                "atoms": ["Rent stays fair."],
+                "seats": [
+                  {
+                    "name": "Eastside Housing",
+                    "key": "^C",
+                    "level": 1
+                  },
+                  {
+                    "name": "Elm Row",
+                    "key": "^E"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501260000,
+              "body": {
+                "name": "FAY",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@20", "%fay"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 22,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501320000,
+              "body": {
+                "name": "HAL",
+                "seat": "^E",
+                "proof": {
+                  "$seatProof": ["E", "@20", "%hal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501380000,
+              "body": {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501440000,
+              "body": {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501500000,
+              "body": {
+                "atom": "@20.0",
+                "title": "Say it better",
+                "why": "Clearer.",
+                "text": "Rent stays fair for everyone."
+              }
+            }
+          },
+          {
+            "seq": 26,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%cal",
+              "ts": 1762501560000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@20", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 27,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%cal",
+              "ts": 1762501620000,
+              "body": {
+                "motion": "@25",
+                "seat": "^A",
+                "result": "fail"
+              }
+            }
+          },
+          {
+            "seq": 28,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501680000,
+              "body": {
+                "motion": "@25",
+                "seat": "^A",
+                "result": "fail"
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "D": {
+          "members": [
+            {
+              "author": "%fay"
+            },
+            {
+              "author": "%hal"
+            }
+          ],
+          "coalition": {
+            "bindings": [
+              {
+                "author": "%fay",
+                "seat": "^C"
+              },
+              {
+                "author": "%hal",
+                "seat": "^E"
+              }
+            ],
+            "results": [
+              {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              },
+              {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            ]
+          },
+          "proposals": [
+            {
+              "id": "@25",
+              "final": false
+            }
+          ]
+        }
+      },
+      "unchangedWithout": {
+        "D": [26, 27, 28]
+      }
+    },
+    {
+      "name": "two-levels-owed-groups: once A and B have decided the motion in D, each owes C its result, and C owes D nothing until it decides; A owes D nothing, holding no seat there",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "ANA",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!A",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500300000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500780000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 26,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501560000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 2,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Oak St",
+                "founder": "BEN",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!B",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@4",
+                "scores": {
+                  "@4": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 27,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762501620000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 0
+                },
+                "note": "Not with them."
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Shared ground",
+                "atoms": ["Everyone has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500480000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500540000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%dee"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": {
+                    "$sealed": ["@7", "~innerC", "~D", "~innerD", "C"]
+                  },
+                  "key": "^C",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500900000,
+              "body": {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500960000,
+              "body": {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "E": [
+          {
+            "seq": 17,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%eve",
+              "ts": 1762501020000,
+              "body": {
+                "name": "Elm Row",
+                "founder": "EVE",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501080000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~D",
+                  "inner": "~innerD",
+                  "seat": "!E",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501140000,
+              "body": {
+                "proposal": "@18",
+                "scores": {
+                  "@18": 4
+                }
+              }
+            }
+          }
+        ],
+        "D": [
+          {
+            "seq": 20,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762501200000,
+              "body": {
+                "kind": "coalition",
+                "name": "Metro Renters",
+                "title": "Shared ground",
+                "atoms": ["Rent stays fair."],
+                "seats": [
+                  {
+                    "name": "Eastside Housing",
+                    "key": "^C",
+                    "level": 1
+                  },
+                  {
+                    "name": "Elm Row",
+                    "key": "^E"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501260000,
+              "body": {
+                "name": "FAY",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@20", "%fay"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 22,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501320000,
+              "body": {
+                "name": "HAL",
+                "seat": "^E",
+                "proof": {
+                  "$seatProof": ["E", "@20", "%hal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501380000,
+              "body": {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501440000,
+              "body": {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501500000,
+              "body": {
+                "atom": "@20.0",
+                "title": "Say it better",
+                "why": "Clearer.",
+                "text": "Rent stays fair for everyone."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "C": {
+          "proposals": [
+            {},
+            {
+              "id": "@25",
+              "final": false,
+              "outcome": {
+                "kind": "lapse"
+              }
+            }
+          ]
+        }
+      },
+      "report": {
+        "A": {
+          "C": [
+            {
+              "motion": "@25",
+              "seat": "^A",
+              "result": "pass"
+            }
+          ],
+          "D": null
+        },
+        "B": {
+          "C": [
+            {
+              "motion": "@25",
+              "seat": "^B",
+              "result": "fail"
+            }
+          ]
+        },
+        "C": {
+          "D": []
+        },
+        "E": {
+          "D": []
+        }
+      }
+    },
+    {
+      "name": "two-levels-owed-coalition: as soon as C’s outcome is certain, a pass not yet final included, C owes D its one result, which carries only the motion, C’s seat and pass",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "ANA",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!A",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500300000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500780000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 26,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501560000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 2,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Oak St",
+                "founder": "BEN",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!B",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@4",
+                "scores": {
+                  "@4": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 27,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762501620000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Shared ground",
+                "atoms": ["Everyone has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500480000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500540000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%dee"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": {
+                    "$sealed": ["@7", "~innerC", "~D", "~innerD", "C"]
+                  },
+                  "key": "^C",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500900000,
+              "body": {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500960000,
+              "body": {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 28,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762501680000,
+              "body": {
+                "motion": "@25",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 29,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762501740000,
+              "body": {
+                "motion": "@25",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "E": [
+          {
+            "seq": 17,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%eve",
+              "ts": 1762501020000,
+              "body": {
+                "name": "Elm Row",
+                "founder": "EVE",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501080000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~D",
+                  "inner": "~innerD",
+                  "seat": "!E",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501140000,
+              "body": {
+                "proposal": "@18",
+                "scores": {
+                  "@18": 4
+                }
+              }
+            }
+          }
+        ],
+        "D": [
+          {
+            "seq": 20,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762501200000,
+              "body": {
+                "kind": "coalition",
+                "name": "Metro Renters",
+                "title": "Shared ground",
+                "atoms": ["Rent stays fair."],
+                "seats": [
+                  {
+                    "name": "Eastside Housing",
+                    "key": "^C",
+                    "level": 1
+                  },
+                  {
+                    "name": "Elm Row",
+                    "key": "^E"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501260000,
+              "body": {
+                "name": "FAY",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@20", "%fay"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 22,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501320000,
+              "body": {
+                "name": "HAL",
+                "seat": "^E",
+                "proof": {
+                  "$seatProof": ["E", "@20", "%hal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501380000,
+              "body": {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501440000,
+              "body": {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501500000,
+              "body": {
+                "atom": "@20.0",
+                "title": "Say it better",
+                "why": "Clearer.",
+                "text": "Rent stays fair for everyone."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "C": {
+          "proposals": [
+            {},
+            {
+              "id": "@25",
+              "final": false,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ]
+        }
+      },
+      "report": {
+        "A": {
+          "C": []
+        },
+        "B": {
+          "C": []
+        },
+        "C": {
+          "D": [
+            {
+              "motion": "@25",
+              "seat": "^C",
+              "result": "pass"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
