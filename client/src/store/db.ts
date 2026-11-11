@@ -446,6 +446,13 @@ export interface Pull {
   lastSyncAt: number;
   /** The move to the next epoch this pull found the group's key change for, if any (#98). */
   advance?: EpochAdvance;
+  /**
+   * Outbox entries the relay took this pass, by their bytes, each dropped in
+   * the change that saves the records this pull read back. A room's message
+   * stays queued until then (#343), so the room lists it once throughout:
+   * from its outbox, then from its log.
+   */
+  sent?: readonly Uint8Array[];
 }
 
 /**
@@ -955,11 +962,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
-        // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
-        const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
-        if (index >= 0) {
-          group.outbox.splice(index, 1);
-        }
+        dropSent(group, bytes);
       }),
     applyPull(groupId, pull, idOf) {
       const { advance } = pull;
@@ -1162,9 +1165,19 @@ function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
   };
 }
 
+/** Drops the first outbox entry of `group` with exactly `bytes`, once the relay has it. */
+function dropSent(group: Pick<Group, 'outbox'>, bytes: Uint8Array): void {
+  // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
+  const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
+  if (index >= 0) {
+    group.outbox.splice(index, 1);
+  }
+}
+
 /**
  * Saves what a sync pass read into `group`'s record: its new log records, in
- * relay order, and sync state. A room (#125) then keeps only the records
+ * relay order, and sync state, dropping from the outbox each entry the pull
+ * says the relay took (#343). A room (#125) then keeps only the records
  * received at most 30 days of relay time before the pull's `now`, so each
  * sync deletes the rest in the same change.
  */
@@ -1173,6 +1186,7 @@ function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  for (const bytes of pull.sent ?? []) dropSent(group, bytes);
   if (isRoomEntry(group)) {
     group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
   }

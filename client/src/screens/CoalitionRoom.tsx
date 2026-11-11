@@ -6,7 +6,8 @@
  * oldest at the top to newest at the bottom, each with its author's
  * coalition name and the relay's time, its text plain inside `<bdi>`, line
  * breaks kept and never read as Markdown or links. What this device wrote
- * and the relay doesn't have yet shows at the end with its `SendStatus`.
+ * that the room's log doesn't hold yet shows at the end with its
+ * `SendStatus`, until the relay's copy takes its place in one render (#343).
  * Someone bound to a seat writes in the box at the bottom; someone who
  * hasn't joined is offered Take part there first, and anyone else reads.
  * New messages from others are announced politely, and only while the
