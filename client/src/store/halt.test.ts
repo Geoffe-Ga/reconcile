@@ -1,7 +1,8 @@
 /**
  * Halting the sync loop (#78): Erase halts it before it closes the store, so
  * no request starts once the halt resolves, and a pass already running stops
- * before its next group, with no chat bot run (#119) for the group it finishes.
+ * before its next group, with no chat bot run (#119) for the group it finishes
+ * and no relay backup (#97) after it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -109,6 +110,28 @@ describe('halt', () => {
 
     expect(await passing).toBe(true);
     expect(chatBot.run).not.toHaveBeenCalled();
+  });
+
+  it('runs nothing after a halted pass, so Erase starts no relay backup (#97)', async () => {
+    const store = await twoGroups();
+    const { fetch, urls, release } = heldFetch();
+    const afterPass = vi.fn(() => Promise.resolve());
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch }),
+      seal: xchachaSeal,
+      timers: manualTimers().timers,
+      afterPass,
+    });
+    const passing = sync.syncOnce();
+    await expect.poll(() => urls.length).toBe(1);
+
+    const halting = sync.halt();
+    release();
+    await halting;
+
+    expect(await passing).toBe(true);
+    expect(afterPass).not.toHaveBeenCalled();
   });
 
   it('stops polling, so neither focus nor coming back online starts a pass', async () => {

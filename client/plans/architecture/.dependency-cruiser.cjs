@@ -10,9 +10,9 @@ module.exports = {
     {
       name: 'core-stays-framework-free',
       comment:
-        'engine/, crypto/, store/ and invite/ are plain TypeScript so they outlive any UI framework and can be tested against protocol vectors.',
+        'engine/, crypto/, store/, invite/, link/ and share/ are plain TypeScript so they outlive any UI framework and can be tested against protocol vectors.',
       severity: 'error',
-      from: { path: '^src/(engine|crypto|store|invite)/' },
+      from: { path: '^src/(engine|crypto|store|invite|link|share)/' },
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {
@@ -46,6 +46,14 @@ module.exports = {
       severity: 'error',
       from: { path: '^src/crypto/', pathNot: '\\.test\\.tsx?$' },
       to: { dependencyTypesNot: ['local'], pathNot: 'node_modules/@noble/' },
+    },
+    {
+      name: 'only-qr-ts-imports-qr',
+      comment:
+        'The QR encoder and decoder (#96) are reached only through src/app/qr.ts, so the one library outside @noble that touches a linking code can be audited in one place. Tests may decode with it directly.',
+      severity: 'error',
+      from: { pathNot: ['^src/app/qr\\.ts$', '\\.test\\.tsx?$'] },
+      to: { path: 'node_modules/qr/' },
     },
     {
       name: 'test-helpers-stay-in-tests',

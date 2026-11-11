@@ -3,12 +3,13 @@ import { openDB } from 'idb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
+import { newSigningKeys } from '../crypto/sign';
 import { local, text, utf8 } from '../test/bytes';
 import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { HISTORY_GAP_MS, openStore } from './db';
 import type { Group, NewGroup, Pull } from './db';
-import type { PersonalDocument } from './personal';
+import type { PersonalDocument, ShareState } from './personal';
 
 freshIndexedDBPerTest();
 
@@ -44,8 +45,12 @@ const statement: PersonalDocument = {
   updatedAt: 1_762_650_000_000,
 };
 
-/** The schema every upgrade path ends at: version 4, with the groups and personal stores (#93). */
-const CURRENT_SCHEMA = { version: 4, stores: ['groups', 'personal'] };
+/**
+ * The schema every upgrade path ends at: version 5, with the groups and
+ * personal stores (#93) and the device store, which holds the relay backup's
+ * state (#97).
+ */
+const CURRENT_SCHEMA = { version: 5, stores: ['device', 'groups', 'personal'] };
 
 /** The version and object stores of the IndexedDB database `name`, as it now stands. */
 async function schemaOf(name: string): Promise<{ version: number; stores: string[] }> {
@@ -571,12 +576,13 @@ describe('purgeGroup', () => {
   });
 });
 
-describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4)', () => {
-  it('starts a fresh install at version 4, with an empty groups store and personal store', async () => {
+describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5)', () => {
+  it('starts a fresh install at version 5, with empty groups, personal and device stores', async () => {
     const store = await openStore();
 
     expect(await store.listGroups()).toEqual([]);
     expect(await store.listPersonal()).toEqual([]);
+    expect(await store.getRelayBackup()).toBeUndefined();
     store.close();
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
@@ -653,7 +659,7 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 
-  it('opens version 4 as #93 left it, changing nothing, and archives a group in it', async () => {
+  it('upgrades version 4 as #93 left it, adding only the device store (#97), and archives a group in it', async () => {
     const old = await openDB('reconcile', 4, {
       upgrade(database) {
         database.createObjectStore('groups', { keyPath: 'groupId' });
@@ -671,6 +677,140 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
     await store.markArchived('group-1', 'dissolved');
     expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved' });
     expect(await store.listPersonal()).toEqual([statement]);
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('upgrades a version 4 group holding #98’s keys and epochs and #99’s push to 5, keeping them, with the relay backup off (#97)', async () => {
+    const push = { endpoint: 'https://push.example/1', mailboxes: ['m'], instance: 'i', at: 1 };
+    const rotated = storedGroup({
+      groupId: 'rotated',
+      kxKey: new Uint8Array(32).fill(4),
+      epoch: 2,
+      log: [
+        { seq: 1, received: 9, bytes: utf8('{"g":1}') },
+        { seq: 2, received: 10, bytes: utf8('{"p":1}'), epoch: 1 },
+        { seq: 3, received: 11, bytes: utf8('{"p":2}'), epoch: 2 },
+      ],
+      push,
+      nudged: ['p1@29010080'],
+    });
+    const old = await openDB('reconcile', 4, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+      },
+    });
+    await old.put('groups', rotated);
+    await old.put('personal', statement);
+    old.close();
+
+    const store = await openStore();
+
+    const plain = (held: Group | undefined) => ({
+      ...comparable(held),
+      kxKey: Array.from(held?.kxKey ?? []),
+    });
+    expect((await store.listGroups()).map(plain)).toEqual([plain(rotated)]);
+    expect((await store.getGroup('rotated'))?.log.map((record) => record.epoch ?? 0)).toEqual([
+      0, 1, 2,
+    ]);
+    expect(await store.listPersonal()).toEqual([statement]);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    // The new store's key sits in no group: keeping one leaves the group's record as it was.
+    await store.setRelayBackupKey(new Uint8Array(32).fill(8));
+    expect(plain(await store.getGroup('rotated'))).toEqual(plain(rotated));
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+});
+
+/** A share by link (#105) on {@link statement}, as #105's app at version 4 kept it. */
+function sharedStatement(): PersonalDocument & { share: ShareState } {
+  const keys = newSigningKeys();
+  const share: ShareState = {
+    seed: new Uint8Array(32).fill(6),
+    secretKey: keys.secretKey,
+    publicKey: keys.publicKey,
+    n: 3,
+    lastPostedAt: 1_762_650_100_000,
+    pending: false,
+  };
+  return { ...statement, share };
+}
+
+/** `document` with its share's bytes as plain lists, so arrays IndexedDB cloned compare equal. */
+function plainShare(document: PersonalDocument | undefined) {
+  const share = document?.share;
+  return share === undefined
+    ? document
+    : {
+        ...document,
+        share: {
+          ...share,
+          seed: Array.from(share.seed),
+          secretKey: Array.from(share.secretKey),
+          publicKey: Array.from(share.publicKey),
+        },
+      };
+}
+
+describe('a share by link through each upgrade (#105, beside #97’s version 5)', () => {
+  it('upgrades version 3, which had no personal store, to 5, where a share can be kept', async () => {
+    const old = await openDB('reconcile', 3, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+      },
+    });
+    await old.put('groups', storedGroup());
+    old.close();
+    const shared = sharedStatement();
+
+    const store = await openStore();
+    await store.savePersonal(statement);
+    await store.updateShare(statement.id, () => shared.share);
+
+    expect(plainShare(await store.getPersonal(statement.id))).toEqual(plainShare(shared));
+    expect(await store.getRelayBackup()).toBeUndefined();
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('upgrades a version 4 Document holding #105’s share to 5, keeping the share whole', async () => {
+    const shared = sharedStatement();
+    const old = await openDB('reconcile', 4, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+      },
+    });
+    await old.put('personal', shared);
+    old.close();
+
+    const store = await openStore();
+
+    expect((await store.listPersonal()).map(plainShare)).toEqual([plainShare(shared)]);
+    // The editor's save keeps it, and a share the store kept stays one it can stop.
+    await store.savePersonal({ ...statement, text: 'Edited after the upgrade.\n' });
+    expect((await store.getPersonal(statement.id))?.share?.pending).toBe(true);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('opens version 5 as it stands, a shared Document and the relay backup key both kept', async () => {
+    const shared = sharedStatement();
+    const key = new Uint8Array(32).fill(8);
+    const first = await openStore();
+    await first.savePersonal(statement);
+    await first.updateShare(statement.id, () => shared.share);
+    await first.setRelayBackupKey(key);
+    first.close();
+
+    const store = await openStore();
+
+    expect((await store.listPersonal()).map(plainShare)).toEqual([plainShare(shared)]);
+    expect(local((await store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(local(key));
     store.close();
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });

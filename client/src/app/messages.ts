@@ -40,6 +40,8 @@ export const messages = {
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
     leaving: 'Leaving…',
     restoreHeading: 'Have a backup file?',
+    linkHeading: 'Have Reconcile on another device?',
+    link: 'Link to my other device',
     settings: 'Settings',
     personal: 'Personal',
     personalHint: 'Your mission statement and other Documents of your own, on this device only.',
@@ -745,7 +747,7 @@ export const messages = {
     title: 'Personal',
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
     privacy:
-      'They stay on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes them.',
+      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
     documentPrivacy:
       'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
     missionTitle: 'My mission statement',
@@ -771,6 +773,71 @@ export const messages = {
     deleteConfirm: 'Delete',
     deleteCancel: 'Cancel',
     deleteFailed: 'It couldn’t be deleted from this device. Try again.',
+    /** Under Delete's question, for a shared Document (#105): deleting stops its link first. */
+    deleteShared: 'Deleting it stops sharing its link first, which needs the relay.',
+    deleteSharedFailed:
+      'Sharing couldn’t be stopped, so nothing was deleted. Check your connection, then try again.',
+    /** Under a shared Document's title on Personal (#105). */
+    sharedLine: 'Shared by link',
+    /** In place of documentPrivacy while the Document is shared (#105). */
+    sharedPrivacy:
+      'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
+    /**
+     * Share link (#105; ADR-0074's personal page at level 2): one Document,
+     * read-only, by a link whose key only its holders have.
+     */
+    share: {
+      heading: 'Share by link',
+      /** Before it's on: what the link shows, and to whom. */
+      about:
+        'Share link makes a link anyone can open in any browser to read this Document’s latest version, without joining anything. They see its title and text, never your name, your groups or your other Documents.',
+      /** Before it's on: what the relay keeps and sees (ADR-0075 §2). */
+      relay:
+        'The relay keeps only a sealed copy it can’t read. As when your groups sync, it sees this device’s internet address while it posts, so someone watching it live could tell this device also uses your groups.',
+      start: 'Share link',
+      starting: 'Making your link…',
+      startFailed:
+        'The link couldn’t be made, so nothing was shared. Making one needs the relay. Check your connection, then try again.',
+      tooLarge: 'This Document is too long to share by link. Shorten it, then try again.',
+      tooLargeShared:
+        'This Document is now too long for its link, which still shows the last version that fit. Shorten it to update the link.',
+      field: 'Link',
+      /** Beside the link: who can read it, and when it stops. */
+      warning:
+        'Anyone with this link can read this Document. It stops working if you don’t open Reconcile for 30 days.',
+      /** How edits reach the link. */
+      edits: 'Your edits reach the link when you leave this page.',
+      pending:
+        'Your latest changes haven’t reached the link yet. Reconcile sends them the next time it opens online.',
+      shareAgain: 'Share link again',
+      shared: 'Shared.',
+      copied: 'Copied. Send it to the people you want to read it.',
+      blocked: 'Copying is blocked here. Select the link above and copy it yourself.',
+      /** What the share sheet carries beside the link: fixed, never the Document's words (spec §9). */
+      message: 'Something I wrote, shared read-only with Reconcile:',
+      stop: 'Stop sharing',
+      stopping: 'Stopping…',
+      stopped:
+        'Sharing stopped. People who opened the link may have kept a copy, and earlier copies stay on the relay, still sealed, until they expire within a month.',
+      stopFailed:
+        'Sharing couldn’t be stopped, so nothing changed and the link still works. Stopping needs the relay. Check your connection, then try again.',
+    },
+  },
+  /**
+   * The page a share link opens (#105), for anyone, in any browser, outside
+   * first run: it reads the Document and keeps nothing.
+   */
+  shared: {
+    /** The tab's title: never the Document's own words, which browser history would keep. */
+    pageTitle: 'Shared page',
+    note: 'Shared with Reconcile. Read-only.',
+    loading: 'Opening the page…',
+    empty: 'Nothing is written here yet.',
+    goneTitle: 'This link doesn’t work',
+    gone: 'This page isn’t shared any more, or the link is damaged.',
+    offlineTitle: 'Can’t open this page yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
   },
   /**
    * Earning a vote (#101; ADR-0014, ADR-0021): a newcomer's progress on the
@@ -815,6 +882,7 @@ export const messages = {
     notifyHeading: 'Notifications',
     backupHeading: 'Back up your groups',
     restoreHeading: 'Restore a backup',
+    linkHeading: 'Link a new device',
     eraseHeading: 'Erase this device',
   },
   /**
@@ -848,6 +916,12 @@ export const messages = {
     cancelled: 'The file wasn’t saved. Save the file to try again.',
     none: 'There are no groups on this device to back up yet.',
   },
+  /** Settings' line on the relay backup (#97), shown once the device keeps one. */
+  relayBackup: {
+    saved: (day: string) => `Backed up to the relay ${day}.`,
+    tooLarge: 'Your groups are too large for the relay backup. Save a backup file instead.',
+    waiting: 'Your groups will be backed up to the relay the next time Reconcile syncs.',
+  },
   restore: {
     lede: 'Bring back the groups in a backup file you saved. On a second device, they vote as you.',
     choose: 'Choose backup file',
@@ -879,6 +953,70 @@ export const messages = {
       `Press and hold for ${count(seconds)} seconds. On a keyboard, hold Space or Enter.`,
     holding: (left: number) =>
       left === 1 ? 'Keep holding: 1 second left.' : `Keep holding: ${count(left)} seconds left.`,
+  },
+  /**
+   * Linking a second device (#96; ADR-0044 as cut by ADR-0074): the existing
+   * device shows a code, the new one scans or pastes it, both show a number,
+   * and only the existing device confirms.
+   */
+  link: {
+    lede: 'Use your groups on a laptop or a second phone. This device shows a code, the new one scans it, and both show a number for you to check before anything is sent.',
+    open: 'Link a new device',
+    none: 'There are no groups on this device to link yet.',
+    // The existing device.
+    newPageTitle: 'Link a new device',
+    newTitle: 'Link a new device',
+    newLede:
+      'On your new device, open Reconcile and tap Link to my other device. Then scan this code, or paste it there.',
+    qrLabel: 'Linking code',
+    codeText: 'The same code as text',
+    copy: 'Copy the code',
+    copied: 'Copied. Paste it on your new device.',
+    copyFailed: 'The code couldn’t be copied. Select it and copy it instead.',
+    lasts:
+      'This code works for 10 minutes. Nothing is sent until you check a number on both devices.',
+    waitingNew: 'Waiting for your new device…',
+    number: (digits: string) => `${digits.slice(0, 3)} ${digits.slice(3)}`,
+    compare: 'Does your new device show the same number?',
+    match: 'Match',
+    noMatch: 'Don’t match',
+    sending: 'Sending your groups…',
+    sent: 'Sent. Your new device is adding your groups.',
+    notSent: 'Nothing was sent. Make a new code to try again.',
+    expired: 'This code has expired. Nothing was sent.',
+    sendFailed: 'Your groups couldn’t be sent. Make a new code to try again.',
+    again: 'Make a new code',
+    backToSettings: 'Settings',
+    // The new device.
+    thisPageTitle: 'Link to your other device',
+    thisTitle: 'Link to your other device',
+    thisLede:
+      'On your other device, open Settings and tap Link a new device. Then scan the code it shows, or paste it here.',
+    pasteLabel: 'Code from your other device',
+    pasteHint: 'It starts with RL1.',
+    pasteSubmit: 'Link this device',
+    notACode: 'That isn’t a linking code. Copy it again from your other device.',
+    connecting: 'Connecting to your other device…',
+    offline: 'Can’t reach the relay right now. Check your connection and try again.',
+    waitingOther: 'Waiting for your other device…',
+    check: 'Check that your other device shows the same number, then confirm there.',
+    cancel: 'Cancel',
+    linked: (groups: number) =>
+      groups === 1
+        ? 'Linked. This device now has 1 group.'
+        : `Linked. This device now has ${count(groups)} groups.`,
+    mismatch: 'That code didn’t match. Start again on your other device.',
+    damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
+    joinExpired: 'That code has expired. Start again on your other device.',
+    startAgain: 'Start again',
+    unreachable: 'Can’t reach the relay right now. Still trying.',
+    // The camera.
+    scan: 'Scan the code',
+    scanning: 'Point your camera at the code on your other device.',
+    stopScan: 'Stop scanning',
+    camera: 'Camera',
+    noCamera: 'The camera can’t be used here. Paste the code instead.',
+    notLinkCode: 'That isn’t a Reconcile linking code.',
   },
   /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
   backupCard: {

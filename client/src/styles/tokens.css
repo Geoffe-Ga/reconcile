@@ -20,6 +20,9 @@
   --negative: #b3362a;
   --negative-soft: #f5ddd5;
   --scrim: #1d1c1973;
+  /* A linking code's colors (#96): the same in both themes, so the dark block doesn't redefine them. */
+  --qr-dark: #1d1c19;
+  --qr-light: #fffdf8;
   --score-0: #b3362a;
   --score-1: #a85a35;
   --score-2: #76705f;
