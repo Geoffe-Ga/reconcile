@@ -205,16 +205,18 @@ function ConfirmStep({
           {refusal === 'mismatch' ? words.wrongNumber : words.failed}
         </p>
       )}
-      <p role="status" className="status">
-        {busy ? words.approving : ''}
-      </p>
-      <div className="row form-actions">
-        <Button type="submit" className="button button-primary" isDisabled={busy}>
-          {words.approve}
-        </Button>
-        <Button className="button button-secondary" onPress={onBack}>
-          {words.back}
-        </Button>
+      <div className="field-status">
+        <div className="row form-actions">
+          <Button type="submit" className="button button-primary" isDisabled={busy}>
+            {words.approve}
+          </Button>
+          <Button className="button button-secondary" onPress={onBack}>
+            {words.back}
+          </Button>
+        </div>
+        <p role="status" className="status">
+          {busy ? words.approving : ''}
+        </p>
       </div>
     </Form>
   );

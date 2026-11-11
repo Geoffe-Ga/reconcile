@@ -134,6 +134,14 @@
   margin: 0;
 }
 
+/* Cancel this recovery with its live status beside it, so the empty line adds no height. */
+.recovery-alert > .field-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+}
+
 .recovery-alert-cancelled {
   border-inline-start-color: var(--hairline);
 }
