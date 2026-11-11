@@ -236,6 +236,12 @@ export interface Group {
    */
   recoverySeen?: string[];
   /**
+   * The shares this device, as a recovery contact, agreed to hand back (#118),
+   * oldest first: each from its alert's approval until it went or stopped.
+   * Absent until the first. No backup file or link carries them.
+   */
+  recoveryHolds?: RecoveryHold[];
+  /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
    * takes, oldest first. Absent until the first. #73's invite header, #78's
    * backup file and #96's link carry it, so a newcomer or a restored device
@@ -277,8 +283,12 @@ export interface Archive {
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
 export type BackupMark = 'saved' | 'not-now';
 
-/** Where restored groups came from: a backup file (#78), or another of the person's devices (#96). */
-export type RestoredFrom = 'backup' | 'link';
+/**
+ * Where restored groups came from: a backup file (#78), another of the
+ * person's devices (#96), or the relay backup that recovery contacts helped
+ * open (#118).
+ */
+export type RestoredFrom = 'backup' | 'link' | 'relay';
 
 /**
  * A group as its IndexedDB record holds it: everything but its secret and
@@ -422,6 +432,48 @@ export interface RecoveryPlan {
   readonly retired: readonly string[];
 }
 
+/** How a hold ended (#118): the share went to the new device, or the recovery stopped, and when, in device ms. */
+export interface HoldEnd {
+  readonly kind: 'sent' | 'stopped';
+  readonly at: number;
+}
+
+/**
+ * A share this device holds for someone recovering on a new device (#118;
+ * ADR-0043 §2, ADR-0075 §4): the `recovery-alert` it posted, whose share it
+ * is (the person's key in the group), the split approved, the tag a cancel
+ * names, and the code that says where the share goes. The code goes once the
+ * hold ends.
+ */
+export interface RecoveryHold {
+  /** The alert's event id. */
+  readonly alert: string;
+  /** The person's key in the group: the author of the share. */
+  readonly person: string;
+  /** The split of the share approved: a later choice of contacts stops the hold. */
+  readonly split: string;
+  /** The 16-byte tag sealed in the alert, which the person's cancel names. */
+  readonly tag: string;
+  /** The recovery code, while the share waits to go. */
+  readonly code?: string;
+  /** When this device approved, in device ms. */
+  readonly approvedAt: number;
+  /** How the hold ended; absent while it holds. */
+  readonly ended?: HoldEnd;
+}
+
+/**
+ * A recovering device's request (#118): the seed its code and mailbox come
+ * from, the secret half of the X25519 key the shares are sealed to, and when
+ * it started, in device ms. It lives in the device store, outside the vault,
+ * until a backup opens or the person stops.
+ */
+export interface RecoverRequest {
+  readonly seed: Uint8Array;
+  readonly secretKey: Uint8Array;
+  readonly startedAt: number;
+}
+
 /** What a relay backup update may change: everything but the key. */
 export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
 
@@ -445,6 +497,19 @@ export interface RecoveryStore {
   setRecoveryPlan(plan: RecoveryPlan): Promise<void>;
   /** Drop `id` from the plan's retired backup ids, in one transaction, once it is overwritten. */
   forgetRetired(id: string): Promise<void>;
+  /** This device's request to recover with contacts (#118), or undefined while it has none. */
+  getRecoverRequest(): Promise<RecoverRequest | undefined>;
+  /** Keep `request` in place of any earlier one. */
+  setRecoverRequest(request: RecoverRequest): Promise<void>;
+  /** Forget the request: the person stopped. */
+  dropRecoverRequest(): Promise<void>;
+  /**
+   * In one transaction, forget the request and mark the device recovered at
+   * `at` (device ms), once a backup has opened and its groups are kept.
+   */
+  finishRecovery(at: number): Promise<void>;
+  /** When this device was recovered with contacts, in device ms, or undefined if it never was. */
+  getRecoveredAt(): Promise<number | undefined>;
 }
 
 /**
@@ -629,6 +694,15 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Reco
    */
   markRecoverySeen(groupId: string, ids: readonly string[]): Promise<void>;
   /**
+   * Queue the signed `recovery-alert` and keep `hold` beside it, in one
+   * change (#118), so a hold never exists without its alert on its way.
+   *
+   * @throws {Error} when the group is leaving or read-only on this device.
+   */
+  holdShare(groupId: string, alert: Uint8Array, hold: RecoveryHold): Promise<void>;
+  /** End the hold of `alert` as `end` says, dropping its code, unless it has ended already (#118). */
+  endHold(groupId: string, alert: string, end: HoldEnd): Promise<void>;
+  /**
    * Keep the group's push registration once the relay has taken it, or with
    * null turn push off for the group, in one change (#99).
    */
@@ -690,11 +764,17 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Reco
   close(): void;
 }
 
+/** The mark a device keeps once it was recovered with contacts (#118). */
+interface RecoveredMark {
+  readonly recoveredAt: number;
+}
+
 /**
- * A record of the device store: the relay backup's (#97) or the recovery
- * contacts' (#109), each under its own key.
+ * A record of the device store, each under its own key: the relay backup's
+ * (#97), the recovery contacts' (#109), and a recovering device's request and
+ * the mark it leaves (#118).
  */
-type DeviceRecord = StoredRelayBackup | RecoveryPlan;
+type DeviceRecord = StoredRelayBackup | RecoveryPlan | RecoverRequest | RecoveredMark;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -703,19 +783,24 @@ interface Schema extends DBSchema {
   vault: { key: string; value: VaultRecord };
 }
 
-/** Whether a device record is the recovery contacts': only they have a split. */
-function isRecoveryPlan(record: DeviceRecord): record is RecoveryPlan {
-  return 'split' in record;
-}
-
-/** The relay backup's record in a device record read from its key, or undefined. */
+/** The relay backup's record in a device record read from its key, or undefined: only it is checked daily. */
 function relayBackupIn(record: DeviceRecord | undefined): StoredRelayBackup | undefined {
-  return record === undefined || isRecoveryPlan(record) ? undefined : record;
+  return record !== undefined && 'checkedDay' in record ? record : undefined;
 }
 
-/** The recovery contacts in a device record read from their key, or undefined. */
+/** The recovery contacts in a device record read from their key, or undefined: only they have contacts. */
 function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefined {
-  return record !== undefined && isRecoveryPlan(record) ? record : undefined;
+  return record !== undefined && 'contacts' in record ? record : undefined;
+}
+
+/** A recovering device's request in a device record read from its key, or undefined (#118). */
+function recoverRequestIn(record: DeviceRecord | undefined): RecoverRequest | undefined {
+  return record !== undefined && 'seed' in record ? record : undefined;
+}
+
+/** When the device was recovered, in a device record read from its key, or undefined (#118). */
+function recoveredAtIn(record: DeviceRecord | undefined): number | undefined {
+  return record !== undefined && 'recoveredAt' in record ? record.recoveredAt : undefined;
 }
 
 /**
@@ -741,6 +826,10 @@ const DEVICE = 'device';
 const RELAY_BACKUP = 'relay-backup';
 /** The device store's key for the recovery contacts' record (#109): a key of its own, so no new version. */
 const RECOVERY = 'recovery';
+/** The device store's key for a recovering device's request (#118). */
+const RECOVER_REQUEST = 'recover-request';
+/** The device store's key for the mark a recovered device keeps (#118). */
+const RECOVERED = 'recovered';
 const VAULT = 'vault';
 
 /**
@@ -979,6 +1068,20 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         const seen = group.recoverySeen ?? [];
         group.recoverySeen = [...seen, ...ids.filter((id) => !seen.includes(id))];
       }),
+    holdShare: (groupId, alert, hold) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
+        if (group.archived !== undefined)
+          throw new Error('This group is read-only on this device.');
+        group.outbox.push(alert);
+        group.recoveryHolds = [...(group.recoveryHolds ?? []), hold];
+      }),
+    endHold: (groupId, alert, end) =>
+      change(groupId, (group) => {
+        group.recoveryHolds = (group.recoveryHolds ?? []).map((hold) =>
+          endedHold(hold, alert, end),
+        );
+      }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const marked: string[] = [];
@@ -1183,7 +1286,34 @@ function recoveryStore(db: IDBPDatabase<Schema>, changed: () => void): RecoveryS
       await tx.done;
       if (wrote) changed();
     },
+    getRecoverRequest: async () => recoverRequestIn(await db.get(DEVICE, RECOVER_REQUEST)),
+    async setRecoverRequest(request) {
+      await db.put(DEVICE, request, RECOVER_REQUEST);
+      changed();
+    },
+    async dropRecoverRequest() {
+      await db.delete(DEVICE, RECOVER_REQUEST);
+      changed();
+    },
+    async finishRecovery(at) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      await Promise.all([
+        tx.store.delete(RECOVER_REQUEST),
+        tx.store.put({ recoveredAt: at }, RECOVERED),
+        tx.done,
+      ]);
+      changed();
+    },
+    getRecoveredAt: async () => recoveredAtIn(await db.get(DEVICE, RECOVERED)),
   };
+}
+
+/** `hold` ended as `end` says, without its code, when it is the hold of `alert` and still holds (#118). */
+function endedHold(hold: RecoveryHold, alert: string, end: HoldEnd): RecoveryHold {
+  if (hold.alert !== alert || hold.ended !== undefined) return hold;
+  const ended: RecoveryHold & { code?: string } = { ...hold, ended: end };
+  delete ended.code;
+  return ended;
 }
 
 /**

@@ -110,3 +110,129 @@ describe('held shares a group’s home has shown', () => {
     );
   });
 });
+
+describe('the shares this device holds for someone recovering (#118)', () => {
+  const HOLD = {
+    alert: 'alert-id',
+    person: 'author-ben',
+    split: 'split-of-the-hold',
+    tag: 'tag-of-the-hold',
+    code: 'RR1.the-code',
+    approvedAt: 1_762_650_000_000,
+  };
+
+  it('queues the signed alert and keeps the hold in one change, and tells listeners', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    const heard = vi.fn<(groupId: string) => void>();
+    store.subscribe(heard);
+    const alert = Uint8Array.from([1, 2, 3]);
+
+    await store.holdShare('group-1', alert, HOLD);
+
+    const group = await store.getGroup('group-1');
+    expect(group?.outbox.map((bytes) => Array.from(bytes))).toEqual([[1, 2, 3]]);
+    expect(group?.recoveryHolds).toEqual([HOLD]);
+    expect(heard.mock.calls).toEqual([['group-1']]);
+  });
+
+  it('ends a hold once, dropping its code, and leaves the others alone', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    await store.holdShare('group-1', Uint8Array.from([1]), HOLD);
+    await store.holdShare('group-1', Uint8Array.from([2]), { ...HOLD, alert: 'other-alert' });
+
+    await store.endHold('group-1', 'alert-id', { kind: 'sent', at: 5 });
+    await store.endHold('group-1', 'alert-id', { kind: 'stopped', at: 6 });
+    await store.endHold('group-1', 'no-such-alert', { kind: 'stopped', at: 7 });
+
+    const holds = (await store.getGroup('group-1'))?.recoveryHolds;
+    expect(holds?.[0]).not.toHaveProperty('code');
+    expect(holds).toEqual([
+      { ...HOLD, code: undefined, ended: { kind: 'sent', at: 5 } },
+      { ...HOLD, alert: 'other-alert' },
+    ]);
+  });
+
+  it('refuses a group that is leaving or read-only, queuing and keeping nothing', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    await store.markLeaving('group-1', Uint8Array.from([9]));
+    await expect(store.holdShare('group-1', Uint8Array.from([1]), HOLD)).rejects.toThrow(
+      'This group is leaving this device.',
+    );
+    await keepGroup(store, 'group-2');
+    await store.markArchived('group-2', 'dissolved');
+    await expect(store.holdShare('group-2', Uint8Array.from([1]), HOLD)).rejects.toThrow(
+      'This group is read-only on this device.',
+    );
+    expect((await store.getGroup('group-1'))?.recoveryHolds).toBeUndefined();
+    expect((await store.getGroup('group-2'))?.recoveryHolds).toBeUndefined();
+  });
+
+  it('never travel in a snapshot', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    await store.holdShare('group-1', Uint8Array.from([1]), HOLD);
+    const snapshot = await deviceSnapshot(store);
+    expect(JSON.stringify(snapshot)).not.toMatch(/RR1|alert-id|tag-of-the-hold|recoveryHolds/);
+  });
+});
+
+describe('a recovering device’s request (#118)', () => {
+  const REQUEST = {
+    seed: new Uint8Array(16).fill(3),
+    secretKey: new Uint8Array(32).fill(4),
+    startedAt: 1_762_650_000_000,
+  };
+
+  it('is absent on a new device, kept across a reload once made, and dropped on Stop', async () => {
+    const store = await openStore();
+    const heard = vi.fn<(groupId: string) => void>();
+    store.subscribe(heard);
+    expect(await store.getRecoverRequest()).toBeUndefined();
+
+    await store.setRecoverRequest(REQUEST);
+    store.close();
+    const reloaded = await openStore();
+    const kept = await reloaded.getRecoverRequest();
+    expect(
+      kept && { ...kept, seed: Array.from(kept.seed), secretKey: Array.from(kept.secretKey) },
+    ).toEqual({
+      ...REQUEST,
+      seed: Array.from(REQUEST.seed),
+      secretKey: Array.from(REQUEST.secretKey),
+    });
+
+    await reloaded.dropRecoverRequest();
+    expect(await reloaded.getRecoverRequest()).toBeUndefined();
+    expect(heard.mock.calls).toEqual([[RECOVERY_CHANGED]]);
+  });
+
+  it('gives way, once a backup opens, to a mark that the device was recovered, in one change', async () => {
+    const store = await openStore();
+    await store.setRecoverRequest(REQUEST);
+    expect(await store.getRecoveredAt()).toBeUndefined();
+
+    await store.finishRecovery(42);
+
+    expect(await store.getRecoverRequest()).toBeUndefined();
+    expect(await store.getRecoveredAt()).toBe(42);
+    // Neither reads as the relay backup's record or the recovery plan.
+    expect(await store.getRelayBackup()).toBeUndefined();
+    expect(await store.getRecoveryPlan()).toBeUndefined();
+  });
+
+  it('is told apart from the relay backup and the plan, and never travels in a snapshot', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    await store.setRelayBackupKey(new Uint8Array(32).fill(5));
+    await store.setRecoveryPlan(PLAN);
+    await store.setRecoverRequest(REQUEST);
+
+    expect(await store.getRecoveryPlan()).toEqual(PLAN);
+    expect((await store.getRelayBackup())?.tooLarge).toBe(false);
+    const snapshot = await deviceSnapshot(store);
+    expect(Object.keys(snapshot).sort()).toEqual(['backupKey', 'groups', 'personal']);
+  });
+});
