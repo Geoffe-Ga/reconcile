@@ -78,7 +78,7 @@ interface HistoryButtonProps {
 }
 
 /** A quiet History, which opens the section's history in a side sheet (#104), for anyone who reads. */
-export function HistoryButton({ source, atom, section }: HistoryButtonProps) {
+function HistoryButton({ source, atom, section }: HistoryButtonProps) {
   const { history } = messages;
   return (
     <HistorySheet source={source} atomId={atom.id} section={section}>
@@ -321,7 +321,8 @@ export function MissingDocument({ state }: { readonly state: GroupState }) {
  * anyone else reads why, and where to change their level (ADR-0021). While
  * this member is leaving, or once the group has dissolved (#108), the
  * Document only reads. Copy as Markdown copies the Document on screen, for
- * everyone who can read it, an archive's readers included.
+ * everyone who can read it, an archive's readers included, and so are each
+ * section's History and the change log under the title (#104).
  */
 export function DocumentView(props: DocumentViewProps) {
   const { state, me, copyText, leaving = false } = props;
