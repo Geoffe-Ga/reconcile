@@ -196,6 +196,19 @@ function same(a: Uint8Array | null | undefined, b: Uint8Array | null | undefined
 }
 
 /**
+ * Forgets each application whose reply carried the invite `seed`, once this
+ * device has joined with it: Your groups then lists the group itself.
+ */
+export async function forgetJoined(
+  store: Pick<SentStore, 'listSent' | 'dropSent'>,
+  seed: Uint8Array,
+): Promise<void> {
+  for (const sent of await store.listSent()) {
+    if (sent.invite !== undefined && same(sent.invite, seed)) await store.dropSent(sent.id);
+  }
+}
+
+/**
  * Reads each pending application's reply mailbox and keeps the invite in the
  * latest reply that opens; forgets an application {@link SENT_DAYS} days
  * after it was sent, by the device clock, with no request. A mailbox that

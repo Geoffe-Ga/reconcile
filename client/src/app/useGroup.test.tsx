@@ -199,6 +199,7 @@ describe('useGroup', () => {
       suggestBackup: false,
       loaded: true,
       cleared: null,
+      applications: [],
     });
   });
 

@@ -6,6 +6,7 @@
  */
 import { useCallback } from 'react';
 
+import { readDoor } from '../door/page';
 import { SharedPage } from '../screens/SharedPage';
 import { lookupInvite } from './actions';
 import { App } from './App';
@@ -25,6 +26,7 @@ export interface RootProps {
 export function Root({ services, firstRun }: RootProps) {
   const route = useRoute();
   const lookup = useCallback((seed: Uint8Array) => lookupInvite(services, seed), [services]);
+  const read = useCallback((address: Uint8Array) => readDoor(services, address), [services]);
   if (route.name === 'shared') return <SharedPage payload={route.payload} reader={services} />;
   return (
     <FirstRunGate
@@ -32,6 +34,7 @@ export function Root({ services, firstRun }: RootProps) {
       origin={services.origin}
       copyText={services.copyText}
       lookup={lookup}
+      readDoor={read}
     >
       {({ heldSeed, persistence }) => (
         <App services={services} initialSeed={heldSeed} persistence={persistence} />

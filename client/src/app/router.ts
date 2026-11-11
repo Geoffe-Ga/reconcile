@@ -8,6 +8,8 @@
  * that it no longer works. A share link's `#share/{seed}.{publicKey}` (#105)
  * reads as the shared page whatever follows it, and stays in the address
  * bar, so a reload reads it again; the page reads a damaged one as not shared.
+ * A front door's `#door/{address}` (#121) reads the same way: it carries no
+ * secret, so it stays in the address bar too.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -30,6 +32,8 @@ export type Route =
   | { readonly name: 'join'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
+  /** A group's front door (#121): what follows `#door/`, as written. */
+  | { readonly name: 'door'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
@@ -156,10 +160,26 @@ const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map(
 /** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
 const SHARE_PREFIX = '#share/';
 
+/** A front door link's own form (#121): `#door/{address}`, with no slash after `#`. */
+const DOOR_PREFIX = '#door/';
+
+/**
+ * The public link a hash opens whatever follows its prefix: a share link's
+ * page (#105) or a front door (#121), each reading its payload itself.
+ */
+function publicLink(hash: string): Route | null {
+  if (hash.startsWith(SHARE_PREFIX)) {
+    return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
+  }
+  return hash.startsWith(DOOR_PREFIX)
+    ? { name: 'door', payload: hash.slice(DOOR_PREFIX.length) }
+    : null;
+}
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
-  if (hash.startsWith(SHARE_PREFIX))
-    return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
+  const link = publicLink(hash);
+  if (link !== null) return link;
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
@@ -228,14 +248,33 @@ export function routeHref(route: Route): string {
       return '#/link-new';
     case 'linkThis':
       return '#/link-this';
+    default:
+      return linkHref(route);
+  }
+}
+
+/** The `href` of Join, a shared page, a front door, or a page inside a group. */
+function linkHref(route: Exclude<Route, PlainRoute>): string {
+  switch (route.name) {
     case 'join':
       return joinHref(route.payload);
     case 'shared':
       return `${SHARE_PREFIX}${route.payload}`;
+    case 'door':
+      return `${DOOR_PREFIX}${route.payload}`;
     default:
       return `#/g/${route.groupId}${groupPath(route)}`;
   }
 }
+
+/** The routes {@link routeHref} spells itself: those with no payload or group. */
+type PlainRoute = Extract<
+  Route,
+  {
+    readonly name:
+      'start' | 'create' | 'settings' | 'personal' | 'personalDocument' | 'linkNew' | 'linkThis';
+  }
+>;
 
 const listeners = new Set<() => void>();
 

@@ -777,6 +777,8 @@ export const messages = {
     /** Read after Send an invite's own words, so each button says whose it is. */
     forApplicant: (name: string) => `to ${name}`,
     dismiss: 'Dismiss',
+    /** Read after Dismiss's own word: "Dismiss Kim’s application". */
+    applicationOf: (name: string) => `${name}’s application`,
     dismissHint: 'Hides it on this device only.',
     sending: 'Sending the invite…',
     inviteSent: 'Invite sent. It waits 2 days for their device.',

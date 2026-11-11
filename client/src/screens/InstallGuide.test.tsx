@@ -6,6 +6,7 @@ import type { FoundGroup, InviteLookup } from '../app/actions';
 import { inviteLink } from '../app/invite';
 import { newGroupSecret } from '../crypto/groupKeys';
 import { newInviteSeed } from '../crypto/invite';
+import type { DoorView } from '../door/page';
 import { axeViolations } from '../test/axe';
 import { type Arrival, InstallGuide } from './InstallGuide';
 
@@ -33,21 +34,40 @@ interface Options {
   readonly arrival?: Arrival;
   readonly lookup?: (seed: Uint8Array) => Promise<InviteLookup>;
   readonly copy?: (text: string) => Promise<void>;
+  readonly readDoor?: (address: Uint8Array) => Promise<DoorView>;
 }
+
+/** A front door's address, as its link carries it (#121). */
+const ADDRESS = 'A'.repeat(42) + 'E';
+
+/** The door's page, as its group's devices post it. */
+const OPEN: DoorView = {
+  kind: 'open',
+  page: {
+    v: 1,
+    open: true,
+    name: 'Riverside Tenants',
+    excerpt: 'We keep rents fair.',
+    count: 12,
+    box: 'A'.repeat(43),
+  },
+};
 
 function setup(options: Options = {}) {
   const found = (): Promise<InviteLookup> => Promise.resolve({ kind: 'found', group: FOUND });
   const lookup = vi.fn(options.lookup ?? found);
   const copyText = vi.fn(options.copy ?? (() => Promise.resolve()));
+  const readDoor = vi.fn(options.readDoor ?? (() => Promise.resolve(OPEN)));
   render(
     <InstallGuide
       arrival={options.arrival ?? { kind: 'plain' }}
       origin={ORIGIN}
       lookup={lookup}
       copyText={copyText}
+      readDoor={readDoor}
     />,
   );
-  return { user: userEvent.setup(), lookup, copyText };
+  return { user: userEvent.setup(), lookup, copyText, readDoor };
 }
 
 /** The first text under the guide’s heading. */
@@ -169,5 +189,56 @@ describe('InstallGuide', () => {
       lookup: () => new Promise(() => undefined),
     });
     expect(screen.getByText('Opening the invite…')).toBeVisible();
+  });
+});
+
+describe('InstallGuide with a front door’s link (#121)', () => {
+  it('shows the page, then the link to copy into the installed app in place of the form', async () => {
+    const { user, copyText, readDoor, lookup } = setup({
+      arrival: { kind: 'door', payload: ADDRESS },
+    });
+    expect(await screen.findByRole('heading', { name: 'Riverside Tenants' })).toBeVisible();
+    expect(screen.getByText('We keep rents fair.')).toBeVisible();
+    expect(screen.getByText('12 people are in this group.')).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Name you’d like to use' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+    expect(
+      screen.getByText('Open Reconcile from your Home Screen and tap Open the front door.'),
+    ).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'This front door’s link' })).toHaveValue(
+      `${ORIGIN}/#door/${ADDRESS}`,
+    );
+    await user.click(screen.getByRole('button', { name: 'Copy link' }));
+    expect(copyText).toHaveBeenCalledWith(`${ORIGIN}/#door/${ADDRESS}`);
+    expect(readDoor).toHaveBeenCalledTimes(1);
+    expect(lookup).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a closed door is closed, with no link to it', async () => {
+    setup({
+      arrival: { kind: 'door', payload: ADDRESS },
+      readDoor: () => Promise.resolve({ kind: 'closed' }),
+    });
+    expect(await screen.findByText('This front door is closed.')).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'This front door’s link' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Reconcile’s address' })).toBeVisible();
+  });
+
+  it('reads nothing for a damaged link', () => {
+    const damaged = setup({ arrival: { kind: 'door', payload: 'abc' } });
+    expect(
+      screen.getByText('This front door link is damaged. Check you copied all of it.'),
+    ).toBeVisible();
+    expect(damaged.readDoor).not.toHaveBeenCalled();
+  });
+
+  it('offers the link with no page while the relay can’t be reached', async () => {
+    setup({
+      arrival: { kind: 'door', payload: ADDRESS },
+      readDoor: () => Promise.reject(new Error('offline')),
+    });
+    expect(await screen.findByRole('textbox', { name: 'This front door’s link' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Riverside Tenants' })).toBeNull();
   });
 });

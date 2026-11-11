@@ -718,3 +718,25 @@ describe('GroupHome: the group’s rules (#117)', () => {
     expect(await axeViolations()).toEqual([]);
   });
 });
+
+describe('GroupHome: the front door’s Applications (#121)', () => {
+  it('shows them under their own heading, before Invite people', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    renderHome(log.state(), { applications: <p>Kim’s card</p> });
+    const applications = section('Applications');
+    expect(within(applications).getByText('Kim’s card')).toBeVisible();
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings.indexOf('Applications')).toBe(headings.indexOf('Invite people') - 1);
+  });
+
+  it('shows none while this member’s leave waits for the relay, nor when none are given', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const { rerender } = renderHome(log.state(), {
+      applications: <p>Kim’s card</p>,
+      leaving: true,
+    });
+    expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
+    rerender({ applications: undefined, leaving: false });
+    expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
+  });
+});
