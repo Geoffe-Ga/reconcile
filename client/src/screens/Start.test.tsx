@@ -141,7 +141,7 @@ describe('Start', () => {
     expect(onOpenInvite).not.toHaveBeenCalled();
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(field).toHaveAccessibleDescription(
-      'Paste the link someone in your group sent you. This invite link has expired or is damaged. Ask someone in your group for a new one.',
+      'Paste the link someone in your group sent you, or a reconcile card from another group. This invite link has expired or is damaged. Ask someone in your group for a new one.',
     );
     expect(document.body).not.toHaveTextContent('not-a-real-payload');
     expect(await axeViolations()).toEqual([]);

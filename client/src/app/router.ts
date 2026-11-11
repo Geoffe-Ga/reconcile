@@ -28,6 +28,8 @@ export type Route =
   /** Link to my other device, on the new device (#96). */
   | { readonly name: 'linkThis' }
   | { readonly name: 'join'; readonly payload: string | null }
+  /** A reconcile card (#114): its seed as written after `#reconcile/`, or null once read. */
+  | { readonly name: 'card'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
@@ -54,7 +56,9 @@ export type Route =
   /** The group's Dispatches, newest first (#112). */
   | { readonly name: 'dispatches'; readonly groupId: string }
   /** Send a Dispatch (#112). */
-  | { readonly name: 'sendDispatch'; readonly groupId: string };
+  | { readonly name: 'sendDispatch'; readonly groupId: string }
+  /** Reconcile with another group (#114): the card's form. */
+  | { readonly name: 'reconcile'; readonly groupId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -87,10 +91,17 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
 
 /**
  * The pages inside a group, Group home apart, that take nothing but the
- * group: the Document, the rules (#117), dissolving (#108), and the
- * Dispatches and Send a Dispatch (#112).
+ * group: the Document, the rules (#117), dissolving (#108), the Dispatches
+ * and Send a Dispatch (#112), and Reconcile with another group (#114).
  */
-const FIXED_NAMES = ['document', 'rules', 'dissolve', 'dispatches', 'sendDispatch'] as const;
+const FIXED_NAMES = [
+  'document',
+  'rules',
+  'dissolve',
+  'dispatches',
+  'sendDispatch',
+  'reconcile',
+] as const;
 
 /** A page {@link FIXED_NAMES} lists. */
 type FixedName = (typeof FIXED_NAMES)[number];
@@ -102,6 +113,7 @@ const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
   dissolve: 'dissolve',
   dispatches: 'dispatches',
   sendDispatch: 'dispatch/new',
+  reconcile: 'reconcile',
 };
 
 /** The fixed pages by path, as a group's route reads them. */
@@ -158,6 +170,17 @@ function joinRoute(rest: readonly string[]): Route {
 /** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
 const INVITE_PREFIX = '#join/';
 
+/** A reconcile card's own form (#114): `#reconcile/{seed}`, with no slash after `#`. */
+const CARD_PREFIX = '#reconcile/';
+
+/** `#reconcile/{seed}`: the card, or Start for anything with more after the seed. */
+function cardRoute(rest: readonly string[]): Route {
+  const [payload] = rest;
+  return rest.length === 1 && payload !== undefined && SEGMENT.test(payload)
+    ? { name: 'card', payload }
+    : START;
+}
+
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
  * and the two sides of linking a device (#96). A linking code never travels
@@ -168,6 +191,8 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['settings', { name: 'settings' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
+  // A card once its seed has left the address bar (#114).
+  ['card', { name: 'card', payload: null }],
 ]);
 
 /** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
@@ -180,14 +205,25 @@ const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map(
 /** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
 const SHARE_PREFIX = '#share/';
 
-/** Reads a `location.hash` value as a route. */
-export function parseRoute(hash: string): Route {
+/**
+ * A link's own route, with no slash after `#`: a share link's (#105), an
+ * invite's (spec §3) or a reconcile card's (#114); null for any other hash.
+ */
+function linkRoute(hash: string): Route | null {
   if (hash.startsWith(SHARE_PREFIX))
     return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
   }
+  if (hash.startsWith(CARD_PREFIX)) return cardRoute(hash.slice(CARD_PREFIX.length).split('/'));
+  return null;
+}
+
+/** Reads a `location.hash` value as a route. */
+export function parseRoute(hash: string): Route {
+  const link = linkRoute(hash);
+  if (link !== null) return link;
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
   const nested = NESTED.get(head);
@@ -231,30 +267,41 @@ function groupPath(route: GroupRoute): string {
   }
 }
 
-/** The `href` of a route, starting with `#`. */
-export function routeHref(route: Route): string {
+/** A route outside any group that takes nothing. */
+type FixedTop = Extract<
+  Route,
+  { readonly name: 'start' | 'create' | 'settings' | 'personal' | 'linkNew' | 'linkThis' }
+>;
+
+/** Each such route's `href`. */
+const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
+  start: '#/',
+  create: '#/create',
+  settings: '#/settings',
+  personal: '#/me',
+  linkNew: '#/link-new',
+  linkThis: '#/link-this',
+};
+
+/** The `href` of a route outside any group. */
+function topHref(route: Exclude<Route, GroupRoute>): string {
   switch (route.name) {
-    case 'start':
-      return '#/';
-    case 'create':
-      return '#/create';
-    case 'settings':
-      return '#/settings';
-    case 'personal':
-      return '#/me';
     case 'personalDocument':
       return `#/me/${route.id}`;
-    case 'linkNew':
-      return '#/link-new';
-    case 'linkThis':
-      return '#/link-this';
     case 'join':
       return joinHref(route.payload);
+    case 'card':
+      return route.payload === null ? '#/card' : `${CARD_PREFIX}${route.payload}`;
     case 'shared':
       return `${SHARE_PREFIX}${route.payload}`;
     default:
-      return `#/g/${route.groupId}${groupPath(route)}`;
+      return TOP_HREFS[route.name];
   }
+}
+
+/** The `href` of a route, starting with `#`. */
+export function routeHref(route: Route): string {
+  return 'groupId' in route ? `#/g/${route.groupId}${groupPath(route)}` : topHref(route);
 }
 
 const listeners = new Set<() => void>();

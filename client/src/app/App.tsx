@@ -6,7 +6,7 @@
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { Level } from '../engine/capabilities';
+import { can, type Level } from '../engine/capabilities';
 import { fold, type GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
@@ -17,7 +17,9 @@ import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
+import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
 import type { OptIn } from '../engine/optIns';
@@ -50,6 +52,18 @@ import {
 import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
+import { CoalitionSection } from './CoalitionSection';
+import { coalitionRows, withMotionWords } from './coalitionLines';
+import {
+  admitCard,
+  bringCard,
+  type CardValues,
+  type FoundCard,
+  lookupCard,
+  makeCard,
+  postCard,
+  takePart,
+} from './reconcile';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
 import type { Passkey } from './passkey';
@@ -95,10 +109,11 @@ export interface AppProps {
 interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (seed: Uint8Array) => void;
+  readonly onOpenCard: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
 }
 
-function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) {
+function StartScreen({ services, onOpenInvite, onOpenCard, persistence }: StartScreenProps) {
   const groups = useGroupList(services.store);
   const onRestore = useCallback(
     (bytes: Uint8Array, passphrase: string) => restoreBackup(services, bytes, passphrase),
@@ -108,6 +123,7 @@ function StartScreen({ services, onOpenInvite, persistence }: StartScreenProps) 
     <Start
       groups={groups}
       onOpenInvite={onOpenInvite}
+      onOpenCard={onOpenCard}
       persistence={persistence}
       onRestore={onRestore}
     />
@@ -357,7 +373,8 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (state.group === null) return <GroupSettingUp />;
   if (writes && state.dissolved !== null)
     return <GroupArchived groupId={groupId} name={state.name} />;
-  return children({ ...group, state, me });
+  // A coalition motion takes its title and why from its coalition (#114).
+  return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
 
 interface GroupScreenProps {
@@ -402,9 +419,90 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             await services.store.purgeGroup(groupId);
             replaceRoute({ name: 'start' });
           }}
+          coalitions={<Coalitions services={services} group={group} />}
         />
       )}
     </GroupGate>
+  );
+}
+
+/**
+ * Group home's Coalitions (#114): each coalition the group proposed or
+ * joined, and Reconcile with another group for whoever may start one, while
+ * the group takes new things and this device reads its current key.
+ */
+function Coalitions({ services, group }: { services: AppServices; group: ReadyGroup }) {
+  const { state, me, coalitions, leaving, keyChange } = group;
+  const groupId = state.group ?? '';
+  const open = !leaving && state.dissolved === null && keyChange === null;
+  return (
+    <CoalitionSection
+      groupId={groupId}
+      rows={coalitionRows(state, me.author, coalitions)}
+      starts={open && can(state, me.author, 'propose')}
+      onTakePart={(entryId, name) => takePart(services, entryId, groupId, name)}
+      makeCardLink={async (entryId) =>
+        postCard(services, await admitCard(services, entryId, groupId), services.origin)
+      }
+      copyText={services.copyText}
+    />
+  );
+}
+
+/** Reconcile with another group (#114): the card's form, then its link. */
+function ReconcileScreen({ services, groupId }: GroupScreenProps) {
+  const onMake = async (values: CardValues): Promise<CardStep> => {
+    const made = await makeCard(services, groupId, values);
+    if (made.outcome === 'too-large') return { kind: 'too-large' };
+    const { card, proposalId } = made;
+    return { kind: 'queued', proposalId, post: () => postCard(services, card, services.origin) };
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state }) => (
+        <ReconcileCard
+          groupId={groupId}
+          groupName={state.name}
+          onMake={onMake}
+          copyText={services.copyText}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+interface BringScreenProps {
+  readonly services: AppServices;
+  readonly payload: string | null;
+  readonly heldSeed: Uint8Array | null;
+  /** Lets go of the seed held in memory, once Bring or Not now is done with it. */
+  readonly releaseSeed: () => void;
+}
+
+/** Bring a card (#114): the card, then the group it goes to, whose new Proposal opens after. */
+function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenProps) {
+  const lookup = useCallback((seed: Uint8Array) => lookupCard(services, seed), [services]);
+  const onBring = useCallback(
+    async (found: FoundCard, groupId: string, name: string) => {
+      const proposalId = await bringCard(services, found, groupId, name);
+      releaseSeed();
+      replaceRoute({ name: 'proposal', groupId, proposalId });
+      return true;
+    },
+    [services, releaseSeed],
+  );
+  const onNotNow = useCallback(() => {
+    releaseSeed();
+    replaceRoute({ name: 'start' });
+  }, [releaseSeed]);
+  return (
+    <BringCard
+      payload={payload}
+      heldSeed={heldSeed}
+      lookup={lookup}
+      onBring={onBring}
+      onNotNow={onNotNow}
+    />
   );
 }
 
@@ -496,6 +594,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
             {...(group.cleared === null ? {} : { cleared: group.cleared })}
+            coalitions={group.coalitions}
             onVote={onVote}
             onProposeAgain={onProposeAgain}
             onTell={onTell}
@@ -656,7 +755,10 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
 }
 
 /** A route inside one group whose screen is a form of its own. */
-type FormRoute = Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' }>;
+type FormRoute = Extract<
+  GroupRoute,
+  { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'reconcile' }
+>;
 
 /**
  * The screen for a route inside one group that opens a form of its own: the
@@ -688,6 +790,45 @@ function FormRouteScreen({ route, services }: { route: FormRoute; services: AppS
       return <DissolveScreen services={services} groupId={groupId} />;
     case 'sendDispatch':
       return <SendDispatchScreen services={services} groupId={groupId} />;
+    case 'reconcile':
+      return <ReconcileScreen services={services} groupId={groupId} />;
+  }
+}
+
+/** A route about this device and its person rather than a group: Settings, Personal and linking. */
+type DeviceRoute = Extract<
+  Route,
+  { readonly name: 'settings' | 'personal' | 'personalDocument' | 'linkNew' | 'linkThis' }
+>;
+
+/** The names of the routes about this device. */
+const DEVICE_ROUTES: ReadonlySet<Route['name']> = new Set<DeviceRoute['name']>([
+  'settings',
+  'personal',
+  'personalDocument',
+  'linkNew',
+  'linkThis',
+]);
+
+/** True for a route about this device rather than a group or a link. */
+function isDeviceRoute(route: Route): route is DeviceRoute {
+  return DEVICE_ROUTES.has(route.name);
+}
+
+/** The screen for a route about this device, which needs only the services. */
+function DeviceScreen({ route, services }: { route: DeviceRoute; services: AppServices }) {
+  switch (route.name) {
+    case 'settings':
+      return <SettingsScreen services={services} />;
+    case 'personal':
+      return <PersonalScreen services={services} />;
+    case 'personalDocument':
+      // Keyed by id, so another Document starts its editor afresh.
+      return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
   }
 }
 
@@ -711,27 +852,38 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
+  const openCard = useCallback(
+    (seed: Uint8Array) => {
+      holdSeed(seed);
+      navigate({ name: 'card', payload: null });
+    },
+    [holdSeed],
+  );
+  if (isDeviceRoute(route)) return <DeviceScreen route={route} services={services} />;
   switch (route.name) {
     case 'start':
       return (
-        <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
+        <StartScreen
+          services={services}
+          onOpenInvite={openInvite}
+          onOpenCard={openCard}
+          persistence={persistence}
+        />
       );
     case 'create':
       return <CreateScreen services={services} offerGuide={guide.offer} />;
-    case 'settings':
-      return <SettingsScreen services={services} />;
-    case 'personal':
-      return <PersonalScreen services={services} />;
-    case 'personalDocument':
-      // Keyed by id, so another Document starts its editor afresh.
-      return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
     case 'shared':
       // Root shows a share link's page before first run; App shows it too, on the same relay.
       return <SharedPage payload={route.payload} reader={services} />;
-    case 'linkNew':
-      return <LinkNewScreen services={services} />;
-    case 'linkThis':
-      return <LinkThisScreen services={services} />;
+    case 'card':
+      return (
+        <BringScreen
+          services={services}
+          payload={route.payload}
+          heldSeed={heldSeed}
+          releaseSeed={releaseSeed}
+        />
+      );
     case 'join':
       return (
         <JoinScreen

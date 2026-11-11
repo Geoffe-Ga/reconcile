@@ -2,6 +2,7 @@ import { type SyntheticEvent, useId } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
 import { parseInviteLink } from '../app/invite';
+import { parseCardLink } from '../coalition/card';
 import { messages } from '../app/messages';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
@@ -23,6 +24,8 @@ export interface StartProps {
   readonly groups: readonly StartGroup[];
   /** Opens a pasted invite's seed. It travels in memory, never through the address bar. */
   readonly onOpenInvite: (seed: Uint8Array) => void;
+  /** Opens a pasted reconcile card's seed (#114), in memory likewise. */
+  readonly onOpenCard?: (seed: Uint8Array) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
   /** Restores a backup file (#78); without it, Start offers no Restore. */
@@ -67,9 +70,14 @@ function PersonalCard() {
   );
 }
 
-/** M2-03's expired-or-damaged line for anything that isn't an invite link. It never repeats the text. */
+/**
+ * M2-03's expired-or-damaged line for anything that is neither an invite
+ * link nor a reconcile card's (#114). It never repeats the text.
+ */
 function checkInvite(text: string): string | null {
-  return parseInviteLink(text) === null ? messages.join.badLink : null;
+  return parseInviteLink(text) === null && parseCardLink(text) === null
+    ? messages.join.badLink
+    : null;
 }
 
 /** "Have a backup file?", and Restore a backup under it (#78). */
@@ -109,14 +117,18 @@ function LinkSection() {
  * backup (#78), Link to my other device (#96), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
  * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
-export function Start({ groups, onOpenInvite, persistence = null, onRestore }: StartProps) {
+export function Start(props: StartProps) {
+  const { groups, onOpenInvite, persistence = null, onRestore, onOpenCard } = props;
   const inviteHeading = useId();
 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const text = new FormData(event.currentTarget).get('invite');
-    const seed = typeof text === 'string' ? parseInviteLink(text) : null;
+    const value = new FormData(event.currentTarget).get('invite');
+    const text = typeof value === 'string' ? value : '';
+    const seed = parseInviteLink(text);
     if (seed !== null) onOpenInvite(seed);
+    const card = parseCardLink(text);
+    if (card !== null) onOpenCard?.(card);
   };
 
   return (

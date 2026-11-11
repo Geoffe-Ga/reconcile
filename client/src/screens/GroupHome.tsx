@@ -69,6 +69,8 @@ export interface GroupHomeProps {
    * none when absent, or once the group has dissolved (#108).
    */
   readonly backupCard?: ReactNode;
+  /** The group's Coalitions (#114), after Decided; none when absent. */
+  readonly coalitions?: ReactNode;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -792,7 +794,7 @@ function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
  * other open Proposals and the backup card under them (#78), the latest
  * Dispatch (#112), the group's Document, the Decided list of closed ones,
- * its people with their levels, the viewer's own involvement and Leave this
+ * its Coalitions (#114), its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
  * whoever may propose it, Propose dissolving the group (#108). While the viewer's
@@ -848,6 +850,7 @@ export function GroupHome(props: GroupHomeProps) {
         <Section title={messages.decided.title}>
           <Decided groupId={groupId} closed={lists.decided} />
         </Section>
+        {props.coalitions}
         <MemberSections {...props} leaving={readOnly} />
         {discussion === null ? null : (
           <Section title={messages.home.discussion}>

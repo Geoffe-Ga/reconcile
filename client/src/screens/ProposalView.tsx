@@ -28,6 +28,7 @@ import { composeOption } from '../engine/composeOption';
 import { closedByDissolve } from '../engine/dissolve';
 import {
   isDissolveProposal,
+  isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -41,6 +42,9 @@ import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/op
 import type { OwnBallot } from '../engine/ownBallot';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
+import { motionWords, reconcileView, type ReconcileView } from '../app/coalitionLines';
+import { decisionOf } from '../app/versionViews';
+import type { HeldCoalition } from '../store/coalitions';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -76,6 +80,8 @@ export interface ProposalViewProps {
     readonly at: number;
     readonly tallies: Readonly<Record<string, TallyDetail>>;
   };
+  /** Every coalition on this device (#114): a reconcile Proposal or a motion reads its words there. */
+  readonly coalitions?: readonly HeldCoalition[];
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -388,14 +394,22 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
  * days its proposer set it to run (#106), each on its own line so none breaks
  * mid-phrase.
  */
-function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposal; now: number }) {
+function Byline({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { state, now } = props;
   const name = displayName(state, proposal.author) ?? '';
   const open = !proposal.final && now < proposal.deadline;
+  const motion = motionWords(proposal, props.coalitions ?? []);
   return (
     <div className="meta-lines">
-      <p className="meta">
-        {messages.proposal.proposedBy} <bdi>{name}</bdi>
-      </p>
+      {motion === null ? (
+        <p className="meta">
+          {messages.proposal.proposedBy} <bdi>{name}</bdi>
+        </p>
+      ) : (
+        <p className="meta">
+          {messages.coalitions.from} <bdi>{motion.coalition}</bdi>
+        </p>
+      )}
       <p className="meta">
         <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
       </p>
@@ -481,9 +495,50 @@ function CarriedDispatch({ proposal }: { readonly proposal: Proposal }) {
   );
 }
 
+/** The justification, as plain text, or nothing when there is none, as a card brought in may have (#114). */
+function Why({ why }: { readonly why: string }) {
+  return why === '' ? null : (
+    <p className="lede" dir="auto">
+      {why}
+    </p>
+  );
+}
+
+/**
+ * A reconcile Proposal's coalition (#114): its name and statement as the
+ * card set them, then, once its genesis names them, the other groups it
+ * reconciles with.
+ */
+function ReconcileStatement({ view }: { readonly view: ReconcileView | null }) {
+  if (view === null) return null;
+  return (
+    <Block title={messages.coalitions.statement} className="card reconcile-statement">
+      <p className="heading-3">
+        <bdi>{view.name}</bdi>
+      </p>
+      {view.others === null || view.others.length === 0 ? null : (
+        <p className="reconcile-with">
+          {messages.coalitions.with} <bdi>{view.others.join(', ')}</bdi>
+        </p>
+      )}
+      <div className="document reconcile-document">
+        <p className="eyebrow">
+          <bdi>{view.title}</bdi>
+        </p>
+        {view.atoms.map((atom, index) => (
+          // Sections are numbered by position; the same text may appear twice.
+          <div key={index} className="atom">
+            <AtomText text={atom} />
+          </div>
+        ))}
+      </div>
+    </Block>
+  );
+}
+
 /** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  const { state, now } = props;
+  const { state } = props;
   if (closedByDissolve(state, proposal))
     return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
@@ -505,11 +560,10 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         />
       ) : null}
       <div className="stack">
-        <Byline state={state} proposal={proposal} now={now} />
-        <p className="lede" dir="auto">
-          {proposal.why}
-        </p>
+        <Byline props={props} proposal={proposal} />
+        <Why why={proposal.why} />
       </div>
+      <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
@@ -568,16 +622,25 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
-  // A reconcile Proposal (#100) changes no section; #114 gives it its card.
+  // A reconcile Proposal (#100) changes no section: its ballot decides the coalition (#114).
   if ('target' in body) {
+    const target = body.target.kind === 'reconcile' ? { ...body.target, key: '' } : null;
+    const decision = target === null ? {} : decisionOf({ target, title: body.title });
     return {
       comparison: STEWARD_BALLOT,
-      versions: [{ id: '', number: 1, author, text: '' }],
+      versions: [{ id: '', number: 1, author, text: '', ...decision }],
       optIn: null,
     };
   }
   const comparison = comparisonFor(state, body.atom, false);
   return { comparison, versions: [{ id: '', number: 1, author, text: body.text }], optIn: null };
+}
+
+/** A waiting reconcile Proposal's coalition, as its card set it: no other group is named yet (#114). */
+function waitingReconcile(body: ProposalEventBody): ReconcileView | null {
+  if (!isReconcileProposal(body)) return null;
+  const { name, title, atoms } = body.target;
+  return { name, title, atoms, others: null };
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
@@ -590,9 +653,8 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
         title={body.title}
         pageTitle={messages.proposal.pageTitle}
       />
-      <p className="lede" dir="auto">
-        {body.why}
-      </p>
+      <Why why={body.why} />
+      <ReconcileStatement view={waitingReconcile(body)} />
       <Block title={comparison.title} className="vote">
         <OptInWarning optIn={optIn} />
         <Legend comparison={comparison} />

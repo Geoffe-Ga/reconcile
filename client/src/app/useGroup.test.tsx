@@ -199,6 +199,7 @@ describe('useGroup', () => {
       suggestBackup: false,
       loaded: true,
       cleared: null,
+      coalitions: [],
     });
   });
 
@@ -349,14 +350,18 @@ describe('useGroup', () => {
 
   it('keeps the newest read when an older one answers late', async () => {
     const reads: ((group: Group | undefined) => void)[] = [];
-    let notify: (groupId: string) => void = () => undefined;
+    const listeners: ((groupId: string) => void)[] = [];
+    const notify = (groupId: string) => {
+      for (const listener of listeners) listener(groupId);
+    };
     const store: GroupServices['store'] = {
       getGroup: () =>
         new Promise((resolve) => {
           reads.push(resolve);
         }),
+      listCoalitions: () => Promise.resolve([]),
       subscribe: (listener) => {
-        notify = listener;
+        listeners.push(listener);
         return () => undefined;
       },
     };
@@ -381,12 +386,16 @@ describe('useGroup', () => {
     const getGroup = vi.fn(() =>
       fail ? Promise.reject(new Error('closed')) : Promise.resolve(groupWith(genesis())),
     );
-    let notify: (groupId: string) => void = () => undefined;
+    const listeners: ((groupId: string) => void)[] = [];
+    const notify = (groupId: string) => {
+      for (const listener of listeners) listener(groupId);
+    };
     const unsubscribe = vi.fn();
     const store: GroupServices['store'] = {
       getGroup,
+      listCoalitions: () => Promise.resolve([]),
       subscribe: (listener) => {
-        notify = listener;
+        listeners.push(listener);
         return unsubscribe;
       },
     };
@@ -410,7 +419,8 @@ describe('useGroup', () => {
     await Promise.resolve();
 
     expect(afterFailure).toBe('House rules');
-    expect(unsubscribe).toHaveBeenCalledOnce();
+    // Once for the group, once for the coalitions it reads beside it (#114).
+    expect(unsubscribe).toHaveBeenCalledTimes(2);
   });
 
   it('needs a provider', () => {
