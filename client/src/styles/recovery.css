@@ -7,9 +7,14 @@
  * person's own t of n.
  */
 
-/* What recovery contacts are, and whom to pick, at reading width. */
+/* What recovery contacts are, and whom to pick, at the lede's reading width. */
 .recovery-about {
   max-width: 34em;
+}
+
+/* The choose-again note in caption type ends where the ledes above it do (30em at 16px). */
+.recovery-about .caption {
+  max-width: 37em;
 }
 
 /* The two counts sit side by side where there's room, and stack on a phone. */
