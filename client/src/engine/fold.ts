@@ -16,10 +16,12 @@
  * (#117). Each member's voting rights arrive at a relay minute the fold
  * records as their `rightsAt`: at once for the founder and the bootstrap's
  * joiners, else after vouches and a wait (admission.ts, #101). The chat bot's
- * claims keep the first per Proposal moment (#119). A `dissolve` ends the
- * group (#108): relay time stops at its receipt, and the fold ignores every
- * event after it, so no vouch lands, no wait ends and no key change becomes
- * due or lands from then on (#98). The fold
+ * claims keep the first per Proposal moment (#119). A Co-Creator's `dispatch`
+ * joins the group's Dispatches at its receipt, and a Proposal carrying one
+ * sends it when its pass is final, at its close (dispatches.ts, #112). A
+ * `dissolve` ends the group (#108): relay time stops at its receipt, and the
+ * fold ignores every event after it, so no vouch lands, no wait ends and no
+ * key change becomes due or lands from then on (#98). The fold
  * is pure: no I/O, no clock, no randomness, so every device that folds the
  * same records builds the same state.
  */
@@ -37,9 +39,12 @@ import {
 } from './capabilities';
 import { type ChatPost, isBotMoment, mayClaim } from './chatPosts';
 import { optionFor } from './composeOption';
+import { type Dispatch, dispatchFits, maySendDispatch } from './dispatches';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
+  type CarriedDispatch,
   type ChatPostedBody,
+  type DispatchBody,
   type DissolveBody,
   type DissolveProposalBody,
   EVENT_VERSION,
@@ -210,7 +215,8 @@ export interface Ballot {
  * early, or null. `final` is true once it has closed, early or because relay
  * time reached `deadline`. `outcome` is the tally of the ballots so far, and
  * is settled only when `final`. A Proposal still open when its group
- * dissolved (#108) is never final, so it has no outcome.
+ * dissolved (#108) is never final, so it has no outcome. `dispatch` is the
+ * Dispatch it sends to the group if it passes (#112), or null.
  */
 export interface Proposal {
   readonly id: string;
@@ -232,6 +238,7 @@ export interface Proposal {
   readonly closedAt: number | null;
   readonly final: boolean;
   readonly outcome: TallyOutcome;
+  readonly dispatch: CarriedDispatch | null;
 }
 
 /**
@@ -262,7 +269,10 @@ export interface IgnoredRecord {
  * order, in force or ended (#117). `vouches` holds every valid vouch in relay
  * order (#101), visible to members like ballots (ADR-0010). `chatPosts` holds
  * the chat bot's winning claims, the first valid `chat-posted` per (Proposal,
- * moment), in relay order (#119). `epoch` is the group key's epoch: 0 at
+ * moment), in relay order (#119). `dispatches` holds the group's Dispatches
+ * in the order they went out (#112): each valid `dispatch` at its receipt,
+ * and each passed Proposal's at its close, in close order, ahead of any
+ * record received from that minute on. `epoch` is the group key's epoch: 0 at
  * genesis, then one more for each canonical key change, which `rotations`
  * keeps in order (#98). `rotationDue` is true once a membership has ended
  * since the last canonical key change, or genesis, until the next, or until
@@ -288,6 +298,7 @@ export interface GroupState {
   readonly narrowings: readonly Narrowing[];
   readonly vouches: readonly Vouch[];
   readonly chatPosts: readonly ChatPost[];
+  readonly dispatches: readonly Dispatch[];
   readonly epoch: number;
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
@@ -317,8 +328,10 @@ interface OpenProposal extends Omit<
 
 /**
  * The state the fold builds up, one event at a time. `seated` holds the ids
- * of the closed steward Proposals whose outcome the seats already show, and
- * `ruled` those of the closed rules Proposals the opt-ins already show.
+ * of the closed steward Proposals whose outcome the seats already show,
+ * `ruled` those of the closed rules Proposals the opt-ins already show, and
+ * `dispatched` those of the closed Proposals carrying a Dispatch that
+ * `dispatches` already reflects (#112).
  */
 interface Draft {
   group: string | null;
@@ -336,11 +349,13 @@ interface Draft {
   readonly narrowings: Narrowing[];
   readonly vouches: Vouch[];
   readonly chatPosts: ChatPost[];
+  readonly dispatches: Dispatch[];
   epoch: number;
   readonly rotations: Rotation[];
   rotationDue: boolean;
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
+  readonly dispatched: Set<string>;
   dissolved: Dissolution | null;
 }
 
@@ -481,10 +496,16 @@ function openOn(draft: Draft, atom: string, received: number): OpenProposal | un
   return draft.proposals.find((p) => p.atom === atom && isOpenAt(p, received));
 }
 
-/** A title of 1–120 code points and a justification of at most 2,000, as every Proposal needs. */
+/**
+ * A title of 1–120 code points and a justification of at most 2,000, as every
+ * Proposal needs, and a carried Dispatch that fits, when there is one (#112).
+ */
 function fieldsAreValid(body: ProposalEventBody): boolean {
   const titleLength = codePointLength(body.title);
-  return titleLength >= 1 && titleLength <= TITLE_MAX && codePointLength(body.why) <= WHY_MAX;
+  const carried = body.dispatch === undefined || dispatchFits(body.dispatch);
+  return (
+    titleLength >= 1 && titleLength <= TITLE_MAX && codePointLength(body.why) <= WHY_MAX && carried
+  );
 }
 
 function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
@@ -511,7 +532,8 @@ interface Term {
 
 /**
  * What every Proposal opens with: its receipt, author, class, window and a
- * deadline `window` days after its receipt (#106), and no ballots yet.
+ * deadline `window` days after its receipt (#106), any Dispatch it carries
+ * (#112), and no ballots yet.
  */
 function opening(body: ProposalEventBody, author: string, at: Receipt, { cls, window }: Term) {
   return {
@@ -525,6 +547,7 @@ function opening(body: ProposalEventBody, author: string, at: Receipt, { cls, wi
     deadline: at.received + window * DAY_MINUTES,
     ballots: [],
     closedAt: null,
+    dispatch: body.dispatch ?? null,
   };
 }
 
@@ -705,6 +728,18 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 }
 
 /**
+ * Keeps a Co-Creator's Dispatch at its receipt (#112), when its author may
+ * send it now and it fits (dispatches.ts). A Dispatch with no `doc` points to
+ * no Document.
+ */
+function applyDispatch(draft: Draft, body: DispatchBody, author: string, at: Receipt): boolean {
+  if (!maySendDispatch(draft, author, body)) return false;
+  const { title, text, doc = null } = body;
+  draft.dispatches.push({ id: at.id, by: author, title, text, doc, received: at.received });
+  return true;
+}
+
+/**
  * Adds a version to an open Proposal's ballot, in relay order, while it holds
  * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
  */
@@ -836,11 +871,15 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 
 /**
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
- * `vouch` (#101), `chat-posted` (#119), and `kx` and `key-rotate` (#98).
+ * `vouch` (#101), `chat-posted` (#119), `dispatch` (#112), and `kx` and
+ * `key-rotate` (#98).
  */
 type LaterEvent = Extract<
   GroupEvent,
-  { readonly type: 'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'kx' | 'key-rotate' }
+  {
+    readonly type:
+      'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'dispatch' | 'kx' | 'key-rotate';
+  }
 >;
 
 /**
@@ -857,6 +896,8 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
       return applyVouch(draft, event.body, event.author, at);
     case 'chat-posted':
       return applyChatPosted(draft, event.body, event.author, at);
+    case 'dispatch':
+      return applyDispatch(draft, event.body, event.author, at);
     case 'kx':
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
@@ -984,17 +1025,17 @@ export function closeTime(proposal: Pick<Proposal, 'closedAt' | 'deadline'>): nu
 }
 
 /**
- * The Proposals of one kind that have closed by `draft.at` and that `applied`
- * doesn't hold yet, each marked applied, in order of close time and then
- * relay order, with whether each passed.
+ * The Proposals `wanted` picks that have closed by `draft.at` and that
+ * `applied` doesn't hold yet, each marked applied, in order of close time and
+ * then relay order, with whether each passed.
  */
 function newlyClosed(
   draft: Draft,
   applied: Set<string>,
-  kind: 'steward' | 'rules',
+  wanted: (proposal: OpenProposal) => boolean,
 ): { proposal: OpenProposal; passed: boolean }[] {
   const closed = draft.proposals.filter(
-    (p) => p.target.kind === kind && !applied.has(p.id) && !isOpenAt(p, draft.at),
+    (p) => wanted(p) && !applied.has(p.id) && !isOpenAt(p, draft.at),
   );
   // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
   return closed
@@ -1014,7 +1055,8 @@ function newlyClosed(
  * seats as relay time has left them.
  */
 function advanceSeats(draft: Draft): void {
-  for (const { proposal, passed } of newlyClosed(draft, draft.seated, 'steward')) {
+  const steward = (proposal: OpenProposal) => proposal.target.kind === 'steward';
+  for (const { proposal, passed } of newlyClosed(draft, draft.seated, steward)) {
     const change = stewardChangeOf(proposal);
     if (change !== null && passed) {
       draft.stewards = seatsAfterPass(draft, change, closeTime(proposal));
@@ -1030,11 +1072,45 @@ function advanceSeats(draft: Draft): void {
  * off-Proposal closes. Runs before each event, beside {@link advanceSeats}.
  */
 function advanceOptIns(draft: Draft): void {
-  for (const { proposal, passed } of newlyClosed(draft, draft.ruled, 'rules')) {
+  const rules = (proposal: OpenProposal) => proposal.target.kind === 'rules';
+  for (const { proposal, passed } of newlyClosed(draft, draft.ruled, rules)) {
     const change = rulesChangeOf(proposal);
     if (change !== null && passed) {
       draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
     }
+  }
+}
+
+/**
+ * The Document a Proposal changes (#112): its Atom's, for an edit. A steward,
+ * rules or dissolve Proposal's `atom` is `""`, which names no Atom, so it
+ * changes none.
+ */
+function documentOf(draft: Draft, proposal: OpenProposal): string | null {
+  return draft.atoms.find((atom) => atom.id === proposal.atom)?.documentId ?? null;
+}
+
+/**
+ * Brings the Dispatches up to `draft.at` (#112): each Proposal carrying one
+ * that has passed and closed by then sends it, once, in order of close time
+ * and then relay order, as a Dispatch from the Proposal, under the Proposal's
+ * id, pointing to the Document it changed, received at its close. A fail or a
+ * lapse sends nothing. Runs before each event, beside {@link advanceSeats}, so
+ * it comes ahead of every record received from its close on.
+ */
+function advanceDispatches(draft: Draft): void {
+  const carries = (proposal: OpenProposal) => proposal.dispatch !== null;
+  for (const { proposal, passed } of newlyClosed(draft, draft.dispatched, carries)) {
+    const { id, dispatch } = proposal;
+    if (dispatch === null || !passed) continue;
+    const doc = documentOf(draft, proposal);
+    draft.dispatches.push({
+      id,
+      by: { proposal: id },
+      ...dispatch,
+      doc,
+      received: closeTime(proposal),
+    });
   }
 }
 
@@ -1082,11 +1158,13 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings: [],
     vouches: [],
     chatPosts: [],
+    dispatches: [],
     epoch: 0,
     rotations: [],
     rotationDue: false,
     seated: new Set(),
     ruled: new Set(),
+    dispatched: new Set(),
     dissolved: null,
   };
   const ignored: IgnoredRecord[] = [];
@@ -1098,10 +1176,11 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   draft.at = now ?? draft.at;
   advanceSeats(draft);
   advanceOptIns(draft);
+  advanceDispatches(draft);
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings, vouches, chatPosts, epoch, rotations, rotationDue } = draft;
+  const { narrowings, vouches, chatPosts, dispatches, epoch, rotations, rotationDue } = draft;
   return {
     group,
     rules,
@@ -1119,6 +1198,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings,
     vouches,
     chatPosts,
+    dispatches,
     epoch,
     rotations,
     rotationDue,
@@ -1140,8 +1220,8 @@ function idOf(record: LogRecord): string | null {
  * changes nothing at all: not relay time, and not the event ids seen, so the
  * copy its author posts again to the new mailbox folds once. Otherwise relay
  * time moves on, whatever the record holds, until the group dissolves (#108),
- * and the seats and opt-ins catch up to it before the event is checked. A
- * repeated event id is ignored.
+ * and the seats, opt-ins and carried Dispatches catch up to it before the
+ * event is checked. A repeated event id is ignored.
  */
 function foldRecord(draft: Draft, record: LogRecord, seen: Set<string>): boolean {
   const { seq, received, bytes, epoch = 0 } = record;
@@ -1150,6 +1230,7 @@ function foldRecord(draft: Draft, record: LogRecord, seen: Set<string>): boolean
     draft.at = Math.max(draft.at, received);
     advanceSeats(draft);
     advanceOptIns(draft);
+    advanceDispatches(draft);
   }
   const parsed = parseRecord(bytes);
   if (parsed === null) return false;

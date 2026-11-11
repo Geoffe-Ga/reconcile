@@ -89,6 +89,29 @@ describe('useDraft', () => {
     expect(shelf.get('atom-1')).toEqual(TYPED);
   });
 
+  it('counts a Dispatch added, changed or removed as a change, and the same one as none (#112)', async () => {
+    const dispatch = { title: 'Updated', text: '' };
+    const { drafts } = memoryDrafts();
+    const { result } = await mount(drafts, { ...START, dispatch });
+    expect(result.current.changed).toBe(false);
+    act(() => {
+      result.current.update({ ...START, dispatch: { ...dispatch, text: 'More' } });
+    });
+    expect(result.current.changed).toBe(true);
+    act(() => {
+      result.current.update({ ...START, dispatch: { ...dispatch, title: 'Other' } });
+    });
+    expect(result.current.changed).toBe(true);
+    act(() => {
+      result.current.update(START);
+    });
+    expect(result.current.changed).toBe(true);
+    act(() => {
+      result.current.update({ ...START, dispatch: { ...dispatch } });
+    });
+    expect(result.current.changed).toBe(false);
+  });
+
   it('clears the draft instead when the values are back where they started', async () => {
     const { drafts, shelf } = memoryDrafts({ 'atom-1': TYPED });
     const { result } = await mount(drafts);

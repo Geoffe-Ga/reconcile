@@ -755,6 +755,40 @@ describe('fetchRelayBackup', () => {
     expect(await fresh.getRelayBackup()).toBeUndefined();
   });
 
+  it('carries a Dispatch only sealed, and a restore from it brings the Dispatch back (#112)', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    const title = 'Canary Dispatch: garden day';
+    const words = 'Canary Dispatch text: bring gloves.';
+    const dispatch = signedAs('ana', {
+      type: 'dispatch',
+      group: founding.id,
+      ts: TS,
+      body: { title, text: words, doc: founding.id },
+    });
+    await device.store.enqueue(founding.id, dispatch.record);
+    expect(await device.sync.syncOnce()).toBe(true);
+    await startRelayBackup(device.services);
+    const key = await keyOf(device.store);
+    const blob = fake.backup(backupIdFor(key)) ?? new Uint8Array();
+    const canaries = [textCanary('Dispatch title', title), textCanary('Dispatch text', words)];
+
+    expect(findCanaries(blob, canaries)).toEqual([]);
+    const plaintext = openRelayBackup(key, blob) ?? new Uint8Array();
+    expect(findCanaries(plaintext, canaries).length).toBeGreaterThan(0);
+    const fresh = await openStore('fresh');
+    await importSnapshot(
+      fresh,
+      (await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key)) ?? new Uint8Array(),
+    );
+    const restored = await fresh.getGroup(founding.id);
+    const state = fold(restored?.log ?? [], restored?.relayNow ?? null);
+    expect(state.dispatches.map((d) => [d.id, d.title, d.text, d.doc])).toEqual([
+      [dispatch.id, title, words, founding.id],
+    ]);
+  });
+
   it('reads null for a backup the relay doesn’t hold, a changed byte, or a blob of another key', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');

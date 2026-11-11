@@ -281,7 +281,7 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('shows, in order: Needs your vote, the other open Proposals, the Document, Decided, People', async () => {
+  it('shows, in order: Needs your vote, the other open Proposals, Dispatches (#112), the Document, Decided, People', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     const scored = log.propose('ben', { title: 'Bins on Monday', atom: 1 });
     log.vote('ana', scored, 3);
@@ -293,9 +293,10 @@ describe('GroupHome', () => {
     const regions = screen
       .getAllByRole('region')
       .map((region) => region.querySelector('h2')?.textContent);
-    expect(regions.slice(0, 5)).toEqual([
+    expect(regions.slice(0, 6)).toEqual([
       'Needs your vote',
       'Other open Proposals',
+      'Dispatches',
       'Document',
       'Decided',
       'People',
