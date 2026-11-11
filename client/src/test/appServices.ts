@@ -2,18 +2,21 @@
  * One device's `AppServices` for tests: its own IndexedDB database on the
  * shared fake-indexeddb, a relay client on a shared fake relay, a chat bot
  * (#119, #123) that posts to that fake's Discord webhook, never the network,
- * push (#99) over a fake browser whose permission starts unasked, and after
- * each complete pass the held recovery shares that are due (#118), the relay
- * backup's daily refresh (#97) and any retired backup id's overwrite (#109).
+ * push (#99) over a fake browser whose permission starts unasked, the front
+ * door's keeper (#121), and after each complete pass the held recovery
+ * shares that are due (#118), the relay backup's daily refresh (#97) and any
+ * retired backup id's overwrite (#109).
  */
 import { vi } from 'vitest';
 
 import { botNotice, botThreadName } from '../app/chatMessages';
 import { passkeyOn } from '../app/passkey';
 import type { AppServices } from '../app/services';
+import { plainText } from '../app/text/markdown';
 import { xchachaSeal } from '../crypto/seal';
 import { getWebhook, postWebhook } from '../net/discord';
 import { createPushRelay } from '../net/push';
+import { createDoorKeeper } from '../door/keeper';
 import { createRelay } from '../net/relay';
 import { browserPushPort } from '../platform/pushPort';
 import { type ChatBot, createChatBot } from '../store/chatBot';
@@ -95,6 +98,8 @@ export async function testDevice(
   // As in main.tsx: after each complete pass, held shares due go (#118), the relay backup
   // refreshes (#97), and retired ids go (#109).
   const afterPass = (): Promise<void> => afterEveryPass({ store, relay, seal: xchachaSeal, now });
+  // As in main.tsx, each sync keeps the front door, and looks for replies (#121).
+  const door = createDoorKeeper({ store, relay, seal: xchachaSeal, plainText, clock: now });
   const sync = createSync({
     store,
     relay,
@@ -102,6 +107,7 @@ export async function testDevice(
     clock: now,
     chatBot,
     push,
+    door,
     afterPass,
   });
   const copied: string[] = [];

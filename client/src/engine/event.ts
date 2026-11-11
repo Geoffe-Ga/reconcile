@@ -387,6 +387,17 @@ export interface ChatPostedBody {
 }
 
 /**
+ * Records that the author sent an invite to someone who asked to join at the
+ * group's front door (#121; ADR-0038): `application` is the SHA-256, in
+ * unpadded base64url, of the sealed application blob the relay holds, so
+ * everyone sees who invited them and nobody sends a second. Kept as written:
+ * the fold checks it (frontDoor.ts).
+ */
+export interface DoorInvitedBody {
+  readonly application: string;
+}
+
+/**
  * Records a Proposal's Discord thread (#123): `url` is the link to the
  * forum thread the author's device opened with the Proposal's first notice.
  * Both are kept as written: the fold checks them (chatPosts.ts).
@@ -566,6 +577,7 @@ export interface EventBodies {
   readonly 'recovery-share': RecoveryShareBody;
   readonly 'recovery-alert': RecoveryAlertBody;
   readonly 'recovery-cancel': RecoveryCancelBody;
+  readonly 'door-invited': DoorInvitedBody;
   readonly 'group-result': GroupResultBody;
 }
 
@@ -1015,6 +1027,10 @@ function parseRecoveryCancel(body: Json): RecoveryCancelBody | null {
   return isString(body.alert) && TAG16.test(body.alert) ? { alert: body.alert } : null;
 }
 
+function parseDoorInvited(body: Json): DoorInvitedBody | null {
+  return isString(body.application) ? { application: body.application } : null;
+}
+
 /** The only keys a group-result may carry, so nothing else crosses group lines (#100). */
 const RESULT_KEYS = ['motion', 'result', 'seat'];
 
@@ -1163,7 +1179,7 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
 /**
  * {@link withBody} for #98's types, `kx` and `key-rotate`, #109's
  * `recovery-share`, #118's `recovery-alert` and `recovery-cancel`, #100's
- * `group-result`, and #111's `result`.
+ * `group-result`, #111's `result`, and #121's `door-invited`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1180,6 +1196,8 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseGroupResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'result':
       return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'door-invited':
+      return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

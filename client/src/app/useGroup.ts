@@ -21,6 +21,7 @@ import {
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
+import type { ReceivedApplication } from '../store/applications';
 import { shownState } from '../store/archive';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
@@ -91,6 +92,11 @@ export interface GroupView {
    * shown yet (#109): its quiet card shows each once, until the person puts it away.
    */
   newShares: readonly HeldShare[];
+  /**
+   * The front door's applications this device read from its inbox (#121),
+   * dismissed ones included, oldest first: none until it has read one.
+   */
+  applications: readonly ReceivedApplication[];
 }
 
 /** No shares: one shared empty list, so it never looks changed. */
@@ -107,6 +113,9 @@ function newSharesIn(group: Group | undefined, state: GroupState | null): readon
   const fresh = heldSharesIn(group, state).filter(({ id }) => !seen.has(id));
   return fresh.length === 0 ? NO_SHARES : fresh;
 }
+
+/** No applications: one shared empty list, so it never looks changed. */
+const NO_APPLICATIONS: readonly ReceivedApplication[] = [];
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
 const NO_RECORDS: readonly LogRecord[] = [];
@@ -130,6 +139,7 @@ export function useGroup(groupId: string): GroupView {
     loaded,
     cleared: clearedOf(group),
     newShares,
+    applications: group?.door?.applications ?? NO_APPLICATIONS,
   };
 }
 

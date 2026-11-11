@@ -11,11 +11,15 @@ import { deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { openRelease, recoveryChannel } from '../crypto/recovery';
 import type { RecoveryShare } from '../crypto/shares';
 import { xchachaSeal } from '../crypto/seal';
+import { LEVELS } from '../engine/capabilities';
 import type { Group } from '../store/db';
 import { chooseContacts } from '../store/recovery';
 import type { TestDevice } from './appServices';
 import type { FakeRelay } from './fakeRelay';
 import { foundAnother, members } from './members';
+
+/** The level joiners join at: the creating level, as `members.ts` joins them. */
+const [, , CREATING] = LEVELS;
 
 /** Minutes a contact holds a share after the relay receives their alert. */
 export const HOLD = 4320;
@@ -90,7 +94,7 @@ export async function joinWith(
   if (seed === null) throw new Error('Expected an invite link.');
   const found = await lookupInvite(device.services, seed);
   if (found.kind !== 'found') throw new Error('Expected the invite to open.');
-  await joinGroup(device.services, found.group, name, 'co-creator');
+  await joinGroup(device.services, found.group, name, CREATING);
   await device.services.sync.syncOnce();
 }
 

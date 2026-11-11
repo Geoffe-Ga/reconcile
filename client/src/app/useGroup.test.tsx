@@ -234,6 +234,7 @@ describe('useGroup', () => {
       loaded: true,
       cleared: null,
       newShares: [],
+      applications: [],
     });
   });
 
