@@ -48,10 +48,10 @@ const statement: PersonalDocument = {
 /**
  * The schema every upgrade path ends at: version 6, with the groups and
  * personal stores (#93), the device store, which holds the relay backup's
- * state (#97), and the store of front-door applications this device sent
- * (#121).
+ * state (#97), the passkey vault (#95), and the store of front-door
+ * applications this device sent (#121).
  */
-const CURRENT_SCHEMA = { version: 6, stores: ['device', 'groups', 'personal', 'sent'] };
+const CURRENT_SCHEMA = { version: 7, stores: ['device', 'groups', 'personal', 'sent', 'vault'] };
 
 /** The version and object stores of the IndexedDB database `name`, as it now stands. */
 async function schemaOf(name: string): Promise<{ version: number; stores: string[] }> {
@@ -577,8 +577,8 @@ describe('purgeGroup', () => {
   });
 });
 
-describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5 → v6)', () => {
-  it('starts a fresh install at version 6, with empty groups, personal, device and sent stores', async () => {
+describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5 → v6 → v7)', () => {
+  it('starts a fresh install at version 7, with empty groups, personal, device, vault and sent stores', async () => {
     const store = await openStore();
 
     expect(await store.listGroups()).toEqual([]);
@@ -661,7 +661,7 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 
-  it('upgrades version 4 as #93 left it, adding only the device store (#97), and archives a group in it', async () => {
+  it('upgrades version 4 as #93 left it, adding the device store (#97) and the vault (#95), and archives a group in it', async () => {
     const old = await openDB('reconcile', 4, {
       upgrade(database) {
         database.createObjectStore('groups', { keyPath: 'groupId' });
@@ -683,7 +683,7 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 
-  it('upgrades a version 4 group holding #98’s keys and epochs and #99’s push to 5, keeping them, with the relay backup off (#97)', async () => {
+  it('upgrades a version 4 group holding #98’s keys and epochs and #99’s push to 6, keeping them, with the relay backup off (#97)', async () => {
     const push = { endpoint: 'https://push.example/1', mailboxes: ['m'], instance: 'i', at: 1 };
     const rotated = storedGroup({
       groupId: 'rotated',
@@ -722,6 +722,60 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
     // The new store's key sits in no group: keeping one leaves the group's record as it was.
     await store.setRelayBackupKey(new Uint8Array(32).fill(8));
     expect(plain(await store.getGroup('rotated'))).toEqual(plain(rotated));
+    store.close();
+    expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+  it('upgrades version 5 as #97 left it, adding only the vault (#95), and keeps its groups, Documents and relay backup', async () => {
+    const push = { endpoint: 'https://push.example/1', mailboxes: ['m'], instance: 'i', at: 1 };
+    const rotated = storedGroup({
+      groupId: 'rotated',
+      kxKey: new Uint8Array(32).fill(4),
+      epoch: 1,
+      log: [
+        { seq: 1, received: 9, bytes: utf8('{"g":1}') },
+        { seq: 2, received: 10, bytes: utf8('{"p":1}'), epoch: 1 },
+      ],
+      backup: 'saved',
+      push,
+    });
+    const backup = {
+      key: new Uint8Array(32).fill(8),
+      digest: 'ab12',
+      checkedDay: 20_400,
+      uploadedAt: 1_762_650_000_000,
+      tooLarge: false,
+    };
+    const old = await openDB('reconcile', 5, {
+      upgrade(database) {
+        database.createObjectStore('groups', { keyPath: 'groupId' });
+        database.createObjectStore('personal', { keyPath: 'id' });
+        database.createObjectStore('device');
+      },
+    });
+    await old.put('groups', rotated);
+    await old.put('groups', storedGroup());
+    await old.put('personal', statement);
+    await old.put('device', backup, 'relay-backup');
+    old.close();
+
+    const store = await openStore();
+
+    const plain = (held: Group | undefined) => ({
+      ...comparable(held),
+      kxKey: Array.from(held?.kxKey ?? []),
+    });
+    expect((await store.listGroups()).map(plain)).toEqual([storedGroup(), rotated].map(plain));
+    expect(await store.listPersonal()).toEqual([statement]);
+    const state = await store.getRelayBackup();
+    expect(state === undefined ? undefined : { ...state, key: local(state.key) }).toEqual({
+      ...backup,
+      key: local(backup.key),
+    });
+    expect(await store.readVault()).toBeNull();
+    // The upgraded store still writes: a new group, and the relay backup's next day.
+    await store.addGroup({ ...group, groupId: 'group-2' });
+    expect(await store.updateRelayBackup(backup.key, { checkedDay: 20_401 })).toBe(true);
+    expect((await store.getRelayBackup())?.checkedDay).toBe(20_401);
     store.close();
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
@@ -836,6 +890,17 @@ describe('markArchived', () => {
     expect(kept?.drafts).toBeUndefined();
     expect(kept?.leaving).toBeUndefined();
     expect(heard).toHaveBeenCalledWith('group-1');
+  });
+
+  it('forgets what the chat bot learned of the webhook, since it never posts again (#123)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const home = { guild: '1188000000000000001', channel: '1199000000000000777' };
+    await store.noteChatChannel('group-1', { webhook: '1199000000000000001', home });
+
+    await store.markArchived('group-1', 'dissolved');
+
+    expect((await store.getGroup('group-1'))?.chatChannel).toBeUndefined();
   });
 
   it('forgets this device’s push registration and posted nudges, leaving the relay’s copy to expire (#99)', async () => {
@@ -1048,6 +1113,33 @@ describe('the chat bot’s claims (#119)', () => {
   });
 });
 
+describe('what this device learned of the group’s webhook (#123)', () => {
+  const forum = { webhook: '1199000000000000001', home: { guild: '1188', channel: '1199' } };
+  const text = { webhook: '1199000000000000001', home: 'text' } as const;
+
+  it('is nothing until noted, then the latest note, without telling subscribers', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+    expect((await store.getGroup(group.groupId))?.chatChannel).toBeUndefined();
+
+    await store.noteChatChannel(group.groupId, forum);
+    expect((await store.getGroup(group.groupId))?.chatChannel).toEqual(forum);
+    await store.noteChatChannel(group.groupId, text);
+    expect((await store.getGroup(group.groupId))?.chatChannel).toEqual(text);
+
+    expect(heard).toEqual([]);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+    await expect(store.noteChatChannel('nope', text)).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+});
+
 describe('push for a group (#99)', () => {
   const registration = {
     endpoint: 'https://fcm.googleapis.com/fcm/send/device-1',
@@ -1110,6 +1202,7 @@ describe('every change', () => {
           moment: 'open',
         }),
       () => store.settleChatClaim(group.groupId, 'claim-1'),
+      () => store.noteChatChannel(group.groupId, { webhook: '1', home: 'text' }),
       () => store.setPush(group.groupId, null),
       () => store.markNudged(group.groupId, []),
       () => store.markLeaving(group.groupId, utf8('{"leave":1}')),

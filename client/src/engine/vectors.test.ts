@@ -30,6 +30,8 @@ describe('vector files', () => {
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'chat-thread-first.json',
+      'chat-thread-ignored.json',
       'dispatch-carried.json',
       'dispatch-limits.json',
       'dispatch-sent.json',
@@ -57,6 +59,7 @@ describe('vector files', () => {
       'optin-class.json',
       'optin-ignored.json',
       'optin-narrow.json',
+      'proposal-number.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -112,7 +115,10 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -381,6 +387,16 @@ describe('vector files', () => {
     'bootstrap-after-leave',
     'bootstrap-member-churn',
   ])('include the admission vector "%s" (#101)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'proposal-number',
+    'chat-thread-first',
+    'chat-thread-ignored',
+    'chat-thread-narrowed',
+    'chat-thread-off',
+  ])('include the Discord thread vector "%s" (#123)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 

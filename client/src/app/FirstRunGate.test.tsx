@@ -7,8 +7,11 @@ import { base64url } from '../engine/event';
 import type { PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import type { Persistence } from '../platform/persist';
+import type { PasskeyOfferRecord } from '../platform/passkeyOffer';
 import type { InviteLookup } from './actions';
 import { FirstRunGate, type OpenedApp } from './FirstRunGate';
+import { messages } from './messages';
+import type { DeviceLock, Passkey, Protection } from './passkey';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -60,6 +63,28 @@ interface Options {
   readonly hash?: string;
   readonly persistence?: Persistence;
   readonly notice?: NoticeRecord;
+  /** Whether the device's keys are locked with a passkey at launch (#95). */
+  readonly locked?: boolean;
+  /** What unlocking resolves to, each time. */
+  readonly unlocks?: boolean;
+  /** Whether this browser can offer a passkey (#95). */
+  readonly passkeyAvailable?: boolean;
+  /** Whether this device answered the passkey offer. */
+  readonly offerAnswered?: boolean;
+  /** What Restore on the unlock screen does. */
+  readonly restore?: DeviceLock['restore'];
+}
+
+/** An offer record in memory, recording each answer in `events`. */
+function memoryOffer(answered: boolean, events: string[]): PasskeyOfferRecord {
+  let current = answered;
+  return {
+    answered: () => current,
+    answer: () => {
+      events.push('answer');
+      current = true;
+    },
+  };
 }
 
 function setup(options: Options = {}) {
@@ -73,6 +98,20 @@ function setup(options: Options = {}) {
   const lookup = vi.fn<(seed: Uint8Array) => Promise<InviteLookup>>(() =>
     Promise.resolve({ kind: 'missing' }),
   );
+  const unlock = vi.fn(() => Promise.resolve(options.unlocks ?? true));
+  const lock: DeviceLock = {
+    lockedAtLaunch: options.locked ?? false,
+    unlock,
+    restore: options.restore ?? vi.fn(() => Promise.resolve(2)),
+  };
+  const passkey: Passkey = {
+    available: options.passkeyAvailable ?? false,
+    isProtected: () => Promise.resolve(false),
+    create: () => Promise.resolve(Uint8Array.of(1)),
+    protect: () => Promise.resolve<Protection>('protected'),
+  };
+  const onErase = vi.fn(() => Promise.resolve());
+  const passkeyOffer = memoryOffer(options.offerAnswered ?? false, events);
   const opened: OpenedApp[] = [];
   const app = vi.fn((open: OpenedApp) => {
     opened.push(open);
@@ -91,11 +130,24 @@ function setup(options: Options = {}) {
       copyText={() => Promise.resolve()}
       lookup={lookup}
       readDoor={() => Promise.resolve({ kind: 'closed' })}
+      lock={lock}
+      passkey={passkey}
+      passkeyOffer={passkeyOffer}
+      onErase={onErase}
     >
       {app}
     </FirstRunGate>,
   );
-  return { user: userEvent.setup(), events, requestPersistence, lookup, app, opened };
+  return {
+    user: userEvent.setup(),
+    events,
+    requestPersistence,
+    lookup,
+    app,
+    opened,
+    unlock,
+    onErase,
+  };
 }
 
 const appHeading = () => screen.queryByRole('heading', { level: 1, name: 'The app' });
@@ -245,5 +297,129 @@ describe('FirstRunGate with a front door’s link (#121)', () => {
     expect(await screen.findByText('This front door is closed.')).toBeVisible();
     expect(window.location.hash).toBe(door);
     expect(appHeading()).toBeNull();
+  });
+});
+
+const offerHeading = () =>
+  screen.queryByRole('heading', { level: 1, name: messages.passkey.title });
+const unlockHeading = () =>
+  screen.queryByRole('heading', { level: 1, name: messages.unlock.title });
+
+describe('FirstRunGate and the passkey offer (#95)', () => {
+  it('offers a passkey once, right after the notice, where one can lock the keys', async () => {
+    const { user, events, app } = setup({ passkeyAvailable: true });
+
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+
+    expect(offerHeading()).toBeVisible();
+    expect(app).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: messages.passkey.notNow }));
+    expect(appHeading()).toBeVisible();
+    expect(events.filter((event) => event !== 'persist')).toEqual(['accept', 'answer']);
+  });
+
+  it('offers it at the next launch to a device that accepted the notice before passkeys came', () => {
+    setup({ accepted: true, passkeyAvailable: true });
+
+    expect(offerHeading()).toBeVisible();
+    expect(appHeading()).not.toBeInTheDocument();
+  });
+
+  it('doesn’t offer it again once answered', () => {
+    setup({ accepted: true, passkeyAvailable: true, offerAnswered: true });
+
+    expect(offerHeading()).not.toBeInTheDocument();
+    expect(appHeading()).toBeVisible();
+  });
+
+  it('doesn’t offer it where a passkey can’t lock the keys', async () => {
+    const { user, events } = setup({ passkeyAvailable: false });
+
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+
+    expect(offerHeading()).not.toBeInTheDocument();
+    expect(appHeading()).toBeVisible();
+    expect(events).not.toContain('answer');
+  });
+
+  it('holds an invite through the notice and the offer, and hands it to the app', async () => {
+    const invite = newInvite();
+    const { user, opened } = setup({
+      passkeyAvailable: true,
+      hash: `#join/${invitePayload(invite)}`,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(window.location.hash).toBe('#/join');
+    await user.click(screen.getByRole('button', { name: messages.passkey.notNow }));
+
+    expect(opened.at(-1)?.heldSeed).toEqual(invite);
+  });
+});
+
+describe('FirstRunGate on a device whose keys are locked (#95)', () => {
+  it('shows the unlock screen before the app, and opens the app once the passkey unlocks', async () => {
+    const { user, app, unlock } = setup({ accepted: true, locked: true, passkeyAvailable: true });
+
+    expect(unlockHeading()).toBeVisible();
+    expect(offerHeading()).not.toBeInTheDocument();
+    expect(app).not.toHaveBeenCalled();
+    expect(unlock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+
+    expect(unlock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(offerHeading()).not.toBeInTheDocument();
+  });
+
+  it('stays on the unlock screen while the passkey doesn’t unlock', async () => {
+    const { user, app } = setup({ accepted: true, locked: true, unlocks: false });
+
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(messages.unlock.failed);
+    expect(unlockHeading()).toBeVisible();
+    expect(app).not.toHaveBeenCalled();
+  });
+
+  it('opens the app once a backup file is restored in place of the locked keys', async () => {
+    const restore = vi.fn(() => Promise.resolve(2));
+    const { user, app } = setup({ accepted: true, locked: true, unlocks: false, restore });
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    const section = await screen.findByRole('region', { name: messages.unlock.restoreHeading });
+    const file = new File([Uint8Array.of(1, 2, 3)], 'reconcile-backup.bin');
+    const chooser = section.querySelector('input[type="file"]');
+    if (!(chooser instanceof HTMLInputElement)) throw new Error('Expected a file input.');
+
+    await user.upload(chooser, file);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(restore).toHaveBeenCalledWith(Uint8Array.of(1, 2, 3), 'a long walk to the river');
+    expect(app).toHaveBeenCalled();
+  });
+
+  it('shows the notice first when the device hasn’t accepted it, then the unlock screen', async () => {
+    const { user } = setup({ locked: true });
+
+    expect(noticeHeading()).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(unlockHeading()).toBeVisible();
+  });
+
+  it('holds an invite opened while locked, and hands it to the app after unlocking', async () => {
+    const invite = newInvite();
+    const { user, opened } = setup({
+      accepted: true,
+      locked: true,
+      hash: `#join/${invitePayload(invite)}`,
+    });
+
+    expect(window.location.hash).toBe('#/join');
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    await screen.findByRole('heading', { level: 1, name: 'The app' });
+
+    expect(opened.at(-1)?.heldSeed).toEqual(invite);
   });
 });

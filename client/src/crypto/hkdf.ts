@@ -6,7 +6,8 @@
  * two ever coincide. Most take an empty salt and 32 bytes of output. A box's
  * key (`box.ts`, #98) is salted with the two public keys of its X25519
  * exchange; a link's number and key are salted with the hash of the link's
- * transcript, and its number takes 4 bytes.
+ * transcript, and its number takes 4 bytes; the key vault's key
+ * (`keyVault.ts`, #95) is salted with the passkey's PRF salt.
  */
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';

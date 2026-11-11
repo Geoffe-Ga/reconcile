@@ -142,12 +142,13 @@ describe('the applications this device sent, in a store of their own (#121)', ()
     store.close();
   });
 
-  it('upgrades version 5 as #97 left it, adding only the sent store, and keeping every group', async () => {
-    const old = await openDB('reconcile', 5, {
+  it('upgrades version 6 as #95 left it, adding only the sent store, and keeping every group', async () => {
+    const old = await openDB('reconcile', 6, {
       upgrade(database) {
         database.createObjectStore('groups', { keyPath: 'groupId' });
         database.createObjectStore('personal', { keyPath: 'id' });
         database.createObjectStore('device');
+        database.createObjectStore('vault', { keyPath: 'id' });
       },
     });
     const kept: Group = {

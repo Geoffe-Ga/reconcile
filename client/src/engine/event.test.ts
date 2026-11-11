@@ -503,6 +503,14 @@ describe('parseEvent', () => {
     ['door-invited without an application', 'door-invited', {}],
     ['door-invited with a numeric application', 'door-invited', { application: 7 }],
     ['door-invited with a null application', 'door-invited', { application: null }],
+    ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
+    ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
+    ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
+    [
+      'chat-thread with a numeric Proposal',
+      'chat-thread',
+      { proposal: 1, url: 'https://discord.com/channels/1/2' },
+    ],
     ['dispatch without a title', 'dispatch', { text: 'x' }],
     ['dispatch without text', 'dispatch', { title: 't' }],
     ['dispatch with a numeric title', 'dispatch', { title: 1, text: 'x' }],
@@ -718,6 +726,19 @@ describe('parseEvent', () => {
       author: ANA,
       ts: 1,
       body: { application: 'a1' },
+    });
+  });
+
+  it('reads a chat-thread as its Proposal and URL, kept as written, dropping unknown keys (#123)', () => {
+    const body = { proposal: 'p1', url: 'https://example.com/x', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-thread', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-thread',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', url: 'https://example.com/x' },
     });
   });
 

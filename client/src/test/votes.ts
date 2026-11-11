@@ -79,6 +79,8 @@ export interface LogBuilder {
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
   /** Adds `name`'s record of an invite sent to the front door's `application` (#121), returning its id. */
   doorInvited(name: string, application: string): string;
+  /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
+  chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
   dispatch(name: string, body: DispatchBody): string;
   /** The records so far, in relay order. */
@@ -215,6 +217,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     doorInvited(name: string, application: string) {
       return add(name, { type: 'door-invited', group, ts: 0, body: { application } });
+    },
+    chatThread(name: string, proposal: string, url: string) {
+      return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
     },
     dispatch(name: string, body: DispatchBody) {
       return add(name, { type: 'dispatch', group, ts: 0, body });
