@@ -396,3 +396,26 @@ describe('a claim after the group dissolves (#108)', () => {
     expect(state.ignored.map((record) => record.id)).toContain(late);
   });
 });
+
+describe('Dispatches beside Proposal numbers and threads (#112, #123)', () => {
+  it('numbers only Proposals, and a Proposal carrying a Dispatch keeps its number and thread through its pass', () => {
+    const log = botOn();
+    const sent = log.dispatch('Ana', { title: 'Meet on Sunday', text: '' });
+    log.minute += 1;
+    const edit = log.propose('Ben', { dispatch: { title: 'Updated: House rules', text: '' } });
+    log.chatPosted('Cal', edit, 'open');
+    log.chatThread('Cal', edit, THREAD_URL);
+    log.minute += 1;
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, edit, 4);
+
+    const state = log.state();
+    // The bot's own rules Proposal is 1; the Dispatch between them takes no number.
+    expect(state.proposals.map((p) => [p.id, p.number])).toEqual([
+      [state.proposals[0]?.id, 1],
+      [edit, 2],
+    ]);
+    expect(state.dispatches.map((dispatch) => dispatch.id)).toEqual([sent, edit]);
+    expect(threadFor(state, edit)?.url).toBe(THREAD_URL);
+    expect(state.chatThreads).toHaveLength(1);
+  });
+});

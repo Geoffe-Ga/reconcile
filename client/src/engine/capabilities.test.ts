@@ -18,7 +18,15 @@ import {
   wouldVote,
 } from './capabilities';
 
-const ALL: readonly Capability[] = ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose'];
+const ALL: readonly Capability[] = [
+  'read',
+  'see-roster',
+  'vote',
+  'vouch',
+  'invite',
+  'propose',
+  'dispatch',
+];
 
 /** No seats held, no suspensions, at relay minute 0. */
 const QUIET = { stewards: [], suspensions: [], at: 0 } as const;
@@ -98,9 +106,16 @@ describe('LEVEL_CAPABILITIES', () => {
     expect(LEVEL_CAPABILITIES).toEqual({
       member: ['read', 'see-roster'],
       collaborator: ['read', 'see-roster', 'vote', 'vouch', 'invite'],
-      'co-creator': ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose'],
+      'co-creator': ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose', 'dispatch'],
     });
     expect(Object.keys(LEVEL_CAPABILITIES)).toEqual(LEVELS);
+  });
+
+  it('gives sending a Dispatch to the Co-Creator row alone (ADR-0074, #112)', () => {
+    const sending = LEVELS.filter((level) =>
+      (LEVEL_CAPABILITIES[level] as readonly Capability[]).includes('dispatch'),
+    );
+    expect(sending).toEqual([LEVELS[2]]);
   });
 
   it('lets every level read the roster until the hidden roster returns (ADR-0074)', () => {

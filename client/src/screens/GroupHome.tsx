@@ -4,6 +4,7 @@ import { Button, Link, VisuallyHidden } from 'react-aria-components';
 import { ChatLink } from '../app/ChatLink';
 import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
+import { DispatchCard } from '../app/DispatchCard';
 import { latestLink } from '../app/latestLink';
 import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
@@ -23,6 +24,7 @@ import { useSaving } from '../app/useSaving';
 import { VouchDialog } from '../app/VouchDialog';
 import { vouchWanted } from '../engine/admission';
 import { can, holdsRights, isLevel, isSuspended, type Level } from '../engine/capabilities';
+import { latestDispatch } from '../engine/dispatches';
 import { type Dissolution, mayProposeDissolve, wipeMinute } from '../engine/dissolve';
 import type { ParsedEvent } from '../engine/event';
 import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
@@ -228,6 +230,63 @@ function Decided({
         </li>
       ))}
     </ul>
+  );
+}
+
+interface HomeDispatchesProps {
+  readonly state: GroupState;
+  readonly me: string;
+  /** True while this member leaves, or once the group has dissolved: nothing new is sent. */
+  readonly readOnly: boolean;
+}
+
+/** Send a Dispatch, quietly, and See all with an arrow: what follows the latest Dispatch. */
+function DispatchLinks({ groupId, sends, any }: { groupId: string; sends: boolean; any: boolean }) {
+  const { dispatches } = messages;
+  return (
+    <div className="row">
+      {sends ? (
+        <Link
+          className="button button-secondary"
+          href={routeHref({ name: 'sendDispatch', groupId })}
+        >
+          {dispatches.send}
+        </Link>
+      ) : null}
+      {any ? (
+        <Link className="forward-link" href={routeHref({ name: 'dispatches', groupId })}>
+          <span>
+            {dispatches.seeAll} <VisuallyHidden>{dispatches.seeAllWhat}</VisuallyHidden>
+          </span>
+          <span aria-hidden="true">{messages.app.forward}</span>
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Dispatches (#112): the group's latest, with See all, or a line saying there
+ * are none yet; and Send a Dispatch for whoever may send one, unless the
+ * group takes nothing new.
+ */
+function HomeDispatches({ state, me, readOnly }: HomeDispatchesProps) {
+  const latest = latestDispatch(state);
+  const sends = !readOnly && can(state, me, 'dispatch');
+  const any = latest !== null;
+  return (
+    <Section title={messages.dispatches.title}>
+      <div className="stack home-dispatches">
+        {latest === null ? (
+          <p>{messages.dispatches.empty}</p>
+        ) : (
+          <DispatchCard state={state} dispatch={latest} level={3} />
+        )}
+        {sends || any ? (
+          <DispatchLinks groupId={state.group ?? ''} sends={sends} any={any} />
+        ) : null}
+      </div>
+    </Section>
   );
 }
 
@@ -731,7 +790,8 @@ function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps
 
 /**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
- * other open Proposals, the group's Document, the Decided list of closed ones,
+ * other open Proposals and the backup card under them (#78), the latest
+ * Dispatch (#112), the group's Document, the Decided list of closed ones,
  * its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
@@ -749,6 +809,9 @@ export function GroupHome(props: GroupHomeProps) {
   const { dissolved } = state;
   // A dissolved group takes nothing new, as a group being left doesn't (#108).
   const readOnly = leaving || dissolved !== null;
+  // Every level follows the group (ADR-0003): for someone who doesn't vote, Dispatches lead (#112).
+  const news = <HomeDispatches state={state} me={me} readOnly={readOnly} />;
+  const leads = !can(state, me, 'vote');
   return (
     <main className="shell">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
@@ -765,9 +828,11 @@ export function GroupHome(props: GroupHomeProps) {
       {/* Nor does a newcomer's wait: no vote opens once the group has dissolved (#101, #108). */}
       {readOnly ? null : <WaitingNote state={state} me={me} />}
       <div className="sections">
+        {leads ? news : null}
         <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
         {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
         {dissolved === null ? props.backupCard : null}
+        {leads ? null : news}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
             <span className="card-link-title">
