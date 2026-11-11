@@ -21,7 +21,13 @@ import {
   TALLY_VECTORS,
   VECTOR_FILES,
 } from '../test/vectors';
-import { foldTogether, resultMismatches, resultsToReport, seatIn } from './crossing';
+import {
+  foldTogether,
+  promotionsOwed,
+  resultMismatches,
+  resultsToReport,
+  seatIn,
+} from './crossing';
 import { fold, type GroupState, type LogRecord } from './fold';
 import { DEFAULT_RULES } from './rules';
 import { rank, tally } from './tally';
@@ -96,6 +102,10 @@ describe('vector files', () => {
       'priority-options.json',
       'priority-rank.json',
       'priority-suspend.json',
+      'promote-ceiling.json',
+      'promote-coalitions.json',
+      'promote-dispatch.json',
+      'promote-forgery.json',
       'proposal-number.json',
       'result-checks.json',
       'result-cleared.json',
@@ -200,6 +210,10 @@ describe('vector files', () => {
       'fold',
       'tally',
       'fold',
+      'nested',
+      'nested',
+      'fold',
+      'nested',
       'fold',
       'fold',
       'fold',
@@ -684,12 +698,41 @@ function stateOf(states: ReadonlyMap<string, GroupState>, log: string): GroupSta
   return state;
 }
 
-/** What `lower` owes `upper` for the seat it holds there, or null when it holds none (#122). */
-function owed(states: ReadonlyMap<string, GroupState>, lower: string, upper: string) {
+/** What a lower log owes the log above it for its seat there: its results, or its promotion records. */
+type Owes = (below: GroupState, above: GroupState, seat: string) => unknown[];
+
+/**
+ * What `lower` owes `upper` for the seat it holds there, by `owes`, or null
+ * when it holds none (#122, #126).
+ */
+function owed(
+  states: ReadonlyMap<string, GroupState>,
+  lower: string,
+  upper: string,
+  owes: Owes = resultsToReport,
+) {
   const below = stateOf(states, lower);
   const above = stateOf(states, upper);
   const seat = seatIn(below, above);
-  return seat === null ? null : resultsToReport(below, above, seat);
+  return seat === null ? null : owes(below, above, seat);
+}
+
+/**
+ * Checks what each lower log owes each log above it, by `owes`, against
+ * `expected`: `{C: {D: [...]}}`, `null` for no seat there (#122, #126).
+ */
+function expectOwed(
+  states: ReadonlyMap<string, GroupState>,
+  ids: Parameters<typeof resolve>[1],
+  expected: NonNullable<NestedVector['report']>,
+  owes: Owes,
+) {
+  for (const [lower, uppers] of Object.entries(expected)) {
+    for (const [upper, list] of Object.entries(uppers)) {
+      const label = `${lower} → ${upper} (${owes.name})`;
+      expect(owed(states, lower, upper, owes), label).toEqual(resolve(list, ids));
+    }
+  }
 }
 
 describe('nested vector files (#122)', () => {
@@ -733,6 +776,51 @@ describe('nested vector files (#122)', () => {
   });
 });
 
+describe('promotion vector files (#126)', () => {
+  it.each([
+    'ceiling-1-owed',
+    'ceiling-1-opens-in-C',
+    'ceiling-1-stops-at-C',
+    'ceiling-1-passed-not-final',
+    'ceiling-2-stops-at-D',
+    'coalitions-owed-D',
+    'coalitions-opens-in-E',
+    'coalitions-to-D-stops',
+    'coalitions-owed-F',
+    'forgery-promote-not-bound',
+    'forgery-promote-non-participant',
+    'forgery-promote-second',
+    'forgery-promote-level-unfit',
+    'forgery-promote-above-ceiling',
+    'forgery-promote-title',
+    'forgery-promote-why',
+    'forgery-promote-too-long',
+    'forgery-promote-in-group',
+    'forgery-promote-forming',
+    'altered-text-fails',
+    'altered-text-reported-fail',
+    'never-passed-fails',
+    'before-final-waits',
+    'before-final-waits-reported',
+    'stale-owes-nothing',
+  ])('include the nested vector "%s"', (name) => {
+    expect(NESTED_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'dispatch-vote-pass',
+    'dispatch-vote-version-ignored',
+    'dispatch-vote-collaborator-ignored',
+    'dispatch-vote-unknown-document-ignored',
+    'dispatch-vote-too-long-ignored',
+    'dispatch-vote-window',
+    'dispatch-vote-fail',
+    'dispatch-vote-lapse',
+  ])('include the fold vector "%s"', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+});
+
 describe('nested vectors (#122)', () => {
   it.each(NESTED_VECTORS.map((vector) => [vector.name, vector] as const))(
     '%s',
@@ -742,11 +830,8 @@ describe('nested vectors (#122)', () => {
       for (const [log, expected] of Object.entries(vector.expect)) {
         expect(stateOf(states, log), log).toMatchObject(resolve(expected, ids) as object);
       }
-      for (const [lower, uppers] of Object.entries(vector.report ?? {})) {
-        for (const [upper, expected] of Object.entries(uppers)) {
-          expect(owed(states, lower, upper), `${lower} → ${upper}`).toEqual(resolve(expected, ids));
-        }
-      }
+      expectOwed(states, ids, vector.report ?? {}, resultsToReport);
+      expectOwed(states, ids, vector.promote ?? {}, promotionsOwed);
       for (const [log, seqs] of Object.entries(vector.unchangedWithout ?? {})) {
         const kept = (logs[log] ?? []).filter((record) => !seqs.includes(record.seq));
         const without = foldNested({ ...logs, [log]: kept }, vector.relayNow);

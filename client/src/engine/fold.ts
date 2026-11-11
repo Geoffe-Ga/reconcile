@@ -33,7 +33,10 @@
  * (coalition.ts). A group's reconcile Proposals carry its seats, and
  * `outside` opens each coalition motion the group owes a result on as a
  * Proposal of its own (crossing.ts), with no number, no chat bot claims and
- * no Dispatch. A priority vote changes no Atom: the top option of the latest
+ * no Dispatch. A Dispatch rises only by vote (#126): a group puts one to its
+ * vote with a ceiling, and once a level passes it, a promotion record opens
+ * it as a motion in the coalition above, which sends it out once that pass is
+ * final. A priority vote changes no Atom: the top option of the latest
  * one to pass is the group's focus (#107). A `result` records a decided
  * Proposal's counts and a commitment to its ballots (#111): with the ballots
  * held, the fold checks it against them, and once a device has cleared them,
@@ -73,6 +76,7 @@ import {
   type ReconcileChange,
   admitSeat,
   mayAdmit,
+  mayPromote,
   mayReconcile,
   newCoalition,
   RESULT_GRACE_MINUTES,
@@ -90,6 +94,7 @@ import {
   type CoalitionGenesisBody,
   type DispatchBody,
   type DoorInvitedBody,
+  type DispatchProposalBody,
   type DissolveBody,
   type DissolveProposalBody,
   EVENT_VERSION,
@@ -102,10 +107,12 @@ import {
   type AddProposalBody,
   isAddProposal,
   isCoalitionGenesis,
+  isDispatchProposal,
   isDissolveProposal,
   isAdmitProposal,
   isSealedReconcileProposal,
   isPriorityProposal,
+  isPromoteProposal,
   isReconcileProposal,
   isRulesProposal,
   type KeyRotateBody,
@@ -116,6 +123,7 @@ import {
   type ParsedEvent,
   parseRecord,
   type PriorityProposalBody,
+  type PromoteProposalBody,
   type ProposalBody,
   type ProposalEventBody,
   type AdmitProposalBody,
@@ -1191,14 +1199,17 @@ function applySealedReconcile(
 /**
  * Opens a coalition motion (#100): once the coalition has formed, an edit of
  * one of its Atoms, by the group fold's own rules, deadline and bar included,
- * admitting a group (#114, {@link applyAdmit}), or taking a seat above (#122,
- * {@link applySealedReconcile}), with the seats it holds now as the snapshot
- * that decides it. Every other target waits: a steward, rules or dissolve
+ * admitting a group (#114, {@link applyAdmit}), taking a seat above (#122,
+ * {@link applySealedReconcile}), or a promotion record, which sends on a
+ * Dispatch a level below passed (#126, {@link applyPromote}), with the seats
+ * it holds now as the snapshot that decides it. Every other target waits: a steward, rules or dissolve
  * change would take effect in the fold while a pass can still be contested,
  * and a reconcile target carrying its secrets readable, as a group's does,
  * would show them to the coalition's followers. So does a motion
  * carrying a Dispatch (#112): its pass, once closed, can still be contested
- * into a fail, and a coalition's followers are #124's. An add (#75) has a
+ * into a fail, and a coalition's followers are #124's. A Dispatch reaches a
+ * coalition only as a promotion record, which goes out here once its pass is
+ * final (#126). An add (#75) has a
  * target, so it waits too, and so does a removal, an edit whose text is
  * `""`: for now a motion only rewords one of the coalition's Atoms. A
  * priority vote (#107) has a target too, so a coalition asks none.
@@ -1214,6 +1225,7 @@ function applyMotion(
   if (isSealedReconcileProposal(body)) {
     return applySealedReconcile(draft, coalition, body, author, at);
   }
+  if (isPromoteProposal(body)) return applyPromote(draft, coalition, body, author, at);
   if ('target' in body)
     return isAdmitProposal(body) && applyAdmit(draft, coalition, body, author, at);
   // Nor does a removal (#75), whose `""` would take out one of the coalition's Atoms.
@@ -1265,6 +1277,46 @@ function applyAdmit(
   return true;
 }
 
+/**
+ * Opens a promotion record as a motion (#126; ADR-0037): a level below
+ * passed a Dispatch that may rise this far, and a current participant bound
+ * to that level's seat posts it here (coalition.ts's `mayPromote`). The
+ * first record per Dispatch id wins, so each Dispatch is decided here once.
+ * It is ordinary, for the default window, with one version that has no
+ * text, and every seat in its snapshot decides it as any motion, `from`'s
+ * included: that seat's result says whether its own fold holds the passed
+ * Dispatch the record names (crossing.ts). Once its pass is final, the
+ * Dispatch goes out here ({@link advancePromotions}).
+ */
+function applyPromote(
+  draft: Draft,
+  coalition: CoalitionDraft,
+  body: PromoteProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { id } = body.target.dispatch;
+  if (!draft.members.some((m) => m.author === author) || !fieldsAreValid(body)) return false;
+  if (!mayPromote(coalition, author, body) || promotionOf(draft, id) !== undefined) return false;
+  const window = draft.rules.windows.ordinary.default;
+  const motion = openProposal(draft, {
+    ...opening(draft, body, author, at, { cls: 'ordinary', window }),
+    atom: '',
+    target: body.target,
+    text: '',
+    eligible: [],
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  const seats = coalition.seats.map((s) => s.key);
+  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
+  return true;
+}
+
+/** The promotion motion here for the Dispatch `id`, if there is one (#126). */
+function promotionOf(draft: Pick<Draft, 'proposals'>, id: string): OpenProposal | undefined {
+  return draft.proposals.find((p) => p.target.kind === 'promote' && p.target.dispatch.id === id);
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
@@ -1276,13 +1328,67 @@ function applyProposal(
   if (isPriorityProposal(body)) return applyPriority(draft, body, author, at);
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
+  return applyGroupProposal(draft, body, author, at);
+}
+
+/**
+ * {@link applyProposal} for the rest of a group's own Proposals: dissolving
+ * (#108), a Dispatch that may rise (#126), an add (#75) and an edit.
+ */
+function applyGroupProposal(
+  draft: Draft,
+  body: Exclude<
+    ProposalEventBody,
+    ReconcileProposalBody | PriorityProposalBody | StewardProposalBody | RulesProposalBody
+  >,
+  author: string,
+  at: Receipt,
+): boolean {
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  // Admitting a group is a coalition's motion (#114), and so is a sealed reconcile
-  // target (#122): a group has no inner to seal under. A group's own log takes neither.
-  if (isAdmitProposal(body) || isSealedReconcileProposal(body)) return false;
+  if (isDispatchProposal(body)) return applyDispatchProposal(draft, body, author, at);
+  // Admitting a group is a coalition's motion (#114), and so are a sealed reconcile
+  // target (#122), as a group has no inner to seal under, and a promotion record
+  // (#126). A group's own log takes none of them.
+  if (isAdmitProposal(body) || isSealedReconcileProposal(body) || isPromoteProposal(body)) {
+    return false;
+  }
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
+}
+
+/**
+ * Opens a Dispatch put to the group's vote so it can rise (#126; ADR-0037):
+ * from someone who may send a Dispatch now, whose words fit, and whose
+ * Document, if any, is one of the group's as the Proposal finds it
+ * (dispatches.ts). It is ordinary, for the window its proposer chose or the
+ * default, with one version that has no text, under its own id, which is
+ * the Dispatch's id at every level. Its ceiling is fixed here. Once its pass
+ * is final it goes out to the group as any carried Dispatch does, pointing
+ * to its Document ({@link advanceDispatches}).
+ */
+function applyDispatchProposal(
+  draft: Draft,
+  body: DispatchProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { doc } = body.target;
+  const sent = { ...body.dispatch, ...(doc === undefined ? {} : { doc }) };
+  const state = { ...draft, atoms: documentAt(draft, at.received) };
+  if (!fieldsAreValid(body) || !maySendDispatch(state, author, sent)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: '',
+    target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
 }
 
 /**
@@ -2043,14 +2149,17 @@ function applyPass(
 }
 
 /**
- * The Document a Proposal changes (#112): its Atom's, for an edit or a
- * removal, and the one Document an add's new Atom joins (#75), as
+ * The Document a Proposal's Dispatch points to (#112): its Atom's, for an
+ * edit or a removal, and the one Document an add's new Atom joins (#75), as
  * {@link applyPasses} gives it. An Atom that genesis didn't found came from
  * an add, so it's in that Document too. A steward, rules or dissolve Proposal
- * changes none.
+ * changes none. A Dispatch put to a vote so it can rise points to the one
+ * it names, if any (#126).
  */
 function documentOf(draft: Draft, proposal: OpenProposal): string | null {
-  const { kind } = proposal.target;
+  const { target } = proposal;
+  if (target.kind === 'dispatch') return target.doc ?? null;
+  const { kind } = target;
   if (kind !== 'edit' && kind !== 'add') return null;
   const founded = draft.founded.find((atom) => atom.id === proposal.atom);
   return founded?.documentId ?? draft.group;
@@ -2293,7 +2402,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   openMotionsBefore(draft, motions, Infinity);
   const now = endTime(draft, pass.relayNow);
   draft.at = now ?? draft.at;
-  if (draft.coalition !== null) advanceAdmissions(draft, draft.coalition);
+  if (draft.coalition !== null) advanceCoalition(draft, draft.coalition);
   advanceSeats(draft);
   advanceOptIns(draft);
   advanceDispatches(draft);
@@ -2453,17 +2562,47 @@ function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
 }
 
 /**
+ * Sends out each Dispatch a promotion motion here has passed (#126), once its
+ * pass is final, at deadline + 10,080, when results on it stop counting, in
+ * order of when that is, then relay order: under the Dispatch's own id, as a
+ * Dispatch from the motion, pointing to no Document, received at that
+ * minute. A fail, final at once, sends nothing.
+ */
+function advancePromotions(draft: Draft, coalition: CoalitionDraft): void {
+  const due = draft.proposals
+    .filter((p) => p.target.kind === 'promote' && !draft.dispatched.has(p.id))
+    .filter((p) => draft.at >= p.deadline + RESULT_GRACE_MINUTES)
+    .sort((a, b) => a.deadline - b.deadline);
+  for (const proposal of due) {
+    draft.dispatched.add(proposal.id);
+    const { target } = proposal;
+    const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
+    if (target.kind !== 'promote' || settled.outcome.kind !== 'pass') continue;
+    const { id, title, text } = target.dispatch;
+    const received = proposal.deadline + RESULT_GRACE_MINUTES;
+    draft.dispatches.push({ id, by: { proposal: proposal.id }, title, text, doc: null, received });
+  }
+}
+
+/** Brings a coalition up to `draft.at` (#114, #126): the groups it admits, then the Dispatches it sends. */
+function advanceCoalition(draft: Draft, coalition: CoalitionDraft): void {
+  advanceAdmissions(draft, coalition);
+  advancePromotions(draft, coalition);
+}
+
+/**
  * Moves relay time on to `received`, never back, and brings the seats,
  * opt-ins and carried Dispatches up to it (#112). A coalition still forming
  * when it reaches its `formsBy` is declined there, and relay time stops at
- * that minute (#100). A coalition seats each group admitted by then (#114).
+ * that minute (#100). A coalition seats each group admitted by then (#114),
+ * and sends each Dispatch it passed whose pass is final by then (#126).
  */
 function advanceTo(draft: Draft, received: number): void {
   draft.at = Math.max(draft.at, received);
   if (draft.coalition !== null) {
     expireFormation(draft.coalition, draft.at);
     draft.at = draft.coalition.declinedAt ?? draft.at;
-    advanceAdmissions(draft, draft.coalition);
+    advanceCoalition(draft, draft.coalition);
   }
   advanceSeats(draft);
   advanceOptIns(draft);

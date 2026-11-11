@@ -202,6 +202,29 @@ describe('targetClass: how hard a change is', () => {
     }
   });
 
+  it('makes a Dispatch put to a vote ordinary, whatever its ceiling, and a promotion record too (#126)', () => {
+    const dispatch = { title: 'Rally', text: 'Saturday at ten.' };
+    for (const ceiling of [1, 2, 'coalitions'] as const) {
+      const body = {
+        target: { kind: 'dispatch', ceiling } as const,
+        title: 't',
+        why: 'w',
+        dispatch,
+      };
+      expect(targetClass({ rules: DEFAULT_RULES }, body)).toBe('ordinary');
+    }
+    const target = {
+      kind: 'promote',
+      dispatch: { id: 'd', ...dispatch },
+      ceiling: 'coalitions',
+      level: 1,
+      from: 'k',
+    } as const;
+    expect(targetClass({ rules: DEFAULT_RULES }, { target, title: 'Rally', why: '' })).toBe(
+      'ordinary',
+    );
+  });
+
   it('makes turning an opt-in on entrenched (ADR-0040)', () => {
     expect(targetClass(standing({}), rules('chatBot', { webhook: W1 }))).toBe('entrenched');
     expect(targetClass(standing({}), rules('frontDoor', DOOR))).toBe('entrenched');

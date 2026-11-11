@@ -1,0 +1,609 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dispatch-vote-pass: a Co-Creator puts a Dispatch to the group’s vote with ceiling 2, pointing to the Document; it is ordinary, has one version with no text, and once it passes it goes out at its close from the Proposal, pointing to the Document",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "BEN",
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 2,
+                "doc": "@1"
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375005,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "atom": "",
+            "text": "",
+            "target": {
+              "kind": "dispatch",
+              "ceiling": 2,
+              "doc": "@1"
+            },
+            "class": "ordinary",
+            "window": 7,
+            "deadline": 29385082,
+            "eligible": ["%ana", "%ben"],
+            "versions": [
+              {
+                "id": "@3",
+                "author": "%ana",
+                "text": ""
+              }
+            ],
+            "dispatch": {
+              "title": "Rally Saturday",
+              "text": "Meet at the river at ten."
+            },
+            "closedAt": 29375004,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            }
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "title": "Rally Saturday",
+            "text": "Meet at the river at ten.",
+            "doc": "@1",
+            "received": 29375004
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 11pm."
+          }
+        ]
+      }
+    },
+    {
+      "name": "dispatch-vote-version-ignored: a version on a Dispatch put to a vote is ignored, as on any Proposal with no text",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "proposal": "@2",
+              "text": "Meet at noon."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "versions": [
+              {
+                "id": "@2"
+              }
+            ]
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "dispatch-vote-collaborator-ignored: someone who can’t send a Dispatch can’t put one to a vote either",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "BEN",
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500180000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "proposals": []
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "dispatch-vote-unknown-document-ignored: one pointing to a Document the group doesn’t have is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1,
+                "doc": "no-such-document"
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "proposals": []
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "dispatch-vote-too-long-ignored: one whose Dispatch is longer than a Dispatch may be is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1
+              },
+              "title": "Send: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "text": ""
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "proposals": []
+      },
+      "unchangedWithout": [2]
+    },
+    {
+      "name": "dispatch-vote-window: it runs a window within the ordinary bounds; one of 15 days is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              },
+              "window": 14
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              },
+              "window": 15
+            }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "window": 14,
+            "deadline": 29395162
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "dispatch-vote-fail: a Dispatch put to a vote that fails sends nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": "coalitions"
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "proposal": "@2",
+              "scores": {
+                "@2": 0
+              },
+              "note": "Not with them."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375004,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "final": true,
+            "outcome": {
+              "kind": "fail"
+            }
+          }
+        ],
+        "dispatches": []
+      }
+    },
+    {
+      "name": "dispatch-vote-lapse: one nobody scores lapses at its deadline and sends nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside",
+              "founder": "ANA",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 1
+              },
+              "title": "Send: Rally Saturday",
+              "why": "The coalitions should hear.",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29385082,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@2",
+            "final": true,
+            "outcome": {
+              "kind": "lapse"
+            }
+          }
+        ],
+        "dispatches": []
+      }
+    }
+  ]
+}

@@ -49,6 +49,9 @@
  *   does (`foldTogether`): each coalition with the motions its seats decide in the coalitions above
  *   it, then each group. `report` maps a lower log to the logs above it: `{C: {D: [...]}}` must
  *   equal `resultsToReport` for the seat C holds in D, and `null` says C holds no seat there.
+ *   `promote` (#126) maps a lower log to the logs above it the same way, matched against
+ *   `promotionsOwed`: the promotion records it owes there. promote-*.json are nested files too,
+ *   but promote-dispatch.json, a group's own Dispatch put to a vote, is a fold file.
  *   `{"$sealed": [coalition, inner, secret, innerAbove, seat]}` is a coalition's sealed seat above
  *   (`crypto/innerSeal.ts`): the secrets `secret` and `innerAbove` and seat `seat`'s secret,
  *   sealed in the coalition `coalition` under `inner`, each a reference as above. A seal's nonce is
@@ -118,9 +121,17 @@ export interface LogsVector {
   readonly unchangedWithout?: Readonly<Record<string, readonly number[]>>;
 }
 
-/** One vector with coalitions nested in coalitions (#122): what each lower log owes each above it. */
+/** What each lower log owes each log above it, by name: `{C: {D: [...]}}` (#122, #126). */
+type Owed = Readonly<Record<string, Readonly<Record<string, readonly unknown[] | null>>>>;
+
+/**
+ * One vector with coalitions nested in coalitions (#122): what each lower log
+ * owes each above it, its results in `report` and its promotion records in
+ * `promote` (#126).
+ */
 export interface NestedVector extends Omit<LogsVector, 'report' | 'mismatches'> {
-  readonly report?: Readonly<Record<string, Readonly<Record<string, readonly unknown[] | null>>>>;
+  readonly report?: Owed;
+  readonly promote?: Owed;
 }
 
 /** One vector file, by its `kind`. */

@@ -11,7 +11,13 @@ import { sha256 } from '../crypto/hash';
 import { sealSeatSecrets } from '../crypto/innerSeal';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { foldTogether, motionsFor, seatIn } from '../engine/crossing';
-import type { EventDraft, GroupResultValue } from '../engine/event';
+import type {
+  CarriedDispatch,
+  Ceiling,
+  EventDraft,
+  GroupResultValue,
+  PromoteProposalBody,
+} from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { authorOf, signedAs } from './keys';
 
@@ -322,6 +328,27 @@ export class NestedLogs extends Logs {
     });
     const target = { kind: 'reconcile', sealed, key: seatKey(log), ...statement } as const;
     const body = { target, title: `Reconcile into ${statement.name}`, why: 'Neighbours.' };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /**
+   * `who`'s Dispatch put to `log`'s vote with `ceiling` (#126), carrying
+   * `words`, with the Proposal's own title and why.
+   */
+  dispatchVote(
+    log: string,
+    received: number,
+    who: string,
+    ceiling: Ceiling,
+    words: CarriedDispatch,
+    { title = 'Send it on', why = 'The coalitions should hear.' } = {},
+  ): string {
+    const body = { target: { kind: 'dispatch', ceiling } as const, title, why, dispatch: words };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
+  /** `who` posts the promotion record `body` in the coalition `log` (#126). */
+  promoteIn(log: string, received: number, who: string, body: PromoteProposalBody): string {
     return this.add(log, received, who, { type: 'proposal', body });
   }
 

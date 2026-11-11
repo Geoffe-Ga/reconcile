@@ -11,12 +11,16 @@
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { seatKeyOf, verifySeatProof } from '../crypto/seat';
+import { dispatchFits } from './dispatches';
 import type {
   AdmitTarget,
+  Ceiling,
   CoalitionGenesisBody,
   GroupResultBody,
   GroupResultValue,
   JoinBody,
+  PromoteProposalBody,
+  PromoteTarget,
   ReconcileTarget,
   SeatEntry,
 } from './event';
@@ -504,4 +508,52 @@ export function motionOutcome(
   const counts = seatCounts(coalition.results, motion, seats);
   const everySeat = (found?.admit ?? null) !== null;
   return coalitionOutcome({ seats: seats.length, ...counts, expired, everySeat });
+}
+
+/**
+ * Whether a Dispatch at `level`, the lines it has crossed, is within the
+ * ceiling its author set (#126; ADR-0037): any level for "as far as the
+ * coalitions go", else up to the ceiling.
+ */
+export function withinCeiling(level: number, ceiling: Ceiling): boolean {
+  return ceiling === 'coalitions' || level <= ceiling;
+}
+
+/**
+ * Whether a promotion record's level fits the seat it comes from (#126): 1
+ * from a group's seat, which sits one line below; from a coalition's, at
+ * least 2, since a Dispatch starts in a group, and at most one above the
+ * level that seat states; never above {@link MAX_LEVEL}, and within its
+ * ceiling. Judged, like every level here, by the stated levels.
+ */
+export function promotionFits(
+  target: Pick<PromoteTarget, 'level' | 'ceiling'>,
+  from: Pick<SeatEntry, 'level'>,
+): boolean {
+  const { level, ceiling } = target;
+  const below = seatLevel(from);
+  const lowest = Math.min(below, 1) + 1;
+  const fits = level >= lowest && level <= below + 1 && level <= MAX_LEVEL;
+  return fits && withinCeiling(level, ceiling);
+}
+
+/**
+ * Whether `author` may post the promotion record `body` here (#126): a
+ * participant bound to the seat it comes from, `from`, which is one of this
+ * coalition's seats; a level that fits that seat and the ceiling; a
+ * Dispatch that fits a Dispatch's limits; and the record's own title the
+ * Dispatch's, with an empty why, so nothing else rides along. The fold also
+ * keeps only the first record per Dispatch id, from a current participant.
+ */
+export function mayPromote(
+  coalition: Pick<Coalition, 'seats' | 'bindings'>,
+  author: string,
+  body: PromoteProposalBody,
+): boolean {
+  const { target, title, why } = body;
+  const { from, dispatch } = target;
+  const seat = coalition.seats.find((entry) => entry.key === from);
+  const bound = coalition.bindings.some((b) => b.author === author && b.seat === from);
+  if (seat === undefined || !bound || !promotionFits(target, seat)) return false;
+  return title === dispatch.title && why === '' && dispatchFits(dispatch);
 }
