@@ -36,6 +36,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
 import { ProposalView } from '../screens/ProposalView';
+import { ProtectComposer } from '../screens/ProtectComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings, type SettingsPasskey } from '../screens/Settings';
@@ -638,6 +639,9 @@ function DocumentScreen({
   const openMove = (atomId: string) => {
     navigate({ name: 'move', groupId, atomId });
   };
+  const openProtect = (atomId: string) => {
+    navigate({ name: 'protect', groupId, atomId });
+  };
   return (
     <GroupGate groupId={groupId}>
       {({ state, me, leaving }) => (
@@ -649,6 +653,7 @@ function DocumentScreen({
           onAdd={openAdd}
           onRemove={openRemove}
           onMove={openMove}
+          onProtect={openProtect}
           copyText={services.copyText}
           leaving={leaving}
         />
@@ -744,7 +749,8 @@ function Ask({ again, ...props }: ComposeProps & { readonly again?: Proposal }) 
  * starting from it. A change opens the composer on its section, a removal the
  * removal composer, an add Add a section at its spot in its Document (#75,
  * #92), a new Document the new-Document composer (#92), a move Move this
- * section (#103), and a priority vote Ask what to focus on (#107).
+ * section (#103), a class Proposal Protect this section (#116), and a
+ * priority vote Ask what to focus on (#107).
  */
 function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
   const again = props.state.proposals.find((proposal) => proposal.id === againId);
@@ -753,6 +759,9 @@ function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: 
   const { target } = again;
   if (target.kind === 'new-document') return <NewDocumentComposer {...props} again={again} />;
   if (target.kind === 'move') return <MoveComposer {...props} atomId={target.atom} again={again} />;
+  if (target.kind === 'class') {
+    return <ProtectComposer {...props} atomId={target.atom} again={again} />;
+  }
   if (target.kind === 'add') {
     return <AddSection {...props} after={target.after} document={target.document} again={again} />;
   }
@@ -802,7 +811,10 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
 /** A route that opens a composer. */
 type ComposeRoute = Extract<
   Route,
-  { readonly name: 'propose' | 'add' | 'remove' | 'move' | 'again' | 'newDocument' | 'priority' }
+  {
+    readonly name:
+      'propose' | 'add' | 'remove' | 'move' | 'protect' | 'again' | 'newDocument' | 'priority';
+  }
 >;
 
 /** The composer a route opens, given what every composer is handed. */
@@ -821,6 +833,8 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
       );
     case 'move':
       return (props) => <MoveComposer {...props} atomId={route.atomId} />;
+    case 'protect':
+      return (props) => <ProtectComposer {...props} atomId={route.atomId} />;
     case 'newDocument':
       return (props) => <NewDocumentComposer {...props} />;
     case 'remove':

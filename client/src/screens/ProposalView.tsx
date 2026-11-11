@@ -7,6 +7,7 @@ import { type ChatDetails, type ChatMoment, openMoment } from '../app/chatMessag
 import { Countdown } from '../app/Countdown';
 import { DocumentLine } from '../app/DocumentLine';
 import { documentLead, sectionPlace } from '../app/documentLines';
+import { formatAverageLine, formatZeroLine } from '../app/format';
 import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
@@ -25,6 +26,7 @@ import { Named, SuspendedNote } from '../app/stewards';
 import {
   dissolveView,
   moveView,
+  protectView,
   stewardView,
   versionDoes,
   type VersionView,
@@ -37,6 +39,7 @@ import { composeOption } from '../engine/composeOption';
 import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
+  isClassProposal,
   isDissolveProposal,
   isMoveProposal,
   isNewDocumentProposal,
@@ -190,6 +193,17 @@ function moveComparison(state: GroupState, atom: string, passed: boolean): Compa
 }
 
 /**
+ * A class Proposal's one card is shown under "Protection for section N"
+ * while its section is in place and it hasn't passed, else under "On the
+ * ballot" (#116). It shows no diff: protecting a section changes no words.
+ */
+function classComparison(state: GroupState, atom: string, passed: boolean): Comparison {
+  const place = passed ? null : sectionPlace(state, atom);
+  if (place === null) return STEWARD_BALLOT;
+  return { title: messages.proposal.protecting(place.number), current: null };
+}
+
+/**
  * True for a Proposal with text: an edit, an add (#75) or a new Document
  * (#92), not a steward or rules one (#102, #117).
  */
@@ -213,12 +227,13 @@ function addingTitle(proposal: Pick<Proposal, 'target'>): string {
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
  * an add or a new Document, whose whole text shows as added (#75, #92),
- * nothing for a steward one or a move (#103), or for a priority vote, its
- * options as they are (#107).
+ * nothing for a steward one, a move (#103) or a class Proposal (#116), or
+ * for a priority vote, its options as they are (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
   if (isPriority(proposal)) return OPTIONS;
   if (proposal.target.kind === 'move') return moveComparison(state, proposal.atom, passed);
+  if (proposal.target.kind === 'class') return classComparison(state, proposal.atom, passed);
   return writesText(proposal)
     ? comparisonFor(state, changedAtom(proposal), passed, addingTitle(proposal))
     : STEWARD_BALLOT;
@@ -247,6 +262,24 @@ function OptInWarning({ optIn }: { readonly optIn: OptIn | null }) {
   return optIn === null ? null : (
     <p className="opt-in-warning">{messages.optIns.warnings[optIn]}</p>
   );
+}
+
+/**
+ * The higher bar in words over a ballot that needs it for a section (#116):
+ * a class Proposal, whatever it asks, or a change, move or removal of an
+ * entrenched section. The consent meter draws the same lines, from the
+ * Proposal's own bar.
+ */
+function HigherBar({ proposal }: { readonly proposal: Proposal }) {
+  const { kind } = proposal.target;
+  const { bar } = proposal.outcome;
+  const { proposal: words } = messages;
+  if (proposal.class !== 'entrenched') return null;
+  const lines = [formatAverageLine(bar), formatZeroLine(bar)] as const;
+  if (kind === 'class') return <p className="caption">{words.protectionBar(...lines)}</p>;
+  return kind === 'edit' || kind === 'move' ? (
+    <p className="caption">{words.entrenchedBar(...lines)}</p>
+  ) : null;
 }
 
 /**
@@ -454,6 +487,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
   return (
     <Block title={comparison.title} className="vote">
       <OptInWarning optIn={rulesChangeOf(proposal)?.optIn ?? null} />
+      <HigherBar proposal={proposal} />
       <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} open={!proposal.final} />
       {ballotShown(reason, proposal) ? (
@@ -798,8 +832,9 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
 
 /**
  * What a waiting ballot decides other than a section's text: a steward,
- * rules, dissolve, move or coalition card (#102, #117, #108, #103, #114), or
- * a priority vote's options (#107); null for one that changes text.
+ * rules, dissolve, move, class or coalition card (#102, #117, #108, #103,
+ * #116, #114), or a priority vote's options (#107); null for one that
+ * changes text.
  */
 function waitingDecision(state: GroupState, author: string, body: ProposalEventBody) {
   if (isStewardProposal(body)) {
@@ -828,6 +863,11 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
   if (isMoveProposal(body)) {
     const versions = [{ id: '', number: 1, author, text: '', move: moveView(state, body.target) }];
     return { comparison: moveComparison(state, body.target.atom, false), versions, optIn: null };
+  }
+  if (isClassProposal(body)) {
+    const protect = protectView(state, body.target);
+    const versions = [{ id: '', number: 1, author, text: '', protect }];
+    return { comparison: classComparison(state, body.target.atom, false), versions, optIn: null };
   }
   // A reconcile Proposal (#100) changes no section: its ballot decides the coalition (#114).
   if (isReconcileProposal(body)) {
@@ -871,8 +911,9 @@ function waitingLead(state: GroupState, id: string, body: ProposalEventBody) {
   if (isAddProposal(body) || isNewDocumentProposal(body)) {
     return documentLead(state, { id, atom: id, target: body.target });
   }
-  if (isMoveProposal(body))
-    return documentLead(state, { id, atom: body.target.atom, target: body.target });
+  if (isMoveProposal(body) || isClassProposal(body)) {
+    return documentLead(state, { id, atom: body.target.atom, target: { kind: 'edit' } });
+  }
   return 'atom' in body
     ? documentLead(state, { id, atom: body.atom, target: { kind: 'edit' } })
     : null;

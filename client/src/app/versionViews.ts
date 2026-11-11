@@ -4,7 +4,8 @@
  * and, for an add or a removal (#75), a line that says first what it does,
  * naming a header add's heading (#103). A steward or rules Proposal's one
  * version has no text: it carries what the ballot decides instead (#102,
- * #117), and so does a dissolve Proposal's (#108) and a move's (#103).
+ * #117), and so does a dissolve Proposal's (#108), a move's (#103) and a
+ * class Proposal's (#116).
  */
 import { isHeadingOnly } from '../engine/atomText';
 import { WIPE_DAYS } from '../engine/dissolve';
@@ -44,6 +45,8 @@ export interface VersionView {
   readonly dissolve?: DissolveView;
   /** For a move, where it moves the section, and the section as it reads, in place of any text (#103). */
   readonly move?: MoveView;
+  /** For a class Proposal, what it does to the section's protection, and the section as it reads (#116). */
+  readonly protect?: ProtectView;
   /**
    * For a reconcile Proposal or a coalition motion, what its ballot decides,
    * in place of any text (#114): its title, which may hold a name someone
@@ -59,6 +62,35 @@ export interface VersionView {
 export interface MoveView {
   readonly line: string;
   readonly text: string | null;
+}
+
+/**
+ * What a class Proposal's ballot decides (#116): the class it gives, the line
+ * that says so, and the section's text as it reads now, or null once it has
+ * gone.
+ */
+export interface ProtectView extends MoveView {
+  readonly to: string;
+}
+
+/**
+ * The line that leads a class Proposal's one card (#116): it marks the
+ * section entrenched or eternal, which can't be undone, or removes its
+ * protection.
+ */
+function classLine(to: string): string {
+  const { proposal } = messages;
+  if (to === 'eternal') return proposal.marksEternal;
+  return to === 'ordinary' ? proposal.removesProtection : proposal.marksEntrenched;
+}
+
+/** What a class Proposal's ballot decides (#116): its line, over the section as it reads now. */
+export function protectView(
+  state: GroupState,
+  target: { readonly atom: string; readonly to: string },
+): ProtectView {
+  const text = state.atoms.find((atom) => atom.id === target.atom)?.text ?? null;
+  return { to: target.to, line: classLine(target.to), text };
 }
 
 /** What a dissolve ballot decides, and the line that says what passing does (#108). */
@@ -185,6 +217,7 @@ export function versionViews(
       ...(rules === null ? {} : { rules: rulesView(rules) }),
       ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
       ...(target.kind === 'move' ? { move: moveView(state, target) } : {}),
+      ...(target.kind === 'class' ? { protect: protectView(state, target) } : {}),
       ...decisionOf(proposal),
     };
   });

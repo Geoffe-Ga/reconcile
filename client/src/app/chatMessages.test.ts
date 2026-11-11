@@ -172,6 +172,15 @@ describe('shareableTitle and chatDetails', () => {
     });
   });
 
+  it('offers the title of a class Proposal, as of any change to the Document (#116)', () => {
+    const log = groupLog();
+    log.protect('ana', `${log.group}.1`, 'eternal', { title: 'Bins forever' });
+    const [protecting] = log.state().proposals;
+    if (protecting === undefined) throw new Error('Expected the class Proposal.');
+    expect(protecting.target.kind).toBe('class');
+    expect(shareableTitle(protecting)).toBe('Bins forever');
+  });
+
   it('offers the title of a move, as of any change to the Document (#103)', () => {
     const log = groupLog();
     log.move('ana', `${log.group}.1`, null, { title: 'Bins first' });

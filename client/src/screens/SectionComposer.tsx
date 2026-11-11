@@ -11,7 +11,14 @@ import { type SyntheticEvent, useId } from 'react';
 import { Button, Form } from 'react-aria-components';
 
 import { documentBack, groupBack } from '../app/backLinks';
-import { againStartOf, lapsed, textCheck, useSend, whyNoForm } from '../app/compose';
+import {
+  againStartOf,
+  lapsed,
+  textCheck,
+  useSend,
+  whyNoForm,
+  whySectionWaits,
+} from '../app/compose';
 import { documentNamed, sectionPlace } from '../app/documentLines';
 import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
@@ -24,7 +31,14 @@ import { composeOption, openProposalOn } from '../engine/composeOption';
 import type { GroupDocument } from '../engine/documents';
 import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { Draft, GroupDrafts } from '../store/drafts';
-import { AgainLede, type ComposerProps, CurrentText, ProposalForm, Unavailable } from './Composer';
+import {
+  AgainLede,
+  type ComposerProps,
+  CurrentText,
+  EntrenchedNote,
+  ProposalForm,
+  Unavailable,
+} from './Composer';
 
 /** Props for {@link AddSection}. */
 export interface AddSectionProps {
@@ -320,11 +334,11 @@ function unavailable(props: RemoveSectionProps) {
   const { state, atomId } = props;
   const { composer } = messages;
   const open = openProposalOn(state, atomId);
-  const refused = whyNoForm(props);
+  const refused = whyNoForm(props) ?? whySectionWaits(state, atomId);
   if (refused !== null) return refused;
-  const option = composeOption(state, atomId);
-  if (option === 'moving') return { title: composer.movingTitle, text: composer.moving };
-  if (option === 'ballot-full') return { title: composer.fullTitle, text: composer.full };
+  if (composeOption(state, atomId) === 'ballot-full') {
+    return { title: composer.fullTitle, text: composer.full };
+  }
   return open !== undefined && holdsRemoval(open)
     ? { title: composer.removalOnBallotTitle, text: composer.removalOnBallot }
     : null;
@@ -384,6 +398,7 @@ export function RemoveSection(props: RemoveSectionProps) {
         <>
           <AgainLede again={again} />
           <p className="lede">{composer.removeLede}</p>
+          <EntrenchedNote state={state} atom={atom} />
           <StruckSection atom={atom} section={number} />
         </>
       }

@@ -70,10 +70,14 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A version's heading: "Version N · <name>", or what a steward, rules, dissolve or move ballot decides. */
+/**
+ * A version's heading: "Version N · <name>", or what a steward, rules,
+ * dissolve, move or class ballot decides (#116).
+ */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules, dissolve, decision, move } = version;
-  if (move !== undefined) return <>{move.line}</>;
+  const { steward, rules, dissolve, decision } = version;
+  const section = version.move ?? version.protect;
+  if (section !== undefined) return <>{section.line}</>;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
   if (dissolve !== undefined) return <>{dissolve.title}</>;
@@ -88,13 +92,15 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
 
 /**
  * Under the heading: the version's change, what passing a steward, rules or
- * dissolve ballot does, or the section a move moves, as it reads (#103).
+ * dissolve ballot does, or the section a move moves (#103) or a class
+ * Proposal protects (#116), as it reads.
  */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules, dissolve, decision, move } = version;
-  if (move !== undefined) {
-    if (move.text === null) return null;
-    return <AtomText text={move.text} className="atom-card atom-card-current" />;
+  const { steward, rules, dissolve, decision } = version;
+  const section = version.move ?? version.protect;
+  if (section !== undefined) {
+    if (section.text === null) return null;
+    return <AtomText text={section.text} className="atom-card atom-card-current" />;
   }
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;

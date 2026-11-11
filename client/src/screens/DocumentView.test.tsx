@@ -22,10 +22,23 @@ interface Handlers {
   readonly onPropose?: (atomId: string) => void;
   readonly onAdd?: (place: AddPlace) => void;
   readonly onMove?: (atomId: string) => void;
+  readonly onProtect?: (atomId: string) => void;
   /** The Document on screen (#92); the group's first when absent. */
   readonly documentId?: string;
   readonly onRemove?: (atomId: string) => void;
   readonly copyText?: (text: string) => Promise<void>;
+}
+
+/** What the Document view reports when a test names nothing: a mock for each action, and no leave. */
+function unnamed() {
+  return {
+    onAdd: vi.fn(),
+    onRemove: vi.fn(),
+    onMove: vi.fn(),
+    onProtect: vi.fn(),
+    copyText: vi.fn(() => Promise.resolve()),
+    leaving: false,
+  };
 }
 
 /** The Document view as `me` (default: the founder, Ana, a Co-Creator) sees it. */
@@ -36,17 +49,7 @@ function view(
   handlers: Handlers = {},
 ) {
   return render(
-    <DocumentView
-      state={state}
-      me={me}
-      onPropose={onPropose}
-      onAdd={handlers.onAdd ?? vi.fn()}
-      onRemove={handlers.onRemove ?? vi.fn()}
-      onMove={handlers.onMove ?? vi.fn()}
-      copyText={handlers.copyText ?? vi.fn(() => Promise.resolve())}
-      leaving={handlers.leaving ?? false}
-      {...(handlers.documentId === undefined ? {} : { documentId: handlers.documentId })}
-    />,
+    <DocumentView state={state} me={me} onPropose={onPropose} {...unnamed()} {...handlers} />,
   );
 }
 
@@ -241,10 +244,12 @@ describe('DocumentView', () => {
         .map((button) => button.getAttribute('aria-label')),
     ).toEqual([
       'Move this section, section 1',
+      'Protect this section, section 1',
       'Add a section here, after section 1',
       'Propose a change to section 2',
       'Propose removing this section, section 2',
       'Move this section, section 2',
+      'Protect this section, section 2',
       'Add a section here, after section 2',
     ]);
     expect(await axeViolations()).toEqual([]);
@@ -301,7 +306,7 @@ describe('DocumentView', () => {
     log.propose('ana');
     view(log.state());
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(10);
+    expect(buttons).toHaveLength(12);
     for (const button of buttons) {
       const name = button.getAttribute('aria-label') ?? button.textContent;
       expect(name.startsWith(button.textContent)).toBe(true);
@@ -435,7 +440,9 @@ describe('DocumentView: moving sections and headers (#103)', () => {
     view(log.state(), authorOf('ana'), vi.fn(), { onMove });
     const busy = screen.getByRole('button', { name: 'Move this section, section 1' });
     expect(busy).toBeDisabled();
-    const reason = screen.getByText('You can move this section once its open Proposal closes.');
+    const reason = screen.getByText(
+      'You can move or protect this section once its open Proposal closes.',
+    );
     expect(reason).toBeVisible();
     expect(busy.getAttribute('aria-describedby')).toBe(reason.id);
     await user.click(busy);
@@ -443,7 +450,7 @@ describe('DocumentView: moving sections and headers (#103)', () => {
     const free = screen.getByRole('button', { name: 'Move this section, section 2' });
     expect(free).toBeEnabled();
     expect(free).not.toHaveAttribute('aria-describedby');
-    expect(screen.getAllByText(messages.document.moveBusy)).toHaveLength(1);
+    expect(screen.getAllByText(messages.document.busy(true))).toHaveLength(1);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -454,7 +461,7 @@ describe('DocumentView: moving sections and headers (#103)', () => {
     log.version('ben', proposal, 'Quiet after 10pm.');
     view(log.state());
     expect(screen.getByRole('button', { name: 'Move this section, section 1' })).toBeDisabled();
-    expect(screen.getByText(messages.document.moveBusy)).toBeVisible();
+    expect(screen.getByText(messages.document.busy(true))).toBeVisible();
   });
 
   it('says a section with an open move has one, and offers no change, version or removal on it', async () => {
@@ -467,7 +474,11 @@ describe('DocumentView: moving sections and headers (#103)', () => {
       screen
         .getAllByRole('button', { name: /section 1$/ })
         .map((button) => button.getAttribute('aria-label')),
-    ).toEqual(['Move this section, section 1', 'Add a section here, after section 1']);
+    ).toEqual([
+      'Move this section, section 1',
+      'Protect this section, section 1',
+      'Add a section here, after section 1',
+    ]);
     expect(screen.getByRole('button', { name: 'Propose a change to section 2' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
@@ -639,6 +650,132 @@ describe('DocumentView: a suspended member (#102)', () => {
     expect(screen.queryByRole('button', { name: /Propose a change/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Change your involvement/ })).toBeNull();
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+/** A group whose first section has passed a class Proposal to `to` (#116). */
+function classed(to: 'entrenched' | 'eternal', atoms?: readonly string[]) {
+  const log = groupLog(atoms === undefined ? {} : { atoms });
+  const protect = log.protect('Ana', `${log.group}.0`, to);
+  log.vote('Ana', protect, 4);
+  log.vote('Ben', protect, 4);
+  return log;
+}
+
+describe('DocumentView: entrenched and eternal sections (#116)', () => {
+  it('badges an entrenched section in words, with its lock, and an eternal one, and leaves an ordinary one plain', async () => {
+    const log = classed('entrenched', ['Values.\n', 'Quiet after 11pm.\n', 'Bins out.\n']);
+    const eternal = log.protect('Ana', `${log.group}.1`, 'eternal');
+    log.vote('Ana', eternal, 4);
+    log.vote('Ben', eternal, 4);
+    const { container } = view(log.state());
+    const atoms = Array.from(container.querySelectorAll('.document > .atom'));
+    expect(atoms.map((atom) => atom.querySelector('.atom-badge')?.textContent ?? null)).toEqual([
+      'Entrenched',
+      'Eternal',
+      null,
+    ]);
+    expect(atoms[0]?.querySelector('.atom-badge svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(atoms[0]?.firstElementChild).toHaveClass('atom-badge');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('badges protected sections for someone who only reads, too', () => {
+    const log = classed('eternal');
+    log.join('Cal', FOLLOWING);
+    view(log.state(), authorOf('cal'));
+    expect(screen.getByText('Eternal')).toHaveClass('atom-badge-eternal');
+  });
+
+  it('offers Protect this section on an ordinary section, and opens its composer for the one pressed', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup();
+    const onProtect = vi.fn();
+    view(state, authorOf('ana'), vi.fn(), { onProtect });
+    const buttons = screen.getAllByRole('button', { name: /^Protect this section/ });
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Protect this section, section 1',
+      'Protect this section, section 2',
+    ]);
+    for (const button of buttons) expect(button).toHaveTextContent('Protect this section');
+    await user.click(screen.getByRole('button', { name: 'Protect this section, section 2' }));
+    expect(onProtect).toHaveBeenCalledWith(`${state.group ?? ''}.1`);
+  });
+
+  it('offers Change its protection on an entrenched section, beside its change, removal and move', async () => {
+    const user = userEvent.setup();
+    const log = classed('entrenched');
+    const onProtect = vi.fn();
+    view(log.state(), authorOf('ana'), vi.fn(), { onProtect });
+    expect(
+      screen
+        .getAllByRole('button', { name: /section 1$/ })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual([
+      'Propose a change to section 1',
+      'Propose removing this section, section 1',
+      'Move this section, section 1',
+      'Change its protection, section 1',
+      'Add a section here, after section 1',
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Change its protection, section 1' }));
+    expect(onProtect).toHaveBeenCalledWith(`${log.group}.0`);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no change, removal, move or protection on an eternal section, only the eternal line', async () => {
+    const log = classed('eternal');
+    const { container } = view(log.state());
+    const atoms = Array.from(container.querySelectorAll('.document > .atom'));
+    const eternal = atoms[0] as HTMLElement;
+    expect(within(eternal).queryAllByRole('button')).toEqual([]);
+    expect(
+      within(eternal).getByText('This section is eternal. It can’t be changed.'),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: /^(Propose|Move|Protect|Change).*section 1$/ }),
+    ).not.toBeInTheDocument();
+    // An eternal section still anchors an add (#116).
+    expect(
+      screen.getByRole('button', { name: 'Add a section here, after section 1' }),
+    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Propose a change to section 2' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says so while a vote on a section’s protection is open, offering no change, version or removal, and Move and Protect disabled', async () => {
+    const log = groupLog();
+    log.protect('Ana', `${log.group}.0`, 'eternal');
+    view(log.state());
+    expect(screen.getByText('This section has an open vote on its protection.')).toBeVisible();
+    const move = screen.getByRole('button', { name: 'Move this section, section 1' });
+    const protect = screen.getByRole('button', { name: 'Protect this section, section 1' });
+    expect(move).toBeDisabled();
+    expect(protect).toBeDisabled();
+    const reason = screen.getByText(messages.document.busy(true));
+    expect(move.getAttribute('aria-describedby')).toBe(reason.id);
+    expect(protect.getAttribute('aria-describedby')).toBe(reason.id);
+    expect(
+      screen.queryByRole('button', { name: /^Propose (a change to|removing this) section 1/ }),
+    ).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('disables Protect this section, with its own reason, in a Document of one busy section', () => {
+    const log = groupLog({ atoms: ['Only this.\n'] });
+    log.propose('Ana');
+    view(log.state());
+    const protect = screen.getByRole('button', { name: 'Protect this section, section 1' });
+    expect(protect).toBeDisabled();
+    const reason = screen.getByText('You can protect this section once its open Proposal closes.');
+    expect(protect.getAttribute('aria-describedby')).toBe(reason.id);
+    expect(screen.queryByRole('button', { name: /^Move this section/ })).not.toBeInTheDocument();
+  });
+
+  it('offers no Protect to someone who may not propose', () => {
+    const { state } = testGroup({ joiners: ['Ben'], levels: { Ben: VOTING } });
+    view(state, authorOf('ben'));
+    expect(screen.queryByRole('button', { name: /^Protect this section/ })).not.toBeInTheDocument();
   });
 });
 

@@ -539,8 +539,9 @@ a[data-focus-visible] {
   padding-block-start: var(--space-3);
 }
 
-/* Why Move this section waits (#103): its own line under the section's actions. */
-.atom-actions .move-reason {
+/* Why Move this section and Protect this section wait (#103, #116): one line under the
+ * section's actions. */
+.atom-actions .wait-reason {
   flex-basis: 100%;
   min-height: 0;
   margin-block-start: calc(-1 * var(--space-2));
@@ -568,6 +569,42 @@ a[data-focus-visible] {
   display: flex;
   align-items: center;
   min-height: var(--touch);
+}
+
+/* A protected section's badge (#116; DESIGN.md Atom block): an eyebrow at the top of its
+ * block, in the gutter its text starts from. Entrenched has a clay outline and a lock glyph;
+ * eternal a double ink rule above and below. The word says the class, never the color alone. */
+.atom-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+}
+
+.atom-badge-entrenched {
+  border: 1px solid var(--clay);
+  border-radius: var(--radius-sm);
+  color: var(--clay);
+}
+
+.atom-badge-eternal {
+  padding-inline: 0;
+  border-block: 3px double var(--ink);
+  color: var(--ink);
+}
+
+.atom-badge-glyph {
+  flex: none;
+}
+
+/* Under Protect this section's choice (#116): while Eternal is chosen, that it's permanent, in
+ * body text set off by a clay rule, warm emphasis rather than an alert. */
+.protect-permanent {
+  max-width: 30em;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--clay);
+  color: var(--ink);
+  font: var(--type-body);
 }
 
 /* An Atom's Markdown, built by <AtomText> from an allowlist of elements. */

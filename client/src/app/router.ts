@@ -60,6 +60,8 @@ export type Route =
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
   /** Move this section (#103). */
   | { readonly name: 'move'; readonly groupId: string; readonly atomId: string }
+  /** Protect this section, or change its protection (#116). */
+  | { readonly name: 'protect'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
   | {
       readonly name: 'steward';
@@ -210,6 +212,7 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['add-first-subheader', headerPage(2, true)],
   ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
   ['move', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'move', groupId, atomId }))],
+  ['protect', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'protect', groupId, atomId }))],
   ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
@@ -400,10 +403,11 @@ function addPath(route: Extract<Route, { readonly name: 'add' }>): string {
   return `/add${suffix}${idPath(route.after)}`;
 }
 
-/** A section composer's path (#75): proposing a change, adding, removing or moving a section (#103). */
-function sectionPath(
-  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' | 'move' }>,
-): string {
+/**
+ * A section composer's path (#75): proposing a change, adding, removing,
+ * moving (#103) or protecting a section (#116).
+ */
+function sectionPath(route: SectionRoute): string {
   switch (route.name) {
     case 'propose':
       return `/propose/${route.atomId}`;
@@ -413,11 +417,33 @@ function sectionPath(
       return `/remove/${route.atomId}`;
     case 'move':
       return `/move/${route.atomId}`;
+    case 'protect':
+      return `/protect/${route.atomId}`;
   }
+}
+
+/** The section composers' routes (#75, #103, #116), whose paths {@link sectionPath} builds. */
+type SectionRoute = Extract<
+  GroupRoute,
+  { readonly name: 'propose' | 'add' | 'remove' | 'move' | 'protect' }
+>;
+
+const SECTION_ROUTES: ReadonlySet<string> = new Set([
+  'propose',
+  'add',
+  'remove',
+  'move',
+  'protect',
+]);
+
+/** True for a section composer's route. */
+function isSectionRoute(route: GroupRoute): route is SectionRoute {
+  return SECTION_ROUTES.has(route.name);
 }
 
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
+  if (isSectionRoute(route)) return sectionPath(route);
   switch (route.name) {
     case 'group':
       return '';
@@ -429,11 +455,6 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
-    case 'propose':
-    case 'add':
-    case 'remove':
-    case 'move':
-      return sectionPath(route);
     default:
       return pagePath(route);
   }

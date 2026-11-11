@@ -72,6 +72,18 @@ async function moveSection(options: MoveOptions = {}) {
   return { user: userEvent.setup(), state, atomId, onPropose, memory };
 }
 
+/** The outline with its first section made `to` by a passed class Proposal (#116). */
+function protectedOutline(to: 'entrenched' | 'eternal'): GroupState {
+  const log = outline();
+  const proposal = log.protect('Ana', `${log.group}.0`, to);
+  log.vote('Ana', proposal, 4);
+  log.vote('Ben', proposal, 4);
+  return log.state();
+}
+
+const ENTRENCHED_NOTE =
+  'This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of 3.0 or more, with zeros under 5%, and a longer vote.';
+
 describe('MoveComposer (#103)', () => {
   it('shows the section as it reads now, then a title, a why, where it goes, a link and the voting time', async () => {
     const { state } = await moveSection();
@@ -230,6 +242,38 @@ describe('MoveComposer (#103)', () => {
       screen.getByRole('heading', { level: 1, name: 'This section is being moved' }),
     ).toBeVisible();
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
+
+  it('says moving an entrenched section needs the higher bar, and runs 14 days to start (#116)', async () => {
+    await moveSection({ state: protectedOutline('entrenched'), atom: 0 });
+    expect(screen.getByText(ENTRENCHED_NOTE)).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Voting time (days)' })).toHaveValue('14');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows no form for an eternal section (#116)', async () => {
+    await moveSection({ state: protectedOutline('eternal'), atom: 0 });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is eternal' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
+
+  it('shows no form while a vote on the section’s protection is open (#116)', async () => {
+    const log = outline();
+    log.protect('Ana', `${log.group}.2`, 'entrenched');
+    await moveSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'This section’s protection is being decided',
+      }),
+    ).toBeVisible();
+  });
+
+  it('offers an eternal section as a place to put another after (#116)', async () => {
+    await moveSection({ state: protectedOutline('eternal'), atom: 2 });
+    expect(within(place()).getByRole('radio', { name: 'Put it after: Values' })).toBeEnabled();
   });
 
   it('says there’s nowhere to move the only section of a Document', async () => {
