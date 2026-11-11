@@ -136,10 +136,12 @@ interface Sealable extends ChosenContact {
  * The group's state when it goes on for this device and this member is still
  * in it, or null: genesis not back, dissolved (#108), read-only, leaving
  * (#77), or this membership gone, as when it left on another device.
+ * `folded` is the group's log already folded at its `relayNow`, when the
+ * caller has it, so it isn't folded twice.
  */
-function liveState(group: Group): GroupState | null {
+function liveState(group: Group, folded?: GroupState): GroupState | null {
   if (group.archived !== undefined || group.leaving !== undefined) return null;
-  const state = fold(group.log, group.relayNow);
+  const state = folded ?? fold(group.log, group.relayNow);
   const present = state.members.some((m) => m.author === group.me.author);
   return state.group === null || state.dissolved !== null || !present ? null : state;
 }
@@ -358,8 +360,11 @@ function openShareFrom(group: Group, posted: SealedShare, kxKey: Uint8Array): Re
  * other current member, in the relay order of those latest shares, with the
  * group's state; nothing for a group that doesn't go on, or with no key.
  */
-function latestHeld(group: Group): { state: GroupState; held: SealedShare[] } | null {
-  const state = liveState(group);
+function latestHeld(
+  group: Group,
+  folded?: GroupState,
+): { state: GroupState; held: SealedShare[] } | null {
+  const state = liveState(group, folded);
   const { kxKey } = group;
   if (state === null || kxKey === undefined) return null;
   const latest = new Map<string, SealedShare>();
@@ -372,9 +377,12 @@ function latestHeld(group: Group): { state: GroupState; held: SealedShare[] } | 
   return { state, held: [...latest.values()] };
 }
 
-/** The shares this device holds in `group`, as group home shows them. */
-export function heldSharesIn(group: Group): HeldShare[] {
-  const found = latestHeld(group);
+/**
+ * The shares this device holds in `group`, as group home shows them. Pass
+ * `folded`, the group's log folded at its `relayNow`, when it's at hand.
+ */
+export function heldSharesIn(group: Group, folded?: GroupState): HeldShare[] {
+  const found = latestHeld(group, folded);
   if (found === null) return [];
   const { state, held } = found;
   return held.map(({ id, by }) => ({
@@ -388,7 +396,7 @@ export function heldSharesIn(group: Group): HeldShare[] {
 
 /** Every share this device holds, group by group in the store's order, as Settings lists them. */
 export function heldShares(groups: readonly Group[]): HeldShare[] {
-  return groups.flatMap(heldSharesIn);
+  return groups.flatMap((group) => heldSharesIn(group));
 }
 
 /**

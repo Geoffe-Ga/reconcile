@@ -96,11 +96,15 @@ export interface GroupView {
 /** No shares: one shared empty list, so it never looks changed. */
 const NO_SHARES: readonly HeldShare[] = [];
 
-/** The shares this device holds in `group` that its home hasn't shown yet (#109). */
-function newSharesIn(group: Group | undefined): readonly HeldShare[] {
-  if (group === undefined) return NO_SHARES;
+/**
+ * The shares this device holds in `group` that its home hasn't shown yet
+ * (#109), from `state`, the fold `useGroup` already made, so no group screen
+ * folds its log twice.
+ */
+function newSharesIn(group: Group | undefined, state: GroupState | null): readonly HeldShare[] {
+  if (group === undefined || state === null) return NO_SHARES;
   const seen = new Set(group.recoverySeen ?? []);
-  const fresh = heldSharesIn(group).filter(({ id }) => !seen.has(id));
+  const fresh = heldSharesIn(group, state).filter(({ id }) => !seen.has(id));
   return fresh.length === 0 ? NO_SHARES : fresh;
 }
 
@@ -114,7 +118,7 @@ export function useGroup(groupId: string): GroupView {
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
   const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
-  const newShares = useMemo(() => newSharesIn(group), [group]);
+  const newShares = useMemo(() => newSharesIn(group, state), [group, state]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
