@@ -41,8 +41,9 @@
  *   `ignored`, deep-equal. A coalition's references: `"^A"` is seat A's public key and `"!A"`
  *   its 32-byte secret in base64url, from SHA-256("reconcile/vector-seat/" + name); `"~name"` is
  *   32 bytes, SHA-256("reconcile/vector-secret/" + name), in base64url, for a coalition secret or
- *   `inner`; and `{"$seatProof": ["A", "@1", "%kim"]}` is seat A's proof for kim's key in the
- *   coalition whose genesis is seq 1 (`crypto/seat.ts`).
+ *   `inner`; `"&^A"` is seat A's X25519 key, `seatKxOf` of `"!A"` (#313, `crypto/room.ts`); and
+ *   `{"$seatProof": ["A", "@1", "%kim"]}` is seat A's proof for kim's key in the coalition whose
+ *   genesis is seq 1 (`crypto/seat.ts`).
  * - A room file (#125), `{kind: "room", vectors}`, holds vectors with a coalition's log and its
  *   room's: `{name, logs: {coalition: [...], room: [...]}, relayNow, expect}`, built as a
  *   coalition file's are, so `@n` names a record of either. room.test.ts folds the coalition log,
@@ -54,6 +55,7 @@
  */
 import { kxPublicKeyOf } from '../crypto/box';
 import { sha256 } from '../crypto/hash';
+import { seatKxOf } from '../crypto/room';
 import { signSeatProof } from '../crypto/seat';
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
 import { base64url, eventId, fromBase64url } from '../engine/event';
@@ -178,6 +180,11 @@ export function seatSecretNamed(name: string): Uint8Array {
   return sha256(encoder.encode(`reconcile/vector-seat/${name}`));
 }
 
+/** The base64url X25519 key the vectors call `&^name`: seat name's, from its seat secret (#313). */
+export function seatKxNamed(name: string): string {
+  return seatKxOf(seatSecretNamed(name));
+}
+
 /** The 32 bytes the vectors call `~name`: a coalition secret or `inner` (#100). */
 function secretNamed(name: string): Uint8Array {
   return sha256(encoder.encode(`reconcile/vector-secret/${name}`));
@@ -195,14 +202,16 @@ function seatRef(text: string): string | null {
 
 /**
  * Replaces `@n` (and `@n.i`) with the id of the record at seq n, `%name` with
- * name's key, `&name` with name's encryption key, and a seat or secret
- * reference with its bytes (#100).
+ * name's key, `&name` with name's encryption key, `&^name` with seat name's
+ * encryption key (#313), and a seat or secret reference with its bytes (#100).
  */
 function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
   const key = /^%(\w+)$/.exec(text);
   if (key !== null) return publicKeyNamed(String(key[1]));
   const kx = /^&(\w+)$/.exec(text);
   if (kx !== null) return kxNamed(String(kx[1]));
+  const seatKx = /^&\^(\w+)$/.exec(text);
+  if (seatKx !== null) return seatKxNamed(String(seatKx[1]));
   const seat = seatRef(text);
   if (seat !== null) return seat;
   const match = /^@(\d+)(.*)$/.exec(text);
