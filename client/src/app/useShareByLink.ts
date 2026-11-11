@@ -1,11 +1,12 @@
 /**
  * `useShareByLink`: one personal Document's share, as its editor holds it
  * (#105): read once when the editor opens, then turned on, sent on and
- * stopped from there, one press at a time.
+ * stopped from there, one press at a time. A share a restore paused (#328)
+ * is kept or stopped from there too.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { PersonalSharing, ShareView } from './personalSharing';
+import type { PersonalSharing, SharingKeep, ShareView } from './personalSharing';
 import type { ShareOutcome } from './share';
 
 /** Where the share has got to, as its live region says it. */
@@ -17,7 +18,19 @@ export type ShareStatus =
   | ShareOutcome
   | 'stopping'
   | 'stop-failed'
-  | 'stopped';
+  | 'stopped'
+  | 'keeping'
+  | 'kept'
+  | 'kept-pending'
+  | 'keep-stopped'
+  | 'paused-stop-failed';
+
+/** What the live region says once Keep sharing has run (#328). */
+const KEPT: Readonly<Record<SharingKeep, ShareStatus>> = {
+  posted: 'kept',
+  pending: 'kept-pending',
+  stopped: 'keep-stopped',
+};
 
 /** One Document's share, as its editor holds it. */
 export interface ShareByLinkState {
@@ -32,6 +45,8 @@ export interface ShareByLinkState {
   readonly send: () => Promise<void>;
   /** Stop sharing. */
   readonly stop: () => Promise<void>;
+  /** Keep sharing, once a restore has paused the share (#328): posts the latest copy. */
+  readonly keep: () => Promise<void>;
   /**
    * Stops sharing before a delete.
    *
@@ -81,7 +96,7 @@ export function useShareByLink(
       const started = await sharing.start(id);
       if (started.kind === 'too-large') return 'too-large';
       if (started.kind === 'failed') return 'start-failed';
-      if (live.current) setView({ link: started.link, pending: false });
+      if (live.current) setView({ link: started.link, pending: false, paused: false });
       return sharing.send(started.link);
     });
 
@@ -89,9 +104,21 @@ export function useShareByLink(
 
   const stop = () =>
     once('stopping', async () => {
-      if ((await sharing.stop(id)) === 'failed') return 'stop-failed';
+      if ((await sharing.stop(id)) === 'failed') {
+        return view?.paused === true ? 'paused-stop-failed' : 'stop-failed';
+      }
       if (live.current) setView(null);
       return 'stopped';
+    });
+
+  const keep = () =>
+    once('keeping', async () => {
+      const link = view?.link;
+      if (link === undefined) return 'idle';
+      const kept = await sharing.keep(id);
+      const shared = { link, pending: kept === 'pending', paused: false };
+      if (live.current) setView(kept === 'stopped' ? null : shared);
+      return KEPT[kept];
     });
 
   const stopFirst = async () => {
@@ -103,10 +130,11 @@ export function useShareByLink(
   return {
     view,
     status,
-    busy: status === 'starting' || status === 'stopping',
+    busy: status === 'starting' || status === 'stopping' || status === 'keeping',
     start,
     send,
     stop,
+    keep,
     stopFirst,
   };
 }

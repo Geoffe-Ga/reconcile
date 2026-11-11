@@ -6,7 +6,9 @@
  * sees, before anything is sent. 'Share link' posts the first copy, then
  * hands the link on with fixed words; on, the link shows as selectable text
  * beside its warning, with 'Stop sharing', which says plainly what it can't
- * call back. Every outcome is read out in a polite live region.
+ * call back. A share a restore brought back is paused (#328): it asks first,
+ * with 'Keep sharing' and 'Stop sharing', and shows no link until the person
+ * keeps it. Every outcome is read out in a polite live region.
  */
 import { useId } from 'react';
 import { Button } from 'react-aria-components';
@@ -29,6 +31,11 @@ const STATUS_LINE: Readonly<Record<ShareStatus, string>> = {
   stopping: messages.personal.share.stopping,
   'stop-failed': messages.personal.share.stopFailed,
   stopped: messages.personal.share.stopped,
+  keeping: messages.personal.share.keeping,
+  kept: messages.personal.share.kept,
+  'kept-pending': messages.personal.share.keptPending,
+  'keep-stopped': messages.personal.share.keepStopped,
+  'paused-stop-failed': messages.personal.share.pausedStopFailed,
 };
 
 /** Props for {@link ShareByLink}. */
@@ -120,9 +127,63 @@ function ShareOn({ share, view, fits }: ShareByLinkProps & { readonly view: Shar
 }
 
 /**
+ * Paused after a restore (#328): the question and what waits on it, then
+ * Keep sharing and Stop sharing, both quiet, so neither is pressed on the
+ * person. No link shows, so none is copied before they choose.
+ */
+function SharePaused({ share }: Pick<ShareByLinkProps, 'share'>) {
+  const question = useId();
+  const note = useId();
+  const { personal } = messages;
+  return (
+    <div className="stack">
+      <p id={question} className="lede">
+        {personal.share.paused}
+      </p>
+      <p id={note} className="caption">
+        {personal.share.pausedNote}
+      </p>
+      <div className="row">
+        <Button
+          className="button button-secondary"
+          onPress={() => {
+            void share.keep();
+          }}
+          isDisabled={share.busy}
+          aria-describedby={`${question} ${note}`}
+        >
+          {personal.share.keep}
+        </Button>
+        <Button
+          className="button button-secondary"
+          onPress={() => {
+            void share.stop();
+          }}
+          isDisabled={share.busy}
+          aria-describedby={question}
+        >
+          {personal.share.stop}
+        </Button>
+      </div>
+      <p role="status" className="status">
+        {STATUS_LINE[share.status]}
+      </p>
+    </div>
+  );
+}
+
+/** The section's body for `view`: off, paused after a restore (#328), or on. */
+function ShareBody({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView | null }) {
+  if (view === null) return <ShareOff share={share} />;
+  if (view.paused) return <SharePaused share={share} />;
+  return <ShareOn share={share} view={view} fits={fits} />;
+}
+
+/**
  * The Share by link section of a personal Document's editor (#105): off
- * until 'Share link', then the link and 'Stop sharing'. Nothing shows until
- * the device has said whether the Document is shared.
+ * until 'Share link', then the link and 'Stop sharing', or, after a restore,
+ * the paused question (#328). Nothing shows until the device has said
+ * whether the Document is shared.
  */
 export function ShareByLink({ share, fits }: ShareByLinkProps) {
   const heading = useId();
@@ -137,11 +198,7 @@ export function ShareByLink({ share, fits }: ShareByLinkProps) {
       <h2 id={heading} className="eyebrow">
         {messages.personal.share.heading}
       </h2>
-      {view === null ? (
-        <ShareOff share={share} />
-      ) : (
-        <ShareOn share={share} view={view} fits={fits} />
-      )}
+      <ShareBody share={share} view={view} fits={fits} />
     </section>
   );
 }
