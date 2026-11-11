@@ -9,12 +9,16 @@ import { describe, expect, it } from 'vitest';
 
 import { NESTED_STATEMENTS, NestedLogs, seatKey, threeLevels } from '../test/coalitions';
 import { authorOf } from '../test/keys';
+import { LEVELS } from './capabilities';
 import { MAX_LEVEL, promotionFits, withinCeiling } from './coalition';
 import { promotionsOwed, resultsToReport } from './crossing';
 import { type Ceiling, CEILINGS, type PromoteProposalBody } from './event';
 import type { GroupState } from './fold';
 
 const R = 29_375_000;
+
+/** The creating level, so each joiner may vote at once. */
+const [, , CREATING] = LEVELS;
 
 const WORDS = { title: 'Rally Saturday', text: 'Meet at the river at ten.' };
 
@@ -137,7 +141,7 @@ describe('what a promotion record carries across a line (#126)', () => {
           logs.vote('A', R + 2, 'ana', into, 4);
           names.forEach((name, i) => {
             const who = i === 0 ? 'gus' : 'ivy';
-            logs.add('A', R + 3, who, { type: 'join', body: { name, level: 'co-creator' } });
+            logs.add('A', R + 3, who, { type: 'join', body: { name, level: CREATING } });
           });
           logs.formedIn('C', R + 4, [['A'], ['B']], ['cal', 'dee'], C);
           const p = logs.dispatchVote('A', R + 10, 'ana', ceiling, WORDS, {
