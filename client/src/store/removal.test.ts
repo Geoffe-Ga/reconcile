@@ -11,7 +11,9 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { sealBackup } from '../crypto/backup';
+import { deriveCoalitionEntryId } from '../crypto/card';
 import { deriveSealKey, deriveWeekMailboxId, WEEK_MINUTES, weekOf } from '../crypto/groupKeys';
 import { open, xchachaSeal } from '../crypto/seal';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
@@ -21,6 +23,7 @@ import { removedClearMinute } from '../engine/removal';
 import { DAY_MINUTES } from '../engine/rules';
 import { newSigningKeys } from '../crypto/sign';
 import { createRelay, type Fetch } from '../net/relay';
+import { COALITION_STATEMENT, seatSecret, testSecret } from '../test/coalitions';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
@@ -556,6 +559,56 @@ describe('a removal beside ballot expiry (#111)', () => {
     expect(cleared.state.responses).toEqual([]);
     expect(cleared.state.removals).toEqual(state.removals);
     expect(cleared.tallies[removal]?.outcome.kind).toBe('pass');
+  });
+});
+
+describe('a removal beside coalitions (#114)', () => {
+  it('stops syncing the coalition only the removed group held, once its remove folds', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last, remove } = history(group);
+    const target = {
+      kind: 'reconcile',
+      secret: testSecret('coalition'),
+      inner: testSecret('inner'),
+      seat: base64url(seatSecret('A')),
+      ...COALITION_STATEMENT,
+    } as const;
+    const reconcile = signedAs('ana', {
+      type: 'proposal',
+      group: groupId,
+      ts: TS,
+      body: { target, title: 'Reconcile', why: 'We share a river.' },
+    });
+    const device = await openDevice(fake.fetch);
+    await keep(device, group, 'cal', [...events, reconcile, last]);
+    const entry = deriveCoalitionEntryId(fromBase64url(testSecret('coalition')));
+    expect((await device.store.getGroup(entry))?.archived).toBeUndefined();
+    const ids = weeksOf(fromBase64url(testSecret('coalition')));
+    const named = () =>
+      fake.requests.filter((request) => ids.includes(mailboxIn(request.url))).length;
+    // The control: while Cal is in the group, his device reads the coalition.
+    expect(named()).toBeGreaterThan(0);
+
+    await device.store.enqueue(groupId, remove('ben').record);
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(true);
+    expect((await device.store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
+    expect((await device.store.getGroup(entry))?.archived).toEqual({ reason: 'removed' });
+
+    const before = named();
+    fake.minute += 5;
+    expect(await device.sync.syncOnce()).toBe(true);
+    expect(named()).toBe(before);
+    // Nor is one made again from the removed copy by a fresh loop, as after a restore.
+    await device.store.purgeGroup(entry);
+    device.sync.stop();
+    const fresh = await openDevice(fake.fetch);
+    fake.minute += 5;
+    expect(await fresh.sync.syncOnce()).toBe(true);
+    expect(await fresh.store.getGroup(entry)).toBeUndefined();
+    expect(named()).toBe(before);
   });
 });
 

@@ -9,13 +9,15 @@
  * then the group's key is changing past this device (#98), so it couldn't
  * read anything new anyway; it keeps what it already has (ADR-0016). Its push
  * registration is forgotten first, as a leave's is (#99), so nothing posted to
- * the old mailbox wakes this phone. Until then, a device whose member may post
+ * the old mailbox wakes this phone, and the coalitions only that group held
+ * here stop syncing too (#114). Until then, a device whose member may post
  * it, and that folds a removal's final pass with no `remove` yet, queues one;
  * the fold takes the first, and the key changes once.
  */
 import { parseRecord, signEvent } from '../engine/event';
 import { mayRemove, removalDue, removedFrom } from '../engine/removal';
 import type { Group, Store } from './db';
+import { retireCoalitionsOf } from './coalitions';
 import { foldGroup } from './expiry';
 
 /** True when this member's own `remove` of `proposal` already waits in the outbox. */
@@ -49,6 +51,7 @@ export async function settleRemoval(
   if (removedFrom(state, me) !== undefined) {
     forget(group);
     await store.markArchived(groupId, 'removed');
+    await retireCoalitionsOf(store, group);
     return;
   }
   const due = removalDue(state);

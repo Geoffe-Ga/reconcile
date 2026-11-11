@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { inviteLink } from '../app/invite';
+import { cardLink } from '../coalition/card';
 import { newInviteSeed } from '../crypto/invite';
 import { axeViolations } from '../test/axe';
 import { Start, type StartGroup } from './Start';
@@ -118,6 +119,35 @@ describe('Start', () => {
     expect(Array.from(onOpenInvite.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
   });
 
+  it('opens a pasted reconcile card (#114), and no invite from it', async () => {
+    const user = userEvent.setup();
+    const onOpenInvite = vi.fn();
+    const onOpenCard = vi.fn();
+    const seed = newInviteSeed();
+    render(<Start groups={[]} onOpenInvite={onOpenInvite} onOpenCard={onOpenCard} />);
+
+    await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
+    await user.paste(` ${cardLink('https://reconcile.example', seed)} `);
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+
+    expect(onOpenInvite).not.toHaveBeenCalled();
+    expect(onOpenCard).toHaveBeenCalledTimes(1);
+    expect(Array.from(onOpenCard.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
+  });
+
+  it('takes a pasted card even where nothing opens one', async () => {
+    const user = userEvent.setup();
+    const onOpenInvite = vi.fn();
+    render(<Start groups={[]} onOpenInvite={onOpenInvite} />);
+    await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
+    await user.paste(cardLink('https://reconcile.example', newInviteSeed()));
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    expect(onOpenInvite).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Invite link' })).not.toHaveAttribute(
+      'aria-invalid',
+    );
+  });
+
   it('never reads the clipboard on its own', async () => {
     const user = userEvent.setup();
     const readText = vi.spyOn(navigator.clipboard, 'readText');
@@ -141,7 +171,7 @@ describe('Start', () => {
     expect(onOpenInvite).not.toHaveBeenCalled();
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(field).toHaveAccessibleDescription(
-      'Paste the link someone in your group sent you. This invite link has expired or is damaged. Ask someone in your group for a new one.',
+      'Paste the link someone in your group sent you, or a reconcile card from another group. This invite link has expired or is damaged. Ask someone in your group for a new one.',
     );
     expect(document.body).not.toHaveTextContent('not-a-real-payload');
     expect(await axeViolations()).toEqual([]);

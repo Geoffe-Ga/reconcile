@@ -72,15 +72,16 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
 
 /**
  * A version's heading: "Version N · <name>", or what a steward, rules,
- * dissolve or removal ballot decides.
+ * dissolve, member removal or coalition ballot decides.
  */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules, dissolve, removal } = version;
+  const { steward, rules, dissolve, removal, decision } = version;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
   if (dissolve !== undefined) return <>{dissolve.title}</>;
   if (removal !== undefined)
     return <Named parts={messages.removal.ballotTitle} name={removal.name} />;
+  if (decision !== undefined) return <bdi>{decision.title}</bdi>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -91,14 +92,14 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
 
 /**
  * Under the heading: the version's change, or what passing a steward, rules,
- * dissolve or removal ballot does.
+ * dissolve, member removal or coalition ballot does.
  */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules, dissolve, removal } = version;
+  const { steward, rules, dissolve, removal, decision } = version;
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;
-  if (dissolve !== undefined) return <p className="caption">{dissolve.line}</p>;
-  if (removal !== undefined) return <p className="caption">{removal.line}</p>;
+  const line = dissolve?.line ?? removal?.line ?? decision?.line;
+  if (line !== undefined) return <p className="caption">{line}</p>;
   return <Change version={version} current={current} />;
 }
 

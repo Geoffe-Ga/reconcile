@@ -32,7 +32,7 @@ import {
   type VersionView,
   versionViews,
 } from '../app/versionViews';
-import { type Proposal, proposalTally } from '../engine/fold';
+import { proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
 import { removalTarget } from '../engine/removal';
 import type { Bar } from '../engine/rules';
@@ -181,34 +181,40 @@ function RemovalPassed({ removal, you }: { readonly removal: RemovalView; readon
   );
 }
 
-/** What a pass of a steward, rules, dissolve or removal ballot says in place of new text, or null. */
-function TargetPassed(props: OutcomeProps) {
-  const { steward, rules, dissolve, removal } = props.versions[0] ?? {};
+/**
+ * A reconcile Proposal's or a coalition motion's pass (#114): only the
+ * group's pass goes to the coalition, which decides with every group's.
+ */
+function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']['proposal'] }) {
+  const { coalitions } = messages;
+  const sentence =
+    proposal.target.kind === 'reconcile' ? coalitions.reconcilePassed : coalitions.motionPassed;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{sentence}</p>
+    </div>
+  );
+}
+
+/** A pass's block: what a one-card ballot decided, or the winning text as the Document reads. */
+function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
+  const { steward, rules, dissolve, removal, decision } = props.versions[0] ?? {};
   const { proposal, me } = props.props;
-  if (removal !== undefined)
+  if (removal !== undefined) {
     return <RemovalPassed removal={removal} you={removalTarget(proposal) === me} />;
+  }
+  if (decision !== undefined) return <DecisionPassed proposal={proposal} />;
   if (dissolve !== undefined) return <DissolvePassed />;
   if (steward !== undefined) return <StewardPassed steward={steward} />;
-  return rules === undefined ? null : <RulesPassed rules={rules} />;
+  if (rules !== undefined) return <RulesPassed rules={rules} />;
+  return <Passed {...props} winner={winner} />;
 }
 
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  if (outcome.kind === 'pass') {
-    return proposalTextless(props.props.proposal) ? (
-      <TargetPassed {...props} />
-    ) : (
-      <Passed {...props} winner={outcome.version} />
-    );
-  }
+  if (outcome.kind === 'pass') return <PassOutcome props={props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
-}
-
-/** True for a Proposal whose versions carry no text: anything but an edit or an add (#75). */
-function proposalTextless(proposal: Proposal): boolean {
-  const { kind } = proposal.target;
-  return kind !== 'edit' && kind !== 'add';
 }
 
 /** A closed edit's result, from the engine's tally of its ballots, or the tally a cleared archive kept. */

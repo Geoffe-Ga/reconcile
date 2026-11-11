@@ -13,6 +13,7 @@ import { parseRecord } from '../engine/event';
 import { resultFor } from '../engine/expiry';
 import { fold } from '../engine/fold';
 import { local, text, utf8 } from '../test/bytes';
+import { Logs, testSecret } from '../test/coalitions';
 import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
@@ -20,6 +21,7 @@ import { findCanaries, keyCanaries, textCanary } from '../test/scan';
 import { scanDb } from '../test/scanDb';
 import { groupLog } from '../test/votes';
 import { clearedArchive } from './archive';
+import { newEntry } from './coalitions';
 import { type BackedUpGroup, type Group, openStore, type Store, VaultLocked } from './db';
 import { eventIdOf } from './eventId';
 import { clearExpiredBallots, foldGroup } from './expiry';
@@ -1713,5 +1715,61 @@ describe('importSnapshot', () => {
     );
 
     expect(await dump(second)).toEqual(before);
+  });
+});
+
+describe('a coalition’s entry in a backup (#114)', () => {
+  /** A formed coalition's entry, kept on `store` with a key of its own and its log. */
+  async function keepCoalition(store: Store) {
+    const logs = new Logs();
+    logs.formed(29_000_000, ['A', 'B'], ['kim', 'zed']);
+    const entry = newEntry(fromBase64url(testSecret('coalition')), { name: 'Kim K.' });
+    await store.addGroup(entry);
+    const records = logs.logs.coalition ?? [];
+    const pull = { records, cursor: 40, relayNow: 29_000_100, instance: 'i', lastSyncAt: 1 };
+    await store.applyPull(entry.groupId, pull, eventIdOf);
+    return entry;
+  }
+
+  it('goes in a backup and comes back whole, beside the groups', async () => {
+    const from = await openStore('from');
+    const to = await openStore('to');
+    const entry = await keepCoalition(from);
+
+    const { plaintext, groupIds } = await takeSnapshot(from);
+    expect(groupIds).toEqual([entry.groupId]);
+    await importSnapshot(to, plaintext);
+
+    const [restored] = await to.listCoalitions();
+    expect(await to.listGroups()).toEqual([]);
+    expect(restored?.kind).toBe('coalition');
+    expect(restored?.groupId).toBe(entry.groupId);
+    expect(Array.from(restored?.signingKey ?? [])).toEqual(Array.from(entry.signingKey));
+    expect(restored?.me).toEqual(entry.me);
+    expect(fold(restored?.log ?? [], null).coalition?.status).toBe('formed');
+    from.close();
+    to.close();
+  });
+
+  it('leaves out an entry whose genesis hasn’t come back yet', async () => {
+    const store = await openStore('device');
+    await store.addGroup(newEntry(fromBase64url(testSecret('coalition'))));
+
+    expect((await takeSnapshot(store)).groupIds).toEqual([]);
+    store.close();
+  });
+
+  it.each([
+    ['whose id isn’t the one its secret makes', { groupId: 'A'.repeat(43) }],
+    ['of a kind it doesn’t know', { kind: 'federation' }],
+  ])('refuses a file with a coalition entry %s', async (_label, change) => {
+    const store = await openStore('device');
+    await keepCoalition(store);
+    const { plaintext } = await takeSnapshot(store);
+    const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
+    json.groups = json.groups.map((group) => ({ ...group, ...change }));
+
+    expect(decodeSnapshot(utf8(JSON.stringify(json)))).toBeNull();
+    store.close();
   });
 });

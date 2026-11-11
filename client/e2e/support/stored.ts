@@ -18,6 +18,8 @@ export interface StoredGroup {
   readonly epoch: number;
   /** Why the group only reads on this device (#108, #115), or null while it goes on. */
   readonly archived: string | null;
+  /** `coalition` for a coalition's entry (#114), null for a group. */
+  readonly kind: string | null;
 }
 
 /** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's derivations. */
@@ -77,8 +79,10 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         epoch?: number;
         me: { author: string };
         archived?: { reason: string };
+        kind?: string;
       }[];
       return groups.map((group) => ({
+        kind: group.kind ?? null,
         groupId: group.groupId,
         secret: Array.from(group.secret),
         signingKey: Array.from(group.signingKey),

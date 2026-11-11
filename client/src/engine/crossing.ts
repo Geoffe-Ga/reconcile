@@ -11,7 +11,7 @@
  * its own vote, so it can talk it out. Nothing here reads a person's key in
  * one log to find them in the other.
  */
-import { type GroupResult, type Motion, resultsCount } from './coalition';
+import { foundingSeats, type GroupResult, type Motion, resultsCount } from './coalition';
 import type { GroupResultBody, GroupResultValue } from './event';
 import type { GroupState, HeldSeat } from './fold';
 
@@ -102,8 +102,9 @@ function ownResult(
  * What `group` owes `coalition` for its seat `seatKey`, as `group-result`
  * bodies to post from a participant bound to that seat: its result on the
  * genesis (its reconcile outcome, or `fail` for a genesis that says something
- * else), then on each motion its seat decides, a lapse as `fail`. Only those
- * the group has decided, while results still count, and that the coalition
+ * else) when it is a founding seat, never for a group admitted since (#114),
+ * then on each motion its seat decides, a lapse as `fail`. Only those the
+ * group has decided, while results still count, and that the coalition
  * hasn't recorded yet. Each carries the motion, the seat and the result, and
  * nothing else.
  */
@@ -115,8 +116,9 @@ export function resultsToReport(
   const { group: id, coalition: info, at } = coalition;
   if (id === null || info === null || info.status === 'declined') return [];
   if (!info.seats.some((seat) => seat.key === seatKey)) return [];
+  const genesis = foundingSeats(info).includes(seatKey) ? [id] : [];
   const motions = info.motions.filter((m) => m.seats.includes(seatKey)).map((m) => m.id);
-  return [id, ...motions].flatMap((motion) => {
+  return [...genesis, ...motions].flatMap((motion) => {
     const result = ownResult(group, coalition, seatKey, motion);
     if (result === null || !resultsCount(info, id, motion, at)) return [];
     const recorded = info.results.some(

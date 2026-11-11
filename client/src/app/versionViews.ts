@@ -42,22 +42,18 @@ export interface VersionView {
   readonly dissolve?: DissolveView;
   /** For a removal, whom its ballot would remove, in place of any text (#115). */
   readonly removal?: RemovalView;
+  /**
+   * For a reconcile Proposal or a coalition motion, what its ballot decides,
+   * in place of any text (#114): its title, which may hold a name someone
+   * chose, and what passing does.
+   */
+  readonly decision?: DissolveView;
 }
 
 /** What a removal's ballot decides: the name of the person it would remove, and what passing does (#115). */
 export interface RemovalView {
   readonly name: string;
   readonly line: string;
-}
-
-/**
- * True for a version that puts text in a section: false for the one version
- * of a steward, rules, dissolve or removal ballot, which decides something
- * else (#102, #117, #108, #115).
- */
-export function hasText(version: VersionView): boolean {
-  const { steward, rules, dissolve, removal } = version;
-  return [steward, rules, dissolve, removal].every((view) => view === undefined);
 }
 
 /** What a removal's ballot decides: removing `person`, named as the group sees them. */
@@ -143,6 +139,25 @@ export function versionViews(state: GroupState, proposal: Proposal): VersionView
       ...(rules === null ? {} : { rules: rulesView(rules) }),
       ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
       ...(target.kind === 'remove' ? { removal: removalView(state, target.member) } : {}),
+      ...decisionOf(proposal),
     };
   });
+}
+
+/**
+ * What a reconcile Proposal's or a coalition motion's ballot decides (#114):
+ * the coalition it would form, or the motion as the coalition titled it.
+ */
+export function decisionOf(proposal: Pick<Proposal, 'target' | 'title'>): {
+  readonly decision?: DissolveView;
+} {
+  const { target } = proposal;
+  if (target.kind === 'reconcile') {
+    const title = messages.card.proposalTitle(target.name);
+    return { decision: { title, line: messages.coalitions.reconcileLine } };
+  }
+  if (target.kind === 'motion') {
+    return { decision: { title: proposal.title, line: messages.coalitions.motionLine } };
+  }
+  return {};
 }

@@ -763,6 +763,7 @@ describe('the code', () => {
         seal: xchachaSeal,
         store: {
           listGroups: () => Promise.resolve([]),
+          listCoalitions: () => Promise.resolve([]),
           listPersonal: () => Promise.resolve([]),
           getRelayBackup: () => Promise.resolve(undefined),
           requireUnlocked: () => Promise.resolve(),
