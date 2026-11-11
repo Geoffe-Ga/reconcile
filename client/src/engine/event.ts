@@ -45,10 +45,41 @@ export interface GenesisBody {
   readonly kx?: string;
 }
 
+/** One member group's seat in a coalition (#100): its name there, and its public seat key in base64url. */
+export interface SeatEntry {
+  readonly name: string;
+  readonly key: string;
+}
+
+/**
+ * Founds a coalition (#100): a group genesis body, rules included, with no
+ * founder, since its author isn't a participant, plus the seats of the groups
+ * that reconcile. Carries `group: ""` like a group's genesis. The fold checks
+ * that the seats hold two or more distinct keys.
+ */
+export interface CoalitionGenesisBody {
+  readonly kind: 'coalition';
+  readonly name: string;
+  readonly chat?: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+  readonly rules?: Readonly<Record<string, unknown>>;
+  readonly seats: readonly SeatEntry[];
+}
+
+/** True when a genesis founds a coalition rather than a group (#100). */
+export function isCoalitionGenesis(
+  body: GenesisBody | CoalitionGenesisBody,
+): body is CoalitionGenesisBody {
+  return 'kind' in body;
+}
+
 /**
  * Joins the group under a name fixed at join, at an involvement level. The
  * level is kept as written: the fold reads a missing one as Collaborator and
- * ignores a join that names a level it doesn't know.
+ * ignores a join that names a level it doesn't know. A coalition's join (#100)
+ * names the seat its author comes from and carries the seat's proof instead,
+ * and the fold reads neither level, token nor kx there.
  */
 export interface JoinBody {
   readonly name: string;
@@ -57,6 +88,10 @@ export interface JoinBody {
   readonly token?: InviteToken;
   /** The joiner's X25519 public key in base64url (#98), when the join carries a well-shaped one. */
   readonly kx?: string;
+  /** A coalition's seat key in base64url (#100), when the join carries a well-shaped one. */
+  readonly seat?: string;
+  /** That seat's proof for the joiner's key in base64url (#100, `crypto/seat.ts`), when well-shaped. */
+  readonly proof?: string;
 }
 
 /**
@@ -206,11 +241,53 @@ export interface DissolveProposalBody {
 }
 
 /**
+ * Reconciling with other groups into a coalition (#100; ADR-0036): the
+ * coalition secret its mailbox derives from; `inner`, 32 random bytes that
+ * followers never get, which #125's room and #122's higher seats derive from;
+ * this group's 32-byte Ed25519 seat secret; and the coalition's proposed name
+ * and founding statement. Each secret is 32 bytes in canonical base64url, and
+ * lives only in this group's sealed log.
+ */
+export interface ReconcileTarget {
+  readonly kind: 'reconcile';
+  readonly secret: string;
+  readonly inner: string;
+  readonly seat: string;
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/**
+ * Proposes reconciling into a coalition (#100): an ordinary Proposal with a
+ * title, a justification, an optional discussion link and an optional voting
+ * window in whole days, whose target carries the coalition's secrets and
+ * statement. It carries no text, so its ballot has one version, under the
+ * Proposal's id. Like any of the group's own Proposals, it may carry a
+ * Dispatch to the group if it passes (#112).
+ */
+export interface ReconcileProposalBody {
+  readonly target: ReconcileTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
- * a steward seat (#102), an opt-in (#117), or dissolving the group (#108).
+ * a steward seat (#102), an opt-in (#117), dissolving the group (#108), or
+ * reconciling into a coalition (#100).
  */
 export type ProposalEventBody =
-  ProposalBody | AddProposalBody | StewardProposalBody | RulesProposalBody | DissolveProposalBody;
+  | ProposalBody
+  | AddProposalBody
+  | StewardProposalBody
+  | RulesProposalBody
+  | DissolveProposalBody
+  | ReconcileProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -230,6 +307,11 @@ export function isRulesProposal(body: ProposalEventBody): body is RulesProposalB
 /** True when a Proposal's body proposes dissolving the group (#108). */
 export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
   return 'target' in body && body.target.kind === 'dissolve';
+}
+
+/** True when a Proposal's body proposes reconciling into a coalition (#100). */
+export function isReconcileProposal(body: ProposalEventBody): body is ReconcileProposalBody {
+  return 'target' in body && body.target.kind === 'reconcile';
 }
 
 /**
@@ -346,9 +428,24 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
+export type GroupResultValue = 'pass' | 'fail';
+
+/**
+ * A member group's result on a coalition motion, or on the coalition's
+ * genesis (#100): exactly the motion's id, the seat key and `pass` or
+ * `fail`. A body with any other key is a bad shape, so no ballot, score,
+ * count, note or name can ride along.
+ */
+export interface GroupResultBody {
+  readonly motion: string;
+  readonly seat: string;
+  readonly result: GroupResultValue;
+}
+
 /** The body each event type carries. */
 export interface EventBodies {
-  readonly genesis: GenesisBody;
+  readonly genesis: GenesisBody | CoalitionGenesisBody;
   readonly join: JoinBody;
   readonly proposal: ProposalEventBody;
   readonly version: VersionBody;
@@ -364,6 +461,7 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'group-result': GroupResultBody;
 }
 
 /** The event types this engine understands. */
@@ -498,7 +596,41 @@ function kxField(value: unknown): { readonly kx?: string } {
   return isKey32(value) ? { kx: value } : {};
 }
 
-function parseGenesis(body: Json): GenesisBody | null {
+/** A seat's name and key, or null for any other shape (#100). */
+function parseSeat(value: unknown): SeatEntry | null {
+  if (!isObject(value)) return null;
+  const { name, key } = value;
+  return isString(name) && isKey32(key) ? { name, key } : null;
+}
+
+/** A list of well-shaped seats, or null when it isn't a list or any seat is badly shaped (#100). */
+function parseSeats(value: unknown): SeatEntry[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed = value.map(parseSeat);
+  return parsed.every((seat) => seat !== null) ? parsed : null;
+}
+
+/** A coalition genesis: a group genesis body without its founder, plus its seats (#100). */
+function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
+  const { kind, name, chat, title, atoms, rules } = body;
+  const seats = parseSeats(body.seats);
+  if (kind !== 'coalition' || !isString(name) || !isString(title) || !isStringList(atoms)) {
+    return null;
+  }
+  if (!isOptionalString(chat) || !isOptionalObject(rules) || seats === null) return null;
+  return {
+    kind,
+    name,
+    title,
+    atoms,
+    seats,
+    ...(chat === undefined ? {} : { chat }),
+    ...(rules === undefined ? {} : { rules }),
+  };
+}
+
+function parseGenesis(body: Json): GenesisBody | CoalitionGenesisBody | null {
+  if (body.kind !== undefined) return parseCoalitionGenesis(body);
   const { name, chat, founder, title, atoms, rules } = body;
   if (!isString(name) || !isString(founder) || !isString(title)) return null;
   if (!isStringList(atoms) || !isOptionalString(chat) || !isOptionalObject(rules)) return null;
@@ -520,6 +652,15 @@ function parseToken(value: unknown): InviteToken | undefined {
   return isAuthor(by) && isString(sig) && SIGNATURE.test(sig) ? { by, sig } : undefined;
 }
 
+/** A well-shaped seat and proof on a join, each as its own field, or nothing (#100). */
+function seatFields(body: Json): { readonly seat?: string; readonly proof?: string } {
+  const { seat, proof } = body;
+  return {
+    ...(isKey32(seat) ? { seat } : {}),
+    ...(isString(proof) && SIGNATURE.test(proof) ? { proof } : {}),
+  };
+}
+
 function parseJoin(body: Json): JoinBody | null {
   const { name, level } = body;
   if (!isString(name) || !isOptionalString(level)) return null;
@@ -529,6 +670,7 @@ function parseJoin(body: Json): JoinBody | null {
     ...(level === undefined ? {} : { level }),
     ...(token === undefined ? {} : { token }),
     ...kxField(body.kx),
+    ...seatFields(body),
   };
 }
 
@@ -613,25 +755,36 @@ function withWindow<T>(target: T | null, body: Json, fields: Omit<StewardProposa
   return { ...fields, target, ...(window === undefined ? {} : { window }) };
 }
 
-/** The target a Proposal names other than a steward seat: an opt-in (#117), or dissolving (#108). */
-function parseWindowedProposal(
-  body: Json,
-  fields: Omit<StewardProposalBody, 'target'>,
-): RulesProposalBody | DissolveProposalBody | null {
-  const dissolve = parseDissolveTarget(body.target);
-  return dissolve === null
-    ? withWindow(parseRulesTarget(body.target), body, fields)
-    : withWindow(dissolve, body, fields);
+/** A reconcile target's kind, secrets, name, title and Atoms, or null for any other shape (#100). */
+function parseReconcileTarget(value: unknown): ReconcileTarget | null {
+  if (!isObject(value) || value.kind !== 'reconcile') return null;
+  const { secret, inner, seat, name, title, atoms } = value;
+  if (!isKey32(secret) || !isKey32(inner) || !isKey32(seat)) return null;
+  if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
+  return { kind: 'reconcile', secret, inner, seat, name, title, atoms };
 }
 
 /**
- * A steward (#102), rules (#117) or dissolve (#108) Proposal carries `target`
- * and no `atom`; any `text` is dropped, and so is a steward Proposal's
- * `window` (#106).
+ * The target a Proposal names other than a steward seat: an opt-in (#117),
+ * dissolving (#108), or reconciling (#100).
  */
-function parseTargetedProposal(
+function parseWindowedProposal(
   body: Json,
-): StewardProposalBody | RulesProposalBody | DissolveProposalBody | null {
+  fields: Omit<StewardProposalBody, 'target'>,
+): RulesProposalBody | DissolveProposalBody | ReconcileProposalBody | null {
+  const dissolve = parseDissolveTarget(body.target);
+  if (dissolve !== null) return withWindow(dissolve, body, fields);
+  const reconcile = parseReconcileTarget(body.target);
+  if (reconcile !== null) return withWindow(reconcile, body, fields);
+  return withWindow(parseRulesTarget(body.target), body, fields);
+}
+
+/**
+ * A steward (#102), rules (#117), dissolve (#108) or reconcile (#100)
+ * Proposal carries `target` and no `atom`; any `text` is dropped, and so is a
+ * steward Proposal's `window` (#106).
+ */
+function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
   const fields = parseTargetedFields(body);
   if (fields === null) return null;
   const steward = parseStewardTarget(body.target);
@@ -730,6 +883,17 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+/** The only keys a group-result may carry, so nothing else crosses group lines (#100). */
+const RESULT_KEYS = ['motion', 'result', 'seat'];
+
+/** A group-result with exactly a motion, a seat key and `pass` or `fail`, or null (#100). */
+function parseGroupResult(body: Json): GroupResultBody | null {
+  const { motion, seat, result } = body;
+  const exact = Object.keys(body).sort().join() === RESULT_KEYS.join();
+  if (!exact || !isString(motion) || !isKey32(seat)) return null;
+  return result === 'pass' || result === 'fail' ? { motion, seat, result } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -810,13 +974,15 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
   }
 }
 
-/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+/** {@link withBody} for #98's types, `kx` and `key-rotate`, and #100's `group-result`. */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'kx':
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'group-result':
+      return attach(parseGroupResult(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

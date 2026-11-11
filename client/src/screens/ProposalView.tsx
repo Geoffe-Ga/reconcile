@@ -34,6 +34,7 @@ import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
   isDissolveProposal,
+  isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -589,6 +590,14 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
     const dissolve = dissolveView(body.target.wipe);
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
+  // A reconcile Proposal (#100) changes no section; #114 gives it its card.
+  if (isReconcileProposal(body)) {
+    return {
+      comparison: STEWARD_BALLOT,
+      versions: [{ id: '', number: 1, author, text: '' }],
+      optIn: null,
+    };
   }
   // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
   const add = isAddProposal(body);

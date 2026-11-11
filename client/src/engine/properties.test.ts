@@ -7,13 +7,18 @@
  * the entrenched bar is never easier than the ordinary one, and neither depends on the order
  * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
  * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
- * mailbox changes nothing, not even relay time.
+ * mailbox changes nothing, not even relay time. And of coalitions (#100): a motion's outcome
+ * doesn't depend on the order distinct seats' results arrive in, and nothing a group reports
+ * carries a name, note, score or key from inside it.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { folded, foldLogs, Logs, seatOf } from '../test/coalitions';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
+import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
+import { resultsToReport } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
 import { fold, type LogRecord } from './fold';
@@ -743,6 +748,141 @@ describe('properties of the bars', () => {
         const lapses = (bar: Bar) => tally({ ...input, bar }).kind === 'lapse';
         expect(lapses(ENTRENCHED)).toBe(lapses(ORDINARY));
       }),
+    );
+  });
+});
+
+/** Seat `i`'s name and the participant bound to it, in the coalition properties (#100). */
+const seatName = (i: number) => `S${String(i)}`;
+const participant = (i: number) => `p${String(i)}`;
+
+describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
+  it('reaches the same outcome whatever order distinct seats’ results arrive in, by coalitionOutcome', () => {
+    const scenario = fc.record({
+      seats: fc.integer({ min: 2, max: 7 }),
+      results: fc.array(
+        fc.option(fc.constantFrom<'pass' | 'fail'>('pass', 'fail'), { nil: null }),
+        {
+          minLength: 7,
+          maxLength: 7,
+        },
+      ),
+      order: fc.array(fc.nat(), { minLength: 7, maxLength: 7 }),
+      expired: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(scenario, ({ seats, results, order, expired }) => {
+        const reports = results
+          .slice(0, seats)
+          .flatMap((result, seat) => (result === null ? [] : [{ seat, result }]));
+        const shuffled = [...reports].sort(
+          (a, b) => (order[a.seat] ?? 0) - (order[b.seat] ?? 0) || a.seat - b.seat,
+        );
+        const names = Array.from({ length: seats }, (_, i) => seatName(i));
+        const folded = (sequence: typeof reports) => {
+          const logs = new Logs();
+          const at = logs.formed(
+            R,
+            names,
+            names.map((_, i) => participant(i)),
+          );
+          const motion = logs.motion(at, participant(0));
+          sequence.forEach(({ seat, result }, i) => {
+            logs.result(at + 1 + i, participant(seat), motion, seatName(seat), result);
+          });
+          const deadline = at + WINDOW;
+          const now = expired ? deadline + RESULT_GRACE_MINUTES : deadline;
+          const state = fold(logs.logs.coalition ?? [], now);
+          const p = state.proposals[0];
+          return {
+            outcome: p?.outcome,
+            final: p?.final,
+            atoms: state.atoms,
+            status: state.coalition?.status,
+          };
+        };
+        const first = folded(reports);
+        expect(folded(shuffled)).toEqual(first);
+        const passes = reports.filter((r) => r.result === 'pass').length;
+        const kind = coalitionOutcome({
+          seats,
+          passes,
+          fails: reports.length - passes,
+          expired,
+        }).kind;
+        expect(first.outcome?.kind).toBe(kind === 'open' ? 'lapse' : kind);
+        expect(first.final).toBe(kind === 'fail' || expired);
+        expect(first.status).toBe('formed');
+      }),
+      { numRuns: 40 },
+    );
+  });
+
+  it('builds no result event, from what a group owes, that holds any of its names, notes, keys or ids', () => {
+    const scenario = fc.record({
+      canary: fc.stringMatching(/^[a-z0-9]{8}$/),
+      reconcile: fc.array(score, { minLength: 3, maxLength: 3 }),
+      motion: fc.array(score, { minLength: 3, maxLength: 3 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ canary, reconcile, motion: scores }) => {
+        const mark = `canary${canary}`;
+        const logs = new Logs();
+        const voters = ['ana', 'ben', 'cal'];
+        const genesis = {
+          name: `Group ${mark}`,
+          founder: `Ana ${mark}`,
+          title: `Rules ${mark}`,
+          atoms: [mark],
+        };
+        logs.add('A', R, 'ana', { type: 'genesis', body: genesis });
+        for (const voter of voters.slice(1)) {
+          logs.add('A', R + 1, voter, {
+            type: 'join',
+            body: { name: `${voter} ${mark}`, level: CREATING },
+          });
+        }
+        const held = logs.reconcile('A', R + 2, 'ben', 'A', {
+          title: `Join ${mark}`,
+          why: `Why ${mark}`,
+        });
+        voters.forEach((voter, i) =>
+          logs.vote('A', R + 3, voter, held, reconcile[i] ?? 4, `Note ${mark}`),
+        );
+        const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+        const motion = logs.motion(at, 'zed');
+        voters.forEach((voter, i) =>
+          logs.vote('A', at + 1, voter, motion, scores[i] ?? 4, `Note ${mark}`),
+        );
+        const logsNow = foldLogs(logs.logs, at + WINDOW);
+        const group = folded(logsNow, 'A').state;
+        const owed = resultsToReport(
+          group,
+          folded(logsNow, 'coalition').state,
+          seatOf(logsNow, 'A'),
+        );
+        expect(owed.length).toBeGreaterThan(0);
+        const forbidden = [
+          mark,
+          ...voters.map(authorOf),
+          group.group ?? 'no group',
+          'scores',
+          'note',
+        ];
+        for (const body of owed) {
+          expect(Object.keys(body).sort()).toEqual(['motion', 'result', 'seat']);
+          const draft = {
+            type: 'group-result',
+            group: logs.ids.coalition ?? '',
+            ts: 0,
+            body,
+          } as const;
+          const { record } = signedAs('kim', draft);
+          const text = new TextDecoder().decode(record.subarray(96));
+          for (const secret of forbidden) expect(text).not.toContain(secret);
+        }
+      }),
+      { numRuns: 25 },
     );
   });
 });
