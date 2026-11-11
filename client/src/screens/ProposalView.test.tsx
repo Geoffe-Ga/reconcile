@@ -667,6 +667,102 @@ describe('ProposalView, with several versions', () => {
   });
 });
 
+describe('ProposalView, moving sections and adding headers (#103)', () => {
+  it('shows an open move as one card under “Moving section N”: where it goes, over the section’s text', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const move = log.move('ana', `${log.group}.0`, `${log.group}.1`, { title: 'Bins first' });
+    const { user, onVote } = setup({ state: log.state(), proposalId: move, me: authorOf('ben') });
+    expect(screen.getByRole('link', { name: 'House rules' })).toBeVisible();
+    const block = screen.getByRole('region', { name: 'Moving section 1' });
+    const card = within(block).getByRole('region', {
+      name: 'Moves this section after ‘Bins go out on Tuesday.’',
+    });
+    expect(card.querySelector('.atom-card')).toHaveTextContent('Quiet hours start at ten.');
+    expect(within(card).queryByText(/^Version 1/)).toBeNull();
+    expect(block.querySelector('.word-diff')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/three versions/)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+    const pills = within(block).getByRole('radiogroup', { name: 'Your score' });
+    await user.click(within(pills).getByRole('radio', { name: '4 · Strongly supportive' }));
+    await user.click(screen.getByRole('button', { name: 'Send your vote' }));
+    expect(onVote).toHaveBeenCalledWith({ [move]: 4 }, '');
+  });
+
+  it('says a move to the start goes there', () => {
+    const log = groupLog();
+    const move = log.move('ana', `${log.group}.1`, null);
+    setup({ state: log.state(), proposalId: move });
+    expect(screen.getByRole('region', { name: 'Moving section 2' })).toBeVisible();
+    expect(screen.getByText('Moves this section to the start')).toBeVisible();
+  });
+
+  it('says a passed move moved its section, shows the section, and thanks its proposer', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const move = log.move('ana', `${log.group}.0`, `${log.group}.1`);
+    log.vote('ana', move, 4);
+    log.vote('ben', move, 4);
+    setup({ state: log.state(), proposalId: move });
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText('This passed. The section has moved.')).toBeVisible();
+    expect(result.querySelector('.result-text')).toHaveTextContent('Quiet hours start at ten.');
+    expect(result.querySelector('.result-thanks')).toHaveTextContent('Thank you, Ana.');
+    const onBallot = screen.getByRole('region', { name: 'On the ballot' });
+    expect(
+      within(onBallot).getByText('Moves this section after ‘Bins go out on Tuesday.’'),
+    ).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Propose again on a lapsed move, waiting while the section is busy again', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const move = log.move('ana', `${log.group}.0`, null);
+    const deadline = deadlineOf(START_MINUTE);
+    const { user, onProposeAgain, rerender } = setup({
+      state: log.state(deadline),
+      proposalId: move,
+      now: deadline,
+    });
+    await user.click(screen.getByRole('button', { name: 'Propose again' }));
+    expect(onProposeAgain).toHaveBeenCalledOnce();
+    log.minute = deadline;
+    log.propose('ben', { atom: 0 });
+    rerender({ state: log.state(deadline) });
+    expect(screen.getByRole('button', { name: 'Propose again' })).toBeDisabled();
+  });
+
+  it('shows a move waiting in the outbox as its one card, led by its Document', () => {
+    const log = groupLog();
+    const state = log.state();
+    const body = {
+      target: { kind: 'move', atom: `${log.group}.1`, after: null } as const,
+      title: 'Bins first',
+      why: 'They come first.',
+    };
+    const event = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 1,
+      body,
+    });
+    setup({ state, proposalId: event.id, pending: [event] });
+    expect(screen.getByRole('link', { name: 'House rules' })).toBeVisible();
+    const block = screen.getByRole('region', { name: 'Moving section 2' });
+    expect(within(block).getByText('Moves this section to the start')).toBeVisible();
+    expect(block.querySelector('.atom-card')).toHaveTextContent('Bins go out on Tuesday.');
+  });
+
+  it('says a header add adds a section header, by its heading', () => {
+    const log = groupLog();
+    const add = log.addSection('ana', `${log.group}.0`, { text: '# Values\n' });
+    setup({ state: log.state(), proposalId: add });
+    expect(
+      screen.getByText('Adds a section header ‘Values’ after ‘Quiet hours start at ten.’'),
+    ).toBeVisible();
+  });
+});
+
 describe('ProposalView, adding and removing sections', () => {
   it('shows an add as a new section: each version says where it goes, all its text added', async () => {
     const log = groupLog({ members: ['Ben'] });

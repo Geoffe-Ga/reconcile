@@ -1,5 +1,16 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { Button, Label, Text, TextArea, TextField } from 'react-aria-components';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import {
+  Button,
+  type Key,
+  Label,
+  Menu,
+  MenuItem,
+  MenuTrigger,
+  Popover,
+  Text,
+  TextArea,
+  TextField,
+} from 'react-aria-components';
 
 import type { CoalitionStanding } from '../app/coalitionHome';
 import { TakePart } from '../app/CoalitionSection';
@@ -11,8 +22,9 @@ import { SuspendedNote } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
+import { type HeadingLevel, isHeadingOnly } from '../engine/atomText';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
-import { composeOption, openProposalOn } from '../engine/composeOption';
+import { type ComposeOption, composeOption, openProposalOn } from '../engine/composeOption';
 import { documentToMarkdown } from '../engine/documentMarkdown';
 import { atomsOf, type GroupDocument } from '../engine/documents';
 import type { Atom, GroupState } from '../engine/fold';
@@ -31,16 +43,22 @@ export interface DocumentViewProps {
   readonly onAdd: (place: AddPlace) => void;
   /** Opens the composer that proposes removing one section (#75). */
   readonly onRemove: (atomId: string) => void;
+  /** Opens the composer that proposes moving one section (#103). */
+  readonly onMove: (atomId: string) => void;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): then nobody proposes from here. */
   readonly leaving?: boolean;
 }
 
-/** Where Add a section here puts a new section (#75): in the Document on screen (#92), after `after`. */
+/**
+ * Where Add a section here puts a new section (#75): in the Document on
+ * screen (#92), after `after`, and, for a header (#103), its level.
+ */
 export interface AddPlace {
   readonly document: string;
   readonly after: string | null;
+  readonly heading?: HeadingLevel;
 }
 
 /**
@@ -67,25 +85,29 @@ interface SectionActionProps {
   readonly state: GroupState;
   readonly atom: Atom;
   readonly section: number;
+  /** Whether the section has anywhere to move to: its Document holds another (#103). */
+  readonly movable: boolean;
   readonly onPropose: DocumentViewProps['onPropose'];
   readonly onRemove: DocumentViewProps['onRemove'];
+  readonly onMove: DocumentViewProps['onMove'];
 }
 
 /**
  * Propose a change, or Add your version while the section's Proposal is open
  * (`composeOption`), and Propose removing this section until its ballot holds
- * a removal, or why its ballot takes no more. Each opens a composer.
+ * a removal; or why its ballot takes no more, or that a move of it is open
+ * (#103). Each opens a composer.
  */
-function SectionAction({ state, atom, section, onPropose, onRemove }: SectionActionProps) {
+function ChangeActions(props: Omit<SectionActionProps, 'movable' | 'onMove'>) {
+  const { state, atom, section, onPropose, onRemove } = props;
   const option = composeOption(state, atom.id);
-  if (option === 'ballot-full') {
-    return <p className="caption atom-note">{messages.document.ballotFull}</p>;
-  }
   const { document } = messages;
+  if (option === 'ballot-full') return <p className="caption atom-note">{document.ballotFull}</p>;
+  if (option === 'moving') return <p className="caption atom-note">{document.moving}</p>;
   const adding = option === 'add-version';
   const open = openProposalOn(state, atom.id);
   return (
-    <div className="row atom-actions">
+    <>
       <Button
         className="button button-quiet"
         aria-label={adding ? document.addVersionLabel(section) : document.proposeLabel(section)}
@@ -106,6 +128,61 @@ function SectionAction({ state, atom, section, onPropose, onRemove }: SectionAct
           {document.remove}
         </Button>
       )}
+    </>
+  );
+}
+
+interface MoveActionProps {
+  readonly atom: Atom;
+  readonly section: number;
+  /** What `composeOption` reports: anything but `'propose'` means the section is busy. */
+  readonly option: ComposeOption;
+  readonly onMove: DocumentViewProps['onMove'];
+}
+
+/**
+ * Move this section (#103), which opens its composer, or, while the section
+ * has an open Proposal, the same button disabled with why beside it.
+ */
+function MoveAction({ atom, section, option, onMove }: MoveActionProps) {
+  const reason = useId();
+  const { document } = messages;
+  const busy = option !== 'propose';
+  return (
+    <>
+      <Button
+        className="button button-quiet"
+        aria-label={document.moveLabel(section)}
+        isDisabled={busy}
+        {...(busy ? { 'aria-describedby': reason } : {})}
+        onPress={() => {
+          onMove(atom.id);
+        }}
+      >
+        {document.move}
+      </Button>
+      {busy ? (
+        <p id={reason} className="caption atom-note move-reason">
+          {document.moveBusy}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** One section's actions: changing, removing or versioning it, then moving it (#103). */
+function SectionAction({ movable, onMove, ...props }: SectionActionProps) {
+  return (
+    <div className="row atom-actions">
+      <ChangeActions {...props} />
+      {movable ? (
+        <MoveAction
+          atom={props.atom}
+          section={props.section}
+          option={composeOption(props.state, props.atom.id)}
+          onMove={onMove}
+        />
+      ) : null}
     </div>
   );
 }
@@ -118,22 +195,50 @@ interface AddHereProps {
   readonly onAdd: DocumentViewProps['onAdd'];
 }
 
-/** A quiet "Add a section here" in a gap between sections, or at the start or end. */
+/** Each Add a section here choice (#103): a section, or a header of the level it names. */
+const ADD_CHOICES: readonly { readonly id: string; readonly heading?: HeadingLevel }[] = [
+  { id: 'section' },
+  { id: 'header', heading: 1 },
+  { id: 'subheader', heading: 2 },
+];
+
+/**
+ * A quiet "Add a section here" in a gap between sections, or at the start or
+ * end, which offers a section, a section header or a subsection header
+ * (#103) in a React Aria menu, each opening its composer.
+ */
 function AddHere({ place, section, onAdd }: AddHereProps) {
   const { document } = messages;
+  const words: Readonly<Record<string, string>> = {
+    section: document.addSection,
+    header: document.addHeader,
+    subheader: document.addSubheader,
+  };
+  const choose = (key: Key) => {
+    const heading = ADD_CHOICES.find((choice) => choice.id === key)?.heading;
+    onAdd(heading === undefined ? place : { ...place, heading });
+  };
   return (
     <div className="atom-gap">
-      <Button
-        className="button button-quiet button-gap"
-        aria-label={
-          place.after === null ? document.addAtStartLabel : document.addAfterLabel(section)
-        }
-        onPress={() => {
-          onAdd(place);
-        }}
-      >
-        {document.addHere}
-      </Button>
+      <MenuTrigger>
+        <Button
+          className="button button-quiet button-gap"
+          aria-label={
+            place.after === null ? document.addAtStartLabel : document.addAfterLabel(section)
+          }
+        >
+          {document.addHere}
+        </Button>
+        <Popover className="menu-popover" placement="bottom start">
+          <Menu className="menu" onAction={choose}>
+            {ADD_CHOICES.map((choice) => (
+              <MenuItem key={choice.id} id={choice.id} className="menu-item">
+                {words[choice.id]}
+              </MenuItem>
+            ))}
+          </Menu>
+        </Popover>
+      </MenuTrigger>
     </div>
   );
 }
@@ -202,16 +307,17 @@ interface SectionsProps {
   /** Its sections, in order. */
   readonly atoms: readonly Atom[];
   readonly proposes: boolean;
-  readonly handlers: Pick<DocumentViewProps, 'onPropose' | 'onAdd' | 'onRemove'>;
+  readonly handlers: Pick<DocumentViewProps, 'onPropose' | 'onAdd' | 'onRemove' | 'onMove'>;
 }
 
 /**
  * The Document's sections in order, each with its actions, and an "Add a
  * section here" before the first, between each two and after the last, for
- * someone who may propose. An empty Document offers only the first.
+ * someone who may propose. An empty Document offers only the first. A
+ * heading-only section sets as a header (#103).
  */
 function Sections({ state, document, atoms, proposes, handlers }: SectionsProps) {
-  const { onPropose, onAdd, onRemove } = handlers;
+  const { onPropose, onAdd, onRemove, onMove } = handlers;
   const at = (after: string | null) => ({ document: document.id, after });
   const first = proposes ? <AddHere place={at(null)} section={0} onAdd={onAdd} /> : null;
   if (atoms.length === 0) {
@@ -227,15 +333,17 @@ function Sections({ state, document, atoms, proposes, handlers }: SectionsProps)
       {first}
       {atoms.map((atom, index) => (
         <Fragment key={atom.id}>
-          <div className="atom">
+          <div className={isHeadingOnly(atom.text) ? 'atom atom-heading' : 'atom'}>
             <AtomText text={atom.text} />
             {proposes ? (
               <SectionAction
                 state={state}
                 atom={atom}
                 section={index + 1}
+                movable={atoms.length > 1}
                 onPropose={onPropose}
                 onRemove={onRemove}
+                onMove={onMove}
               />
             ) : null}
           </div>
@@ -263,7 +371,8 @@ function MissingDocument({ state }: { readonly state: GroupState }) {
  * group's first Document, #92): one canonical Document, each section (Atom)
  * formatted through `<AtomText>` in the document style, with Propose a change
  * (or Add your version while the section's Proposal is open), Propose
- * removing this section, and Add a section here in each gap (#75). Nothing
+ * removing this section, Move this section (#103), and Add a section here in
+ * each gap (#75), which offers a section or a header (#103). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
  * this member is leaving, or once the group has dissolved (#108), the

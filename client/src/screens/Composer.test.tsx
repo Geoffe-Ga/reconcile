@@ -467,6 +467,23 @@ describe('Composer, adding a version', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('says the section is being moved, with no form, while a move of it is open (#103)', async () => {
+    const log = groupLog();
+    log.move('ben', `${log.group}.0`, null);
+    const { memory } = await setup({ state: log.state() });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is being moved' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        'Score its move on the open Proposal. You can propose a change once that vote closes.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(memory.drafts.load).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('keeps the version’s draft under its Proposal, apart from the section’s own draft', async () => {
     const { state, proposal } = busy();
     const atomDraft = { title: 'Mine', why: 'Mine.', text: 'Quiet after 9pm.', link: '' };

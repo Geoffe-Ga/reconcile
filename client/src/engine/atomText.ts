@@ -48,6 +48,12 @@ export function normalizeAtomText(text: string): string {
 }
 
 /**
+ * A header's level as Add a section here offers it (#103): 1 for a section
+ * header, `# …`, and 2 for a subsection header, `## …`.
+ */
+export type HeadingLevel = 1 | 2;
+
+/**
  * One ATX heading of level 1–6 with a word in it, on one line that ends the
  * text (ADR-0023): CommonMark needs the space after the `#`s.
  */

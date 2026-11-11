@@ -94,6 +94,21 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
   );
 }
 
+/**
+ * A move's pass (#103): that the section has moved, the section as it reads,
+ * and thanks to whoever proposed it.
+ */
+function MovePassed({ version }: { readonly version: VersionView }) {
+  const text = version.move?.text ?? null;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{messages.result.passedMove}</p>
+      {text === null ? null : <AtomText text={text} className="atom-card result-text" />}
+      <Thanks names={[version.author]} />
+    </div>
+  );
+}
+
 /** A rules Proposal's pass: what is now on or off (#117). */
 function RulesPassed({ rules }: { readonly rules: RulesView }) {
   return (
@@ -210,11 +225,13 @@ function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']
  * coalition (#120), whose own result says what changed.
  */
 function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
-  const { steward, rules, dissolve, decision } = props.versions[0] ?? {};
+  const first = props.versions[0];
+  const { steward, rules, dissolve, decision } = first ?? {};
   const { proposal } = props.props;
   if (decision !== undefined || proposal.target.kind === 'motion') {
     return <DecisionPassed proposal={proposal} />;
   }
+  if (first?.move !== undefined) return <MovePassed version={first} />;
   if (dissolve !== undefined) return <DissolvePassed />;
   if (steward !== undefined) return <StewardPassed steward={steward} />;
   if (rules !== undefined) return <RulesPassed rules={rules} />;

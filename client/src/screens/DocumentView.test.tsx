@@ -11,7 +11,7 @@ import { groupLog, SETTLED_MINUTES } from '../test/votes';
 import type { CoalitionStanding } from '../app/coalitionHome';
 import { messages } from '../app/messages';
 import type { Atom } from '../engine/fold';
-import { CoalitionDocumentView, DocumentView } from './DocumentView';
+import { type AddPlace, CoalitionDocumentView, DocumentView } from './DocumentView';
 
 const [FOLLOWING, VOTING] = LEVELS;
 
@@ -20,7 +20,8 @@ interface Handlers {
   /** Whether this device's leave waits for the relay (#77). */
   readonly leaving?: boolean;
   readonly onPropose?: (atomId: string) => void;
-  readonly onAdd?: (place: { readonly document: string; readonly after: string | null }) => void;
+  readonly onAdd?: (place: AddPlace) => void;
+  readonly onMove?: (atomId: string) => void;
   /** The Document on screen (#92); the group's first when absent. */
   readonly documentId?: string;
   readonly onRemove?: (atomId: string) => void;
@@ -41,11 +42,18 @@ function view(
       onPropose={onPropose}
       onAdd={handlers.onAdd ?? vi.fn()}
       onRemove={handlers.onRemove ?? vi.fn()}
+      onMove={handlers.onMove ?? vi.fn()}
       copyText={handlers.copyText ?? vi.fn(() => Promise.resolve())}
       leaving={handlers.leaving ?? false}
       {...(handlers.documentId === undefined ? {} : { documentId: handlers.documentId })}
     />,
   );
+}
+
+/** Opens the Add a section here named `gap` and picks `choice`: a section or a header (#103). */
+async function addVia(user: ReturnType<typeof userEvent.setup>, gap: string, choice = 'Section') {
+  await user.click(screen.getByRole('button', { name: gap }));
+  await user.click(await screen.findByRole('menuitem', { name: choice }));
 }
 
 describe('DocumentView', () => {
@@ -232,9 +240,11 @@ describe('DocumentView', () => {
         .getAllByRole('button', { name: /section [12]$/ })
         .map((button) => button.getAttribute('aria-label')),
     ).toEqual([
+      'Move this section, section 1',
       'Add a section here, after section 1',
       'Propose a change to section 2',
       'Propose removing this section, section 2',
+      'Move this section, section 2',
       'Add a section here, after section 2',
     ]);
     expect(await axeViolations()).toEqual([]);
@@ -255,7 +265,7 @@ describe('DocumentView', () => {
       screen.getAllByRole('button').map((button) => button.getAttribute('aria-label')),
     ).toEqual(['Add a section here, at the start']);
     expect(screen.queryByRole('button', { name: 'Copy as Markdown' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Add a section here, at the start' }));
+    await addVia(user, 'Add a section here, at the start');
     expect(onAdd).toHaveBeenCalledWith({ document: state.group, after: null });
     expect(await axeViolations()).toEqual([]);
   });
@@ -276,8 +286,8 @@ describe('DocumentView', () => {
       (node) => node.className,
     );
     expect(order).toEqual(['atom-gap', 'atom', 'atom-gap', 'atom', 'atom-gap']);
-    await user.click(gaps[0] ?? document.body);
-    await user.click(gaps[2] ?? document.body);
+    await addVia(user, 'Add a section here, at the start');
+    await addVia(user, 'Add a section here, after section 2');
     const first = state.group ?? '';
     expect(onAdd.mock.calls).toEqual([
       [{ document: first, after: null }],
@@ -291,7 +301,7 @@ describe('DocumentView', () => {
     log.propose('ana');
     view(log.state());
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(8);
+    expect(buttons).toHaveLength(10);
     for (const button of buttons) {
       const name = button.getAttribute('aria-label') ?? button.textContent;
       expect(name.startsWith(button.textContent)).toBe(true);
@@ -397,6 +407,136 @@ describe('DocumentView', () => {
   });
 });
 
+describe('DocumentView: moving sections and headers (#103)', () => {
+  it('offers Move this section on each section, and opens its composer for the one pressed', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup();
+    const onMove = vi.fn();
+    view(state, authorOf('ana'), vi.fn(), { onMove });
+    const buttons = screen.getAllByRole('button', { name: /^Move this section/ });
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Move this section, section 1',
+      'Move this section, section 2',
+    ]);
+    for (const button of buttons) {
+      expect(button).toHaveTextContent('Move this section');
+      expect(button).toBeEnabled();
+    }
+    await user.click(screen.getByRole('button', { name: 'Move this section, section 2' }));
+    expect(onMove).toHaveBeenCalledWith(`${state.group ?? ''}.1`);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('disables Move this section, and says why, while the section has an open Proposal', async () => {
+    const user = userEvent.setup();
+    const log = groupLog();
+    log.propose('ana', { atom: 0 });
+    const onMove = vi.fn();
+    view(log.state(), authorOf('ana'), vi.fn(), { onMove });
+    const busy = screen.getByRole('button', { name: 'Move this section, section 1' });
+    expect(busy).toBeDisabled();
+    const reason = screen.getByText('You can move this section once its open Proposal closes.');
+    expect(reason).toBeVisible();
+    expect(busy.getAttribute('aria-describedby')).toBe(reason.id);
+    await user.click(busy);
+    expect(onMove).not.toHaveBeenCalled();
+    const free = screen.getByRole('button', { name: 'Move this section, section 2' });
+    expect(free).toBeEnabled();
+    expect(free).not.toHaveAttribute('aria-describedby');
+    expect(screen.getAllByText(messages.document.moveBusy)).toHaveLength(1);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('disables Move this section on a full ballot too, beside its note', () => {
+    const log = groupLog();
+    const proposal = log.propose('ana');
+    log.version('ben', proposal, 'Quiet after midnight.');
+    log.version('ben', proposal, 'Quiet after 10pm.');
+    view(log.state());
+    expect(screen.getByRole('button', { name: 'Move this section, section 1' })).toBeDisabled();
+    expect(screen.getByText(messages.document.moveBusy)).toBeVisible();
+  });
+
+  it('says a section with an open move has one, and offers no change, version or removal on it', async () => {
+    const log = groupLog();
+    log.move('ana', `${log.group}.0`, `${log.group}.1`);
+    view(log.state());
+    expect(screen.getByText('This section has an open move.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Move this section, section 1' })).toBeDisabled();
+    expect(
+      screen
+        .getAllByRole('button', { name: /section 1$/ })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Move this section, section 1', 'Add a section here, after section 1']);
+    expect(screen.getByRole('button', { name: 'Propose a change to section 2' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Move in a Document of one section, since there is nowhere to move it', () => {
+    const { state } = testGroup({ atoms: ['Only this.\n'] });
+    view(state);
+    expect(screen.queryByRole('button', { name: /^Move this section/ })).not.toBeInTheDocument();
+  });
+
+  it('offers no Move to someone who may not propose', () => {
+    const { state } = testGroup({ joiners: ['Ben'], levels: { Ben: VOTING } });
+    view(state, authorOf('ben'));
+    expect(screen.queryByRole('button', { name: /^Move this section/ })).not.toBeInTheDocument();
+  });
+
+  it('sets a heading-only section as a header, a section header at h2 and a subsection header at h3', async () => {
+    const { state } = testGroup({
+      atoms: [
+        '# Values\n',
+        'We care for each other.\n',
+        '## Organization\n',
+        '# Values\nWe care.\n',
+      ],
+    });
+    const { container } = view(state);
+    const atoms = Array.from(container.querySelectorAll('.document > .atom'));
+    expect(atoms.map((atom) => atom.classList.contains('atom-heading'))).toEqual([
+      true,
+      false,
+      true,
+      false,
+    ]);
+    expect(within(atoms[0] as HTMLElement).getByRole('heading', { level: 2 })).toHaveTextContent(
+      'Values',
+    );
+    expect(within(atoms[2] as HTMLElement).getByRole('heading', { level: 3 })).toHaveTextContent(
+      'Organization',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Section, Section header and Subsection header from each Add a section here', async () => {
+    const user = userEvent.setup();
+    const { state } = testGroup();
+    const onAdd = vi.fn();
+    view(state, authorOf('ana'), vi.fn(), { onAdd });
+    const gap = screen.getByRole('button', { name: 'Add a section here, after section 1' });
+    expect(gap).toHaveAttribute('aria-haspopup');
+    await user.click(gap);
+    const menu = await screen.findByRole('menu', { name: 'Add a section here, after section 1' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Section', 'Section header', 'Subsection header']);
+    expect(await axeViolations()).toEqual([]);
+    await user.click(within(menu).getByRole('menuitem', { name: 'Section header' }));
+    await addVia(user, 'Add a section here, at the start', 'Subsection header');
+    await addVia(user, 'Add a section here, after section 2', 'Section');
+    const first = state.group ?? '';
+    expect(onAdd.mock.calls).toEqual([
+      [{ document: first, after: `${first}.0`, heading: 1 }],
+      [{ document: first, after: null, heading: 2 }],
+      [{ document: first, after: `${first}.1` }],
+    ]);
+  });
+});
+
 describe('DocumentView: several Documents (#92)', () => {
   const DOCUMENTS = [
     { title: 'Mission statement', atoms: ['We share.\n', 'We meet weekly.\n'] },
@@ -444,8 +584,8 @@ describe('DocumentView: several Documents (#92)', () => {
     const copyText = vi.fn(() => Promise.resolve());
     const handlers = { documentId: second, onAdd, onRemove, copyText };
     view(log.state(), authorOf('ana'), onPropose, handlers);
-    await user.click(screen.getByRole('button', { name: 'Add a section here, at the start' }));
-    await user.click(screen.getByRole('button', { name: 'Add a section here, after section 2' }));
+    await addVia(user, 'Add a section here, at the start');
+    await addVia(user, 'Add a section here, after section 2');
     expect(onAdd.mock.calls).toEqual([
       [{ document: second, after: null }],
       [{ document: second, after: `${second}.1` }],

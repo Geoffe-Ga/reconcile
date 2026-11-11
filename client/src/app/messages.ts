@@ -325,6 +325,38 @@ export const messages = {
     removeVersionVisibility: 'Everyone in your group sees this version and that you added it.',
     removalOnBallotTitle: 'Removing this section is already on the ballot',
     removalOnBallot: 'Score it on the section’s open Proposal.',
+    /** A section with an open move (#103) takes no change, removal or version until it closes. */
+    movingTitle: 'This section is being moved',
+    moving: 'Score its move on the open Proposal. You can propose a change once that vote closes.',
+    /** Add a section here's header choices (#103): one line, built into `# …` or `## …`. */
+    headerPageTitle: 'Add a section header',
+    headerTitle: 'Add a section header',
+    subheaderPageTitle: 'Add a subsection header',
+    subheaderTitle: 'Add a subsection header',
+    headingLabel: 'Heading',
+    headerHint: 'One line. If your group passes it, it shows as a section header.',
+    subheaderHint: 'One line. If your group passes it, it shows as a subsection header.',
+    headingMissing: 'Write the heading.',
+    /** The Proposal title a header's heading prefills, until it's changed by hand. */
+    headerProposalTitle: (heading: string) => `Add section header: ${heading}`,
+    subheaderProposalTitle: (heading: string) => `Add subsection header: ${heading}`,
+    headerSubmit: 'Propose this header',
+    /** Move this section (#103). */
+    movePageTitle: 'Move a section',
+    moveTitle: 'Move this section',
+    moveLede:
+      'If your group passes it, this section comes out of its place and goes where you choose. Its words stay as they are.',
+    movePlaceLabel: 'Where it goes',
+    moveFirst: 'Put it first',
+    /** Before the first words of the section it would follow, which go in `<bdi>`. */
+    moveAfter: 'Put it after:',
+    moveHere: 'It’s here now.',
+    movePlaceMissing: 'Choose where the section goes.',
+    moveSubmit: 'Propose this move',
+    moveBusyTitle: 'This section has an open Proposal',
+    moveBusy: 'You can propose moving it once that vote closes.',
+    moveAloneTitle: 'There’s nowhere to move this section',
+    moveAlone: 'It’s the only section in its Document.',
     /** The checkbox that adds a Dispatch to a Proposal (#112). */
     dispatchLabel: 'Send a Dispatch if this passes',
     dispatchHint:
@@ -397,6 +429,19 @@ export const messages = {
     addsAfter: (words: string) => `Adds a section after ‘${words}’`,
     addsAtStart: 'Adds a section at the start',
     addsAtEnd: 'Adds a section at the end',
+    /** What a header add does (#103): a section header for `#`, a subsection header for deeper. */
+    addsHeaderAfter: (sub: boolean, heading: string, words: string) =>
+      `Adds a ${sub ? 'subsection' : 'section'} header ‘${heading}’ after ‘${words}’`,
+    addsHeaderAtStart: (sub: boolean, heading: string) =>
+      `Adds a ${sub ? 'subsection' : 'section'} header ‘${heading}’ at the start`,
+    addsHeaderAtEnd: (sub: boolean, heading: string) =>
+      `Adds a ${sub ? 'subsection' : 'section'} header ‘${heading}’ at the end`,
+    /** What a move does (#103), heading its one card. */
+    movesAfter: (words: string) => `Moves this section after ‘${words}’`,
+    movesToStart: 'Moves this section to the start',
+    movesToEnd: 'Moves this section to the end',
+    /** Over an open move's card: the section it moves, by its number now. */
+    moving: (section: number) => `Moving section ${String(section)}`,
     readsAs: 'How it will read',
     proposed: 'Proposed text',
     onBallot: 'On the ballot',
@@ -467,6 +512,8 @@ export const messages = {
     passedRemoval: 'This passed. The Document no longer has this section.',
     passedVersionRemoval: (version: number) =>
       `Version ${String(version)} passed. The Document no longer has this section.`,
+    /** A move's pass (#103), before the section it moved. */
+    passedMove: 'This passed. The section has moved.',
     /** A new Document's pass (#92), before its first sections. */
     passedDocument: 'This passed. The new Document reads:',
     passedVersionDocument: (version: number) =>
@@ -656,6 +703,15 @@ export const messages = {
     addAfterLabel: (section: number) => `Add a section here, after section ${String(section)}`,
     remove: 'Propose removing this section',
     removeLabel: (section: number) => `Propose removing this section, section ${String(section)}`,
+    /** Move this section (#103), disabled with its reason while the section is busy. */
+    move: 'Move this section',
+    moveLabel: (section: number) => `Move this section, section ${String(section)}`,
+    moveBusy: 'You can move this section once its open Proposal closes.',
+    moving: 'This section has an open move.',
+    /** Add a section here's choices (#103), in a menu its button names. */
+    addSection: 'Section',
+    addHeader: 'Section header',
+    addSubheader: 'Subsection header',
     copy: 'Copy as Markdown',
     copyHint:
       'To start a fresh group from this Document, copy it, then paste it into Create group.',
