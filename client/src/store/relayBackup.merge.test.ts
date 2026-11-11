@@ -171,17 +171,17 @@ describe('carriedGroups (#327)', () => {
   const BEA = testKeys('bea').author;
 
   /**
-   * The relay copy's entry for the group named `name`, as `member` holds it,
+   * The relay copy's entry for the group named `name`, as `holder` holds it,
    * read as the relay backup reads it: one a restore reads whole (#336).
    */
-  function entry(name: string, member = 'ana'): RelayGroup {
+  function entry(name: string, holder = 'ana'): RelayGroup {
     const { state, records } = testGroup({ name });
-    const { secretKey, author } = testKeys(member);
+    const { secretKey, author } = testKeys(holder);
     const group: BackedUpGroup = {
       groupId: state.group ?? '',
       secret: sha256(utf8(`${name}'s secret`)),
       signingKey: secretKey,
-      me: { author, name: member },
+      me: { author, name: holder },
       log: [...records],
       cursor: records.length,
       relayNow: null,
