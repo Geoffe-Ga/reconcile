@@ -592,6 +592,11 @@ a[data-focus-visible] {
   text-wrap: balance;
 }
 
+/* A subsection header raised a level in a Document's outline keeps its own look (#103). */
+.atom-text .atom-subheading {
+  font: var(--type-heading-3);
+}
+
 .atom-text :where(h3, h4, h5, h6) {
   color: var(--ink);
   font: var(--type-heading-3);

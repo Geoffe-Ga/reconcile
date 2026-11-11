@@ -11,7 +11,8 @@
  * Ana uses a wide desktop window; Ben uses a 390 px phone in the dark theme,
  * where nothing may scroll sideways. axe checks the Add a section here menu,
  * the header composer, the Document view with its Move buttons, the move
- * composer, and a move's ballot on both profiles.
+ * composer, a move's ballot on both profiles, and the reordered Document,
+ * whose first header is a subsection header, on both.
  */
 import type { Locator, Page } from '@playwright/test';
 
@@ -228,6 +229,8 @@ test('a group builds a Document from headers up and moves a section, and every p
         'Values',
       ]);
       expect(await fitsWidth(page)).toBe(true);
+      // Organization, a subsection header, now comes first: it reads h2, so no level is skipped.
+      await expectAccessible(person, 'the Document, reordered');
     }
   });
 });

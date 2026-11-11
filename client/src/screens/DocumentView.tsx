@@ -20,6 +20,7 @@ import { messages } from '../app/messages';
 import { WaitingNote } from '../app/Newcomer';
 import { SuspendedNote } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
+import { lastHeadingLevel } from '../app/text/markdown';
 import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
 import { type HeadingLevel, isHeadingOnly } from '../engine/atomText';
@@ -300,6 +301,19 @@ export function CopyMarkdown({ atoms, copyText }: CopyMarkdownProps) {
   );
 }
 
+/**
+ * The level of the heading before each section on the page, from the
+ * screen's `h1` on, so a Document's headers never skip a level (#103).
+ */
+function headingsBefore(atoms: readonly Atom[]): number[] {
+  let last = 1;
+  return atoms.map((atom) => {
+    const before = last;
+    last = lastHeadingLevel(atom.text, before);
+    return before;
+  });
+}
+
 interface SectionsProps {
   readonly state: GroupState;
   /** The Document on screen (#92). */
@@ -320,6 +334,7 @@ function Sections({ state, document, atoms, proposes, handlers }: SectionsProps)
   const { onPropose, onAdd, onRemove, onMove } = handlers;
   const at = (after: string | null) => ({ document: document.id, after });
   const first = proposes ? <AddHere place={at(null)} section={0} onAdd={onAdd} /> : null;
+  const before = headingsBefore(atoms);
   if (atoms.length === 0) {
     return (
       <>
@@ -334,7 +349,7 @@ function Sections({ state, document, atoms, proposes, handlers }: SectionsProps)
       {atoms.map((atom, index) => (
         <Fragment key={atom.id}>
           <div className={isHeadingOnly(atom.text) ? 'atom atom-heading' : 'atom'}>
-            <AtomText text={atom.text} />
+            <AtomText text={atom.text} after={before[index] ?? 1} />
             {proposes ? (
               <SectionAction
                 state={state}
@@ -490,6 +505,7 @@ function CoalitionSectionAction(props: {
 export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
   const { atoms, standing, open } = props;
   const proposes = standing.kind === 'proposes';
+  const before = headingsBefore(atoms);
   return (
     <main className="shell">
       <BackLink to={{ name: 'coalition', coalitionId: props.coalitionId }} label={props.name} />
@@ -505,7 +521,7 @@ export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
         <article className="document">
           {atoms.map((atom, index) => (
             <div key={atom.id} className="atom">
-              <AtomText text={atom.text} />
+              <AtomText text={atom.text} after={before[index] ?? 1} />
               <CoalitionSectionAction
                 atom={atom}
                 section={index + 1}

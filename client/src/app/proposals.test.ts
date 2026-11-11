@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { RECORD_HEADER_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { LEVELS } from '../engine/capabilities';
 import { base64url, fromBase64url, parseRecord } from '../engine/event';
@@ -442,6 +443,17 @@ describe('propose', () => {
       window: 5,
       dispatch,
     });
+    // The signed bytes themselves carry no text, not even an empty one the parser would drop.
+    const [record] = (await device.services.store.getGroup(groupId))?.outbox ?? [];
+    const signed = new TextDecoder().decode(record?.slice(RECORD_HEADER_BYTES));
+    expect(Object.keys((JSON.parse(signed) as { body: object }).body)).toEqual([
+      'target',
+      'title',
+      'why',
+      'link',
+      'window',
+      'dispatch',
+    ]);
     expect(await device.services.store.readDraft(groupId, moveDraft(atom))).toBeUndefined();
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
   });

@@ -510,6 +510,20 @@ describe('DocumentView: moving sections and headers (#103)', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('never skips a heading level, even when a subsection header comes first, keeping its look', async () => {
+    const { state } = testGroup({
+      atoms: ['## Organization\n', 'We meet weekly.\n', '# Values\n', '### Deep\n'],
+    });
+    const { container } = view(state);
+    const headings = Array.from(container.querySelectorAll('.document h2, .document h3'));
+    expect(headings.map((h) => [h.tagName, h.className, h.textContent])).toEqual([
+      ['H2', 'atom-subheading', 'Organization'],
+      ['H2', '', 'Values'],
+      ['H3', 'atom-subheading', 'Deep'],
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('offers Section, Section header and Subsection header from each Add a section here', async () => {
     const user = userEvent.setup();
     const { state } = testGroup();
