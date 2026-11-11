@@ -162,11 +162,12 @@ export type Naming = 'versions' | 'options';
 
 /**
  * "Version 1 · Ana", the version's heading wherever the result names it, what a
- * steward, rules or dissolve ballot decided (#102, #117, #108), or a priority
- * option's text (#107).
+ * steward, rules, dissolve or move ballot decided (#102, #117, #108, #103), or
+ * a priority option's text (#107).
  */
 function VersionName({ version, naming }: { readonly version: VersionView; naming: Naming }) {
   if (naming === 'options') return <bdi>{version.text}</bdi>;
+  if (version.move !== undefined) return <>{version.move.line}</>;
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
   if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;

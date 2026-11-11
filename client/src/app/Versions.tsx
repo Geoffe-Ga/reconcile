@@ -93,7 +93,8 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
   const { steward, rules, dissolve, decision, move } = version;
   if (move !== undefined) {
-    return move.text === null ? null : <AtomText text={move.text} className="atom-card" />;
+    if (move.text === null) return null;
+    return <AtomText text={move.text} className="atom-card atom-card-current" />;
   }
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;

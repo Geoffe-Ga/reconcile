@@ -707,6 +707,9 @@ describe('ProposalView, moving sections and adding headers (#103)', () => {
     expect(within(result).getByText('This passed. The section has moved.')).toBeVisible();
     expect(result.querySelector('.result-text')).toHaveTextContent('Quiet hours start at ten.');
     expect(result.querySelector('.result-thanks')).toHaveTextContent('Thank you, Ana.');
+    expect(result.querySelector('.result-totals .result-version')).toHaveTextContent(
+      'Moves this section after ‘Bins go out on Tuesday.’',
+    );
     const onBallot = screen.getByRole('region', { name: 'On the ballot' });
     expect(
       within(onBallot).getByText('Moves this section after ‘Bins go out on Tuesday.’'),
