@@ -75,7 +75,9 @@ export type Route =
       readonly documentId: string;
     }
   /** Propose a change to one of a coalition's sections (#120). */
-  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string };
+  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
+  /** A coalition's room (#125). */
+  | { readonly name: 'coalitionRoom'; readonly coalitionId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -204,11 +206,15 @@ const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) =>
   ],
 ]);
 
-/** `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or `propose/{atomId}` (#120). */
+/**
+ * `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or
+ * `propose/{atomId}` (#120), or `room` (#125).
+ */
 function coalitionRoute(rest: readonly string[]): Route {
   const [coalitionId, page, arg, ...extra] = rest;
   if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
   if (page === undefined) return { name: 'coalition', coalitionId };
+  if (page === 'room') return arg === undefined ? { name: 'coalitionRoom', coalitionId } : START;
   const open = COALITION_PAGES.get(page);
   return open === undefined || arg === undefined ? START : open(coalitionId, arg);
 }
@@ -368,6 +374,8 @@ function coalitionHref(route: CoalitionRoute): string {
       return `${home}/doc/${route.documentId}`;
     case 'coalitionPropose':
       return `${home}/propose/${route.atomId}`;
+    case 'coalitionRoom':
+      return `${home}/room`;
   }
 }
 

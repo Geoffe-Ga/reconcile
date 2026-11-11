@@ -555,6 +555,16 @@ export interface GroupResultBody {
   readonly result: GroupResultValue;
 }
 
+/**
+ * A message in a coalition's room (#125; ADR-0011): plain text, kept as
+ * written. A body with any other key is a bad shape. It belongs to the room's
+ * own log, sealed under keys from the coalition's `inner`, and `room.ts`
+ * reads it there: the fold of a group's or a coalition's own log ignores it.
+ */
+export interface MessageBody {
+  readonly text: string;
+}
+
 /** The body each event type carries. */
 export interface EventBodies {
   readonly genesis: GenesisBody | CoalitionGenesisBody;
@@ -576,6 +586,7 @@ export interface EventBodies {
   readonly 'key-rotate': KeyRotateBody;
   readonly 'door-invited': DoorInvitedBody;
   readonly 'group-result': GroupResultBody;
+  readonly message: MessageBody;
 }
 
 /** The event types this engine understands. */
@@ -1038,6 +1049,13 @@ function parseGroupResult(body: Json): GroupResultBody | null {
   return result === 'pass' || result === 'fail' ? { motion, seat, result } : null;
 }
 
+/** A room message's body: exactly its text (#125). */
+function parseMessage(body: Json): MessageBody | null {
+  const { text } = body;
+  const exact = Object.keys(body).join() === 'text';
+  return exact && isString(text) ? { text } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -1174,7 +1192,7 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
 
 /**
  * {@link withBody} for #98's types, `kx` and `key-rotate`, #100's
- * `group-result`, #111's `result`, and #121's `door-invited`.
+ * `group-result`, #111's `result`, #121's `door-invited` and #125's `message`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1188,6 +1206,8 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'door-invited':
       return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'message':
+      return attach(parseMessage(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

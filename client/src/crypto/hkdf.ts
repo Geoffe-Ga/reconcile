@@ -2,8 +2,9 @@
  * The one HKDF call site (spec §3): HKDF-SHA-256 (RFC 5869). A group secret's
  * weekly mailbox ids and seal key (`groupKeys.ts`), an invite seed's mailbox
  * id and key (`invite.ts`), a share seed's (`share.ts`, #105), a front
- * door's page, inbox and reply mailboxes (`door.ts`, #121) and a link's
- * channels (`link.ts`, #96) all derive through it, each under a label of its
+ * door's page, inbox and reply mailboxes (`door.ts`, #121), a link's
+ * channels (`link.ts`, #96) and a coalition room's entry id (`room.ts`, #125)
+ * all derive through it, each under a label of its
  * own, so no two ever coincide. Most take an empty salt and 32 bytes of
  * output. A weekly mailbox id's info is bytes, its label then its week
  * (#110). A box's key (`box.ts`, #98) is salted with the two public keys of

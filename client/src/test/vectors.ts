@@ -43,6 +43,12 @@
  *   32 bytes, SHA-256("reconcile/vector-secret/" + name), in base64url, for a coalition secret or
  *   `inner`; and `{"$seatProof": ["A", "@1", "%kim"]}` is seat A's proof for kim's key in the
  *   coalition whose genesis is seq 1 (`crypto/seat.ts`).
+ * - A room file (#125), `{kind: "room", vectors}`, holds vectors with a coalition's log and its
+ *   room's: `{name, logs: {coalition: [...], room: [...]}, relayNow, expect}`, built as a
+ *   coalition file's are, so `@n` names a record of either. room.test.ts folds the coalition log,
+ *   then `foldRoom` the room's, and matches `expect`, a list of messages, against what it gives.
+ * - room-keys.json (#125), `{kind: "room-keys", ...}`, pins a room's derivations and one sealed
+ *   message, computed outside @noble; crypto/room.test.ts runs it.
  * - invite.json (#73) is a fold file: joins carrying invite tokens, each signed outside @noble.
  * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
@@ -107,11 +113,21 @@ export interface LogsVector {
   readonly unchangedWithout?: Readonly<Record<string, readonly number[]>>;
 }
 
+/** One room vector (#125): a coalition's log and its room's, and the messages they must show. */
+export interface RoomVector {
+  readonly name: string;
+  readonly logs: Readonly<Record<'coalition' | 'room', readonly VectorRecord[]>>;
+  readonly relayNow: number | null;
+  readonly expect: readonly object[];
+}
+
 /** One vector file, by its `kind`. */
 export type VectorFile =
   | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
   | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
   | { readonly kind: 'coalition'; readonly vectors: readonly LogsVector[] }
+  | { readonly kind: 'room'; readonly vectors: readonly RoomVector[] }
+  | { readonly kind: 'room-keys'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'keys'; readonly seeds: Readonly<Record<string, string>> };
 
@@ -318,7 +334,7 @@ export interface VectorLogs {
  * Turns a vector's logs into relay records, building every record in global
  * seq order, so `@n` names a record of any log written before it (#100).
  */
-export function buildLogs(vector: LogsVector): VectorLogs {
+export function buildLogs(vector: Pick<LogsVector, 'logs'>): VectorLogs {
   const ids = new Map<number, string>();
   const tagged = Object.entries(vector.logs).flatMap(([log, records]) =>
     records.map((record) => ({ log, record })),
@@ -344,6 +360,11 @@ export const FOLD_VECTORS: readonly FoldVector[] = Object.values(VECTOR_FILES).f
 /** Every vector with several logs, file by file (#100). */
 export const COALITION_VECTORS: readonly LogsVector[] = Object.values(VECTOR_FILES).flatMap(
   (file) => (file.kind === 'coalition' ? file.vectors : []),
+);
+
+/** Every room vector, file by file (#125). */
+export const ROOM_VECTORS: readonly RoomVector[] = Object.values(VECTOR_FILES).flatMap((file) =>
+  file.kind === 'room' ? file.vectors : [],
 );
 
 /**
