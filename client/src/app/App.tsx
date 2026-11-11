@@ -1065,10 +1065,6 @@ function PlainScreen({ route, services, persistence, guide, openInvite }: PlainS
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
-    case 'linkNew':
-      return <LinkNewScreen services={services} />;
-    case 'linkThis':
-      return <LinkThisScreen services={services} />;
   }
 }
 
