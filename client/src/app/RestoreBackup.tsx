@@ -96,7 +96,7 @@ export function RestoreBackup({ onRestore }: RestoreBackupProps) {
           </div>
         </Form>
       )}
-      <p role="status" className="status">
+      <p role="status" className="status restore-status">
         {outcome.kind === 'restoring' ? messages.restore.restoring : null}
         {outcome.kind === 'restored'
           ? messages.restore.restored(outcome.groups, outcome.skipped)

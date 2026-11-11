@@ -139,11 +139,12 @@ describe('RestoreBackup', () => {
     const { user } = setup(onRestore);
 
     await restoreAgain(user);
-    expect(
-      await screen.findByText(
-        '2 groups are back on this device. One group in this backup couldn’t be read and was left out.',
-      ),
-    ).toHaveAttribute('role', 'status');
+    const status = await screen.findByText(
+      '2 groups are back on this device. One group in this backup couldn’t be read and was left out.',
+    );
+    expect(status).toHaveAttribute('role', 'status');
+    // Two sentences of caption text keep a field hint's measure (backup.css).
+    expect(status).toHaveClass('status', 'restore-status');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
 
