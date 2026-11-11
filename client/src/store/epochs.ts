@@ -30,6 +30,12 @@
  *   A key change the fold refused but that checks out here, as one a false
  *   `unwrap-failed` named, it takes up too, posting a `key-taken` to the new
  *   epoch's mailbox first, so the fold keeps it.
+ * - **Stranded leaves** (#225). A leave that reached the old epoch's mailbox
+ *   after the key change, from someone still a member, ends no membership
+ *   there, and devices that took the key up never read it. So a device that
+ *   read one posts it again, as signed, to the new epoch's mailbox when it
+ *   moves, whoever wrote it, and the membership ends where it lands there. A
+ *   device that is leaving does the same for its own leave (`sync.ts`).
  * - **No wrap.** Otherwise the device stays where it is, and the group says
  *   why: this membership left on another device, or this device missed the
  *   new key.
@@ -48,7 +54,7 @@ import {
 } from '../crypto/epoch';
 import { parseRecord, signEvent } from '../engine/event';
 import { type GroupState, keyHolders, type LogRecord, type Rotation } from '../engine/fold';
-import type { EpochAdvance, Group } from './db';
+import { type EpochAdvance, type Group, sameBytes } from './db';
 import { foldGroup } from './expiry';
 import { placedInLog } from './logOrder';
 
@@ -208,6 +214,25 @@ function lateRecords(
   });
 }
 
+/**
+ * The records in `log` of each leave `state` names stranded (#225), one per
+ * event, oldest first: a device that moves posts them again to the new
+ * epoch's mailbox, whoever wrote them.
+ */
+function strandedRecords(log: readonly LogRecord[], state: GroupState): Uint8Array[] {
+  const ids = new Set(state.strandedLeaves.map((leave) => leave.id));
+  return log.flatMap((record) => {
+    const id = parseRecord(record.bytes)?.id;
+    if (id === undefined || !ids.delete(id)) return [];
+    return [record.bytes];
+  });
+}
+
+/** `records` with each record's bytes once, in their first place. */
+function distinct(records: readonly Uint8Array[]): Uint8Array[] {
+  return records.filter((bytes, i) => records.findIndex((other) => sameBytes(other, bytes)) === i);
+}
+
 /** What a sync pull leads this device to do about its group's key (#98, #224). */
 export type KeyStep =
   /** Move to a key change's epoch: its secret, cursor and records to post there. */
@@ -249,7 +274,11 @@ interface Context {
   readonly ts: number;
 }
 
-/** The move into `rotation` with its `secret`, posting a `key-taken` first when the fold refused it. */
+/**
+ * The move into `rotation` with its `secret`, posting a `key-taken` first when
+ * the fold refused it, then this member's late records, then every stranded
+ * leave (#225).
+ */
 function moveInto(group: Group, context: Context, rotation: Rotation, secret: Uint8Array): KeyStep {
   const { log, state } = context;
   const late = lateRecords(log, epochOf(group), rotation.seq, group.me.author);
@@ -259,7 +288,7 @@ function moveInto(group: Group, context: Context, rotation: Rotation, secret: Ui
     epoch: rotation.epoch,
     secret,
     cursor: rotation.seq,
-    repost: [...taken, ...late],
+    repost: distinct([...taken, ...late, ...strandedRecords(log, state)]),
   };
   return { kind: 'move', advance };
 }
@@ -328,7 +357,7 @@ export function secretFits(state: GroupState, epoch: number, secret: Uint8Array)
  * (#98), or null: none unless `epoch` is past the one `group` holds and its
  * canonical key change commits to `secret`. Like a move by sync, it posts
  * again this member's records that reached the old mailbox after the key
- * change that left the device behind.
+ * change that left the device behind, and every stranded leave (#225).
  */
 export function adoptionFor(group: Group, epoch: number, secret: Uint8Array): EpochAdvance | null {
   if (epoch <= epochOf(group)) return null;
@@ -342,7 +371,8 @@ export function adoptionFor(group: Group, epoch: number, secret: Uint8Array): Ep
   if (!wrapsHold({ groupId: state.group, epoch, commit, secret, keys, wraps })) return null;
   // The first canonical key change past the device's epoch is the one that left it behind.
   const left = state.rotations.find((r) => r.epoch > epochOf(group)) ?? rotation;
-  const repost = lateRecords(group.log, epochOf(group), left.seq, group.me.author);
+  const late = lateRecords(group.log, epochOf(group), left.seq, group.me.author);
+  const repost = distinct([...late, ...strandedRecords(group.log, state)]);
   return { epoch, secret, cursor: rotation.seq, repost };
 }
 

@@ -68,9 +68,14 @@
  * blob that won't open, so one bad blob never stalls a group.
  *
  * A group this device is leaving (#77) goes once the relay returns a seq for
- * its leave: the pass fires a `keepalive` DELETE of its push registration,
- * without waiting (#99), purges it from the store and reads nothing more for it.
- * Until then it stays, leaving, through failures and reloads.
+ * its leave and the pass has read its mailboxes once more, to see where the
+ * leave landed: the pass fires a `keepalive` DELETE of its push registration,
+ * without waiting (#99), purges it from the store and reads nothing more for
+ * it. Until then it stays, leaving, through failures and reloads. When that
+ * read brings a key change that came before the leave and checks out here,
+ * the leave reached the old epoch's mailbox too late to count (#225): the
+ * device moves to the new epoch, as any device does, and posts the leave
+ * again there before it lets the group go.
  *
  * A dissolved group (#108) is archived once its `dissolve` folds, and from
  * then on a pass sends nothing for it and reads nothing: no request names its
@@ -135,6 +140,7 @@ import {
   hasDuty,
   isFrozen,
   keyRotateRecord,
+  type KeyStep,
   keyStepFor,
   kxRecord,
   needsKx,
@@ -334,9 +340,10 @@ export function createSync(options: SyncOptions): Sync {
   /**
    * Post the group's current outbox in order; an entry leaves only once the
    * relay accepts it. While `frozen` (#98), every entry but a `key-rotate` or
-   * `leave` stays queued, in its place. Once the relay has returned a seq for
-   * the group's leave, the group is purged: `left`. Else `posted` when the
-   * relay took anything, `none` when it took nothing.
+   * `leave` stays queued, in its place. `left` once the relay has returned a
+   * seq for the group's leave, which is always last, so nothing goes after
+   * it. Else `posted` when the relay took anything, `none` when it took
+   * nothing.
    */
   async function postOutbox(
     groupId: string,
@@ -353,15 +360,19 @@ export function createSync(options: SyncOptions): Sync {
       // No phone registers under a coalition's mailboxes yet (#120), so nothing there asks to wake one.
       const wake = !isCoalitionEntry(current) && wakeForRecord(before, bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
-      if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
-        push?.forget(current);
-        await store.purgeGroup(groupId);
-        return 'left';
-      }
       await store.markSent(groupId, bytes);
+      if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) return 'left';
       posted = 'posted';
     }
     return posted;
+  }
+
+  /** Lets go of a group this device has left (#77): forgets its push registration (#99), then purges it. */
+  async function letGo(groupId: string): Promise<'left'> {
+    const current = await store.getGroup(groupId);
+    if (current !== undefined) push?.forget(current);
+    await store.purgeGroup(groupId);
+    return 'left';
   }
 
   /** GETs week `week`'s mailbox of `secret`, after its cursor in `cursors` (#110). */
@@ -424,17 +435,25 @@ export function createSync(options: SyncOptions): Sync {
    * epoch (#98), else `stayed`. When the pull brings a key change that doesn't
    * check out here, it queues this member's `unwrap-failed` for the next pass
    * to post to the old epoch's mailbox (#224).
+   *
+   * Once the leave is posted, here or on a pass that failed after, the group
+   * goes after the reads, unless they bring a key change that came before the
+   * leave and checks out here (#225): then the device moves, as any device
+   * does, with the leave queued again for the new epoch's mailbox, and goes
+   * once it is posted there. A leaving device says nothing of a key change
+   * that doesn't check out: it queues nothing more.
    */
   async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
     const frozen = isFrozen(foldGroup(group), group);
     const { first, cursors } = await firstRead(group);
     const week = weekOf(first.now);
     const outcome = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
-    if (outcome === 'left') return 'left';
-    const pass = { first, cursors, week, posted: outcome === 'posted' };
+    const pass = { first, cursors, week, posted: outcome !== 'none' };
     const reads = await readWeeks(group, pass);
     const { records, relayNow } = openReads(seal, group, reads);
     const step = keyStepFor(group, records, relayNow, clock());
+    const left = outcome === 'left' || leaveSent(group);
+    if (left && step?.kind !== 'move') return letGo(group.groupId);
     const pull: Pull = {
       records,
       cursors: cursorsAfter(group.secret, pass, reads),
@@ -443,6 +462,19 @@ export function createSync(options: SyncOptions): Sync {
       lastSyncAt: clock(),
       ...(step?.kind === 'move' ? { advance: step.advance } : {}),
     };
+    return savePull(group, pull, step);
+  }
+
+  /**
+   * Saves `pull`, which moves the group when `step` does, then queues the
+   * `unwrap-failed` that `step` calls for (#224) and settles a dissolve:
+   * `moved` or `stayed`.
+   */
+  async function savePull(
+    group: Group,
+    pull: Pull,
+    step: KeyStep | null,
+  ): Promise<'moved' | 'stayed'> {
     await store.applyPull(group.groupId, pull, idOf);
     if (step?.kind === 'refuse') await store.enqueue(group.groupId, step.record);
     await settleAfter(group, pull);
@@ -665,6 +697,15 @@ export function createSync(options: SyncOptions): Sync {
       return () => listeners.delete(listener);
     },
   };
+}
+
+/**
+ * Whether `group` is leaving and its leave has gone (#77): the relay returned
+ * a seq for it on a pass that then failed before it let the group go.
+ */
+function leaveSent(group: Group): boolean {
+  const { leaving, outbox } = group;
+  return leaving !== undefined && !outbox.some((bytes) => sameBytes(bytes, leaving));
 }
 
 /** Where a group's blobs go and the key they're sealed under, both derived from its secret. */
