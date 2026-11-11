@@ -34,6 +34,7 @@ import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { linkDevice } from '../test/link';
 import { members } from '../test/members';
+import { LEVELS } from '../engine/capabilities';
 import { createGroup, joinGroup, leaveGroup, lookupInvite, makeInvite } from './actions';
 import { parseInviteLink } from './invite';
 
@@ -204,6 +205,9 @@ describe('two linked devices and one relay backup (#247)', () => {
   });
 });
 
+/** The level Ana joins Bea's group at: the creating level, as the test helpers join. */
+const [, , CREATING] = LEVELS;
+
 /** The ids of the groups `device` holds, sorted. */
 async function groupIds(device: TestDevice): Promise<string[]> {
   return (await device.services.store.listGroups()).map((group) => group.groupId).sort();
@@ -234,7 +238,7 @@ async function joinedOnThePhone(fake: FakeRelay, phone: TestDevice): Promise<str
   if (seed === null) throw new Error('Expected an invite link.');
   const found = await lookupInvite(phone.services, seed);
   if (found.kind !== 'found') throw new Error('Expected the invite to open.');
-  await joinGroup(phone.services, found.group, 'Ana', 'co-creator');
+  await joinGroup(phone.services, found.group, 'Ana', CREATING);
   expect(await phone.services.sync.syncOnce()).toBe(true);
   return created.groupId;
 }
