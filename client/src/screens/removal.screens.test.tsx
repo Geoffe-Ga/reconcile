@@ -479,6 +479,11 @@ describe('the removed member’s copy (ADR-0016)', () => {
     ).toBeVisible();
     expect(screen.queryByText(/Can’t reach the relay/)).toBeNull();
     const cut = screen.getByRole('region', { name: 'Open when you were removed' });
+    // What the vote cut off leads; the Dispatches this device kept follow it (#112).
+    const order = Array.from(document.querySelectorAll('h2.eyebrow'), (h) => h.textContent);
+    expect(order.indexOf('Dispatches')).toBeGreaterThan(
+      order.indexOf('Open when you were removed'),
+    );
     const card = within(cut).getByRole('link', { name: /Later quiet hours/ });
     expect(card).toHaveTextContent('You won’t see how this ends');
     expect(card).toHaveAttribute('href', `#/g/${state.group ?? ''}/p/${edit}`);

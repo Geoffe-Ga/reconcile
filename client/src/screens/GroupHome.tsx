@@ -949,8 +949,9 @@ export function GroupHome(props: GroupHomeProps) {
   // A dissolved group takes nothing new, as a group being left doesn't (#108), nor one a vote removed this member from (#115).
   const readOnly = leaving || dissolved !== null || removed;
   // Every level follows the group (ADR-0003): for someone who doesn't vote, Dispatches lead (#112).
+  // A removed member's copy leads with what the vote cut off instead (#115): no Dispatch comes now.
   const news = <HomeDispatches state={state} me={me} readOnly={readOnly} />;
-  const leads = !can(state, me, 'vote');
+  const leads = !removed && !can(state, me, 'vote');
   return (
     <main className="shell">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
