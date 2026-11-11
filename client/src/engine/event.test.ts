@@ -416,6 +416,10 @@ describe('parseEvent', () => {
     ['result with an unknown outcome', 'result', { ...RESULT, outcome: { kind: 'win' } }],
     ['result with a pass naming no version', 'result', { ...RESULT, outcome: { kind: 'pass' } }],
     ['result with an outcome that isn’t an object', 'result', { ...RESULT, outcome: 'lapse' }],
+    ['result with a string closedSeq', 'result', { ...RESULT, closedSeq: '7' }],
+    ['result with a fractional closedSeq', 'result', { ...RESULT, closedSeq: 7.5 }],
+    ['result with a negative closedSeq', 'result', { ...RESULT, closedSeq: -1 }],
+    ['result with a null closedSeq', 'result', { ...RESULT, closedSeq: null }],
     [
       'proposal with both an atom and a target',
       'proposal',
@@ -693,6 +697,15 @@ describe('parseEvent', () => {
     expect(fail?.event.body).toEqual({ ...RESULT, outcome: { kind: 'fail' } });
     const lapse = parseEvent(json(envelope('result', { ...RESULT, outcome: { kind: 'lapse' } })));
     expect(lapse?.event.body).toEqual({ ...RESULT, outcome: { kind: 'lapse' } });
+  });
+
+  it('keeps a result’s closedSeq, the closing ballot’s place, and reads one without it (#289)', () => {
+    const placed = parseEvent(json(envelope('result', { ...RESULT, closedSeq: 7 })));
+    expect(placed?.event.body).toEqual({ ...RESULT, closedSeq: 7 });
+    const first = parseEvent(json(envelope('result', { ...RESULT, closedSeq: 0 })));
+    expect(first?.event.body).toEqual({ ...RESULT, closedSeq: 0 });
+    const without = parseEvent(json(envelope('result', RESULT)));
+    expect(without?.event.body).not.toHaveProperty('closedSeq');
   });
 
   it('keeps a vote’s salt, and reads a vote without one, as cast before #111', () => {
