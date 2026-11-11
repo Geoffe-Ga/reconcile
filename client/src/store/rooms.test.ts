@@ -199,6 +199,25 @@ describe('keepRooms', () => {
     ).toBe(false);
   });
 
+  it('keeps none on a device whose group only asks to join: its seat isn’t the coalition’s yet', async () => {
+    const store = await device();
+    const built = logs();
+    built.group('C', R, ['dee'], 'Elm Row');
+    built.reconcile('C', R + 30, 'dee', 'C');
+    await store.addGroup({
+      groupId: built.ids.C ?? '',
+      secret: new Uint8Array(32).fill(9),
+      signingKey: testKeys('dee').secretKey,
+      me: { author: authorOf('dee'), name: 'Dee' },
+    });
+    await store.applyPull(built.ids.C ?? '', pullOf(built.logs.C ?? []), eventIdOf);
+    await followerDevice(store, built);
+
+    await keepRooms(store);
+
+    expect(await store.listRooms()).toEqual([]);
+  });
+
   it('keeps none before the coalition’s genesis, nor for a declined one', async () => {
     const store = await device();
     const built = new Logs();

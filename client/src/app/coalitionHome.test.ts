@@ -161,6 +161,9 @@ describe('coalitionHome', () => {
     expect(coalitionHome(held, [])?.room).toBe(false);
     logs.group('C', R, ['ana'], 'Elm Row');
     expect(coalitionHome(held, [deviceGroup(logs, 'C', at, 'ana')])?.room).toBe(false);
+    // A group asking to join holds the card's inner, but its seat isn't the coalition's yet.
+    logs.reconcile('C', at, 'ana', 'Elm Row');
+    expect(coalitionHome(held, [deviceGroup(logs, 'C', at + 1, 'ana')])?.room).toBe(false);
     expect(coalitionHome(held, [{ ...riverside, leaving: true }])?.room).toBe(false);
     expect(coalitionHome(held, [{ ...riverside, archived: true }])?.room).toBe(false);
   });
