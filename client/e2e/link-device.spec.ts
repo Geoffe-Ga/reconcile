@@ -113,7 +113,7 @@ test('a second device links by a pasted code, the relay learns nothing, and both
     await expect(heading(ben.page, CANARY.group)).toBeVisible();
     const people = phone.page.getByRole('region', { name: 'People', exact: true });
     await expect(people).toContainText(CANARY.joiner);
-    await phone.page.getByRole('link', { name: 'Our garden' }).click();
+    await phone.page.getByRole('link', { name: 'Our garden', exact: true }).click();
     await phone.page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await phone.page.getByRole('textbox', { name: 'Title' }).fill(CANARY.title);
     await phone.page.getByRole('textbox', { name: 'Why' }).fill('Mornings are cooler.');
@@ -190,7 +190,7 @@ test('a second device links by a pasted code, the relay learns nothing, and both
     const { page } = laptop;
     await page.getByRole('link', { name: 'Your groups' }).first().click();
     await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();
-    await page.getByRole('link', { name: 'Our garden' }).click();
+    await page.getByRole('link', { name: 'Our garden', exact: true }).click();
     await expect(page.getByText(CANARY.atom)).toBeVisible();
   });
 

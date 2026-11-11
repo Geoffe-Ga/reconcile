@@ -288,7 +288,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     const { page } = ana;
     await page.goto('/#/');
     await page.getByRole('link', { name: new RegExp(GROUP) }).click();
-    await page.getByRole('link', { name: 'Plot rules' }).click();
+    await page.getByRole('link', { name: 'Plot rules', exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(TITLE);
     await page.getByRole('textbox', { name: 'Why' }).fill('Cooler in the evening.');
