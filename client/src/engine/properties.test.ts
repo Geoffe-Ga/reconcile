@@ -13,7 +13,9 @@
  * it holds exactly the options that pass, best first, its first is always the tally's winner,
  * and the order ballots arrive in never changes it. And of ballot expiry (#111): a device that
  * has cleared a closed Proposal's ballots, keeping its result, folds the same Document and
- * outcomes as one that still holds them.
+ * outcomes as one that still holds them, and reads the same section history. And of section
+ * history (#104): replaying a section's passed texts, oldest first, ends at its current text or
+ * its removal, and a Document's change log holds each final pass once.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -27,6 +29,7 @@ import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
 import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
+import { changeLog, sectionHistory } from './history';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { rank, tally, type TallyInput } from './tally';
@@ -642,6 +645,87 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
   });
 });
 
+/** One Proposal of a section-history scenario (#104): its kind, what it picks, its text, three ballots and a wait. */
+const historyStep = fc.record({
+  kind: fc.constantFrom<InDocument['kind']>('edit', 'remove', 'add', 'new-document'),
+  pick: fc.nat(),
+  first: fc.boolean(),
+  text: fc.constantFrom('X', 'Y\n', '# Z\n\nW', 'V\n\nU\n\nT'),
+  scores: fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }),
+  wait: fc.oneof(fc.integer({ min: 1, max: 60 }), fc.constant(WINDOW + 10)),
+});
+
+/**
+ * A log of three members and two founded Documents, then one Proposal per
+ * step in a Document's section, or a new Document, each scored by up to three
+ * ballots, folded once every Proposal has closed.
+ */
+const historyLog = fc.array(historyStep, { maxLength: 12 }).map((steps) => {
+  const log = Log.founded(3, FIRST_SECTIONS, [{ title: 'Second', atoms: SECOND_SECTIONS }]);
+  let received = R + 10;
+  for (const s of steps) {
+    const now = fold(log.records, received);
+    const target = now.documents[s.pick % now.documents.length]?.id ?? log.group;
+    const sections = now.atoms.filter((atom) => atom.documentId === target);
+    const section = sections[s.pick % Math.max(1, sections.length)]?.id ?? `${target}.0`;
+    const proposal = proposeIn(log, { ...s, target, section }, received);
+    s.scores.forEach((value, voter) => {
+      if (value !== null) log.vote(received + 1 + voter, voter, proposal, value);
+    });
+    received += 4 + s.wait;
+  }
+  return fold(log.records, received + WINDOW + 10);
+});
+
+/** Every section id a history scenario could have made: founded, added, or a new Document's. */
+function everySection(state: GroupState): string[] {
+  const founded = state.founding?.atoms.map((atom) => atom.id) ?? [];
+  const made = state.proposals.flatMap((p) => {
+    if (p.target.kind === 'add') return [p.id];
+    if (p.target.kind !== 'new-document') return [];
+    return [0, 1, 2, 3].map((i) => `${p.id}.${String(i)}`);
+  });
+  return [...founded, ...made];
+}
+
+describe('properties of section history (#104)', { timeout: 60_000 }, () => {
+  it('replays a section’s passed texts, oldest first, to its current text or its removal', () => {
+    fc.assert(
+      fc.property(historyLog, (state) => {
+        for (const id of everySection(state)) {
+          const oldestFirst = [...sectionHistory(state, id).passed].reverse();
+          const now = state.atoms.find((atom) => atom.id === id);
+          if (oldestFirst.length === 0) {
+            expect(now, id).toBeUndefined();
+            continue;
+          }
+          expect(['founded', 'added', 'created']).toContain(oldestFirst[0]?.change.kind);
+          expect(oldestFirst.slice(1).map((entry) => entry.change.kind)).not.toContain('founded');
+          expect(oldestFirst.at(-1)?.text, id).toBe(now?.text ?? '');
+          const dates = oldestFirst.map((entry) => entry.decidedAt);
+          expect(dates).toEqual([...dates].sort((a, b) => a - b));
+        }
+      }),
+    );
+  });
+
+  it('logs each final pass once, in the Document it changed, opening a history that holds it', () => {
+    fc.assert(
+      fc.property(historyLog, (state) => {
+        const rows = state.documents.flatMap((document) => changeLog(state, document.id));
+        const logged = rows.flatMap((row) => (row.proposalId === null ? [] : [row.proposalId]));
+        const passed = state.proposals.filter((p) => p.final && p.outcome.kind === 'pass');
+        expect([...logged].sort()).toEqual(passed.map((p) => p.id).sort());
+        for (const row of rows) {
+          if (row.section === null) continue;
+          const history = sectionHistory(state, row.section).passed;
+          expect(history.map((entry) => entry.proposalId)).toContain(row.proposalId);
+        }
+      }),
+    );
+  });
+});
+
 /** What {@link proposeIn} proposes: its kind, its Document, a section of it, and its text. */
 interface InDocument {
   readonly kind: 'edit' | 'remove' | 'add' | 'new-document';
@@ -651,12 +735,16 @@ interface InDocument {
   readonly text: string;
 }
 
-/** One Proposal at R + 20 in the Document `target` (#92), or a new Document beside it. */
-function proposeIn(log: Log, { kind, target, section, first, text }: InDocument): string {
-  if (kind === 'edit') return log.propose(R + 20, section, text);
-  if (kind === 'remove') return log.propose(R + 20, section, '');
-  if (kind === 'add') return log.addSection(R + 20, first ? null : section, text, target);
-  return log.newDocument(R + 20, 'New', text);
+/** One Proposal at `at` (R + 20 by default) in the Document `target` (#92), or a new Document beside it. */
+function proposeIn(
+  log: Log,
+  { kind, target, section, first, text }: InDocument,
+  at = R + 20,
+): string {
+  if (kind === 'edit') return log.propose(at, section, text);
+  if (kind === 'remove') return log.propose(at, section, '');
+  if (kind === 'add') return log.addSection(at, first ? null : section, text, target);
+  return log.newDocument(at, 'New', text);
 }
 
 /**
@@ -1005,7 +1093,10 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         const now = Math.max(resultAt, ...full.map((record) => record.received)) + scenario.later;
         const held = fold(full, now);
         expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
-        expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));
+        const after = fold(cleared, now, [], [pId]);
+        expect(decided(after)).toEqual(decided(held));
+        // A section's history shows totals and never a ballot, so it reads the same (#104).
+        expect(sectionHistory(after, `${group}.0`)).toEqual(sectionHistory(held, `${group}.0`));
       }),
     );
   });
