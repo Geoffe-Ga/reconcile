@@ -83,9 +83,14 @@ describe('the alert on the person’s devices', DEVICES, () => {
     const earliest = Math.min(...seen.map(({ completes }) => completes));
     expect(alertSummary(seen)).toEqual({ kind: 'pending', completes: earliest });
 
+    // Offline, the cancels wait in the phone's outbox, and it already reads them as cancelled.
+    fake.offline = true;
     await cancelRecovery(phone.services, seen);
-    // Queued on the phone, it already reads as cancelled there.
+    expect(
+      (await phone.services.store.listGroups()).every((group) => group.outbox.length > 0),
+    ).toBe(true);
     expect(alertSummary(await alertsOn(phone))).toEqual({ kind: 'cancelled' });
+    fake.offline = false;
     await syncAll([phone, ...world.devices]);
     expect(alertSummary(await alertsOn(world.ana))).toEqual({ kind: 'cancelled' });
 

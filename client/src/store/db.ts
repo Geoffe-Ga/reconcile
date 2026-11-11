@@ -499,8 +499,11 @@ export interface RecoveryStore {
   forgetRetired(id: string): Promise<void>;
   /** This device's request to recover with contacts (#118), or undefined while it has none. */
   getRecoverRequest(): Promise<RecoverRequest | undefined>;
-  /** Keep `request` in place of any earlier one. */
-  setRecoverRequest(request: RecoverRequest): Promise<void>;
+  /**
+   * In one transaction, the request this device keeps, or `fresh`, kept, when
+   * it keeps none: two screens starting at once both get the one kept.
+   */
+  keepRecoverRequest(fresh: RecoverRequest): Promise<RecoverRequest>;
   /** Forget the request: the person stopped. */
   dropRecoverRequest(): Promise<void>;
   /**
@@ -1287,9 +1290,13 @@ function recoveryStore(db: IDBPDatabase<Schema>, changed: () => void): RecoveryS
       if (wrote) changed();
     },
     getRecoverRequest: async () => recoverRequestIn(await db.get(DEVICE, RECOVER_REQUEST)),
-    async setRecoverRequest(request) {
-      await db.put(DEVICE, request, RECOVER_REQUEST);
-      changed();
+    async keepRecoverRequest(fresh) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      const held = recoverRequestIn(await tx.store.get(RECOVER_REQUEST));
+      if (held === undefined) await tx.store.put(fresh, RECOVER_REQUEST);
+      await tx.done;
+      if (held === undefined) changed();
+      return held ?? fresh;
     },
     async dropRecoverRequest() {
       await db.delete(DEVICE, RECOVER_REQUEST);

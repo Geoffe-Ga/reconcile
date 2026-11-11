@@ -24,6 +24,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import {
   gated,
   groupOn,
+  mailboxesAround,
   HOLD,
   holdTag,
   keyOf,
@@ -149,6 +150,37 @@ describe('holding a share for someone recovering', DEVICES, () => {
     expect(holds[1]?.code).toBeUndefined();
   });
 
+  it('stops only the alert whose tag the cancel names: another request still goes', async () => {
+    const { fake, world, request, code, check, ana } = await setUp();
+    const { ben, groupId } = world;
+    const other = newRecoveryKeys();
+    const otherCode = recoveryCode(other);
+    await approveRecovery(ben.services, { code, groupId, person: ana, check });
+    await approveRecovery(ben.services, {
+      code: otherCode,
+      groupId,
+      person: ana,
+      check: recoveryCheck(otherCode),
+    });
+    const [first] = (await groupOn(ben, groupId)).recoveryHolds ?? [];
+    const anaGroup = await groupOn(world.ana, groupId);
+    const cancel = signEvent(anaGroup.signingKey, {
+      type: 'recovery-cancel',
+      group: groupId,
+      ts: 0,
+      body: { alert: first?.tag ?? '' },
+    });
+    await world.ana.services.store.enqueue(groupId, cancel.record);
+    await world.ana.services.sync.syncOnce();
+    const received = Math.max(
+      ...foldGroup(await groupOn(ben, groupId)).recoveryAlerts.map((alert) => alert.received),
+    );
+
+    await passAt(fake, received + HOLD, ben);
+    expect(releasedShares(fake, request.seed, request.secretKey)).toEqual([]);
+    expect(releasedShares(fake, other.seed, other.secretKey)).toHaveLength(1);
+  });
+
   it('releases nothing after a failed sync pass, even with the relay taking PUTs, and sends on the next complete one', async () => {
     const { fake, gate, world, request, code, check, ana } = await setUp();
     const { ben, groupId } = world;
@@ -163,6 +195,35 @@ describe('holding a share for someone recovering', DEVICES, () => {
     gate.gets = true;
     expect(await passAt(fake, received + HOLD + 11, ben)).toBe(true);
     expect(fake.blobs(mailbox)).toHaveLength(1);
+  });
+
+  it('releases nothing after a pass that failed in another group, though this one synced', async () => {
+    const { fake, gate, world, request, code, check } = await setUp();
+    const { cal, allotment, groupId } = world;
+    const person = await keyOf(world.ana, allotment);
+    await approveRecovery(cal.services, { code, groupId: allotment, person, check });
+    const received = await alertReceived(cal, allotment);
+    const { mailbox } = recoveryChannel(request.seed);
+    const until = received + HOLD;
+
+    // Cal's Riverside can't be read; Allotment, where the hold is, syncs at the hold's end.
+    gate.blocked = mailboxesAround(await groupOn(cal, groupId), until);
+    expect(await passAt(fake, until, cal)).toBe(false);
+    expect((await groupOn(cal, allotment)).relayNow).toBe(until);
+    expect(fake.blobs(mailbox)).toEqual([]);
+
+    gate.blocked = [];
+    expect(await passAt(fake, until, cal)).toBe(true);
+    expect(fake.blobs(mailbox)).toHaveLength(1);
+  });
+
+  it('puts only blobs the relay takes: the fake refuses any size but #62’s four, as the relay does', async () => {
+    const { world, request } = await setUp();
+    const { mailbox } = recoveryChannel(request.seed);
+    const odd = new Uint8Array(1000);
+    await expect(world.ben.services.relay.putBlob(mailbox, odd, 7)).rejects.toThrow(
+      'The relay answered 400 (invalid_size).',
+    );
   });
 
   it('refuses a wrong check number, a code that isn’t one, and someone whose share it doesn’t hold, queuing nothing', async () => {

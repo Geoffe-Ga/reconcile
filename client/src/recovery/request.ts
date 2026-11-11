@@ -58,7 +58,7 @@ export interface RecoverServices {
   readonly store: Pick<
     Store,
     | 'getRecoverRequest'
-    | 'setRecoverRequest'
+    | 'keepRecoverRequest'
     | 'dropRecoverRequest'
     | 'finishRecovery'
     | 'restoreGroups'
@@ -104,9 +104,17 @@ export async function startRecovery(services: RecoverServices): Promise<ShownReq
   const held = await services.store.getRecoverRequest();
   if (held !== undefined) return shown(held);
   const { seed, secretKey } = newRecoveryKeys();
-  const request = { seed, secretKey, startedAt: services.now() };
-  await services.store.setRecoverRequest(request);
-  return shown(request);
+  // Two starts at once, as StrictMode makes them, both show the one the store kept.
+  const kept = await services.store.keepRecoverRequest({
+    seed,
+    secretKey,
+    startedAt: services.now(),
+  });
+  if (kept.seed !== seed) {
+    seed.fill(0);
+    secretKey.fill(0);
+  }
+  return shown(kept);
 }
 
 /** Stop recovering: forget the seed and key, so nothing sent to the old code is ever read. */

@@ -1275,6 +1275,8 @@ export const messages = {
     notACode: 'That isn’t a recovery code. Ask them to send it again.',
     next: 'Continue',
     who: 'Which person?',
+    /** One option: "<name> (<group>)". */
+    person: (name: string, group: string) => `${name} (${group})`,
     /** "Call <name> or meet them. Make sure it's really them." around the name. */
     callBefore: 'Call',
     callAfter: 'or meet them. Make sure it’s really them.',

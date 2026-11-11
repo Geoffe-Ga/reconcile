@@ -192,7 +192,11 @@ describe('a recovering device’s request (#118)', () => {
     store.subscribe(heard);
     expect(await store.getRecoverRequest()).toBeUndefined();
 
-    await store.setRecoverRequest(REQUEST);
+    expect(await store.keepRecoverRequest(REQUEST)).toBe(REQUEST);
+    // A second request while one is kept keeps the first, and writes nothing.
+    const second = { ...REQUEST, seed: new Uint8Array(16).fill(8) };
+    const again = await store.keepRecoverRequest(second);
+    expect(Array.from(again.seed)).toEqual(Array.from(REQUEST.seed));
     store.close();
     const reloaded = await openStore();
     const kept = await reloaded.getRecoverRequest();
@@ -211,7 +215,7 @@ describe('a recovering device’s request (#118)', () => {
 
   it('gives way, once a backup opens, to a mark that the device was recovered, in one change', async () => {
     const store = await openStore();
-    await store.setRecoverRequest(REQUEST);
+    await store.keepRecoverRequest(REQUEST);
     expect(await store.getRecoveredAt()).toBeUndefined();
 
     await store.finishRecovery(42);
@@ -228,7 +232,7 @@ describe('a recovering device’s request (#118)', () => {
     await keepGroup(store, 'group-1');
     await store.setRelayBackupKey(new Uint8Array(32).fill(5));
     await store.setRecoveryPlan(PLAN);
-    await store.setRecoverRequest(REQUEST);
+    await store.keepRecoverRequest(REQUEST);
 
     expect(await store.getRecoveryPlan()).toEqual(PLAN);
     expect((await store.getRelayBackup())?.tooLarge).toBe(false);

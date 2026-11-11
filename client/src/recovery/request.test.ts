@@ -98,6 +98,21 @@ describe('recovering on a new device', DEVICES, () => {
     expect((await startRecovery(fresh.services)).code).not.toBe(shown.code);
   });
 
+  it('shows one code, the one it keeps, for two starts at once, as React’s StrictMode makes them', async () => {
+    const fake = createFakeRelay();
+    const fresh = await testDevice(fake, 'twice');
+    opened.push(fresh);
+    const [one, two] = await Promise.all([
+      startRecovery(fresh.services),
+      startRecovery(fresh.services),
+    ]);
+    const kept = await fresh.services.store.getRecoverRequest();
+    expect(two).toEqual(one);
+    expect(local(parseRecoveryCode(one.code)?.seed ?? new Uint8Array())).toEqual(
+      local(kept?.seed ?? new Uint8Array(1)),
+    );
+  });
+
   it('waits for t shares, then restores Ana’s groups and keeps her backup key, through real contacts', async () => {
     const { fake, world, fresh, shown } = await setUp();
     const session = recoverSession(fresh.services);
@@ -193,6 +208,21 @@ describe('recovering on a new device', DEVICES, () => {
     });
     expect(backupReads(fake)).toBe(0);
     expect(await fresh.services.store.listGroups()).toEqual([]);
+  });
+
+  it('tries nothing until a split has t shares: two of a 3-of-5 split ask the relay nothing', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    const split = newSplitId();
+    for (let x = 1; x <= 2; x += 1) {
+      const share = Uint8Array.from({ length: 33 }, (_, i) => (i === 32 ? x : (x * 5 + i) % 256));
+      await release(fake, world.ben, shown.code, { split, t: 3, n: 5, share });
+    }
+    expect(await recoverSession(fresh.services).poll()).toEqual({
+      kind: 'waiting',
+      shares: 2,
+      needed: 3,
+    });
+    expect(backupReads(fake)).toBe(0);
   });
 
   it('leaves the device empty when the backup won’t open, and keeps waiting', async () => {

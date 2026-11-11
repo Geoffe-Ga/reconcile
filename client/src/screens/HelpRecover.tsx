@@ -135,7 +135,6 @@ function WhichPerson({
   readonly value: string;
   readonly onChange: (id: string) => void;
 }) {
-  const { recovery } = messages;
   return (
     <RadioGroup className="level-group" value={value} onChange={onChange}>
       <Label className="field-label">{messages.helpRecover.who}</Label>
@@ -143,9 +142,8 @@ function WhichPerson({
         {held.map((share) => (
           <RadioField key={share.id} value={share.id} className="level-option">
             <RadioButton className="level-button">
-              <bdi>{share.name}</bdi> {recovery.groupOpen}
-              <bdi>{share.groupName}</bdi>
-              {recovery.groupClose}
+              {/* One isolate for the whole label, so its accessible name reads as written. */}
+              <bdi>{messages.helpRecover.person(share.name, share.groupName)}</bdi>
             </RadioButton>
           </RadioField>
         ))}

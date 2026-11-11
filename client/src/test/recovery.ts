@@ -7,6 +7,7 @@
 import { joinGroup, lookupInvite, makeInvite } from '../app/actions';
 import { parseInviteLink } from '../app/invite';
 import { fromBase64url } from '../crypto/base64url';
+import { deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { openRelease, recoveryChannel } from '../crypto/recovery';
 import type { RecoveryShare } from '../crypto/shares';
 import { xchachaSeal } from '../crypto/seal';
@@ -19,25 +20,43 @@ import { foundAnother, members } from './members';
 /** Minutes a contact holds a share after the relay receives their alert. */
 export const HOLD = 4320;
 
-/** A fake relay, and a view of it whose GETs fail while `gets` is false. */
+/** What a gated relay refuses: every GET while `gets` is false, and any GET naming a `blocked` mailbox. */
+export interface Gate {
+  gets: boolean;
+  blocked: readonly string[];
+}
+
+/** A fake relay, and a view of it whose GETs fail as its gate says, while PUTs still go. */
 export interface GatedRelay {
   /** What devices talk to. */
   readonly view: FakeRelay;
-  /** Set `gets` to false to fail every GET, as a pass that can't read would, while PUTs still go. */
-  readonly gate: { gets: boolean };
+  readonly gate: Gate;
+}
+
+/** Whether `gate` refuses the request to `input`. */
+function refuses(gate: Gate, input: RequestInfo | URL, init?: RequestInit): boolean {
+  if ((init?.method ?? 'GET') !== 'GET') return false;
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  return !gate.gets || gate.blocked.some((mailbox) => url.includes(mailbox));
 }
 
 /** `fake` behind a gate on its GETs. */
 export function gated(fake: FakeRelay): GatedRelay {
-  const gate = { gets: true };
+  const gate: Gate = { gets: true, blocked: [] };
   const view = Object.create(fake) as FakeRelay;
   Object.defineProperty(view, 'fetch', {
     value: (input: RequestInfo | URL, init?: RequestInit) =>
-      !gate.gets && (init?.method ?? 'GET') === 'GET'
+      refuses(gate, input, init)
         ? Promise.reject(new TypeError('Failed to fetch'))
         : fake.fetch(input, init),
   });
   return { view, gate };
+}
+
+/** Every weekly mailbox id of `group`'s secret from a week before `minute` to a week after (#110). */
+export function mailboxesAround(group: Group, minute: number): string[] {
+  const week = weekOf(minute);
+  return [week - 1, week, week + 1].map((each) => deriveWeekMailboxId(group.secret, each));
 }
 
 /** The group `groupId` on `device`. */
