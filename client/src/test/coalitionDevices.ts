@@ -3,17 +3,19 @@
  * up through the app's own actions. Ana founds Riverside Tenants, Ben founds
  * Oak St Co-op, and Cy joins both; Ana makes a card, which Cy opens.
  */
-import { cleanup } from '@testing-library/react';
-
 import { createGroup, joinGroup, lookupInvite, makeInvite } from '../app/actions';
 import { parseInviteLink } from '../app/invite';
 import { castBallot } from '../app/proposals';
 import { lookupCard, makeCard, postCard } from '../app/reconcile';
 import { parseCardLink } from '../coalition/card';
 import type { Score } from '../engine/event';
+import { LEVELS } from '../engine/capabilities';
 import { fold, type GroupState } from '../engine/fold';
 import { TEST_NOW, type TestDevice, testDevice } from './appServices';
 import type { FakeRelay } from './fakeRelay';
+
+/** The creating level, so every person here may propose and bring cards. */
+const [, , CREATING] = LEVELS;
 
 /** Several devices syncing in turn: these tests run longer than one device's. */
 export const SLOW = { timeout: 30_000 };
@@ -21,9 +23,8 @@ export const SLOW = { timeout: 30_000 };
 /** The devices a test opened, in order: `syncAll` syncs them, `closeAll` closes them. */
 const devices: TestDevice[] = [];
 
-/** Unmounts any app and closes every device a test opened. */
+/** Closes every device a test opened; a test unmounts its own app first. */
 export function closeAll(): void {
-  cleanup();
   for (const device of devices.splice(0)) device.services.store.close();
   window.history.replaceState(null, '', '#/');
 }
@@ -59,7 +60,7 @@ export async function join(from: TestDevice, groupId: string, device: TestDevice
   if (seed === null) throw new Error('Expected an invite link.');
   const lookup = await lookupInvite(device.services, seed);
   if (lookup.kind !== 'found') throw new Error('Expected the invite to open.');
-  await joinGroup(device.services, lookup.group, name, 'co-creator');
+  await joinGroup(device.services, lookup.group, name, CREATING);
   await device.services.sync.syncOnce();
 }
 

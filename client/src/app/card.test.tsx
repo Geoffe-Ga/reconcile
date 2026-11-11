@@ -4,7 +4,7 @@
  * sees of it all: no coalition secret, `inner`, seat secret or seed outside
  * `#`, in any request, in any spelling.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -32,7 +32,11 @@ import { bringCard } from './reconcile';
 
 freshIndexedDBPerTest();
 
-afterEach(closeAll);
+afterEach(() => {
+  // Unmount any app before its device's store closes.
+  cleanup();
+  closeAll();
+});
 
 /** Opens `hash` in `device`'s app, as following a link would. */
 function opening(device: TestDevice, hash: string): void {

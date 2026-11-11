@@ -34,7 +34,11 @@ import { admitCard, bringCard, lookupCard, postCard, takePart } from './reconcil
 
 freshIndexedDBPerTest();
 
-afterEach(closeAll);
+afterEach(() => {
+  // Unmount any app before its device's store closes.
+  cleanup();
+  closeAll();
+});
 
 /** Riverside and Oak St, reconciled into Eastside Housing: both groups passed. */
 async function formed(fake: FakeRelay) {

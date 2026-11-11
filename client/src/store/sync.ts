@@ -304,6 +304,8 @@ export function createSync(options: SyncOptions): Sync {
   let reachable = true;
   let halted = false;
   let inFlight: Promise<boolean> | null = null;
+  // Each group as the coalitions' part of a pass last read it (#114), so an unchanged one isn't folded again.
+  const scanned = new Map<string, string>();
 
   /**
    * Post the group's current outbox in order; an entry leaves only once the
@@ -524,7 +526,7 @@ export function createSync(options: SyncOptions): Sync {
    * and sends what that queued at once.
    */
   async function syncCoalitions(): Promise<boolean> {
-    await ensureEntries(store);
+    await ensureEntries(store, scanned);
     const ok = await each(await store.listCoalitions(), syncGroup);
     if (!ok || halted) return ok;
     const queued = await settleCoalitions(store, clock);

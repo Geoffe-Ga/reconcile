@@ -5,7 +5,7 @@
  * result doesn't match their vote, and the coalition counts the contested
  * seat as a fail.
  */
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
@@ -34,7 +34,11 @@ import { bringCard } from './reconcile';
 
 freshIndexedDBPerTest();
 
-afterEach(closeAll);
+afterEach(() => {
+  // Unmount any app before its device's store closes.
+  cleanup();
+  closeAll();
+});
 
 /** Riverside's reconcile seat, its secret and public key, as Riverside's own log holds them. */
 async function riversideSeat(ana: TestDevice, riverside: string) {

@@ -79,21 +79,34 @@ export function newEntry(
   };
 }
 
+/** What {@link ensureEntries} last read of a group: its log's and outbox's lengths. */
+function readMark(group: Pick<Group, 'log' | 'outbox'>): string {
+  return `${String(group.log.length)}/${String(group.outbox.length)}`;
+}
+
 /**
  * Keeps an entry for each coalition secret a group on the device holds, in
  * its log or its outbox, that has none yet. Another tab may make the same
- * entry first: then the device keeps that one.
+ * entry first: then the device keeps that one. `read` remembers each group as
+ * this last read it, by its id, so a group that hasn't changed since isn't
+ * folded again; the sync loop keeps one for its life.
  */
-export async function ensureEntries(store: Store): Promise<void> {
+export async function ensureEntries(
+  store: Store,
+  read: Map<string, string> = new Map(),
+): Promise<void> {
   const held = new Set((await store.listCoalitions()).map((entry) => entry.groupId));
   for (const group of await store.listGroups()) {
+    const mark = readMark(group);
+    if (read.get(group.groupId) === mark) continue;
     const secrets = [...heldSecrets(foldGroup(group)), ...queuedSecrets(group)];
-    for (const secret of secrets) {
-      const entry = newEntry(fromBase64url(secret));
-      if (held.has(entry.groupId)) continue;
+    for (const secret of secrets.map(fromBase64url)) {
+      if (held.has(deriveCoalitionEntryId(secret))) continue;
+      const entry = newEntry(secret);
       held.add(entry.groupId);
       await store.addGroup(entry).catch(() => undefined);
     }
+    read.set(group.groupId, mark);
   }
 }
 
@@ -276,6 +289,7 @@ function parsedOf(outbox: readonly Uint8Array[]): ParsedEvent[] {
  */
 export async function settleCoalitions(store: Store, clock: () => number): Promise<string[]> {
   const coalitions = await heldCoalitions(store);
+  if (coalitions.length === 0) return [];
   const groups = (await store.listGroups())
     .filter((group) => group.archived === undefined && group.leaving === undefined)
     .map((group) => ({ group, state: foldGroup(group) }));
