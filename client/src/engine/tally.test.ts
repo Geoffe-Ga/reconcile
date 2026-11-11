@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { type Bar, DEFAULT_RULES } from './rules';
-import { tally, tallyDetail, type TallyInput } from './tally';
+import { rank, tally, tallyDetail, type TallyInput } from './tally';
 
 const ORDINARY = DEFAULT_RULES.bars.ordinary;
 const ENTRENCHED = DEFAULT_RULES.bars.entrenched;
@@ -537,5 +537,76 @@ describe('tallyDetail: what the consent meter reads (#74)', () => {
         },
       ),
     );
+  });
+});
+
+describe('rank: the passing options, best first (#107; ADR-0004)', () => {
+  /** The ids `rank` gives at the ordinary bar. */
+  function ranked(input: Omit<TallyInput, 'bar'>): string[] {
+    return rank({ ...input, bar: ORDINARY }).map((option) => option.id);
+  }
+
+  it('ranks the issue’s example: A and B tie on average and zeros, so A comes first', () => {
+    const input = {
+      eligible: 10,
+      versions: [
+        { id: 'A', scores: [3, 3, 4, 2] },
+        { id: 'B', scores: [3, 3, 3, 3] },
+        { id: 'C', scores: [4, 4] },
+        { id: 'D', scores: [4, 0, 1] },
+      ],
+    };
+    expect(ranked(input)).toEqual(['A', 'B']);
+    expect(ordinary(input)).toEqual({ kind: 'pass', version: 'A' });
+  });
+
+  it('puts the higher average first, whatever the ballot order', () => {
+    const input = {
+      eligible: 3,
+      versions: [
+        { id: 'low', scores: [2, 2, 2] },
+        { id: 'high', scores: [4, 4, 3] },
+        { id: 'mid', scores: [3, 3, 2] },
+      ],
+    };
+    expect(ranked(input)).toEqual(['high', 'mid', 'low']);
+  });
+
+  it('breaks an equal average by fewer zeros, then by the earlier option', () => {
+    // All three average 40/11. One 0 among 11 is 9%, under the floor's 10%.
+    const input = {
+      eligible: 11,
+      versions: [
+        { id: 'one-zero', scores: [0, ...many(10, 4)] },
+        { id: 'no-zeros', scores: [...many(7, 4), ...many(4, 3)] },
+        { id: 'no-zeros-later', scores: [...many(4, 3), ...many(7, 4)] },
+      ],
+    };
+    expect(ranked(input)).toEqual(['no-zeros', 'no-zeros-later', 'one-zero']);
+  });
+
+  it('keeps every passing option, and only those, with the winner first', () => {
+    const input = {
+      eligible: 4,
+      versions: [
+        { id: 'fails', scores: [1, 1, 1, 1] },
+        { id: 'second', scores: [3, 3, 3, 3] },
+        { id: 'below-quorum', scores: [4, 4] },
+        { id: 'first', scores: [4, 4, 4, 3] },
+      ],
+    };
+    expect(ranked(input)).toEqual(['first', 'second']);
+    expect(ordinary(input)).toEqual({ kind: 'pass', version: 'first' });
+  });
+
+  it('is empty when nothing passes, as on a fail or a lapse', () => {
+    expect(ranked({ eligible: 3, versions: [{ id: 'v1', scores: [1, 1, 1] }] })).toEqual([]);
+    expect(ranked({ eligible: 3, versions: [{ id: 'v1', scores: [4] }] })).toEqual([]);
+    expect(ranked({ eligible: 3, versions: [] })).toEqual([]);
+  });
+
+  it('gives each ranked option its numbers and flags, as tallyDetail does', () => {
+    const input = { eligible: 3, versions: [{ id: 'v1', scores: [2, 3, 4] }], bar: ORDINARY };
+    expect(rank(input)).toEqual(tallyDetail(input).versions);
   });
 });
