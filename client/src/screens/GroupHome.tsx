@@ -144,6 +144,8 @@ interface OpenListsProps {
   readonly groupId: string;
   /** What goes right under Needs your vote: the current focus (#107). */
   readonly children?: ReactNode;
+  /** What goes right after the last list of open Proposals: the backup card (#78). */
+  readonly after?: ReactNode;
   /** What waits on this person; nothing while they're leaving. */
   readonly needsYourVote: readonly Proposal[];
   /** The other open Proposals, or every open one while they're leaving. */
@@ -152,13 +154,19 @@ interface OpenListsProps {
 }
 
 /**
- * 'Needs your vote', when anything waits on this person, then the other open
- * Proposals: "Open Proposals", or "Other open Proposals" after it. With none
- * open, one line says so.
+ * 'Needs your vote', when anything waits on this person, then the current
+ * focus (#107), then the other open Proposals: "Open Proposals", or "Other
+ * open Proposals" after it. With none open, one line says so. `after`, the
+ * backup card (#78), follows the last list of Proposals, so it sits under
+ * Needs your vote, ahead of the focus, when nothing else is open.
  */
-function OpenLists({ groupId, needsYourVote, otherOpen, now, children }: OpenListsProps) {
+function OpenLists(props: OpenListsProps) {
+  const { groupId, needsYourVote, otherOpen, now, children, after } = props;
   const { home } = messages;
   const waits = needsYourVote.length > 0;
+  const others = otherOpen.length > 0;
+  // Needs your vote is the last list when nothing else is open.
+  const lastIsWaits = waits && !others;
   return (
     <>
       {waits ? (
@@ -166,17 +174,19 @@ function OpenLists({ groupId, needsYourVote, otherOpen, now, children }: OpenLis
           <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} />
         </Section>
       ) : null}
+      {lastIsWaits ? after : null}
       {children}
-      {otherOpen.length > 0 ? (
+      {others ? (
         <Section title={waits ? home.otherOpen : home.openProposals}>
           <ProposalCards groupId={groupId} proposals={otherOpen} now={now} />
         </Section>
       ) : null}
-      {waits || otherOpen.length > 0 ? null : (
+      {waits || others ? null : (
         <Section title={home.openProposals}>
           <p>{home.noProposals}</p>
         </Section>
       )}
+      {lastIsWaits ? null : after}
     </>
   );
 }
@@ -847,6 +857,8 @@ interface OpenSectionsProps {
   readonly leaving: boolean;
   /** The current focus (#107), right under Needs your vote. */
   readonly children: ReactNode;
+  /** The backup card (#78), after the open Proposals; none in a dissolved group. */
+  readonly after: ReactNode;
 }
 
 /**
@@ -854,7 +866,8 @@ interface OpenSectionsProps {
  * or every one together while this member leaves. In a dissolved group, those
  * still open when it dissolved, as closed (#108), then the focus it had.
  */
-function OpenSections({ groupId, state, lists, now, leaving, children }: OpenSectionsProps) {
+function OpenSections(props: OpenSectionsProps) {
+  const { groupId, state, lists, now, leaving, children, after } = props;
   if (state.dissolved !== null) {
     return (
       <>
@@ -869,6 +882,7 @@ function OpenSections({ groupId, state, lists, now, leaving, children }: OpenSec
       needsYourVote={leaving ? [] : lists.needsYourVote}
       otherOpen={leaving ? lists.open : lists.otherOpen}
       now={now}
+      after={after}
     >
       {children}
     </OpenLists>
@@ -916,11 +930,17 @@ export function GroupHome(props: GroupHomeProps) {
       {readOnly ? null : <WaitingNote state={state} me={me} />}
       <div className="sections">
         {leads ? news : null}
-        <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving}>
+        <OpenSections
+          groupId={groupId}
+          state={state}
+          lists={lists}
+          now={now}
+          leaving={leaving}
+          // No backup file carries a dissolved group's read-only copy, so none is suggested (#108).
+          after={dissolved === null ? props.backupCard : null}
+        >
           <Focus state={state} me={me} readOnly={readOnly} />
         </OpenSections>
-        {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
-        {dissolved === null ? props.backupCard : null}
         {leads ? null : news}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
