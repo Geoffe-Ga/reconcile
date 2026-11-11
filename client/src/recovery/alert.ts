@@ -82,8 +82,38 @@ function answerable(group: Group, state: GroupState): boolean {
   return group.archived === undefined && group.leaving === undefined && present;
 }
 
-/** The alerts in `group` that open for this device, ended or not. */
+/**
+ * What each group's alerts were last read from, by member and group: a key
+ * of its log's length, seqs and receipts, its outbox and its state on this
+ * device, and the alerts found. Every sync pass changes the store, most with
+ * nothing new, so Start and every group home refold a group only once its
+ * key moves.
+ */
+const lastRead = new Map<string, { readonly key: string; readonly alerts: SeenAlert[] }>();
+
+/** What `group`'s alerts depend on, cheaply: no signature or fold is needed to compute it. */
+function readKey(group: Group): string {
+  const seqs = group.log.reduce((sum, record) => sum + record.seq, 0);
+  const receipts = group.log.reduce((sum, record) => sum + record.received, 0);
+  const outbox = group.outbox.reduce((sum, bytes) => sum + bytes.length, 0);
+  const flags = `${String(group.archived !== undefined)} ${String(group.leaving !== undefined)}`;
+  const counts = `${String(group.log.length)} ${String(group.outbox.length)} ${String(outbox)}`;
+  return `${counts} ${String(seqs)} ${String(receipts)} ${flags}`;
+}
+
+/** The alerts in `group` that open for this device, ended or not: read again only when it changed. */
 function alertsIn(group: Group): SeenAlert[] {
+  const id = `${group.me.author} ${group.groupId}`;
+  const key = readKey(group);
+  const held = lastRead.get(id);
+  if (held?.key === key) return held.alerts;
+  const alerts = foldAlerts(group);
+  lastRead.set(id, { key, alerts });
+  return alerts;
+}
+
+/** The alerts in `group` that open for this device, ended or not, from its fold. */
+function foldAlerts(group: Group): SeenAlert[] {
   const { kxKey } = group;
   if (kxKey === undefined) return [];
   const state = foldGroup(group);

@@ -120,6 +120,31 @@ describe('the alert on the person’s devices', DEVICES, () => {
     expect(alertSummary([])).toBeNull();
   });
 
+  it('reads each group again only when its log or outbox changes, and then sees what changed', async () => {
+    const fake = createFakeRelay();
+    const world = await recoveryWorld(fake);
+    opened.push(...world.devices);
+    const { ana, ben, groupId } = world;
+    expect(await alertsOn(ana)).toEqual([]);
+    const code = recoveryCode(newRecoveryKeys());
+    const person = await keyOf(ana, groupId);
+    await approveRecovery(ben.services, { code, groupId, person, check: recoveryCheck(code) });
+    await ana.services.sync.syncOnce();
+    const [first] = await alertsOn(ana);
+    expect(first).toBeDefined();
+    // The same group read again, with nothing new, answers the same.
+    expect(await alertsOn(ana)).toEqual([first]);
+
+    // A receipt moved in the stored log is read again, though the log is as long.
+    const group = await groupOn(ana, groupId);
+    const moved = {
+      ...group,
+      log: group.log.map((record) => ({ ...record, received: record.received - 60 })),
+    };
+    const [again] = recoveryAlerts([moved], () => 0);
+    expect(again?.completes).toBe((first?.completes ?? 0) - 60);
+  });
+
   it('shows until the hold ends, then goes, and a new alert after a cancel shows again', async () => {
     const fake = createFakeRelay();
     const world = await recoveryWorld(fake);
