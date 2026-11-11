@@ -108,7 +108,10 @@
  * its secret makes (#224), moves the group to the new epoch's mailboxes, in
  * the same store change, and they are read at once, from the key change's
  * seq. The old epoch's are read no more, so whatever reaches any week of them
- * after the key change stays ignored. A pull that brings a key change that
+ * after the key change stays ignored; the move posts again there this
+ * member's records that did, and every leave that did (#225), whoever wrote
+ * it, so a leave that raced the key change still ends a membership on every
+ * device. A pull that brings a key change that
  * doesn't check out queues an `unwrap-failed` naming it, which the next pass
  * posts to the old epoch's mailbox; once it folds, the key change is refused,
  * one is due again, and its author may write no other (#224). A member with
