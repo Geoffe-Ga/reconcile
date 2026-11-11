@@ -17,8 +17,10 @@ import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorke
 import { botNotice } from './app/chatMessages';
 import { openDeviceLock, passkeyOn, whenOpen } from './app/passkey';
 import { Root } from './app/Root';
+import { parseRoute } from './app/router';
 import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
+import { SharedRoot } from './app/SharedRoot';
 import { xchachaSeal } from './crypto/seal';
 import { postWebhook } from './net/discord';
 import { createPushRelay } from './net/push';
@@ -35,7 +37,9 @@ import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
 import { createPush } from './store/push';
 import { refreshRelayBackup } from './store/relayBackup';
+import { sweepArchives } from './store/archive';
 import { createSync } from './store/sync';
+import { keepSharesAlive } from './share/shareLink';
 
 const root = document.getElementById('root');
 if (root === null) {
@@ -53,9 +57,13 @@ if (root === null) {
  * app closes its notifications whenever it comes to the front. After each
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
- * key (#97). A device whose keys are locked with a passkey (#95) sweeps and
- * syncs, and so refreshes the relay backup, only once the passkey unlocks
- * them (`openDeviceLock`); the relying party is this host.
+ * key (#97). Each launch also posts again any shared personal Document whose
+ * link is due a fresh copy or has an edit waiting (#105). That runs beside the
+ * sync loop, not in its pass: a share has its own mailbox and keys, so no
+ * group's key change or freeze touches it. A device whose keys are locked
+ * with a passkey (#95) sweeps, syncs, and so refreshes the relay backup, and
+ * posts shares only once the passkey unlocks them (`openDeviceLock`); the
+ * relying party is this host.
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
@@ -72,8 +80,12 @@ async function start(container: HTMLElement): Promise<void> {
   const credentials = browserCredentials();
   const webauthn = credentials === undefined ? undefined : webAuthn(credentials);
   const keys = { store, webauthn, platform, rpId: window.location.hostname };
-  // The archive sweep, then the sync loop: at once, or once the passkey unlocks the keys.
-  const lock = await openDeviceLock({ ...keys, open: whenOpen(store, sync) });
+  const shares = () => keepSharesAlive({ store, relay, seal: xchachaSeal, now });
+  // The archive sweep, the sync loop and the shares: at once, or once the passkey unlocks the keys.
+  const lock = await openDeviceLock({
+    ...keys,
+    open: whenOpen(store, sync, sweepArchives, shares),
+  });
   const services = {
     store,
     relay,
@@ -103,10 +115,29 @@ async function start(container: HTMLElement): Promise<void> {
   );
 }
 
-void start(root);
+/**
+ * A share link opened fresh (#105) gets its page alone: no store, sync, keys
+ * or service worker, so a reader's browser keeps nothing of Reconcile's.
+ */
+function startShared(container: HTMLElement): void {
+  const reader = { relay: createRelay(), seal: xchachaSeal };
+  const reload = () => {
+    window.location.reload();
+  };
+  createRoot(container).render(
+    <StrictMode>
+      <SharedRoot reader={reader} reload={reload} />
+    </StrictMode>,
+  );
+}
 
-registerServiceWorker({
-  production: import.meta.env.PROD,
-  container: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
-  afterLoad,
-});
+if (parseRoute(window.location.hash).name === 'shared') {
+  startShared(root);
+} else {
+  void start(root);
+  registerServiceWorker({
+    production: import.meta.env.PROD,
+    container: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+    afterLoad,
+  });
+}

@@ -315,4 +315,23 @@ describe('whenOpen', () => {
     await expect(afterPass.mock.results[0]?.value).resolves.toBeUndefined();
     expect(refreshed[0]).toEqual(local(backupKey));
   });
+  it('posts due shares (#105) only once the passkey unlocks the keys, after sync starts, and shrugs off a failure', async () => {
+    const { store, authenticator } = await lockedDevice();
+    const order: string[] = [];
+    const sync = { start: vi.fn(() => order.push('sync')) };
+    const shares = vi.fn(() => {
+      order.push('shares');
+      return Promise.reject(new Error('offline'));
+    });
+    const lock = await openDeviceLock({
+      ...deps(store, authenticator.calls),
+      open: whenOpen(store, sync, () => Promise.resolve(), shares),
+    });
+
+    expect(shares).not.toHaveBeenCalled();
+    expect(await lock.unlock()).toBe(true);
+
+    expect(order).toEqual(['sync', 'shares']);
+    await expect(shares.mock.results[0]?.value).rejects.toThrow('offline');
+  });
 });

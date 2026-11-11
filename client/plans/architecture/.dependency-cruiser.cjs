@@ -10,9 +10,9 @@ module.exports = {
     {
       name: 'core-stays-framework-free',
       comment:
-        'engine/, crypto/, store/, invite/ and link/ are plain TypeScript so they outlive any UI framework and can be tested against protocol vectors.',
+        'engine/, crypto/, store/, invite/, link/ and share/ are plain TypeScript so they outlive any UI framework and can be tested against protocol vectors.',
       severity: 'error',
-      from: { path: '^src/(engine|crypto|store|invite|link)/' },
+      from: { path: '^src/(engine|crypto|store|invite|link|share)/' },
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {

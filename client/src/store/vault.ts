@@ -13,10 +13,12 @@
  * Today that is each group's secret (its current epoch's, #98), signing key
  * and, once it has one, its X25519 encryption key (#98), and the device's
  * relay backup key (#97) once it keeps one. #97 landed before the vault
- * shipped, so format 1 holds its key, as an optional field. Later secrets
- * (#105's share seeds and keys, the recovery shares this device holds for
- * others, #109) join them here under a new format number, so the vault keeps
- * covering every secret. Each plaintext is zeroed once sealed or read.
+ * shipped, so format 1 holds its key, as an optional field. Not yet a shared
+ * personal Document's seed and signing key (#105), which stay on its record
+ * until a follow-up seals them. Later secrets (those, and the recovery
+ * shares this device holds for others, #109) join them here under a new
+ * format number, so the vault comes to cover every secret. Each plaintext is
+ * zeroed once sealed or read.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { openVault, sealVault } from '../crypto/keyVault';

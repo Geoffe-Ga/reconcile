@@ -7,19 +7,20 @@
  * it once for PRF output on a fresh 32-byte salt. That second answer decides,
  * once: the keys are sealed only when it is 32 bytes, the user was verified,
  * and `prfTrusted` holds for this device (`platform/prfPolicy.ts`). Then the
- * vault key derives from it (`crypto/keyVault.ts`) and the store seals every
- * secret under it, deleting the plain copies in the same transaction.
+ * vault key derives from it (`crypto/keyVault.ts`) and the store seals the
+ * device's keys under it (`Store.sealKeys`), deleting the plain copies in the
+ * same transaction.
  * Otherwise nothing is sealed and the keys stay as they are. Either way the
  * PRF output is zeroed.
  *
  * **Launch** ({@link openDeviceLock}): a device whose keys aren't locked
- * opens at once: the dissolved archives' sweep (#108), then the sync loop
- * ({@link whenOpen}). One whose keys are locked starts nothing until
- * {@link DeviceLock.unlock} gets PRF output from the same passkey and the
- * store's vault opens under the key it derives; the key then stays in the
- * store's memory for the session. A failed unlock writes nothing and never
- * seals anything again under another key. Restore puts a backup file's
- * groups in place of the locked ones.
+ * opens at once: the dissolved archives' sweep (#108), then the sync loop,
+ * then posting shares that are due (#105) ({@link whenOpen}). One whose keys
+ * are locked starts nothing until {@link DeviceLock.unlock} gets PRF output
+ * from the same passkey and the store's vault opens under the key it
+ * derives; the key then stays in the store's memory for the session. A
+ * failed unlock writes nothing and never seals anything again under another
+ * key. Restore puts a backup file's groups in place of the locked ones.
  *
  * Nothing here reaches the network, and the relay hears nothing about
  * passkeys: the password manager sees only the app's host and "Reconcile key".
@@ -63,8 +64,8 @@ export interface Passkey {
    */
   create(): Promise<Uint8Array>;
   /**
-   * Tap 2: asks the passkey once for PRF output, and seals every secret on
-   * the device when it qualifies.
+   * Tap 2: asks the passkey once for PRF output, and seals the device's keys
+   * (`Store.sealKeys`) when it qualifies.
    *
    * @throws {PasskeyUnanswered} when the passkey didn't answer; nothing changes.
    */
@@ -152,17 +153,22 @@ async function unlockVault(deps: PasskeyDeps): Promise<boolean> {
 
 /**
  * What starts once this device's keys are open (#95): the dissolved
- * archives' sweep (#108), whose reads need the keys, then the sync loop. A
- * sweep that fails tries again at the next launch, and sync starts either way.
+ * archives' sweep (#108), whose reads need the keys, then the sync loop, then
+ * `shares`, which posts each shared personal Document due a fresh copy
+ * (#105), signed with the share's own key. A sweep that fails tries again at
+ * the next launch, and sync starts either way; a share whose post fails
+ * stays pending, and the next launch tries again.
  */
 export function whenOpen(
   store: Store,
   sync: Pick<Sync, 'start'>,
   sweep: (store: Store) => Promise<void> = sweepArchives,
+  shares: () => Promise<unknown> = () => Promise.resolve(),
 ): () => Promise<void> {
   return async () => {
     await sweep(store).catch(() => undefined);
     sync.start();
+    void shares().catch(() => undefined);
   };
 }
 

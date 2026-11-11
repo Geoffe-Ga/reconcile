@@ -3,7 +3,7 @@
  * pilot notice, an iPhone browser tab gets none at all, and an invite link,
  * opened or pasted, reaches the same preview.
  */
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +15,7 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { sharePayloadOf, startSharing } from '../share/shareLink';
 import { createGroup, makeInvite } from './actions';
 import { messages } from './messages';
 import { Root } from './Root';
@@ -193,5 +194,50 @@ describe('Root', () => {
     const { user } = renderRoot(ben);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(await screen.findByText(messages.start.mayClear)).toBeVisible();
+  });
+
+  it.each([
+    ['a desktop browser before the notice', DESKTOP],
+    ['an iPhone browser tab, behind the install gate', IPHONE_TAB],
+  ])('opens a share link in %s, outside first run, making no key', async (_name, platform) => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const id = 'U2hhcmVkIHN0YXRlbWVudA';
+    await ana.services.store.savePersonal({
+      id,
+      title: 'What I stand for',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const started = await startSharing(ana.services, id);
+    if (started.kind !== 'shared') throw new Error('Expected a share.');
+    const reader = await device(fake, 'reader');
+    keysMade.mockClear();
+    window.history.replaceState(null, '', `/#share/${sharePayloadOf(started.link)}`);
+    renderRoot(reader, platform);
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What I stand for' }),
+    ).toBeVisible();
+    expect(screen.getByText(messages.shared.note)).toBeVisible();
+    expect(screen.queryByRole('button', { name: messages.notice.accept })).not.toBeInTheDocument();
+    expect(keysMade).not.toHaveBeenCalled();
+    expect(await reader.services.store.listPersonal()).toEqual([]);
+    expect(window.location.hash).toBe(`#share/${sharePayloadOf(started.link)}`);
+  });
+
+  it('goes back to first run when the address leaves the share link', async () => {
+    const ben = await device(createFakeRelay(), 'ben');
+    window.history.replaceState(null, '', '/#share/damaged');
+    renderRoot(ben);
+    expect(await screen.findByText(messages.shared.gone)).toBeVisible();
+
+    act(() => {
+      window.history.pushState(null, '', '/#/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    expect(screen.getByRole('heading', { level: 1, name: messages.notice.title })).toBeVisible();
   });
 });

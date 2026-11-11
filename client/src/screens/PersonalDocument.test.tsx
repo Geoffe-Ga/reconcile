@@ -8,7 +8,15 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { messages } from '../app/messages';
+import { personalSharing } from '../app/personalSharing';
+import { xchachaSeal } from '../crypto/seal';
+import { shareChannelOf } from '../crypto/share';
+import { MAX_RECORD_BYTES } from '../crypto/record';
+import { createRelay } from '../net/relay';
+import { parseShareLink, readShare, startSharing } from '../share/shareLink';
 import { axeViolations } from '../test/axe';
+import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { openStore, type Store } from '../store/db';
 import type { PersonalDocument as Stored } from '../store/personal';
@@ -30,13 +38,34 @@ const STATEMENT: Stored = {
 
 let store: Store;
 let clock: number;
+let relay: FakeRelay;
+let copied: string[];
 const fetchSpy = vi.fn(() => Promise.reject(new Error('No network for personal Documents.')));
+const ORIGIN = 'https://reconcile.test';
 
 beforeEach(async () => {
   store = await openStore();
   clock = NOW;
+  relay = createFakeRelay();
+  copied = [];
   vi.stubGlobal('fetch', fetchSpy);
 });
+
+/** Sharing by link on the test's store and fake relay: no Web Share, so a link is copied. */
+function sharing() {
+  return personalSharing({
+    store,
+    relay: createRelay({ fetch: relay.fetch }),
+    seal: xchachaSeal,
+    now: () => clock,
+    origin: ORIGIN,
+    share: undefined,
+    copyText: async (copiedText: string) => {
+      copied.push(copiedText);
+      await Promise.resolve();
+    },
+  });
+}
 
 afterEach(() => {
   store.close();
@@ -46,7 +75,13 @@ afterEach(() => {
 /** Renders the editor for `id` on the test's store, as `#/me/{id}` does. */
 function open(id = ID, onDeleted = vi.fn()) {
   const view = render(
-    <PersonalDocument id={id} documents={store} now={() => clock} onDeleted={onDeleted} />,
+    <PersonalDocument
+      id={id}
+      documents={store}
+      now={() => clock}
+      onDeleted={onDeleted}
+      sharing={sharing()}
+    />,
   );
   return { ...view, onDeleted, user: userEvent.setup() };
 }
@@ -81,8 +116,9 @@ describe('PersonalDocument', () => {
 
     await user.type(text(), 'I show up for my neighbors.');
 
-    expect(await saved()).toBeVisible();
-    expect(screen.getByRole('status')).toHaveTextContent('Saved on this device.');
+    const line = await saved();
+    expect(line).toBeVisible();
+    expect(line).toHaveAttribute('role', 'status');
     expect(await store.listPersonal()).toEqual([
       {
         id: ID,
@@ -303,7 +339,13 @@ describe('PersonalDocument', () => {
     const user = userEvent.setup();
     const onDeleted = vi.fn();
     render(
-      <PersonalDocument id={ID} documents={failing} now={() => clock} onDeleted={onDeleted} />,
+      <PersonalDocument
+        id={ID}
+        documents={failing}
+        now={() => clock}
+        onDeleted={onDeleted}
+        sharing={sharing()}
+      />,
     );
     await user.type(await screen.findByRole('textbox', { name: 'Text' }), ' Kept.');
 
@@ -330,7 +372,15 @@ describe('PersonalDocument', () => {
       .mockImplementation((document) => store.savePersonal(document));
     const flaky = Object.assign(Object.create(store) as Store, { savePersonal });
     const user = userEvent.setup();
-    render(<PersonalDocument id={ID} documents={flaky} now={() => clock} onDeleted={vi.fn()} />);
+    render(
+      <PersonalDocument
+        id={ID}
+        documents={flaky}
+        now={() => clock}
+        onDeleted={vi.fn()}
+        sharing={sharing()}
+      />,
+    );
     const box = await screen.findByRole('textbox', { name: 'Text' });
 
     await user.type(box, ' One.');
@@ -354,7 +404,13 @@ describe('PersonalDocument', () => {
       listPersonal: () => Promise.reject(new Error('IndexedDB refused.')),
     });
     render(
-      <PersonalDocument id={ID} documents={unreadable} now={() => clock} onDeleted={vi.fn()} />,
+      <PersonalDocument
+        id={ID}
+        documents={unreadable}
+        now={() => clock}
+        onDeleted={vi.fn()}
+        sharing={sharing()}
+      />,
     );
 
     expect(
@@ -396,5 +452,286 @@ describe('PersonalDocument', () => {
 
     expect(onDeleted).toHaveBeenCalledOnce();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+/** What anyone holding `link` reads now. */
+async function linkShows(link: string) {
+  const parsed = parseShareLink(link);
+  if (parsed === null) throw new Error('Expected a share link.');
+  return readShare({ relay: createRelay({ fetch: relay.fetch }), seal: xchachaSeal }, parsed);
+}
+
+/** The share section, once the Document's stored state is read. */
+const shareSection = () => screen.findByRole('region', { name: messages.personal.share.heading });
+
+/** The link field's value. */
+const linkField = () =>
+  screen.getByRole<HTMLInputElement>('textbox', { name: messages.personal.share.field });
+
+describe('PersonalDocument, shared by link (#105)', () => {
+  const { share } = messages.personal;
+
+  it('offers Share link only once the Document is saved, off, with what the link and the relay show', async () => {
+    await store.savePersonal(STATEMENT);
+    open();
+
+    const section = await shareSection();
+    expect(within(section).getByText(share.about)).toBeVisible();
+    expect(within(section).getByText(share.relay)).toBeVisible();
+    const start = within(section).getByRole('button', { name: share.start });
+    expect(start).toHaveAccessibleDescription(`${share.about} ${share.relay}`);
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+    expect(relay.requests).toEqual([]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no share for a Document never saved', async () => {
+    open();
+    await screen.findByRole('textbox', { name: 'Text' });
+
+    expect(screen.queryByRole('region', { name: share.heading })).not.toBeInTheDocument();
+  });
+
+  it('posts the first copy, then copies the link with fixed words only, and shows it beside its warning', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+
+    expect(await screen.findByText(share.copied)).toBeVisible();
+    const link = linkField().value;
+    expect(link).toMatch(/^https:\/\/reconcile\.test\/#share\/[\w-]{43}\.[\w-]{43}$/);
+    expect(copied).toEqual([`${share.message} ${link}`]);
+    expect(copied[0]).not.toContain('mission');
+    expect(linkField()).toHaveAccessibleDescription(share.warning);
+    expect(screen.getByText(share.edits)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.stop })).toBeVisible();
+    expect(screen.getByText(messages.personal.sharedPrivacy)).toBeVisible();
+    expect(screen.queryByText(messages.personal.documentPrivacy)).not.toBeInTheDocument();
+    expect(await linkShows(link)).toEqual({
+      kind: 'shown',
+      title: STATEMENT.title,
+      text: STATEMENT.text,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: share.shareAgain }));
+    await vi.waitFor(() => {
+      expect(copied).toHaveLength(2);
+    });
+    expect(relay.requests.filter(({ method }) => method === 'PUT')).toHaveLength(1);
+  });
+
+  it('saves what was just typed before it shares, so the link shows it', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    const section = await shareSection();
+    await user.clear(text());
+    await user.type(text(), 'Typed just now.');
+
+    await user.click(within(section).getByRole('button', { name: share.start }));
+
+    await screen.findByText(share.copied);
+    expect(await linkShows(linkField().value)).toEqual({
+      kind: 'shown',
+      title: STATEMENT.title,
+      text: 'Typed just now.\n',
+    });
+  });
+
+  it('says so, shares nothing and copies nothing, when the relay can’t be reached', async () => {
+    await store.savePersonal(STATEMENT);
+    relay.offline = true;
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+
+    expect(await screen.findByText(share.startFailed)).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: share.field })).not.toBeInTheDocument();
+    expect(copied).toEqual([]);
+    expect((await store.getPersonal(ID))?.share).toBeUndefined();
+  });
+
+  it('refuses a Document too long to share, with the message tied to the button, and asks nothing of the relay', async () => {
+    await store.savePersonal({ ...STATEMENT, text: 'x'.repeat(MAX_RECORD_BYTES) });
+    const { user } = open();
+    const start = within(await shareSection()).getByRole('button', { name: share.start });
+
+    await user.click(start);
+
+    expect(await screen.findByText(share.tooLarge)).toBeVisible();
+    expect(start).toHaveAccessibleDescription(`${share.about} ${share.relay} ${share.tooLarge}`);
+    expect(relay.requests).toEqual([]);
+    expect(copied).toEqual([]);
+  });
+
+  it('opens a shared Document with its link, and says when an edit hasn’t reached it yet', async () => {
+    await store.savePersonal(STATEMENT);
+    const services = {
+      store,
+      relay: createRelay({ fetch: relay.fetch }),
+      seal: xchachaSeal,
+      now: () => clock,
+    };
+    await startSharing(services, ID);
+    await store.savePersonal({ ...STATEMENT, text: 'Edited, not posted.\n' });
+    open();
+
+    await shareSection();
+    expect(linkField().value).toMatch(/^https:\/\/reconcile\.test\/#share\//);
+    expect(screen.getByText(share.pending)).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('posts an edit once the editor closes, and nothing when nothing changed', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user, unmount } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    const link = linkField().value;
+    await user.clear(text());
+    await user.type(text(), 'Edited for the link.');
+
+    unmount();
+
+    await vi.waitFor(async () => {
+      expect(await linkShows(link)).toEqual({
+        kind: 'shown',
+        title: STATEMENT.title,
+        text: 'Edited for the link.\n',
+      });
+    });
+    expect((await store.getPersonal(ID))?.share?.pending).toBe(false);
+    const posts = relay.requests.filter(({ method }) => method === 'PUT').length;
+    open().unmount();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(relay.requests.filter(({ method }) => method === 'PUT')).toHaveLength(posts);
+  });
+
+  it('says when an edit has made it too long for its link', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+
+    await user.click(text());
+    await user.paste('x'.repeat(MAX_RECORD_BYTES));
+
+    expect(await screen.findByText(share.tooLargeShared)).toBeVisible();
+  });
+
+  it('Stop sharing posts a tombstone, says what it can’t recall, and Share link then makes a new link', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    const first = linkField().value;
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.stopped)).toBeVisible();
+    expect(await linkShows(first)).toEqual({ kind: 'gone' });
+    expect(screen.queryByRole('textbox', { name: share.field })).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    expect(linkField().value).not.toBe(first);
+  });
+
+  it('changes nothing when Stop sharing can’t reach the relay, and says so', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    const link = linkField().value;
+    relay.offline = true;
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.stopFailed)).toBeVisible();
+    expect(linkField()).toHaveValue(link);
+    relay.offline = false;
+    expect((await linkShows(link)).kind).toBe('shown');
+  });
+
+  it('stops sharing before it deletes a shared Document, and says so in the dialog', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user, onDeleted } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    const link = linkField().value;
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText(messages.personal.deleteShared)).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await vi.waitFor(() => {
+      expect(onDeleted).toHaveBeenCalledOnce();
+    });
+    expect(await linkShows(link)).toEqual({ kind: 'gone' });
+    expect(await store.listPersonal()).toEqual([]);
+  });
+
+  it('deletes nothing when sharing can’t be stopped first, and says why', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user, onDeleted } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    relay.offline = true;
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = screen.getByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(await within(dialog).findByText(messages.personal.deleteSharedFailed)).toBeVisible();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect((await store.getPersonal(ID))?.share).toBeDefined();
+  });
+
+  it('names the share mailbox to the relay and nothing of the Document', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    const parsed = parseShareLink(linkField().value);
+    if (parsed === null) throw new Error('Expected a link.');
+    const mailbox = shareChannelOf(parsed.seed).mailbox;
+
+    expect(relay.requests.map(({ method, url }) => `${method} ${url}`)).toEqual([
+      `GET /v1/mailbox/${mailbox}?after=0&limit=100`,
+      `PUT /v1/mailbox/${mailbox}?ttl_days=30`,
+    ]);
+  });
+
+  it('selects the whole link when its field takes focus', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+
+    await user.click(linkField());
+
+    const field = linkField();
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, field.value.length]);
+  });
+
+  it('offers Share link when the device can’t say whether the Document is shared', async () => {
+    await store.savePersonal(STATEMENT);
+    const unsure = { ...sharing(), read: () => Promise.reject(new Error('IndexedDB refused.')) };
+    render(
+      <PersonalDocument
+        id={ID}
+        documents={store}
+        now={() => clock}
+        onDeleted={vi.fn()}
+        sharing={unsure}
+      />,
+    );
+
+    expect(within(await shareSection()).getByRole('button', { name: share.start })).toBeVisible();
   });
 });

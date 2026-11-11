@@ -14,6 +14,8 @@ import { BACKUP_SEAL_INFO, backupIdFor, openRelayBackup } from '../crypto/relayB
 import { sha256 } from '../crypto/hash';
 import { hkdf32 } from '../crypto/hkdf';
 import { xchachaSeal } from '../crypto/seal';
+import { deriveShareMailboxId } from '../crypto/share';
+import { newSigningKeys } from '../crypto/sign';
 import type { SignedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { createRelay } from '../net/relay';
@@ -24,11 +26,12 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
+import { keepSharesAlive } from '../share/shareLink';
 import { scanDb } from '../test/scanDb';
 import { type Group, openStore, type Store, VaultLocked } from './db';
 import { hasDuty } from './epochs';
 import { eventIdOf } from './eventId';
-import { newPersonalId, type PersonalDocument } from './personal';
+import { newPersonalId, type PersonalDocument, type ShareState } from './personal';
 import {
   fetchRelayBackup,
   refreshRelayBackup,
@@ -554,6 +557,51 @@ describe('a key change and the relay copy (#97, #98)', () => {
     expect((await device.store.getRelayBackup())?.checkedDay).toBeNull();
   });
 
+  it('lets a share by link (#105) post at launch while the key change is due, moving no group and uploading nothing until it lands', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const { groupId, seq } = await afterBenLeft(device);
+    await startRelayBackup(device.services);
+    const shared = statement();
+    await device.store.savePersonal(shared);
+    const share = { ...shareState(5), n: 0, lastPostedAt: null, pending: true };
+    await device.store.updateShare(shared.id, () => share);
+    const before = await groupOn(device.store, groupId);
+    const services = {
+      store: device.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      now: () => TS,
+    };
+
+    // As main.tsx runs it: beside the sync loop, not in a pass, so no freeze holds it.
+    expect(await keepSharesAlive(services)).toEqual([[shared.id, 'posted']]);
+    await refreshRelayBackup(device.services);
+
+    const puts = fake.requests.filter((request) => request.method === 'PUT');
+    expect(puts.map((request) => request.url.split('?')[0])).toEqual([
+      `/v1/mailbox/${deriveShareMailboxId(share.seed)}`,
+    ]);
+    const after = await groupOn(device.store, groupId);
+    expect(plain(after)).toEqual(plain(before));
+    expect((await device.store.getPersonal(shared.id))?.share).toMatchObject({
+      n: 1,
+      pending: false,
+    });
+
+    await keyChangeLands(device, groupId, seq, secretFor('after the key change'));
+    await refreshRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    expect(uploads(fake)).toEqual([backupIdFor(key)]);
+    const copy = JSON.parse(
+      text(openRelayBackup(key, fake.backup(backupIdFor(key)) ?? utf8('')) ?? utf8('{}')),
+    ) as {
+      personal: { share?: { n: number; pending: boolean } }[];
+    };
+    expect(copy.personal.map((document) => document.share?.n)).toEqual([1]);
+  });
+
   it('uploads once the key change lands, and a restore from it comes back at the new epoch with every key', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
@@ -585,6 +633,91 @@ describe('a key change and the relay copy (#97, #98)', () => {
     const state = fold(held.log, held.relayNow);
     expect([state.epoch, state.rotationDue]).toEqual([1, false]);
     expect(await folds(fresh)).toEqual(await folds(device.store));
+  });
+});
+
+/** A share by link (#105) of a statement: its own seed and keys, posted once. */
+function shareState(fill: number): ShareState {
+  const keys = newSigningKeys();
+  return {
+    seed: new Uint8Array(32).fill(fill),
+    secretKey: keys.secretKey,
+    publicKey: keys.publicKey,
+    n: 1,
+    lastPostedAt: TS,
+    pending: false,
+  };
+}
+
+/** `value` with every byte array spelled as a plain list, so arrays IndexedDB cloned compare equal. */
+function plain(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item: unknown) =>
+      Object.prototype.toString.call(item) === '[object Uint8Array]'
+        ? Array.from(item as Uint8Array)
+        : item,
+    ),
+  ) as unknown;
+}
+
+describe('a share by link in the relay copy (#97, #105)', () => {
+  it('carries a shared Document’s share as the snapshot does, sealed, and a restore keeps the same link', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+    const shared = statement();
+    const share = shareState(7);
+    await device.store.savePersonal(shared);
+    await device.store.updateShare(shared.id, () => share);
+
+    await startRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    const blob = fake.backup(backupIdFor(key)) ?? new Uint8Array();
+    const secrets = [
+      ...keyCanaries('share seed', share.seed),
+      ...keyCanaries('share secret key', share.secretKey),
+    ];
+    expect(findCanaries(blob, secrets)).toEqual([]);
+    // The drift guard: the relay's copy is the device's own snapshot, share and all, less its key.
+    const sealed = text(openRelayBackup(key, blob) ?? new Uint8Array());
+    const snapshot = JSON.parse(text(encodeSnapshot(await deviceSnapshot(device.store)))) as Record<
+      string,
+      unknown
+    >;
+    const { backupKey, ...withoutKey } = snapshot;
+    expect(backupKey).toBe(base64url(key));
+    expect(JSON.parse(sealed)).toEqual(withoutKey);
+    expect(findCanaries(utf8(sealed), secrets)).not.toEqual([]);
+
+    const plaintext = await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key);
+    const fresh = await openStore('fresh');
+    await importSnapshot(fresh, plaintext ?? new Uint8Array());
+    expect(plain(await fresh.getPersonal(shared.id))).toEqual(plain({ ...shared, share }));
+  });
+
+  it('keeps the restoring device’s live share when the relay copy’s later copy holds none (`restoredCopy`)', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const other = await openDevice(fake, 'other');
+    await found(other);
+    const older = statement();
+    const later = { ...older, text: 'Edited on the other device.', updatedAt: TS + 1 };
+    await other.store.savePersonal(later);
+    await startRelayBackup(other.services);
+    const plaintext = await fetchRelayBackup(
+      createRelay({ fetch: fake.fetch }),
+      await keyOf(other.store),
+    );
+    const device = await openStore('ana');
+    const share = shareState(9);
+    await device.savePersonal(older);
+    await device.updateShare(older.id, () => share);
+
+    await importSnapshot(device, plaintext ?? new Uint8Array());
+
+    expect(plain(await device.getPersonal(older.id))).toEqual(
+      plain({ ...later, share: { ...share, pending: true } }),
+    );
   });
 });
 

@@ -17,16 +17,18 @@
  * deletes or upgrades its database, so Erase never waits on a connection
  * left open. Personal Documents (#93) sit in a store of their own beside the
  * groups (`./personal.ts`), and a backup file brings them back in that same
- * transaction. A dissolved group stays as a read-only archive (#108): nothing
+ * transaction; a shared one keeps its share state on its own record (#105).
+ * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
  * cleared while its outcomes stay. The relay backup's key and state (#97) are
  * one record in a store of their own, in no group, so no group's record ever
  * holds the key. Under a vault that record keeps its state, and the vault
  * its key.
  *
- * Once the device locks its keys with a passkey (#95), every secret leaves
- * the group records for one sealed vault record (`./vault.ts`), and the
- * records keep the rest. A store opened on such a device reads nothing until
+ * Once the device locks its keys with a passkey (#95), every group secret and
+ * the relay backup key leave their records for one sealed vault record
+ * (`./vault.ts`), and the records keep the rest. A shared personal
+ * Document's seed and signing key (#105) stay on its record for now. A store opened on such a device reads nothing until
  * {@link Store.unlock} gets the vault key from the passkey; it keeps that key
  * in memory for the session, opens the vault inside each read's transaction
  * and hands back whole groups, so nothing else in the app changes. Every
@@ -59,9 +61,14 @@ import {
 import {
   byCreation,
   isPersonalDocument,
+  isShareState,
   keepsHeldCopy,
+  keptShare,
   type PersonalDocument,
+  restoredCopy,
   type PersonalStore,
+  type ShareState,
+  textOf,
 } from './personal';
 
 /** Who this device is in a group. */
@@ -462,7 +469,9 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
    * the file holds it; from a link, no file holds it, so a new group has no
    * mark and one already here keeps its own. A personal Document merges by
    * id the same way: the file's replaces the device's only when it was
-   * edited later (`keepsHeldCopy`). Nothing is stamped with the time now.
+   * edited later (`keepsHeldCopy`), keeping the device's share when the
+   * file's copy holds none (`restoredCopy`, #105), as a link bundle's never
+   * does. Nothing is stamped with the time now.
    */
   restoreGroups(
     groups: readonly BackedUpGroup[],
@@ -553,7 +562,9 @@ interface Schema extends DBSchema {
  * an optional field of its record, so it needed no version of its own: a
  * version 3 group that holds one keeps it through the upgrade. So are a
  * group's encryption key and epoch and each record's epoch (#98): a group or
- * record without one reads as epoch 0.
+ * record without one reads as epoch 0. So is a personal Document's share by
+ * link (#105): a version 4 or 5 Document that holds one keeps it whole
+ * through the upgrade.
  */
 const VERSION = 6;
 const GROUPS = 'groups';
@@ -811,10 +822,31 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     },
     getPersonal: (id) => db.get(PERSONAL, id),
     async savePersonal(document) {
-      if (!isPersonalDocument(document)) {
+      const saved = textOf(document);
+      if (!isPersonalDocument(saved)) {
         throw new Error('This isn’t a personal Document this device can keep.');
       }
-      await db.put(PERSONAL, document);
+      // One change, so a share set meanwhile (#105) is never written over.
+      const tx = db.transaction(PERSONAL, 'readwrite');
+      const share = keptShare(await tx.store.get(saved.id), saved);
+      await Promise.all([tx.store.put(share === undefined ? saved : { ...saved, share }), tx.done]);
+    },
+    async updateShare(id, edit) {
+      const tx = db.transaction(PERSONAL, 'readwrite');
+      const held = await tx.store.get(id);
+      let kept: PersonalDocument | undefined;
+      try {
+        kept = held && withShare(held, edit(held));
+      } catch (error) {
+        await abandonPersonal(tx);
+        throw error;
+      }
+      if (kept === undefined) {
+        await abandonPersonal(tx);
+        return undefined;
+      }
+      await Promise.all([tx.store.put(kept), tx.done]);
+      return kept;
     },
     deletePersonal: (id) => db.delete(PERSONAL, id),
     ...relayBackupStore(db, session, () => {
@@ -979,6 +1011,26 @@ async function abandon(tx: KeyTransaction): Promise<void> {
   await tx.done.catch(() => undefined);
 }
 
+/**
+ * `document` with `share` in place of any it held, or without one when
+ * `share` is undefined (#105).
+ *
+ * @throws {Error} when the share isn't one to keep.
+ */
+function withShare(document: PersonalDocument, share: ShareState | undefined): PersonalDocument {
+  if (share === undefined) return textOf(document);
+  if (!isShareState(share)) throw new Error('This isn’t a share this device can keep.');
+  return { ...textOf(document), share };
+}
+
+/** Ends a personal-store transaction that writes nothing. */
+async function abandonPersonal(
+  tx: IDBPTransaction<Schema, ['personal'], 'readwrite'>,
+): Promise<void> {
+  tx.abort();
+  await tx.done.catch(() => undefined);
+}
+
 /** What one restore keeps: a backup file's or a link bundle's groups and Documents (#96). */
 interface Restored {
   readonly groups: readonly BackedUpGroup[];
@@ -1009,7 +1061,8 @@ async function restoreInto(
   await keepKeys(tx, session, { put: kept });
   const documents = tx.objectStore(PERSONAL);
   for (const restored of personal) {
-    if (!keepsHeldCopy(await documents.get(restored.id), restored)) await documents.put(restored);
+    const held = await documents.get(restored.id);
+    if (!keepsHeldCopy(held, restored)) await documents.put(restoredCopy(held, restored));
   }
 }
 

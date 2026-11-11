@@ -19,7 +19,8 @@
  *    checks the bundle and keeps its groups and personal Documents
  *    (`importSnapshot`, as from a link), and the relay backup key (#97) if it
  *    has none, through the store's one key-writing path, so a B whose keys
- *    are locked with a passkey seals them in its vault.
+ *    are locked with a passkey seals them in its vault. Neither side carries
+ *    a Document's share by link (#105): it stays on A alone.
  *
  * Every blob is sealed and padded, and every PUT uses `ttl_days=1`. Each
  * handshake message is a 1-byte tag (who posted it) and a 32-byte key. Each
@@ -250,7 +251,8 @@ export function offerLink(services: LinkServices, keys: LinkKeys = newLinkKeys()
   const send = async (secrets: LinkSecrets): Promise<void> => {
     // Like Save a backup, nothing hands keys on before this session holds them unlocked (#95).
     await services.store.requireUnlocked();
-    const { plaintext } = await takeSnapshot(services.store);
+    // A share by link stays on this device alone (#105): the bundle leaves every one out.
+    const { plaintext } = await takeSnapshot(services.store, 'link');
     try {
       if (ended !== null) throw new LinkClosed();
       for (const blob of sealBundle(services.seal, secrets.bundle, plaintext)) {
