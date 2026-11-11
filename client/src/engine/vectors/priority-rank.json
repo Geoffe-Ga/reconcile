@@ -1,0 +1,172 @@
+{
+  "kind": "tally",
+  "vectors": [
+    {
+      "name": "priority-rank: of four options, A and B pass and tie on average and zeros, so A, the earlier, comes first; C is below quorum and D fails the floor",
+      "eligible": 10,
+      "versions": [
+        {
+          "id": "A",
+          "scores": [3, 3, 4, 2]
+        },
+        {
+          "id": "B",
+          "scores": [3, 3, 3, 3]
+        },
+        {
+          "id": "C",
+          "scores": [4, 4]
+        },
+        {
+          "id": "D",
+          "scores": [4, 0, 1]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "A"
+      },
+      "rank": ["A", "B"]
+    },
+    {
+      "name": "priority-rank: the higher average ranks first, wherever it sits on the ballot",
+      "eligible": 3,
+      "versions": [
+        {
+          "id": "low",
+          "scores": [2, 2, 2]
+        },
+        {
+          "id": "high",
+          "scores": [4, 4, 3]
+        },
+        {
+          "id": "mid",
+          "scores": [3, 3, 2]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "high"
+      },
+      "rank": ["high", "mid", "low"]
+    },
+    {
+      "name": "priority-rank: an equal average ranks the option with fewer zeros first, then the earlier option",
+      "eligible": 11,
+      "versions": [
+        {
+          "id": "one-zero",
+          "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+        },
+        {
+          "id": "no-zeros",
+          "scores": [4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3]
+        },
+        {
+          "id": "no-zeros-later",
+          "scores": [3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "no-zeros"
+      },
+      "rank": ["no-zeros", "no-zeros-later", "one-zero"]
+    },
+    {
+      "name": "priority-rank: two options, one at exactly 2.0 and one just under, rank only the one at 2.0",
+      "eligible": 3,
+      "versions": [
+        {
+          "id": "under",
+          "scores": [2, 2, 1]
+        },
+        {
+          "id": "at",
+          "scores": [2, 2, 2]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "at"
+      },
+      "rank": ["at"]
+    },
+    {
+      "name": "priority-rank: seven options, of which the three that clear the floor and quorum rank by average",
+      "eligible": 5,
+      "versions": [
+        {
+          "id": "o0",
+          "scores": [1, 1, 1]
+        },
+        {
+          "id": "o1",
+          "scores": [3, 3, 3]
+        },
+        {
+          "id": "o2",
+          "scores": [4, 4]
+        },
+        {
+          "id": "o3",
+          "scores": [4, 4, 4, 4, 0]
+        },
+        {
+          "id": "o4",
+          "scores": [2, 2, 3]
+        },
+        {
+          "id": "o5",
+          "scores": [4, 4, 3, 4]
+        },
+        {
+          "id": "o6",
+          "scores": []
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "o5"
+      },
+      "rank": ["o5", "o1", "o4"]
+    },
+    {
+      "name": "priority-rank: options at quorum that all miss the floor rank nothing, and the vote fails",
+      "eligible": 4,
+      "versions": [
+        {
+          "id": "a",
+          "scores": [1, 1, 2]
+        },
+        {
+          "id": "b",
+          "scores": [4, 4, 0]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      },
+      "rank": []
+    },
+    {
+      "name": "priority-rank: options that all miss quorum rank nothing, and the vote lapses",
+      "eligible": 10,
+      "versions": [
+        {
+          "id": "a",
+          "scores": [4, 4]
+        },
+        {
+          "id": "b",
+          "scores": [3]
+        }
+      ],
+      "expect": {
+        "kind": "lapse"
+      },
+      "rank": []
+    }
+  ]
+}

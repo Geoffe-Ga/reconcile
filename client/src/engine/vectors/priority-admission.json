@@ -1,0 +1,308 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "priority-admission: a newcomer still earning a vote can't ask what to focus on, and isn't eligible on a priority vote that opens meanwhile, which closes early without them; from the minute their rights arrive they ask, and their priority vote takes the next number",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Rent strike", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6.0": 4,
+                "@6.1": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500780000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500840000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6.0": 4,
+                "@6.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6.0": 4,
+                "@6.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6.0": 3,
+                "@6.1": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29395162,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1763709720000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Rent strike", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29395163,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1763709780000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Rent strike", "Plan the picnic"]
+            }
+          }
+        }
+      ],
+      "relayNow": 29395164,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          },
+          {
+            "author": "%dee",
+            "rightsAt": 29395163
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@6",
+            "number": 1,
+            "eligible": ["%ana", "%ben", "%cal"],
+            "closedAt": 29375017,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@6.0"
+            }
+          },
+          {
+            "id": "@14",
+            "number": 2,
+            "author": "%dee",
+            "target": {
+              "kind": "priority"
+            },
+            "final": false
+          }
+        ],
+        "focus": {
+          "proposal": "@6",
+          "option": "@6.0",
+          "text": "Fix the website"
+        },
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 13,
+            "id": "@13"
+          }
+        ]
+      },
+      "unchangedWithout": [5, 7, 13]
+    }
+  ]
+}

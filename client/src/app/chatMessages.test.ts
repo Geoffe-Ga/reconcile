@@ -169,6 +169,16 @@ describe('shareableTitle and chatDetails', () => {
     expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
     expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Ben');
   });
+
+  it('never offers a priority vote’s question, which isn’t a change to the Document (#107)', () => {
+    const log = groupLog();
+    log.ask('ana', ['Rent strike', 'Plan the picnic'], { title: 'Should we strike?' });
+    const [folded] = log.state().proposals;
+    if (folded === undefined) throw new Error('Expected the priority vote.');
+
+    expect(shareableTitle(folded)).toBeNull();
+    expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
+  });
 });
 
 describe('botNotice: what the chat bot posts (#119, #123)', () => {

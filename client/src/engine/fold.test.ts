@@ -108,8 +108,11 @@ describe('fold', () => {
       rotationDue: false,
       dissolved: null,
       recoveryShares: [],
+      recoveryAlerts: [],
+      recoveryCancels: [],
       coalitions: [],
       coalition: null,
+      focus: null,
       ignored: [],
     });
   });
