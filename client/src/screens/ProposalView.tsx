@@ -361,8 +361,18 @@ function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
 }
 
 /**
+ * True when the viewer gets the ballot: they can vote on it, and this device
+ * hasn't cleared its ballots (#111), since then there's no ballot left to show.
+ */
+function ballotShown(reason: string | null, proposal: Proposal): boolean {
+  return reason === null && !proposal.cleared;
+}
+
+/**
  * The versions, or a priority vote's options, each with its own pills for
- * someone who can vote on them, then "Add your version".
+ * someone who can vote on them, then "Add your version". Once this device has
+ * cleared a Proposal's ballots (#111), there's no ballot left to show, so the
+ * versions or options stand alone.
  */
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
@@ -379,7 +389,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
       <OptInWarning optIn={rulesChangeOf(proposal)?.optIn ?? null} />
       <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} open={!proposal.final} />
-      {reason === null ? (
+      {ballotShown(reason, proposal) ? (
         <Ballot
           key={proposal.id}
           versions={versions}
@@ -400,7 +410,9 @@ function Vote({ props, proposal, versions }: VoteProps) {
           <ChoiceList versions={versions} current={comparison.current} layout={layout}>
             {meters}
           </ChoiceList>
-          <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
+          {reason === null ? null : (
+            <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
+          )}
         </>
       )}
       <AddVersion props={props} proposal={proposal} />

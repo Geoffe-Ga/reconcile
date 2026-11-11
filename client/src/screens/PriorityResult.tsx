@@ -12,6 +12,9 @@
  * threshold of its own. Once a dissolved group's archive has cleared its
  * ballots (#108), the ranking and totals come from the tally this device
  * kept, and the disclosure holds the totals and when the ballots were cleared.
+ * Once this device has cleared them (#111), the ranking and totals come from
+ * the vote's result, and the disclosure says when in place of the ballots; a
+ * record that doesn't match this device's ballots names who posted it.
  */
 import { useId } from 'react';
 
@@ -24,6 +27,7 @@ import type { TallyDetail } from '../engine/tally';
 import {
   Ballots,
   LateNotice,
+  Mismatches,
   ProposeAgain,
   Ran,
   type ResultViewProps,
@@ -126,12 +130,15 @@ function Ranking({ detail, options }: Omit<PriorityProps, 'props'>) {
   );
 }
 
-/** The disclosure's label: "Totals and individual ballots (N)", or "Totals" once they're cleared (#108). */
+/**
+ * The disclosure's label: "Totals and individual ballots (N)", or "Totals"
+ * once the ballots are cleared, by this device (#111) or a dissolved group's
+ * archive (#108).
+ */
 function detailsLabel(props: ResultViewProps): string {
   const { result } = messages;
-  return props.cleared === undefined
-    ? result.details(props.proposal.ballots.length)
-    : result.totals;
+  const gone = props.cleared !== undefined || props.proposal.cleared;
+  return gone ? result.totals : result.details(props.proposal.ballots.length);
 }
 
 /**
@@ -150,6 +157,7 @@ export function PriorityResult(props: ResultViewProps) {
       </h2>
       <Outcome props={props} detail={detail} options={options} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
+      <Mismatches state={state} proposal={proposal} />
       <Ranking detail={detail} options={options} />
       {props.leaving === true ? null : (
         <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />

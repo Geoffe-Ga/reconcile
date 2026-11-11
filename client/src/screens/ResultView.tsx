@@ -7,12 +7,16 @@
  * ADR-0069's sentence and Propose again. Then Tell your group's result
  * message (#113), each version's totals, the individual ballots and notes
  * under a disclosure, and when voting ran, in relay time. A ballot that
- * reached the relay too late tells its author so. No result offers a
- * part-ways action (ADR-0068). Everything here is read from the group's own
- * log on this device; nothing is sent to the relay. Once a dissolved group's
- * archive has cleared its ballots (#108), the totals come from the tally this
- * device kept, and the ballots give way to when they were cleared. A priority
- * vote's result is PriorityResult.tsx's (#107); the two share ResultParts.tsx.
+ * reached the relay too late tells its author so. The disclosure says until
+ * when the individual scores and notes stay visible, and once this device has
+ * cleared them, when it did (#111), while the outcome and totals stay. A
+ * record of the decision that doesn't match this device's ballots names who
+ * posted it. No result offers a part-ways action (ADR-0068). Everything here
+ * is read from the group's own log on this device; nothing is sent to the
+ * relay. Once a dissolved group's archive has cleared its ballots (#108), the
+ * totals come from the tally this device kept, and the ballots give way to
+ * when they were cleared. A priority vote's result is PriorityResult.tsx's
+ * (#107); the two share ResultParts.tsx.
  */
 import { useId } from 'react';
 
@@ -32,6 +36,7 @@ import {
   Ballots,
   Cleared,
   LateNotice,
+  Mismatches,
   ProposeAgain,
   Ran,
   type ResultViewProps,
@@ -179,6 +184,7 @@ function EditResult(props: ResultViewProps) {
       </h2>
       <Outcome props={props} detail={detail} versions={versions} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
+      <Mismatches state={state} proposal={proposal} />
       {props.leaving === true ? null : (
         <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
       )}

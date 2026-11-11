@@ -38,13 +38,13 @@
  * the service worker ends the subscription, so the push service refuses the
  * relay's next push and the relay forgets the endpoint everywhere.
  */
-import { fold } from '../engine/fold';
 import { nudgeKey, nudgesFor, type Nudge } from '../engine/nudges';
 import { DAY_MINUTES } from '../engine/rules';
 import type { PushRelay } from '../net/push';
 import { RelayError } from '../net/relay';
 import type { DeviceSubscription, PushPort } from '../platform/pushPort';
 import type { Group, Store } from './db';
+import { foldGroup } from './expiry';
 import { mailboxAt as defaultMailboxAt, type MailboxAt, mailboxesFrom } from './mailbox';
 
 /** How often a registration is renewed, in relay minutes: the relay keeps one 30 days. */
@@ -119,7 +119,7 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
  * then each week's from now to 30 days on, each named once, in order.
  */
 function registrationOf(group: Group, now: number, at: MailboxAt): string[] {
-  const open = fold(group.log, group.relayNow).proposals.filter((proposal) => !proposal.final);
+  const open = foldGroup(group).proposals.filter((proposal) => !proposal.final);
   const waiting = open.map((proposal) => at(group, proposal.received));
   return [...new Set([...waiting, ...mailboxesFrom(group, now, at)])];
 }
@@ -249,7 +249,7 @@ export function createPush(options: PushOptions): Push {
    * none is left to send, rests until the log grows.
    */
   async function postDue(group: Group): Promise<void> {
-    const due = nudgesFor(fold(group.log, group.relayNow), group.me.author);
+    const due = nudgesFor(foldGroup(group), group.me.author);
     const sent = new Set(group.nudged ?? []);
     for (const nudge of due) {
       if (!sent.has(nudgeKey(nudge)) && (await post(group, nudge))) sent.add(nudgeKey(nudge));

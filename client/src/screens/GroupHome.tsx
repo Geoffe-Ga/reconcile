@@ -225,8 +225,9 @@ function TopOption({ proposal }: { readonly proposal: Proposal }) {
 
 /**
  * Decided: the group's history, each closed Proposal with its title, its
- * outcome in a word, and its close date, opening its result. A priority
- * vote that passed also names its top option (#107).
+ * outcome in a word, and its close date, opening its result, and "Scores
+ * cleared" once this device has deleted its individual ballots (#111). A
+ * priority vote that passed also names its top option (#107).
  */
 function Decided({
   groupId,
@@ -258,6 +259,9 @@ function Decided({
               <time dateTime={minuteIso(closeTime(proposal))}>
                 {formatDay(closeTime(proposal))}
               </time>
+              {proposal.cleared ? (
+                <span className="decided-cleared">{messages.decided.cleared}</span>
+              ) : null}
             </span>
           </Link>
         </li>

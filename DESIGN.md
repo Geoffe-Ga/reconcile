@@ -178,8 +178,9 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
 - **Result:**
   - The outcome sentence comes first.
   - Totals come next.
-  - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
-  - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots.
+  - Individual ballots appear under a disclosure, with the expiry date shown under its toggle ("Individual scores and notes are visible until Sat 12 Dec. Screenshots taken before then can outlast this.", #111).
+  - Once they expire, a caption takes the disclosure's place ("Individual scores and notes were cleared on Sat 12 Dec."), and the totals stay.
+  - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots. Once the ballots expire, that disclosure, now "Totals", keeps the totals, with the cleared caption in the ballots' place.
 - **Dispatch card** (#112): a `surface` card with a `hairline` border, as every card.
   - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it.
   - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.

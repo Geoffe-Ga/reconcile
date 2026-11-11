@@ -1,14 +1,15 @@
 /**
  * The pieces a closed Proposal's result shares with a priority vote's (#107;
  * DESIGN.md, Result): thanks by name, Propose again, a late ballot's notice,
- * each choice's totals, the individual ballots under a disclosure, or once a
- * dissolved group's archive has cleared them, when it did (#108), and when
- * voting ran, in relay time.
+ * a record that doesn't match this device's ballots (#111), each choice's
+ * totals, the individual ballots under a disclosure with the day they
+ * expire, or once this device has cleared them, when it did (#111, or a
+ * dissolved group's archive, #108), and when voting ran, in relay time.
  */
 import { Fragment, type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
-import { formatAverage } from '../app/format';
+import { formatAverage, formatDay } from '../app/format';
 import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { messages } from '../app/messages';
 import type { ShareOutcome } from '../app/share';
@@ -17,6 +18,7 @@ import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
 import type { VersionView } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
+import { ballotsExpireAt } from '../engine/expiry';
 import type { Ballot, GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import type { OwnBallot } from '../engine/ownBallot';
@@ -126,6 +128,16 @@ export function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
       ) : null}
     </div>
   );
+}
+
+/** Each record of the decision that doesn't match this device's ballots, by who posted it (#111). */
+export function Mismatches({ state, proposal }: Pick<ResultViewProps, 'state' | 'proposal'>) {
+  const { mismatchBefore, mismatchAfter } = messages.result;
+  return proposal.mismatched.map((author) => (
+    <p key={author} className="ballot-notice">
+      {mismatchBefore} <bdi>{displayName(state, author)}</bdi> {mismatchAfter}
+    </p>
+  ));
 }
 
 /** "Your vote arrived after voting closed and wasn't counted.", to its author alone. */
@@ -269,6 +281,35 @@ export function Cleared({ at }: { readonly at: number }) {
   );
 }
 
+/** A relay minute as a day, in a `<time>` element that never breaks across lines. */
+function Day({ minute }: { readonly minute: number }) {
+  return <time dateTime={minuteIso(minute)}>{formatDay(minute)}</time>;
+}
+
+/** "Individual scores and notes were cleared on <date>.", once this device has deleted them (#111). */
+function ClearedOn({ props }: { readonly props: ResultViewProps }) {
+  const { result } = messages;
+  return (
+    <p className="caption result-expiry">
+      {result.clearedOn} <Day minute={ballotsExpireAt(props.state.rules, props.proposal)} />
+      {result.clearedOnEnd}
+    </p>
+  );
+}
+
+/** "Individual scores and notes are visible until <date>. …", while there are ballots to see (#111). */
+function VisibleUntil({ props }: { readonly props: ResultViewProps }) {
+  const { result } = messages;
+  const { state, proposal } = props;
+  if (proposal.cleared || proposal.ballots.length === 0) return null;
+  return (
+    <p className="caption result-expiry">
+      {result.visibleUntil} <Day minute={ballotsExpireAt(state.rules, proposal)} />
+      {result.visibleUntilEnd}
+    </p>
+  );
+}
+
 /** The ballots, each by its voter's name, or a line that nobody voted. */
 function BallotList({
   props,
@@ -294,12 +335,25 @@ function BallotList({
 }
 
 /**
+ * Where the ballots were, once they're gone: when a dissolved group's archive
+ * cleared them (#108), or when this device did (#111); else the ballots.
+ */
+function BallotsOrCleared(props: Omit<BallotsProps, 'children'> & { label: string }) {
+  const { cleared, proposal } = props.props;
+  if (cleared !== undefined) return <Cleared at={cleared.at} />;
+  return proposal.cleared ? <ClearedOn props={props.props} /> : <BallotList {...props} />;
+}
+
+/**
  * The individual ballots and notes, by name, one tap away (ADR-0010: open
- * inside the group), or once a dissolved group's archive has cleared them,
- * when it did (#108).
+ * inside the group), with the day they expire (#111). Once this device has
+ * cleared them (#111), or a dissolved group's archive has (#108), it says
+ * when instead. With nothing else to hold, a cleared Proposal's needs no
+ * disclosure: only that day is left to say.
  */
 export function Ballots({ props, versions, naming, children, ...rest }: BallotsProps) {
-  const { proposal, cleared } = props;
+  const { proposal } = props;
+  if (proposal.cleared && children === undefined) return <ClearedOn props={props} />;
   const label = rest.label ?? messages.result.ballots(proposal.ballots.length);
   return (
     <Disclosure className="reads-as result-ballots">
@@ -308,13 +362,10 @@ export function Ballots({ props, versions, naming, children, ...rest }: BallotsP
           {label}
         </Button>
       </Heading>
+      <VisibleUntil props={props} />
       <DisclosurePanel className="result-details">
         {children}
-        {cleared === undefined ? (
-          <BallotList props={props} versions={versions} naming={naming} label={label} />
-        ) : (
-          <Cleared at={cleared.at} />
-        )}
+        <BallotsOrCleared props={props} versions={versions} naming={naming} label={label} />
       </DisclosurePanel>
     </Disclosure>
   );

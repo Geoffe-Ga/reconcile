@@ -11,15 +11,16 @@
  *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
  *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
  *   first (#107).
- * - A fold vector is `{name, records, relayNow, expect, unchangedWithout?}`.
+ * - A fold vector is `{name, cleared?, records, relayNow, expect, unchangedWithout?}`. `cleared`
+ *   lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed to `fold`.
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
  *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
  *     Atom, and `"%ana"` stands for ana's public key in base64url. `"&ana"` stands for ana's
  *     X25519 encryption key (#98) in base64url: the public key of the secret key
  *     SHA-256("reconcile/vector-kx/" + name). `{"$base64url": [bytes]}`
- *     stands for those bytes in unpadded base64url, as invite.json's token signatures are
- *     written, so no high-entropy text sits in the repository.
+ *     stands for those bytes in unpadded base64url, as invite.json's token signatures and
+ *     a result's `commit` (#111) are written, so no high-entropy text sits in the repository.
  *   - The relay record is `publicKey ‖ signature ‖ event bytes` (spec §3), signed by the key
  *     `by` names, or else by the key the event's `"%name"` author names. `key` (hex, or
  *     `"%name"`) and `sig` (hex) replace those fields, and `flip: {in, at}` flips the low bit of
@@ -88,6 +89,7 @@ type VectorRecord = RecordOptions &
 /** One fold vector: records in relay order, the relay's `now`, and the state they must fold to. */
 export interface FoldVector {
   readonly name: string;
+  readonly cleared?: readonly string[];
   readonly records: readonly VectorRecord[];
   readonly relayNow: number | null;
   readonly expect: object;
@@ -276,11 +278,12 @@ function relayBytes(record: VectorRecord, event: Uint8Array): Uint8Array {
   return concat(at.key, at.signature, at.event);
 }
 
-/** A fold vector's relay records, the id of each record by seq, and its relay `now`. */
+/** A fold vector's relay records, the id of each record by seq, its relay `now` and its `cleared`. */
 export interface VectorLog {
   readonly records: LogRecord[];
   readonly ids: ReadonlyMap<number, string>;
   readonly relayNow: number | null;
+  readonly cleared: readonly string[];
 }
 
 /**
@@ -301,7 +304,8 @@ function buildRecord(record: VectorRecord, ids: Map<number, string>): LogRecord[
 export function buildRecords(vector: FoldVector): VectorLog {
   const ids = new Map<number, string>();
   const records = vector.records.flatMap((record) => buildRecord(record, ids));
-  return { records, ids, relayNow: vector.relayNow };
+  const cleared = (vector.cleared ?? []).map((ref) => resolveRef(ref, ids));
+  return { records, ids, relayNow: vector.relayNow, cleared };
 }
 
 /** A vector's logs as relay records by name, and the id of each record by its global seq (#100). */

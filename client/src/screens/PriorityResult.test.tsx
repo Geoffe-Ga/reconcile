@@ -2,6 +2,9 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { formatDay } from '../app/format';
+import { messages } from '../app/messages';
+import { resultFor } from '../engine/expiry';
 import type { GroupState } from '../engine/fold';
 import { optionId } from '../engine/priority';
 import { axeViolations } from '../test/axe';
@@ -42,8 +45,7 @@ function show(state: GroupState, proposalId: string, cleared?: ClearedResult) {
  * closes it early. Fix the website and Plan the picnic both pass; Plan the picnic has the higher
  * average. New bylaws averages under 2.0, and Rent strike has a 0 in three.
  */
-function rankedVote() {
-  const log = groupLog({ members: ['Ben', 'Cal'] });
+function rankedVote(log = groupLog({ members: ['Ben', 'Cal'] })) {
   const id = log.ask('ana', FOUR);
   const o = (i: number) => optionId(id, i);
   log.minute += 5;
@@ -186,5 +188,51 @@ describe('a priority vote’s result (#107)', () => {
     ).toBeVisible();
     expect(within(result).queryByText('Nobody voted.')).toBeNull();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('ranks from its result once this device has cleared its ballots, and says when (#111)', async () => {
+    const { state: held, id } = rankedVote();
+    const decided = held.proposals.find((candidate) => candidate.id === id);
+    if (decided?.closedAt == null) throw new Error('Expected the closed priority vote.');
+    const { closedAt } = decided;
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    expect(log.ask('ana', FOUR)).toBe(id);
+    log.minute = closedAt + 1;
+    log.result('ben', resultFor(decided));
+    const expires = closedAt + 43_200;
+    const { result, user } = show(log.state(expires, [id]), id);
+
+    expect(
+      within(result).getByText('Plan the picnic', { selector: '.result-focus bdi' }),
+    ).toBeVisible();
+    expect(
+      within(within(result).getByRole('list', { name: 'Passed, best first' })).getAllByRole(
+        'listitem',
+      ),
+    ).toHaveLength(2);
+    expect(within(result).queryByRole('button', { name: /individual ballots/ })).toBeNull();
+    await user.click(within(result).getByRole('button', { name: 'Totals' }));
+    expect(within(result).getByRole('list', { name: 'Totals' })).toHaveTextContent(
+      'Plan the picnicScored by 3 · average 3.6 · no zeros',
+    );
+    const { clearedOn, clearedOnEnd } = messages.result;
+    expect(result).toHaveTextContent(`${clearedOn} ${formatDay(expires)}${clearedOnEnd}`);
+    expect(within(result).queryByText('Nobody voted.')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says until when the ballots are visible, and names who posted a record that doesn’t match them (#111)', () => {
+    const { state: held, id } = rankedVote();
+    const decided = held.proposals.find((candidate) => candidate.id === id);
+    if (decided === undefined) throw new Error('Expected the closed priority vote.');
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    rankedVote(log);
+    log.minute += 1;
+    log.result('ben', { ...resultFor(decided), commit: 'not-these-ballots' });
+    const { result } = show(log.state(), id);
+    const { visibleUntil, mismatchBefore, mismatchAfter } = messages.result;
+    expect(within(result).getByText(new RegExp(`^${visibleUntil}`))).toBeVisible();
+    expect(result).toHaveTextContent(`${mismatchBefore} Ben ${mismatchAfter}`);
+    cleanup();
   });
 });
