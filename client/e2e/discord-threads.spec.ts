@@ -25,6 +25,7 @@ import {
   type Person,
   pick,
   test,
+  visit,
 } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
@@ -37,10 +38,10 @@ const PHONE = { width: 390, height: 844 };
 /** Proposal 2's thread: the second the fixture's forum opens. */
 const THREAD = `https://discord.com/channels/${DISCORD_GUILD}/${discordThread(1)}`;
 
-/** `person` scores the Proposal at `url` 4 and sends it. */
+/** `person` scores the Proposal at `url` 4 and sends it, going there only if they aren't already (`visit`). */
 async function vote(person: Person, url: string): Promise<void> {
   const { page } = person;
-  await page.goto(url);
+  await visit(page, url);
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
   await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');

@@ -5,7 +5,11 @@
  * them, axe on the screen a person is looking at, a few locators, and
  * first run's steps (#76). Every profile's requests to Discord are answered
  * by the fixture itself, as a forum channel's webhook would answer them, and
- * kept in `discord` (#119, #123), so no test ever posts to Discord.
+ * kept in `discord` (#119, #123), so no test ever posts to Discord. WebKit
+ * never lets `context.route` see a request from a page under the app's
+ * service worker, so the fixture fails a test on any request to Discord it
+ * didn't answer, and specs move a page with `visit`, which never reloads it
+ * into the worker's hands (#123).
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -14,6 +18,7 @@ import {
   expect,
   type Locator,
   type Page,
+  type Request,
   type Route,
   test as base,
 } from '@playwright/test';
@@ -125,22 +130,48 @@ async function answerAsDiscord(
   await route.fulfill(discordAnswer(new URL(request.url()), request.method(), body, forum));
 }
 
+/** What a context sent to Discord that the fixture didn't answer (#123). */
+export interface DiscordWatch {
+  /** Each request the browser sent to Discord that the fixture never answered, as `METHOD url`. */
+  unanswered(): string[];
+}
+
 /**
  * Answers every request `context` makes to Discord itself, as a forum
  * channel's webhook would, keeping each in `requests`. Profiles routed with
  * one `forum` share its threads, as members of one group share its channel.
+ *
+ * The watch it returns names any request to Discord the browser sent that
+ * the route never saw, such as one from a page under the app's service
+ * worker in WebKit (#123). A CORS preflight is the browser's, not the app's,
+ * so it isn't counted.
  */
 export async function routeDiscord(
   context: BrowserContext,
   requests: DiscordRequest[],
   forum: Forum = { threads: 0 },
-): Promise<void> {
-  await context.route(isDiscord, (route) => answerAsDiscord(route, requests, forum));
+): Promise<DiscordWatch> {
+  const sent: Request[] = [];
+  const answered = new Set<Request>();
+  context.on('request', (request) => {
+    if (request.method() !== 'OPTIONS' && isDiscord(new URL(request.url()))) sent.push(request);
+  });
+  await context.route(isDiscord, (route) => {
+    answered.add(route.request());
+    return answerAsDiscord(route, requests, forum);
+  });
+  return {
+    unanswered: () =>
+      sent
+        .filter((request) => !answered.has(request))
+        .map((request) => `${request.method()} ${request.url()}`),
+  };
 }
 
 /**
  * Opens a new profile for `name`; the fixture closes it after the test.
- * `discord` holds every request any profile sent to Discord, in order (#119).
+ * `discord` holds every request any profile sent to Discord, in order (#119),
+ * and the test fails on any request to Discord the fixture didn't answer (#123).
  */
 export interface OpenProfile {
   (name: string, options?: BrowserContextOptions): Promise<Person>;
@@ -166,7 +197,8 @@ function recordCspViolations(report: string): void {
 
 /**
  * Playwright's `test`, with the relay started before each test and stopped after
- * it, and `openProfile`: each profile it opens is checked for CSP violations.
+ * it, and `openProfile`: each profile it opens is checked for CSP violations
+ * and for requests to Discord that the fixture didn't answer.
  */
 export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile }>({
   // Every test gets the relay, started before it and stopped after it. It waits for
@@ -186,10 +218,11 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
     const profiles: { readonly person: Person; readonly violations: string[] }[] = [];
     const discord: DiscordRequest[] = [];
     const forum: Forum = { threads: 0 };
+    const watches: DiscordWatch[] = [];
     const open = async (name: string, options: BrowserContextOptions = {}): Promise<Person> => {
       // The project's `use` options (baseURL, device) apply; the CSP always does.
       const context = await browser.newContext({ ...options, bypassCSP: false });
-      await routeDiscord(context, discord, forum);
+      watches.push(await routeDiscord(context, discord, forum));
       const violations: string[] = [];
       await context.exposeFunction(REPORT_VIOLATION, (line: string) => {
         violations.push(line);
@@ -207,11 +240,23 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
         violations.map((line) => `${person.name}: ${line}`),
       );
       expect(all, 'CSP violations').toEqual([]);
+      const unanswered = watches.flatMap((watch) => watch.unanswered());
+      expect(unanswered, 'requests to Discord that the fixture never answered').toEqual([]);
     } finally {
       await Promise.all(profiles.map(({ person }) => person.page.context().close()));
     }
   },
 });
+
+/**
+ * Shows `url` on `page`, navigating only when the page isn't there already
+ * (#123). WebKit reloads a page sent to its own URL, where Chromium stays
+ * put, and the reloaded page comes under the app's service worker, whose
+ * requests WebKit never lets `context.route` see.
+ */
+export async function visit(page: Page, url: string): Promise<void> {
+  if (page.url() !== url) await page.goto(url);
+}
 
 /** The screen's one `h1`. */
 export function heading(page: Page, name: string): Locator {

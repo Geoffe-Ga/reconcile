@@ -23,6 +23,7 @@ import {
   type Person,
   pick,
   test,
+  visit,
 } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
@@ -58,10 +59,10 @@ async function join(person: Person, invite: string): Promise<void> {
   await expect(people(page)).toContainText(person.name);
 }
 
-/** `person` scores the Proposal at `url` 4 and sends it. */
+/** `person` scores the Proposal at `url` 4 and sends it, going there only if they aren't already (`visit`). */
 async function vote(person: Person, url: string): Promise<void> {
   const { page } = person;
-  await page.goto(url);
+  await visit(page, url);
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
   await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
