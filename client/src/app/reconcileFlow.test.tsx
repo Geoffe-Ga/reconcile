@@ -29,7 +29,8 @@ import {
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { App } from './App';
-import { admitCard, bringCard, lookupCard, postCard } from './reconcile';
+import { messages } from './messages';
+import { admitCard, bringCard, lookupCard, postCard, takePart } from './reconcile';
 
 freshIndexedDBPerTest();
 
@@ -87,10 +88,34 @@ describe('reconciling two groups', SLOW, () => {
       'CoalitionsFormedEastside HousingRiverside Tenants, Oak St Co-op',
     );
     expect(await axeViolations()).toEqual([]);
+    cleanup();
+    window.history.replaceState(null, '', `#/g/${riverside}/p/${proposal}`);
+    render(<App services={ana.services} />);
+    expect(await screen.findByText(messages.coalitions.reconcilePassed)).toBeVisible();
     const anaHome = await coalitionsOnHome(ana, riverside);
     expect(within(anaHome).getByText(/You take part as/)).toHaveTextContent(
       'You take part as Ana E.',
     );
+  });
+
+  it('lets Ben take part under Oak St’s seat from its row, with a name of his own', async () => {
+    const fake = createFakeRelay();
+    const { ben, oak } = await formed(fake);
+    const entry = (await ben.services.store.listCoalitions())[0];
+    if (entry === undefined) throw new Error('Expected Ben’s coalition.');
+    const home = await coalitionsOnHome(ben, oak);
+    expect(within(home).getByRole('button', { name: 'Take part' })).toBeVisible();
+
+    await takePart(ben.services, entry.groupId, oak, 'Ben O.');
+    await syncAll();
+
+    const coalition = await coalitionOn(ben);
+    const benIn = coalition.members.find((m) => m.name === 'Ben O.');
+    expect(benIn).toBeDefined();
+    expect(coalition.coalition?.bindings.find((b) => b.author === benIn?.author)?.seat).toBe(
+      coalition.coalition?.seats[1]?.key,
+    );
+    expect(await coalitionsOnHome(ben, oak)).toHaveTextContent('You take part as Ben O.');
   });
 
   it('shows each group whom the coalition waits for while it forms', async () => {
@@ -191,6 +216,15 @@ describe('admitting a group into a formed coalition', SLOW, () => {
     await syncAll();
 
     expect((await coalitionOn(dee)).coalition?.seats).toHaveLength(2);
+    cleanup();
+    window.history.replaceState(null, '', `#/g/${riverside}/p/${motion}`);
+    render(<App services={ana.services} />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Admit Elm Row' })).toBeVisible();
+    expect(screen.getByText(/^From the coalition/)).toHaveTextContent(
+      'From the coalition Eastside Housing',
+    );
+    expect(screen.getByText(messages.coalitions.motionPassed)).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
     act(() => {
       fake.minute += PAST_FINAL;
     });

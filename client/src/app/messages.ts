@@ -1146,7 +1146,7 @@ export const messages = {
     failed: 'Bringing the card didn’t finish. Try again.',
     badLinkTitle: 'This card doesn’t work',
     badLink: 'This card has expired or is damaged. Ask the group that sent it for a new one.',
-    usedTitle: 'This card has been used',
+    usedTitle: 'Can’t bring this card',
     used: 'This card has already been used.',
     offlineTitle: 'Can’t open the card yet',
     offline: 'Can’t reach the relay right now. Check your connection, then try again.',
@@ -1180,6 +1180,11 @@ export const messages = {
     statement: 'The coalition’s statement',
     /** Under a reconcile ballot's one version. */
     reconcileLine: 'If your group and the other group both pass this, the coalition forms.',
+    /** A reconcile Proposal's pass, and a coalition motion's in the group. */
+    reconcilePassed:
+      'This passed. Your group’s pass goes to the coalition, which forms once every group has passed.',
+    motionPassed:
+      'This passed in your group. Your group’s pass goes to the coalition, which decides with every group’s.',
     /** Under a coalition motion's one version. */
     motionLine:
       'Every group in the coalition votes on this. Only your group’s pass or fail goes back.',

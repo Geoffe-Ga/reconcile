@@ -223,14 +223,35 @@ function DissolvePassed() {
   );
 }
 
+/**
+ * A reconcile Proposal's or a coalition motion's pass (#114): only the
+ * group's pass goes to the coalition, which decides with every group's.
+ */
+function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']['proposal'] }) {
+  const { coalitions } = messages;
+  const sentence =
+    proposal.target.kind === 'reconcile' ? coalitions.reconcilePassed : coalitions.motionPassed;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{sentence}</p>
+    </div>
+  );
+}
+
+/** A pass's block: what a one-card ballot decided, or the winning text as the Document reads. */
+function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
+  const { steward, rules, dissolve, decision } = props.versions[0] ?? {};
+  if (decision !== undefined) return <DecisionPassed proposal={props.props.proposal} />;
+  if (dissolve !== undefined) return <DissolvePassed />;
+  if (steward !== undefined) return <StewardPassed steward={steward} />;
+  if (rules !== undefined) return <RulesPassed rules={rules} />;
+  return <Passed {...props} winner={winner} />;
+}
+
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const { steward, rules, dissolve } = props.versions[0] ?? {};
-  if (outcome.kind === 'pass' && dissolve !== undefined) return <DissolvePassed />;
-  if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
-  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
-  if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
+  if (outcome.kind === 'pass') return <PassOutcome props={props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 

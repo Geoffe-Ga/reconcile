@@ -21,6 +21,16 @@ import { useSaving } from './useSaving';
 import { VersionList } from './Versions';
 import type { VersionView } from './versionViews';
 
+/**
+ * Whether a version is the one card of a ballot that decides something other
+ * than a section's text (a steward, an opt-in, dissolving, or a coalition,
+ * #102, #117, #108, #114), whose pills read "Your score".
+ */
+function decidesOne(version: VersionView): boolean {
+  const { steward, rules, dissolve, decision } = version;
+  return [steward, rules, dissolve, decision].some((field) => field !== undefined);
+}
+
 /** A score for each version, by version id. */
 export type Scores = Readonly<Record<string, Score>>;
 
@@ -111,11 +121,7 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       aria-describedby={hint}
     >
       <Label className="field-label">
-        {version.steward === undefined &&
-        version.rules === undefined &&
-        version.dissolve === undefined
-          ? messages.ballot.scoreFor(version.number)
-          : messages.stewards.score}
+        {decidesOne(version) ? messages.stewards.score : messages.ballot.scoreFor(version.number)}
       </Label>
       <div className="score-pills">
         {SCORES.map((option) => (

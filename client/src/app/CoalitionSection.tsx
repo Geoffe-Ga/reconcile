@@ -131,14 +131,16 @@ function AnotherGroup({ makeCardLink, copyText }: AnotherProps) {
   const lede = useId();
   if (status.kind === 'made') {
     return (
-      <CopyLink
-        link={status.link}
-        label={messages.card.linkLabel}
-        hint={messages.card.warning}
-        button={messages.card.copy}
-        primary={false}
-        copyText={copyText}
-      />
+      <div className="coalition-another">
+        <CopyLink
+          link={status.link}
+          label={messages.card.linkLabel}
+          hint={messages.card.warning}
+          button={messages.card.copy}
+          primary={false}
+          copyText={copyText}
+        />
+      </div>
     );
   }
   const make = () => {
