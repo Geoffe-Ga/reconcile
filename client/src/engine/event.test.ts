@@ -538,7 +538,7 @@ describe('parseEvent', () => {
       'proposal',
       {
         atom: 'a',
-        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        target: { kind: 'rules', optIn: 'frontDoor', value: false },
         title: 't',
         why: 'w',
       },
@@ -546,13 +546,13 @@ describe('parseEvent', () => {
     [
       'a rules Proposal without a title',
       'proposal',
-      { target: { kind: 'rules', optIn: 'frontDoor', value: true }, why: 'w' },
+      { target: { kind: 'rules', optIn: 'frontDoor', value: false }, why: 'w' },
     ],
     [
       'a rules Proposal with its window as text',
       'proposal',
       {
-        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        target: { kind: 'rules', optIn: 'frontDoor', value: false },
         title: 't',
         why: 'w',
         window: '14',
@@ -572,6 +572,9 @@ describe('parseEvent', () => {
       'chat-posted',
       { proposal: 'p', moment: 'open', nonce: 7 },
     ],
+    ['door-invited without an application', 'door-invited', {}],
+    ['door-invited with a numeric application', 'door-invited', { application: 7 }],
+    ['door-invited with a null application', 'door-invited', { application: null }],
     ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
     ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
     ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
@@ -816,7 +819,7 @@ describe('parseEvent', () => {
   });
 
   it('keeps a rules Proposal’s voting window as written, for the fold to bound (#106, #117)', () => {
-    const target = { kind: 'rules', optIn: 'frontDoor', value: true };
+    const target = { kind: 'rules', optIn: 'frontDoor', value: false };
     const parsed = parseEvent(
       json(envelope('proposal', { target, title: 't', why: 'w', window: 13 })),
     );
@@ -825,7 +828,7 @@ describe('parseEvent', () => {
 
   it('tells a rules Proposal from a steward one and from an edit', () => {
     const rules = {
-      target: { kind: 'rules', optIn: 'frontDoor', value: true },
+      target: { kind: 'rules', optIn: 'frontDoor', value: false },
       title: 't',
       why: 'w',
     } as const;
@@ -866,6 +869,19 @@ describe('parseEvent', () => {
     });
     const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
     expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
+  });
+
+  it('reads a door-invited as its application, kept as written, dropping unknown keys (#121)', () => {
+    const body = { application: 'a1', name: 'Kim', message: 'Hello' };
+    const parsed = parseEvent(json(envelope('door-invited', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'door-invited',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { application: 'a1' },
+    });
   });
 
   it('reads a chat-thread as its Proposal and URL, kept as written, dropping unknown keys (#123)', () => {

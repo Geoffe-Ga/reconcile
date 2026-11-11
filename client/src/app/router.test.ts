@@ -36,6 +36,10 @@ describe('parseRoute', () => {
     ['#share/', { name: 'shared', payload: '' }],
     ['#share/abc/def', { name: 'shared', payload: 'abc/def' }],
     ['#share/has space', { name: 'shared', payload: 'has space' }],
+    // Any #door/ link reaches the front door, which reads a damaged one itself (#121).
+    [`#door/${SHARE.slice(0, 43)}`, { name: 'door', payload: SHARE.slice(0, 43) }],
+    ['#door/', { name: 'door', payload: '' }],
+    ['#door/abc/def', { name: 'door', payload: 'abc/def' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
     [`#/g/${GROUP}/priority`, { name: 'priority', groupId: GROUP }],
@@ -192,6 +196,7 @@ describe('routeHref', () => {
     [{ name: 'join', payload: null }, '#/join'],
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'shared', payload: SHARE }, `#share/${SHARE}`],
+    [{ name: 'door', payload: 'abc' }, '#door/abc'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'priority', groupId: GROUP }, `#/g/${GROUP}/priority`],

@@ -4,7 +4,8 @@
  * Every signature covers a context tag's UTF-8, one 0x00 byte, then the
  * message, so a signature made for one purpose can never pass as another:
  * an event's signature is no invite token's (#73), and neither is a seat
- * proof (#100) or a shared Document's copy (#105). Verification is strict
+ * proof (#100), a shared Document's copy (#105) or a front door's page
+ * (#121). Verification is strict
  * RFC 8032, `zip215: false`, never the library's default, which accepts
  * non-canonical point encodings and small-order keys: a small-order key has
  * "signatures" that hold for every message, and devices that disagreed on
@@ -32,9 +33,16 @@ export const SEAT_CONTEXT = 'reconcile/v1/seat';
 /** The tag on a shared personal Document's copy (#105): its owner's signature over the copy. */
 export const SHARE_CONTEXT = 'reconcile/v1/share';
 
+/** The tag on a front door's page (#121): the door's own signature over the page. */
+export const DOOR_PAGE_CONTEXT = 'reconcile/v1/door-page';
+
 /** What a signature is for. */
 export type SignContext =
-  typeof EVENT_CONTEXT | typeof INVITE_TOKEN_CONTEXT | typeof SEAT_CONTEXT | typeof SHARE_CONTEXT;
+  | typeof EVENT_CONTEXT
+  | typeof INVITE_TOKEN_CONTEXT
+  | typeof SEAT_CONTEXT
+  | typeof SHARE_CONTEXT
+  | typeof DOOR_PAGE_CONTEXT;
 
 /** An Ed25519 public key's length in bytes. */
 export const PUBLIC_KEY_BYTES = 32;

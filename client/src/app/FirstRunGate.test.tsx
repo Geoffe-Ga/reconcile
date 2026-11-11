@@ -129,6 +129,7 @@ function setup(options: Options = {}) {
       origin={ORIGIN}
       copyText={() => Promise.resolve()}
       lookup={lookup}
+      readDoor={() => Promise.resolve({ kind: 'closed' })}
       lock={lock}
       passkey={passkey}
       passkeyOffer={passkeyOffer}
@@ -275,6 +276,27 @@ describe('FirstRunGate where keys may be made', () => {
     const { user } = setup({ notice: blocked });
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(appHeading()).toBeVisible();
+  });
+});
+
+describe('FirstRunGate with a front door’s link (#121)', () => {
+  const door = `#door/${'A'.repeat(42)}E`;
+
+  it('keeps the link in the address bar under the notice, so the app opens at the door', async () => {
+    const { user, opened } = setup({ hash: door });
+    expect(screen.getByRole('button', { name: 'I understand' })).toBeVisible();
+    expect(window.location.hash).toBe(door);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(appHeading()).toBeVisible();
+    expect(window.location.hash).toBe(door);
+    expect(opened.at(-1)?.heldSeed).toBeNull();
+  });
+
+  it('shows an iPhone outside the installed app the door in the guide, leaving its link in place', async () => {
+    setup({ platform: IPHONE_TAB, hash: door });
+    expect(await screen.findByText('This front door is closed.')).toBeVisible();
+    expect(window.location.hash).toBe(door);
+    expect(appHeading()).toBeNull();
   });
 });
 
