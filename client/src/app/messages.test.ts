@@ -64,8 +64,8 @@ describe('messages', () => {
     expect(messages.join.nameHint).toBe(
       'This name is only shown in this group. It doesn’t have to be your real name.',
     );
-    expect(messages.join.visibility).toBe(
-      'People in this group will see the name you choose and how you vote.',
+    expect(messages.join.visibility(30)).toBe(
+      'People in this group will see the name you choose and how you vote, until 30 days after each decision.',
     );
     expect(`${messages.join.fromBefore} Ana${messages.join.fromAfter}`).toBe('From Ana’s invite');
   });

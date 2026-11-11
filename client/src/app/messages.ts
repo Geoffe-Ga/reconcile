@@ -13,6 +13,9 @@ const LOCALE = 'en-GB';
 /** A whole number as this language writes it, such as "2,000". */
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
+/** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
+const CLEARED_ON = 'Individual scores and notes were cleared on';
+
 export const messages = {
   app: {
     name: 'Reconcile',
@@ -146,7 +149,9 @@ export const messages = {
     nameLabel: 'Your name',
     nameHint: 'This name is only shown in this group. It doesn’t have to be your real name.',
     nameMissing: 'Add the name your group will see.',
-    visibility: 'People in this group will see the name you choose and how you vote.',
+    /** What joining shows the group: individual ballots expire `days` after each decision (#111). */
+    visibility: (days: number) =>
+      `People in this group will see the name you choose and how you vote, until ${count(days)} days after each decision.`,
     submit: 'Join group',
     badLinkTitle: 'This invite link doesn’t work',
     badLink: 'This invite link has expired or is damaged. Ask someone in your group for a new one.',
@@ -424,6 +429,15 @@ export const messages = {
     ranTo: '–',
     ranEnd: '.',
     ranEarlyEnd: ', when everyone had voted.',
+    /** "Individual scores and notes are visible until <date>. …", the date in a `<time>` element (#111). */
+    visibleUntil: 'Individual scores and notes are visible until',
+    visibleUntilEnd: '. Screenshots taken before then can outlast this.',
+    /** "Individual scores and notes were cleared on <date>.", once the device has deleted them. */
+    clearedOn: CLEARED_ON,
+    clearedOnEnd: '.',
+    /** "A record of this decision posted by <name> doesn’t match the ballots on this device." */
+    mismatchBefore: 'A record of this decision posted by',
+    mismatchAfter: 'doesn’t match the ballots on this device.',
   },
   leave: {
     open: 'Leave this group',
@@ -476,6 +490,8 @@ export const messages = {
     empty: 'Nothing decided yet.',
     /** Each outcome as the Decided list names it. */
     outcomes: { pass: 'Passed', fail: 'Didn’t pass', lapse: 'Lapsed' },
+    /** Added to an entry once this device has deleted its individual scores and notes (#111). */
+    cleared: 'Scores cleared',
   },
   send: {
     sending: 'Sending…',
@@ -665,7 +681,7 @@ export const messages = {
     closed: 'Closed when the group dissolved',
     readOnlyTitle: 'This group has dissolved',
     readOnly: 'This is a read-only copy. Nothing new can be proposed or voted on.',
-    cleared: (date: string) => `Individual scores and notes were cleared on ${date}.`,
+    cleared: (date: string) => `${CLEARED_ON} ${date}.`,
   },
   /**
    * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat

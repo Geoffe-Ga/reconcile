@@ -14,6 +14,7 @@ import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
+import { groupLog, START_MINUTE } from '../test/votes';
 import { GroupServicesContext, useGroup } from './useGroup';
 import type { GroupServices } from './useGroup';
 
@@ -112,6 +113,43 @@ describe('useGroup', () => {
       expect(result.current.state?.members.map((member) => member.name)).toEqual(['Ana', 'Ben']);
     });
     expect(result.current.pending).toEqual([]);
+  });
+
+  it('folds with the Proposals whose ballots this device has cleared (#111)', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana');
+    log.minute += 2;
+    log.result('ana', {
+      proposal: proposalId,
+      closedAt: START_MINUTE + 1,
+      eligible: 2,
+      versions: [{ id: proposalId, counts: [0, 0, 0, 1, 1] }],
+      outcome: { kind: 'pass', version: proposalId },
+      commit: 'kept',
+    });
+    const group: Group = {
+      ...groupWith(genesis()),
+      log: [...log.records],
+      relayNow: log.minute,
+      cleared: [proposalId],
+    };
+    const store = {
+      getGroup: () => Promise.resolve(group),
+      listCoalitions: () => Promise.resolve([]),
+      subscribe: () => () => undefined,
+    };
+    const sync = { isReachable: () => true, subscribe: () => () => undefined };
+
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+
+    await waitFor(() => {
+      expect(result.current.state?.proposals[0]).toMatchObject({
+        cleared: true,
+        closedAt: START_MINUTE + 1,
+        outcome: { kind: 'pass' },
+      });
+    });
+    expect(result.current.state?.atoms[0]?.text).toBe('Quiet after 11pm.');
   });
 
   it('leaves bytes that are not an event out of pending', async () => {

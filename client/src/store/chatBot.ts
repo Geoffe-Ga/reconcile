@@ -48,10 +48,11 @@ import {
   threadUrl,
 } from '../engine/chatPosts';
 import { signEvent } from '../engine/event';
-import { fold, type GroupState, type Proposal } from '../engine/fold';
+import type { GroupState, Proposal } from '../engine/fold';
 import { effectiveOptIn, webhookParts } from '../engine/optIns';
 import type { Answer, PostOptions, WebhookHome } from '../net/discord';
 import type { ChatChannel, ChatClaim, Group, Store } from './db';
+import { foldGroup } from './expiry';
 
 /**
  * The text the bot posts for `moment` of a Proposal whose voting ends at
@@ -271,7 +272,7 @@ export function createChatBot(options: ChatBotOptions): ChatBot {
       if (group === undefined || group.leaving !== undefined) return;
       const mark = `${String(group.log.length)}@${String(group.relayNow)}`;
       if (settled.get(groupId) === mark) return;
-      const state = fold(group.log, group.relayNow);
+      const state = foldGroup(group);
       const webhook = webhookFor(state, group.me.author);
       await settle(group, state, webhook);
       if (webhook !== null) await claim(group, state);

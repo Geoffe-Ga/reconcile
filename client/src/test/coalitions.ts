@@ -42,19 +42,22 @@ export interface FoldedLog {
 
 /**
  * Folds logs as a device would: the coalition's first, then each other log,
- * a member group's, with the motions its seat decides.
+ * a member group's, with the motions its seat decides and, by log, the
+ * Proposals whose ballots that group's device has cleared (#111).
  */
 export function foldLogs(
   logs: Readonly<Record<string, readonly LogRecord[]>>,
   relayNow: number | null,
+  cleared: Readonly<Record<string, readonly string[]>> = {},
 ): Record<string, FoldedLog> {
   const coalition = fold(logs.coalition ?? [], relayNow);
   const folded: Record<string, FoldedLog> = { coalition: { state: coalition, seat: null } };
   for (const [log, records] of Object.entries(logs)) {
     if (log === 'coalition') continue;
-    const seat = seatIn(fold(records, relayNow), coalition);
+    const gone = cleared[log] ?? [];
+    const seat = seatIn(fold(records, relayNow, [], gone), coalition);
     const outside = seat === null ? [] : motionsFor(coalition, seat);
-    folded[log] = { state: fold(records, relayNow, outside), seat };
+    folded[log] = { state: fold(records, relayNow, outside, gone), seat };
   }
   return folded;
 }

@@ -25,7 +25,7 @@
  *   to join under its seat; if it didn't pass, the plan goes.
  *
  * A group's own fold takes the motions its seats decide (`motionsFor`), so
- * its members vote on them as on any Proposal ({@link foldGroup}). Nothing
+ * its members vote on them as on any Proposal ({@link foldWithCoalitions}). Nothing
  * here reads a person's key in one log to find them in another.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
@@ -37,6 +37,7 @@ import { motionsFor, resultsToReport } from '../engine/crossing';
 import { type GroupResultBody, type ParsedEvent, parseRecord, signEvent } from '../engine/event';
 import { fold, type GroupState } from '../engine/fold';
 import { type Group, isCoalitionEntry, type NewGroup, type Store } from './db';
+import { foldGroup } from './expiry';
 
 /** A coalition entry with its log folded. */
 export interface HeldCoalition {
@@ -86,7 +87,7 @@ export function newEntry(
 export async function ensureEntries(store: Store): Promise<void> {
   const held = new Set((await store.listCoalitions()).map((entry) => entry.groupId));
   for (const group of await store.listGroups()) {
-    const secrets = [...heldSecrets(fold(group.log, group.relayNow)), ...queuedSecrets(group)];
+    const secrets = [...heldSecrets(foldGroup(group)), ...queuedSecrets(group)];
     for (const secret of secrets) {
       const entry = newEntry(fromBase64url(secret));
       if (held.has(entry.groupId)) continue;
@@ -100,7 +101,7 @@ export async function ensureEntries(store: Store): Promise<void> {
 export async function heldCoalitions(store: Pick<Store, 'listCoalitions'>) {
   return (await store.listCoalitions()).map((entry) => ({
     entry,
-    state: fold(entry.log, entry.relayNow),
+    state: foldGroup(entry),
   }));
 }
 
@@ -123,13 +124,13 @@ export function outsideFor(
  * `group` folded with the motions its seats decide in the coalitions on the
  * device, so its members vote on them as on any of its Proposals (#114).
  */
-export function foldGroup(
-  group: Pick<Group, 'log' | 'relayNow'>,
+export function foldWithCoalitions(
+  group: Pick<Group, 'log' | 'relayNow' | 'cleared'>,
   coalitions: readonly HeldCoalition[],
 ): GroupState {
-  const own = fold(group.log, group.relayNow);
+  const own = foldGroup(group);
   const outside = outsideFor(own, coalitions);
-  return outside.length === 0 ? own : fold(group.log, group.relayNow, outside);
+  return outside.length === 0 ? own : fold(group.log, group.relayNow, outside, group.cleared ?? []);
 }
 
 /** A group on the device with its fold, as {@link settleCoalitions} reads it. */
@@ -224,7 +225,7 @@ async function reportResults(settling: Settling, coalitions: readonly HeldCoalit
   const seat = boundSeat(settling);
   const holder = seat === null ? null : holderOf(settling.groups, seat);
   if (seat === null || holder === null) return false;
-  const state = foldGroup(holder.group, coalitions);
+  const state = foldWithCoalitions(holder.group, coalitions);
   const owed = resultsToReport(state, settling.coalition, seat).filter(
     (body) => !resultWaits(settling.pending, body),
   );
@@ -277,7 +278,7 @@ export async function settleCoalitions(store: Store, clock: () => number): Promi
   const coalitions = await heldCoalitions(store);
   const groups = (await store.listGroups())
     .filter((group) => group.archived === undefined && group.leaving === undefined)
-    .map((group) => ({ group, state: fold(group.log, group.relayNow) }));
+    .map((group) => ({ group, state: foldGroup(group) }));
   const queued: string[] = [];
   for (const { entry, state: coalition } of coalitions) {
     const id = coalition.group;
@@ -302,5 +303,5 @@ export async function settleCoalitions(store: Store, clock: () => number): Promi
 /** Whether the sync loop reads `entry`: any group, and a coalition until it was declined. */
 export function stillSyncs(entry: Group): boolean {
   if (!isCoalitionEntry(entry)) return true;
-  return fold(entry.log, entry.relayNow).coalition?.status !== 'declined';
+  return foldGroup(entry).coalition?.status !== 'declined';
 }

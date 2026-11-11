@@ -16,7 +16,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import {
   ensureEntries,
-  foldGroup,
+  foldWithCoalitions,
   heldCoalitions,
   newEntry,
   outsideFor,
@@ -307,10 +307,12 @@ describe('folding a group with its coalitions', () => {
     const records = logs.logs.A ?? [];
 
     expect(
-      foldGroup({ log: records, relayNow: at + 1 }, coalitions).proposals.map((p) => p.id),
+      foldWithCoalitions({ log: records, relayNow: at + 1 }, coalitions).proposals.map((p) => p.id),
     ).toContain(motion);
     expect(outsideFor(fold([], null), coalitions)).toEqual([]);
-    expect(foldGroup({ log: records, relayNow: at + 1 }, [])).toEqual(fold(records, at + 1));
+    expect(foldWithCoalitions({ log: records, relayNow: at + 1 }, [])).toEqual(
+      fold(records, at + 1),
+    );
     expect(a).toBe(fold(records, null).group);
   });
 
@@ -362,5 +364,29 @@ describe('a coalition entry’s plan in the store', () => {
 
     await expect(store.planCoalition(a, { name: 'Ana' })).rejects.toThrow('coalition');
     expect((await store.getGroup(a))?.me.name).toBe('ana');
+  });
+});
+
+describe('a group whose ballots have expired (#111)', () => {
+  it('folds with its cleared Proposals beside the coalition’s motions', async () => {
+    const store = await device();
+    const logs = new Logs();
+    groupA(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'kim');
+    await keepEntry(store, logs, 'kim');
+    const coalitions = await heldCoalitions(store);
+    const records = logs.logs.A ?? [];
+    const reconcile = fold(records, null).proposals[0]?.id ?? '';
+
+    const kept = foldWithCoalitions({ log: records, relayNow: at + 1 }, coalitions);
+    const cleared = foldWithCoalitions(
+      { log: records, relayNow: at + 1, cleared: [reconcile] },
+      coalitions,
+    );
+    expect(cleared.proposals.find((p) => p.id === reconcile)?.cleared).toBe(true);
+    expect(kept.proposals.find((p) => p.id === reconcile)?.cleared).toBe(false);
+    expect(cleared.coalitions.map((c) => c.key)).toEqual(kept.coalitions.map((c) => c.key));
+    expect(cleared.proposals.map((p) => p.id)).toContain(motion);
   });
 });

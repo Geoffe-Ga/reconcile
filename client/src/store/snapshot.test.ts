@@ -9,6 +9,8 @@ import { BackupUnreadable, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { epochCommit } from '../crypto/epoch';
 import { newSigningKeys } from '../crypto/sign';
+import { parseRecord } from '../engine/event';
+import { resultFor } from '../engine/expiry';
 import { fold } from '../engine/fold';
 import { local, text, utf8 } from '../test/bytes';
 import { Logs, testSecret } from '../test/coalitions';
@@ -22,6 +24,7 @@ import { clearedArchive } from './archive';
 import { newEntry } from './coalitions';
 import { type BackedUpGroup, type Group, openStore, type Store, VaultLocked } from './db';
 import { eventIdOf } from './eventId';
+import { clearExpiredBallots, foldGroup } from './expiry';
 import type { PersonalDocument, ShareState } from './personal';
 import {
   backedUpGroups,
@@ -376,6 +379,130 @@ describe('added and removed sections in a backup and a link (#75 with #78, #96, 
       expect(await folded(second, groupId)).toEqual(sections);
       expect((await second.getGroup(groupId))?.drafts).toBeUndefined();
     }
+  });
+});
+
+/** A note on a ballot that must not outlive its window, in a backup or anywhere else (#111). */
+const CANARY_NOTE = 'Canary note: the hall is too loud';
+
+/**
+ * A group of Ana and Ben whose one Proposal both scored, Ben with a note,
+ * with Ben's result, kept on `store` at relay minute `relayNow`, synced at
+ * `lastSyncAt`; past the window, `clear` clears its ballots (#111).
+ */
+async function keepDecided(
+  store: Store,
+  { relayNow, lastSyncAt, clear }: { relayNow: number; lastSyncAt: number; clear: boolean },
+) {
+  const log = groupLog({ members: ['Ben'] });
+  const proposal = log.propose('ana');
+  log.vote('ana', proposal, 4);
+  log.vote('ben', proposal, 0, CANARY_NOTE);
+  log.minute += 1;
+  const result = log.result('ben', resultFor(log.state().proposals[0] ?? never()));
+  const { secretKey, author } = testKeys('ana');
+  await store.addGroup({
+    groupId: log.group,
+    secret: new Uint8Array(32).fill(7),
+    signingKey: secretKey,
+    me: { author, name: 'Ana' },
+  });
+  const pull = { records: [...log.records], relayNow, instance: 'relay-1', lastSyncAt };
+  await store.applyPull(log.group, { ...pull, cursor: log.records.length }, eventIdOf);
+  if (clear) await clearExpiredBallots(store, log.group);
+  return { groupId: log.group, proposal, result, closedAt: log.minute - 1 };
+}
+
+/** The type of each event in a group's log on `store`. */
+async function logTypes(store: Store, groupId: string): Promise<string[]> {
+  const group = await store.getGroup(groupId);
+  return (group?.log ?? []).map((record) => parseRecord(record.bytes)?.event.type ?? '?');
+}
+
+/** What a device must keep of a group once ballots expire: its Document and its decisions. */
+async function decisionsOn(store: Store, groupId: string) {
+  const group = await store.getGroup(groupId);
+  if (group === undefined) throw new Error('Expected the group.');
+  const { atoms, proposals } = foldGroup(group);
+  return { atoms, proposals: proposals.map(({ id, final, outcome }) => ({ id, final, outcome })) };
+}
+
+function never(): never {
+  throw new Error('Expected a Proposal.');
+}
+
+describe('cleared ballots in a backup and a link (#111 with #78, #96, #97)', () => {
+  const WINDOW = 43_200;
+
+  it('carry the cleared Proposals, and bring the same decisions back with no ballot or note', async () => {
+    const device = await openStore('ana');
+    const { groupId, proposal, closedAt } = await keepDecided(device, {
+      relayNow: 29_000_000 + WINDOW * 2,
+      lastSyncAt: 1_762_000_000_000,
+      clear: true,
+    });
+    expect((await device.getGroup(groupId))?.cleared).toEqual([proposal]);
+    expect(closedAt).toBeLessThan(29_000_000 + WINDOW);
+
+    for (const [name, from] of [
+      ['restored', 'backup'],
+      ['laptop', 'link'],
+    ] as const) {
+      const { plaintext } = await takeSnapshot(device, from);
+      expect(firstGroupOf(plaintext)).toMatchObject({ cleared: [proposal] });
+      expect(text(plaintext)).not.toContain(CANARY_NOTE);
+      const second = await openStore(name);
+      await importSnapshot(second, plaintext, from);
+      expect((await second.getGroup(groupId))?.cleared).toEqual([proposal]);
+      expect(await logTypes(second, groupId)).not.toContain('vote');
+      expect(await decisionsOn(second, groupId)).toEqual(await decisionsOn(device, groupId));
+    }
+  });
+
+  it('keep what the device cleared when a file’s later copy still holds those ballots, and none of them', async () => {
+    const device = await openStore('ana');
+    const relayNow = 29_000_000 + WINDOW * 2;
+    const { groupId, proposal, result } = await keepDecided(device, {
+      relayNow,
+      lastSyncAt: 1_762_000_000_000,
+      clear: true,
+    });
+    const other = await openStore('other-device');
+    await keepDecided(other, { relayNow, lastSyncAt: 1_762_000_900_000, clear: false });
+    const { plaintext } = await takeSnapshot(other);
+    expect(text(plaintext)).not.toContain('"cleared"');
+
+    await importSnapshot(device, plaintext);
+
+    const kept = await device.getGroup(groupId);
+    expect(kept?.lastSyncAt).toBe(1_762_000_900_000);
+    expect(kept?.cleared).toEqual([proposal]);
+    expect(await logTypes(device, groupId)).toContain('result');
+    expect(await logTypes(device, groupId)).not.toContain('vote');
+    expect(foldGroup(kept ?? never()).proposals[0]?.result?.id).toBe(result);
+    const plain = (await dump(device)) as unknown[];
+    expect(JSON.stringify(plain)).not.toContain(CANARY_NOTE);
+  });
+
+  it('read a group without cleared as clearing nothing, and refuse one whose cleared isn’t a list of distinct ids', async () => {
+    const device = await openStore('ana');
+    const { groupId, proposal } = await keepDecided(device, {
+      relayNow: 29_000_000 + WINDOW * 2,
+      lastSyncAt: 1_762_000_000_000,
+      clear: true,
+    });
+    const json = JSON.parse(text(await snapshotOf(device))) as {
+      groups: Record<string, unknown>[];
+    };
+    const withCleared = (cleared: unknown) =>
+      utf8(JSON.stringify({ ...json, groups: json.groups.map((g) => ({ ...g, cleared })) }));
+    expect(decodeSnapshot(withCleared(undefined))?.groups[0]?.cleared).toBeUndefined();
+    expect(decodeSnapshot(withCleared([]))?.groups[0]?.cleared).toBeUndefined();
+    expect(decodeSnapshot(withCleared([proposal]))?.groups[0]?.cleared).toEqual([proposal]);
+    for (const bad of [proposal, [1], ['not an id'], [proposal, proposal], {}]) {
+      expect(decodeSnapshot(withCleared(bad))).toBeNull();
+    }
+    expect(groupId).toBe(json.groups[0]?.groupId);
   });
 });
 

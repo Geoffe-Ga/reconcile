@@ -7,7 +7,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { can, type Level } from '../engine/capabilities';
-import { fold, type GroupState } from '../engine/fold';
+import type { GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
@@ -38,6 +38,7 @@ import { Start } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
+import { foldGroup } from '../store/expiry';
 import type { LinkCode } from '../crypto/link';
 import { joinLink, offerLink } from '../link/session';
 import { newPersonalId } from '../store/personal';
@@ -153,7 +154,7 @@ function usePasskeyState(passkey: Passkey): SettingsPasskey['state'] | null {
  * it's leaving or once it's a read-only archive (#108).
  */
 function notifyGroupOf(group: Group): NotifyGroup | null {
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   // A read-only archive takes nothing new, push included (#108).
   if (state.group === null || group.leaving !== undefined || group.archived !== undefined) {
     return null;

@@ -9,7 +9,7 @@ import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { fold, type GroupState } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
-import { foldGroup } from '../store/coalitions';
+import { foldWithCoalitions } from '../store/coalitions';
 import type { Group } from '../store/db';
 import { COALITION_STATEMENT, Logs, testSecret } from '../test/coalitions';
 import { authorOf } from '../test/keys';
@@ -39,7 +39,7 @@ function heldCoalition(
 
 /** Group `log` folded with its coalition's motions, as group home folds it. */
 function groupState(logs: Logs, log: string, relayNow: number, held: HeldCoalition): GroupState {
-  return foldGroup({ log: logs.logs[log] ?? [], relayNow }, [held]);
+  return foldWithCoalitions({ log: logs.logs[log] ?? [], relayNow }, [held]);
 }
 
 /** Riverside (ana, ben) proposes reconciling under seat A; it passes unless `pass` is false. */

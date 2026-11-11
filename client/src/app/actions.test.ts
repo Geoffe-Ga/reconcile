@@ -43,6 +43,7 @@ import {
   type Services,
 } from './actions';
 import { parseInviteLink } from './invite';
+import { castBallot, propose } from './proposals';
 
 freshIndexedDBPerTest();
 
@@ -371,6 +372,7 @@ describe('makeInvite', () => {
       },
       token: { by: group.me.author, sig: expect.any(String) as string },
       entries: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
+      cleared: [],
     });
     const sig = fromBase64url(envelope?.token.sig ?? '');
     expect(verifyInviteToken(publicKeyOf(group.signingKey), sig, groupId)).toBe(true);
@@ -479,6 +481,7 @@ describe('lookupInvite', () => {
         secret: Uint8Array.from(group.secret),
         epoch: 0,
         token: envelopeAt(fake, link)?.token,
+        cleared: [],
         page: {
           records: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
           // The highest seq among the entries: Ana's own base cursor is 0 (#110).
@@ -549,6 +552,7 @@ describe('lookupInvite', () => {
       preview: { groupName: 'g', inviterName: 'i', documentTitle: 't', excerpt: 'e' },
       token: { by: group.me.author, sig: 'A'.repeat(86) },
       entries: [{ seq: 1, received: 1, bytes: utf8('not a record') }],
+      cleared: [],
     });
     for (const blob of forged) await ana.relay.putBlob(channel.mailbox, blob, 1);
 
@@ -587,6 +591,34 @@ describe('lookupInvite', () => {
     expect(after.outbox).toEqual([]);
   });
 });
+
+/**
+ * Ana's group, which Ben joins; Ana proposes, both vote with Ana leaving a
+ * note, a device posts the result a minute on, and 30 days on both devices
+ * clear the ballots (#111).
+ */
+async function decidedAndCleared(fake: FakeRelay) {
+  const { ana, groupId } = await anaWithGroup(fake);
+  const ben = await device(fake, 'ben');
+  await joinBy(ben, await linkTo(ana, groupId), 'Ben');
+  for (const services of [ben, ana]) await services.sync.syncOnce();
+  const atom = fold((await stored(ana, groupId)).log, null).atoms[0]?.id ?? '';
+  const values = { title: 'Later quiet hours', why: 'Shift work.', link: null };
+  const text = 'Quiet hours start at eleven.';
+  const proposed = await propose(ana, groupId, { ...values, atom, text });
+  if (proposed.outcome !== 'proposed') throw new Error('Expected the Proposal to queue.');
+  const { proposalId } = proposed;
+  for (const services of [ana, ben]) await services.sync.syncOnce();
+  const scores = { [proposalId]: 4 as const };
+  await castBallot(ana, groupId, { proposal: proposalId, scores, note: 'Not for travel.' });
+  await castBallot(ben, groupId, { proposal: proposalId, scores, note: '' });
+  for (const services of [ana, ben]) await services.sync.syncOnce();
+  fake.minute += 1;
+  for (const services of [ana, ben, ana]) await services.sync.syncOnce();
+  fake.minute += 43_200;
+  for (const services of [ana, ana]) await services.sync.syncOnce();
+  return { ana, ben, groupId, proposalId };
+}
 
 describe('joinGroup', () => {
   async function folded(services: Services, groupId: string): Promise<string[]> {
@@ -662,6 +694,30 @@ describe('joinGroup', () => {
       (await stored(ana, groupId)).me.author,
       (await stored(ben, groupId)).me.author,
     ]);
+  });
+
+  it('carries the Proposals whose ballots the inviter cleared, so a newcomer folds the same Document from their results (#111)', async () => {
+    const fake = createFakeRelay();
+    const { ana, groupId, proposalId } = await decidedAndCleared(fake);
+    const anaGroup = await stored(ana, groupId);
+    expect(anaGroup.cleared).toEqual([proposalId]);
+
+    const link = await linkTo(ana, groupId);
+    expect(envelopeAt(fake, link)?.cleared).toEqual([proposalId]);
+    const cal = await device(fake, 'cal');
+    await joinBy(cal, link, 'Cal');
+
+    const calGroup = await stored(cal, groupId);
+    expect(calGroup.cleared).toEqual([proposalId]);
+    const types = calGroup.log.map((record) => parseRecord(record.bytes)?.event.type);
+    expect(types).not.toContain('vote');
+    expect(types).toContain('result');
+    const anaState = fold(anaGroup.log, anaGroup.relayNow, [], anaGroup.cleared);
+    const calState = fold(calGroup.log, calGroup.relayNow, [], calGroup.cleared);
+    expect(calState.atoms).toEqual(anaState.atoms);
+    expect(calState.atoms[0]?.text).toBe('Quiet hours start at eleven.\n');
+    // Without the header's cleared, the result alone, with no ballots, would read as nobody voting.
+    expect(fold(calGroup.log, calGroup.relayNow).atoms).not.toEqual(anaState.atoms);
   });
 
   it('takes the week from the invite GET’s now: its first pass starts there and posts the join there (#110)', async () => {
@@ -885,6 +941,7 @@ describe('encryption keys and a new group key (#98)', () => {
       preview: { groupName: 'G', inviterName: 'Ana', documentTitle: 'T', excerpt: '' },
       token: { by: held.me.author, sig: 'A'.repeat(86) },
       entries: held.log,
+      cleared: [],
     });
     for (const blob of forged) await ana.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
 

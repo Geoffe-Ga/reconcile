@@ -37,7 +37,14 @@ function entry(seq: number, size: number, fill = seq % 256): LogRecord {
 
 /** An envelope holding `entries`, under a fresh group secret of epoch 0. */
 function envelope(entries: readonly LogRecord[]): Envelope {
-  return { groupSecret: newGroupSecret(), epoch: 0, preview: PREVIEW, token: TOKEN, entries };
+  return {
+    groupSecret: newGroupSecret(),
+    epoch: 0,
+    preview: PREVIEW,
+    token: TOKEN,
+    entries,
+    cleared: [],
+  };
 }
 
 /** JSON text as the header's bytes. */
@@ -166,20 +173,27 @@ describe('clip', () => {
 });
 
 describe('encodeHeader and decodeHeader', () => {
-  it('write the header as JSON {groupSecret, epoch, preview, token, chunkCount}', () => {
+  it('write the header as JSON {groupSecret, epoch, preview, token, chunkCount, cleared}', () => {
     const secret = newGroupSecret();
-    const header = encodeHeader({ ...envelope([]), groupSecret: secret, epoch: 2, chunkCount: 3 });
+    const header = encodeHeader({
+      ...envelope([]),
+      groupSecret: secret,
+      epoch: 2,
+      chunkCount: 3,
+      cleared: ['p1', 'p2'],
+    });
     expect(JSON.parse(new TextDecoder().decode(header))).toEqual({
       groupSecret: base64url(secret),
       epoch: 2,
       preview: PREVIEW,
       token: TOKEN,
       chunkCount: 3,
+      cleared: ['p1', 'p2'],
     });
   });
 
-  it('read back what they wrote', () => {
-    const written = { ...envelope([]), epoch: 1, chunkCount: 2 };
+  it('read back what they wrote, the Proposals whose ballots the inviter cleared included (#111)', () => {
+    const written = { ...envelope([]), epoch: 1, chunkCount: 2, cleared: ['p1'] };
     const read = decodeHeader(encodeHeader(written));
     expect(read).toEqual({
       groupSecret: Uint8Array.from(written.groupSecret),
@@ -187,7 +201,17 @@ describe('encodeHeader and decodeHeader', () => {
       preview: PREVIEW,
       token: TOKEN,
       chunkCount: 2,
+      cleared: ['p1'],
     });
+  });
+
+  it('read a header without cleared as clearing nothing, and refuse one whose cleared isn’t a list of ids', () => {
+    const without = headerJson();
+    delete without.cleared;
+    expect(decodeHeader(bytes(JSON.stringify(without)))?.cleared).toEqual([]);
+    for (const cleared of ['p1', [1], [null], {}, ['p1', 2]]) {
+      expect(decodeHeader(bytes(JSON.stringify({ ...headerJson(), cleared })))).toBeNull();
+    }
   });
 
   it('cut each preview field to its limit, so a long name or section never grows the header', () => {

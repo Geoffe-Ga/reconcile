@@ -1,0 +1,1444 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "a Proposal in cleared takes its outcome and early close from its result, and its pass applies",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 10pm."
+          },
+          {
+            "text": "Bins out on Sunday."
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "final": true,
+            "cleared": true,
+            "ballots": [],
+            "outcome": {
+              "kind": "pass",
+              "version": "@3",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@4",
+              "author": "%ana",
+              "closedAt": 29375021,
+              "commit": "commit-of-the-cleared-ballots",
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ]
+            },
+            "mismatched": []
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "with the ballots held, a version in the early close's minute but after the closing ballot is ignored, as is one after",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 9pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 3,
+                "@4": 4
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 2,
+                "@4": 4
+              },
+              "salt": "salt-of-bens-ballot"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 8pm."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375025,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 7pm."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375026,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 1, 1, 0]
+                },
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 0, 2]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": {
+                "$base64url": [
+                  190, 85, 75, 31, 112, 1, 30, 121, 214, 65, 216, 160, 102, 249, 137, 94, 131, 10,
+                  252, 181, 84, 5, 29, 182, 20, 45, 147, 26, 251, 222, 20, 149
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 9pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "cleared": false,
+            "versions": [
+              {
+                "id": "@3"
+              },
+              {
+                "id": "@4",
+                "author": "%ben"
+              }
+            ],
+            "outcome": {
+              "kind": "pass",
+              "version": "@4",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@9"
+            }
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "with the ballots cleared, a version in the early close's minute joins only if the result lists it, and one after is ignored",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 9pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 8pm."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375025,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@3",
+              "text": "Quiet after 7pm."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375026,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 1, 1, 0]
+                },
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 0, 2]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": {
+                "$base64url": [
+                  190, 85, 75, 31, 112, 1, 30, 121, 214, 65, 216, 160, 102, 249, 137, 94, 131, 10,
+                  252, 181, 84, 5, 29, 182, 20, 45, 147, 26, 251, 222, 20, 149
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 9pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "cleared": true,
+            "versions": [
+              {
+                "id": "@3"
+              },
+              {
+                "id": "@4",
+                "author": "%ben"
+              }
+            ],
+            "outcome": {
+              "kind": "pass",
+              "version": "@4",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@7"
+            }
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      }
+    },
+    {
+      "name": "with the ballots held, a second Proposal on the same Atom opens in the minute of the first's early close, after the closing ballot",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 3
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              },
+              "salt": "salt-of-bens-ballot"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Even later",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after midnight."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": {
+                "$base64url": [
+                  20, 100, 41, 161, 43, 142, 47, 59, 194, 204, 14, 214, 180, 166, 15, 132, 126, 213,
+                  35, 163, 171, 218, 221, 105, 63, 61, 147, 224, 25, 0, 213, 240
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 10pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@7"
+            },
+            "cleared": false
+          },
+          {
+            "id": "@6",
+            "received": 29375021,
+            "final": false,
+            "atom": "@1.0"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "with the ballots cleared, a second Proposal on the same Atom opens in the minute of the first's early close, before the result arrives",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Even later",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after midnight."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": {
+                "$base64url": [
+                  20, 100, 41, 161, 43, 142, 47, 59, 194, 204, 14, 214, 180, 166, 15, 132, 126, 213,
+                  35, 163, 171, 218, 221, 105, 63, 61, 147, 224, 25, 0, 213, 240
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 10pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@5"
+            },
+            "cleared": true
+          },
+          {
+            "id": "@4",
+            "received": 29375021,
+            "final": false,
+            "atom": "@1.0"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "for a Proposal in cleared, a ballot left in the log is ignored, and only the first result counts",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 0
+              },
+              "note": "A note that should be gone.",
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "first"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 0, 2]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "second"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "ballots": [],
+            "closedAt": 29375021,
+            "result": {
+              "id": "@5",
+              "commit": "first"
+            },
+            "mismatched": []
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      }
+    },
+    {
+      "name": "for a Proposal in cleared, a result from someone who isn't a member is ignored, so it neither closes nor decides it",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "c"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 11pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": null,
+            "final": false,
+            "cleared": true,
+            "outcome": {
+              "kind": "lapse",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": null,
+            "mismatched": []
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      }
+    },
+    {
+      "name": "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "c"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 11pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": null,
+            "final": false,
+            "cleared": true,
+            "outcome": {
+              "kind": "lapse",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": null,
+            "mismatched": []
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      }
+    },
+    {
+      "name": "for a Proposal in cleared, a result whose outcome its counts don't give is ignored",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [2, 0, 0, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "c"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 11pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": null,
+            "final": false,
+            "cleared": true,
+            "outcome": {
+              "kind": "lapse",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": null,
+            "mismatched": []
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      }
+    },
+    {
+      "name": "for a Proposal in cleared, an early close whose counts leave an eligible voter out is ignored",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 0, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "lapse"
+              },
+              "commit": "c"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 11pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": null,
+            "final": false,
+            "cleared": true,
+            "outcome": {
+              "kind": "lapse",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": null,
+            "mismatched": []
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      }
+    }
+  ]
+}

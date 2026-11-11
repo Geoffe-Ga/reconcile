@@ -22,8 +22,9 @@ import {
 
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
-import { fold, type GroupState, type LogRecord } from '../engine/fold';
-import { foldGroup, type HeldCoalition } from '../store/coalitions';
+import type { GroupState, LogRecord } from '../engine/fold';
+import { foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
+import { foldGroup } from '../store/expiry';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
 
@@ -103,7 +104,7 @@ export function useGroup(groupId: string): GroupView {
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
   const state = useMemo(() => {
     if (group === undefined) return null;
-    return group.archived?.cleared?.state ?? foldGroup(group, coalitions);
+    return group.archived?.cleared?.state ?? foldWithCoalitions(group, coalitions);
   }, [group, coalitions]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   return {
@@ -143,7 +144,7 @@ export function useCoalitions(
           setCoalitions(
             entries.length === 0
               ? NO_COALITIONS
-              : entries.map((entry) => ({ entry, state: fold(entry.log, entry.relayNow) })),
+              : entries.map((entry) => ({ entry, state: foldGroup(entry) })),
           );
         },
         // A failed read keeps the last list; the next change reads again.

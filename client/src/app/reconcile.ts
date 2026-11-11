@@ -38,6 +38,7 @@ import { clip } from '../invite/envelope';
 import { heldSecrets, newEntry, queuedSecrets } from '../store/coalitions';
 import type { Group } from '../store/db';
 import { eventIdOf } from '../store/eventId';
+import { foldGroup } from '../store/expiry';
 import { readRecentLog, type RecentLog } from '../store/sync';
 import type { Services } from './actions';
 import { messages } from './messages';
@@ -133,7 +134,7 @@ export async function makeCard(
   const { store } = services;
   const group = await store.getGroup(groupId);
   if (group === undefined) throw new Error('No such group on this device.');
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   const coalition = {
     secret: newGroupSecret(),
     inner: newGroupSecret(),
@@ -200,7 +201,7 @@ async function groupsFor(services: Services, secret: string): Promise<CardGroup[
   const groups = await services.store.listGroups();
   return groups.flatMap((group) => {
     if (group.archived !== undefined || group.leaving !== undefined) return [];
-    const state = fold(group.log, group.relayNow);
+    const state = foldGroup(group);
     if (state.group === null || !can(state, group.me.author, 'propose')) return [];
     if ([...heldSecrets(state), ...queuedSecrets(group)].includes(secret)) return [];
     return [{ groupId: group.groupId, name: state.name }];
@@ -299,7 +300,7 @@ export async function bringCard(
   const { store } = services;
   const group = await store.getGroup(groupId);
   if (group === undefined) throw new Error('No such group on this device.');
-  const state = fold(group.log, group.relayNow);
+  const state = foldGroup(group);
   const { card } = found;
   const { target, seatSecret, seatKey } = reconcileTarget(card);
   const proposal = reconcileRecord(group, services.now(), { target, why: '' });
@@ -377,8 +378,8 @@ export async function admitCard(
   const entry = await services.store.getGroup(entryId);
   const group = await services.store.getGroup(groupId);
   if (entry === undefined || group === undefined) throw new Error('No such coalition here.');
-  const coalition = fold(entry.log, entry.relayNow);
-  const state = fold(group.log, group.relayNow);
+  const coalition = foldGroup(entry);
+  const state = foldGroup(group);
   const seats = new Set((coalition.coalition?.seats ?? []).map((seat) => seat.key));
   const target = state.proposals
     .map((p) => p.target)
