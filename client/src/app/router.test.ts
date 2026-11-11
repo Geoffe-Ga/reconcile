@@ -62,6 +62,8 @@ describe('parseRoute', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
+    [`#/g/${GROUP}/dispatches`, { name: 'dispatches', groupId: GROUP }],
+    [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -109,6 +111,13 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/narrow/toString`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
+    `#/g/${GROUP}/dispatch`,
+    `#/g/${GROUP}/dispatch/`,
+    `#/g/${GROUP}/dispatch/old`,
+    `#/g/${GROUP}/dispatch/${PROPOSAL}`,
+    `#/g/${GROUP}/dispatch/new/extra`,
+    `#/g/${GROUP}/dispatches/new`,
+    `#/g/${GROUP}/dispatches/${PROPOSAL}`,
     '#/join/',
     '#join',
     '#join/',
@@ -119,6 +128,20 @@ describe('parseRoute', () => {
     'create',
   ])('sends the unknown %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
+  });
+});
+
+describe('share links and Dispatches (#105, #112)', () => {
+  it('reads a share link as the shared page whatever follows, and a Dispatch route as itself', () => {
+    expect(parseRoute(`#share/g/${GROUP}/dispatches`)).toEqual({
+      name: 'shared',
+      payload: `g/${GROUP}/dispatches`,
+    });
+    expect(parseRoute(`#/g/${GROUP}/dispatch/new`)).toEqual({
+      name: 'sendDispatch',
+      groupId: GROUP,
+    });
+    expect(parseRoute(`#/g/${GROUP}/dispatches`)).toEqual({ name: 'dispatches', groupId: GROUP });
   });
 });
 
@@ -152,6 +175,8 @@ describe('routeHref', () => {
       `#/g/${GROUP}/narrow/chatBot`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
+    [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
+    [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

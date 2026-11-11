@@ -5,7 +5,7 @@
  * lower case, so `authorOf('ana')` names Ana.
  */
 import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
-import type { EventDraft, Score } from '../engine/event';
+import type { CarriedDispatch, DispatchBody, EventDraft, Score } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { authorOf, signedAs } from './keys';
@@ -32,6 +32,8 @@ export interface ProposalEntry {
   readonly atom?: number;
   /** The voting window in days; the class default when left out. */
   readonly window?: number;
+  /** The Dispatch it sends if it passes (#112); none when left out. */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /** A group's log under construction, one relay record at a time. */
@@ -77,6 +79,8 @@ export interface LogBuilder {
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
   /** Adds `name`'s record of an invite sent to the front door's `application` (#121), returning its id. */
   doorInvited(name: string, application: string): string;
+  /** Adds `name`'s Dispatch (#112), returning its id. */
+  dispatch(name: string, body: DispatchBody): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /** The folded state, with the relay's `now` (default: the current minute). */
@@ -147,6 +151,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
         ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },
@@ -210,6 +215,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     doorInvited(name: string, application: string) {
       return add(name, { type: 'door-invited', group, ts: 0, body: { application } });
+    },
+    dispatch(name: string, body: DispatchBody) {
+      return add(name, { type: 'dispatch', group, ts: 0, body });
     },
     state(relayNow?: number) {
       return fold(records, relayNow ?? builder.minute);
