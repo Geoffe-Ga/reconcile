@@ -424,7 +424,8 @@ export interface Focus {
  * which no key change can land. `strandedLeaves` lists, in relay order, the
  * leaves this device read stranded in an earlier epoch's mailbox whose
  * authors are still members (#225): like `ignored`, it is what this device
- * read, not something every device folds alike. `dissolved` is when the group dissolved, and whether its
+ * read, not something every device folds alike. `dissolved` is when the
+ * group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `coalitions` lists the group's reconcile Proposals (#100), each with its
@@ -560,7 +561,7 @@ interface Draft {
   readonly rotations: Rotation[];
   readonly refused: Rotation[];
   rotationDue: boolean;
-  /** The leaves read stranded in an earlier epoch's mailbox (#225), each once, whoever still holds a membership. */
+  /** The leaves read stranded in an earlier epoch's mailbox (#225), each once, members' or not by now. */
   readonly stranded: StrandedLeave[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
