@@ -1,0 +1,1131 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "chat-thread-ignored: a chat-thread from a member who didn’t make the winning open claim is ignored even when it comes first, and so is one for a URL off discord.com, past the thread id, over http:, with short ids, for a Proposal the log doesn’t hold, or whose URL isn’t text; the open claimant’s valid one after them all holds",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "chat-posted",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@12",
+              "moment": "open",
+              "nonce": "b-1"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501920000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://example.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000003/1400000000000000001"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@12",
+              "url": "http://discord.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discordapp.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188/1309"
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29375034,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502040000,
+            "body": {
+              "proposal": "no-such-proposal",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29375034,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502040000,
+            "body": {
+              "proposal": "@12",
+              "url": 42
+            }
+          }
+        },
+        {
+          "seq": 22,
+          "received": 29375035,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502100000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000004"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375040,
+      "expect": {
+        "chatThreads": [
+          {
+            "id": "@22",
+            "seq": 22,
+            "received": 29375035,
+            "by": "%ben",
+            "proposal": "@12",
+            "url": "https://discord.com/channels/1188000000000000001/1309000000000000004"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 14,
+            "id": "@14"
+          },
+          {
+            "seq": 15,
+            "id": "@15"
+          },
+          {
+            "seq": 16,
+            "id": "@16"
+          },
+          {
+            "seq": 17,
+            "id": "@17"
+          },
+          {
+            "seq": 18,
+            "id": "@18"
+          },
+          {
+            "seq": 19,
+            "id": "@19"
+          },
+          {
+            "seq": 20,
+            "id": "@20"
+          },
+          {
+            "seq": 21,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [14, 15, 16, 17, 18, 19, 20, 21]
+    },
+    {
+      "name": "chat-thread-narrowed: a chat-thread is ignored while a steward’s narrowing holds the bot off, and holds once the off-Proposal fails and the bot is back on",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "chat-posted",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@12",
+              "moment": "open",
+              "nonce": "b-1"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501920000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": null
+              },
+              "title": "Turn the chat bot off",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "narrow",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501920000,
+            "body": {
+              "optIn": "chatBot",
+              "proposal": "@14"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 0
+              },
+              "note": "Keep it as it is."
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 0
+              },
+              "note": "Keep it as it is."
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 0
+              },
+              "note": "Keep it as it is."
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 0
+              },
+              "note": "Keep it as it is."
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29375044,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502640000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000004"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7"
+          },
+          {
+            "id": "@12"
+          },
+          {
+            "id": "@14",
+            "closedAt": 29375043,
+            "outcome": {
+              "kind": "fail"
+            }
+          }
+        ],
+        "chatThreads": [
+          {
+            "id": "@21",
+            "seq": 21,
+            "received": 29375044,
+            "by": "%ben",
+            "proposal": "@12",
+            "url": "https://discord.com/channels/1188000000000000001/1309000000000000004"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 16,
+            "id": "@16"
+          }
+        ]
+      },
+      "unchangedWithout": [16]
+    },
+    {
+      "name": "chat-thread-off: a chat-thread is ignored once the group has turned the bot off, even from the open claimant",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "chat-posted",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@12",
+              "moment": "open",
+              "nonce": "b-1"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501920000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": null
+              },
+              "title": "Turn the chat bot off",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@14",
+              "scores": {
+                "@14": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29375044,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502640000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/1309000000000000003"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "optIns": {
+          "chatBot": null
+        },
+        "chatThreads": [],
+        "ignored": [
+          {
+            "seq": 19,
+            "id": "@19"
+          }
+        ]
+      },
+      "unchangedWithout": [19]
+    }
+  ]
+}

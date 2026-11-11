@@ -245,6 +245,16 @@ export interface ChatPostedBody {
 }
 
 /**
+ * Records a Proposal's Discord thread (#123): `url` is the link to the
+ * forum thread the author's device opened with the Proposal's first notice.
+ * Both are kept as written: the fold checks them (chatPosts.ts).
+ */
+export interface ChatThreadBody {
+  readonly proposal: string;
+  readonly url: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -320,6 +330,7 @@ export interface EventBodies {
   readonly dissolve: DissolveBody;
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
+  readonly 'chat-thread': ChatThreadBody;
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
@@ -628,6 +639,11 @@ function parseChatPosted(body: Json): ChatPostedBody | null {
   return { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
 }
 
+function parseChatThread(body: Json): ChatThreadBody | null {
+  const { proposal, url } = body;
+  return isString(proposal) && isString(url) ? { proposal, url } : null;
+}
+
 function parseDispatch(body: Json): DispatchBody | null {
   const { title, text, doc } = body;
   if (!isString(title) || !isString(text) || !isOptionalString(doc)) return null;
@@ -713,7 +729,7 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 /**
  * {@link withBody} for the types the restored features added: `suspend`
  * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
- * (#119) and `dispatch` (#112).
+ * (#119), `chat-thread` (#123) and `dispatch` (#112).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -727,6 +743,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-posted':
       return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'chat-thread':
+      return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dispatch':
       return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
