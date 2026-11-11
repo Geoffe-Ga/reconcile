@@ -295,7 +295,9 @@ describe('following a coalition (#124)', SLOW, () => {
     expect(window.location.hash).toBe('#/follow');
     await user.click(follow);
 
-    expect(await screen.findByRole('heading', { level: 1, name: CANARY_NAME })).toBeVisible();
+    // The preview's heading is the coalition's name too: wait for the follower's home itself.
+    expect(await screen.findByRole('region', { name: 'Dispatches' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1, name: CANARY_NAME })).toBeVisible();
     expect(window.location.hash).toBe(`#/c/${(await coalitionOn(ana)).group ?? ''}`);
     expect((await entryOn(gus)).following).toBe(true);
   });
