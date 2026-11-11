@@ -149,3 +149,34 @@ describe('Personal in the app', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'My mission statement' })).toBeVisible();
   });
 });
+
+describe('Personal’s line on where Documents go, in the app (#248)', () => {
+  it('says the sealed relay backup has them once the device keeps a key, and follows the key as it comes', async () => {
+    const ana = await device('ana');
+    const id = 'Q2FuYXJ5IHN0YXRlbWVudA';
+    await ana.services.store.savePersonal({
+      id,
+      title: 'My mission statement',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const { privacy, privacyRelayBackup, documentPrivacy, documentPrivacyRelayBackup } =
+      messages.personal;
+    window.history.replaceState(null, '', '#/me');
+    render(<App services={ana.services} />);
+
+    expect(await screen.findByText(privacy)).toBeVisible();
+
+    // #109 keeps a key once someone chooses recovery contacts: the line follows at once.
+    await ana.services.store.setRelayBackupKey(new Uint8Array(32).fill(7));
+    expect(await screen.findByText(privacyRelayBackup)).toBeVisible();
+    expect(screen.queryByText(privacy)).not.toBeInTheDocument();
+
+    window.history.pushState(null, '', `#/me/${id}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(await screen.findByText(documentPrivacyRelayBackup)).toBeVisible();
+    expect(screen.queryByText(documentPrivacy)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+});

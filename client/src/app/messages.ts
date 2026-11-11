@@ -930,10 +930,18 @@ export const messages = {
     pageTitle: 'Personal',
     title: 'Personal',
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
+    /** Personal's line on where Documents go, while the device keeps no relay backup key. */
     privacy:
       'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+    /** In place of privacy once the device keeps a relay backup key (#97, #248): its sealed copy carries them. */
+    privacyRelayBackup:
+      'They stay on this device. Nothing here goes to your groups. A backup file you save includes them, and so does your sealed relay backup.',
+    /** The editor's line on where its Document goes, while the device keeps no relay backup key. */
     documentPrivacy:
       'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+    /** In place of documentPrivacy once the device keeps a relay backup key (#97, #248). */
+    documentPrivacyRelayBackup:
+      'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
     missionTitle: 'My mission statement',
     missionPrompt: 'What do you stand for, and what are you working toward?',
     newDocument: 'New document',
@@ -966,6 +974,9 @@ export const messages = {
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
+    /** In place of sharedPrivacy once the device keeps a relay backup key (#97, #248). */
+    sharedPrivacyRelayBackup:
+      'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it, and so does your sealed relay backup.',
     /**
      * Share link (#105; ADR-0074's personal page at level 2): one Document,
      * read-only, by a link whose key only its holders have.

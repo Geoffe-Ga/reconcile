@@ -32,6 +32,12 @@ export interface PersonalDocumentProps {
   readonly onDeleted: () => void;
   /** Sharing by link (#105): off until the person turns it on for this Document. */
   readonly sharing: PersonalSharing;
+  /**
+   * Whether the device keeps a relay backup key (#97), whose sealed copy
+   * carries this Document, or null until the store has said: then no line
+   * on where it goes shows (#248).
+   */
+  readonly relayBackup: boolean | null;
 }
 
 /** Refuses a blank title, and one over 120 code points after NFC, never UTF-16 units. */
@@ -132,6 +138,16 @@ function DeleteDialog(props: DeleteProps) {
   );
 }
 
+/**
+ * The editor's line on where its Document goes: whether it's shared by link
+ * (#105), and whether the device keeps a relay backup key (#97, #248).
+ */
+function keptLine(shared: boolean, relayBackup: boolean): string {
+  const { personal } = messages;
+  if (shared) return relayBackup ? personal.sharedPrivacyRelayBackup : personal.sharedPrivacy;
+  return relayBackup ? personal.documentPrivacyRelayBackup : personal.documentPrivacy;
+}
+
 /** Props for {@link KeptAndShared}. */
 interface KeptAndSharedProps {
   /** The Document as last saved, or null before its first save. */
@@ -140,21 +156,23 @@ interface KeptAndSharedProps {
   readonly values: PersonalValues;
   readonly share: ShareByLinkState;
   readonly onDelete: () => Promise<void>;
+  /** Whether the device keeps a relay backup key, or null until the store has said (#248). */
+  readonly relayBackup: boolean | null;
 }
 
 /**
  * Under the fields: where the Document is kept, then, once it's saved, Share
  * by link (#105) and Delete. Whether the words as typed still fit a share is
  * worked out as they're typed, so a shared Document says when its link can't
- * keep up.
+ * keep up. The line on where it's kept waits until the device has said
+ * whether it keeps a relay backup (#248).
  */
-function KeptAndShared({ saved, values, share, onDelete }: KeptAndSharedProps) {
-  const { personal } = messages;
+function KeptAndShared({ saved, values, share, onDelete, relayBackup }: KeptAndSharedProps) {
   const shared = share.view !== null && share.view !== undefined;
   const fits = fitsShare({ title: values.title.trim(), text: normalizeAtomText(values.text) });
   return (
     <>
-      <p className="caption">{shared ? personal.sharedPrivacy : personal.documentPrivacy}</p>
+      {relayBackup === null ? null : <p className="caption">{keptLine(shared, relayBackup)}</p>}
       {saved === null ? null : (
         <>
           <ShareByLink share={share} fits={fits} />
@@ -180,10 +198,11 @@ function BackToPersonal() {
  * after each save. The first Document on a device opens as My mission
  * statement, with its prompt line, and is stored on its first save, not on
  * the visit. Delete asks first, in an alert dialog. The Document stays in
- * this device's IndexedDB and its backups, unless the person shares it by
- * link (#105): then its latest version goes, sealed, to the share's mailbox
- * when the share starts and each time the editor closes after an edit, and
- * Delete stops the share first.
+ * this device's IndexedDB and its backups, the sealed relay backup among
+ * them once the device keeps one (#97, #248), unless the person shares it
+ * by link (#105): then its latest version goes, sealed, to the share's
+ * mailbox when the share starts and each time the editor closes after an
+ * edit, and Delete stops the share first.
  */
 export function PersonalDocument({
   id,
@@ -191,6 +210,7 @@ export function PersonalDocument({
   now,
   onDeleted,
   sharing,
+  relayBackup,
 }: PersonalDocumentProps) {
   const onClose = useCallback(() => {
     sharing.leave(id);
@@ -259,7 +279,13 @@ export function PersonalDocument({
           {personal.failed}
         </p>
       ) : null}
-      <KeptAndShared saved={saved} values={values} share={share} onDelete={remove} />
+      <KeptAndShared
+        saved={saved}
+        values={values}
+        share={share}
+        onDelete={remove}
+        relayBackup={relayBackup}
+      />
     </main>
   );
 }
