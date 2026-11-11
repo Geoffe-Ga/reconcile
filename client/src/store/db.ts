@@ -21,7 +21,9 @@
  * more is queued, claimed or sent for it, and its ballots and notes can be
  * cleared while its outcomes stay. The relay backup's key and state (#97) are
  * one record in a store of their own, in no group, so no group's record ever
- * holds the key.
+ * holds the key. The person's recovery contacts (#109) are another record
+ * beside it: the one place the device lists them, which no backup file,
+ * link bundle or relay copy carries.
  */
 
 import { openDB } from 'idb';
@@ -154,6 +156,11 @@ export interface Group {
    * goes on. Nothing is queued, claimed or synced for it from then on.
    */
   archived?: Archive;
+  /**
+   * The ids of the `recovery-share` events whose held-share line group home
+   * has already shown, and the person put away (#109). Absent until the first.
+   */
+  recoverySeen?: string[];
 }
 
 /** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
@@ -269,6 +276,35 @@ export interface RelayBackupState {
   readonly tooLarge: boolean;
 }
 
+/** One recovery contact as this device chose them (#109): who, and where, as they were then. */
+export interface ChosenContact {
+  /** The group they share with the person: the group the share went to. */
+  readonly groupId: string;
+  /** Their key in that group: the `author` of their events there. */
+  readonly member: string;
+  /** Their name in that group, as the picker showed it. */
+  readonly name: string;
+  /** The group's name. */
+  readonly groupName: string;
+}
+
+/**
+ * The person's recovery contacts (#109; ADR-0043 §1): the split their
+ * shares came from, `t` needed of `n`, who holds them, and when this device
+ * chose them. `retired` lists the relay backup ids an earlier key named,
+ * which still have to be overwritten with random bytes before every older
+ * share opens nothing.
+ */
+export interface RecoveryPlan {
+  readonly split: string;
+  readonly t: number;
+  readonly n: number;
+  readonly contacts: readonly ChosenContact[];
+  /** When this device chose them, in device milliseconds. */
+  readonly chosenAt: number;
+  readonly retired: readonly string[];
+}
+
 /** What a relay backup update may change: everything but the key. */
 export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
 
@@ -277,6 +313,22 @@ export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
  * changes: never a group id, which is 43 base64url characters.
  */
 export const RELAY_BACKUP_CHANGED = 'relay-backup';
+
+/**
+ * What {@link Store.subscribe}'s listeners hear when the recovery contacts
+ * change (#109): never a group id either.
+ */
+export const RECOVERY_CHANGED = 'recovery';
+
+/** The recovery contacts' one device-wide record (#109). */
+export interface RecoveryStore {
+  /** The person's recovery contacts, or undefined while they've chosen none on this device. */
+  getRecoveryPlan(): Promise<RecoveryPlan | undefined>;
+  /** Keep `plan` in place of any earlier one. */
+  setRecoveryPlan(plan: RecoveryPlan): Promise<void>;
+  /** Drop `id` from the plan's retired backup ids, in one transaction, once it is overwritten. */
+  forgetRetired(id: string): Promise<void>;
+}
 
 /** The relay backup's one device-wide record (#97). */
 export interface RelayBackupStore {
@@ -303,8 +355,11 @@ export interface RelayBackupStore {
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups, its personal Documents (#93), and its relay backup's state (#97). */
-export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
+/**
+ * The device's groups, its personal Documents (#93), its relay backup's
+ * state (#97), and its recovery contacts (#109).
+ */
+export interface Store extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -423,6 +478,11 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /**
+   * Keep `ids` as the held shares group home has shown for the group, in one
+   * change (#109), so its quiet card shows each line once.
+   */
+  markRecoverySeen(groupId: string, ids: readonly string[]): Promise<void>;
+  /**
    * Keep the group's push registration once the relay has taken it, or with
    * null turn push off for the group, in one change (#99).
    */
@@ -443,10 +503,28 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   close(): void;
 }
 
+/** A record of the device store: the relay backup's (#97) or the recovery contacts' (#109), each under its own key. */
+type DeviceRecord = RelayBackupState | RecoveryPlan;
+
 interface Schema extends DBSchema {
   groups: { key: string; value: Group };
   personal: { key: string; value: PersonalDocument };
-  device: { key: string; value: RelayBackupState };
+  device: { key: string; value: DeviceRecord };
+}
+
+/** Whether a device record is the recovery contacts': only they have a split. */
+function isRecoveryPlan(record: DeviceRecord): record is RecoveryPlan {
+  return 'split' in record;
+}
+
+/** The relay backup's state in a device record read from its key, or undefined. */
+function relayBackupIn(record: DeviceRecord | undefined): RelayBackupState | undefined {
+  return record === undefined || isRecoveryPlan(record) ? undefined : record;
+}
+
+/** The recovery contacts in a device record read from their key, or undefined. */
+function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefined {
+  return record !== undefined && isRecoveryPlan(record) ? record : undefined;
 }
 
 /**
@@ -466,8 +544,10 @@ const VERSION = 5;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
-/** The device store's one key: the relay backup's record. */
+/** The device store's key for the relay backup's record. */
 const RELAY_BACKUP = 'relay-backup';
+/** The device store's key for the recovery contacts' record (#109): a key of its own, so no new version. */
+const RECOVERY = 'recovery';
 
 /**
  * Brings a database at `oldVersion` up to {@link VERSION}: groups from before
@@ -651,6 +731,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await tx.done;
       for (const { groupId } of groups) notify(groupId);
     },
+    markRecoverySeen: (groupId, ids) =>
+      change(groupId, (group) => {
+        group.recoverySeen = [...ids];
+      }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const marked: string[] = [];
@@ -687,6 +771,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...relayBackupStore(db, () => {
       notify(RELAY_BACKUP_CHANGED);
     }),
+    ...recoveryStore(db, () => {
+      notify(RECOVERY_CHANGED);
+    }),
     resetCursor: (groupId, instance) =>
       change(groupId, (group) => {
         group.cursor = 0;
@@ -709,7 +796,7 @@ function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayB
     next: (held: RelayBackupState | undefined) => RelayBackupState | undefined,
   ): Promise<{ held: RelayBackupState | undefined; wrote: boolean }> => {
     const tx = db.transaction(DEVICE, 'readwrite');
-    const held = await tx.store.get(RELAY_BACKUP);
+    const held = relayBackupIn(await tx.store.get(RELAY_BACKUP));
     const state = next(held);
     if (state !== undefined) await tx.store.put(state, RELAY_BACKUP);
     await tx.done;
@@ -724,7 +811,7 @@ function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayB
     tooLarge: false,
   });
   return {
-    getRelayBackup: () => db.get(DEVICE, RELAY_BACKUP),
+    getRelayBackup: async () => relayBackupIn(await db.get(DEVICE, RELAY_BACKUP)),
     async setRelayBackupKey(key) {
       return (await write(() => fresh(key))).held;
     },
@@ -736,6 +823,26 @@ function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayB
         held !== undefined && sameBytes(held.key, key) ? { ...held, ...update } : undefined,
       );
       return result.wrote;
+    },
+  };
+}
+
+/** The recovery contacts' record in `db`'s device store (#109), telling `changed` after each write. */
+function recoveryStore(db: IDBPDatabase<Schema>, changed: () => void): RecoveryStore {
+  return {
+    getRecoveryPlan: async () => recoveryPlanIn(await db.get(DEVICE, RECOVERY)),
+    async setRecoveryPlan(plan) {
+      await db.put(DEVICE, plan, RECOVERY);
+      changed();
+    },
+    async forgetRetired(id) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      const held = recoveryPlanIn(await tx.store.get(RECOVERY));
+      const kept = held?.retired.filter((retired) => retired !== id);
+      const wrote = held !== undefined && kept?.length !== held.retired.length;
+      if (wrote) await tx.store.put({ ...held, retired: kept ?? [] }, RECOVERY);
+      await tx.done;
+      if (wrote) changed();
     },
   };
 }

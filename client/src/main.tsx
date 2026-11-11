@@ -31,7 +31,7 @@ import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
 import { createPush } from './store/push';
-import { refreshRelayBackup } from './store/relayBackup';
+import { afterSyncPass } from './store/recovery';
 import { createSync } from './store/sync';
 
 const root = document.getElementById('root');
@@ -50,7 +50,8 @@ if (root === null) {
  * app closes its notifications whenever it comes to the front. After each
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
- * key (#97).
+ * key (#97), and any backup id an earlier choice of recovery contacts
+ * retired is overwritten (#109).
  */
 async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
@@ -62,7 +63,7 @@ async function start(container: HTMLElement): Promise<void> {
   const port = browserPushPort();
   const push = createPush({ store, relay: createPushRelay(), port });
   const now = (): number => Date.now();
-  const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  const afterPass = (): Promise<void> => afterSyncPass({ store, relay, now });
   const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, afterPass });
   closeWhenVisible(port, document);
   sync.start();

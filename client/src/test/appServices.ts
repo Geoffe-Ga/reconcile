@@ -3,7 +3,8 @@
  * shared fake-indexeddb, a relay client on a shared fake relay, a chat bot
  * (#119) that posts to that fake's Discord endpoint, never the network,
  * push (#99) over a fake browser whose permission starts unasked, and the
- * relay backup's daily refresh after each complete pass (#97).
+ * relay backup's daily refresh after each complete pass (#97), with any
+ * retired backup id's overwrite (#109).
  */
 import { vi } from 'vitest';
 
@@ -18,7 +19,7 @@ import { createChatBot } from '../store/chatBot';
 import { openStore } from '../store/db';
 import type { MailboxAt } from '../store/mailbox';
 import { createPush } from '../store/push';
-import { refreshRelayBackup } from '../store/relayBackup';
+import { afterSyncPass } from '../store/recovery';
 import { createSync } from '../store/sync';
 import { fakePushBrowser, type FakePushBrowser } from './fakePush';
 import type { FakeRelay } from './fakeRelay';
@@ -73,8 +74,8 @@ export async function testDevice(
     clock: now,
     ...(options.mailboxAt === undefined ? {} : { mailboxAt: options.mailboxAt }),
   });
-  // As in main.tsx, the relay backup refreshes after each complete pass (#97).
-  const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  // As in main.tsx, the relay backup refreshes after each complete pass (#97), and retired ids go (#109).
+  const afterPass = (): Promise<void> => afterSyncPass({ store, relay, now });
   const sync = createSync({
     store,
     relay,
