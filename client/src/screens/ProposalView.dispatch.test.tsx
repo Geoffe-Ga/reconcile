@@ -4,7 +4,7 @@
  * that everyone in the group gets it. Once it has closed, the Dispatches
  * view has it, or it never went.
  */
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { messages } from '../app/messages';
@@ -47,6 +47,29 @@ describe('ProposalView: a carried Dispatch (#112)', () => {
     expect(text).toHaveClass('dispatch-text');
     expect(within(block).getByText(messages.proposal.dispatchLine)).toBeVisible();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows it on an add’s ballot and a removal’s, beside what each version does (#75)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const add = log.addSection('Ana', `${log.group}.0`, { dispatch: DISPATCH });
+    const removal = log.propose('Ben', {
+      atom: 1,
+      title: 'No bins rule',
+      text: '',
+      dispatch: DISPATCH,
+    });
+    for (const [id, does] of [
+      [add, /^Adds a section after/],
+      [removal, messages.proposal.removes],
+    ] as const) {
+      setup(log.state(), id, 'cal');
+      const block = carried();
+      if (block === null) throw new Error('Expected the carried Dispatch.');
+      expect(within(block).getByText('Updated: House rules')).toBeVisible();
+      expect(screen.getAllByText(does)[0]).toBeVisible();
+      expect(await axeViolations()).toEqual([]);
+      cleanup();
+    }
   });
 
   it('leaves out an empty text', () => {

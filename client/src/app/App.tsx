@@ -30,6 +30,7 @@ import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
+import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings, type SettingsPasskey } from '../screens/Settings';
 import { SharedPage } from '../screens/SharedPage';
@@ -40,7 +41,7 @@ import { Start, type StartRequest } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
 import type { Group, Me } from '../store/db';
-import { groupDrafts } from '../store/drafts';
+import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import type { LinkCode } from '../crypto/link';
 import { joinLink, offerLink } from '../link/session';
 import { newPersonalId } from '../store/personal';
@@ -489,34 +490,62 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
-function DocumentScreen({ groupId }: { readonly groupId: string }) {
+function DocumentScreen({ services, groupId }: GroupScreenProps) {
   const openComposer = (atomId: string) => {
     navigate({ name: 'propose', groupId, atomId });
+  };
+  const openAdd = (after: string | null) => {
+    navigate({ name: 'add', groupId, after });
+  };
+  const openRemove = (atomId: string) => {
+    navigate({ name: 'remove', groupId, atomId });
   };
   return (
     <GroupGate groupId={groupId}>
       {({ state, me, leaving }) => (
-        <DocumentView state={state} me={me.author} onPropose={openComposer} leaving={leaving} />
+        <DocumentView
+          state={state}
+          me={me.author}
+          onPropose={openComposer}
+          onAdd={openAdd}
+          onRemove={openRemove}
+          copyText={services.copyText}
+          leaving={leaving}
+        />
       )}
     </GroupGate>
   );
 }
 
-interface ProposeScreenProps extends GroupScreenProps {
-  /** The section to propose on, from `propose/{atomId}`. */
-  readonly atomId?: string;
-  /** The lapsed Proposal to propose again, from `again/{proposalId}` (#74). */
-  readonly againId?: string;
+/** What every composer is handed: the group, this member, its drafts, the device clock, and its two actions. */
+interface ComposeProps {
+  readonly state: GroupState;
+  readonly me: string;
+  readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
+  readonly now: number;
+  /** Whether this device's leave waits for the relay (#77): then composers show no form. */
+  readonly leaving: boolean;
+  readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
+  readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
 }
 
-function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProps) {
+interface ComposeScreenProps extends GroupScreenProps {
+  /** The composer for the route, given what every composer is handed. */
+  readonly children: (props: ComposeProps) => ReactNode;
+}
+
+/**
+ * A composer's screen: proposing, or adding a version, queues the event and
+ * replaces the composer with the Proposal, so Back returns to where it opened.
+ */
+function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
   const drafts = useMemo(() => groupDrafts(services.store, groupId), [services.store, groupId]);
   const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId} writes>
       {({ state, me, leaving }) => {
-        const again = state.proposals.find((proposal) => proposal.id === againId);
         const onPropose = async (values: ProposalValues): Promise<ComposeOutcome> => {
           const result = await propose(services, groupId, values);
           if (result.outcome === 'too-large') return result.outcome;
@@ -531,22 +560,32 @@ function ProposeScreen({ services, groupId, atomId, againId }: ProposeScreenProp
           replaceRoute({ name: 'proposal', groupId, proposalId: values.proposal });
           return result.outcome;
         };
-        return (
-          <Composer
-            state={state}
-            me={me.author}
-            atomId={again?.atom ?? atomId ?? ''}
-            drafts={drafts}
-            now={deviceNow}
-            onPropose={onPropose}
-            onAddVersion={onAddVersion}
-            leaving={leaving}
-            {...(again === undefined ? {} : { again })}
-          />
-        );
+        return children({
+          state,
+          me: me.author,
+          drafts,
+          now: deviceNow,
+          leaving,
+          onPropose,
+          onAddVersion,
+        });
       }}
     </GroupGate>
   );
+}
+
+/**
+ * Propose again (#74): the composer for what the lapsed Proposal targets,
+ * starting from it. A change opens the composer on its section, a removal the
+ * removal composer, and an add Add a section at its spot (#75).
+ */
+function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
+  const again = props.state.proposals.find((proposal) => proposal.id === againId);
+  if (again === undefined) return <Composer {...props} atomId="" />;
+  const { target } = again;
+  if (target.kind === 'add') return <AddSection {...props} after={target.after} again={again} />;
+  if (again.text === '') return <RemoveSection {...props} atomId={again.atom} again={again} />;
+  return <Composer {...props} atomId={again.atom} again={again} />;
 }
 
 interface ProposalScreenProps extends GroupScreenProps {
@@ -585,6 +624,23 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
       }}
     </GroupGate>
   );
+}
+
+/** A route that opens a composer. */
+type ComposeRoute = Extract<Route, { readonly name: 'propose' | 'add' | 'remove' | 'again' }>;
+
+/** The composer a route opens, given what every composer is handed. */
+function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
+  switch (route.name) {
+    case 'propose':
+      return (props) => <Composer {...props} atomId={route.atomId} />;
+    case 'add':
+      return (props) => <AddSection {...props} after={route.after} />;
+    case 'remove':
+      return (props) => <RemoveSection {...props} atomId={route.atomId} />;
+    case 'again':
+      return (props) => <ProposeAgain {...props} againId={route.proposalId} />;
+  }
 }
 
 interface StewardScreenProps extends GroupScreenProps {
@@ -727,13 +783,9 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
     case 'group':
       return <GroupScreen services={services} groupId={groupId} />;
     case 'document':
-      return <DocumentScreen groupId={groupId} />;
-    case 'propose':
-      return <ProposeScreen services={services} groupId={groupId} atomId={route.atomId} />;
+      return <DocumentScreen services={services} groupId={groupId} />;
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
-    case 'again':
-      return <ProposeScreen services={services} groupId={groupId} againId={route.proposalId} />;
     case 'rules':
       return <RulesScreen services={services} groupId={groupId} />;
     case 'dispatches':
@@ -744,12 +796,14 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
 }
 
 /** A route inside one group whose screen is a form of its own. */
-type FormRoute = Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' }>;
+type FormRoute =
+  Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' }> | ComposeRoute;
 
 /**
  * The screen for a route inside one group that opens a form of its own: the
- * steward (#102), opt-in (#117) and dissolve (#108) composers, and Send a
- * Dispatch (#112).
+ * steward (#102), opt-in (#117) and dissolve (#108) composers, Send a
+ * Dispatch (#112), and the composers that propose a change, add or remove a
+ * section (#75), or propose a lapsed Proposal again (#74).
  */
 function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;
@@ -776,6 +830,12 @@ function FormRouteScreen({ route, services }: { route: FormRoute; services: AppS
       return <DissolveScreen services={services} groupId={groupId} />;
     case 'sendDispatch':
       return <SendDispatchScreen services={services} groupId={groupId} />;
+    default:
+      return (
+        <ComposeScreen services={services} groupId={groupId}>
+          {composerFor(route)}
+        </ComposeScreen>
+      );
   }
 }
 

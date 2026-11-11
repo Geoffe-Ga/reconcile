@@ -17,17 +17,24 @@ import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
-import { type VersionView, versionViews } from '../app/versionViews';
 import { rulesView } from '../app/optInLines';
 import { Named, SuspendedNote } from '../app/stewards';
-import { dissolveView, stewardView } from '../app/versionViews';
+import {
+  dissolveView,
+  stewardView,
+  versionDoes,
+  type VersionView,
+  versionViews,
+} from '../app/versionViews';
 import { rightsAt } from '../engine/admission';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { threadFor } from '../engine/chatPosts';
 import { composeOption } from '../engine/composeOption';
 import { closedByDissolve } from '../engine/dissolve';
 import {
+  isAddProposal,
   isDissolveProposal,
+  isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -123,12 +130,14 @@ interface Comparison {
 }
 
 /**
- * Each version is a word diff against the section's text now. Once a pass has
- * changed the section, or when the section is gone, each version shows as it
- * reads instead.
+ * Each version is a word diff against the section's text now, or for an add
+ * (`atom` null, #75), against nothing, so its whole text shows as added. Once
+ * a pass has changed the section, or when the section is gone, each version
+ * shows as it reads instead.
  */
-function comparisonFor(state: GroupState, atom: string, passed: boolean): Comparison {
+function comparisonFor(state: GroupState, atom: string | null, passed: boolean): Comparison {
   if (passed) return { title: messages.proposal.onBallot, current: null };
+  if (atom === null) return { title: messages.proposal.newSection, current: '' };
   const index = state.atoms.findIndex((candidate) => candidate.id === atom);
   const now = state.atoms[index];
   if (now === undefined) return { title: messages.proposal.proposed, current: null };
@@ -138,10 +147,24 @@ function comparisonFor(state: GroupState, atom: string, passed: boolean): Compar
 /** A steward or rules ballot shows what it decides, never a diff: it changes no section (#102, #117). */
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
 
-/** What a folded Proposal's versions are shown against: a section, or nothing for a steward one. */
+/** True for a Proposal with text: an edit or an add (#75), not a steward or rules one (#102, #117). */
+function writesText(proposal: Proposal): boolean {
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add';
+}
+
+/** The section a Proposal changes, or null when it adds one (#75). */
+function changedAtom(proposal: Proposal): string | null {
+  return proposal.target.kind === 'add' ? null : proposal.atom;
+}
+
+/**
+ * What a folded Proposal's versions are shown against: a section, nothing for
+ * an add, whose whole text shows as added (#75), or nothing for a steward one.
+ */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
-  return proposal.target.kind === 'edit'
-    ? comparisonFor(state, proposal.atom, passed)
+  return writesText(proposal)
+    ? comparisonFor(state, changedAtom(proposal), passed)
     : STEWARD_BALLOT;
 }
 
@@ -279,8 +302,8 @@ function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposa
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
 function AddVersion({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  // A steward Proposal has no text, so it takes no versions (#102).
-  if (proposal.target.kind !== 'edit' || !isOpenToVersions(props, proposal)) return null;
+  // A steward or rules Proposal has no text, so it takes no versions (#102, #117); an edit or an add does.
+  if (!writesText(proposal) || !isOpenToVersions(props, proposal)) return null;
   const option = composeOption(props.state, proposal.atom);
   if (option === 'ballot-full') return <p className="caption">{messages.proposal.ballotFull}</p>;
   const route = {
@@ -368,7 +391,7 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
       : [],
   );
   if (mine.length === 0) return null;
-  const { current } = comparisonFor(state, proposal.atom, false);
+  const { current } = comparisonFor(state, changedAtom(proposal), false);
   return (
     <Block title={messages.proposal.yourVersion} className="text-block">
       {mine.map(({ id, text }) =>
@@ -569,15 +592,19 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
   // A reconcile Proposal (#100) changes no section; #114 gives it its card.
-  if ('target' in body) {
+  if (isReconcileProposal(body)) {
     return {
       comparison: STEWARD_BALLOT,
       versions: [{ id: '', number: 1, author, text: '' }],
       optIn: null,
     };
   }
-  const comparison = comparisonFor(state, body.atom, false);
-  return { comparison, versions: [{ id: '', number: 1, author, text: body.text }], optIn: null };
+  // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
+  const add = isAddProposal(body);
+  const comparison = comparisonFor(state, add ? null : body.atom, false);
+  const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
+  const version = { id: '', number: 1, author, text: body.text };
+  return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */

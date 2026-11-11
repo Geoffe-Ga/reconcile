@@ -105,6 +105,20 @@ describe('pageFor: what the page says, and nothing else', () => {
     expect(textOf(encodePage(page))).not.toContain('count');
   });
 
+  it('takes its excerpt from the Document’s first section as it stands, after sections come and go (#75)', () => {
+    const log = opened();
+    const removal = log.propose('Ana', { atom: 0, text: '', title: 'Drop the first section' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, removal, 4);
+    log.minute += 1;
+    expect(log.state().atoms.map((atom) => atom.id)).toEqual([`${log.group}.1`]);
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Bins.');
+    const added = log.addSection('Ana', null, { text: 'Everyone is **welcome** here.\n' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, added, 4);
+    log.minute += 1;
+    expect(log.state().atoms[0]?.id).toBe(added);
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Everyone is welcome here.\n');
+  });
+
   it('shows the member count only when the group chose to', () => {
     const state = opened(COUNTED).state();
     expect(pageFor(state, COUNTED, plain)).toMatchObject({ count: 3 });

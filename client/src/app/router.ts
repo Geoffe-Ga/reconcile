@@ -38,6 +38,8 @@ export type Route =
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
+  | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
+  | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
   | {
       readonly name: 'steward';
@@ -113,27 +115,39 @@ const FIXED_PAGES: ReadonlyMap<string, FixedName> = new Map(
   FIXED_NAMES.map((name) => [FIXED_PATHS[name], name]),
 );
 
-/** `p/{proposalId}` or `again/{proposalId}`. */
-function proposalPage(groupId: string, page: string, arg: string): Route {
-  if (!ID.test(arg)) return START;
-  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
-  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
+/** A page inside a group that takes one argument: its route, or Start when the argument doesn't fit. */
+type ArgPage = (groupId: string, arg: string) => Route;
+
+/** A page whose argument must match `pattern`. */
+function idPage(pattern: RegExp, make: (groupId: string, id: string) => Route): ArgPage {
+  return (groupId, arg) => (pattern.test(arg) ? make(groupId, arg) : START);
 }
+
+/** The pages inside a group that take one argument. */
+const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  ['propose', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId }))],
+  ['p', idPage(ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId }))],
+  ['again', idPage(ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId }))],
+  ['add', idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after }))],
+  ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
+  ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
+  ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
+  ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
+  ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
+]);
 
 /**
  * A page inside a group: one of the fixed pages, such as `doc` or
- * `dispatch/new`, or `propose/{atomId}`, `p/{proposalId}`,
- * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
- * `narrow/{optIn}`.
+ * `dispatch/new`, `add` (a new first section, #75), or `propose/{atomId}`,
+ * `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}` (a new section after
+ * that Atom), `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`,
+ * `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
   if (fixed !== undefined) return { name: fixed, groupId };
-  if (arg === undefined) return START;
-  if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
-  if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
-  if (page === 'rules' || page === 'narrow') return optInPage(groupId, page === 'narrow', arg);
-  return proposalPage(groupId, page, arg);
+  if (arg === undefined) return page === 'add' ? { name: 'add', groupId, after: null } : START;
+  return ARG_PAGES.get(page)?.(groupId, arg) ?? START;
 }
 
 function groupRoute(rest: readonly string[]): Route {
@@ -220,6 +234,11 @@ function joinHref(payload: string | null): string {
   return payload === null ? '#/join' : `${INVITE_PREFIX}${payload}`;
 }
 
+/** The path after a page's name: `/{id}`, or nothing when there's none. */
+function idPath(id: string | null): string {
+  return id === null ? '' : `/${id}`;
+}
+
 /** A steward composer's path: `/recall/{seat}` for a recall, else `/steward/{seat}` (#102). */
 function stewardPath(route: Extract<Route, { readonly name: 'steward' }>): string {
   const page = route.recall ? 'recall' : 'steward';
@@ -231,13 +250,25 @@ function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 
+/** A section composer's path (#75): proposing a change, adding a section, or removing one. */
+function sectionPath(
+  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' }>,
+): string {
+  switch (route.name) {
+    case 'propose':
+      return `/propose/${route.atomId}`;
+    case 'add':
+      return `/add${idPath(route.after)}`;
+    case 'remove':
+      return `/remove/${route.atomId}`;
+  }
+}
+
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
   switch (route.name) {
     case 'group':
       return '';
-    case 'propose':
-      return `/propose/${route.atomId}`;
     case 'proposal':
       return `/p/${route.proposalId}`;
     case 'again':
@@ -246,6 +277,10 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'propose':
+    case 'add':
+    case 'remove':
+      return sectionPath(route);
     default:
       return `/${FIXED_PATHS[route.name]}`;
   }

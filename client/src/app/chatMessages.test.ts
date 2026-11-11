@@ -147,6 +147,18 @@ describe('shareableTitle and chatDetails', () => {
     });
   });
 
+  it('offers the title of an add and of a removal, as of any change to the Document (#75)', () => {
+    const log = groupLog();
+    log.addSection('ana', null, { title: 'Guests' });
+    log.propose('ben', { atom: 1, title: 'No bins rule', text: '' });
+    const [add, removal] = log.state().proposals;
+    if (add === undefined || removal === undefined) throw new Error('Expected both Proposals.');
+
+    expect(shareableTitle(add)).toBe('Guests');
+    expect(shareableTitle(removal)).toBe('No bins rule');
+    expect(chatDetails(add, true)).toEqual({ deadline: add.deadline, title: 'Guests' });
+  });
+
   it('never offers a steward Proposal’s title, which names a member', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     log.steward('ana', 1, 'Ben', { title: 'Make Ben steward (seat 1)' });
