@@ -2,6 +2,7 @@ import { type ReactNode, useId, useState } from 'react';
 import { Button, Link, SwitchButton, SwitchField } from 'react-aria-components';
 
 import type { BackupToSave } from '../app/backup';
+import { HeldShares } from '../app/HeldShares';
 import { HoldToConfirm } from '../app/HoldToConfirm';
 import { messages } from '../app/messages';
 import { RestoreBackup } from '../app/RestoreBackup';
@@ -11,6 +12,7 @@ import type { SaveOutcome } from '../app/share';
 import { formatDay } from '../app/time';
 import { BackLink, PageHeader } from '../app/ui';
 import type { PushAvailability, TurnOnOutcome } from '../store/push';
+import type { HeldShare, RecoveryStatus } from '../store/recovery';
 import type { RelayBackupStatus } from '../store/relayBackup';
 
 /** A group as its push switch shows it: its name, and whether push is on for it. */
@@ -32,6 +34,16 @@ export interface NotifyProps {
   readonly onTurnOff: (groupId: string) => Promise<void>;
 }
 
+/** What Settings › Recovery contacts shows (#109). */
+export interface RecoveryProps {
+  /** Where the person's contacts stand, or null before they've chosen any on this device. */
+  readonly status: RecoveryStatus | null;
+  /** The shares this device holds for others. */
+  readonly held: readonly HeldShare[];
+  /** Whether anyone in the person's groups can hold a share, so the picker has someone to offer. */
+  readonly canChoose: boolean;
+}
+
 /** Props for {@link Settings}. */
 export interface SettingsProps {
   /** Push, one switch per group (#99). */
@@ -48,6 +60,8 @@ export interface SettingsProps {
   readonly onErase: () => Promise<void>;
   /** Where the relay backup stands (#97); nothing shows while the device keeps none. */
   readonly relayBackup: RelayBackupStatus;
+  /** Recovery contacts, and the shares this device holds (#109). */
+  readonly recovery: RecoveryProps;
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
@@ -88,6 +102,66 @@ function RelayBackupLine({ status }: { readonly status: RelayBackupStatus }) {
     <p className="relay-backup" role="status">
       {words}
     </p>
+  );
+}
+
+/** "<n> recovery contacts · <t> needed", then each contact by name and group, and any who've gone. */
+function ContactList({ status }: { readonly status: RecoveryStatus }) {
+  const { recovery } = messages;
+  return (
+    <div className="stack recovery-status">
+      <p className="recovery-count">{recovery.status(status.n, status.t)}</p>
+      <ul className="recovery-contacts">
+        {status.contacts.map((contact) => (
+          <li key={`${contact.groupId} ${contact.member}`}>
+            <bdi className="recovery-name">{contact.name}</bdi>{' '}
+            <span className="caption">
+              {recovery.inGroupOf} <bdi>{contact.groupName}</bdi>
+            </span>
+            {contact.shared ? null : (
+              <>
+                {' '}
+                <span className="recovery-gone">{recovery.gone}</span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {status.chooseAgain ? <p className="notice">{recovery.belowThreshold(status.t)}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Recovery contacts (#109; ADR-0043 §1, ADR-0008): what they are, in
+ * trust's words; where the person's stand, or that they've chosen none; the
+ * way to choose, or choose again; and the shares this device holds for
+ * others. Quiet, like every protective feature here (ADR-0018).
+ */
+function RecoverySection({ recovery: props }: { readonly recovery: RecoveryProps }) {
+  const { recovery } = messages;
+  const { status, held, canChoose } = props;
+  const heading = useId();
+  return (
+    <div className="stack">
+      <p className="lede">{recovery.lede}</p>
+      {status === null ? <p>{recovery.none}</p> : <ContactList status={status} />}
+      {canChoose ? (
+        <div>
+          <Link className="button button-secondary" href={routeHref({ name: 'recovery' })}>
+            {status === null ? recovery.choose : recovery.chooseAgain}
+          </Link>
+        </div>
+      ) : null}
+      {held.length === 0 ? null : (
+        <section className="stack" aria-labelledby={heading}>
+          <h3 id={heading} className="heading-3">
+            {recovery.holdingHeading}
+          </h3>
+          <HeldShares held={held} />
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -216,10 +290,11 @@ function EraseCard({ onErase }: Pick<SettingsProps, 'onErase'>) {
 }
 
 /**
- * Settings (`#/settings`; spec §8.12, #78, #96, #99): Notifications, one
- * switch per group, then Save a backup, with the relay backup's line once the
- * device keeps one (#97), Restore a backup, Link a new device, and Erase
- * Reconcile from this device behind a 3-second press and hold.
+ * Settings (`#/settings`; spec §8.12, #78, #96, #99, #109): Notifications,
+ * one switch per group, then Save a backup, with the relay backup's line
+ * once the device keeps one (#97), Recovery contacts (#109), Restore a
+ * backup, Link a new device, and Erase Reconcile from this device behind a
+ * 3-second press and hold.
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
  */
@@ -239,6 +314,9 @@ export function Settings(props: SettingsProps) {
             <RelayBackupLine status={props.relayBackup} />
             <SaveBackup hasGroups={props.hasGroups} onMake={props.onMake} onSave={props.onSave} />
           </div>
+        </Section>
+        <Section title={settings.recoveryHeading}>
+          <RecoverySection recovery={props.recovery} />
         </Section>
         <Section title={settings.restoreHeading}>
           <div className="stack">

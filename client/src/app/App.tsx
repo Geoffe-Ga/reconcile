@@ -14,6 +14,7 @@ import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
+import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { Join } from '../screens/Join';
@@ -46,6 +47,7 @@ import {
 } from './actions';
 import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { BackupCard } from './BackupCard';
+import { HeldShareCard } from './HeldShares';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
 import {
@@ -73,6 +75,8 @@ import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { chooseContacts } from '../store/recovery';
+import { useRecovery } from './useRecovery';
 import { useRelayBackupStatus } from './useRelayBackup';
 
 /** Props for {@link App}. */
@@ -128,7 +132,10 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
   const relayBackup = useRelayBackupStatus(services.store);
+  const recovery = useRecovery(services.store);
   const { push } = services;
+  if (recovery === null) return null;
+  const { status, held } = recovery;
   return groups === null || switches === null || relayBackup === null ? null : (
     <Settings
       notify={{
@@ -139,10 +146,30 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       }}
       hasGroups={groups.length > 0}
       relayBackup={relayBackup}
+      recovery={{ status, held, canChoose: recovery.groups.length > 0 }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
+    />
+  );
+}
+
+/**
+ * Choose recovery contacts (#109): the picker, from the people in this
+ * device's groups. Saving chooses them, then goes back to Settings, where
+ * their status shows.
+ */
+function RecoveryScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  return recovery === null ? null : (
+    <RecoveryContacts
+      groups={recovery.groups}
+      current={recovery.status}
+      onSave={async (choice) => {
+        await chooseContacts(services, choice);
+        replaceRoute({ name: 'settings' });
+      }}
     />
   );
 }
@@ -346,6 +373,12 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
             ) : null
+          }
+          recoveryCard={
+            <HeldShareCard
+              held={group.newShares}
+              onDismiss={(ids) => services.store.markRecoverySeen(groupId, ids)}
+            />
           }
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
           onLeave={async () => {
@@ -635,6 +668,8 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       return <LinkNewScreen services={services} />;
     case 'linkThis':
       return <LinkThisScreen services={services} />;
+    case 'recovery':
+      return <RecoveryScreen services={services} />;
     case 'join':
       return (
         <JoinScreen

@@ -25,6 +25,8 @@ export type Route =
   | { readonly name: 'linkNew' }
   /** Link to my other device, on the new device (#96). */
   | { readonly name: 'linkThis' }
+  /** Choose recovery contacts, or choose again (#109). */
+  | { readonly name: 'recovery' }
   | { readonly name: 'join'; readonly payload: string | null }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
@@ -132,14 +134,16 @@ const INVITE_PREFIX = '#join/';
 
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
- * and the two sides of linking a device (#96). A linking code never travels
- * in a route: it's shown, scanned or pasted, and held only in memory.
+ * the two sides of linking a device (#96), and Choose recovery contacts
+ * (#109). A linking code never travels in a route: it's shown, scanned or
+ * pasted, and held only in memory. Nor does a recovery contact.
  */
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
+  ['recovery', { name: 'recovery' }],
 ]);
 
 /** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
@@ -219,6 +223,8 @@ export function routeHref(route: Route): string {
       return '#/link-new';
     case 'linkThis':
       return '#/link-this';
+    case 'recovery':
+      return '#/recovery';
     case 'join':
       return joinHref(route.payload);
     default:

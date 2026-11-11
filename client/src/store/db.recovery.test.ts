@@ -96,7 +96,7 @@ describe('held shares a group’s home has shown', () => {
     store.subscribe(heard);
 
     await store.markRecoverySeen('group-1', ['share-a']);
-    await store.markRecoverySeen('group-1', ['share-a', 'share-b']);
+    await store.markRecoverySeen('group-1', ['share-b', 'share-a']);
 
     expect((await store.getGroup('group-1'))?.recoverySeen).toEqual(['share-a', 'share-b']);
     expect((await store.getGroup('group-2'))?.recoverySeen).toBeUndefined();

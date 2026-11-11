@@ -67,6 +67,11 @@ export interface GroupHomeProps {
    * none when absent, or once the group has dissolved (#108).
    */
   readonly backupCard?: ReactNode;
+  /**
+   * The quiet card of recovery shares this device holds here (#109), shown
+   * once each; none when absent, or once the group has dissolved (#108).
+   */
+  readonly recoveryCard?: ReactNode;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -768,6 +773,7 @@ export function GroupHome(props: GroupHomeProps) {
         <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
         {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
         {dissolved === null ? props.backupCard : null}
+        {dissolved === null ? props.recoveryCard : null}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
             <span className="card-link-title">

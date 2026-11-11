@@ -478,8 +478,8 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Reco
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /**
-   * Keep `ids` as the held shares group home has shown for the group, in one
-   * change (#109), so its quiet card shows each line once.
+   * Add `ids` to the held shares group home has shown for the group, each
+   * once, in one change (#109), so its quiet card shows each line once.
    */
   markRecoverySeen(groupId: string, ids: readonly string[]): Promise<void>;
   /**
@@ -733,7 +733,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     },
     markRecoverySeen: (groupId, ids) =>
       change(groupId, (group) => {
-        group.recoverySeen = [...ids];
+        const seen = group.recoverySeen ?? [];
+        group.recoverySeen = [...seen, ...ids.filter((id) => !seen.includes(id))];
       }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');

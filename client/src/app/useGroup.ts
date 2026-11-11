@@ -24,6 +24,7 @@ import type { GroupState, LogRecord } from '../engine/fold';
 import { shownState } from '../store/archive';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
+import { type HeldShare, heldSharesIn } from '../store/recovery';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -85,6 +86,22 @@ export interface GroupView {
   loaded: boolean;
   /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
   cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
+  /**
+   * The recovery shares this device holds in the group that its home hasn't
+   * shown yet (#109): its quiet card shows each once, until the person puts it away.
+   */
+  newShares: readonly HeldShare[];
+}
+
+/** No shares: one shared empty list, so it never looks changed. */
+const NO_SHARES: readonly HeldShare[] = [];
+
+/** The shares this device holds in `group` that its home hasn't shown yet (#109). */
+function newSharesIn(group: Group | undefined): readonly HeldShare[] {
+  if (group === undefined) return NO_SHARES;
+  const seen = new Set(group.recoverySeen ?? []);
+  const fresh = heldSharesIn(group).filter(({ id }) => !seen.has(id));
+  return fresh.length === 0 ? NO_SHARES : fresh;
 }
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
@@ -97,6 +114,7 @@ export function useGroup(groupId: string): GroupView {
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
   const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
+  const newShares = useMemo(() => newSharesIn(group), [group]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
@@ -107,6 +125,7 @@ export function useGroup(groupId: string): GroupView {
     me: group?.me ?? null,
     loaded,
     cleared: clearedOf(group),
+    newShares,
   };
 }
 
