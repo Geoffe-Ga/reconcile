@@ -106,7 +106,7 @@ export function RestoreBackup({ onRestore }: RestoreBackupProps) {
           {outcome.kind === 'restored' ? messages.restore.restored(outcome.restored.groups) : null}
         </p>
         {outcome.kind === 'restored' && isOlder(outcome.restored) ? (
-          <p className="restore-older">{messages.restore.older}</p>
+          <p className="lede">{messages.restore.older}</p>
         ) : null}
       </div>
       {outcome.kind === 'failed' ? (
