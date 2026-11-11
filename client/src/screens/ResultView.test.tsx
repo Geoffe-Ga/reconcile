@@ -354,11 +354,10 @@ describe('ResultView', () => {
     const held = log.state();
     const closedAt = held.proposals[0]?.closedAt ?? 0;
     const body = resultFor(held.proposals[0] as Proposal);
-    const cleared = groupLog({ members: ['Ben', 'Cal'] });
-    cleared.propose('ana');
-    cleared.minute = closedAt + 1;
-    cleared.result('ben', body);
-    const state = cleared.state(closedAt + 43_200, [proposalId]);
+    log.minute = closedAt + 1;
+    log.result('ben', body);
+    // Clearing keeps every record's relay seq, which the result's closedSeq names (#289).
+    const state = log.state(closedAt + 43_200, [proposalId]);
     const { result } = show({ state, proposalId });
     const { clearedOn, clearedOnEnd, totalsLine } = messages.result;
     expect(result).toHaveTextContent(`${clearedOn} ${formatDay(closedAt + 43_200)}${clearedOnEnd}`);
