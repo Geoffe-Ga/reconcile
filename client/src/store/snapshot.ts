@@ -18,9 +18,12 @@
  * to be erased, and a file would keep them past that.
  *
  * Each personal Document goes in whole: its id, title, text, and when it
- * was made and last edited. #93 added them without a new format number, so a
- * format 1 file may hold them or not: one from before #93 has no `personal`
- * field, and reads as holding no personal Documents.
+ * was made and last edited, and its share by link while it is shared (#105),
+ * so a restore keeps the same link and can stop it; a second device's link
+ * (#96) takes `withoutShares`. #93 added them without a new format number,
+ * so a format 1 file may hold them or not: one from before #93 has no
+ * `personal` field, and reads as holding no personal Documents. A file from
+ * before #105 holds no shares.
  *
  * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
  * device keeps one, so a device restored from the file keeps the relay
@@ -46,7 +49,12 @@
  * So a link carries what a backup does, format 2's keys and epochs (#98),
  * every personal Document (#93) and the relay backup key (#97) included, and
  * leaves out what a backup does, a dissolved group's read-only copy (#108)
- * and push (#99) included.
+ * and push (#99) included. It leaves out one thing more: each Document's
+ * share by link (#105, `withoutShares`). A share belongs to the device that
+ * made it, since personal Documents don't sync, so the new device starts
+ * with every Document unshared and the existing one keeps, and alone can
+ * stop, its link. Both sides drop it: `takeSnapshot` as for a link, and
+ * `importSnapshot` from one.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
 import { base64url, fromBase64url } from '../crypto/base64url';
@@ -57,7 +65,14 @@ import { removedFrom } from '../engine/removal';
 import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
 import { epochOf, secretFits } from './epochs';
 import { eventIdOf } from './eventId';
-import { isPersonalDocument, type PersonalDocument } from './personal';
+import {
+  isPersonalDocument,
+  isShareState,
+  type PersonalDocument,
+  type PersonalText,
+  type ShareState,
+  textOf,
+} from './personal';
 
 /** The plaintext's format number: 2 since #98 added encryption keys and epochs. */
 export const SNAPSHOT_FORMAT = 2;
@@ -140,10 +155,34 @@ export async function deviceSnapshot(
   return relayBackup === undefined ? kept : { ...kept, backupKey: relayBackup.key };
 }
 
-/** One personal Document as the backup's JSON holds it: its five fields and nothing else. */
-function personalJson(document: PersonalDocument): PersonalDocument {
-  const { id, title, text, createdAt, updatedAt } = document;
-  return { id, title, text, createdAt, updatedAt };
+/**
+ * The snapshot a second device takes (#96): everything `snapshot` holds, its
+ * relay backup key (#97) included, less each Document's share by link
+ * (#105). Personal Documents don't sync between devices, so two devices
+ * posting one share would roll its link back and forth; the linked device
+ * can make its own link instead.
+ */
+export function withoutShares(snapshot: Snapshot): Snapshot {
+  return { ...snapshot, personal: snapshot.personal.map(textOf) };
+}
+
+/** A share by link (#105) as the backup's JSON holds it: its bytes in unpadded base64url. */
+function shareJson(share: ShareState) {
+  const { seed, secretKey, publicKey, n, lastPostedAt, pending } = share;
+  return {
+    seed: base64url(seed),
+    secretKey: base64url(secretKey),
+    publicKey: base64url(publicKey),
+    n,
+    lastPostedAt,
+    pending,
+  };
+}
+
+/** One personal Document as the backup's JSON holds it: its five fields, and its share when shared. */
+function personalJson(document: PersonalDocument) {
+  const { share } = document;
+  return { ...textOf(document), ...(share === undefined ? {} : { share: shareJson(share) }) };
 }
 
 /** `snapshot` as the backup's plaintext: UTF-8 JSON, bytes in unpadded base64url. */
@@ -186,12 +225,15 @@ export interface SnapshotPlaintext {
 /**
  * The plaintext of everything on the device that a backup keeps: its groups,
  * every personal Document and its relay backup key (`deviceSnapshot`). It is
- * a backup file's plaintext, and a link's bundle (#96).
+ * a backup file's plaintext, and, `to` a link, a link's bundle (#96), which
+ * leaves out every share by link (`withoutShares`, #105).
  */
 export async function takeSnapshot(
   store: Parameters<typeof deviceSnapshot>[0],
+  to: RestoredFrom = 'backup',
 ): Promise<SnapshotPlaintext> {
-  const snapshot = await deviceSnapshot(store);
+  const held = await deviceSnapshot(store);
+  const snapshot = to === 'link' ? withoutShares(held) : held;
   return {
     plaintext: encodeSnapshot(snapshot),
     groupIds: snapshot.groups.map((group) => group.groupId),
@@ -243,9 +285,11 @@ export async function importGroups(
  * Checks every group and personal Document in a backup's or a link bundle's
  * `plaintext`, keeps them all in one transaction, marked as `from` says
  * (`Store.restoreGroups`), then keeps its relay backup key if the device has
- * none. Returns how many groups it held. `importGroups` calls it once a file
- * is open, a second device's link (#96) once the bundle is in, and the relay
- * backup's restore (#118) once `fetchRelayBackup` has.
+ * none. From a link it keeps no share by link (#105), even one a bundle
+ * holds, so the device keeps any share of its own (`restoredCopy`) and takes
+ * none of another's. Returns how many groups it held. `importGroups` calls
+ * it once a file is open, a second device's link (#96) once the bundle is
+ * in, and the relay backup's restore (#118) once `fetchRelayBackup` has.
  *
  * @throws {BackupUnreadable} when anything in it doesn't check out; nothing is written then.
  */
@@ -254,8 +298,9 @@ export async function importSnapshot(
   plaintext: Uint8Array,
   from: RestoredFrom = 'backup',
 ): Promise<number> {
-  const snapshot = decodeSnapshot(plaintext);
-  if (snapshot === null) throw new BackupUnreadable();
+  const decoded = decodeSnapshot(plaintext);
+  if (decoded === null) throw new BackupUnreadable();
+  const snapshot = from === 'link' ? withoutShares(decoded) : decoded;
   await store.restoreGroups(snapshot.groups, snapshot.personal, from);
   if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
   return snapshot.groups.length;
@@ -303,8 +348,32 @@ function groupsIn(
 /** The personal Documents in `value`, or null when it isn't a list of valid ones, each once. */
 function personalIn(value: unknown): PersonalDocument[] | null {
   if (!Array.isArray(value)) return null;
-  const read = (item: unknown) => (isPersonalDocument(item) ? personalJson(item) : null);
-  return allUnique(value, read, (document) => document.id);
+  return allUnique(value, documentIn, (document) => document.id);
+}
+
+/** One personal Document in `value`, with its share when it has one (#105), or null. */
+function documentIn(value: unknown): PersonalDocument | null {
+  if (!isObject(value)) return null;
+  const share = value.share === undefined ? undefined : shareIn(value.share);
+  if (share === null) return null;
+  // Read only through isPersonalDocument, which checks every field this picks.
+  const words = textOf(value as unknown as PersonalText);
+  const document: PersonalDocument = share === undefined ? words : { ...words, share };
+  return isPersonalDocument(document) ? document : null;
+}
+
+/** A share by link in `value` (#105), or null when any part of it doesn't check out. */
+function shareIn(value: unknown): ShareState | null {
+  if (!isObject(value)) return null;
+  const share = {
+    seed: keyIn(value.seed),
+    secretKey: keyIn(value.secretKey),
+    publicKey: keyIn(value.publicKey),
+    n: value.n,
+    lastPostedAt: value.lastPostedAt,
+    pending: value.pending,
+  };
+  return isShareState(share) ? share : null;
 }
 
 /** The JSON value `bytes` spell in UTF-8, or undefined when they don't. */

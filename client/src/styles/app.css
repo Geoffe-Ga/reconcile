@@ -1219,3 +1219,21 @@ a[data-focus-visible] {
   color: var(--body);
   font: var(--type-ui);
 }
+
+/* Share by link (#105) ------------------------------------------------------ */
+
+/* The shared page's first line, where the app's back link would sit, so the title lands as on every screen. */
+.shared-note {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+  color: var(--muted);
+  font: var(--type-ui);
+}
+
+/* How edits reach a shared Document's link, and anything holding them back. */
+.share-notes {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34em;
+}

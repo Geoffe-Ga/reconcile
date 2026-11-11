@@ -765,7 +765,7 @@ export const messages = {
     title: 'Personal',
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
     privacy:
-      'They stay on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes them.',
+      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
     documentPrivacy:
       'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
     missionTitle: 'My mission statement',
@@ -791,6 +791,71 @@ export const messages = {
     deleteConfirm: 'Delete',
     deleteCancel: 'Cancel',
     deleteFailed: 'It couldn’t be deleted from this device. Try again.',
+    /** Under Delete's question, for a shared Document (#105): deleting stops its link first. */
+    deleteShared: 'Deleting it stops sharing its link first, which needs the relay.',
+    deleteSharedFailed:
+      'Sharing couldn’t be stopped, so nothing was deleted. Check your connection, then try again.',
+    /** Under a shared Document's title on Personal (#105). */
+    sharedLine: 'Shared by link',
+    /** In place of documentPrivacy while the Document is shared (#105). */
+    sharedPrivacy:
+      'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
+    /**
+     * Share link (#105; ADR-0074's personal page at level 2): one Document,
+     * read-only, by a link whose key only its holders have.
+     */
+    share: {
+      heading: 'Share by link',
+      /** Before it's on: what the link shows, and to whom. */
+      about:
+        'Share link makes a link anyone can open in any browser to read this Document’s latest version, without joining anything. They see its title and text, never your name, your groups or your other Documents.',
+      /** Before it's on: what the relay keeps and sees (ADR-0075 §2). */
+      relay:
+        'The relay keeps only a sealed copy it can’t read. As when your groups sync, it sees this device’s internet address while it posts, so someone watching it live could tell this device also uses your groups.',
+      start: 'Share link',
+      starting: 'Making your link…',
+      startFailed:
+        'The link couldn’t be made, so nothing was shared. Making one needs the relay. Check your connection, then try again.',
+      tooLarge: 'This Document is too long to share by link. Shorten it, then try again.',
+      tooLargeShared:
+        'This Document is now too long for its link, which still shows the last version that fit. Shorten it to update the link.',
+      field: 'Link',
+      /** Beside the link: who can read it, and when it stops. */
+      warning:
+        'Anyone with this link can read this Document. It stops working if you don’t open Reconcile for 30 days.',
+      /** How edits reach the link. */
+      edits: 'Your edits reach the link when you leave this page.',
+      pending:
+        'Your latest changes haven’t reached the link yet. Reconcile sends them the next time it opens online.',
+      shareAgain: 'Share link again',
+      shared: 'Shared.',
+      copied: 'Copied. Send it to the people you want to read it.',
+      blocked: 'Copying is blocked here. Select the link above and copy it yourself.',
+      /** What the share sheet carries beside the link: fixed, never the Document's words (spec §9). */
+      message: 'Something I wrote, shared read-only with Reconcile:',
+      stop: 'Stop sharing',
+      stopping: 'Stopping…',
+      stopped:
+        'Sharing stopped. People who opened the link may have kept a copy, and earlier copies stay on the relay, still sealed, until they expire within a month.',
+      stopFailed:
+        'Sharing couldn’t be stopped, so nothing changed and the link still works. Stopping needs the relay. Check your connection, then try again.',
+    },
+  },
+  /**
+   * The page a share link opens (#105), for anyone, in any browser, outside
+   * first run: it reads the Document and keeps nothing.
+   */
+  shared: {
+    /** The tab's title: never the Document's own words, which browser history would keep. */
+    pageTitle: 'Shared page',
+    note: 'Shared with Reconcile. Read-only.',
+    loading: 'Opening the page…',
+    empty: 'Nothing is written here yet.',
+    goneTitle: 'This link doesn’t work',
+    gone: 'This page isn’t shared any more, or the link is damaged.',
+    offlineTitle: 'Can’t open this page yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
   },
   /**
    * Earning a vote (#101; ADR-0014, ADR-0021): a newcomer's progress on the

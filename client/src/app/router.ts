@@ -5,7 +5,9 @@
  * invite's seed in `#join/{seed}` stays on the device. The Join screen
  * replaces that entry with `#/join` once it has read the seed. The tracer's
  * `#/join/{payload}` form still reads as Join, so an old link says plainly
- * that it no longer works.
+ * that it no longer works. A share link's `#share/{seed}.{publicKey}` (#105)
+ * reads as the shared page whatever follows it, and stays in the address
+ * bar, so a reload reads it again; the page reads a damaged one as not shared.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -26,6 +28,8 @@ export type Route =
   /** Link to my other device, on the new device (#96). */
   | { readonly name: 'linkThis' }
   | { readonly name: 'join'; readonly payload: string | null }
+  /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
+  | { readonly name: 'shared'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
@@ -158,8 +162,13 @@ const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map(
   ['me', personalRoute],
 ]);
 
+/** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
+const SHARE_PREFIX = '#share/';
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
+  if (hash.startsWith(SHARE_PREFIX))
+    return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
@@ -240,6 +249,8 @@ export function routeHref(route: Route): string {
       return '#/link-this';
     case 'join':
       return joinHref(route.payload);
+    case 'shared':
+      return `${SHARE_PREFIX}${route.payload}`;
     default:
       return `#/g/${route.groupId}${groupPath(route)}`;
   }

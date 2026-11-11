@@ -1,12 +1,12 @@
 /**
  * The one HKDF call site (spec §3): HKDF-SHA-256 (RFC 5869). A group secret's
  * mailbox id and seal key (`groupKeys.ts`), an invite seed's mailbox id and
- * key (`invite.ts`) and a link's channels (`link.ts`, #96) all derive through
- * it, each under a label of its own, so no two ever coincide. Most take an
- * empty salt and 32 bytes of output. A box's key (`box.ts`, #98) is salted
- * with the two public keys of its X25519 exchange; a link's number and key
- * are salted with the hash of the link's transcript, and its number takes 4
- * bytes.
+ * key (`invite.ts`), a share seed's (`share.ts`, #105) and a link's channels
+ * (`link.ts`, #96) all derive through it, each under a label of its own, so no
+ * two ever coincide. Most take an empty salt and 32 bytes of output. A box's
+ * key (`box.ts`, #98) is salted with the two public keys of its X25519
+ * exchange; a link's number and key are salted with the hash of the link's
+ * transcript, and its number takes 4 bytes.
  */
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';

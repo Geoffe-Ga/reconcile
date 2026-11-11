@@ -16,6 +16,7 @@ import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
+import { newSigningKeys } from '../crypto/sign';
 import { createRelay, type Fetch } from '../net/relay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -386,6 +387,41 @@ describe('a removal and the relay backup (#97)', () => {
     expect((await device.store.getGroup(groupId))?.epoch).toBe(1);
     await startRelayBackup(services);
     expect((await groupsIn(fake, key))[0]).toMatch(new RegExp(`^${groupId}@1#`));
+  });
+});
+
+describe('a removal beside a shared personal Document (#105)', () => {
+  it('leaves the Document and its share by link as they were when it archives the group', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last, remove } = history(group);
+    const device = await openDevice(fake.fetch);
+    await keep(device, group, 'cal', [...events, last]);
+    const statement = {
+      id: 'AAAAAAAAAAAAAAAAAAAAAA',
+      title: 'My mission statement',
+      text: 'I show up for my neighbours.\n',
+      createdAt: TS,
+      updatedAt: TS,
+    };
+    await device.store.savePersonal(statement);
+    const share = {
+      seed: new Uint8Array(32).fill(4),
+      ...newSigningKeys(),
+      n: 2,
+      lastPostedAt: TS,
+      pending: false,
+    };
+    await device.store.updateShare(statement.id, () => share);
+    const before = await device.store.getPersonal(statement.id);
+
+    await device.store.enqueue(groupId, remove('ben').record);
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    expect((await device.store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
+    expect(await device.store.getPersonal(statement.id)).toEqual(before);
   });
 });
 
