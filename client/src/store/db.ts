@@ -282,9 +282,9 @@ export interface Group extends CoalitionPlan {
   door?: DoorInbox;
   /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
-   * takes, oldest first. Absent until the first. #73's invite header, #78's
-   * backup file and #96's link carry it, so a newcomer or a restored device
-   * knows which it can't check.
+   * takes, oldest first. Absent until the first. #73's invite marks the
+   * result each keeps (#269), and #78's backup file and #96's link carry it,
+   * so a newcomer or a restored device knows which it can't check.
    */
   cleared?: string[];
 }
