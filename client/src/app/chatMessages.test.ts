@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { DAY_MINUTES } from '../engine/rules';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
-import { chatDetails, chatMessage, openMoment, shareableTitle } from './chatMessages';
+import {
+  botNotice,
+  botThreadName,
+  chatDetails,
+  chatMessage,
+  openMoment,
+  shareableTitle,
+} from './chatMessages';
 import { MINUTE_MS } from './time';
 
 /** A relay minute on Friday 14 November 2025 at 12:00 UTC. */
@@ -140,6 +147,18 @@ describe('shareableTitle and chatDetails', () => {
     });
   });
 
+  it('offers the title of an add and of a removal, as of any change to the Document (#75)', () => {
+    const log = groupLog();
+    log.addSection('ana', null, { title: 'Guests' });
+    log.propose('ben', { atom: 1, title: 'No bins rule', text: '' });
+    const [add, removal] = log.state().proposals;
+    if (add === undefined || removal === undefined) throw new Error('Expected both Proposals.');
+
+    expect(shareableTitle(add)).toBe('Guests');
+    expect(shareableTitle(removal)).toBe('No bins rule');
+    expect(chatDetails(add, true)).toEqual({ deadline: add.deadline, title: 'Guests' });
+  });
+
   it('never offers a steward Proposal’s title, which names a member', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     log.steward('ana', 1, 'Ben', { title: 'Make Ben steward (seat 1)' });
@@ -149,5 +168,41 @@ describe('shareableTitle and chatDetails', () => {
     expect(shareableTitle(folded)).toBeNull();
     expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
     expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Ben');
+  });
+});
+
+describe('botNotice: what the chat bot posts (#119, #123)', () => {
+  const notice = botNotice('https://app.example', 'UTC');
+
+  it('is the moment’s line with no title, then the app’s address on a line of its own', () => {
+    expect(notice('open', FRI_14, false)).toBe(
+      'A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\nhttps://app.example/',
+    );
+    expect(notice('closing', FRI_14, false)).toBe(
+      'A vote closes within a day in Reconcile.\nhttps://app.example/',
+    );
+    expect(notice('result', FRI_14, false)).toBe(
+      'A vote has finished in Reconcile.\nhttps://app.example/',
+    );
+  });
+
+  it('says the argument has concluded for the result inside a Proposal’s thread, and nothing else changes there', () => {
+    expect(notice('result', FRI_14, true)).toBe(
+      'The argument has concluded. A vote has finished in Reconcile.\nhttps://app.example/',
+    );
+    expect(notice('open', FRI_14, true)).toBe(notice('open', FRI_14, false));
+    expect(notice('closing', FRI_14, true)).toBe(notice('closing', FRI_14, false));
+  });
+
+  it('is made from the moment, the deadline and whether it is in a thread alone, so nothing else of a Proposal can reach it', () => {
+    expect(notice).toHaveLength(3);
+  });
+});
+
+describe('botThreadName: the name of a Proposal’s Discord thread (#123)', () => {
+  it('is its number and fixed text, never its title', () => {
+    expect(botThreadName(3)).toBe('Proposal 3 in Reconcile');
+    expect(botThreadName(12)).toBe('Proposal 12 in Reconcile');
+    expect(botThreadName).toHaveLength(1);
   });
 });

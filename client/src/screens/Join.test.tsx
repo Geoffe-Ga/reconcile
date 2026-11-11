@@ -1,14 +1,42 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import type { FoundGroup, InviteLookup } from '../app/actions';
+import {
+  createGroup,
+  type FoundGroup,
+  type InviteLookup,
+  joinGroup,
+  makeInvite,
+} from '../app/actions';
+import { App } from '../app/App';
+import { parseInviteLink } from '../app/invite';
+import { messages } from '../app/messages';
+import { navigate } from '../app/router';
 import { newGroupSecret } from '../crypto/groupKeys';
-import { newInviteSeed } from '../crypto/invite';
-import { DEFAULT_JOIN_LEVEL, LEVELS } from '../engine/capabilities';
+import { inviteChannelOf, newInviteSeed } from '../crypto/invite';
+import type * as SignModule from '../crypto/sign';
+import { newSigningKeys } from '../crypto/sign';
+import { DEFAULT_JOIN_LEVEL, type Level, LEVELS } from '../engine/capabilities';
 import { base64url } from '../engine/event';
+import type { LogRecord } from '../engine/fold';
+import { type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
+import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
+import { testGroup } from '../test/groups';
+import { freshIndexedDBPerTest } from '../test/idb';
+import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { Join } from './Join';
+
+vi.mock('../crypto/sign', async (importOriginal) => {
+  const actual = await importOriginal<typeof SignModule>();
+  return { ...actual, newSigningKeys: vi.fn(actual.newSigningKeys) };
+});
+
+freshIndexedDBPerTest();
+
+const keysMade = vi.mocked(newSigningKeys);
+const devices: TestDevice[] = [];
 
 const PREVIEW = {
   groupName: 'Riverside Tenants',
@@ -21,13 +49,18 @@ const FOUND: FoundGroup = {
   groupId: 'group-1',
   preview: PREVIEW,
   secret: newGroupSecret(),
+  epoch: 0,
   token: { by: 'a'.repeat(43), sig: 'b'.repeat(86) },
   cleared: [],
-  page: { records: [], cursor: 3, relayNow: 29_000_000, instance: 'relay' },
+  page: { records: testGroup().records, cursor: 1, relayNow: 29_000_100, instance: 'relay' },
 };
 
 afterEach(() => {
+  for (const device of devices.splice(0)) device.services.store.close();
   window.history.replaceState(null, '', '#/');
+  window.localStorage.clear();
+  keysMade.mockClear();
+  vi.restoreAllMocks();
 });
 
 type Lookup = (seed: Uint8Array) => Promise<InviteLookup>;
@@ -46,10 +79,17 @@ function setup(options: Options = {}) {
   const found = (): Promise<InviteLookup> => Promise.resolve({ kind: 'found', group: FOUND });
   const lookup = vi.fn<Lookup>(options.lookup ?? found);
   const onJoin = vi.fn(() => Promise.resolve(options.joined ?? true));
+  const onNotNow = vi.fn();
   const { rerender } = render(
-    <Join payload={payload} heldSeed={options.heldSeed ?? null} lookup={lookup} onJoin={onJoin} />,
+    <Join
+      payload={payload}
+      heldSeed={options.heldSeed ?? null}
+      lookup={lookup}
+      onJoin={onJoin}
+      onNotNow={onNotNow}
+    />,
   );
-  return { user: userEvent.setup(), seed, payload, lookup, onJoin, rerender };
+  return { user: userEvent.setup(), seed, payload, lookup, onJoin, onNotNow, rerender };
 }
 
 describe('Join', () => {
@@ -131,6 +171,7 @@ describe('Join', () => {
         heldSeed={newInviteSeed()}
         lookup={() => Promise.resolve({ kind: 'found', group: FOUND })}
         onJoin={onJoin}
+        onNotNow={vi.fn()}
       />,
     );
     await user.type(await screen.findByRole('textbox', { name: 'Your name' }), 'Ben');
@@ -139,6 +180,36 @@ describe('Join', () => {
     finish(false);
     await screen.findByRole('alert');
     expect(onJoin).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Not now while a join is under way, and takes it once that join didn’t finish', async () => {
+    const user = userEvent.setup();
+    let finish: (joined: boolean) => void = () => undefined;
+    const onJoin = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onNotNow = vi.fn();
+    window.history.replaceState(null, '', '#/join');
+    render(
+      <Join
+        payload={null}
+        heldSeed={newInviteSeed()}
+        lookup={() => Promise.resolve({ kind: 'found', group: FOUND })}
+        onJoin={onJoin}
+        onNotNow={onNotNow}
+      />,
+    );
+    await user.type(await screen.findByRole('textbox', { name: 'Your name' }), 'Ben');
+    await user.click(screen.getByRole('button', { name: 'Join group' }));
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(onNotNow).not.toHaveBeenCalled();
+    finish(false);
+    await screen.findByRole('alert');
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(onNotNow).toHaveBeenCalledTimes(1);
   });
 
   it('asks for a name before joining', async () => {
@@ -234,11 +305,19 @@ describe('Join', () => {
   });
 
   it('opens a new invite that arrives while Join is showing', async () => {
-    const { lookup, onJoin, rerender } = setup({ payload: 'damaged' });
+    const { lookup, onJoin, onNotNow, rerender } = setup({ payload: 'damaged' });
     expect(screen.getByRole('heading', { name: 'This invite link doesn’t work' })).toBeVisible();
     const next = newInviteSeed();
 
-    rerender(<Join payload={base64url(next)} heldSeed={null} lookup={lookup} onJoin={onJoin} />);
+    rerender(
+      <Join
+        payload={base64url(next)}
+        heldSeed={null}
+        lookup={lookup}
+        onJoin={onJoin}
+        onNotNow={onNotNow}
+      />,
+    );
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),
@@ -248,11 +327,13 @@ describe('Join', () => {
   });
 
   it('reads the mailbox once per invite, even when handed a new lookup function', async () => {
-    const { lookup, onJoin, rerender } = setup();
+    const { lookup, onJoin, onNotNow, rerender } = setup();
     await screen.findByRole('textbox', { name: 'Your name' });
     const next = vi.fn(() => Promise.resolve<InviteLookup>({ kind: 'missing' }));
 
-    rerender(<Join payload={null} heldSeed={null} lookup={next} onJoin={onJoin} />);
+    rerender(
+      <Join payload={null} heldSeed={null} lookup={next} onJoin={onJoin} onNotNow={onNotNow} />,
+    );
     await screen.findByRole('textbox', { name: 'Your name' });
 
     expect(lookup).toHaveBeenCalledTimes(1);
@@ -271,8 +352,9 @@ describe('Join', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: preview.groupName })).toBeVisible();
     expect(screen.getByText(/^From/)).toHaveTextContent(`From **Ana**’s invite`);
-    expect(screen.getByText(preview.documentTitle)).toBeVisible();
-    expect(screen.getByText(preview.excerpt)).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: preview.documentTitle })).toBeVisible();
+    // The whole Document takes the excerpt's place under the title (#91).
+    expect(screen.queryByText(preview.excerpt)).not.toBeInTheDocument();
     expect(document.querySelector('main img, main script, main b, main strong')).toBeNull();
     expect(document.querySelector('main a[href^="javascript"]')).toBeNull();
     expect(await axeViolations()).toEqual([]);
@@ -286,5 +368,231 @@ describe('Join', () => {
     });
     expect(lookup.mock.calls[0]?.[0]).toBe(held);
     expect(window.location.hash).toBe('#/');
+  });
+});
+
+const EARLY = 'Quiet after 10pm.';
+const LATE = 'Bins go out on Monday.';
+
+/**
+ * Ana, Ben, Cal and Dee. The first section's edit passed by early close, once
+ * all four scored it; the second's has the quorum's three scores, so it
+ * passes only when relay time reaches its deadline.
+ */
+function passedTwice(): { readonly records: readonly LogRecord[]; readonly deadline: number } {
+  const log = groupLog({ members: ['Ben', 'Cal', 'Dee'] });
+  const early = log.propose('Ana', { atom: 0, text: EARLY });
+  for (const name of ['Ana', 'Ben', 'Cal', 'Dee']) log.vote(name, early, 4);
+  const late = log.propose('Ana', { atom: 1, text: LATE });
+  for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, late, 4);
+  return { records: log.records, deadline: deadlineOf(START_MINUTE) };
+}
+
+/** FOUND, carrying `records`, read by an invite GET whose `now` was `relayNow`. */
+function carrying(records: readonly LogRecord[], relayNow = FOUND.page.relayNow): FoundGroup {
+  return { ...FOUND, page: { ...FOUND.page, records, relayNow } };
+}
+
+const found = (group: FoundGroup) => () => Promise.resolve<InviteLookup>({ kind: 'found', group });
+
+/** Every write a page could make to IndexedDB, each spied on. */
+function spyOnWrites(): MockInstance[] {
+  const proto = IDBObjectStore.prototype;
+  return [
+    vi.spyOn(proto, 'put'),
+    vi.spyOn(proto, 'add'),
+    vi.spyOn(proto, 'delete'),
+    vi.spyOn(proto, 'clear'),
+  ];
+}
+
+const writes = (spies: readonly MockInstance[]) =>
+  spies.reduce((sum, spy) => sum + spy.mock.calls.length, 0);
+
+/** True when each element comes after the one before it in the page. */
+function inOrder(elements: readonly Element[]): boolean {
+  return elements.every(
+    (element, i) =>
+      i === 0 ||
+      (elements[i - 1]?.compareDocumentPosition(element) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+}
+
+async function device(fake: FakeRelay, name: string): Promise<TestDevice> {
+  const opened = await testDevice(fake, name);
+  devices.push(opened);
+  return opened;
+}
+
+describe('Join, reading the Document before joining (#91)', () => {
+  it('reads the preview card, the whole Document as it reads now, then asks to join', async () => {
+    const { records, deadline } = passedTwice();
+    const { user, onJoin, onNotNow } = setup({ lookup: found(carrying(records, deadline)) });
+
+    const group = await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'House rules' });
+    expect(heading).toHaveFocus();
+    const article = screen.getByRole('article');
+    // Both passes show: one closed early, the other at the deadline the invite GET's now reached.
+    expect(
+      within(article)
+        .getAllByRole('paragraph')
+        .map((p) => p.textContent),
+    ).toEqual([EARLY, LATE]);
+    const question = screen.getByRole('heading', {
+      level: 2,
+      name: 'Do you share enough of this to join?',
+    });
+    const notNow = screen.getByRole('button', { name: 'Not now' });
+    const page = [
+      group,
+      screen.getByText(/^From/),
+      heading,
+      article,
+      question,
+      screen.getByRole('textbox', { name: 'Your name' }),
+      screen.getByRole('radiogroup', { name: 'Your involvement' }),
+      screen.getByRole('button', { name: 'Join group' }),
+      notNow,
+    ];
+    expect(inOrder(page)).toBe(true);
+    expect(notNow).toHaveAccessibleDescription('You can open the link again while it lasts.');
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(notNow);
+    expect(onNotNow).toHaveBeenCalledTimes(1);
+    expect(onJoin).not.toHaveBeenCalled();
+  });
+
+  it('stores nothing and makes no key until Join is tapped, then joins with what it showed', async () => {
+    const ben = await device(createFakeRelay(), 'ben');
+    const spies = spyOnWrites();
+    const { records, deadline } = passedTwice();
+    const group = carrying(records, deadline);
+    const onJoin = vi.fn(async (joining: FoundGroup, name: string, level: Level) => {
+      await joinGroup(ben.services, joining, name, level);
+      return true;
+    });
+    const user = userEvent.setup();
+    render(
+      <Join
+        payload={null}
+        heldSeed={newInviteSeed()}
+        lookup={found(group)}
+        onJoin={onJoin}
+        onNotNow={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(LATE)).toBeVisible();
+    await user.type(screen.getByRole('textbox', { name: 'Your name' }), 'Eve');
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    expect(writes(spies)).toBe(0);
+    expect(keysMade).not.toHaveBeenCalled();
+    expect(await ben.services.store.listGroups()).toEqual([]);
+    expect(window.localStorage).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Join group' }));
+    await waitFor(() => {
+      expect(onJoin).toHaveBeenCalledExactlyOnceWith(group, 'Eve', LEVELS[0]);
+    });
+    await waitFor(async () => {
+      expect(await ben.services.store.listGroups()).toHaveLength(1);
+    });
+    expect(keysMade).toHaveBeenCalledTimes(1);
+    expect(writes(spies)).toBeGreaterThan(0);
+  });
+
+  it('renders an Atom’s markup inert: no live javascript: link, script or image', async () => {
+    const atoms = [
+      '[x](javascript:alert(1))',
+      '<img src=x onerror="alert(1)"> <a href="javascript:alert(1)">raw</a>',
+      '<script>alert(1)</script>',
+    ];
+    setup({ lookup: found(carrying(testGroup({ atoms }).records)) });
+
+    const article = await screen.findByRole('article');
+    expect(article).toHaveTextContent('[x](javascript:alert(1))');
+    expect(article).toHaveTextContent('<script>alert(1)</script>');
+    expect(document.querySelector('a[href^="javascript" i], script, img, [onerror]')).toBeNull();
+    expect(within(article).queryByRole('link')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('passes axe with a long Document of headings and lists', async () => {
+    const atoms = Array.from({ length: 30 }, (_, i) =>
+      i % 2 === 0
+        ? `# Part ${String(i + 1)}\nWhat part ${String(i + 1)} says, at reading length, wraps onto a second line.`
+        : `- One thing for part ${String(i + 1)}\n- Another thing\n  - and a detail`,
+    );
+    setup({ lookup: found(carrying(testGroup({ atoms }).records)) });
+    const article = await screen.findByRole('article');
+    expect(within(article).getAllByRole('heading', { level: 2 })).toHaveLength(15);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the expired-or-damaged line when the entries hold no genesis', async () => {
+    const { onNotNow } = setup({ lookup: found(carrying([])) });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'This invite link doesn’t work' }),
+    ).toBeVisible();
+    expect(screen.getByText(messages.join.badLink)).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(onNotNow).not.toHaveBeenCalled();
+  });
+});
+
+describe('Not now, in the app (#91)', () => {
+  it('returns to Start and lets go of the invite, writing nothing, with no request beyond the invite GET', async () => {
+    const user = userEvent.setup();
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const created = await createGroup(ana.services, {
+      groupName: 'Riverside Tenants',
+      yourName: 'Ana',
+      chat: null,
+      title: 'House rules',
+      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+    });
+    if (created.outcome !== 'created') throw new Error('Expected a group.');
+    await ana.services.sync.syncOnce();
+    const link = await makeInvite(ana.services, created.groupId, ana.services.origin);
+    const seed = parseInviteLink(link);
+    if (seed === null) throw new Error('Expected an invite link.');
+    const ben = await device(fake, 'ben');
+    const before = fake.requests.length;
+    keysMade.mockClear();
+    const spies = spyOnWrites();
+
+    // Pasted on Start, the seed travels to Join in memory, held by the app.
+    render(<App services={ben.services} />);
+    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.paste(link);
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'House rules' })).toHaveFocus();
+    expect(screen.getByText('Bins go out on Tuesday.')).toBeVisible();
+    const inviteGet = [['GET', inviteChannelOf(seed).mailbox]];
+    const sent = () =>
+      fake.requests
+        .slice(before)
+        .map((request) => [request.method, request.url.split('/').at(-1)?.split('?')[0]]);
+    expect(sent()).toEqual(inviteGet);
+
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your groups' })).toBeVisible();
+    expect(window.location.hash).toBe('#/');
+    expect(await ben.services.store.listGroups()).toEqual([]);
+    expect(writes(spies)).toBe(0);
+    expect(keysMade).not.toHaveBeenCalled();
+    expect(window.localStorage).toHaveLength(0);
+
+    // The held seed is gone from memory: Join with no link in hand shows the damaged line.
+    act(() => {
+      navigate({ name: 'join', payload: null });
+    });
+    expect(await screen.findByText(messages.join.badLink)).toBeVisible();
+    expect(sent()).toEqual(inviteGet);
   });
 });

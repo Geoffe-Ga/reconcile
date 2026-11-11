@@ -64,7 +64,8 @@ describe('Create group', () => {
     type: 'genesis',
     group: '',
     ts: NOW,
-    body: { ...NAMES, atoms: genesisAtoms(text), rules: DEFAULT_RULES },
+    // Create group adds the founder's encryption key (#98): 43 characters, whatever the key.
+    body: { ...NAMES, atoms: genesisAtoms(text), rules: DEFAULT_RULES, kx: 'k'.repeat(43) },
   });
 
   it('refuses a founding Document whose record is 64,001 bytes, tied to its text, and queues nothing', async () => {

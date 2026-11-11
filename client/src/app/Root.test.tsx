@@ -3,7 +3,7 @@
  * pilot notice, an iPhone browser tab gets none at all, and an invite link,
  * opened or pasted, reaches the same preview.
  */
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +15,7 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { sharePayloadOf, startSharing } from '../share/shareLink';
 import { createGroup, makeInvite } from './actions';
 import { messages } from './messages';
 import { Root } from './Root';
@@ -89,6 +90,8 @@ function renderRoot(ben: TestDevice, platform: PlatformEnv = DESKTOP) {
     platform,
     notice: memoryNotice(),
     requestPersistence: () => Promise.resolve('denied' as const),
+    lock: { lockedAtLaunch: false, unlock: vi.fn(), restore: vi.fn() },
+    passkeyOffer: { answered: () => false, answer: vi.fn() },
   };
   const { unmount } = render(<Root services={ben.services} firstRun={firstRun} />);
   return { user: userEvent.setup(), unmount };
@@ -191,5 +194,92 @@ describe('Root', () => {
     const { user } = renderRoot(ben);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(await screen.findByText(messages.start.mayClear)).toBeVisible();
+  });
+
+  it.each([
+    ['a desktop browser before the notice', DESKTOP],
+    ['an iPhone browser tab, behind the install gate', IPHONE_TAB],
+  ])('opens a share link in %s, outside first run, making no key', async (_name, platform) => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const id = 'U2hhcmVkIHN0YXRlbWVudA';
+    await ana.services.store.savePersonal({
+      id,
+      title: 'What I stand for',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const started = await startSharing(ana.services, id);
+    if (started.kind !== 'shared') throw new Error('Expected a share.');
+    const reader = await device(fake, 'reader');
+    keysMade.mockClear();
+    window.history.replaceState(null, '', `/#share/${sharePayloadOf(started.link)}`);
+    renderRoot(reader, platform);
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'What I stand for' }),
+    ).toBeVisible();
+    expect(screen.getByText(messages.shared.note)).toBeVisible();
+    expect(screen.queryByRole('button', { name: messages.notice.accept })).not.toBeInTheDocument();
+    expect(keysMade).not.toHaveBeenCalled();
+    expect(await reader.services.store.listPersonal()).toEqual([]);
+    expect(window.location.hash).toBe(`#share/${sharePayloadOf(started.link)}`);
+  });
+
+  it('keeps Add a section and Propose removing behind the unlock step, as every group route (#75, #95)', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const created = await createGroup(ana.services, {
+      groupName: 'Riverside Tenants',
+      yourName: 'Ana',
+      chat: null,
+      title: 'House rules',
+      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+    });
+    if (created.outcome !== 'created') throw new Error('Expected a group.');
+    await ana.services.sync.syncOnce();
+    const { groupId } = created;
+    const unlock = vi.fn(() => Promise.resolve(true));
+    const firstRun = {
+      platform: DESKTOP,
+      notice: { accepted: () => true, accept: vi.fn() },
+      requestPersistence: () => Promise.resolve('denied' as const),
+      lock: { lockedAtLaunch: true, unlock, restore: vi.fn() },
+      passkeyOffer: { answered: () => true, answer: vi.fn() },
+    };
+    const pages = ['add', `add/${groupId}.0`, `remove/${groupId}.1`];
+    window.history.replaceState(null, '', `/#/g/${groupId}/${pages[0] ?? ''}`);
+    render(<Root services={ana.services} firstRun={firstRun} />);
+
+    for (const page of pages) {
+      act(() => {
+        window.history.replaceState(null, '', `/#/g/${groupId}/${page}`);
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+      expect(screen.getByRole('heading', { level: 1, name: messages.unlock.title })).toBeVisible();
+      expect(screen.queryByRole('textbox')).toBeNull();
+    }
+    expect(unlock).not.toHaveBeenCalled();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Propose removing this section' }),
+    ).toBeVisible();
+    expect(unlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes back to first run when the address leaves the share link', async () => {
+    const ben = await device(createFakeRelay(), 'ben');
+    window.history.replaceState(null, '', '/#share/damaged');
+    renderRoot(ben);
+    expect(await screen.findByText(messages.shared.gone)).toBeVisible();
+
+    act(() => {
+      window.history.pushState(null, '', '/#/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    expect(screen.getByRole('heading', { level: 1, name: messages.notice.title })).toBeVisible();
   });
 });

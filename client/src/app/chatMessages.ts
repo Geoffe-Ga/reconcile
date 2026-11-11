@@ -11,8 +11,9 @@
  * Document text, a member's name or a link fragment never goes in, and a
  * steward Proposal's title, which names a member, is never offered.
  */
+import { type BotMoment, NOTICE_MINUTES } from '../engine/chatPosts';
 import type { Proposal } from '../engine/fold';
-import { DAY_MINUTES } from '../engine/rules';
+import type { Notice } from '../store/chatBot';
 import { formatDay } from './format';
 import { messages } from './messages';
 
@@ -34,8 +35,8 @@ export interface ChatDetails {
 /** The part of a Proposal a message is made from. */
 export type ChatSource = Pick<Proposal, 'deadline' | 'title' | 'target'>;
 
-/** How long before its deadline a vote counts as closing: a day, in relay minutes. */
-export const CLOSING_MINUTES = DAY_MINUTES;
+/** How long before its deadline a vote counts as closing: a day, in relay minutes, as the chat bot's. */
+export const CLOSING_MINUTES = NOTICE_MINUTES;
 
 /** Bidi embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069), which could reorder the chat's text. */
 const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/gu;
@@ -84,9 +85,14 @@ export function openMoment(
   return addedVersion && proposal.author !== me ? 'version' : 'open';
 }
 
-/** The title Include the title may add, or null for a steward Proposal, whose title names a member. */
+/**
+ * The title Include the title may add: a change to the Document's, an add's
+ * included (#75), or null for any other target, such as a steward Proposal,
+ * whose title names a member.
+ */
 export function shareableTitle(proposal: ChatSource): string | null {
-  return proposal.target.kind === 'edit' ? proposal.title : null;
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add' ? proposal.title : null;
 }
 
 /** What a share of `proposal` says: its deadline, and its title only when `includeTitle`. */
@@ -95,4 +101,31 @@ export function chatDetails(proposal: ChatSource, includeTitle: boolean): ChatDe
   return includeTitle && title !== null
     ? { deadline: proposal.deadline, title }
     : { deadline: proposal.deadline };
+}
+
+/**
+ * What the chat bot posts (#119, #123; spec §9, "Shares carry no content"):
+ * for each moment, its message with no title, then the app's address on a
+ * line of its own. Inside a Proposal's Discord thread, the result reads as
+ * the argument concluded. It is made from the moment, the deadline and
+ * whether it goes into the thread alone, so no title, name or other word of
+ * the group can reach Discord. `origin` is the app's (`location.origin`);
+ * `timeZone` dates the deadline, the device's own unless a test names one.
+ */
+export function botNotice(origin: string, timeZone?: string): Notice {
+  return (moment: BotMoment, deadline: number, inThread: boolean) => {
+    const line =
+      inThread && moment === 'result'
+        ? messages.chat.concluded
+        : chatMessage(moment, { deadline }, timeZone);
+    return `${line}\n${origin}/`;
+  };
+}
+
+/**
+ * The name of a Proposal's Discord thread (#123; ADR-0039 step 1): its
+ * number alone, 'Proposal 3 in Reconcile', since no title may reach Discord.
+ */
+export function botThreadName(number: number): string {
+  return messages.chat.threadName(number);
 }

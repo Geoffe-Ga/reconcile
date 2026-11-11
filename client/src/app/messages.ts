@@ -13,6 +13,9 @@ const LOCALE = 'en-GB';
 /** A whole number as this language writes it, such as "2,000". */
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
+/** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
+const CLEARED_ON = 'Individual scores and notes were cleared on';
+
 export const messages = {
   app: {
     name: 'Reconcile',
@@ -23,6 +26,8 @@ export const messages = {
     back: '←',
     forward: '→',
     outward: '↗',
+    /** Ends a quotation that leaves words out, as in "Shared spaces are cleaned every…". */
+    ellipsis: '…',
   },
   start: {
     pageTitle: 'Your groups',
@@ -37,6 +42,12 @@ export const messages = {
     settingUp: 'Saved on this device. Waiting for the relay.',
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
     leaving: 'Leaving…',
+    restoreHeading: 'Have a backup file?',
+    linkHeading: 'Have Reconcile on another device?',
+    link: 'Link to my other device',
+    settings: 'Settings',
+    personal: 'Personal',
+    personalHint: 'Your mission statement and other Documents of your own, on this device only.',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -147,10 +158,38 @@ export const messages = {
     offline: 'Can’t reach the relay right now. Check your connection, then try again.',
     retry: 'Try again',
     failed: 'Joining didn’t finish. Try again.',
+    /** Under the whole Document (#91): the explicit fit check before a name is asked for. */
+    question: 'Do you share enough of this to join?',
+    notNow: 'Not now',
+    /** Read as Not now's description: it drops the invite and writes nothing. */
+    notNowHint: 'You can open the link again while it lasts.',
     memberTitle: 'You’re already in this group',
     alreadyJoined:
       'This invite is for a group you’re already in on this device. Anything this device was missing from its history is here now.',
     openGroup: 'Open your group',
+  },
+  /**
+   * The first-run guide (#91): up to three cards after the first Create group
+   * or Join on a device. Every number arrives from the engine's rules and the
+   * score scale, never typed here.
+   */
+  guide: {
+    /** Where a card sits among those this person sees, such as "2 of 3". */
+    step: (step: number, steps: number) => `${count(step)} of ${count(steps)}`,
+    next: 'Next',
+    back: 'Back',
+    skip: 'Skip',
+    done: 'Done',
+    proposeTitle: 'Propose',
+    propose:
+      'Suggest new wording for any section, with a short reason. Nothing changes until the group agrees.',
+    /** The score scale's ends, such as "Vote 0–4". */
+    voteTitle: (low: string, high: string) => `Vote ${low}–${high}`,
+    /** The scale's ends, then the ordinary bar's average line and share of zeros, such as "2.0" and "10%". */
+    vote: (low: string, high: string, average: string, zeros: string) =>
+      `Score each version from ${low} (strongly opposed) to ${high} (strongly supportive). Most changes pass when the average is at least ${average} and fewer than ${zeros} of scores are ${low}. A ${low} needs a reason.`,
+    discussTitle: 'Discuss in your chat',
+    discuss: 'Talk it through in your group’s own chat. Every Proposal links to it.',
   },
   home: {
     pageTitle: 'Your group',
@@ -179,6 +218,11 @@ export const messages = {
     copyFailed: 'Copying is blocked here. Select the link above and copy it yourself.',
     missingHistory:
       'Some history may be missing on this device. Open a new invite link from your group to catch up.',
+    /** When the group's key changed after this membership left on another device (#98). */
+    keyLeft: 'You left this group on another device.',
+    /** When the group's key changed and this device has no wrap that opens (#98). */
+    keyMissed:
+      'This group’s key changed and this device didn’t get the new one. Ask someone in the group for a new invite link.',
     joinDiscussion: 'Join discussion',
     discussion: 'Discussion',
     unreachable: 'Can’t reach the relay right now.',
@@ -241,14 +285,50 @@ export const messages = {
       'These versions go on the new ballot after yours. Your group sees that you added them.',
     fullTitle: 'This ballot is full',
     full: 'This ballot already has three versions.',
+    addPageTitle: 'Add a section',
+    addTitle: 'Add a section',
+    addAtStart: 'If your group passes it, your section goes at the start of the Document.',
+    addAfter: (section: number) =>
+      `If your group passes it, your section goes right after section ${String(section)}.`,
+    addTextLabel: 'Section text',
+    addTextHint: 'If your group passes it, this becomes a new section.',
+    addTextMissing: 'Write the new section.',
+    addSubmit: 'Propose this section',
+    addVersionLede:
+      'This new section has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+    addVersionHint: 'If your group passes it, this becomes the new section.',
+    removePageTitle: 'Propose removing a section',
+    removeTitle: 'Propose removing this section',
+    removeLede: 'If your group passes it, this section leaves the Document.',
+    removeVersionLede:
+      'This section already has an open Proposal. Removing it goes on that ballot as another version, and everyone scores each version.',
+    removeSubmit: 'Propose removing it',
+    removeVersionSubmit: 'Add removal to the ballot',
+    removeVersionVisibility: 'Everyone in your group sees this version and that you added it.',
+    removalOnBallotTitle: 'Removing this section is already on the ballot',
+    removalOnBallot: 'Score it on the section’s open Proposal.',
+    /** The checkbox that adds a Dispatch to a Proposal (#112). */
+    dispatchLabel: 'Send a Dispatch if this passes',
+    dispatchHint:
+      'If your group passes this, everyone in it gets the Dispatch. Voters see it on the ballot first.',
+    /** Where a carried Dispatch's title starts: the Document's own title, set in the field. */
+    dispatchTitle: (document: string) => `Updated: ${document}`,
+    dispatchTitleLabel: 'Dispatch title',
+    dispatchTextLabel: 'Dispatch text (optional)',
   },
   proposal: {
     pageTitle: 'Proposal',
-    eyebrowOpen: 'Open Proposal',
-    eyebrowClosed: 'Closed Proposal',
+    /** Over an ordered Proposal's title: its number among the group's Proposals (#123), and whether it's open. */
+    eyebrowOpen: (number: number) => `Proposal ${String(number)} · Open`,
+    eyebrowClosed: (number: number) => `Proposal ${String(number)} · Closed`,
     eyebrowNew: 'New Proposal',
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
+    newSection: 'New section',
+    removes: 'Removes this section',
+    addsAfter: (words: string) => `Adds a section after ‘${words}’`,
+    addsAtStart: 'Adds a section at the start',
+    addsAtEnd: 'Adds a section at the end',
     readsAs: 'How it will read',
     proposed: 'Proposed text',
     onBallot: 'On the ballot',
@@ -257,6 +337,9 @@ export const messages = {
     yourVersion: 'Your version',
     joinedAfter: 'You joined after this opened, so you can’t vote on it.',
     notVotingLevel: 'You weren’t at a voting level when this opened, so you can’t vote on it.',
+    /** Over the Dispatch a Proposal carries (#112). */
+    dispatchHeading: 'If this passes',
+    dispatchLine: 'Everyone in your group gets this Dispatch.',
     missingTitle: 'This Proposal isn’t on this device',
     missing: 'Go back to your group to see its open Proposals.',
   },
@@ -304,6 +387,9 @@ export const messages = {
     passed: 'This passed. The Document now reads:',
     passedVersion: (version: number) =>
       `Version ${String(version)} passed. The Document now reads:`,
+    passedRemoval: 'This passed. The Document no longer has this section.',
+    passedVersionRemoval: (version: number) =>
+      `Version ${String(version)} passed. The Document no longer has this section.`,
     failed: 'This didn’t pass.',
     failedVersions: 'No version passed.',
     lapsed: 'Not enough people weighed in. This isn’t a no.',
@@ -346,7 +432,7 @@ export const messages = {
     visibleUntil: 'Individual scores and notes are visible until',
     visibleUntilEnd: '. Screenshots taken before then can outlast this.',
     /** "Individual scores and notes were cleared on <date>.", once the device has deleted them. */
-    clearedOn: 'Individual scores and notes were cleared on',
+    clearedOn: CLEARED_ON,
     clearedOnEnd: '.',
     /** "A record of this decision posted by <name> doesn’t match the ballots on this device." */
     mismatchBefore: 'A record of this decision posted by',
@@ -355,7 +441,7 @@ export const messages = {
   leave: {
     open: 'Leave this group',
     title: 'Leave this group?',
-    body: 'Leaving removes this group from this device. Others keep what they already have. Reconcile doesn’t change the group’s keys, so a copy kept elsewhere, like a backup file, could still read new changes.',
+    body: 'Leaving removes this group from this device. Others keep what they already have. When you leave, the group gets a new key, so this device and any backup can’t read what comes next.',
     confirm: 'Leave this group',
     cancel: 'Cancel',
     failed: 'Leaving couldn’t be saved on this device. Try again.',
@@ -393,6 +479,10 @@ export const messages = {
     untitled: '.',
     /** How it ends with the title, such as `: "Quiet hours".` */
     titled: (title: string) => `: "${title}".`,
+    /** The chat bot's result post inside a Proposal's Discord thread (#123; ADR-0011). */
+    concluded: 'The argument has concluded. A vote has finished in Reconcile.',
+    /** The name of a Proposal's Discord thread: its number, never its title (#123; ADR-0039). */
+    threadName: (number: number) => `Proposal ${String(number)} in Reconcile`,
   },
   decided: {
     title: 'Decided',
@@ -460,6 +550,19 @@ export const messages = {
     addVersionLabel: (section: number) => `Add your version to section ${String(section)}`,
     ballotFull: 'This section’s ballot already has three versions.',
     empty: 'This Document has no sections yet.',
+    addHere: 'Add a section here',
+    /** Each gap's name starts with its visible words, which name the spot too (WCAG 2.5.3). */
+    addAtStartLabel: 'Add a section here, at the start',
+    addAfterLabel: (section: number) => `Add a section here, after section ${String(section)}`,
+    remove: 'Propose removing this section',
+    removeLabel: (section: number) => `Propose removing this section, section ${String(section)}`,
+    copy: 'Copy as Markdown',
+    copyHint:
+      'To start a fresh group from this Document, copy it, then paste it into Create group.',
+    copied: 'Copied',
+    copyFailed:
+      'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
+    markdownLabel: 'The Document as Markdown',
   },
   /**
    * Stewards and suspensions (#102). Where a person's name sits inside a
@@ -534,6 +637,51 @@ export const messages = {
     notAllowed: 'Your place in this group doesn’t include proposing.',
     noNominees: 'Nobody in your group can stand for this seat right now.',
   },
+  /** Dissolving a group (#108; ADR-0051): the composer, and what its ballot decides. */
+  dissolve: {
+    propose: 'Propose dissolving the group',
+    pageTitle: 'Propose dissolving',
+    eyebrow: 'Dissolve',
+    title: 'Propose dissolving the group',
+    lede: 'If your group passes this, it ends. Every device keeps a read-only copy, and nothing new is sent or accepted.',
+    bar: (average: string, zeros: string) =>
+      `Dissolving needs more support than an ordinary change: an average of at least ${average}, with under ${zeros} zeros.`,
+    titleHint: 'A few words your group will see on the ballot.',
+    whyHint: 'Tell your group why it’s time. They’ll talk it over before voting.',
+    wipeLabel: 'Also erase it from every device',
+    wipeHint:
+      'Each copy of Reconcile will erase this group. No app can stop someone who already kept a copy, a screenshot or a backup file.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose dissolving',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'You can’t propose dissolving now',
+    notAllowed: 'Your place in this group doesn’t include proposing.',
+    alreadyOpen:
+      'A Proposal to dissolve this group is already open. Go back to your group to vote on it.',
+    ballotTitle: 'Dissolve the group',
+    keepLine: 'If this passes, your group ends. Every device keeps a read-only copy.',
+    wipeLine: (days: number) =>
+      `If this passes, your group ends, and every device erases it ${count(days)} days later.`,
+    passed: 'This passed. Your group has dissolved.',
+  },
+  /** A dissolved group's read-only copy on this device (#108). */
+  archive: {
+    eyebrow: 'Dissolved',
+    dissolvedOn: (date: string) => `This group dissolved on ${date}. This is a read-only copy.`,
+    erasedOn: (date: string) => `It will be erased from this device on ${date}.`,
+    remove: 'Remove from this device',
+    removeTitle: 'Remove this group from this device?',
+    removeBody:
+      'This erases your read-only copy of this group from this device. Others keep their own copies.',
+    removeConfirm: 'Remove from this device',
+    cancel: 'Cancel',
+    removeFailed: 'This group couldn’t be removed from this device. Try again.',
+    unfinished: 'Not decided',
+    closed: 'Closed when the group dissolved',
+    readOnlyTitle: 'This group has dissolved',
+    readOnly: 'This is a read-only copy. Nothing new can be proposed or voted on.',
+    cleared: (date: string) => `${CLEARED_ON} ${date}.`,
+  },
   /**
    * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat
    * bot and the front door. Each changes only by a Proposal, so nothing here
@@ -548,7 +696,7 @@ export const messages = {
     names: { chatBot: 'Discord chat bot', frontDoor: 'Front door' },
     warnings: {
       chatBot:
-        'Discord’s servers will hold that this group uses Reconcile and when votes open and close. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges.',
+        'Discord’s servers will hold that this group uses Reconcile, when votes open and close, and each Proposal’s number. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges. Discord also sees the internet address of the member’s phone that posts each notice.',
       frontDoor:
         'Anyone with the address can see the group’s name and a short excerpt of its mission statement, and ask to join. It never lists people.',
     },
@@ -615,7 +763,7 @@ export const messages = {
     nowLine: 'It’s off until the group decides. This Proposal asks the group to keep it off.',
     webhookLabel: 'Discord webhook URL',
     webhookHint:
-      'In Discord, open the channel’s settings, then Integrations, then Webhooks, and copy the URL. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
+      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel, or a forum channel to give each Proposal its own thread. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
     webhookMissing: 'Paste the webhook URL from Discord.',
     webhookInvalid: 'Use a Discord webhook URL, starting with https://discord.com/api/webhooks/.',
     submitNow: 'Turn off now',
@@ -624,5 +772,373 @@ export const messages = {
       'Your group may be voting on this already. Go back to your group’s rules to see where it stands.',
     nowUnavailable:
       'You can’t turn this off at once right now. You can still propose turning it off.',
+  },
+  // Personal (#93): a person's own Documents, kept on this device only (ADR-0001).
+  personal: {
+    pageTitle: 'Personal',
+    title: 'Personal',
+    lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
+    privacy:
+      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+    documentPrivacy:
+      'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+    missionTitle: 'My mission statement',
+    missionPrompt: 'What do you stand for, and what are you working toward?',
+    newDocument: 'New document',
+    documentPageTitle: 'Personal Document',
+    eyebrow: 'Personal',
+    untitled: 'Untitled',
+    titleLabel: 'Title',
+    titleMissing: 'Give this Document a title.',
+    titleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    textLabel: 'Text',
+    textHint: 'Nobody votes on this. It saves on this device as you type.',
+    saved: 'Saved on this device.',
+    notSaved: 'Not saved yet. Fix the title to save your changes.',
+    failed: 'Your changes couldn’t be saved on this device. Keep typing to try again.',
+    unreadable: 'This Document couldn’t be read on this device. Reload Reconcile, then try again.',
+    delete: 'Delete',
+    /** Around the Document's title, which renders in its own `<bdi>`: "Delete ‘Mine’ from this device?" */
+    deleteBefore: 'Delete ‘',
+    deleteAfter: '’ from this device?',
+    deleteBody: 'A backup you saved earlier still has it.',
+    deleteConfirm: 'Delete',
+    deleteCancel: 'Cancel',
+    deleteFailed: 'It couldn’t be deleted from this device. Try again.',
+    /** Under Delete's question, for a shared Document (#105): deleting stops its link first. */
+    deleteShared: 'Deleting it stops sharing its link first, which needs the relay.',
+    deleteSharedFailed:
+      'Sharing couldn’t be stopped, so nothing was deleted. Check your connection, then try again.',
+    /** Under a shared Document's title on Personal (#105). */
+    sharedLine: 'Shared by link',
+    /** In place of documentPrivacy while the Document is shared (#105). */
+    sharedPrivacy:
+      'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
+    /**
+     * Share link (#105; ADR-0074's personal page at level 2): one Document,
+     * read-only, by a link whose key only its holders have.
+     */
+    share: {
+      heading: 'Share by link',
+      /** Before it's on: what the link shows, and to whom. */
+      about:
+        'Share link makes a link anyone can open in any browser to read this Document’s latest version, without joining anything. They see its title and text, never your name, your groups or your other Documents.',
+      /** Before it's on: what the relay keeps and sees (ADR-0075 §2). */
+      relay:
+        'The relay keeps only a sealed copy it can’t read. As when your groups sync, it sees this device’s internet address while it posts, so someone watching it live could tell this device also uses your groups.',
+      start: 'Share link',
+      starting: 'Making your link…',
+      startFailed:
+        'The link couldn’t be made, so nothing was shared. Making one needs the relay. Check your connection, then try again.',
+      tooLarge: 'This Document is too long to share by link. Shorten it, then try again.',
+      tooLargeShared:
+        'This Document is now too long for its link, which still shows the last version that fit. Shorten it to update the link.',
+      field: 'Link',
+      /** Beside the link: who can read it, and when it stops. */
+      warning:
+        'Anyone with this link can read this Document. It stops working if you don’t open Reconcile for 30 days.',
+      /** How edits reach the link. */
+      edits: 'Your edits reach the link when you leave this page.',
+      pending:
+        'Your latest changes haven’t reached the link yet. Reconcile sends them the next time it opens online.',
+      shareAgain: 'Share link again',
+      shared: 'Shared.',
+      copied: 'Copied. Send it to the people you want to read it.',
+      blocked: 'Copying is blocked here. Select the link above and copy it yourself.',
+      /** What the share sheet carries beside the link: fixed, never the Document's words (spec §9). */
+      message: 'Something I wrote, shared read-only with Reconcile:',
+      stop: 'Stop sharing',
+      stopping: 'Stopping…',
+      stopped:
+        'Sharing stopped. People who opened the link may have kept a copy, and earlier copies stay on the relay, still sealed, until they expire within a month.',
+      stopFailed:
+        'Sharing couldn’t be stopped, so nothing changed and the link still works. Stopping needs the relay. Check your connection, then try again.',
+    },
+  },
+  /**
+   * The page a share link opens (#105), for anyone, in any browser, outside
+   * first run: it reads the Document and keeps nothing.
+   */
+  shared: {
+    /** The tab's title: never the Document's own words, which browser history would keep. */
+    pageTitle: 'Shared page',
+    note: 'Shared with Reconcile. Read-only.',
+    loading: 'Opening the page…',
+    empty: 'Nothing is written here yet.',
+    goneTitle: 'This link doesn’t work',
+    gone: 'This page isn’t shared any more, or the link is damaged.',
+    offlineTitle: 'Can’t open this page yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+  },
+  /**
+   * Earning a vote (#101; ADR-0014, ADR-0021): a newcomer's progress on the
+   * People list, Vouch and its dialog, and the newcomer's own lines. Where a
+   * name sits inside a sentence, the words around it are kept apart, so the
+   * screen sets the name in `<bdi>`.
+   */
+  admission: {
+    /** The first word of a newcomer's progress, as in "New · 1 of 2 vouches · wait ends Sun 22 Nov". */
+    newcomer: 'New',
+    /** Between the parts of a newcomer's progress. */
+    separator: '·',
+    vouches: (have: number, need: number) => `${count(have)} of ${count(need)} vouches`,
+    waitEnds: (date: string) => `wait ends ${date}`,
+    canVoteFrom: (date: string) => `can vote from ${date}`,
+    /** Before the names of everyone who has vouched for a newcomer, as in "Vouched for by Ana and Ben". */
+    vouchedBy: 'Vouched for by',
+    vouchFor: { before: 'Vouch for' },
+    dialogTitle: { before: 'Vouch for', after: '?' },
+    dialogLine:
+      'Vouch only for someone you’ve met or talked with, on a call or in person. Everyone in the group sees your vouch.',
+    confirm: 'Vouch',
+    cancel: 'Cancel',
+    failed: 'Your vouch couldn’t be saved on this device. Try again.',
+    /** A newcomer's own line before anyone has given them every vouch they need, while the wait runs. */
+    voteAfterOnce: (date: string, need: number) =>
+      `You can vote on Proposals that open after ${date}, once ${count(need)} people vouch for you.`,
+    /** A newcomer's own line once the wait has ended without every vouch they need. */
+    voteOnce: (need: number) =>
+      `You can vote on Proposals that open once ${count(need)} people vouch for you.`,
+    /** A newcomer's own line once vouched for, while the wait runs. */
+    voteAfter: (date: string) => `You can vote on Proposals that open after ${date}.`,
+    /** Under the level picker while a newcomer earns their vote. */
+    levelsWait: 'Voting and proposing start once you have a vote. Until then, you read and follow.',
+    /** On a Proposal that opened before this member's vote arrived. */
+    noVoteYet: 'You didn’t have a vote yet when this opened.',
+  },
+  // Settings (#78): save and restore a backup, and Erase (ADR-0046 as cut by ADR-0073).
+  settings: {
+    pageTitle: 'Settings',
+    title: 'Settings',
+    notifyHeading: 'Notifications',
+    backupHeading: 'Back up your groups',
+    restoreHeading: 'Restore a backup',
+    linkHeading: 'Link a new device',
+    passkeyHeading: 'Lock with a passkey',
+    eraseHeading: 'Erase this device',
+  },
+  // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
+  // notice and always in Settings. iOS allows one passkey request per tap, so
+  // the first time asks twice. The no-PRF line is #95's own words.
+  passkey: {
+    pageTitle: 'Lock with a passkey',
+    title: 'Lock your keys with a passkey',
+    lede: 'Someone who picks up your unlocked phone could act as you in your groups. With a passkey, Reconcile asks for your face, fingerprint or screen lock each time it opens.',
+    twice:
+      'The first time, your phone asks twice: once to make the passkey, then once to check it can lock your keys.',
+    privacy:
+      'Your password manager keeps it as “Reconcile key”, with nothing about your groups, and nothing about it reaches the relay.',
+    create: 'Make a passkey',
+    creating: 'Waiting for your passkey…',
+    createFailed: 'No passkey was made. You can try again.',
+    confirmLede: 'Now confirm your passkey, and Reconcile locks your keys with it.',
+    confirm: 'Confirm your passkey',
+    confirming: 'Waiting for your passkey…',
+    confirmFailed: 'Your passkey didn’t answer. Try again.',
+    locked:
+      'Your keys on this device are locked with your passkey. Reconcile asks for it each time it opens.',
+    noPrf: 'This device’s passkey can’t protect your keys, so they stay on this device as before.',
+    saveBackup: 'Save a backup',
+    notNow: 'Not now',
+    continue: 'Continue',
+  },
+  // The unlock screen (#95): a device whose keys are locked opens here, and
+  // nothing syncs or signs until the passkey unlocks it.
+  unlock: {
+    pageTitle: 'Unlock Reconcile',
+    title: 'Unlock Reconcile',
+    lede: 'Your keys on this device are locked with your passkey.',
+    unlock: 'Unlock with your passkey',
+    unlocking: 'Waiting for your passkey…',
+    failed: 'Your passkey didn’t unlock Reconcile.',
+    tryAgain: 'Try again',
+    restoreHeading: 'Restore a backup',
+    restoreLede:
+      'Restoring puts the groups in your backup file in place of the locked ones on this device. Their keys stay on this device unlocked, and you can lock them with a passkey again in Settings.',
+    eraseHeading: 'Erase this device',
+  },
+  /**
+   * Dispatches (#112; ADR-0003, ADR-0074): news for everyone in a group.
+   * Where a name or a title sits inside a sentence, the words around it are
+   * kept apart, so the screen sets it in `<bdi>`.
+   */
+  dispatches: {
+    pageTitle: 'Dispatches',
+    title: 'Dispatches',
+    lede: 'News for everyone in your group, newest first.',
+    empty: 'No Dispatches yet.',
+    /** Group home's link to every Dispatch, read with `seeAllWhat` after it. */
+    seeAll: 'See all',
+    seeAllWhat: 'Dispatches',
+    send: 'Send a Dispatch',
+    from: { before: 'From' },
+    fromProposal: { before: 'From the Proposal ‘', after: '’' },
+    /** Before a Document's title, on the link that opens it. */
+    open: 'Open',
+    /** Read between who sent a Dispatch and its date. */
+    dateSeparator: '·',
+  },
+  sendDispatch: {
+    pageTitle: 'Send a Dispatch',
+    eyebrow: 'Dispatches',
+    title: 'Send a Dispatch',
+    lede: 'A Dispatch goes to everyone in your group, whatever their involvement. Phones with notifications on say only “Something new in Reconcile.”',
+    titleLabel: 'Title',
+    titleHint: 'A few words that say what it’s about.',
+    titleMissing: 'Give your Dispatch a title.',
+    textLabel: 'Text (optional)',
+    textHint: 'Plain text. Links and formatting show just as you type them.',
+    documentLabel: 'Point to a Document (optional)',
+    noDocument: 'No Document',
+    visibility: 'Everyone in your group sees this Dispatch and that you sent it.',
+    submit: 'Send Dispatch',
+    failed: 'Your Dispatch couldn’t be saved on this device. Try again.',
+    notAllowedTitle: 'You can’t send Dispatches here',
+    notAllowed:
+      'Your place in this group doesn’t include sending Dispatches. Co-Creators send them.',
+    leaving: 'You can’t send a Dispatch in a group you’re leaving.',
+  },
+  /**
+   * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows
+   * `somethingNew`: no group, name, text, id or count. The disclosure comes
+   * before any switch, and says plainly what the relay and Apple or Google see.
+   */
+  push: {
+    somethingNew: 'Something new in Reconcile',
+    disclosure:
+      'Notifications only ever say “Something new in Reconcile.” To send them, the relay keeps this phone’s push address for each group you turn on, for up to 30 days. That lets whoever runs the relay see that the same phone is in each of those groups. Apple or Google can see when this phone is woken. Notifications may show on your lock screen and a paired watch.',
+    notify: (group: string) => `Notify me about ${group}`,
+    blocked: 'Notifications are blocked for Reconcile in this device’s settings.',
+    unavailable: 'This device can’t get notifications from Reconcile.',
+    failed: 'That didn’t reach the relay, so nothing changed. Try again when you’re online.',
+    none: 'Once you’re in a group, you can turn on its notifications here.',
+  },
+  backup: {
+    lede: 'One file holds every group on this device, with the keys and the name you use in each, and your personal Documents. With the file and its passphrase, you can bring your groups back on a new phone, or set up a second device that votes as you.',
+    passphrase: 'Passphrase',
+    passphraseHint: 'At least 8 characters. Nobody can recover this passphrase for you.',
+    passphraseShort: 'Use at least 8 characters.',
+    confirm: 'Passphrase again',
+    confirmMismatch: 'The two passphrases don’t match.',
+    make: 'Make a backup file',
+    making: 'Locking your backup with your passphrase…',
+    makeFailed: 'The backup file couldn’t be made. Try again.',
+    ready: 'Your backup file is ready. Without the passphrase, nothing in it can be read.',
+    save: 'Save the file',
+    saved: 'Saved. Keep the file and the passphrase in different places.',
+    cancelled: 'The file wasn’t saved. Save the file to try again.',
+    none: 'There are no groups on this device to back up yet.',
+  },
+  /** Settings' line on the relay backup (#97), shown once the device keeps one. */
+  relayBackup: {
+    saved: (day: string) => `Backed up to the relay ${day}.`,
+    tooLarge: 'Your groups are too large for the relay backup. Save a backup file instead.',
+    waiting: 'Your groups will be backed up to the relay the next time Reconcile syncs.',
+  },
+  restore: {
+    lede: 'Bring back the groups in a backup file you saved. On a second device, they vote as you.',
+    choose: 'Choose backup file',
+    chosen: 'Backup file:',
+    passphrase: 'Its passphrase',
+    passphraseMissing: 'Enter the passphrase this backup was saved with.',
+    submit: 'Restore',
+    restoring: 'Opening your backup…',
+    restored: (groups: number) => {
+      if (groups === 0) return 'This backup holds no groups.';
+      return groups === 1
+        ? '1 group is back on this device.'
+        : `${count(groups)} groups are back on this device.`;
+    },
+    failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
+  },
+  erase: {
+    open: 'Erase Reconcile from this device',
+    body: 'This erases Reconcile’s data on this device. Your groups carry on for everyone else, and a backup file you saved can bring them back here.',
+    hold: 'Hold to erase',
+    released: 'You let go early, so nothing was erased.',
+    erasing: 'Erasing…',
+    failed: 'Some of Reconcile’s data couldn’t be erased. Reload Reconcile, then try again.',
+    cancel: 'Cancel',
+  },
+  /** Press and hold (#78): what the button's live region says while it's held. */
+  hold: {
+    hint: (seconds: number) =>
+      `Press and hold for ${count(seconds)} seconds. On a keyboard, hold Space or Enter.`,
+    holding: (left: number) =>
+      left === 1 ? 'Keep holding: 1 second left.' : `Keep holding: ${count(left)} seconds left.`,
+  },
+  /**
+   * Linking a second device (#96; ADR-0044 as cut by ADR-0074): the existing
+   * device shows a code, the new one scans or pastes it, both show a number,
+   * and only the existing device confirms.
+   */
+  link: {
+    lede: 'Use your groups on a laptop or a second phone. This device shows a code, the new one scans it, and both show a number for you to check before anything is sent.',
+    open: 'Link a new device',
+    none: 'There are no groups on this device to link yet.',
+    // The existing device.
+    newPageTitle: 'Link a new device',
+    newTitle: 'Link a new device',
+    newLede:
+      'On your new device, open Reconcile and tap Link to my other device. Then scan this code, or paste it there.',
+    qrLabel: 'Linking code',
+    codeText: 'The same code as text',
+    copy: 'Copy the code',
+    copied: 'Copied. Paste it on your new device.',
+    copyFailed: 'The code couldn’t be copied. Select it and copy it instead.',
+    lasts:
+      'This code works for 10 minutes. Nothing is sent until you check a number on both devices.',
+    waitingNew: 'Waiting for your new device…',
+    number: (digits: string) => `${digits.slice(0, 3)} ${digits.slice(3)}`,
+    compare: 'Does your new device show the same number?',
+    match: 'Match',
+    noMatch: 'Don’t match',
+    sending: 'Sending your groups…',
+    sent: 'Sent. Your new device is adding your groups.',
+    notSent: 'Nothing was sent. Make a new code to try again.',
+    expired: 'This code has expired. Nothing was sent.',
+    sendFailed: 'Your groups couldn’t be sent. Make a new code to try again.',
+    again: 'Make a new code',
+    // A tab whose keys another tab locked with a passkey (#95) shows no code until it's unlocked.
+    locked:
+      'Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it, then link a new device.',
+    backToSettings: 'Settings',
+    // The new device.
+    thisPageTitle: 'Link to your other device',
+    thisTitle: 'Link to your other device',
+    thisLede:
+      'On your other device, open Settings and tap Link a new device. Then scan the code it shows, or paste it here.',
+    pasteLabel: 'Code from your other device',
+    pasteHint: 'It starts with RL1.',
+    pasteSubmit: 'Link this device',
+    notACode: 'That isn’t a linking code. Copy it again from your other device.',
+    connecting: 'Connecting to your other device…',
+    offline: 'Can’t reach the relay right now. Check your connection and try again.',
+    waitingOther: 'Waiting for your other device…',
+    check: 'Check that your other device shows the same number, then confirm there.',
+    cancel: 'Cancel',
+    linked: (groups: number) =>
+      groups === 1
+        ? 'Linked. This device now has 1 group.'
+        : `Linked. This device now has ${count(groups)} groups.`,
+    mismatch: 'That code didn’t match. Start again on your other device.',
+    damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
+    joinExpired: 'That code has expired. Start again on your other device.',
+    startAgain: 'Start again',
+    unreachable: 'Can’t reach the relay right now. Still trying.',
+    // The camera.
+    scan: 'Scan the code',
+    scanning: 'Point your camera at the code on your other device.',
+    stopScan: 'Stop scanning',
+    camera: 'Camera',
+    noCamera: 'The camera can’t be used here. Paste the code instead.',
+    notLinkCode: 'That isn’t a Reconcile linking code.',
+  },
+  /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
+  backupCard: {
+    body: 'Save a backup so you can get this group back if you lose your phone.',
+    save: 'Save a backup',
+    notNow: 'Not now',
   },
 } as const;

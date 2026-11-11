@@ -1,0 +1,218 @@
+/*
+ * Settings: Notifications (#99), the backup card and Erase (#78), from
+ * tokens.css (DESIGN.md). Safety stays quiet: the backup card is an inline
+ * card, never a modal, and `negative` appears only on Erase's final
+ * press-and-hold confirm.
+ */
+
+/* Notifications: one switch per group, each a card whose whole row toggles it. */
+.notify-list {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 30rem;
+  padding: 0;
+  list-style: none;
+}
+
+.notify-switch {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  align-items: center;
+  min-height: var(--touch);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.notify-switch:hover {
+  border-color: var(--muted);
+}
+
+.notify-switch[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.notify-switch[data-disabled] {
+  cursor: progress;
+}
+
+/* A group's name is whatever its founder typed, so it may need to break anywhere. */
+.notify-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The track and thumb: the thumb's side says on or off, so the state never rests on color.
+ * muted on surface is 4.6:1 or more and primary on surface well past 3:1, in both themes. */
+.switch-track {
+  flex: none;
+  display: flex;
+  align-items: center;
+  width: 44px;
+  height: 26px;
+  padding: 2px;
+  border: 2px solid var(--muted);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+}
+
+.switch-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  transition: transform 120ms ease-out;
+}
+
+.notify-switch[data-selected] .switch-track {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.notify-switch[data-selected] .switch-thumb {
+  background: var(--surface);
+  transform: translateX(14px);
+}
+
+:dir(rtl) .notify-switch[data-selected] .switch-thumb {
+  transform: translateX(-14px);
+}
+
+.notify-switch[data-disabled] .switch-track {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-thumb {
+    transition: none;
+  }
+}
+
+/* Why a switch didn't turn on, or why the device can't: plain words, never alarm. The
+ * live region stays in the page while empty, so a screen reader hears it when it fills. */
+.notify-note {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* Group home's suggestion, quiet and inline, between the open Proposals and the Document.
+ * Its row lines the card up with the sections' content column, as .section does. */
+.backup-slot {
+  display: grid;
+  padding-block-end: var(--space-5);
+}
+
+@media (min-width: 40rem) {
+  .backup-slot {
+    grid-template-columns: 10rem minmax(0, 1fr);
+    column-gap: var(--space-5);
+  }
+
+  .backup-slot > .backup-card {
+    grid-column: 2;
+  }
+}
+
+.backup-card {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.backup-card .button-quiet {
+  margin-inline-start: 0;
+}
+
+/* Settings' line on the relay backup (#97): plain words, no semantic color. */
+.relay-backup {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* The chosen backup file's name, which may be anything the person's device called it. */
+.restore-file {
+  color: var(--body);
+  overflow-wrap: anywhere;
+}
+
+/* The Erase card: as calm as any setting until it's opened. */
+.erase-card {
+  gap: var(--space-4);
+}
+
+.erase-panel {
+  max-width: 34em;
+  color: var(--body);
+}
+
+/* Press and hold: the button, a bar that fills while it's held, and the live region. */
+.hold {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/* Paper-colored words on negative: 5.9:1 in light, 5.4:1 in dark (checked 2026-11-10). */
+.button-negative {
+  background: var(--negative);
+  color: var(--surface);
+  /* A long press selects nothing and opens no callout, so the hold is all it does. */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.button-negative[data-pressed] {
+  filter: brightness(0.92);
+}
+
+.button-negative[data-disabled] {
+  opacity: 0.7;
+}
+
+.hold-track {
+  display: block;
+  width: min(100%, 16rem);
+  height: var(--space-1);
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--sunken);
+}
+
+.hold-fill {
+  display: block;
+  height: 100%;
+  background: var(--negative);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* Fills over the hold's 3 seconds (HOLD_SECONDS); letting go empties it at once. */
+.hold-fill[data-holding] {
+  transform: scaleX(1);
+  transition: transform 3s linear;
+}
+
+:dir(rtl) .hold-fill {
+  transform-origin: right center;
+}
+
+/* Without motion, the bar steps once a second, in time with the live region. */
+@media (prefers-reduced-motion: reduce) {
+  .hold-fill[data-holding] {
+    transition-timing-function: steps(3, end);
+  }
+}

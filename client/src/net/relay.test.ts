@@ -55,6 +55,21 @@ describe('putBlob', () => {
     expect(fake.requests[0]?.url).toBe(`/v1/mailbox/${mailbox}`);
   });
 
+  it('asks the relay to wake the mailbox with wake=1 only when told to (#99)', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+
+    await relay.putBlob(mailbox, blob(1), 30, { wake: true });
+    await relay.putBlob(mailbox, blob(2), 30, { wake: false });
+    await relay.putBlob(mailbox, blob(3), undefined, { wake: true });
+
+    expect(fake.requests.map((request) => request.url)).toEqual([
+      `/v1/mailbox/${mailbox}?ttl_days=30&wake=1`,
+      `/v1/mailbox/${mailbox}?ttl_days=30`,
+      `/v1/mailbox/${mailbox}?wake=1`,
+    ]);
+  });
+
   it('turns a refusal into a RelayError carrying the status and code', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
@@ -276,5 +291,110 @@ describe('every request', () => {
 
     expect(error).toMatchObject({ status: 507, code: 'storage_full' });
     expect(String(error)).not.toContain(mailbox);
+  });
+});
+
+describe('putBackup and getBackup (#97)', () => {
+  const backup = 'test-backup-'.padEnd(43, '1');
+
+  /** A 64 KiB backup whose first byte is `marker`. */
+  function backupBlob(marker: number): Uint8Array<ArrayBuffer> {
+    const bytes = new Uint8Array(65536);
+    bytes[0] = marker;
+    return bytes;
+  }
+
+  it('PUTs the raw backup as application/octet-stream to its own route, and GETs its bytes back', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+
+    await relay.putBackup(backup, backupBlob(7));
+    const fetched = await relay.getBackup(backup);
+
+    expect(fake.requests).toEqual([
+      {
+        method: 'PUT',
+        url: `/v1/backup/${backup}`,
+        contentType: 'application/octet-stream',
+        body: backupBlob(7),
+      },
+      { method: 'GET', url: `/v1/backup/${backup}`, contentType: null, body: null },
+    ]);
+    expect(local(fetched ?? new Uint8Array())).toEqual(backupBlob(7));
+  });
+
+  it('reads an unknown backup as null', async () => {
+    const relay = createRelay({ fetch: createFakeRelay().fetch });
+
+    expect(await relay.getBackup(backup)).toBeNull();
+  });
+
+  it('turns a refused PUT or GET into a RelayError with its status and code', async () => {
+    const relay = createRelay({ fetch: createFakeRelay().fetch });
+    const full = createRelay({ fetch: answering({ error: 'storage_full' }, 507) });
+
+    const errors = await Promise.all([
+      rejection(relay.putBackup(backup, new Uint8Array(1024))),
+      rejection(full.putBackup(backup, backupBlob(1))),
+      rejection(full.getBackup(backup)),
+    ]);
+
+    expect(errors[0]).toMatchObject({ status: 400, code: 'invalid_size' });
+    expect(errors[1]).toMatchObject({ status: 507, code: 'storage_full' });
+    expect(errors[2]).toMatchObject({ status: 507, code: 'storage_full' });
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(RelayError);
+      expect(String(error)).not.toContain(backup);
+    }
+  });
+
+  it('refuses a PUT answer other than 204, and a GET answer other than 200 or 404', async () => {
+    const created = createRelay({ fetch: answering({ seq: 1 }, 201) });
+    const moved = createRelay({ fetch: () => Promise.resolve(new Response('', { status: 302 })) });
+
+    expect(await rejection(created.putBackup(backup, backupBlob(1)))).toMatchObject({
+      status: 201,
+      code: 'bad_response',
+    });
+    expect(await rejection(moved.getBackup(backup))).toMatchObject({
+      status: 302,
+      code: 'http_302',
+    });
+  });
+
+  it('sends no cookies or referrer and skips the cache', async () => {
+    const fake = createFakeRelay();
+    const seen: (RequestInit | undefined)[] = [];
+    const relay = createRelay({
+      fetch: (input, init) => {
+        seen.push(init);
+        return fake.fetch(input, init);
+      },
+    });
+
+    await relay.putBackup(backup, backupBlob(1));
+    await relay.getBackup(backup);
+
+    expect(seen).toHaveLength(2);
+    for (const init of seen) {
+      expect(init).toMatchObject({
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        cache: 'no-store',
+      });
+    }
+  });
+
+  it('refuses a backup id that is not 43 base64url characters, sending nothing', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+
+    const errors = await Promise.all([
+      rejection(relay.putBackup('../mailbox/x', backupBlob(1))),
+      rejection(relay.getBackup(`${backup}x`)),
+    ]);
+
+    expect(errors.every((error) => error instanceof RangeError)).toBe(true);
+    expect(fake.requests).toEqual([]);
   });
 });

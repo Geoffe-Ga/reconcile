@@ -11,14 +11,35 @@
  * Every request the three browsers send is captured, and none may carry the
  * group secret, an invite seed or an invite key, raw, in hex or in base64, in
  * its path, query or body.
+ *
+ * Reading before joining (#91): Cal reads the whole Document as it reads now
+ * on the Join screen while IndexedDB holds nothing and the invite GET is the
+ * only request, taps Not now, and comes back. Ana and Cal meet the first-run
+ * guide after their first create and join, and its cards send nothing. A
+ * second test opens an invite whose Document holds script, an image and
+ * `javascript:` links, which render as inert text with no CSP violation.
  */
 import { DatabaseSync } from 'node:sqlite';
 
 import type { Page, Request } from '@playwright/test';
 
-import { acceptNotice, expect, heading, type Person, pick, test } from './support/fixtures';
+import {
+  acceptNotice,
+  expect,
+  expectAccessible,
+  type FirstRun,
+  type FirstRunOptions,
+  GUIDE_KEY,
+  heading,
+  localKeys,
+  PASSKEY_OFFER_KEY,
+  type Person,
+  pick,
+  storedRecords,
+  test,
+} from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
-import { derive, onlyGroup } from './support/stored';
+import { derive, groupMailboxes, onlyGroup } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -34,6 +55,16 @@ const PEOPLE = [
 
 /** The form the issue pins for an invite link. */
 const LINK = /^https?:\/\/[^#]+\/#join\/[A-Za-z0-9_-]{43}$/;
+
+/** The pilot notice's `localStorage` key (`src/platform/notice.ts`): device-wide, set before Join. */
+const NOTICE_KEY = 'reconcile.pilot-notice';
+
+/** Join's question, under the whole Document (#91). */
+const QUESTION = 'Do you share enough of this to join?';
+
+/** The first-run guide's cards (#91): a Co-Creator sees all three, a Collaborator the last two. */
+const CO_CREATOR_CARDS = ['Propose', 'Vote 0–4', 'Discuss in your chat'];
+const COLLABORATOR_CARDS = CO_CREATOR_CARDS.slice(1);
 
 /** What one request carried where a server could read it: its path and query, and its body. */
 interface Sent {
@@ -65,17 +96,79 @@ function seedOf(link: string): Buffer {
   return Buffer.from(new URL(link).hash.slice('#join/'.length), 'base64url');
 }
 
-/** Opens `link`, checks the preview, and joins as `person.name` at Join's preselected level. */
-async function joinFrom(person: Person, link: string): Promise<void> {
+/**
+ * Opens `link` in a new profile, through the pilot notice (and the passkey
+ * offer, #95), and checks Join's preview. Returns what first run showed.
+ */
+async function openInvite(
+  person: Person,
+  link: string,
+  options?: FirstRunOptions,
+): Promise<FirstRun> {
   const { page } = person;
   await page.goto(link);
-  await acceptNotice(person);
+  const firstRun = await acceptNotice(person, options);
   await expect(heading(page, GROUP)).toBeVisible();
   await expect(page).toHaveURL(/#\/join$/);
   await expect(page.getByText('From Ana’s invite')).toBeVisible();
+  return firstRun;
+}
+
+/** Joins from the Join screen as `person.name` at Join's preselected level. */
+async function joinHere(person: Person): Promise<void> {
+  const { page } = person;
   await page.getByRole('textbox', { name: 'Your name' }).fill(person.name);
   await page.getByRole('button', { name: 'Join group' }).click();
   await expect(page).toHaveURL(/#\/g\/[\w-]+$/);
+}
+
+/** Opens `link`, checks the preview, and joins as `person.name` at Join's preselected level. */
+async function joinFrom(person: Person, link: string): Promise<void> {
+  await openInvite(person, link);
+  await joinHere(person);
+}
+
+/** The relay requests `page` sends while `act` runs, as "METHOD /path". */
+async function relayRequestsDuring(page: Page, act: () => Promise<void>): Promise<string[]> {
+  const seen: Request[] = [];
+  const record = (request: Request) => {
+    if (new URL(request.url()).pathname.startsWith('/v1/')) seen.push(request);
+  };
+  page.on('request', record);
+  try {
+    await act();
+  } finally {
+    page.off('request', record);
+  }
+  return seen.map((request) => `${request.method()} ${new URL(request.url()).pathname}`);
+}
+
+/**
+ * Walks the first-run guide on Group home (#91): each card in `titles` in
+ * turn, its heading focused and axe checked, then Done. The guide sends
+ * nothing: the only relay requests meanwhile are the sync loop's reads of the
+ * group's own weekly mailboxes (#110). Done leaves the guide's flag set on
+ * the device.
+ */
+async function walkGuide(person: Person, titles: readonly string[]): Promise<void> {
+  const { page } = person;
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  const { secret } = await onlyGroup(page);
+  // The group's weekly mailboxes (#110): a pass reads last week's and this week's.
+  const reads = groupMailboxes(Uint8Array.from(secret)).map((id) => `GET /v1/mailbox/${id}`);
+  const sent = await relayRequestsDuring(page, async () => {
+    for (const [i, title] of titles.entries()) {
+      await expect(dialog.getByRole('heading', { name: title })).toBeFocused();
+      await expect(dialog.getByText(`${String(i + 1)} of ${String(titles.length)}`)).toBeVisible();
+      await expectAccessible(person, `first-run guide, card ${String(i + 1)}`);
+      const last = i === titles.length - 1;
+      await dialog.getByRole('button', { name: last ? 'Done' : 'Next' }).click();
+    }
+    await expect(dialog).toHaveCount(0);
+  });
+  expect(sent.filter((line) => !reads.includes(line))).toEqual([]);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), GUIDE_KEY)).toBe('1');
 }
 
 /** Scores the open Proposal with `pill` and sends the ballot. */
@@ -113,10 +206,10 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
   for (const { page } of [ana, ben, cal]) page.on('request', (request) => requests.push(request));
   const links: string[] = [];
 
-  await test.step('A creates a group and copies an invite link; B joins from it', async () => {
+  await test.step('A creates a group, walks the first-run guide, and copies an invite link; B joins from it', async () => {
     const { page } = ana;
     await page.goto('/#/create');
-    await acceptNotice(ana);
+    await acceptNotice(ana, { guide: true });
     await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
     await page.getByRole('textbox', { name: 'Your name' }).fill(ana.name);
     await page.getByRole('textbox', { name: 'Document title' }).fill(TITLE);
@@ -125,6 +218,10 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
       .fill([FIRST_ATOM, SECOND_ATOM].join('\n\n'));
     await page.getByRole('button', { name: 'Create group' }).click();
     await expect(heading(page, GROUP)).toBeVisible();
+    await walkGuide(ana, CO_CREATOR_CARDS);
+    await page.reload();
+    await expect(heading(page, GROUP)).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     links.push(await copyInvite(page));
     await joinFrom(ben, links[0] ?? '');
   });
@@ -156,31 +253,69 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
 
   const group = await onlyGroup(ana.page);
   const secret = Uint8Array.from(group.secret);
-  const mailbox = derive(secret, 'reconcile/v1/mailbox').toString('base64url');
+  // Its weekly mailboxes (#110), whichever weeks this run's records fell in.
+  const mailboxes = groupMailboxes(secret);
+  const inGroup = 'mailbox IN (?, ?, ?)';
 
   await test.step('the test deletes the group’s oldest relay rows, genesis and the Proposal included', () => {
     const db = new DatabaseSync(relay.db, { timeout: 10_000 });
     try {
       const rows = db
-        .prepare('SELECT seq FROM blobs WHERE mailbox = ? ORDER BY seq')
-        .all(mailbox)
+        .prepare(`SELECT seq FROM blobs WHERE ${inGroup} ORDER BY seq`)
+        .all(...mailboxes)
         .map((row) => Number(row.seq));
       // Genesis, Ben's join, the Proposal, then the two ballots.
       expect(rows).toHaveLength(5);
       const proposal = rows[2] ?? 0;
-      db.prepare('DELETE FROM blobs WHERE mailbox = ? AND seq <= ?').run(mailbox, proposal);
-      const left = db.prepare('SELECT COUNT(*) AS n FROM blobs WHERE mailbox = ?').get(mailbox);
+      db.prepare(`DELETE FROM blobs WHERE ${inGroup} AND seq <= ?`).run(...mailboxes, proposal);
+      const left = db.prepare(`SELECT COUNT(*) AS n FROM blobs WHERE ${inGroup}`).get(...mailboxes);
       expect(Number(left?.n)).toBe(2);
     } finally {
       db.close();
     }
   });
 
-  await test.step('C joins from a fresh link and sees what A and B see', async () => {
+  const firstRunKeys: string[] = [];
+  await test.step('C reads the whole current Document before any key exists, and taps Not now', async () => {
     await ana.page.goto('/');
     await ana.page.getByRole('link', { name: GROUP }).click();
     links.push(await copyInvite(ana.page));
-    await joinFrom(cal, links[1] ?? '');
+    const link = links[1] ?? '';
+    const { page } = cal;
+    const inviteMailbox = derive(seedOf(link), 'reconcile/v1/invite-mailbox').toString('base64url');
+    const inviteGet = [`GET /v1/mailbox/${inviteMailbox}`];
+
+    const reading = await relayRequestsDuring(page, async () => {
+      const { passkeyOffered } = await openInvite(cal, link, { guide: true });
+      // First run's own device flags: the notice's, and the passkey offer's answer where it showed (#95).
+      firstRunKeys.push(...(passkeyOffered ? [PASSKEY_OFFER_KEY, NOTICE_KEY] : [NOTICE_KEY]));
+      const document = page.getByRole('article');
+      await expect(document.getByRole('paragraph')).toHaveText([NEW_TEXT, SECOND_ATOM]);
+      await expect(page.getByRole('heading', { level: 2, name: TITLE })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 2, name: QUESTION })).toBeVisible();
+      expect(await storedRecords(page)).toBe(0);
+      expect(await localKeys(page)).toEqual(firstRunKeys);
+      await expectAccessible(cal, 'Join, with the whole Document');
+      await page.getByRole('button', { name: 'Not now' }).click();
+      await expect(heading(page, 'Your groups')).toBeVisible();
+    });
+    // Reading the Document and Not now sent nothing beyond the invite GET, and wrote nothing.
+    expect(reading).toEqual(inviteGet);
+    expect(await storedRecords(page)).toBe(0);
+    expect(await localKeys(page)).toEqual(firstRunKeys);
+  });
+
+  await test.step('C opens the link again, joins, walks the guide, and sees what A and B see', async () => {
+    const { page } = cal;
+    await page.goto(links[1] ?? '');
+    await expect(heading(page, GROUP)).toBeVisible();
+    await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
+      NEW_TEXT,
+      SECOND_ATOM,
+    ]);
+    expect(await storedRecords(page)).toBe(0);
+    await joinHere(cal);
+    await walkGuide(cal, COLLABORATOR_CARDS);
     for (const person of [cal, ana, ben]) await expectSameGroup(person);
   });
 
@@ -191,7 +326,8 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     for (const link of links) {
       const seed = seedOf(link);
       const inviteMailbox = derive(seed, 'reconcile/v1/invite-mailbox');
-      for (const other of [groupId, Buffer.from(mailbox, 'base64url'), inviteMailbox]) {
+      const weekly = mailboxes.map((id) => Buffer.from(id, 'base64url'));
+      for (const other of [groupId, ...weekly, inviteMailbox]) {
         expect(seed.equals(other)).toBe(false);
       }
     }
@@ -215,4 +351,40 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     );
     expect(findings.map(describeFinding)).toEqual([]);
   });
+});
+
+test('an invite’s Document renders script, an image and javascript: links as inert text', async ({
+  openProfile,
+}) => {
+  const ana = await openProfile('Ana');
+  const ben = await openProfile('Ben');
+  const atoms = [
+    '<script>window.xssRan = true</script>',
+    '<img src="/xss.png" onerror="window.xssRan = true">',
+    '[Open](javascript:window.xssRan=true) and <a href="javascript:window.xssRan=true">this</a>',
+  ];
+  const { page } = ana;
+  await page.goto('/#/create');
+  await acceptNotice(ana);
+  await page.getByRole('textbox', { name: 'Group name' }).fill(GROUP);
+  await page.getByRole('textbox', { name: 'Your name' }).fill(ana.name);
+  await page.getByRole('textbox', { name: 'Document title' }).fill(TITLE);
+  await page.getByRole('textbox', { name: 'Document text' }).fill(atoms.join('\n\n'));
+  await page.getByRole('button', { name: 'Create group' }).click();
+  await expect(heading(page, GROUP)).toBeVisible();
+  const link = await copyInvite(page);
+
+  const fetched: string[] = [];
+  ben.page.on('request', (request) => fetched.push(new URL(request.url()).pathname));
+  await openInvite(ben, link);
+  const document = ben.page.getByRole('article');
+  for (const atom of atoms) await expect(document).toContainText(atom);
+  await expect(ben.page.locator('main :is(script, img, iframe, [onerror])')).toHaveCount(0);
+  await expect(document.locator('[style]')).toHaveCount(0);
+  await expect(ben.page.locator('a[href^="javascript" i]')).toHaveCount(0);
+  await expect(document.getByRole('link')).toHaveCount(0);
+  expect(await ben.page.evaluate(() => 'xssRan' in window)).toBe(false);
+  expect(fetched.filter((path) => path.endsWith('/xss.png'))).toEqual([]);
+  await expectAccessible(ben, 'Join, with markup in the Document');
+  // The fixture fails the test on any CSP violation in either profile.
 });

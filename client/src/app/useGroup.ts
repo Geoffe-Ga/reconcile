@@ -5,7 +5,8 @@
  * The state is `fold` over the relay records in the store's log, so it is the
  * same on every device that has synced the same records. Events still in the
  * outbox are listed as pending and never folded: the relay hasn't ordered or
- * timed them yet.
+ * timed them yet. A dissolved group whose ballots this device has cleared
+ * shows the state it kept instead (#108).
  */
 
 import {
@@ -20,8 +21,9 @@ import {
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
-import type { Group, Me, Store } from '../store/db';
-import { foldGroup } from '../store/expiry';
+import { shownState } from '../store/archive';
+import type { ClearedArchive, Group, Me, Store } from '../store/db';
+import { type KeyChange, keyChangeOf } from '../store/epochs';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -66,8 +68,23 @@ export interface GroupView {
    * only, until the relay has the leave and the sync loop deletes it.
    */
   leaving: boolean;
+  /**
+   * Why this device can't read what the group writes now (#98): `left` when
+   * this membership left on another device, `missed` when the group's key
+   * changed and this device didn't get the new one; null while it can, and
+   * for a read-only archive (#108).
+   */
+  keyChange: KeyChange | null;
+  /**
+   * Whether group home suggests a backup (#78): the group is on the device,
+   * no backup file it saved or restored from holds it, nobody answered Not
+   * now, and it isn't a read-only archive, which no backup carries (#108).
+   */
+  suggestBackup: boolean;
   /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
   loaded: boolean;
+  /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
+  cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
 }
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
@@ -78,28 +95,46 @@ export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
   const { group, loaded } = useStoredGroup(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
-  const state = useMemo(() => (group === undefined ? null : foldGroup(group)), [group]);
+  const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
     pending,
+    keyChange: keyChangeIn(group, state),
     ...syncStatusOf(group),
     reachable,
     me: group?.me ?? null,
     loaded,
+    cleared: clearedOf(group),
   };
 }
 
-/** What a stored group says of its syncs and its leave, or nothing yet before it loads. */
+/**
+ * Why this device can't read what `group` writes now (#98), or null: always
+ * null for a read-only archive, whose home shows the archive instead (#108).
+ */
+function keyChangeIn(group: Group | undefined, state: GroupState | null): KeyChange | null {
+  if (group === undefined || state === null || group.archived !== undefined) return null;
+  return keyChangeOf(group, state);
+}
+
+/** A dissolved group's cleared archive (#108), or null for any other group, or none yet. */
+function clearedOf(group: Group | undefined): GroupView['cleared'] {
+  return group?.archived?.cleared ?? null;
+}
+
+/** What a stored group says of its syncs, its leave and its backup, or nothing yet before it loads. */
 function syncStatusOf(
   group: Group | undefined,
-): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving'> {
+): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'suggestBackup'> {
   return {
     lastSyncAt: group?.lastSyncAt ?? null,
     relayNow: group?.relayNow ?? null,
     missingHistory: group?.missingHistory === true,
     leaving: group?.leaving !== undefined,
+    suggestBackup:
+      group !== undefined && group.backup === undefined && group.archived === undefined,
   };
 }
 

@@ -57,11 +57,28 @@ export const OFF: OptIns = { chatBot: null, frontDoor: false };
  * over the whole string rather than read with a URL parser, so every device
  * folds the same answer whatever its browser.
  */
-const WEBHOOK = /^https:\/\/(?:discord|discordapp)\.com\/api\/webhooks\/\d+\/[\w-]+$/;
+const WEBHOOK = /^https:\/\/(?:discord|discordapp)\.com\/api\/webhooks\/(\d+)\/([\w-]+)$/;
+
+/** A webhook's two path parts: the webhook's id and its token, the secret part. */
+export interface WebhookParts {
+  readonly id: string;
+  readonly token: string;
+}
+
+/**
+ * The id and token of a Discord webhook URL the bot may post to, read with
+ * {@link isWebhook}'s pattern, or null for anything else. `postWebhook`
+ * (src/net/discord.ts, #119) rebuilds the URL from these alone.
+ */
+export function webhookParts(value: unknown): WebhookParts | null {
+  if (typeof value !== 'string') return null;
+  const [, id, token] = WEBHOOK.exec(value) ?? [];
+  return id === undefined || token === undefined ? null : { id, token };
+}
 
 /** True when `value` is a Discord webhook URL the bot may post to. */
 export function isWebhook(value: unknown): value is string {
-  return typeof value === 'string' && WEBHOOK.test(value);
+  return webhookParts(value) !== null;
 }
 
 /** True when `value` names one of {@link OPT_INS}. */
@@ -173,7 +190,10 @@ export interface Narrowing {
 export interface OptInProposalState {
   readonly id: string;
   readonly author: string;
-  readonly target: { readonly kind: 'edit' | 'steward' } | RulesChange;
+  /** A rules change, or any other kind of target, whose details the opt-in rules don't read. */
+  readonly target:
+    | { readonly kind: 'edit' | 'add' | 'steward' | 'dissolve' | 'reconcile' | 'motion' }
+    | RulesChange;
   readonly deadline: number;
   readonly closedAt: number | null;
 }

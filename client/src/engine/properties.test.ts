@@ -2,18 +2,25 @@
  * Properties of the fold (fast-check): every device that folds the same relay
  * records builds the same state, the Document changes only on a final pass, a level change
  * or a leave never reaches back into a Proposal that's already open, a member who has left
- * acts no more, and an Atom never has two open
- * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
- * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
- * ballot expiry (#111): a device that has cleared a closed Proposal's ballots, keeping its result,
- * folds the same Document and outcomes as one that still holds them. And of windows (#106): a
- * Proposal opens only for a window its class allows, and runs exactly that long.
+ * acts no more, an Atom never has two open Proposals or a ballot more than three versions,
+ * and adds and removals (#75) only ever add or take out whole Atoms. And of the bars (#94):
+ * the entrenched bar is never easier than the ordinary one, and neither depends on the order
+ * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
+ * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
+ * mailbox changes nothing, not even relay time. And of coalitions (#100): a motion's outcome
+ * doesn't depend on the order distinct seats' results arrive in, and nothing a group reports
+ * carries a name, note, score or key from inside it. And of ballot expiry (#111): a device that
+ * has cleared a closed Proposal's ballots, keeping its result, folds the same Document and
+ * outcomes as one that still holds them.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { signedAs } from '../test/keys';
+import { folded, foldLogs, Logs, seatOf } from '../test/coalitions';
+import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
+import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
+import { resultsToReport } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
@@ -23,6 +30,8 @@ import { tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
 const [FOLLOWING, , CREATING] = LEVELS;
+/** How long before R the founded members join: past the 14-day wait, so they vote from R on (#101). */
+const SETTLED = DEFAULT_RULES.waitDays * DAY_MINUTES + 100;
 /** How long an ordinary vote runs when no one chooses, in relay minutes. */
 const WINDOW = defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
 const encoder = new TextEncoder();
@@ -51,13 +60,23 @@ class Log {
     return id;
   }
 
-  /** Genesis by member 0 at R, then members 1..count-1 join. */
+  /**
+   * Genesis by member 0, then members 1..count-1 join, all {@link SETTLED}
+   * minutes before R, and members 0 and 1 vouch for each joiner after the
+   * bootstrap's first two, so everyone holds voting rights by R (#101).
+   */
   static founded(count: number, atoms: readonly string[] = ['A0', 'A1']): Log {
     const log = new Log();
+    const start = R - SETTLED;
     const body = { name: 'G', founder: 'Founder', title: 'Doc', atoms };
-    log.group = log.add(R, member(0), { type: 'genesis', body });
+    log.group = log.add(start, member(0), { type: 'genesis', body });
     for (let i = 1; i < count; i += 1) {
-      log.add(R + i, member(i), { type: 'join', body: { name: member(i) } });
+      log.add(start + i, member(i), { type: 'join', body: { name: member(i) } });
+    }
+    for (let i = 3; i < count; i += 1) {
+      const vouch = { type: 'vouch', body: { member: authorOf(member(i)) } } as const;
+      log.add(start + 20 + 2 * i, member(0), vouch);
+      log.add(start + 21 + 2 * i, member(1), vouch);
     }
     return log;
   }
@@ -65,6 +84,12 @@ class Log {
   /** A Proposal by member 0, for `window` days when given, else the class default. */
   propose(received: number, atom: string, text: string, window?: number): string {
     const body = { atom, title: 'T', why: 'W', text, ...(window === undefined ? {} : { window }) };
+    return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** An add of a new section after `after`, or first for null (#75). */
+  addSection(received: number, after: string | null, text: string): string {
+    const body = { target: { kind: 'add', after } as const, title: 'T', why: 'W', text };
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
@@ -96,6 +121,43 @@ class Log {
     return this.add(received, member(author), { type: 'version', body: { proposal, text } });
   }
 }
+
+/** What a late event in the dissolve property acts on: the group's size, an open edit and the dissolve Proposal. */
+interface LateContext {
+  readonly count: number;
+  readonly edit: string;
+  readonly motion: string;
+}
+
+/**
+ * A key change into epoch 1, wrapped to nobody: the property's members hold
+ * no kx, so after a leave it would be valid in a group that goes on (#98).
+ */
+const LATE_ROTATE = { epoch: 1, commit: 'rotation-commit-of-this-propertyAAAAAAAAAAA', wraps: {} };
+
+/** Each kind of event the dissolve property sends late, by member `who` (mod the group's size). */
+const LATE = {
+  vote: (log, at, who, value, { count, edit }) => log.vote(at, who % count, edit, value),
+  version: (log, at, who, _value, { count, edit }) =>
+    log.version(at, who % count, edit, 'Late wording'),
+  level: (log, at, who, _value, { count }) => log.level(at, who % count, FOLLOWING),
+  join: (log, at, who, _value, { count }) =>
+    log.add(at, member(count + who), { type: 'join', body: { name: 'Late' } }),
+  proposal: (log, at) => log.propose(at, `${log.group}.1`, 'Late text'),
+  dissolve: (log, at, who, _value, { count, motion }) =>
+    log.add(at, member(who % count), { type: 'dissolve', body: { proposal: motion } }),
+  leave: (log, at, who, _value, { count }) => log.leave(at, who % count),
+  kx: (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'kx', body: { kx: testKx(member(who % count)).kx } }),
+  'key-rotate': (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'key-rotate', body: LATE_ROTATE }),
+} satisfies Record<
+  string,
+  (log: Log, at: number, who: number, value: Score, context: LateContext) => string
+>;
+
+/** The kinds of late event, for fast-check to pick from. */
+const LATE_KINDS = Object.keys(LATE) as (keyof typeof LATE)[];
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
@@ -221,6 +283,23 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('only adds or takes out whole Atoms: each id at most once, founded or a passed add’s, in founded order', () => {
+    fc.assert(
+      fc.property(arbitraryLog, ({ records, relayNow }) => {
+        const state = fold(records, relayNow);
+        const ids = state.atoms.map((atom) => atom.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        const founded = [0, 1, 2].map((i) => `${state.group ?? ''}.${String(i)}`);
+        const added = state.proposals
+          .filter((p) => p.target.kind === 'add' && p.final && p.outcome.kind === 'pass')
+          .map((p) => p.id);
+        for (const id of ids) expect([...founded, ...added]).toContain(id);
+        const kept = ids.filter((id) => founded.includes(id));
+        expect(kept).toEqual(founded.filter((id) => kept.includes(id)));
+      }),
+    );
+  });
+
   it('gives deep-equal state when it folds the same records twice', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
@@ -246,13 +325,36 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
       fc.property(scenario, ({ log: { records, relayNow }, source, at, flip }) => {
         const forged = Uint8Array.from(source.bytes);
         forged[flip % forged.length] = (forged[flip % forged.length] ?? 0) ^ 0x01;
+        // It lands at its neighbour's receipt: relay time moves on with any record, valid or not.
+        const received = records[at]?.received ?? records.at(-1)?.received ?? R;
         const withForgery = [
           ...records.slice(0, at),
-          { seq: 0, received: records[at]?.received ?? R, bytes: forged },
+          { seq: 0, received, bytes: forged },
           ...records.slice(at),
         ];
         const state = fold(withForgery, relayNow);
         expect(state.ignored).toContainEqual({ seq: 0, id: null });
+        expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
+      }),
+    );
+  });
+
+  it('ignores any record read from another epoch’s mailbox, wherever it lands, even a late copy (#98)', () => {
+    const scenario = arbitraryLog.chain((log) =>
+      fc.record({
+        log: fc.constant(log),
+        source: fc.constantFrom(...log.records),
+        at: fc.nat({ max: log.records.length }),
+        epoch: fc.integer({ min: 1, max: 3 }),
+        late: fc.integer({ min: 0, max: 30 * DAY_MINUTES }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ log: { records, relayNow }, source, at, epoch, late }) => {
+        // No key change ever happened here, so every epoch but 0 is another mailbox's.
+        const stale = { ...source, seq: 0, received: source.received + late, epoch };
+        const state = fold([...records.slice(0, at), stale, ...records.slice(at)], relayNow);
+        expect(state.ignored).toContainEqual({ seq: 0, id: parseRecord(source.bytes)?.id ?? null });
         expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
       }),
     );
@@ -357,12 +459,55 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('ignores every event anyone sends after the group dissolves, whatever it is (#108)', () => {
+    const late = fc.array(
+      fc.record({
+        who: fc.nat({ max: 5 }),
+        kind: fc.constantFrom(...LATE_KINDS),
+        value: score,
+        gap: fc.integer({ min: 0, max: 2 * WINDOW }),
+      }),
+      { minLength: 1, maxLength: 6 },
+    );
+    const args = [fc.integer({ min: 3, max: 5 }), fc.boolean(), fc.boolean(), late] as const;
+    fc.assert(
+      fc.property(...args, (count, wipe, leaveFirst, events) => {
+        const log = Log.founded(count);
+        const edit = log.propose(R + 10, `${log.group}.0`, 'New text');
+        const target = { kind: 'dissolve' as const, wipe };
+        const body = { target, title: 'Dissolve', why: 'Done.' };
+        const motion = log.add(R + 11, member(0), { type: 'proposal', body });
+        for (let i = 0; i < count; i += 1) log.vote(R + 12 + i, i, motion, 4);
+        // A leave just before the dissolve makes a key change due, until the dissolve ends it (#98).
+        if (leaveFirst) log.leave(R + 19, count - 1);
+        log.add(R + 20, member(1), { type: 'dissolve', body: { proposal: motion } });
+        const before = fold(log.records, R + 30);
+        let at = R + 20;
+        for (const { who, kind, value, gap } of events) {
+          at += gap;
+          LATE[kind](log, at, who, value, { count, edit, motion });
+        }
+        const after = fold(log.records, at + 3 * WINDOW);
+        expect(before.dissolved).toEqual({ received: R + 20, wipe });
+        expect([before.epoch, before.rotationDue, before.former.length]).toEqual([
+          0,
+          false,
+          leaveFirst ? 1 : 0,
+        ]);
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        expect(after.ignored.map((record) => record.seq)).toEqual(
+          log.records.slice(-events.length).map((record) => record.seq),
+        );
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const { proposals, rules } = fold(records, relayNow);
         for (const p of proposals) {
-          // No target is entrenched until a later issue registers one (#116, #115, #117, #108).
+          // The log proposes only edits, which are ordinary; dissolving is entrenched (#108).
           expect(p.class).toBe('ordinary');
           expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
@@ -393,7 +538,7 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
-  it('changes only the target Atom on a final pass, and no Atom on a fail or lapse', () => {
+  it('changes only the target Atom on a final pass, removing it for "", and no Atom on a fail or lapse', () => {
     const scenario = fc.record({
       atoms: fc.array(fc.string({ unit: 'grapheme', maxLength: 12 }), {
         minLength: 1,
@@ -414,9 +559,11 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         const state = fold(log.records, R + minutes);
         const p = state.proposals[0];
         const passed = p?.final === true && p.outcome.kind === 'pass';
-        const expected = before.map((atom, i) =>
-          passed && i === atomIndex ? { ...atom, text: p.text } : atom,
-        );
+        const removed = passed && p.text === '';
+        const expected = before.flatMap((atom, i) => {
+          if (!passed || i !== atomIndex) return [atom];
+          return removed ? [] : [{ ...atom, text: p.text }];
+        });
         expect(state.atoms.map((a) => encoder.encode(a.text))).toEqual(
           expected.map((a) => encoder.encode(a.text)),
         );
@@ -436,6 +583,8 @@ const step = fc.record({
     'join',
     'level',
     'propose',
+    'remove',
+    'add',
     'version',
     'vote',
     'repeat',
@@ -479,6 +628,15 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
   },
   propose: (log, proposals, s, received) => {
     proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));
+  },
+  remove: (log, proposals, s, received) => {
+    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, ''));
+  },
+  // Anchored on a genesis Atom, an earlier add's Atom (once it may have passed), or the start.
+  add: (log, proposals, s, received) => {
+    const anchors = [null, `${log.group}.${String(s.target)}`, ...proposals];
+    const after = anchors[s.who % anchors.length] ?? null;
+    proposals.push(log.addSection(received, after, s.score === 0 ? '' : `Add ${String(s.score)}`));
   },
   version: (log, proposals, s, received) => {
     log.version(received, s.who, proposals[s.target] ?? 'unknown', `V${String(s.score)}`);
@@ -636,7 +794,10 @@ function decided(state: GroupState) {
 /** A ballot-expiry scenario: members, extra versions and ballots on P, then a later Proposal Q. */
 const expiryScenario = fc.record({
   count: fc.integer({ min: 1, max: 5 }),
-  versions: fc.array(fc.integer({ min: 0, max: 40 }), { maxLength: 3 }),
+  // Each extra version arrives `at` minutes in; a removal's text is `""` (#75).
+  versions: fc.array(fc.record({ at: fc.integer({ min: 0, max: 40 }), removal: fc.boolean() }), {
+    maxLength: 3,
+  }),
   ballots: fc.array(
     fc.record({
       voter: fc.nat({ max: 4 }),
@@ -677,12 +838,10 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         }));
         planned.push({ received: p0, author: member(0), input: proposalInput });
         const versionIds = [pId];
-        scenario.versions.forEach((offset, v) => {
-          const input: Unstamped = {
-            type: 'version',
-            body: { proposal: pId, text: `Version ${String(v + 2)}` },
-          };
-          const received = p0 + offset;
+        scenario.versions.forEach(({ at, removal }, v) => {
+          const text = removal ? '' : `Version ${String(v + 2)}`;
+          const input: Unstamped = { type: 'version', body: { proposal: pId, text } };
+          const received = p0 + at;
           planned.push({ received, author: member(0), input });
           versionIds.push(signedAs(member(0), { ...input, group, ts: received * 60_000 }).id);
         });
@@ -740,7 +899,7 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         const now = Math.max(resultAt, ...full.map((record) => record.received)) + scenario.later;
         const held = fold(full, now);
         expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
-        expect(decided(fold(cleared, now, [pId]))).toEqual(decided(held));
+        expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));
       }),
     );
   });
@@ -766,6 +925,141 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         const { commit, versions } = commitOf(first);
         expect(commitOf(second)).toMatchObject({ commit, versions });
       }),
+    );
+  });
+});
+
+/** Seat `i`'s name and the participant bound to it, in the coalition properties (#100). */
+const seatName = (i: number) => `S${String(i)}`;
+const participant = (i: number) => `p${String(i)}`;
+
+describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
+  it('reaches the same outcome whatever order distinct seats’ results arrive in, by coalitionOutcome', () => {
+    const scenario = fc.record({
+      seats: fc.integer({ min: 2, max: 7 }),
+      results: fc.array(
+        fc.option(fc.constantFrom<'pass' | 'fail'>('pass', 'fail'), { nil: null }),
+        {
+          minLength: 7,
+          maxLength: 7,
+        },
+      ),
+      order: fc.array(fc.nat(), { minLength: 7, maxLength: 7 }),
+      expired: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(scenario, ({ seats, results, order, expired }) => {
+        const reports = results
+          .slice(0, seats)
+          .flatMap((result, seat) => (result === null ? [] : [{ seat, result }]));
+        const shuffled = [...reports].sort(
+          (a, b) => (order[a.seat] ?? 0) - (order[b.seat] ?? 0) || a.seat - b.seat,
+        );
+        const names = Array.from({ length: seats }, (_, i) => seatName(i));
+        const folded = (sequence: typeof reports) => {
+          const logs = new Logs();
+          const at = logs.formed(
+            R,
+            names,
+            names.map((_, i) => participant(i)),
+          );
+          const motion = logs.motion(at, participant(0));
+          sequence.forEach(({ seat, result }, i) => {
+            logs.result(at + 1 + i, participant(seat), motion, seatName(seat), result);
+          });
+          const deadline = at + WINDOW;
+          const now = expired ? deadline + RESULT_GRACE_MINUTES : deadline;
+          const state = fold(logs.logs.coalition ?? [], now);
+          const p = state.proposals[0];
+          return {
+            outcome: p?.outcome,
+            final: p?.final,
+            atoms: state.atoms,
+            status: state.coalition?.status,
+          };
+        };
+        const first = folded(reports);
+        expect(folded(shuffled)).toEqual(first);
+        const passes = reports.filter((r) => r.result === 'pass').length;
+        const kind = coalitionOutcome({
+          seats,
+          passes,
+          fails: reports.length - passes,
+          expired,
+        }).kind;
+        expect(first.outcome?.kind).toBe(kind === 'open' ? 'lapse' : kind);
+        expect(first.final).toBe(kind === 'fail' || expired);
+        expect(first.status).toBe('formed');
+      }),
+      { numRuns: 40 },
+    );
+  });
+
+  it('builds no result event, from what a group owes, that holds any of its names, notes, keys or ids', () => {
+    const scenario = fc.record({
+      canary: fc.stringMatching(/^[a-z0-9]{8}$/),
+      reconcile: fc.array(score, { minLength: 3, maxLength: 3 }),
+      motion: fc.array(score, { minLength: 3, maxLength: 3 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ canary, reconcile, motion: scores }) => {
+        const mark = `canary${canary}`;
+        const logs = new Logs();
+        const voters = ['ana', 'ben', 'cal'];
+        const genesis = {
+          name: `Group ${mark}`,
+          founder: `Ana ${mark}`,
+          title: `Rules ${mark}`,
+          atoms: [mark],
+        };
+        logs.add('A', R, 'ana', { type: 'genesis', body: genesis });
+        for (const voter of voters.slice(1)) {
+          logs.add('A', R + 1, voter, {
+            type: 'join',
+            body: { name: `${voter} ${mark}`, level: CREATING },
+          });
+        }
+        const held = logs.reconcile('A', R + 2, 'ben', 'A', {
+          title: `Join ${mark}`,
+          why: `Why ${mark}`,
+        });
+        voters.forEach((voter, i) =>
+          logs.vote('A', R + 3, voter, held, reconcile[i] ?? 4, `Note ${mark}`),
+        );
+        const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+        const motion = logs.motion(at, 'zed');
+        voters.forEach((voter, i) =>
+          logs.vote('A', at + 1, voter, motion, scores[i] ?? 4, `Note ${mark}`),
+        );
+        const logsNow = foldLogs(logs.logs, at + WINDOW);
+        const group = folded(logsNow, 'A').state;
+        const owed = resultsToReport(
+          group,
+          folded(logsNow, 'coalition').state,
+          seatOf(logsNow, 'A'),
+        );
+        expect(owed.length).toBeGreaterThan(0);
+        const forbidden = [
+          mark,
+          ...voters.map(authorOf),
+          group.group ?? 'no group',
+          'scores',
+          'note',
+        ];
+        for (const body of owed) {
+          expect(Object.keys(body).sort()).toEqual(['motion', 'result', 'seat']);
+          const draft = {
+            type: 'group-result',
+            group: logs.ids.coalition ?? '',
+            ts: 0,
+            body,
+          } as const;
+          const { record } = signedAs('kim', draft);
+          const text = new TextDecoder().decode(record.subarray(96));
+          for (const secret of forbidden) expect(text).not.toContain(secret);
+        }
+      }),
+      { numRuns: 25 },
     );
   });
 });

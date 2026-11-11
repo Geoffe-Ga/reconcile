@@ -14,7 +14,7 @@
  * Integers only, like the tally: a bar is an average of at least
  * `avgAtLeast` with under `zerosUnderPercent`% zeros, compared as products.
  */
-import { isRulesProposal, type ProposalEventBody } from './event';
+import { isDissolveProposal, isRulesProposal, type ProposalEventBody } from './event';
 import { isOptIn, isWider, type OptIns } from './optIns';
 
 /** How hard a change is: the class whose bar and window a Proposal gets. #115 adds removal's. */
@@ -163,13 +163,14 @@ export type TargetClassifier = (state: ClassState, proposal: ProposalEventBody) 
 /**
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
- * change. The fold stores it as the Proposal's `class`. A rules Proposal that
- * widens an opt-in from its standing value is entrenched (ADR-0040, #117).
- * Every other target is ordinary, steward elections and recalls included
- * (ADR-0049): entrenched sections (#116), removal (#115) and dissolution
- * (#108) each add their case here.
+ * change. The fold stores it as the Proposal's `class`. Dissolving the group
+ * is entrenched (ADR-0051, #108), and so is a rules Proposal that widens an
+ * opt-in from its standing value (ADR-0040, #117). Every other target is
+ * ordinary, steward elections and recalls included (ADR-0049): entrenched
+ * sections (#116) and removal (#115) each add their case here.
  */
 export const targetClass: TargetClassifier = (state, proposal) => {
+  if (isDissolveProposal(proposal)) return 'entrenched';
   if (!isRulesProposal(proposal)) return 'ordinary';
   const { optIn, value } = proposal.target;
   const wider = isOptIn(optIn) && isWider(optIn, state.rules.optIns[optIn], value);

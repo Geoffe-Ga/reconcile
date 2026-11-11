@@ -487,6 +487,79 @@ describe('Composer, adding a version', () => {
   });
 });
 
+describe('Composer, adding a version of a new section', () => {
+  /** Ben's open add after section 1, and the composer on it. */
+  async function onAdd() {
+    const log = groupLog();
+    const add = log.addSection('ben', `${log.group}.0`, {
+      title: 'Guests',
+      text: 'Guests leave by 11pm.\n',
+    });
+    const state = log.state();
+    const onAddVersion = vi.fn<OnAddVersion>(() => Promise.resolve('added'));
+    const memory = memoryDrafts();
+    render(
+      <Composer
+        state={state}
+        me={authorOf('ana')}
+        atomId={add}
+        drafts={memory.drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={onAddVersion}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    return { user: userEvent.setup(), state, add, onAddVersion, memory };
+  }
+
+  it('says where the section goes, and starts from the add’s own text', async () => {
+    const { state, add, memory } = await onAdd();
+    expect(screen.getByRole('heading', { level: 1, name: 'Add your version' })).toBeVisible();
+    expect(
+      screen.getByText(
+        'This new section has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByText('Adds a section after ‘Quiet hours start at ten.’')).toBeVisible();
+    expect(screen.queryByRole('region', { name: /now reads$/ })).not.toBeInTheDocument();
+    expect(box('Your version')).toHaveValue('Guests leave by 11pm.\n');
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this becomes the new section. ${HINT}`,
+    );
+    expect(screen.getByRole('link', { name: 'Guests' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/p/${add}`,
+    );
+    expect(memory.drafts.load).toHaveBeenCalledWith(add);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the version for the add', async () => {
+    const { user, add, onAddVersion } = await onAdd();
+    await replace(user, 'Your version', 'Guests leave by midnight.');
+    await user.click(addSubmit());
+    expect(onAddVersion).toHaveBeenCalledWith({ proposal: add, text: 'Guests leave by midnight.' });
+  });
+
+  it.each([
+    ['blank text', ' \n', 'Write the new section.'],
+    [
+      'the add’s own text',
+      'Guests leave by 11pm.',
+      'This reads the same as a version already on the ballot. Change it to add something new.',
+    ],
+  ])('blocks %s, with the reason tied to the field', async (_label, text, reason) => {
+    const { user, onAddVersion } = await onAdd();
+    await replace(user, 'Your version', text);
+    await user.click(addSubmit());
+    expect(onAddVersion).not.toHaveBeenCalled();
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this becomes the new section. ${reason} ${HINT}`,
+    );
+  });
+});
+
 describe('Composer, proposing again', () => {
   /** Ana proposes with a link, Ben adds a version, and nobody votes, so it lapses at its deadline. */
   function lapsed() {

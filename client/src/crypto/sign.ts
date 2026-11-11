@@ -3,7 +3,8 @@
  *
  * Every signature covers a context tag's UTF-8, one 0x00 byte, then the
  * message, so a signature made for one purpose can never pass as another:
- * an event's signature is no invite token's (#73). Verification is strict
+ * an event's signature is no invite token's (#73), and neither is a seat
+ * proof (#100) or a shared Document's copy (#105). Verification is strict
  * RFC 8032, `zip215: false`, never the library's default, which accepts
  * non-canonical point encodings and small-order keys: a small-order key has
  * "signatures" that hold for every message, and devices that disagreed on
@@ -22,8 +23,18 @@ export const EVENT_CONTEXT = 'reconcile/v1/event';
 /** The tag on an invite token: an inviter's signature over the group id (#73). */
 export const INVITE_TOKEN_CONTEXT = 'reconcile/v1/invite-token';
 
+/**
+ * The tag on a seat proof (#100): a member group's seat key signing a
+ * coalition id and the key of one of its people joining that coalition.
+ */
+export const SEAT_CONTEXT = 'reconcile/v1/seat';
+
+/** The tag on a shared personal Document's copy (#105): its owner's signature over the copy. */
+export const SHARE_CONTEXT = 'reconcile/v1/share';
+
 /** What a signature is for. */
-export type SignContext = typeof EVENT_CONTEXT | typeof INVITE_TOKEN_CONTEXT;
+export type SignContext =
+  typeof EVENT_CONTEXT | typeof INVITE_TOKEN_CONTEXT | typeof SEAT_CONTEXT | typeof SHARE_CONTEXT;
 
 /** An Ed25519 public key's length in bytes. */
 export const PUBLIC_KEY_BYTES = 32;

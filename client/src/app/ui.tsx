@@ -2,7 +2,7 @@
  * Small building blocks the screens share, on React Aria Components (ADR-0022)
  * and styled from DESIGN.md tokens in src/styles/app.css.
  */
-import { useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useRef } from 'react';
 import {
   FieldError,
   Input,
@@ -25,22 +25,27 @@ export interface PageHeaderProps {
   readonly title: string;
   /** The browser tab's title. Never a group's words: browser history keeps it. */
   readonly pageTitle: string;
+  /**
+   * Whether the heading takes focus when it appears (the default). False where
+   * a heading below takes it instead, as Join's Document heading does (#91).
+   */
+  readonly takesFocus?: boolean;
 }
 
 /**
  * The screen's one `h1`, with an optional eyebrow.
  *
- * It names the tab and takes focus when it appears, so a screen reader
- * announces each new screen of this single-page app.
+ * It names the tab and, unless told otherwise, takes focus when it appears,
+ * so a screen reader announces each new screen of this single-page app.
  */
-export function PageHeader({ eyebrow, title, pageTitle }: PageHeaderProps) {
+export function PageHeader({ eyebrow, title, pageTitle, takesFocus = true }: PageHeaderProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     document.title = messages.app.pageTitle(pageTitle);
   }, [pageTitle]);
   useEffect(() => {
-    heading.current?.focus();
-  }, []);
+    if (takesFocus) heading.current?.focus();
+  }, [takesFocus]);
   return (
     <header className="page-head">
       {eyebrow === undefined ? null : <p className="eyebrow">{eyebrow}</p>}
@@ -48,6 +53,26 @@ export function PageHeader({ eyebrow, title, pageTitle }: PageHeaderProps) {
         <bdi>{title}</bdi>
       </h1>
     </header>
+  );
+}
+
+/** Props for {@link Section}. */
+export interface SectionProps {
+  /** The section's heading, set as an eyebrow. */
+  readonly title: string;
+  readonly children: ReactNode;
+}
+
+/** A labelled section of a screen: a hairline above, its eyebrow heading beside it on wide screens. */
+export function Section({ title, children }: SectionProps) {
+  const heading = useId();
+  return (
+    <section className="section" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 

@@ -7,19 +7,20 @@
 import { openDB } from 'idb';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { deriveMailboxId, newGroupSecret } from '../crypto/groupKeys';
+import { deriveWeekMailboxId, newGroupSecret, weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
 import { parseRecord, type SignedEvent } from '../engine/event';
-import { proposalTally } from '../engine/fold';
+import { fold, proposalTally } from '../engine/fold';
 import { createRelay, type Relay } from '../net/relay';
 import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
+import { Logs } from '../test/coalitions';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { authorOf, signedAs, testKeys } from '../test/keys';
+import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { groupLog, START_MINUTE } from '../test/votes';
 import { openStore, type Group, type Store } from './db';
 import { eventIdOf } from './eventId';
-import { clearExpiredBallots, foldGroup, resultsDue } from './expiry';
+import { clearExpiredBallots, foldGroup, resultsDue, signResults } from './expiry';
 import { channelOf, createSync, openRecords, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -44,11 +45,15 @@ interface Device {
   group(): Promise<Group>;
 }
 
-/** A device for `name` in the group with `secret`, in its own IndexedDB database. */
+/**
+ * A device for `name` in the group with `secret`, in its own IndexedDB
+ * database, with the encryption key its genesis or join carries (#98).
+ */
 async function device(name: string, relay: Relay, secret: Uint8Array): Promise<Device> {
   const store = await openStore(`reconcile-${name}`);
   const { secretKey: signingKey, author } = testKeys(name);
-  await store.addGroup({ groupId: GROUP, secret, signingKey, me: { author, name } });
+  const { kxKey } = testKx(name);
+  await store.addGroup({ groupId: GROUP, secret, signingKey, kxKey, me: { author, name } });
   return attach(name, store, relay);
 }
 
@@ -127,7 +132,9 @@ interface Decided {
 /**
  * Two members' decided vote: both score it, the second ballot closes it
  * early, then, unless `quiet`, a minute passes and the result goes up and
- * comes back. A quiet group has no result yet: no device synced after the close.
+ * comes back: Ana's first pass finds none due yet, her second queues it, her
+ * third posts it and reads it back, and Ben reads it. A quiet group has no
+ * result yet: Ana has read both ballots, but no device synced after the close.
  */
 async function decidedTogether(quiet = false): Promise<Decided> {
   const fake = createFakeRelay();
@@ -144,6 +151,7 @@ async function decidedTogether(quiet = false): Promise<Decided> {
       founder: 'Ana',
       title: 'House rules',
       atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      kx: testKx('ana').kx,
     },
   });
   const group = genesis.id;
@@ -151,7 +159,8 @@ async function decidedTogether(quiet = false): Promise<Decided> {
   await ana.sync.syncOnce();
   await ben.store.enqueue(
     GROUP,
-    signedAs('ben', { type: 'join', group, ts: TS, body: { name: 'Ben' } }).record,
+    signedAs('ben', { type: 'join', group, ts: TS, body: { name: 'Ben', kx: testKx('ben').kx } })
+      .record,
   );
   await ben.sync.syncOnce();
   fake.minute += 1;
@@ -185,12 +194,14 @@ async function decidedTogether(quiet = false): Promise<Decided> {
   await ben.store.enqueue(GROUP, ballots[1]?.record ?? new Uint8Array());
   await ben.sync.syncOnce();
   const closedAt = fake.minute;
-  if (quiet) return { fake, relay, secret, ana, ben, proposal, ballots, closedAt };
-  // A minute on, both devices see the close; the first posts the result, and both read it back.
+  if (quiet) {
+    // In the closing minute Ana reads Ben's ballot too, but no result is due until the next.
+    await ana.sync.syncOnce();
+    return { fake, relay, secret, ana, ben, proposal, ballots, closedAt };
+  }
+  // A minute on, Ana's device owes the result: it syncs once more to be sure, queues it, posts it.
   fake.minute += 1;
-  await ana.sync.syncOnce();
-  await ben.sync.syncOnce();
-  await ana.sync.syncOnce();
+  await syncEach(ana, ana, ana, ben);
   return { fake, relay, secret, ana, ben, proposal, ballots, closedAt };
 }
 
@@ -235,34 +246,82 @@ describe('ballot expiry on a device', () => {
     }
   });
 
-  it('clears on the pass after it posts a missing result, for a device back after 30 days away', async () => {
+  it('clears once its own result comes back, for a device back after 30 days away', async () => {
     const { fake, ana } = await decidedTogether(true);
     fake.minute += WINDOW + 5;
 
-    await ana.sync.syncOnce();
-    // The first pass posts the result; it's on the relay, not yet in the log.
-    expect(types((await ana.group()).log)).toEqual(['genesis', 'join', 'proposal', 'vote', 'vote']);
-    expect((await ana.group()).outbox).toEqual([]);
-    await ana.sync.syncOnce();
+    // The first pass finds the result due, and the second, after syncing again, queues it.
+    await syncEach(ana, ana);
+    expect(types((await ana.group()).outbox)).toEqual(['result']);
+    expect(types((await ana.group()).log)).toContain('vote');
 
+    // The third posts it to this week's mailbox (#110), reads it back, then clears.
+    await ana.sync.syncOnce();
     expect(types((await ana.group()).log)).toEqual(['genesis', 'join', 'proposal', 'result']);
+    expect((await ana.group()).outbox).toEqual([]);
     expect(await onDevice(utf8(ANA_NOTE), ana)).toBe(false);
   });
 
   it('adds nothing back when the relay delivers the old ballots again, even from seq 0 of a new instance', async () => {
-    const { fake, ana, ben, ballots, closedAt } = await decidedTogether();
+    const { fake, relay, secret, ana, ben, ballots, closedAt } = await decidedTogether();
     fake.minute = closedAt + WINDOW;
     await ana.sync.syncOnce();
     expect(types((await ana.group()).log)).not.toContain('vote');
     // Ben hasn't synced since, so his device still holds them: the search finds what's there.
     for (const ballot of ballots) expect(await onDevice(ballot.record, ben)).toBe(true);
 
-    // The fake relay never expires blobs, so the old ballots are still there; a new instance re-reads all.
+    // A fresh relay database, which this week's mailbox holds the old ballots in again: a new
+    // instance, so Ana reads every mailbox from its start (#110).
     fake.restart({ keep: true });
+    const week = channelOf(secret, weekOf(fake.minute));
+    for (const ballot of ballots) {
+      await relay.putBlob(
+        week.mailbox,
+        xchachaSeal.seal(week.mailbox, week.key, ballot.record),
+        30,
+      );
+    }
+    const from = fake.requests.length;
     await ana.sync.syncOnce();
     await ana.sync.syncOnce();
 
+    const read = fake.requests.slice(from).filter((r) => r.url.includes(week.mailbox));
+    expect(read.some((r) => r.method === 'GET' && r.url.includes('after=0'))).toBe(true);
     expect(types((await ana.group()).log)).toEqual(['genesis', 'join', 'proposal', 'result']);
+    for (const ballot of ballots) expect(await onDevice(ballot.record, ana)).toBe(false);
+  });
+
+  it('adds nothing back from a weekly mailbox it catches up on (#110), though it reads that mailbox', async () => {
+    const { fake, relay, secret, ana, ballots, closedAt, proposal } = await decidedTogether();
+    fake.minute = closedAt + WINDOW;
+    await ana.sync.syncOnce();
+    expect((await ana.group()).cleared).toEqual([proposal.id]);
+    // A stale device sends Ben's ballot again in a later week, beside a new event.
+    fake.minute += 7 * 1_440;
+    const week = channelOf(secret, weekOf(fake.minute));
+    const level = signedAs('ben', {
+      type: 'level',
+      group: parseRecord(proposal.record)?.event.group ?? '',
+      ts: TS,
+      body: { level: 'member' },
+    });
+    for (const record of [ballots[1]?.record ?? new Uint8Array(), level.record]) {
+      await relay.putBlob(week.mailbox, xchachaSeal.seal(week.mailbox, week.key, record), 30);
+    }
+    // Ana is away two more weeks, then catches up on each week she missed, once.
+    fake.minute += 14 * 1_440;
+    const from = fake.requests.length;
+    await ana.sync.syncOnce();
+
+    const read = fake.requests.slice(from).filter((r) => r.url.includes(week.mailbox));
+    expect(read.map((r) => r.method)).toEqual(['GET']);
+    expect(types((await ana.group()).log)).toEqual([
+      'genesis',
+      'join',
+      'proposal',
+      'result',
+      'level',
+    ]);
     for (const ballot of ballots) expect(await onDevice(ballot.record, ana)).toBe(false);
   });
 
@@ -298,7 +357,7 @@ describe('ballot expiry on a device', () => {
 
     // A device that reads the group's history from the relay, which still holds the old blobs
     // here; app/actions.test.ts joins through a real invite envelope.
-    const channel = channelOf(secret);
+    const channel = channelOf(secret, weekOf(closedAt));
     const page = await relay.getBlobs(channel.mailbox, 0);
     const cal = await device('cal', relay, secret);
     await cal.store.applyPull(
@@ -330,7 +389,7 @@ describe('ballot expiry on a device', () => {
     const puts = fake.requests.filter((r) => r.method === 'PUT').length;
     await ana.sync.syncOnce();
     expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(puts);
-    expect(fake.blobs(deriveMailboxId(secret)).length).toBeGreaterThan(0);
+    expect(fake.blobs(deriveWeekMailboxId(secret, weekOf(closedAt))).length).toBeGreaterThan(0);
   });
 });
 
@@ -342,12 +401,12 @@ const SOURCES = import.meta.glob<string>('../**/*.{ts,tsx}', {
 });
 
 describe('Cache Storage', () => {
-  it('is used only by the service worker, which caches the app’s own files and never the relay’s', () => {
+  it('is used only by the service worker, which caches the app’s own files and never the relay’s, and by Erase, which empties it (#78)', () => {
     const users = Object.entries(SOURCES)
       .filter(([path]) => !path.endsWith('.test.ts') && !path.endsWith('.test.tsx'))
       .filter(([, text]) => /\bcaches\b/.test(text))
       .map(([path]) => path);
-    expect(users).toEqual(['../net/serviceWorker.ts']);
+    expect(users).toEqual(['../net/serviceWorker.ts', './erase.ts']);
   });
 });
 
@@ -381,5 +440,47 @@ describe('resultsDue', () => {
     expect(resultsDue(state, { me: kim, relayNow })).toEqual([]);
     const ana = { author: authorOf('ana'), name: 'Ana' };
     expect(resultsDue(state, { me: ana, relayNow, leaving: utf8('leave') })).toEqual([]);
+  });
+
+  it('names none whose result already waits in the outbox, so none is queued twice', () => {
+    const { state, proposalId } = closed();
+    const me = { author: authorOf('ana'), name: 'Ana' };
+    const relayNow = START_MINUTE + 1;
+    const due = resultsDue(state, { me, relayNow });
+    const signingKey = testKeys('ana').secretKey;
+    const outbox = signResults(state, { signingKey }, due, TS);
+    expect(due.map((p) => p.id)).toEqual([proposalId]);
+    expect(resultsDue(state, { me, relayNow, outbox })).toEqual([]);
+  });
+
+  it('names none once the group has dissolved (#108), since the fold takes nothing after its dissolve', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposal = log.propose('ana');
+    log.vote('ana', proposal, 4);
+    log.vote('ben', proposal, 4);
+    const ending = log.proposeDissolve('ana', false);
+    log.vote('ana', ending, 4);
+    log.vote('ben', ending, 4);
+    log.minute += 1;
+    log.dissolve('ben', ending);
+    const relayNow = log.minute + 1;
+    const state = log.state(relayNow);
+    expect(state.dissolved).not.toBeNull();
+    const me = { author: authorOf('ana'), name: 'Ana' };
+    expect(resultsDue(state, { me, relayNow })).toEqual([]);
+    expect(resultsDue({ ...state, dissolved: null }, { me, relayNow })).toHaveLength(2);
+  });
+
+  it('names none in a coalition’s own log (#100), which takes no result, even for a motion it has decided', () => {
+    const logs = new Logs();
+    const at = logs.formed(START_MINUTE, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'zed');
+    logs.result(at + 1, 'kim', motion, 'A', 'fail');
+    const relayNow = at + 2;
+    const state = fold(logs.logs.coalition ?? [], relayNow);
+    expect(state.proposals.find((p) => p.id === motion)).toMatchObject({ final: true });
+    const me = { author: authorOf('kim'), name: 'kim' };
+    expect(resultsDue(state, { me, relayNow })).toEqual([]);
+    expect(resultsDue({ ...state, coalition: null }, { me, relayNow })).toHaveLength(1);
   });
 });

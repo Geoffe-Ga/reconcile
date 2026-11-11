@@ -13,7 +13,9 @@
  * record of the decision that doesn't match this device's ballots names who
  * posted it. No result offers a part-ways action (ADR-0068). Everything here
  * is read from the group's own log on this device; nothing is sent to the
- * relay.
+ * relay. Once a dissolved group's archive has cleared its ballots (#108), the
+ * totals come from the tally this device kept, and the ballots give way to
+ * when they were cleared.
  */
 import { Fragment, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
@@ -25,7 +27,7 @@ import type { ShareOutcome } from '../app/share';
 import { MotionTitle, Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
-import { formatMinute, minuteIso } from '../app/time';
+import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
 import type { RulesView } from '../app/optInLines';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
 import { can } from '../engine/capabilities';
@@ -52,8 +54,21 @@ export interface ResultViewProps {
   readonly onProposeAgain: () => void;
   /** Shares the result message into the group's chat, or copies it (#113). */
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
-  /** Whether this device's leave waits for the relay (#77): then nothing is proposed again. */
+  /**
+   * Whether this device's leave waits for the relay (#77), or the group has
+   * dissolved (#108): then nothing is proposed again, and the result offers
+   * no message to tell the group.
+   */
   readonly leaving?: boolean;
+  /** Once a dissolved group's ballots are cleared (#108): when, and the tally kept for this Proposal. */
+  readonly cleared?: ClearedResult;
+}
+
+/** A Proposal's result in a cleared archive: when this device cleared it, and its kept tally (#108). */
+export interface ClearedResult {
+  /** When the ballots were cleared, in device milliseconds. */
+  readonly at: number;
+  readonly tally: TallyDetail;
 }
 
 /** What the outcome blocks read. */
@@ -80,6 +95,13 @@ function Thanks({ names }: { readonly names: readonly string[] }) {
   );
 }
 
+/** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
+function passSentence(versions: number, winner: number, removed: boolean): string {
+  const { result } = messages;
+  if (removed) return versions > 1 ? result.passedVersionRemoval(winner) : result.passedRemoval;
+  return versions > 1 ? result.passedVersion(winner) : result.passed;
+}
+
 /** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
 function StewardPassed({ steward }: { readonly steward: StewardView }) {
   const { motion } = steward;
@@ -103,20 +125,22 @@ function RulesPassed({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A pass: its sentence, the winning text as the Document now reads, and thanks. No numbers. */
+/**
+ * A pass: its sentence, the winning text as the Document now reads, or no
+ * text when it removed the section, and thanks. No numbers.
+ */
 function Passed({ props, versions, winner }: OutcomeProps & { readonly winner: string }) {
   const { proposal } = props;
   const index = versions.findIndex((version) => version.id === winner);
   const shown = versions[index];
-  const sentence =
-    versions.length > 1 ? messages.result.passedVersion(index + 1) : messages.result.passed;
+  const text = shown?.text ?? '';
   // The proposer wrote version 1; a later version's author is thanked first.
   const byProposer = proposal.versions[index]?.author === proposal.author;
   const names = [shown?.author ?? '', ...(byProposer ? [] : [versions[0]?.author ?? ''])];
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{sentence}</p>
-      <AtomText text={shown?.text ?? ''} className="atom-card result-text" />
+      <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+      {text === '' ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={names} />
     </div>
   );
@@ -166,8 +190,9 @@ function Failed({ detail, versions }: OutcomeProps) {
 function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
   const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  // A steward vote isn't proposed again from here: Group home says when an election is due (#102).
-  if (leaving || proposal.target.kind !== 'edit' || !can(state, me, 'propose')) return null;
+  // A steward or rules vote isn't proposed again from here (#102, #117); a change, a removal or an add is (#75).
+  const { kind } = proposal.target;
+  if (leaving || (kind !== 'edit' && kind !== 'add') || !can(state, me, 'propose')) return null;
   const busy = composeOption(state, proposal.atom) !== 'propose';
   return (
     <div className="row result-again">
@@ -204,10 +229,20 @@ function Lapsed({ props }: OutcomeProps) {
   );
 }
 
+/** A dissolve Proposal's pass (#108): the group has dissolved. */
+function DissolvePassed() {
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{messages.dissolve.passed}</p>
+    </div>
+  );
+}
+
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const { steward, rules } = props.versions[0] ?? {};
+  const { steward, rules, dissolve } = props.versions[0] ?? {};
+  if (outcome.kind === 'pass' && dissolve !== undefined) return <DissolvePassed />;
   if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
   if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
@@ -218,6 +253,7 @@ function Outcome(props: OutcomeProps) {
 function VersionName({ version }: { readonly version: VersionView }) {
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
+  if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -372,11 +408,18 @@ function Ran({ proposal }: { readonly proposal: Proposal }) {
   );
 }
 
-/** A closed Proposal's result, from the engine's tally of its ballots. */
+/** "Individual scores and notes were cleared on <date>.", where the ballots were. */
+function Cleared({ at }: { readonly at: number }) {
+  return (
+    <p className="caption">{messages.archive.cleared(formatDate(Math.floor(at / MINUTE_MS)))}</p>
+  );
+}
+
+/** A closed Proposal's result, from the engine's tally of its ballots, or the tally a cleared archive kept. */
 export function ResultView(props: ResultViewProps) {
-  const { state, proposal, own } = props;
+  const { state, proposal, own, cleared } = props;
   const heading = useId();
-  const detail = proposalTally(proposal);
+  const detail = cleared?.tally ?? proposalTally(proposal);
   const versions = versionViews(state, proposal);
   return (
     <section className="result" aria-labelledby={heading}>
@@ -390,7 +433,11 @@ export function ResultView(props: ResultViewProps) {
         <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
       )}
       <Totals detail={detail} versions={versions} />
-      <Ballots props={props} versions={versions} />
+      {cleared === undefined ? (
+        <Ballots props={props} versions={versions} />
+      ) : (
+        <Cleared at={cleared.at} />
+      )}
       <Ran proposal={proposal} />
     </section>
   );

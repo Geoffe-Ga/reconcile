@@ -5,10 +5,29 @@
  * event (the `openProfile` fixture fails on any) and no CSP error on the
  * console. The worker, the manifest and the app all come from the app's own
  * origin.
+ *
+ * The page may connect to its own origin and to one path more, Discord's
+ * webhooks, which a group's chat bot posts to (#119), with or without the
+ * query that opens a thread or posts into one (#123): a CSP path never
+ * matches the query. A `fetch` anywhere else, another path on Discord or
+ * `discordapp.com` included, is blocked with a `securitypolicyviolation`.
+ * Every request off the app's origin is answered by the test, so nothing
+ * reaches Discord or any other host.
  */
 import { readFileSync } from 'node:fs';
 
-import { acceptNotice, expect, heading, test } from './support/fixtures';
+import type { BrowserContext } from '@playwright/test';
+
+import { connectFromPage } from './support/connect';
+import {
+  acceptNotice,
+  type DiscordRequest,
+  expect,
+  heading,
+  isDiscord,
+  routeDiscord,
+  test,
+} from './support/fixtures';
 
 /** The Caddyfile's one Content-Security-Policy value, as deploy/check.sh reads it. */
 function deployCsp(): string {
@@ -37,6 +56,7 @@ test('reaches a ready service worker under the deploy CSP, with no violation', a
 
   const response = await page.goto('/');
   expect(response?.headers()['content-security-policy']).toBe(csp);
+  expect(csp).toContain("; connect-src 'self' https://discord.com/api/webhooks/;");
   await acceptNotice(ana);
   await expect(heading(page, 'Your groups')).toBeVisible();
 
@@ -59,4 +79,85 @@ test('reaches a ready service worker under the deploy CSP, with no violation', a
     new URL('/sw.js', page.url()).href,
   );
   expect(cspErrors, 'CSP errors on the console').toEqual([]);
+});
+
+const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ';
+
+/** Where the page tries to connect, and what it must get: Discord's answer, or blocked. */
+const TRIES: readonly (readonly [string, number | 'blocked'])[] = [
+  [WEBHOOK, 204],
+  [`${WEBHOOK}?wait=true`, 200],
+  [`${WEBHOOK}?thread_id=1309000000000000010`, 204],
+  ['https://example.com/collect', 'blocked'],
+  ['https://discord.com/api/v10/channels/1199000000000000001/messages', 'blocked'],
+  ['https://discordapp.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ', 'blocked'],
+];
+
+/** The name the page keeps its CSP violations under, as "directive origin". */
+const VIOLATIONS = 'e2eConnectViolations';
+
+/** Runs in the page before any script: keeps each CSP violation on `window`. */
+function keepCspViolations(key: string): void {
+  const seen: string[] = [];
+  Reflect.set(window, key, seen);
+  window.addEventListener(
+    'securitypolicyviolation',
+    (event) => {
+      seen.push(`${event.effectiveDirective} ${new URL(event.blockedURI).origin}`);
+    },
+    true,
+  );
+}
+
+/** Answers every request off `origin` that isn't Discord's, so a CSP that let one through can't reach a real host. */
+async function answerOtherHosts(context: BrowserContext, origin: string): Promise<void> {
+  await context.route(
+    (url) => url.origin !== origin && !isDiscord(url),
+    (route) =>
+      route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, body: '' }),
+  );
+}
+
+test('connects only to its own origin and Discord’s webhook path, blocking any other with a violation', async ({
+  browser,
+  baseURL,
+}) => {
+  // Its own profile, as this test expects violations that `openProfile` would fail on.
+  const context = await browser.newContext({ bypassCSP: false });
+  try {
+    const discord: DiscordRequest[] = [];
+    await routeDiscord(context, discord);
+    await answerOtherHosts(context, new URL(baseURL ?? '').origin);
+    await context.addInitScript(keepCspViolations, VIOLATIONS);
+    const page = await context.newPage();
+    await page.goto('/');
+    await acceptNotice({ name: 'Ana', page });
+
+    const got = await connectFromPage(
+      page,
+      TRIES.map(([url]) => url),
+    );
+    expect(got).toEqual(TRIES.map(([, outcome]) => outcome));
+    // The page sends them all at once, so they may reach the fixture in any order.
+    expect(discord.map((request) => `${request.method} ${request.url}`).sort()).toEqual([
+      `POST ${WEBHOOK}`,
+      `POST ${WEBHOOK}?thread_id=1309000000000000010`,
+      `POST ${WEBHOOK}?wait=true`,
+    ]);
+
+    const violations = await page.evaluate(async (key) => {
+      // A frame and then a task, so every queued violation report has arrived.
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => setTimeout(resolve, 0));
+      });
+      return Reflect.get(window, key) as string[];
+    }, VIOLATIONS);
+    expect([...violations].sort()).toEqual([
+      'connect-src https://discord.com',
+      'connect-src https://discordapp.com',
+      'connect-src https://example.com',
+    ]);
+  } finally {
+    await context.close();
+  }
 });

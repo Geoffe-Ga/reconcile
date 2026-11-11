@@ -4,17 +4,24 @@
  * hand-written state. Each member signs with the test key of their name in
  * lower case, so `authorOf('ana')` names Ana.
  */
-import { type Level, LEVELS } from '../engine/capabilities';
-import type { EventDraft, ResultBody, Score } from '../engine/event';
+import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
+import type { CarriedDispatch, DispatchBody, EventDraft, ResultBody, Score } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
-import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
+import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { authorOf, signedAs } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
 const [, , CREATING] = LEVELS;
 
-/** The relay minute the log starts at. */
+/** The relay minute the log stands at once its starting members hold voting rights. */
 export const START_MINUTE = 29_000_000;
+
+/**
+ * How long before {@link START_MINUTE} the group is founded and its starting
+ * members join: past the wait before voting, so each of them, vouched for,
+ * holds voting rights from START_MINUTE on (#101).
+ */
+export const SETTLED_MINUTES = DEFAULT_RULES.waitDays * DAY_MINUTES + 60;
 
 /** What a new Proposal says; it targets the first Atom unless told otherwise. */
 export interface ProposalEntry {
@@ -25,6 +32,8 @@ export interface ProposalEntry {
   readonly atom?: number;
   /** The voting window in days; the class default when left out. */
   readonly window?: number;
+  /** The Dispatch it sends if it passes (#112); none when left out. */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /** A group's log under construction, one relay record at a time. */
@@ -39,8 +48,10 @@ export interface LogBuilder {
   level(name: string, level: string): void;
   /** Adds `name`'s leave. */
   leave(name: string): void;
-  /** Adds a Proposal by `name`, returning its id. */
+  /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal of a new section after Atom `after`, or first for null (#75). */
+  addSection(name: string, after: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
@@ -59,10 +70,22 @@ export interface LogBuilder {
   steward(name: string, seat: number, nominee: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s suspension of the person named `who`, with an optional reason. */
   suspend(name: string, who: string, reason?: string): string;
+  /** Adds `name`'s Proposal to dissolve the group, wiping every copy when `wipe` (#108), returning its id. */
+  proposeDissolve(name: string, wipe: boolean, entry?: ProposalEntry): string;
+  /** Adds `name`'s `dissolve`, naming the dissolve Proposal `proposal` (#108). */
+  dissolve(name: string, proposal: string): string;
   /** Adds `name`'s rules Proposal setting `optIn` to `value` (#117), returning its id. */
   rules(name: string, optIn: string, value: unknown, entry?: ProposalEntry): string;
   /** Adds `name`'s narrowing of `optIn` beside the off-Proposal `proposal` (#117), returning its id. */
   narrow(name: string, optIn: string, proposal: string): string;
+  /** Adds `name`'s vouch for the person named `who` (#101), returning its id. */
+  vouch(name: string, who: string): string;
+  /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
+  chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
+  /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
+  chatThread(name: string, proposal: string, url: string): string;
+  /** Adds `name`'s Dispatch (#112), returning its id. */
+  dispatch(name: string, body: DispatchBody): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /**
@@ -72,10 +95,17 @@ export interface LogBuilder {
   state(relayNow?: number, cleared?: readonly string[]): GroupState;
 }
 
-/** What a test group starts with. */
+/**
+ * What a test group starts with. The founder and `members` hold voting rights
+ * by START_MINUTE: they join SETTLED_MINUTES earlier, and the founder and the
+ * first voting member vouch for each one after the bootstrap's first two
+ * (#101). `newcomers` join at START_MINUTE after them, with no vouches, so
+ * they read and follow until they earn a vote.
+ */
 export interface GroupStart {
   readonly founder?: string;
   readonly members?: readonly string[];
+  readonly newcomers?: readonly string[];
   /** Each member's level at join, by name; a member not named joins as a Co-Creator. */
   readonly levels?: Readonly<Record<string, Level>>;
   readonly atoms?: readonly string[];
@@ -89,7 +119,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
   const records: LogRecord[] = [];
   const builder = {
     group: '',
-    minute: START_MINUTE,
+    minute: START_MINUTE - SETTLED_MINUTES,
     records,
   };
   const add = (name: string, draft: EventDraft): string => {
@@ -129,6 +159,23 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
         ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    addSection(name: string, after: string | null, entry: ProposalEntry = {}) {
+      const {
+        title = 'Guests',
+        why = 'Guests come often.',
+        text = 'Guests leave by 11pm.\n',
+      } = entry;
+      const proposal = {
+        target: { kind: 'add', after } as const,
+        title,
+        why,
+        text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },
@@ -169,6 +216,19 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       };
       return add(name, { type: 'suspend', group, ts: 0, body });
     },
+    proposeDissolve(name: string, wipe: boolean, entry: ProposalEntry = {}) {
+      const { title = 'Dissolve our group', why = 'We have all moved out.' } = entry;
+      const body = {
+        target: { kind: 'dissolve' as const, wipe },
+        title,
+        why,
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
+    dissolve(name: string, proposal: string) {
+      return add(name, { type: 'dissolve', group, ts: 0, body: { proposal } });
+    },
     rules(name: string, optIn: string, value: unknown, entry: ProposalEntry = {}) {
       const { title = 'Our chat bot', why = 'A nudge when votes open.' } = entry;
       const target = { kind: 'rules' as const, optIn, value };
@@ -183,12 +243,61 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     narrow(name: string, optIn: string, proposal: string) {
       return add(name, { type: 'narrow', group, ts: 0, body: { optIn, proposal } });
     },
+    vouch(name: string, who: string) {
+      const body = { member: authorOf(who.toLowerCase()) };
+      return add(name, { type: 'vouch', group, ts: 0, body });
+    },
+    chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
+      const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+      return add(name, { type: 'chat-posted', group, ts: 0, body });
+    },
+    chatThread(name: string, proposal: string, url: string) {
+      return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
+    },
+    dispatch(name: string, body: DispatchBody) {
+      return add(name, { type: 'dispatch', group, ts: 0, body });
+    },
     state(relayNow?: number, cleared: readonly string[] = []) {
-      return fold(records, relayNow ?? builder.minute, cleared);
+      return fold(records, relayNow ?? builder.minute, [], cleared);
     },
   });
   for (const member of members) log.join(member, start.levels?.[member]);
+  settle(log, start, founder, members);
   return log;
+}
+
+/**
+ * Gives the starting members their vouches, moves the log on to
+ * START_MINUTE, past their wait, and joins the newcomers there (#101).
+ */
+function settle(log: LogBuilder, start: GroupStart, founder: string, members: readonly string[]) {
+  const levels = start.levels ?? {};
+  for (const [voucher, member] of settlingVouches(founder, members, levels)) {
+    log.vouch(voucher, member);
+  }
+  log.minute = START_MINUTE;
+  for (const newcomer of start.newcomers ?? []) log.join(newcomer, levels[newcomer]);
+}
+
+/**
+ * The vouches a test group's starting members need to hold voting rights
+ * (#101), as `[voucher, member]` names: the founder and the first starting
+ * member at a voting level vouch for each starting member after the
+ * bootstrap's first two. A member not in `levels` is a Co-Creator.
+ */
+export function settlingVouches(
+  founder: string,
+  members: readonly string[],
+  levels: Readonly<Record<string, Level>>,
+): [string, string][] {
+  const votes = (name: string) => {
+    const granted: readonly Capability[] = LEVEL_CAPABILITIES[levels[name] ?? CREATING];
+    return granted.includes('vote');
+  };
+  const vouchers = [founder, ...members.slice(0, 2)].filter(votes).slice(0, 2);
+  return members
+    .slice(2)
+    .flatMap((member) => vouchers.map((voucher): [string, string] => [voucher, member]));
 }
 
 /** The relay minute an ordinary Proposal received at `received` closes at. */

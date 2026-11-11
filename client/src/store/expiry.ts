@@ -5,9 +5,10 @@
  * Two duties run on the device after each sync pass, in relay time:
  *
  * - **The result.** A device holding a closed Proposal's ballots, with no
- *   valid result in its log once the relay is past the close, re-syncs once
- *   and, if there's still none, signs and posts one (`resultsDue`,
- *   `signResults`). Any member may, and the fold keeps the first valid one.
+ *   valid result in its log once the relay is past the close, syncs once
+ *   more and, if there's still none, signs one and queues it for the next
+ *   pass to post (`resultsDue`, `signResults`, sync.ts). Any member may, and
+ *   the fold keeps the first valid one.
  * - **Clearing.** Once the relay's minute reaches the result's close plus
  *   `ballotExpiryDays` days, `clearExpiredBallots` deletes, in one store
  *   change, the Proposal's ballots, every other result for it and anything
@@ -17,27 +18,45 @@
  * Nothing here reaches the network: sync.ts posts what `signResults` signs.
  */
 import { can } from '../engine/capabilities';
-import { signEvent } from '../engine/event';
+import { parseRecord, signEvent } from '../engine/event';
 import { ballotsExpired, needsResult, resultFor } from '../engine/expiry';
 import { fold, type GroupState, type Proposal } from '../engine/fold';
 import type { Clearing, Group, Store } from './db';
 
 /** A stored group folded as the screens fold it: its log, the relay's minute, and what it cleared. */
 export function foldGroup(group: Pick<Group, 'log' | 'relayNow' | 'cleared'>): GroupState {
-  return fold(group.log, group.relayNow, group.cleared ?? []);
+  return fold(group.log, group.relayNow, [], group.cleared ?? []);
 }
 
 /**
  * The closed Proposals this device's member should post a result for now:
  * none once they've left or are leaving (#77), since nothing is queued after
- * a leave.
+ * a leave; none once the group has dissolved (#108), since the fold takes no
+ * event after its dissolve; and none in a coalition's own log (#100), which
+ * takes no result: its motions are decided by the groups' results, and each
+ * group's own log carries the result of its vote on one. A Proposal whose
+ * result already waits in the outbox is left out, so none is queued twice.
  */
 export function resultsDue(
   state: GroupState,
-  group: Pick<Group, 'me' | 'relayNow' | 'leaving'>,
+  group: Pick<Group, 'me' | 'relayNow' | 'leaving'> & Partial<Pick<Group, 'outbox'>>,
 ): readonly Proposal[] {
+  if (state.dissolved !== null || state.coalition !== null) return [];
   if (group.leaving !== undefined || !can(state, group.me.author, 'read')) return [];
-  return state.proposals.filter((proposal) => needsResult(proposal, group.relayNow));
+  const queued = queuedResults(group.outbox ?? []);
+  return state.proposals.filter(
+    (proposal) => needsResult(proposal, group.relayNow) && !queued.has(proposal.id),
+  );
+}
+
+/** The Proposals `outbox` already holds a result for, on its way to the relay. */
+function queuedResults(outbox: readonly Uint8Array[]): Set<string> {
+  const queued = new Set<string>();
+  for (const bytes of outbox) {
+    const event = parseRecord(bytes)?.event;
+    if (event?.type === 'result') queued.add(event.body.proposal);
+  }
+  return queued;
 }
 
 /** A signed result for each Proposal in `due`, by this device's member, at device time `ts`. */

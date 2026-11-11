@@ -6,8 +6,12 @@
  * entrenched bar. Ben reads it on, by the webhook's last 4 characters only,
  * and sees no Turn off now. Then Ana, the steward, turns it off now, and Ben
  * reads who did. axe checks each screen, and the fixture fails the test on
- * any CSP violation. Nothing moves time, and nothing posts to Discord: #119
- * builds that.
+ * any CSP violation. Nothing moves time. Once the bot is on, exactly one of
+ * the three devices posts the vote's result to the webhook (#119), under the
+ * deploy CSP, and the fixture answers it as a forum channel's webhook would,
+ * so nothing reaches Discord. The post opens the vote's thread by its number
+ * alone (#123) and carries the fixed line and the app's address, with no
+ * cookie or referrer, and after the steward's narrowing nothing more goes.
  */
 import type { Page } from '@playwright/test';
 
@@ -19,6 +23,7 @@ import {
   type Person,
   pick,
   test,
+  visit,
 } from './support/fixtures';
 
 const GROUP = 'Riverside Tenants';
@@ -54,10 +59,10 @@ async function join(person: Person, invite: string): Promise<void> {
   await expect(people(page)).toContainText(person.name);
 }
 
-/** `person` scores the Proposal at `url` 4 and sends it. */
+/** `person` scores the Proposal at `url` 4 and sends it, going there only if they aren't already (`visit`). */
 async function vote(person: Person, url: string): Promise<void> {
   const { page } = person;
-  await page.goto(url);
+  await visit(page, url);
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
   await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
@@ -65,7 +70,9 @@ async function vote(person: Person, url: string): Promise<void> {
 
 test('the group turns its chat bot on by an entrenched vote, and a steward turns it off now', async ({
   openProfile,
+  baseURL,
 }) => {
+  const origin = new URL(baseURL ?? '').origin;
   const ana = await openProfile('Ana', { viewport: { width: 1280, height: 800 } });
   const ben = await openProfile('Ben', { viewport: PHONE, colorScheme: 'dark' });
   const cal = await openProfile('Cal');
@@ -90,6 +97,11 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
 
   await test.step('Ana opens Group rules and proposes turning the chat bot on', async () => {
     const { page } = ana;
+    // Wait until both joins have synced to Ana's Group home: each newcomer adds a
+    // row (with #101 a taller one), which moves the Rules link below People. A click
+    // aimed while it moves can land elsewhere (seen on WebKit).
+    await expect(people(page)).toContainText(cal.name);
+    await expect(people(page)).toContainText(ben.name);
     await page.getByRole('link', { name: /Chat bot and front door/ }).click();
     await expect(heading(page, 'What reaches outside your group')).toBeVisible();
     rulesUrl = page.url();
@@ -123,6 +135,22 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     await expectAccessible(ben, 'Group rules on a phone, bot on');
   });
 
+  await test.step('one device posts the result to the webhook, opening its thread, and nothing of the group', async () => {
+    await expect.poll(() => openProfile.discord.length, { timeout: 30_000 }).toBe(1);
+    const [post] = openProfile.discord;
+    expect(post?.method).toBe('POST');
+    expect(post?.url).toBe(`${WEBHOOK}?wait=true`);
+    expect(post?.body).toEqual({
+      content: `A vote has finished in Reconcile.\n${origin}/`,
+      thread_name: 'Proposal 1 in Reconcile',
+      allowed_mentions: { parse: [] },
+    });
+    expect(post?.headers['origin']).toBe(origin);
+    expect(post?.headers['content-type']).toBe('application/json');
+    expect(post?.headers['referer']).toBeUndefined();
+    expect(post?.headers['cookie']).toBeUndefined();
+  });
+
   await test.step('Ana, the steward, turns it off now, and Ben reads who did', async () => {
     const { page } = ana;
     await page.goto(rulesUrl);
@@ -144,5 +172,7 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
       'Off for now. Steward Ana turned it off while your group votes.',
     );
     await expectAccessible(ben, 'Group rules on a phone, narrowed');
+    // The off-Proposal opened while the bot was narrowed, so no device posts it.
+    expect(openProfile.discord).toHaveLength(1);
   });
 });

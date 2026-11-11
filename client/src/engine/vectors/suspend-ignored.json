@@ -207,13 +207,13 @@
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -224,13 +224,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -239,13 +239,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal"
             }
@@ -253,13 +253,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee"
             }
@@ -267,13 +267,13 @@
         },
         {
           "seq": 5,
-          "received": 29375004,
+          "received": 29354844,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%eve",
-            "ts": 1762500240000,
+            "ts": 1761290640000,
             "body": {
               "name": "Eve"
             }
@@ -281,13 +281,13 @@
         },
         {
           "seq": 6,
-          "received": 29375005,
+          "received": 29354845,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%kim",
-            "ts": 1762500300000,
+            "ts": 1761290700000,
             "body": {
               "name": "Kim"
             }
@@ -295,6 +295,90 @@
         },
         {
           "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290760000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290820000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290880000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290940000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 13,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -314,7 +398,7 @@
           }
         },
         {
-          "seq": 8,
+          "seq": 14,
           "received": 29375011,
           "event": {
             "v": 1,
@@ -323,15 +407,15 @@
             "author": "%ana",
             "ts": 1762500660000,
             "body": {
-              "proposal": "@7",
+              "proposal": "@13",
               "scores": {
-                "@7": 4
+                "@13": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 15,
           "received": 29375012,
           "event": {
             "v": 1,
@@ -340,15 +424,15 @@
             "author": "%ben",
             "ts": 1762500720000,
             "body": {
-              "proposal": "@7",
+              "proposal": "@13",
               "scores": {
-                "@7": 4
+                "@13": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 16,
           "received": 29375013,
           "event": {
             "v": 1,
@@ -357,15 +441,15 @@
             "author": "%cal",
             "ts": 1762500780000,
             "body": {
-              "proposal": "@7",
+              "proposal": "@13",
               "scores": {
-                "@7": 4
+                "@13": 4
               }
             }
           }
         },
         {
-          "seq": 11,
+          "seq": 17,
           "received": 29385091,
           "event": {
             "v": 1,
@@ -380,7 +464,7 @@
           }
         },
         {
-          "seq": 12,
+          "seq": 18,
           "received": 29385092,
           "event": {
             "v": 1,
@@ -413,32 +497,32 @@
         ],
         "suspensions": [
           {
-            "id": "@11",
+            "id": "@17",
             "by": "%ben",
             "member": "%ana"
           }
         ],
         "ignored": [
           {
-            "seq": 12,
-            "id": "@12"
+            "seq": 18,
+            "id": "@18"
           }
         ]
       },
-      "unchangedWithout": [12]
+      "unchangedWithout": [18]
     },
     {
       "name": "a suspend of someone already suspended is ignored, even from the other steward",
       "records": [
         {
           "seq": 1,
-          "received": 29375000,
+          "received": 29354840,
           "event": {
             "v": 1,
             "type": "genesis",
             "group": "",
             "author": "%ana",
-            "ts": 1762500000000,
+            "ts": 1761290400000,
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
@@ -449,13 +533,13 @@
         },
         {
           "seq": 2,
-          "received": 29375001,
+          "received": 29354841,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%ben",
-            "ts": 1762500060000,
+            "ts": 1761290460000,
             "body": {
               "name": "Ben",
               "level": "co-creator"
@@ -464,13 +548,13 @@
         },
         {
           "seq": 3,
-          "received": 29375002,
+          "received": 29354842,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%cal",
-            "ts": 1762500120000,
+            "ts": 1761290520000,
             "body": {
               "name": "Cal"
             }
@@ -478,13 +562,13 @@
         },
         {
           "seq": 4,
-          "received": 29375003,
+          "received": 29354843,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%dee",
-            "ts": 1762500180000,
+            "ts": 1761290580000,
             "body": {
               "name": "Dee"
             }
@@ -492,13 +576,13 @@
         },
         {
           "seq": 5,
-          "received": 29375004,
+          "received": 29354844,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%eve",
-            "ts": 1762500240000,
+            "ts": 1761290640000,
             "body": {
               "name": "Eve"
             }
@@ -506,13 +590,13 @@
         },
         {
           "seq": 6,
-          "received": 29375005,
+          "received": 29354845,
           "event": {
             "v": 1,
             "type": "join",
             "group": "@1",
             "author": "%kim",
-            "ts": 1762500300000,
+            "ts": 1761290700000,
             "body": {
               "name": "Kim"
             }
@@ -520,6 +604,90 @@
         },
         {
           "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290760000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290820000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290880000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290940000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 13,
           "received": 29375010,
           "event": {
             "v": 1,
@@ -539,7 +707,7 @@
           }
         },
         {
-          "seq": 8,
+          "seq": 14,
           "received": 29375011,
           "event": {
             "v": 1,
@@ -548,15 +716,15 @@
             "author": "%ana",
             "ts": 1762500660000,
             "body": {
-              "proposal": "@7",
+              "proposal": "@13",
               "scores": {
-                "@7": 4
+                "@13": 4
               }
             }
           }
         },
         {
-          "seq": 9,
+          "seq": 15,
           "received": 29375012,
           "event": {
             "v": 1,
@@ -565,15 +733,15 @@
             "author": "%ben",
             "ts": 1762500720000,
             "body": {
-              "proposal": "@7",
+              "proposal": "@13",
               "scores": {
-                "@7": 4
+                "@13": 4
               }
             }
           }
         },
         {
-          "seq": 10,
+          "seq": 16,
           "received": 29375013,
           "event": {
             "v": 1,
@@ -582,15 +750,15 @@
             "author": "%cal",
             "ts": 1762500780000,
             "body": {
-              "proposal": "@7",
+              "proposal": "@13",
               "scores": {
-                "@7": 4
+                "@13": 4
               }
             }
           }
         },
         {
-          "seq": 11,
+          "seq": 17,
           "received": 29385091,
           "event": {
             "v": 1,
@@ -605,7 +773,7 @@
           }
         },
         {
-          "seq": 12,
+          "seq": 18,
           "received": 29385092,
           "event": {
             "v": 1,
@@ -624,18 +792,18 @@
       "expect": {
         "suspensions": [
           {
-            "id": "@11",
+            "id": "@17",
             "by": "%ben"
           }
         ],
         "ignored": [
           {
-            "seq": 12,
-            "id": "@12"
+            "seq": 18,
+            "id": "@18"
           }
         ]
       },
-      "unchangedWithout": [12]
+      "unchangedWithout": [18]
     },
     {
       "name": "a second active suspension by the same steward is ignored until the first one ends",

@@ -118,3 +118,20 @@ describe('homeLists', () => {
     expect(homeLists(s, authorOf('ana'), deadlineOf(START_MINUTE)).otherOpen).toEqual([]);
   });
 });
+
+describe('homeLists in a dissolved group (#108)', () => {
+  it('lists nothing under Needs your vote, and keeps a Proposal open at the dissolve with the open ones', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.propose('ana');
+    const motion = log.proposeDissolve('ana', false);
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('ana', motion);
+    const s = log.state(log.minute + 5);
+    const lists = homeLists(s, authorOf('ben'), log.minute + 5);
+    expect(lists.needsYourVote).toEqual([]);
+    expect(ids(lists.otherOpen)).toEqual([open]);
+    expect(ids(lists.open)).toEqual([open]);
+    expect(ids(lists.decided)).toEqual([motion]);
+  });
+});

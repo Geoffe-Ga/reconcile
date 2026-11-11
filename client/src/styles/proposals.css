@@ -351,6 +351,13 @@
   overflow-wrap: anywhere;
 }
 
+/* What a version does, before its change: "Removes this section", or where an add goes (#75). */
+.version-does {
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
 /* The card is the surface for its diff or text, so they drop their own box. */
 .version > :is(.word-diff, .atom-card) {
   padding: 0;

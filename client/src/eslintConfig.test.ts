@@ -1,7 +1,8 @@
 /**
  * Regression tests for the rules eslint.config.js adds itself (#162): NO_CLOCK and
  * INTEGERS_ONLY in src/engine, the network globals outside src/net, the messages
- * rule in src/app and src/screens, and NO_RAW_HTML across src/ (#70). Each must fire on a bad snippet where it applies,
+ * rule in src/app and src/screens, NO_RAW_HTML across src/ (#70), and
+ * `navigator.credentials` outside src/platform/webauthn.ts (#95). Each must fire on a bad snippet where it applies,
  * and stay quiet on a good snippet or where it doesn't apply.
  *
  * The snippets are linted in memory as if they were files at the paths given, with
@@ -142,13 +143,15 @@ describe('network globals: only src/net talks to the network', () => {
     'src/screens/Fixture.tsx',
     'src/fixture.ts',
     'src/app/fixture.test.ts',
+    'e2e/fixture.spec.ts',
+    'e2e/support/fixture.ts',
   ])('applies in %s', async (filePath) => {
     expect(await lint('export const api: unknown = fetch;', filePath)).toEqual([
       `no-restricted-globals: Unexpected use of 'fetch'. ${NETWORK}`,
     ]);
   });
 
-  it.each(['src/net/fixture.ts', 'src/net/fixture.test.ts'])(
+  it.each(['src/net/fixture.ts', 'src/net/fixture.test.ts', 'e2e/support/connect.ts'])(
     "doesn't apply in %s",
     async (filePath) => {
       const code =
@@ -274,5 +277,54 @@ describe('NO_RAW_HTML: nothing in src/ is ever parsed as HTML', () => {
       RAW,
       'no-restricted-syntax: Visible text comes from src/app/messages.ts.',
     ]);
+  });
+});
+
+describe('navigator.credentials: only src/platform/webauthn.ts reaches WebAuthn (#95)', () => {
+  const CREDENTIALS =
+    "no-restricted-properties: 'navigator.credentials' is restricted from being used. Only src/platform/webauthn.ts reaches WebAuthn (#95), so every passkey request can be audited in one place.";
+
+  it.each([
+    ['a call', 'export const ask = () => navigator.credentials.get({});'],
+    ['a read', 'export const calls: unknown = navigator.credentials;'],
+    ['a computed key', "export const calls: unknown = navigator['credentials'];"],
+    ['destructuring', 'export const { credentials } = navigator;'],
+  ])('flags %s', async (_name, code) => {
+    expect(await lint(code, 'src/app/fixture.ts')).toEqual([CREDENTIALS]);
+  });
+
+  it.each([
+    'src/app/Fixture.tsx',
+    'src/screens/Fixture.tsx',
+    'src/store/fixture.ts',
+    'src/platform/fixture.ts',
+    'src/platform/webauthn.test.ts',
+    'src/net/fixture.ts',
+    'e2e/fixture.spec.ts',
+    'e2e/support/connect.ts',
+  ])('applies in %s', async (filePath) => {
+    expect(await lint('export const calls: unknown = navigator.credentials;', filePath)).toEqual([
+      CREDENTIALS,
+    ]);
+  });
+
+  it('doesn’t apply in src/platform/webauthn.ts, which still may not reach the network', async () => {
+    const code = 'export const calls: unknown[] = [navigator.credentials, window.fetch];';
+    expect(await lint(code, 'src/platform/webauthn.ts')).toEqual([
+      "no-restricted-properties: 'window.fetch' is restricted from being used. Only src/net/ talks to the network (spec §2), so every request can be audited in one place.",
+    ]);
+  });
+
+  it('keeps the network rules beside it everywhere else', async () => {
+    const code = 'export const both: unknown[] = [navigator.credentials, globalThis.fetch];';
+    expect(await lint(code, 'src/app/fixture.ts')).toEqual([
+      CREDENTIALS,
+      "no-restricted-properties: 'globalThis.fetch' is restricted from being used. Only src/net/ talks to the network (spec §2), so every request can be audited in one place.",
+    ]);
+  });
+
+  it('allows another object’s credentials field', async () => {
+    const code = 'export const mode = (init: RequestInit): unknown => init.credentials;';
+    expect(await lint(code, 'src/app/fixture.ts')).toEqual([]);
   });
 });

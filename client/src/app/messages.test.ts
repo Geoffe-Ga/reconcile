@@ -41,8 +41,14 @@ describe('messages', () => {
 
   it('uses the domain vocabulary, never retired or misleading words', () => {
     for (const [path, text] of strings) {
-      expect(text, path).not.toMatch(/\b(pitch|push|fork|split|organization|community)\b/i);
+      // "Push" alone was a Dispatch's working name. A phone's "push address" is Web Push's
+      // own term, which #99's disclosure names on purpose; nothing else may say push.
+      expect(text, path).not.toMatch(
+        /\b(pitch|push(?! address)|fork|split|organization|community)\b/i,
+      );
     }
+    expect('Push the Dispatch').toMatch(/\bpush(?! address)\b/i);
+    expect(messages.push.disclosure).toContain('push address');
   });
 
   it('says what an invite link opens in spec §9’s words, and the join lines in §8’s', () => {
