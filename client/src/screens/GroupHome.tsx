@@ -947,42 +947,45 @@ interface DocumentsProps {
 /**
  * The group's Documents (#92), in order, each opening its own view, then
  * Propose a new Document for whoever may propose, unless the group takes
- * nothing new.
+ * nothing new: one content cell, as Dispatches has, so the button sits under
+ * the list and not in the section's label column.
  */
 function Documents({ state, me, readOnly }: DocumentsProps) {
   const groupId = state.group ?? '';
   const { home } = messages;
   return (
     <Section title={home.documentsLabel}>
-      <ul className="card-list">
-        {state.documents.map(({ id, title }) => (
-          <li key={id}>
+      <div className="stack">
+        <ul className="card-list">
+          {state.documents.map(({ id, title }) => (
+            <li key={id}>
+              <Link
+                className="card-link"
+                href={routeHref({ name: 'document', groupId, documentId: id })}
+              >
+                <span className="card-link-title">
+                  <span className="heading-2">
+                    <bdi>{title}</bdi>
+                  </span>
+                  <span className="card-link-arrow" aria-hidden="true">
+                    {messages.app.forward}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        {!readOnly && can(state, me, 'propose') ? (
+          <div className="row">
             <Link
-              className="card-link"
-              href={routeHref({ name: 'document', groupId, documentId: id })}
+              className="button button-secondary"
+              href={routeHref({ name: 'newDocument', groupId })}
             >
-              <span className="card-link-title">
-                <span className="heading-2">
-                  <bdi>{title}</bdi>
-                </span>
-                <span className="card-link-arrow" aria-hidden="true">
-                  {messages.app.forward}
-                </span>
-              </span>
+              {home.proposeDocument}
             </Link>
-          </li>
-        ))}
-      </ul>
-      {!readOnly && can(state, me, 'propose') ? (
-        <div className="row">
-          <Link
-            className="button button-secondary"
-            href={routeHref({ name: 'newDocument', groupId })}
-          >
-            {home.proposeDocument}
-          </Link>
-        </div>
-      ) : null}
+          </div>
+        ) : null}
+      </div>
     </Section>
   );
 }

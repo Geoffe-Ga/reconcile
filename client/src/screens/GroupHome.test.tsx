@@ -456,6 +456,38 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('keeps Propose a new Document in the content column, with the Document list, as Dispatches keeps Send a Dispatch (#92)', () => {
+    renderHome(groupLog({ members: ['Ben'] }).state());
+    const content = (name: string) => {
+      const children = Array.from(section(name).children);
+      // The heading takes the label column; everything else shares one content cell.
+      expect(children.map((child) => child.tagName)).toEqual(['H2', 'DIV']);
+      return children[1] as HTMLElement;
+    };
+    const documents = content('Documents');
+    expect(documents).toHaveClass('stack');
+    expect(documents).toContainElement(within(documents).getByRole('list'));
+    expect(documents).toContainElement(
+      within(documents).getByRole('link', { name: 'Propose a new Document' }),
+    );
+    expect(content('Dispatches')).toHaveClass('stack');
+  });
+
+  it('gives every section on Group home its heading and one content cell, nothing in the label column (#92)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.propose('ana', { title: 'Later quiet hours' });
+    renderHome(log.state(), { applications: <p>No one has asked yet.</p> });
+    const sections = Array.from(document.querySelectorAll('section.section'));
+    expect(sections.length).toBeGreaterThan(8);
+    for (const each of sections) {
+      const label = each.querySelector('h2')?.textContent;
+      expect([label, Array.from(each.children).map((child) => child.tagName)]).toEqual([
+        label,
+        ['H2', expect.any(String)],
+      ]);
+    }
+  });
+
   it('offers Propose a new Document only to someone who may propose, and not while leaving (#92)', () => {
     const log = groupLog({ members: ['Ben'], levels: { Ben: VOTING } });
     renderHome(log.state(), { me: authorOf('ben') });
