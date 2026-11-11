@@ -1,0 +1,413 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dispatch-co-creator: a Co-Creator's dispatch appears with its title, text, Document and receipt, in relay order, and one with no doc has none; a Collaborator's and a Member's are ignored, though both hold voting rights",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben",
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1764000120000,
+            "body": {
+              "name": "Kim",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000600000,
+            "body": {
+              "title": "Meet on Sunday",
+              "text": "Bring a chair.\nWe start at 10.",
+              "doc": "@1"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400011,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000660000,
+            "body": {
+              "title": "Meet on Saturday",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400012,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1764000720000,
+            "body": {
+              "title": "Meet on Friday",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400013,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1764000780000,
+            "body": {
+              "title": "Bins are back",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29400020,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@4",
+            "by": "%ana",
+            "title": "Meet on Sunday",
+            "text": "Bring a chair.\nWe start at 10.",
+            "doc": "@1",
+            "received": 29400010
+          },
+          {
+            "id": "@7",
+            "by": "%ana",
+            "title": "Bins are back",
+            "text": "",
+            "doc": null,
+            "received": 29400013
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [5, 6]
+    },
+    {
+      "name": "dispatch-rights: a Co-Creator still earning voting rights holds a Member's capabilities, so their dispatch is ignored (#101), and so is one from a Co-Creator who has left; a Co-Creator who joined at the bootstrap sends one",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764000120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1764000180000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400010,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1764000600000,
+            "body": {
+              "title": "Hello from Dee",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400011,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764000660000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29400012,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1764000720000,
+            "body": {
+              "title": "Goodbye from Cal",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29400013,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000780000,
+            "body": {
+              "title": "Welcome, Dee",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29400020,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@8",
+            "by": "%ben",
+            "title": "Welcome, Dee",
+            "text": "",
+            "doc": null,
+            "received": 29400013
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [5, 7]
+    },
+    {
+      "name": "dispatch-level: a Co-Creator who steps down to Collaborator can't send a Dispatch, and can again from the minute they step back up",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29400000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1764000000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29400001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29400005,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000300000,
+            "body": {
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29400006,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000360000,
+            "body": {
+              "title": "Still here",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29400007,
+          "event": {
+            "v": 1,
+            "type": "level",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000420000,
+            "body": {
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29400008,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1764000480000,
+            "body": {
+              "title": "Back again",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29400010,
+      "expect": {
+        "dispatches": [
+          {
+            "id": "@6",
+            "by": "%ben",
+            "title": "Back again",
+            "text": "",
+            "doc": null,
+            "received": 29400008
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      },
+      "unchangedWithout": [4]
+    }
+  ]
+}

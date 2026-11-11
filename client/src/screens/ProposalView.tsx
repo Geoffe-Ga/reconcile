@@ -493,6 +493,31 @@ function clearedOf(props: ProposalViewProps, proposal: Proposal) {
 }
 
 /**
+ * The Dispatch an open Proposal carries (#112): "If this passes", its title
+ * and its text as plain text, and that everyone in the group gets it, so
+ * voters see what passing also sends. Nothing once the vote has closed: the
+ * Dispatches view has it then, or it never went.
+ */
+function CarriedDispatch({ proposal }: { readonly proposal: Proposal }) {
+  const { dispatch } = proposal;
+  if (dispatch === null || proposal.final) return null;
+  const { dispatchHeading, dispatchLine } = messages.proposal;
+  return (
+    <Block title={dispatchHeading} className="card dispatch dispatch-carried">
+      <p className="heading-3 dispatch-title">
+        <bdi>{dispatch.title}</bdi>
+      </p>
+      {dispatch.text === '' ? null : (
+        <p className="dispatch-text" dir="auto">
+          {dispatch.text}
+        </p>
+      )}
+      <p className="caption">{dispatchLine}</p>
+    </Block>
+  );
+}
+
+/**
  * A Proposal the relay has ordered: open with its ballot, or closed with its
  * outcome first. A removal's response follows its justification (#115).
  */
@@ -540,6 +565,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         readOnly={readOnly}
         {...(props.onRespond === undefined ? {} : { onRespond: props.onRespond })}
       />
+      <CarriedDispatch proposal={proposal} />
       <ChatLink href={link} />
       <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} />

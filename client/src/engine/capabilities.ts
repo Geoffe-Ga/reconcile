@@ -26,6 +26,8 @@
  * an opt-in at once (#117), come with a steward seat, never a level.
  * `propose-removal` is any voting level's (ADR-0049, #115): a Collaborator
  * may propose removing someone, though not a change to the Document.
+ * `dispatch`, sending a Dispatch to the whole group, comes with the creating
+ * level (ADR-0074, #112).
  */
 export type Capability =
   | 'read'
@@ -35,6 +37,7 @@ export type Capability =
   | 'invite'
   | 'propose-removal'
   | 'propose'
+  | 'dispatch'
   | 'suspend'
   | 'narrow';
 
@@ -48,12 +51,22 @@ export type Level = (typeof LEVELS)[number];
  * The capabilities each level holds. Every level reads the roster: hiding it
  * from Members stays deferred (ADR-0074, ADR-0072 item 12). Both voting
  * levels may propose a removal (ADR-0049, #115); the lists are flat, so each
- * names it.
+ * names it. Every level follows and reads the group's Dispatches (ADR-0003),
+ * and only the creating level sends one (#112).
  */
 export const LEVEL_CAPABILITIES = {
   member: ['read', 'see-roster'],
   collaborator: ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose-removal'],
-  'co-creator': ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose-removal', 'propose'],
+  'co-creator': [
+    'read',
+    'see-roster',
+    'vote',
+    'vouch',
+    'invite',
+    'propose-removal',
+    'propose',
+    'dispatch',
+  ],
 } as const satisfies Record<Level, readonly Capability[]>;
 
 /** The level genesis gives the group's founder. */

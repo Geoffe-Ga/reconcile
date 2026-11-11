@@ -103,6 +103,7 @@ describe('fold', () => {
       narrowings: [],
       vouches: [],
       chatPosts: [],
+      dispatches: [],
       epoch: 0,
       rotations: [],
       rotationDue: false,
@@ -158,6 +159,7 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        dispatch: null,
       },
     ]);
   });
@@ -290,6 +292,7 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        dispatch: null,
       },
     ]);
   });

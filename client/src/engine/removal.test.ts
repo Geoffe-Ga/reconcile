@@ -291,3 +291,23 @@ describe('the removal bar in the fold (ADR-0075 §3)', () => {
     expect(fold(log.records, START_MINUTE + 15 * DAY_MINUTES).removals).toHaveLength(1);
   });
 });
+
+describe('a removal beside Dispatches (#112)', () => {
+  it('ignores a Dispatch from the Co-Creator a passed removal names, and takes one from the others', () => {
+    const { log } = passed();
+    log.dispatch('Kim', { title: 'Still here', text: 'Read this.' });
+    log.dispatch('Ben', { title: 'Bins move to Monday', text: '' });
+    const state = log.state();
+    expect(state.dispatches.map((dispatch) => dispatch.title)).toEqual(['Bins move to Monday']);
+  });
+
+  it('sends a Dispatch a removal carries once it passes, pointing to no Document', () => {
+    const log = five();
+    const dispatch = { title: 'A vote removed Kim', text: 'The house rules still stand.' };
+    const id = log.proposeRemoval('Ana', 'Kim', { dispatch });
+    for (const voter of ['Ana', 'Ben', 'Cal', 'Dee']) log.vote(voter, id, 4);
+    log.minute += 1;
+    const [sent] = log.state().dispatches;
+    expect(sent).toMatchObject({ id, by: { proposal: id }, ...dispatch, doc: null });
+  });
+});

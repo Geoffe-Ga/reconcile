@@ -83,7 +83,9 @@ async function expectRemoved(device: TestDevice, groupId: string): Promise<void>
   expect(types).toContain('remove');
 }
 
-describe('removing a member in the app', () => {
+// Three devices sync six passes and sign, seal and open every record for real, a key change
+// included, so this takes longer than the default 5 seconds on a loaded machine.
+describe('removing a member in the app', { timeout: 30_000 }, () => {
   it('passes, takes Cal out, changes the key past him, and leaves his device a read-only copy', async () => {
     const fake = createFakeRelay();
     const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);

@@ -31,6 +31,9 @@ describe('vector files', () => {
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'dispatch-carried.json',
+      'dispatch-limits.json',
+      'dispatch-sent.json',
       'dissolve-bar.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
@@ -97,6 +100,9 @@ describe('vector files', () => {
       'tally',
       'tally',
       'tally',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -422,6 +428,25 @@ describe('vector files', () => {
     'an average of exactly 2.5 with no zeros fails the removal bar',
   ])('include the removal bar vector "%s" (#115)', (name) => {
     expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    'dispatch-co-creator',
+    'dispatch-rights',
+    'dispatch-level',
+    'dispatch-title',
+    'dispatch-text',
+    'dispatch-doc',
+    'dispatch-carried-pass',
+    'dispatch-carried-open',
+    'dispatch-carried-lapse',
+    'dispatch-carried-fail',
+    'dispatch-carried-invalid',
+    'dispatch-carried-close-order',
+    'dispatch-carried-same-deadline',
+    'dispatch-carried-dissolve',
+  ])('include the Dispatch vector "%s" (#112)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 });
 

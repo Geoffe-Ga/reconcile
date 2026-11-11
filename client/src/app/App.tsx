@@ -12,6 +12,7 @@ import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
+import { Dispatches } from '../screens/Dispatches';
 import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
@@ -26,6 +27,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
 import { RemovalComposer } from '../screens/RemovalComposer';
+import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings } from '../screens/Settings';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
@@ -56,6 +58,7 @@ import {
   addVersion,
   castBallot,
   chooseLevel,
+  type DispatchValues,
   type DissolveValues,
   propose,
   proposeDissolve,
@@ -65,20 +68,14 @@ import {
   type RemovalValues,
   respondToRemoval,
   type RulesValues,
+  sendDispatch,
   type StewardValues,
   suspend,
   type ProposalValues,
   type VersionValues,
   vouch,
 } from './proposals';
-import {
-  type GroupRoute,
-  navigate,
-  replaceRoute,
-  type Route,
-  type TargetRoute,
-  useRoute,
-} from './router';
+import { type GroupRoute, navigate, replaceRoute, type Route, useRoute } from './router';
 import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
@@ -613,8 +610,74 @@ function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
   );
 }
 
-/** The screen for a composer route inside one group. */
-function TargetRouteScreen({ route, services }: { route: TargetRoute; services: AppServices }) {
+/** The group's Dispatches (#112), newest first, with this device's own while they wait. */
+function DispatchesScreen({ groupId }: { readonly groupId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me, pending, reachable, leaving }) => (
+        <Dispatches
+          state={state}
+          me={me.author}
+          pending={pending}
+          reachable={reachable}
+          leaving={leaving}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** Send a Dispatch (#112); sending it replaces the form with the group's Dispatches. */
+function SendDispatchScreen({ services, groupId }: GroupScreenProps) {
+  const onSend = async (values: DispatchValues) => {
+    await sendDispatch(services, groupId, values);
+    // Replace the form, so Back from the Dispatches doesn't open it again.
+    replaceRoute({ name: 'dispatches', groupId });
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <SendDispatch state={state} me={me.author} leaving={leaving} onSend={onSend} />
+      )}
+    </GroupGate>
+  );
+}
+
+/** The screen for a route inside one group. */
+function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
+  const { groupId } = route;
+  switch (route.name) {
+    case 'group':
+      return <GroupScreen services={services} groupId={groupId} />;
+    case 'document':
+      return <DocumentScreen groupId={groupId} />;
+    case 'propose':
+      return <ProposeScreen services={services} groupId={groupId} atomId={route.atomId} />;
+    case 'proposal':
+      return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'again':
+      return <ProposeScreen services={services} groupId={groupId} againId={route.proposalId} />;
+    case 'rules':
+      return <RulesScreen groupId={groupId} />;
+    case 'dispatches':
+      return <DispatchesScreen groupId={groupId} />;
+    default:
+      return <FormRouteScreen route={route} services={services} />;
+  }
+}
+
+/** A route inside one group whose screen is a form of its own. */
+type FormRoute = Extract<
+  GroupRoute,
+  { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'removal' }
+>;
+
+/**
+ * The screen for a route inside one group that opens a form of its own: the
+ * steward (#102), opt-in (#117), dissolve (#108) and removal (#115)
+ * composers, and Send a Dispatch (#112).
+ */
+function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;
   switch (route.name) {
     case 'steward':
@@ -637,29 +700,10 @@ function TargetRouteScreen({ route, services }: { route: TargetRoute; services: 
       );
     case 'dissolve':
       return <DissolveScreen services={services} groupId={groupId} />;
+    case 'sendDispatch':
+      return <SendDispatchScreen services={services} groupId={groupId} />;
     case 'removal':
       return <RemovalScreen services={services} groupId={groupId} member={route.member} />;
-  }
-}
-
-/** The screen for a route inside one group. */
-function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
-  const { groupId } = route;
-  switch (route.name) {
-    case 'group':
-      return <GroupScreen services={services} groupId={groupId} />;
-    case 'document':
-      return <DocumentScreen groupId={groupId} />;
-    case 'propose':
-      return <ProposeScreen services={services} groupId={groupId} atomId={route.atomId} />;
-    case 'proposal':
-      return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
-    case 'again':
-      return <ProposeScreen services={services} groupId={groupId} againId={route.proposalId} />;
-    case 'rules':
-      return <RulesScreen groupId={groupId} />;
-    default:
-      return <TargetRouteScreen route={route} services={services} />;
   }
 }
 

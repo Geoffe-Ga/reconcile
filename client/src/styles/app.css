@@ -1220,6 +1220,59 @@ a[data-focus-visible] {
   font: var(--type-ui);
 }
 
+/* Dispatches (#112) ------------------------------------------------------- */
+
+/* The Dispatches view: one card each, newest first. */
+.dispatch-list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+/* A Dispatch: its title, who sent it and when, its plain text, then its Document. */
+.dispatch.card {
+  gap: var(--space-2);
+}
+
+.dispatch-title {
+  overflow-wrap: anywhere;
+}
+
+/* "From Ana · Mon 16 Nov": a name or a Proposal's title can be long, so it wraps. */
+.dispatch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--muted);
+  font: var(--type-caption);
+  overflow-wrap: anywhere;
+}
+
+/* Plain text, never Markdown or links: line breaks and spaces show as typed. */
+.dispatch-text {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dispatch-open {
+  justify-self: start;
+  overflow-wrap: anywhere;
+}
+
+/* The Dispatch an open Proposal would send, under its why. */
+.dispatch-carried {
+  max-width: 34rem;
+}
+
+/* The composer's Dispatch: the checkbox's card, then its title and text. */
+.dispatch-choice {
+  gap: var(--space-4);
+}
+
 /* Share by link (#105) ------------------------------------------------------ */
 
 /* The shared page's first line, where the app's back link would sit, so the title lands as on every screen. */
