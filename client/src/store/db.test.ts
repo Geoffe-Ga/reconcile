@@ -346,6 +346,55 @@ describe('applyPull', () => {
     });
   });
 
+  it('puts a record that reached last week’s mailbox late before the later records read first (#110)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const read = (seq: number, received: number, body: string) => ({
+      seq,
+      received,
+      bytes: utf8(body),
+    });
+    const first = [read(3, 7, '{"a":1}'), read(8, 9, '{"c":3}')];
+    await store.applyPull(group.groupId, pull(first, 0), idOf);
+
+    const second = [read(6, 9, '{"b":2}'), read(9, 9, '{"d":4}')];
+    await store.applyPull(group.groupId, pull(second, 0), idOf);
+
+    const saved = await store.getGroup(group.groupId);
+    expect(saved?.log.map((record) => record.seq)).toEqual([3, 6, 8, 9]);
+  });
+
+  it('keeps the cursors a pass gives, in place of the ones before, and leaves the base cursor (#110)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.applyPull(group.groupId, pull([], 4), idOf);
+    const { cursor, ...pass } = pull([], 0);
+
+    await store.applyPull(group.groupId, { ...pass, cursors: { lastWeek: 3, thisWeek: 9 } }, idOf);
+    await store.applyPull(group.groupId, { ...pass, cursors: { thisWeek: 12 } }, idOf);
+
+    expect(cursor).toBe(0);
+    expect(await store.getGroup(group.groupId)).toMatchObject({
+      cursor: 4,
+      cursors: { thisWeek: 12 },
+    });
+  });
+
+  it('keeps the cursors a join’s pull doesn’t name', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const { cursor, ...pass } = pull([], 0);
+    await store.applyPull(group.groupId, { ...pass, cursors: { thisWeek: 9 } }, idOf);
+
+    await store.applyPull(group.groupId, pull([], 2), idOf);
+
+    expect(cursor).toBe(0);
+    expect(await store.getGroup(group.groupId)).toMatchObject({
+      cursor: 2,
+      cursors: { thisWeek: 9 },
+    });
+  });
+
   it('changes nothing when working out an id fails', async () => {
     const store = await openStore();
     await store.addGroup(group);
@@ -475,15 +524,60 @@ describe('mergeLog', () => {
   });
 });
 
-describe('resetCursor', () => {
-  it('starts reading from seq 0 of the new instance', async () => {
+describe('a pull from a fresh relay instance', () => {
+  const read = (seq: number, received: number, body: string) => ({
+    seq,
+    received,
+    bytes: utf8(body),
+  });
+
+  it('starts every cursor over from that relay’s start, apart from the ones it gives', async () => {
     const store = await openStore();
     await store.addGroup(group);
-    await store.applyPull(group.groupId, pull([], 40), idOf);
+    await store.applyPull(
+      group.groupId,
+      { ...pull([], 40), cursors: { lastWeek: 39, thisWeek: 41 } },
+      idOf,
+    );
+    const { cursor, ...pass } = pull([], 0);
 
-    await store.resetCursor(group.groupId, 'relay-2');
+    await store.applyPull(
+      group.groupId,
+      { ...pass, instance: 'relay-2', cursors: { thisWeek: 2 } },
+      idOf,
+    );
 
-    expect(await store.getGroup(group.groupId)).toMatchObject({ cursor: 0, instance: 'relay-2' });
+    expect(cursor).toBe(0);
+    expect(await store.getGroup(group.groupId)).toMatchObject({
+      cursor: 0,
+      cursors: { thisWeek: 2 },
+      instance: 'relay-2',
+    });
+  });
+
+  it('puts its records after the whole log, though its seqs start again from 1 in the same minute', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const old = [read(1, 9, '{"a":1}'), read(2, 9, '{"b":2}'), read(3, 9, '{"c":3}')];
+    await store.applyPull(group.groupId, pull(old, 3), idOf);
+
+    const fresh = [read(1, 9, '{"d":4}'), read(2, 9, '{"e":5}')];
+    await store.applyPull(group.groupId, { ...pull(fresh, 0), instance: 'relay-2' }, idOf);
+    await store.applyPull(
+      group.groupId,
+      { ...pull([read(3, 9, '{"f":6}')], 0), instance: 'relay-2' },
+      idOf,
+    );
+
+    const kept = await store.getGroup(group.groupId);
+    expect(kept?.log.map((record) => text(record.bytes))).toEqual([
+      '{"a":1}',
+      '{"b":2}',
+      '{"c":3}',
+      '{"d":4}',
+      '{"e":5}',
+      '{"f":6}',
+    ]);
   });
 });
 
@@ -1194,7 +1288,6 @@ describe('every change', () => {
       () => store.enqueue(group.groupId, utf8('{"n":1}')),
       () => store.markSent(group.groupId, utf8('{"n":1}')),
       () => store.applyPull(group.groupId, pull([], 1), idOf),
-      () => store.resetCursor(group.groupId, 'relay-2'),
       () =>
         store.claimChat(group.groupId, utf8('{"claim":1}'), {
           id: 'claim-1',
@@ -1277,6 +1370,7 @@ describe('encryption keys and epochs (#98)', () => {
       group.groupId,
       {
         ...pull([{ seq: 12, received: 9, bytes: late }], 12),
+        cursors: { oldEpochThisWeek: 12 },
         advance: { epoch: 1, secret: NEXT, cursor: 11, repost: [late, utf8('{"queued":1}')] },
       },
       idOf,
@@ -1285,6 +1379,8 @@ describe('encryption keys and epochs (#98)', () => {
     expect(kept?.epoch).toBe(1);
     expect(kept === undefined ? null : local(kept.secret)).toEqual(NEXT);
     expect(kept?.cursor).toBe(11);
+    // The old epoch's mailboxes are read no more; each new one from the key change on (#110).
+    expect(kept?.cursors).toBeUndefined();
     expect(kept?.outbox.map(text)).toEqual(['{"late":1}', '{"queued":1}']);
     expect(kept?.log.map((record) => record.seq)).toEqual([12]);
   });

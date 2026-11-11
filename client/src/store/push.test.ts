@@ -27,7 +27,8 @@ import {
 } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { FOUNDING, foundAnother, members } from '../test/members';
-import { mailboxAt, type MailboxAt } from './mailbox';
+import type { Group } from './db';
+import { mailboxAt, type MailboxAt, mailboxesFrom } from './mailbox';
 import { createPush, RENEW_MINUTES, REST_MS } from './push';
 import { createSync } from './sync';
 
@@ -48,10 +49,33 @@ async function group(fake: FakeRelay = createFakeRelay()) {
   const [ana, ben] = devices as [TestDevice, TestDevice];
   const stored = await ana.services.store.getGroup(groupId);
   if (stored === undefined) throw new Error('Expected the group on Ana’s device.');
-  const mailbox = mailboxAt(stored, 0);
   ana.push.answer = 'granted';
-  return { fake, groupId, ana, ben, mailbox, secret: stored.secret };
+  return { fake, groupId, ana, ben, secret: stored.secret, ...weeklyOf(stored, fake.minute) };
 }
+
+/**
+ * A group's weekly mailboxes at relay minute `minute` (#110): this week's,
+ * the 30 days' worth a registration names, the week of a Proposal's deadline
+ * 7 days on, where its nudges go, and every week from last to 6 on.
+ */
+function weeklyOf(held: Pick<Group, 'secret'>, minute: number) {
+  return {
+    mailbox: mailboxAt(held, minute),
+    mailboxes: mailboxesFrom(held, minute),
+    deadlineBox: mailboxAt(held, minute + 7 * DAY_MINUTES),
+    everyBox: Array.from({ length: 8 }, (_, n) =>
+      mailboxAt(held, minute + (n - 1) * 7 * DAY_MINUTES),
+    ),
+  };
+}
+
+/** A push request to each of `mailboxes`, in order, as `[method, path]`. */
+const each = (method: string, mailboxes: readonly string[]) =>
+  mailboxes.map((mailbox) => [method, `/v1/push/${mailbox}`]);
+
+/** Whether `request` names any of `mailboxes`. */
+const names = (request: FakeRequest, mailboxes: readonly string[]) =>
+  mailboxes.some((mailbox) => request.url.includes(mailbox));
 
 /** The requests to the relay's push routes since `from`. */
 function pushRequests(fake: FakeRelay, from = 0): FakeRequest[] {
@@ -103,8 +127,8 @@ describe('turning push on for a group (#99)', () => {
     expect(ana.push.asked).toBe(0);
   });
 
-  it('asks permission inside the tap, subscribes with the relay’s key, and PUTs the group’s mailbox', async () => {
-    const { fake, ana, groupId, mailbox } = await group();
+  it('asks permission inside the tap, subscribes with the relay’s key, and PUTs each of the group’s mailboxes for 30 days', async () => {
+    const { fake, ana, groupId, mailbox, mailboxes } = await group();
     const relayKey = `C${'Q'.repeat(86)}`;
     fake.pushKey = relayKey;
     const before = fake.requests.length;
@@ -114,14 +138,17 @@ describe('turning push on for a group (#99)', () => {
     expect(await turning).toBe('on');
 
     expect(ana.push.subscribed).toEqual([{ userVisibleOnly: true, key: relayKey }]);
+    // This week's and each week's to 30 days on (#110): the relay can link them by the endpoint (ADR-0075 §2).
+    expect(mailboxes).toHaveLength(6);
+    expect(mailboxes[0]).toBe(mailbox);
     expect(pushRequests(fake, before).map(line)).toEqual([
       ['GET', '/v1/push/key'],
-      ['PUT', `/v1/push/${mailbox}`],
+      ...each('PUT', mailboxes),
     ]);
-    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
+    for (const one of mailboxes) expect(fake.endpoints(one)).toEqual([fakeEndpoint(1)]);
     expect((await ana.services.store.getGroup(groupId))?.push).toEqual({
       endpoint: fakeEndpoint(1),
-      mailboxes: [mailbox],
+      mailboxes,
       instance: fake.instance,
       at: fake.minute,
     });
@@ -212,7 +239,7 @@ describe('turning push on for a group (#99)', () => {
     expect(ana.push.made).toHaveLength(1);
     expect(ana.push.subscribed).toHaveLength(1);
     expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
-    expect(fake.endpoints(mailboxAt(second, 0))).toEqual([fakeEndpoint(1)]);
+    expect(fake.endpoints(mailboxAt(second, fake.minute))).toEqual([fakeEndpoint(1)]);
   });
 
   it('keeps the subscription while another group is still on', async () => {
@@ -230,14 +257,14 @@ describe('turning push on for a group (#99)', () => {
 });
 
 describe('turning push off', () => {
-  it('sends a best-effort DELETE, then ends the subscription once no group is on', async () => {
-    const { fake, ana, groupId, mailbox } = await group();
+  it('sends a best-effort DELETE for each mailbox, then ends the subscription once no group is on', async () => {
+    const { fake, ana, groupId, mailbox, mailboxes } = await group();
     await ana.services.push.turnOn(groupId);
     const before = fake.requests.length;
 
     await ana.services.push.turnOff(groupId);
 
-    expect(pushRequests(fake, before).map(line)).toEqual([['DELETE', `/v1/push/${mailbox}`]]);
+    expect(pushRequests(fake, before).map(line)).toEqual(each('DELETE', mailboxes));
     expect(fake.endpoints(mailbox)).toEqual([]);
     expect(ana.push.subscription).toBeNull();
     expect(ana.push.made[0]?.unsubscribed).toBe(true);
@@ -267,8 +294,8 @@ describe('turning push off', () => {
 });
 
 describe('nudges for my own open Proposals', () => {
-  it('posts D − 1,440 and D once each for my Proposal, and none for another member’s', async () => {
-    const { fake, ana, ben, groupId, mailbox } = await group();
+  it('posts D − 1,440 and D once each for my Proposal, to its own week’s mailbox, and none for another member’s', async () => {
+    const { fake, ana, ben, groupId, mailbox, deadlineBox } = await group();
 
     const proposal = await propose(ana, groupId);
     const deadline = fake.minute + 7 * DAY_MINUTES;
@@ -277,7 +304,11 @@ describe('nudges for my own open Proposals', () => {
     await ben.services.sync.syncOnce();
     await propose(ben, groupId).catch(() => undefined);
 
+    // Never the deadline's week, 7 days on: there, D minus the window would name the
+    // Proposal's receipt in last week's mailbox, and link the two weeks' ids (#110).
+    expect(deadlineBox).not.toBe(mailbox);
     expect(fake.nudges(mailbox)).toEqual([deadline - DAY_MINUTES, deadline]);
+    expect(fake.nudges(deadlineBox)).toEqual([]);
     expect((await ana.services.store.getGroup(groupId))?.nudged).toEqual([
       `${proposal}@${String(deadline - DAY_MINUTES)}`,
       `${proposal}@${String(deadline)}`,
@@ -380,26 +411,98 @@ describe('upkeep, after each sync pass (#99)', () => {
     return setup;
   }
 
-  it('re-PUTs 7 days after the relay last took it, and not a minute before', async () => {
-    const { fake, ana, mailbox } = await pushOn();
+  it('re-PUTs 7 days after the relay last took it, and not a minute before, while its mailboxes stay', async () => {
+    const { fake, ana, groupId, secret } = await group();
+    // One mailbox all along, so only the 7 days can make the registration due: weekly
+    // mailboxes change its set within any 7 days (#110), as the next test shows.
+    const one: MailboxAt = (held) => `one-${base64url(held.secret).slice(0, 39)}`;
+    const push = createPush({
+      store: ana.services.store,
+      relay: createPushRelay({ fetch: fake.fetch }),
+      port: browserPushPort(ana.push.environment),
+      mailboxAt: one,
+    });
+    const store = ana.services.store;
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+    });
+    expect(await push.turnOn(groupId)).toBe('on');
     const start = fake.minute;
 
     fake.minute = start + RENEW_MINUTES - 1;
+    await sync.syncOnce();
     let before = fake.requests.length;
-    await ana.services.sync.syncOnce();
+    await push.upkeep();
     expect(pushRequests(fake, before)).toEqual([]);
 
     fake.minute = start + RENEW_MINUTES;
+    await sync.syncOnce();
     before = fake.requests.length;
-    await ana.services.sync.syncOnce();
+    await push.upkeep();
     expect(pushRequests(fake, before).map(line)).toEqual([
       ['GET', '/v1/push/key'],
-      ['PUT', `/v1/push/${mailbox}`],
+      ['PUT', `/v1/push/${one({ secret }, start)}`],
     ]);
   });
 
+  it('re-PUTs once the week turns, under the next 30 days’ mailboxes, then forgets last week’s (#110)', async () => {
+    const { fake, ana, groupId, secret, mailbox, mailboxes } = await pushOn();
+    // 200 minutes on, past Thursday 00:00 UTC.
+    fake.minute += 200;
+    const next = mailboxesFrom({ secret }, fake.minute);
+    const before = fake.requests.length;
+
+    await ana.services.sync.syncOnce();
+
+    expect(next).toEqual(mailboxes.slice(1, 1 + next.length));
+    expect(pushRequests(fake, before).map(line)).toEqual([
+      ['GET', '/v1/push/key'],
+      ...each('PUT', next),
+      ['DELETE', `/v1/push/${mailbox}`],
+    ]);
+    expect(fake.endpoints(mailbox)).toEqual([]);
+    expect((await ana.services.store.getGroup(groupId))?.push?.mailboxes).toEqual(next);
+  });
+
+  it('keeps last week’s mailbox while a Proposal opened there is open, where its nudges wait, then forgets it (#110)', async () => {
+    const { fake, ana, ben, groupId, secret, mailbox, mailboxes } = await pushOn();
+    await propose(ben, groupId);
+    await ana.services.sync.syncOnce();
+    // Past Thursday 00:00 UTC: the Proposal's week is last week now.
+    fake.minute += 200;
+    let before = fake.requests.length;
+
+    await ana.services.sync.syncOnce();
+
+    // Last week's mailbox stays named, beside the next 30 days', so nothing is due.
+    expect([mailbox, ...mailboxesFrom({ secret }, fake.minute)]).toEqual(mailboxes);
+    expect(pushRequests(fake, before)).toEqual([]);
+    expect((await ana.services.store.getGroup(groupId))?.push?.mailboxes).toEqual(mailboxes);
+    // Ben's device nudged it there, and Ana's phone is still under it.
+    expect(fake.nudges(mailbox)).toHaveLength(2);
+    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
+
+    // Once its deadline has passed, the week goes from the registration, its nudges spent.
+    fake.minute += 7 * DAY_MINUTES;
+    before = fake.requests.length;
+    await ana.services.sync.syncOnce();
+    const later = mailboxesFrom({ secret }, fake.minute);
+    expect(later).not.toContain(mailbox);
+    expect(pushRequests(fake, before).map(line)).toEqual([
+      ['GET', '/v1/push/key'],
+      ...each('PUT', later),
+      ...each(
+        'DELETE',
+        mailboxes.filter((id) => !later.includes(id)),
+      ),
+    ]);
+    expect(fake.endpoints(mailbox)).toEqual([]);
+  });
+
   it('re-PUTs on a new endpoint, forgetting the old one', async () => {
-    const { fake, ana, groupId, mailbox } = await pushOn();
+    const { fake, ana, groupId, mailbox, mailboxes } = await pushOn();
     ana.push.rotate();
     const before = fake.requests.length;
 
@@ -407,8 +510,8 @@ describe('upkeep, after each sync pass (#99)', () => {
 
     expect(pushRequests(fake, before).map(line)).toEqual([
       ['GET', '/v1/push/key'],
-      ['DELETE', `/v1/push/${mailbox}`],
-      ['PUT', `/v1/push/${mailbox}`],
+      ...each('DELETE', mailboxes),
+      ...each('PUT', mailboxes),
     ]);
     expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(2)]);
     expect((await ana.services.store.getGroup(groupId))?.push?.endpoint).toBe(fakeEndpoint(2));
@@ -425,7 +528,7 @@ describe('upkeep, after each sync pass (#99)', () => {
     expect((await ana.services.store.getGroup(groupId))?.push?.instance).toBe(fake.instance);
   });
 
-  it('registers every mailbox a new mailboxAt gives, and puts each nudge in its own week’s mailbox', async () => {
+  it('registers every mailbox a new mailboxAt gives, and puts each nudge in its Proposal’s week’s mailbox', async () => {
     const { fake, ana, groupId, secret } = await group();
     const turn = fake.minute + 3 * DAY_MINUTES;
     const at = twoMailboxes(turn);
@@ -441,19 +544,20 @@ describe('upkeep, after each sync pass (#99)', () => {
     expect(await push.turnOn(groupId)).toBe('on');
     expect(fake.endpoints(early)).toEqual([fakeEndpoint(1)]);
     expect(fake.endpoints(later)).toEqual([fakeEndpoint(1)]);
-    // Ana's own sync runs her own push, whose one mailbox moves the registration back (#98's path).
+    // Ana's own sync runs her own push, whose weekly mailboxes move the registration back.
     await propose(ana, groupId);
-    // Ana's own sync posted these to today's one mailbox; ask again through the stub.
+    // Ana's own sync posted these to the Proposal's week's mailbox; ask again through the stub.
     await ana.services.store.markNudged(groupId, []);
     await push.nudge(groupId);
     const deadline = fake.minute + 7 * DAY_MINUTES;
 
-    expect(fake.nudges(later)).toEqual([deadline - DAY_MINUTES, deadline]);
-    expect(fake.nudges(early)).toEqual([]);
+    // The Proposal's mailbox, never the deadline's, which would link the two (#110).
+    expect(fake.nudges(early)).toEqual([deadline - DAY_MINUTES, deadline]);
+    expect(fake.nudges(later)).toEqual([]);
   });
 
   it('re-PUTs when the mailbox set changes, then forgets the mailbox it no longer has', async () => {
-    const { fake, ana, groupId, mailbox } = await pushOn();
+    const { fake, ana, groupId, mailbox, mailboxes } = await pushOn();
     const at = twoMailboxes(fake.minute + 40 * DAY_MINUTES);
     const push = createPush({
       store: ana.services.store,
@@ -471,7 +575,7 @@ describe('upkeep, after each sync pass (#99)', () => {
     expect(pushRequests(fake, before).map(line)).toEqual([
       ['GET', '/v1/push/key'],
       ['PUT', `/v1/push/${early}`],
-      ['DELETE', `/v1/push/${mailbox}`],
+      ...each('DELETE', mailboxes),
     ]);
     expect(fake.endpoints(early)).toEqual([fakeEndpoint(1)]);
     expect(fake.endpoints(mailbox)).toEqual([]);
@@ -479,7 +583,7 @@ describe('upkeep, after each sync pass (#99)', () => {
   });
 
   it('resubscribes when the relay’s key changes, and swaps the endpoint', async () => {
-    const { fake, ana, groupId, mailbox } = await pushOn();
+    const { fake, ana, groupId, secret, mailbox } = await pushOn();
     fake.pushKey = `D${'w'.repeat(86)}`;
     fake.minute += RENEW_MINUTES;
 
@@ -487,7 +591,8 @@ describe('upkeep, after each sync pass (#99)', () => {
 
     expect(ana.push.made[0]?.unsubscribed).toBe(true);
     expect(ana.push.subscribed.at(-1)).toEqual({ userVisibleOnly: true, key: fake.pushKey });
-    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(2)]);
+    expect(fake.endpoints(mailboxAt({ secret }, fake.minute))).toEqual([fakeEndpoint(2)]);
+    expect(fake.endpoints(mailbox)).toEqual([]);
     expect((await ana.services.store.getGroup(groupId))?.push?.endpoint).toBe(fakeEndpoint(2));
   });
 
@@ -512,7 +617,7 @@ describe('upkeep, after each sync pass (#99)', () => {
   });
 
   it('rests for an hour after a failure, so a refusal never repeats every pass', async () => {
-    const { fake, ana, groupId } = await pushOn();
+    const { fake, ana, groupId, secret, mailbox, mailboxes } = await pushOn();
     let now = TEST_NOW;
     const push = createPush({
       store: ana.services.store,
@@ -535,7 +640,16 @@ describe('upkeep, after each sync pass (#99)', () => {
     fake.pushKey = TEST_PUSH_KEY;
     before = fake.requests.length;
     await push.upkeep();
-    expect(pushRequests(fake, before)).toHaveLength(2);
+    const next = mailboxesFrom({ secret }, fake.minute);
+    expect(next).toEqual([
+      ...mailboxes.slice(1),
+      mailboxAt({ secret }, fake.minute + 30 * DAY_MINUTES),
+    ]);
+    expect(pushRequests(fake, before).map(line)).toEqual([
+      ['GET', '/v1/push/key'],
+      ...each('PUT', next),
+      ['DELETE', `/v1/push/${mailbox}`],
+    ]);
     expect((await ana.services.store.getGroup(groupId))?.push?.at).toBe(fake.minute);
   });
 
@@ -550,8 +664,8 @@ describe('upkeep, after each sync pass (#99)', () => {
 });
 
 describe('Leave (#77, #99)', () => {
-  it('fires a keepalive DELETE before the group is purged, doesn’t wait for it, then ends the subscription', async () => {
-    const { fake, ana, groupId, mailbox } = await group();
+  it('fires a keepalive DELETE for each mailbox before the group is purged, doesn’t wait for them, then ends the subscription', async () => {
+    const { fake, ana, groupId, mailbox, mailboxes } = await group();
     await ana.services.push.turnOn(groupId);
     const order: string[] = [];
     const deletes: RequestInit[] = [];
@@ -592,8 +706,8 @@ describe('Leave (#77, #99)', () => {
     await queueLeave(ana, groupId);
     await sync.syncOnce();
 
-    expect(order).toEqual(['delete', 'purge']);
-    expect(deletes.map((init) => init.keepalive)).toEqual([true]);
+    expect(order).toEqual([...mailboxes.map(() => 'delete'), 'purge']);
+    expect(deletes.map((init) => init.keepalive)).toEqual(mailboxes.map(() => true));
     expect(await store.getGroup(groupId)).toBeUndefined();
     expect(ana.push.subscription).not.toBeNull();
     release();
@@ -688,7 +802,7 @@ async function threeWithPush(fake: FakeRelay = createFakeRelay()) {
   expect(await ana.services.push.turnOn(groupId)).toBe('on');
   const stored = await ana.services.store.getGroup(groupId);
   if (stored === undefined) throw new Error('Expected the group on Ana’s device.');
-  return { fake, groupId, ana, ben, cal, mailbox: mailboxAt(stored, 0) };
+  return { fake, groupId, ana, ben, cal, ...weeklyOf(stored, fake.minute) };
 }
 
 /** Cal leaves from his own device, which posts his leave and forgets the group. */
@@ -698,16 +812,16 @@ async function calLeaves(cal: TestDevice, groupId: string): Promise<void> {
   expect(await cal.services.store.getGroup(groupId)).toBeUndefined();
 }
 
-/** The group's mailbox on `device` now: its current epoch's (#98). */
-async function mailboxNow(device: TestDevice, groupId: string): Promise<string> {
+/** The group's weekly mailboxes on `device` now: its current epoch's (#98), from its relay minute (#110). */
+async function mailboxNow(device: TestDevice, groupId: string) {
   const held = await device.services.store.getGroup(groupId);
   if (held === undefined) throw new Error('Expected the group.');
-  return mailboxAt(held, 0);
+  return weeklyOf(held, held.relayNow ?? 0);
 }
 
 describe('push across a key change (#98)', () => {
   it('moves the registration to the new key’s mailbox: a PUT there, then a DELETE of the old one', async () => {
-    const { fake, groupId, ana, cal, mailbox } = await threeWithPush();
+    const { fake, groupId, ana, cal, mailbox, mailboxes } = await threeWithPush();
     await calLeaves(cal, groupId);
     const before = fake.requests.length;
 
@@ -715,16 +829,16 @@ describe('push across a key change (#98)', () => {
     await ana.services.sync.syncOnce();
 
     const held = await ana.services.store.getGroup(groupId);
-    const next = mailboxAt(held ?? never(), 0);
+    const { mailbox: next, mailboxes: nextWeeks } = await mailboxNow(ana, groupId);
     expect(held?.epoch).toBe(1);
     expect(next).not.toBe(mailbox);
     expect(pushRequests(fake, before).map(line)).toEqual([
       ['GET', '/v1/push/key'],
-      ['PUT', `/v1/push/${next}`],
-      ['DELETE', `/v1/push/${mailbox}`],
+      ...each('PUT', nextWeeks),
+      ...each('DELETE', mailboxes),
     ]);
     expect([fake.endpoints(next), fake.endpoints(mailbox)]).toEqual([[fakeEndpoint(1)], []]);
-    expect(held?.push?.mailboxes).toEqual([next]);
+    expect(held?.push?.mailboxes).toEqual(nextWeeks);
     // A later pass finds nothing due.
     const after = fake.requests.length;
     await ana.services.sync.syncOnce();
@@ -736,7 +850,7 @@ describe('push across a key change (#98)', () => {
     await calLeaves(cal, groupId);
     const before = fake.requests.length;
     await ana.services.sync.syncOnce();
-    const next = await mailboxNow(ana, groupId);
+    const { mailbox: next } = await mailboxNow(ana, groupId);
     const puts = (from: number, box: string) =>
       fake.requests
         .slice(from)
@@ -753,8 +867,8 @@ describe('push across a key change (#98)', () => {
     expect(fake.nudges(next)).toHaveLength(2);
   });
 
-  it('still fires Leave’s keepalive DELETE while a key change holds the outbox', async () => {
-    const { fake, groupId, ana, cal, mailbox } = await threeWithPush();
+  it('still fires Leave’s keepalive DELETEs while a key change holds the outbox', async () => {
+    const { fake, groupId, ana, cal, mailbox, mailboxes } = await threeWithPush();
     await calLeaves(cal, groupId);
     // Ana's device reads Cal's leave, but the relay turns its key change away, so the outbox freezes.
     let refuse = true;
@@ -785,7 +899,7 @@ describe('push across a key change (#98)', () => {
     await sync.syncOnce();
 
     expect(await store.getGroup(groupId)).toBeUndefined();
-    expect(deletes.map((init) => init.keepalive)).toEqual([true]);
+    expect(deletes.map((init) => init.keepalive)).toEqual(mailboxes.map(() => true));
     await vi.waitFor(() => {
       expect(fake.endpoints(mailbox)).toEqual([]);
     });
@@ -826,7 +940,7 @@ function pushOf(device: TestDevice, fake: FakeRelay) {
 
 describe('push in a dissolved group (#108)', () => {
   it('sends no push PUT, nudge or DELETE once the group dissolves, and leaves its registration to expire', async () => {
-    const { fake, ana, groupId, mailbox, held } = await dissolveWithPush();
+    const { fake, ana, groupId, mailbox, everyBox, held } = await dissolveWithPush();
     expect(held?.push).toBeUndefined();
     expect(held?.nudged).toBeUndefined();
     const before = fake.requests.length;
@@ -841,7 +955,7 @@ describe('push in a dissolved group (#108)', () => {
     await push.upkeep();
     await push.turnOff(groupId);
 
-    expect(fake.requests.slice(before).filter((r) => r.url.includes(mailbox))).toEqual([]);
+    expect(fake.requests.slice(before).filter((r) => names(r, everyBox))).toEqual([]);
     expect(pushRequests(fake, before)).toEqual([]);
     // The relay keeps the endpoint until it expires, as it keeps the mailbox's blobs.
     expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
@@ -863,7 +977,7 @@ describe('push in a dissolved group (#108)', () => {
   });
 
   it('keeps up no registration a restore carried into a read-only copy', async () => {
-    const { fake, ana, groupId, mailbox } = await group();
+    const { fake, ana, groupId, everyBox } = await group();
     await ana.services.push.turnOn(groupId);
     const held = (await ana.services.store.getGroup(groupId)) ?? never();
     // As a restore over this device's copy would leave it: the registration, under an archive.
@@ -876,13 +990,13 @@ describe('push in a dissolved group (#108)', () => {
     await pushOf(ana, fake).upkeep();
     await ana.services.sync.syncOnce();
 
-    expect(fake.requests.slice(before).filter((r) => r.url.includes(mailbox))).toEqual([]);
+    expect(fake.requests.slice(before).filter((r) => names(r, everyBox))).toEqual([]);
   });
 });
 
 describe('what push sends the relay', () => {
   it('holds only an endpoint or a relay minute, and never the group, its names or its secret', async () => {
-    const { fake, ana, ben, groupId, secret } = await group();
+    const { fake, ana, ben, groupId, secret, mailboxes } = await group();
     await ana.services.push.turnOn(groupId);
     ben.push.answer = 'granted';
     await ben.services.push.turnOn(groupId);
@@ -891,10 +1005,17 @@ describe('what push sends the relay', () => {
     await ana.services.sync.syncOnce();
     await ben.services.push.turnOff(groupId);
 
+    // Two turn-ons, two nudges, Ana's renewal a week on, which forgets last week's
+    // mailbox, and Ben's turn-off of all six (#110).
     const sent = pushRequests(fake);
-    expect(sent.map((r) => r.method).sort()).toEqual(
-      ['DELETE', 'GET', 'GET', 'GET', 'POST', 'POST', 'PUT', 'PUT', 'PUT'].sort(),
-    );
+    const count = (method: string) => sent.filter((r) => r.method === method).length;
+    expect(['GET', 'PUT', 'POST', 'DELETE'].map(count)).toEqual([
+      3,
+      3 * mailboxes.length,
+      2,
+      1 + mailboxes.length,
+    ]);
+    expect(sent).toHaveLength(6 + 4 * mailboxes.length);
     const canaries = [groupId, base64url(secret), FOUNDING.groupName, FOUNDING.title, 'Ana', 'Ben'];
     for (const request of sent) {
       const body =

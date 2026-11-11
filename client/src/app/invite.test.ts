@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { deriveMailboxId } from '../crypto/groupKeys';
+import { deriveWeekMailboxId } from '../crypto/groupKeys';
 import { deriveInviteMailboxId, newInviteSeed } from '../crypto/invite';
 import { base64url } from '../engine/event';
 import { inviteLink, parseInviteLink, parseInvitePayload } from './invite';
@@ -20,7 +20,7 @@ describe('inviteLink', () => {
     const [beforeHash] = link.split('#');
     expect(beforeHash).not.toContain(base64url(seed));
     expect(link).not.toContain(deriveInviteMailboxId(seed));
-    expect(link).not.toContain(deriveMailboxId(seed));
+    expect(link).not.toContain(deriveWeekMailboxId(seed, 2963));
   });
 });
 

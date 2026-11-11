@@ -23,7 +23,7 @@ import {
   sealPadded,
   signDoorRecord,
 } from './door';
-import { deriveMailboxId } from './groupKeys';
+import { deriveWeekMailboxId } from './groupKeys';
 import { deriveInviteMailboxId } from './invite';
 import { BLOB_SIZES, PayloadTooLarge } from './seal';
 import { deriveShareMailboxId } from './share';
@@ -183,7 +183,8 @@ describe('the door’s channels', () => {
           base64url(pageKey),
           base64url(key),
           replyMailboxOf(key),
-          deriveMailboxId(key),
+          deriveWeekMailboxId(key, 0),
+          deriveWeekMailboxId(key, 2913),
           deriveInviteMailboxId(key),
           deriveShareMailboxId(key),
         ];

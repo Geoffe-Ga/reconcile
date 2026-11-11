@@ -12,8 +12,9 @@
  *   cached or answered here (spec §7), and nothing is cached at run time.
  *
  * - **Push** (#99) shows one fixed notification, "Something new in Reconcile",
- *   whatever the push carries (the relay's carry nothing), and a tap on it
- *   opens the app, which syncs (`src/sw/notify.ts`).
+ *   whatever the push carries (the relay's carry nothing), closing the last
+ *   first only where its tag doesn't replace it, and a tap on it opens the
+ *   app, which syncs (`src/sw/notify.ts`).
  *
  * It never calls `skipWaiting()` or `clients.claim()`: a new version installs
  * in the background and takes over at the next launch, once every Reconcile
@@ -25,8 +26,10 @@
  */
 
 import {
+  type NotificationInterface,
   type NotifyRegistration,
   openApp,
+  replacesByTag,
   type ShownNotification,
   showSomethingNew,
   type WindowClients,
@@ -62,6 +65,8 @@ export interface WorkerScope {
   readonly location: { readonly origin: string };
   readonly registration: NotifyRegistration;
   readonly clients: WindowClients;
+  /** The worker's `Notification`, which TypeScript's worker library leaves off the scope. */
+  readonly Notification?: NotificationInterface;
   fetch(request: Request): Promise<Response>;
   addEventListener(
     type: 'install' | 'activate' | 'push',
@@ -150,8 +155,9 @@ export function startServiceWorker(scope: WorkerScope, precache: Precache): void
     event.respondWith(fromCache(scope, precache, path, request));
   });
   // The push's data is never read: what shows is fixed (#99).
+  const replaces = replacesByTag(scope.Notification);
   scope.addEventListener('push', (event) => {
-    event.waitUntil(showSomethingNew(scope.registration));
+    event.waitUntil(showSomethingNew(scope.registration, replaces));
   });
   scope.addEventListener('notificationclick', (event) => {
     event.waitUntil(openApp(event.notification, scope.clients));

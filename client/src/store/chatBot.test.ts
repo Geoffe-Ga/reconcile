@@ -12,6 +12,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
 import { type EventBodies, type EventType, signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
@@ -398,14 +399,16 @@ async function pullOnly(device: TestDevice, groupId: string): Promise<void> {
   const { store, relay } = device.services;
   const group = await store.getGroup(groupId);
   if (group === undefined) throw new Error('Expected the group on this device.');
-  const channel = channelOf(group.secret);
-  const page = await relay.getBlobs(channel.mailbox, group.cursor);
+  // The week of its last relay minute: these tests stay in one relay week (#110).
+  const channel = channelOf(group.secret, weekOf(group.relayNow ?? START));
+  const after = group.cursors?.[channel.mailbox] ?? group.cursor;
+  const page = await relay.getBlobs(channel.mailbox, after);
   const records = openRecords(xchachaSeal, channel, page.records);
-  const cursor = page.records.at(-1)?.seq ?? group.cursor;
+  const cursors = { ...group.cursors, [channel.mailbox]: page.records.at(-1)?.seq ?? after };
   const { now: relayNow, instance } = page;
   await store.applyPull(
     groupId,
-    { records, cursor, relayNow, instance, lastSyncAt: TEST_NOW },
+    { records, cursors, relayNow, instance, lastSyncAt: TEST_NOW },
     eventIdOf,
   );
 }

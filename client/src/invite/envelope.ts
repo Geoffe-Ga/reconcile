@@ -44,7 +44,7 @@ export interface InvitePreview {
 
 /** What an envelope carries. */
 export interface Envelope {
-  /** The 32-byte group secret, from which the joiner derives the group's mailbox and seal key. */
+  /** The 32-byte group secret, from which the joiner derives the group's weekly mailboxes and seal key. */
   readonly groupSecret: Uint8Array;
   /** The epoch of that secret (#98): 0 until the group's key first changes. */
   readonly epoch: number;

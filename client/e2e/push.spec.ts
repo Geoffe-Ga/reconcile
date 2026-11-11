@@ -12,7 +12,8 @@
  *   off, and no subscription is made.
  * - With no Reconcile window open, a push carrying a canary shows exactly
  *   one notification, "Something new in Reconcile", with only its tag, read
- *   in the worker itself; a second replaces the first.
+ *   in the worker itself once the worker has finished the push; a second
+ *   replaces the first.
  * - Once the app opens again, it closes them.
  */
 import type { BrowserContext, CDPSession } from '@playwright/test';
@@ -37,6 +38,17 @@ const GROUP: NewGroup = {
   founder: 'Ana',
 };
 const CANARY = 'CANARY-push Ana proposed Later quiet hours in Riverside Tenants';
+
+/** All a notification may hold, its time aside: the title and the tag, nothing else. */
+const SOMETHING_NEW = {
+  title: 'Something new in Reconcile',
+  tag: 'reconcile',
+  body: '',
+  data: null,
+  icon: '',
+  badge: '',
+  actions: 0,
+};
 
 /** What a shown notification holds, as the worker reads it. */
 interface Shown {
@@ -85,6 +97,51 @@ async function registrationId(cdp: CDPSession): Promise<string> {
   return found;
 }
 
+/**
+ * Delivers pushes to the worker over the DevTools protocol. Each resolves
+ * only once the worker has finished that push event, to the status Chromium
+ * gives it: "Success" when its `waitUntil` settled, so whatever it showed is
+ * on display.
+ *
+ * `deliverPushMessage` itself answers before the event starts, and a read
+ * while the worker is showing a notification races it: Chromium's
+ * `getNotifications()` deletes its record of any notification it doesn't
+ * find on display as the read begins. A read that lands as the worker shows
+ * one where none showed under its tag loses it for good: it still shows, but
+ * no read returns it. So the test reads only after Chromium logs "Push event
+ * completed".
+ */
+async function pusher(
+  cdp: CDPSession,
+  origin: string,
+  registrationId: string,
+): Promise<(data: string) => Promise<string>> {
+  const completed: string[] = [];
+  cdp.on('BackgroundService.backgroundServiceEventReceived', ({ backgroundServiceEvent }) => {
+    const { service, eventName, eventMetadata } = backgroundServiceEvent;
+    if (
+      service === 'pushMessaging' &&
+      eventName === 'Push event completed' &&
+      backgroundServiceEvent.serviceWorkerRegistrationId === registrationId
+    ) {
+      completed.push(eventMetadata.find(({ key }) => key === 'Status')?.value ?? '');
+    }
+  });
+  await cdp.send('BackgroundService.setRecording', {
+    shouldRecord: true,
+    service: 'pushMessaging',
+  });
+  await cdp.send('BackgroundService.startObserving', { service: 'pushMessaging' });
+  return async (data) => {
+    const before = completed.length;
+    await cdp.send('ServiceWorker.deliverPushMessage', { origin, registrationId, data });
+    await expect
+      .poll(() => completed.length, { message: 'the worker finishes the push event' })
+      .toBe(before + 1);
+    return completed[before] ?? '';
+  };
+}
+
 test('shows one content-free notification per push, and Settings explains it first', async ({
   openProfile,
 }) => {
@@ -131,33 +188,22 @@ test('shows one content-free notification per push, and Settings explains it fir
   await test.step('with no window open, each push shows only “Something new in Reconcile”, once', async () => {
     const context = page.context();
     const cdp = await context.newCDPSession(page);
-    const id = await registrationId(cdp);
-    const origin = new URL(page.url()).origin;
+    const push = await pusher(cdp, new URL(page.url()).origin, await registrationId(cdp));
     // As on a phone in a pocket: no Reconcile window is open to close what shows.
     await page.goto('about:blank');
-    const push = () =>
-      cdp.send('ServiceWorker.deliverPushMessage', { origin, registrationId: id, data: CANARY });
 
-    await push();
-    await expect.poll(async () => (await shown(context)).length).toBe(1);
-    const [first] = await shown(context);
-    expect(first).toEqual({
-      title: 'Something new in Reconcile',
-      tag: 'reconcile',
-      body: '',
-      data: null,
-      icon: '',
-      badge: '',
-      actions: 0,
-      timestamp: first?.timestamp,
-    });
+    expect(await push(CANARY)).toBe('Success');
+    const [first, ...others] = await shown(context);
+    expect(others).toEqual([]);
+    expect(first).toEqual({ ...SOMETHING_NEW, timestamp: first?.timestamp });
     expect(JSON.stringify(first)).not.toContain('CANARY');
 
-    await push();
+    expect(await push(CANARY)).toBe('Success');
     // The second replaces the first: still one, shown later.
-    await expect
-      .poll(async () => (await shown(context)).map((n) => n.timestamp > (first?.timestamp ?? 0)))
-      .toEqual([true]);
+    const [second, ...more] = await shown(context);
+    expect(more).toEqual([]);
+    expect(second).toEqual({ ...SOMETHING_NEW, timestamp: second?.timestamp });
+    expect(second?.timestamp).toBeGreaterThan(first?.timestamp ?? Infinity);
   });
 
   await test.step('the app closes them once it comes to the front', async () => {
