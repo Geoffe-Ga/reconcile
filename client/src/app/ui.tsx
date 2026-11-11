@@ -19,8 +19,8 @@ import { type Route, routeHref } from './router';
 
 /** Props for {@link PageHeader}. */
 export interface PageHeaderProps {
-  /** A short label above the title, set in caps. */
-  readonly eyebrow?: string;
+  /** A short label above the title, set in caps, which may hold a name in its own `<bdi>`. */
+  readonly eyebrow?: ReactNode;
   /** The screen's heading, which may be a group's own words. */
   readonly title: string;
   /** The browser tab's title. Never a group's words: browser history keeps it. */

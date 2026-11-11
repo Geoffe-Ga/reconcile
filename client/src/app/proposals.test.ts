@@ -164,6 +164,18 @@ describe('propose', () => {
     });
   });
 
+  it('signs for another log when asked, as a coalition’s entry does (#120), queued under its key', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const values = { atom, title: 'Banks too', why: 'Yes.', text: 'Clean banks.', link: null };
+    await propose(device.services, groupId, values, 'coalition-id');
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ type: 'proposal', group: 'coalition-id' });
+  });
+
   it('carries a Dispatch, NFC-normalized, when the values hold one (#112)', async () => {
     const fake = createFakeRelay();
     const { device, groupId, atom } = await founded(fake);

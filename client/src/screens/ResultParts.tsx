@@ -47,6 +47,11 @@ export interface ResultViewProps {
   readonly leaving?: boolean;
   /** Once a dissolved group's ballots are cleared (#108): when, and the tally kept for this Proposal. */
   readonly cleared?: ClearedResult;
+  /**
+   * Whose names the versions carry: the group's members unless given, or for
+   * a coalition motion, the coalition's participants (#120).
+   */
+  readonly names?: Pick<GroupState, 'members' | 'former'>;
 }
 
 /** A Proposal's result in a cleared archive: when this device cleared it, and its kept tally (#108). */
@@ -56,9 +61,13 @@ export interface ClearedResult {
   readonly tally: TallyDetail;
 }
 
-/** "Thank you, Ben and Ana.", each name inside `<bdi>`. */
+/**
+ * "Thank you, Ben and Ana.", each name inside `<bdi>`, with one full stop
+ * even after a name that ends with one, as "Ana E." does.
+ */
 export function Thanks({ names }: { readonly names: readonly string[] }) {
   const { result } = messages;
+  const stopped = names.at(-1)?.endsWith(result.end) === true;
   return (
     <p className="result-thanks">
       {result.thanks}{' '}
@@ -68,7 +77,7 @@ export function Thanks({ names }: { readonly names: readonly string[] }) {
           <bdi>{name}</bdi>
         </Fragment>
       ))}
-      {result.end}
+      {stopped ? null : result.end}
     </p>
   );
 }
@@ -158,6 +167,7 @@ function VersionName({ version, naming }: { readonly version: VersionView; namin
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
   if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
+  if (version.decision !== undefined) return <bdi>{version.decision.title}</bdi>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
