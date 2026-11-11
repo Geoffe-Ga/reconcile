@@ -1,8 +1,9 @@
 # Landing page
 
-One static page that says what Reconcile is, for phones and desktops alike. It is a single scene
-read from top to bottom: sky, canopy, intertwining branches, trunks, soil, roots, and the mycelial
-network that joins them. Each layer carries the part of the product it stands for.
+One static page that says what Reconcile is, for phones and desktops alike, drawn like a 16-bit
+video game. It is a single scene read from top to bottom: sky, canopy, intertwining branches,
+trunks, soil, roots, and the mycelial network that joins them. Each layer carries the part of the
+product it stands for, and the words sit in dialog-box windows on top.
 
 | Layer | What it says |
 |-------|--------------|
@@ -15,13 +16,23 @@ network that joins them. Each layer carries the part of the product it stands fo
 ## Files
 
 - `index.html`: the copy and structure. Edit the words here.
-- `landing.css`: every color, size and animation. The tokens at the top mirror
-  [`DESIGN.md`](../DESIGN.md); the scene colors under them (sky, leaves, bark, soil, threads) are
-  for the illustration only.
-- `scene.mjs`: draws the illustration. `node landing/scene.mjs` rewrites the SVG between the
-  `<!-- scene:NAME -->` markers in `index.html` and nothing else. Change the trees or the network
-  there, never by hand in the SVG.
-- `fonts/`: self-hosted Newsreader and Public Sans (see `fonts/README.md`).
+- `landing.css`: layout, type and which picture goes where. The tokens at the top mirror
+  [`DESIGN.md`](../DESIGN.md); the scene colors under them match the palette in `scene.mjs`.
+- `scene.mjs`: draws the pixel art. `node landing/scene.mjs` rewrites every PNG in `img/`. It has
+  no dependencies and a fixed random seed, so an unchanged script writes the same files. Change
+  the art there, never by editing a PNG.
+- `img/day/`, `img/night/`: the pictures. Night is a palette swap of day: same drawing, different
+  colors, and the stars only show at night.
+- `fonts/`: self-hosted Press Start 2P and Public Sans (see `fonts/README.md`).
+
+### How the pictures fit together
+
+- Every strip is 320 art pixels wide and tiles sideways from the middle of the page. The four
+  trees are at the same x in every strip (`TREES` in `scene.mjs`), so trunks and roots line up.
+- `--px` in `landing.css` is how many screen pixels one art pixel takes: 2 on phones, 3 on most
+  screens, 4 on very wide ones. Keep it a whole number, or the pixels blur.
+- The lights in the mycelium are 12 frames stacked in one PNG. The CSS steps down it. If you
+  change the frame count in `scene.mjs`, change `steps(12)` and the `-2400` in `landing.css` too.
 
 ## See it
 
@@ -34,11 +45,13 @@ Check it at a phone width (about 390px) and a desktop width, in light and dark.
 ## Rules it keeps
 
 - **No scripts, no cookies, no third-party requests.** The page says so in its footer, so keep it
-  true. The moving lights in the network are a CSS animation, and they stop under
+  true. The moving lights in the network and the blinking menu arrow are CSS animations, and they stop under
   `prefers-reduced-motion`.
 - **It passes the deploy CSP as it stands** (`deploy/Caddyfile`): one stylesheet from its own
-  origin, no `<style>` elements, no `style` attributes, no `data:` URLs.
-- **Flat color, no gradients**, as `DESIGN.md` asks. The illustration is cut-paper shapes.
+  origin, images and fonts from its own origin, no `<style>` elements, no `style` attributes, no
+  `data:` URLs.
+- **A small fixed palette, taken from `DESIGN.md`.** Shading is done with dithering, never a
+  smooth gradient, and the pictures are never smoothed when scaled.
 - **The copy uses the domain vocabulary** in the root `CLAUDE.md`, and the ballot labels match
   `client/src/app/messages.ts`.
 - **Nothing here promises a public directory**, or names a real group.
