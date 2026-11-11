@@ -68,13 +68,18 @@ function ok(request: Request): Response {
 
 type Listener = (event: never) => void;
 
-/** The worker's registration, as far as a push uses it: what it shows, and a badge spy. */
+/**
+ * The worker's registration, as far as a push uses it: what it shows, one
+ * notification already open with a spy on its close, and a badge spy.
+ */
 function fakeRegistration() {
   const shown: { title: string; options: unknown }[] = [];
+  const close = vi.fn();
   return {
     shown,
+    close,
     setAppBadge: vi.fn(),
-    getNotifications: () => Promise.resolve([]),
+    getNotifications: () => Promise.resolve([{ close }]),
     showNotification: (title: string, options: unknown) => {
       shown.push({ title, options });
       return Promise.resolve();
@@ -82,8 +87,11 @@ function fakeRegistration() {
   };
 }
 
+/** The worker's `Notification` interface in Chromium, whose notifications have `renotify`. */
+const CHROMIUM_NOTIFICATION = { prototype: { renotify: false } };
+
 /** A worker scope that records its listeners, with spies on the calls that hurry an update. */
-function fakeScope(caches = new FakeCaches()) {
+function fakeScope(caches = new FakeCaches(), notification?: { prototype: object }) {
   const listeners = new Map<string, Listener>();
   const registration = fakeRegistration();
   const windows: { focus: () => Promise<void> }[] = [];
@@ -104,6 +112,7 @@ function fakeScope(caches = new FakeCaches()) {
       matchAll: vi.fn(() => Promise.resolve(windows)),
       openWindow: vi.fn(() => Promise.resolve(null)),
     },
+    ...(notification === undefined ? {} : { Notification: notification }),
   };
   startServiceWorker(scope, PRECACHE);
   return { scope, caches, listeners, network, registration, windows };
@@ -284,24 +293,49 @@ describe('answerFor', () => {
   });
 });
 
+/** Delivers one push carrying text to the worker and waits for what it said to wait for. */
+async function deliverPush(listeners: Map<string, Listener>): Promise<void> {
+  let waited: Promise<unknown> = Promise.resolve();
+  const event = {
+    data: { text: () => 'Ana proposed Later quiet hours in Riverside Tenants' },
+    waitUntil: (promise: Promise<unknown>) => {
+      waited = promise;
+    },
+  };
+  listeners.get('push')?.(event as never);
+  await waited;
+}
+
 describe('push (#99)', () => {
   it('shows only the fixed notification, whatever the push carries', async () => {
     const { listeners, registration } = fakeScope();
-    let waited: Promise<unknown> = Promise.resolve();
-    const event = {
-      data: { text: () => 'Ana proposed Later quiet hours in Riverside Tenants' },
-      waitUntil: (promise: Promise<unknown>) => {
-        waited = promise;
-      },
-    };
 
-    listeners.get('push')?.(event as never);
-    await waited;
+    await deliverPush(listeners);
 
     expect(registration.shown).toEqual([
       { title: 'Something new in Reconcile', options: { tag: 'reconcile' } },
     ]);
     expect(registration.setAppBadge).not.toHaveBeenCalled();
+  });
+
+  it('closes the open one first where the browser doesn’t replace by tag, as in Safari', async () => {
+    const { listeners, registration } = fakeScope(new FakeCaches(), { prototype: {} });
+
+    await deliverPush(listeners);
+
+    expect(registration.close).toHaveBeenCalledTimes(1);
+    expect(registration.shown).toHaveLength(1);
+  });
+
+  it('closes nothing where the browser replaces by tag, as in Chromium', async () => {
+    const { listeners, registration } = fakeScope(new FakeCaches(), CHROMIUM_NOTIFICATION);
+
+    await deliverPush(listeners);
+
+    expect(registration.close).not.toHaveBeenCalled();
+    expect(registration.shown).toEqual([
+      { title: 'Something new in Reconcile', options: { tag: 'reconcile' } },
+    ]);
   });
 
   it('opens the app on a tap, focusing a window that is open', async () => {
