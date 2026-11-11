@@ -30,6 +30,8 @@ describe('vector files', () => {
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'chat-thread-first.json',
+      'chat-thread-ignored.json',
       'dispatch-carried.json',
       'dispatch-limits.json',
       'dispatch-sent.json',
@@ -55,6 +57,7 @@ describe('vector files', () => {
       'optin-class.json',
       'optin-ignored.json',
       'optin-narrow.json',
+      'proposal-number.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -67,6 +70,7 @@ describe('vector files', () => {
       'sections-add.json',
       'sections-admission.json',
       'sections-anchor-removed.json',
+      'sections-chat-thread.json',
       'sections-dispatch.json',
       'sections-dissolve.json',
       'sections-pass-order.json',
@@ -116,7 +120,11 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
       'keys',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -404,6 +412,16 @@ describe('vector files', () => {
   });
 
   it.each([
+    'proposal-number',
+    'chat-thread-first',
+    'chat-thread-ignored',
+    'chat-thread-narrowed',
+    'chat-thread-off',
+  ])('include the Discord thread vector "%s" (#123)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
     'dispatch-co-creator',
     'dispatch-rights',
     'dispatch-level',
@@ -429,6 +447,12 @@ describe('vector files', () => {
     'sections-dispatch-ignored',
   ])('include the sections Dispatch vector "%s" (#75, #112)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('include the sections vector "sections-chat-thread" (#75, #123)', () => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'sections-chat-thread',
+    );
   });
 });
 

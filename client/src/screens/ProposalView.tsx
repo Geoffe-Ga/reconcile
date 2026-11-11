@@ -28,6 +28,7 @@ import {
 } from '../app/versionViews';
 import { rightsAt } from '../engine/admission';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
+import { threadFor } from '../engine/chatPosts';
 import { composeOption } from '../engine/composeOption';
 import { closedByDissolve } from '../engine/dissolve';
 import {
@@ -426,6 +427,16 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
 }
 
 /**
+ * Where Join discussion goes: the Proposal's own Discord thread once the log
+ * holds it (#123), else its own link, else the group's latest (#66).
+ */
+function discussionLink(state: GroupState, proposal: Proposal): string | null {
+  const thread = threadFor(state, proposal.id)?.url;
+  if (thread !== undefined) return thread;
+  return proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
+}
+
+/**
  * A Proposal still open when its group dissolved (#108): closed, with no
  * outcome and no ballot, its versions as they stood.
  */
@@ -436,7 +447,7 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={messages.proposal.eyebrowClosed}
+        eyebrow={messages.proposal.eyebrowClosed(proposal.number)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
@@ -498,16 +509,11 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   if (closedByDissolve(state, proposal))
     return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
-  const link =
-    proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
   const { eyebrowOpen, eyebrowClosed, pageTitle } = messages.proposal;
+  const eyebrow = proposal.final ? eyebrowClosed : eyebrowOpen;
   return (
     <Screen state={state} wide={versions.length > 1}>
-      <PageHeader
-        eyebrow={proposal.final ? eyebrowClosed : eyebrowOpen}
-        title={proposal.title}
-        pageTitle={pageTitle}
-      />
+      <PageHeader eyebrow={eyebrow(proposal.number)} title={proposal.title} pageTitle={pageTitle} />
       {proposal.final ? (
         <ResultView
           state={state}
@@ -527,7 +533,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         </p>
       </div>
       <CarriedDispatch proposal={proposal} />
-      <ChatLink href={link} />
+      <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} />
       <PendingVersions props={props} proposal={proposal} />
@@ -626,8 +632,9 @@ function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
 }
 
 /**
- * The Proposal and its ballot (`#/g/{groupId}/p/{proposalId}`; spec §8): the
- * title and why, a countdown, Join discussion, then every version side by
+ * The Proposal and its ballot (`#/g/{groupId}/p/{proposalId}`; spec §8): its
+ * number over the title (#123), the why, a countdown, Join discussion (its
+ * Discord thread once the log holds one), then every version side by
  * side, each a word diff of the section's source with its own score pills,
  * and Add your version while the ballot has room. Who may vote, and whether
  * voting is still open, come from engine state and `can()`, never from level

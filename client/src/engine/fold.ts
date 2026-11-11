@@ -19,14 +19,16 @@
  * (#117). Each member's voting rights arrive at a relay minute the fold
  * records as their `rightsAt`: at once for the founder and the bootstrap's
  * joiners, else after vouches and a wait (admission.ts, #101). The chat bot's
- * claims keep the first per Proposal moment (#119). A Co-Creator's `dispatch`
- * joins the group's Dispatches at its receipt, and a Proposal carrying one
- * sends it when its pass is final, at its close (dispatches.ts, #112). A
- * `dissolve` ends the group (#108): relay time stops at its receipt, and the
- * fold ignores every event after it, so no vouch lands, no wait ends and no
- * key change becomes due or lands from then on (#98). The fold
- * is pure: no I/O, no clock, no randomness, so every device that folds the
- * same records builds the same state.
+ * claims keep the first per Proposal moment (#119), and each Proposal keeps
+ * the first Discord thread its open claimant records (#123). Each Proposal is
+ * numbered by its place among the group's Proposals (#123). A Co-Creator's
+ * `dispatch` joins the group's Dispatches at its receipt, and a Proposal
+ * carrying one sends it when its pass is final, at its close (dispatches.ts,
+ * #112). A `dissolve` ends the group (#108): relay time stops at its receipt,
+ * and the fold ignores every event after it, so no vouch lands, no wait ends
+ * and no key change becomes due or lands from then on (#98). The fold is
+ * pure: no I/O, no clock, no randomness, so every device that folds the same
+ * records builds the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
@@ -40,13 +42,21 @@ import {
   type Level,
   wouldVote,
 } from './capabilities';
-import { type ChatPost, isBotMoment, mayClaim } from './chatPosts';
+import {
+  type ChatPost,
+  type ChatThread,
+  isBotMoment,
+  isThreadUrl,
+  mayClaim,
+  mayRecordThread,
+} from './chatPosts';
 import { optionFor } from './composeOption';
 import { type Dispatch, dispatchFits, maySendDispatch } from './dispatches';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
   type CarriedDispatch,
   type ChatPostedBody,
+  type ChatThreadBody,
   type DispatchBody,
   type DissolveBody,
   type DissolveProposalBody,
@@ -214,6 +224,10 @@ export interface Ballot {
  * id, has no text. A recall's eligible set leaves out the steward it would
  * remove.
  *
+ * `number` is its 1-based place among the group's Proposals in relay order,
+ * counting only the ones the fold kept (#123): the name of its Discord thread
+ * carries it, as no title may reach Discord (ADR-0039).
+ *
  * `class` is how hard the change is, set by `targetClass` from state when it
  * opened, never from the proposer's own fields. It picks the bar the versions
  * are tallied at, which `outcome` carries, and bounds `window`, the whole days
@@ -233,6 +247,7 @@ export interface Proposal {
   readonly id: string;
   readonly seq: number;
   readonly received: number;
+  readonly number: number;
   readonly author: string;
   readonly atom: string;
   readonly target: ProposalTarget;
@@ -280,17 +295,18 @@ export interface IgnoredRecord {
  * order, in force or ended (#117). `vouches` holds every valid vouch in relay
  * order (#101), visible to members like ballots (ADR-0010). `chatPosts` holds
  * the chat bot's winning claims, the first valid `chat-posted` per (Proposal,
- * moment), in relay order (#119). `dispatches` holds the group's Dispatches
- * in the order they went out (#112): each valid `dispatch` at its receipt,
- * and each passed Proposal's at its close, in close order, ahead of any
- * record received from that minute on. `epoch` is the group key's epoch: 0 at
- * genesis, then one more for each canonical key change, which `rotations`
- * keeps in order (#98). `rotationDue` is true once a membership has ended
- * since the last canonical key change, or genesis, until the next, or until
- * the group dissolves, after which no key change can land. `dissolved` is
- * when the group dissolved, and whether its vote chose to wipe every copy, or
- * null while it goes on (#108). Once it has dissolved, `at` stays at that
- * receipt whatever the relay's `now`.
+ * moment), in relay order (#119), and `chatThreads` each Proposal's Discord
+ * thread, the first valid `chat-thread` for it, in relay order (#123).
+ * `dispatches` holds the group's Dispatches in the order they went out
+ * (#112): each valid `dispatch` at its receipt, and each passed Proposal's at
+ * its close, in close order, ahead of any record received from that minute
+ * on. `epoch` is the group key's epoch: 0 at genesis, then one more for each
+ * canonical key change, which `rotations` keeps in order (#98). `rotationDue`
+ * is true once a membership has ended since the last canonical key change, or
+ * genesis, until the next, or until the group dissolves, after which no key
+ * change can land. `dissolved` is when the group dissolved, and whether its
+ * vote chose to wipe every copy, or null while it goes on (#108). Once it has
+ * dissolved, `at` stays at that receipt whatever the relay's `now`.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -309,6 +325,7 @@ export interface GroupState {
   readonly narrowings: readonly Narrowing[];
   readonly vouches: readonly Vouch[];
   readonly chatPosts: readonly ChatPost[];
+  readonly chatThreads: readonly ChatThread[];
   readonly dispatches: readonly Dispatch[];
   readonly epoch: number;
   readonly rotations: readonly Rotation[];
@@ -370,6 +387,7 @@ interface Draft {
   readonly narrowings: Narrowing[];
   readonly vouches: Vouch[];
   readonly chatPosts: ChatPost[];
+  readonly chatThreads: ChatThread[];
   readonly dispatches: Dispatch[];
   epoch: number;
   readonly rotations: Rotation[];
@@ -587,13 +605,16 @@ interface Term {
 }
 
 /**
- * What every Proposal opens with: its receipt, author, class, window and a
- * deadline `window` days after its receipt (#106), any Dispatch it carries
- * (#112), and no ballots yet.
+ * What every Proposal opens with: its receipt, its number, the next after
+ * the Proposals already kept (#123), author, class, window and a deadline
+ * `window` days after its receipt (#106), any Dispatch it carries (#112),
+ * and no ballots yet.
  */
-function opening(body: ProposalEventBody, author: string, at: Receipt, { cls, window }: Term) {
+function opening(draft: Draft, body: ProposalEventBody, author: string, at: Receipt, term: Term) {
+  const { cls, window } = term;
   return {
     ...at,
+    number: draft.proposals.length + 1,
     author,
     title: body.title,
     why: body.why,
@@ -618,7 +639,7 @@ function applyEdit(draft: Draft, body: ProposalBody, author: string, at: Receipt
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   draft.proposals.push({
-    ...opening(body, author, at, { cls, window }),
+    ...opening(draft, body, author, at, { cls, window }),
     atom: body.atom,
     target: { kind: 'edit' },
     text: body.text,
@@ -639,7 +660,7 @@ function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Recei
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   draft.proposals.push({
-    ...opening(body, author, at, { cls, window }),
+    ...opening(draft, body, author, at, { cls, window }),
     atom: at.id,
     target: body.target,
     text: body.text,
@@ -668,7 +689,7 @@ function applySteward(
   const { holder } = seatAt(draft, seat);
   const cls = targetClass(draft, body);
   draft.proposals.push({
-    ...opening(body, author, at, { cls, window: draft.rules.windows[cls].default }),
+    ...opening(draft, body, author, at, { cls, window: draft.rules.windows[cls].default }),
     atom: '',
     target: { kind: 'steward', seat, member, holder },
     text: '',
@@ -694,7 +715,7 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   draft.proposals.push({
-    ...opening(body, author, at, { cls, window }),
+    ...opening(draft, body, author, at, { cls, window }),
     atom: '',
     target,
     text: '',
@@ -722,7 +743,7 @@ function applyDissolveProposal(
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   draft.proposals.push({
-    ...opening(body, author, at, { cls, window }),
+    ...opening(draft, body, author, at, { cls, window }),
     atom: '',
     target: body.target,
     text: '',
@@ -814,6 +835,20 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 function versionTextFits(proposal: OpenProposal, text: string): boolean {
   const { kind } = proposal.target;
   return kind === 'edit' || (kind === 'add' && text !== '');
+}
+
+/**
+ * Keeps a Proposal's Discord thread (#123) when its author may record it at
+ * its receipt (chatPosts.ts): a member who isn't suspended and made the
+ * Proposal's winning `open` claim, the bot on in effect, and no thread kept
+ * for it yet, with a link of the one form the fold accepts. The first valid
+ * `chat-thread` per Proposal in relay order wins.
+ */
+function applyChatThread(draft: Draft, body: ChatThreadBody, author: string, at: Receipt): boolean {
+  const { proposal, url } = body;
+  if (!isThreadUrl(url) || !mayRecordThread(draft, author, proposal)) return false;
+  draft.chatThreads.push({ ...at, by: author, proposal, url });
+  return true;
 }
 
 /**
@@ -961,14 +996,22 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 
 /**
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
- * `vouch` (#101), `chat-posted` (#119), `dispatch` (#112), and `kx` and
+ * `vouch` (#101), `chat-posted` (#119), `chat-thread` (#123), `dispatch`
+ * (#112), and `kx` and
  * `key-rotate` (#98).
  */
 type LaterEvent = Extract<
   GroupEvent,
   {
     readonly type:
-      'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'dispatch' | 'kx' | 'key-rotate';
+      | 'suspend'
+      | 'narrow'
+      | 'vouch'
+      | 'chat-posted'
+      | 'chat-thread'
+      | 'dispatch'
+      | 'kx'
+      | 'key-rotate';
   }
 >;
 
@@ -986,6 +1029,8 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
       return applyVouch(draft, event.body, event.author, at);
     case 'chat-posted':
       return applyChatPosted(draft, event.body, event.author, at);
+    case 'chat-thread':
+      return applyChatThread(draft, event.body, event.author, at);
     case 'dispatch':
       return applyDispatch(draft, event.body, event.author, at);
     case 'kx':
@@ -1286,6 +1331,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings: [],
     vouches: [],
     chatPosts: [],
+    chatThreads: [],
     dispatches: [],
     epoch: 0,
     rotations: [],
@@ -1308,7 +1354,8 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings, vouches, chatPosts, dispatches, epoch, rotations, rotationDue } = draft;
+  const { narrowings, vouches, chatPosts, chatThreads, dispatches, epoch, rotations, rotationDue } =
+    draft;
   return {
     group,
     rules,
@@ -1326,6 +1373,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings,
     vouches,
     chatPosts,
+    chatThreads,
     dispatches,
     epoch,
     rotations,
