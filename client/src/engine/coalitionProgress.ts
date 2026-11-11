@@ -11,7 +11,6 @@
  */
 import {
   coalitionOutcome,
-  motionOutcome,
   RESULT_GRACE_MINUTES,
   seatCounts,
   seatResult,
@@ -100,24 +99,4 @@ export function coalitionProgress(
     final: kind === 'fail' || (kind === 'pass' && expired),
     settles,
   };
-}
-
-/**
- * The relay minute the coalition decided motion `motionId` (#104): a pass
- * when it became final, at its deadline plus 10,080 minutes, when results
- * stop counting and the coalition's text changes; a fail at the receipt of
- * the result that failed it, or, when it failed for want of results, at that
- * same minute. Null when the coalition holds no such motion, or `coalition`
- * is a group's state.
- */
-export function motionDecidedAt(coalition: GroupState, motionId: string): number | null {
-  const info = coalition.coalition;
-  const motion = info?.motions.find((m) => m.id === motionId);
-  if (info === null || motion === undefined) return null;
-  const results = info.results.filter((r) => r.motion === motionId);
-  const failing = results.find((_, i) => {
-    const sofar = { results: results.slice(0, i + 1), motions: info.motions };
-    return motionOutcome(sofar, motionId, false).kind === 'fail';
-  });
-  return failing?.received ?? motion.deadline + RESULT_GRACE_MINUTES;
 }

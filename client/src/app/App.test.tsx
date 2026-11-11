@@ -136,6 +136,20 @@ describe('App', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('opens a Document’s change log from the Document view, and its founding text from there (#104)', async () => {
+    const user = userEvent.setup();
+    const ana = await device(createFakeRelay(), 'ana');
+    const groupId = await existingGroup(ana);
+    at(`#/g/${groupId}/doc/${groupId}`);
+    render(<App services={ana.services} />);
+    await user.click(await screen.findByRole('link', { name: 'Change log' }));
+    expect(window.location.hash).toBe(`#/g/${groupId}/doc/${groupId}/log`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
+    expect(screen.getByText('Nothing has changed this Document since it began.')).toBeVisible();
+    expect(screen.getByRole('list', { name: 'Change log' })).toHaveTextContent('Founding text');
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('opens a pasted invite without putting it in the address bar', async () => {
     const user = userEvent.setup();
     const fake = createFakeRelay();

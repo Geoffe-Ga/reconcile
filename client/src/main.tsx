@@ -11,6 +11,7 @@ import './styles/link.css';
 import './styles/door.css';
 import './styles/passkey.css';
 import './styles/coalitions.css';
+import './styles/history.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

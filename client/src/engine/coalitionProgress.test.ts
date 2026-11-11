@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { foldLogs, folded, Logs, seatKey } from '../test/coalitions';
 import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
-import { coalitionProgress, motionDecidedAt, passesNeeded } from './coalitionProgress';
+import { coalitionProgress, passesNeeded } from './coalitionProgress';
 import type { GroupResultValue } from './event';
-import { fold, type GroupState } from './fold';
+import type { GroupState } from './fold';
 import { DAY_MINUTES, DEFAULT_RULES } from './rules';
 
 /** Six member groups, in seat order, and the participant who reports for each. */
@@ -270,51 +270,6 @@ describe('coalitionProgress', () => {
       { numRuns: 20 },
     );
   }, 30_000);
-});
-
-describe('motionDecidedAt', () => {
-  it('dates a pass when it became final, its deadline plus 10,080 minutes', () => {
-    const { state, motion, deadline } = coalitionWith(
-      2,
-      ['pass', 'pass'],
-      WINDOW + RESULT_GRACE_MINUTES,
-    );
-    expect(motionDecidedAt(state, motion)).toBe(deadline + RESULT_GRACE_MINUTES);
-  });
-
-  it('dates a fail by the receipt of the result that failed it, not a later one', () => {
-    const logs = new Logs();
-    const start = logs.formed(1, SEATS.slice(0, 3), PEOPLE.slice(0, 3));
-    const motion = logs.motion(start, 'ana');
-    logs.result(start + 5, 'ana', motion, 'Riverside Tenants', 'pass');
-    logs.result(start + 9, 'ben', motion, 'Oak St Co-op', 'fail');
-    logs.result(start + 12, 'cy', motion, 'Elm Row', 'fail');
-    const { state } = folded(foldLogs(logs.logs, start + 20), 'coalition');
-    expect(motionDecidedAt(state, motion)).toBe(start + 9);
-  });
-
-  it('dates a fail from 5 groups by the result that left too few to pass', () => {
-    // Each report lands a minute after the last, from the motion's minute on.
-    const { state, motion, deadline } = coalitionWith(5, ['fail', 'pass', 'fail', 'pass', 'pass']);
-    // Two fails of five leave three, short of two-thirds: the second fail, the third report, decides it.
-    expect(motionDecidedAt(state, motion)).toBe(deadline - WINDOW + 3);
-  });
-
-  it('dates a fail by expiry, with results missing, when results stopped counting', () => {
-    const { state, motion, deadline } = coalitionWith(
-      2,
-      ['pass', 'none'],
-      WINDOW + RESULT_GRACE_MINUTES,
-    );
-    expect(progressOf(state, motion).outcome).toBe('fail');
-    expect(motionDecidedAt(state, motion)).toBe(deadline + RESULT_GRACE_MINUTES);
-  });
-
-  it('is null for a motion the coalition doesn’t hold, and for a group’s own state', () => {
-    const { state } = coalitionWith(2, []);
-    expect(motionDecidedAt(state, 'nope')).toBeNull();
-    expect(motionDecidedAt(fold([], null), 'nope')).toBeNull();
-  });
 });
 
 /** {@link progressOf}'s first two arguments for a coalition of `size` with `reports`. */

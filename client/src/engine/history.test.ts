@@ -493,6 +493,18 @@ describe('a coalition’s section history (#100, #120; ADR-0036)', () => {
     ]);
   });
 
+  it('dates a motion that failed for want of results when results stopped counting', () => {
+    const logs = new Logs();
+    const at = logs.formed(R, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'zed');
+    logs.result(at + 1, 'kim', motion, 'A', 'pass');
+    const settles = at + WEEK + RESULT_GRACE_MINUTES;
+    const coalition = folded(foldLogs(logs.logs, settles), 'coalition').state;
+    expect(sectionHistory(coalition, `${logs.ids.coalition ?? ''}.0`).notPassed).toEqual([
+      { proposalId: motion, title: 'Banks too', outcome: 'fail', decidedAt: settles },
+    ]);
+  });
+
   it('carries no group’s voter names, notes or counts, only each group’s pass or fail', () => {
     const { logs, coalition } = coalitionStory();
     const section = `${logs.ids.coalition ?? ''}.0`;

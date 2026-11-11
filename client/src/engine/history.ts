@@ -18,7 +18,8 @@
  * of them appears. `describeChange` says what a pass did as data; the
  * screens put it into words, since src/engine imports no app code.
  */
-import { coalitionProgress, type GroupStanding, motionDecidedAt } from './coalitionProgress';
+import { RESULT_GRACE_MINUTES } from './coalition';
+import { coalitionProgress, type GroupStanding } from './coalitionProgress';
 import { documentOf, documentSections } from './documents';
 import { closeTime, type GroupState, type Proposal, proposalTally, type Version } from './fold';
 import type { ProposalTarget } from './stewards';
@@ -45,8 +46,8 @@ export type PassChange = Exclude<Change, { readonly kind: 'founded' }>;
  * One decision that shaped a section: a final pass, or its founding text.
  * `proposalId`, `title` and `why` are null for the founding text. `decidedAt`
  * is the relay minute it took effect: the Proposal's close (its early close
- * or its deadline), a coalition motion's when the coalition decided it
- * (`motionDecidedAt`), or the genesis's receipt for the founding text. `text`
+ * or its deadline), a coalition motion's when the coalition decided it, or
+ * the genesis's receipt for the founding text. `text`
  * is the section's text right after, the winning version's, or `""` once
  * removed. `author` wrote that text: the winning version's author, the
  * founder for the founding text, or null for a coalition's founding text.
@@ -217,9 +218,16 @@ function steps(state: GroupState): Step[] {
   });
 }
 
-/** When a decision took effect: a Proposal's close, or a coalition motion's when the coalition decided it. */
+/**
+ * When a decision took effect, as the coalition home dates it too: a
+ * Proposal's close, its early close or its deadline. A coalition motion
+ * closes at the result that fails it (#100); otherwise it's decided once
+ * results stop counting, its deadline plus 10,080 minutes, when a pass
+ * becomes final and a motion short of results fails.
+ */
 function decidedAt(state: GroupState, proposal: Proposal): number {
-  return motionDecidedAt(state, proposal.id) ?? closeTime(proposal);
+  const settles = state.coalition !== null && proposal.closedAt === null;
+  return settles ? proposal.deadline + RESULT_GRACE_MINUTES : closeTime(proposal);
 }
 
 /** The winning version's totals: from a cleared archive's kept tally (#108), else the Proposal's own. */

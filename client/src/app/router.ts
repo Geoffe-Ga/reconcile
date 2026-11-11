@@ -41,6 +41,8 @@ export type Route =
   | { readonly name: 'document'; readonly groupId: string; readonly documentId?: string }
   /** Propose a new Document (#92). */
   | { readonly name: 'newDocument'; readonly groupId: string }
+  /** A Document's change log (#104): every change that passed, newest first. */
+  | { readonly name: 'documentLog'; readonly groupId: string; readonly documentId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
@@ -87,7 +89,9 @@ export type Route =
       readonly documentId: string;
     }
   /** Propose a change to one of a coalition's sections (#120). */
-  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string };
+  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
+  /** A coalition Document's change log (#104). */
+  | { readonly name: 'coalitionLog'; readonly coalitionId: string; readonly documentId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -218,9 +222,24 @@ function groupPage(groupId: string, page: string, arg: string | undefined): Rout
   return make?.(groupId, arg ?? '') ?? START;
 }
 
+/**
+ * The Document id of a change log's path, `doc/{documentId}/log` (#104), from
+ * a route's page, its argument and what follows them; null for any other path.
+ */
+function logOf(page: string | undefined, arg: string | undefined, extra: readonly string[]) {
+  const [last, ...more] = extra;
+  const fits = page === 'doc' && last === 'log' && more.length === 0;
+  return fits && arg !== undefined && DOCUMENT_ID.test(arg) ? arg : null;
+}
+
+/** `#/g/{groupId}`, Group home, or one of its pages, the deepest being a change log (#104). */
 function groupRoute(rest: readonly string[]): Route {
   const [groupId, page, arg, ...extra] = rest;
-  if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
+  if (groupId === undefined || !ID.test(groupId)) return START;
+  if (extra.length > 0) {
+    const documentId = logOf(page, arg, extra);
+    return documentId === null ? START : { name: 'documentLog', groupId, documentId };
+  }
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
 }
 
@@ -238,10 +257,18 @@ const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) =>
   ],
 ]);
 
-/** `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or `propose/{atomId}` (#120). */
+/**
+ * `#/c/{coalitionId}`, a coalition's home, or one of its pages:
+ * `doc/{documentId}` or `propose/{atomId}` (#120), or `doc/{documentId}/log`,
+ * a Document's change log (#104).
+ */
 function coalitionRoute(rest: readonly string[]): Route {
   const [coalitionId, page, arg, ...extra] = rest;
-  if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
+  if (coalitionId === undefined || !ID.test(coalitionId)) return START;
+  if (extra.length > 0) {
+    const documentId = logOf(page, arg, extra);
+    return documentId === null ? START : { name: 'coalitionLog', coalitionId, documentId };
+  }
   if (page === undefined) return { name: 'coalition', coalitionId };
   const open = COALITION_PAGES.get(page);
   return open === undefined || arg === undefined ? START : open(coalitionId, arg);
@@ -386,6 +413,8 @@ function groupPath(route: GroupRoute): string {
       return '';
     case 'proposal':
       return `/p/${route.proposalId}`;
+    case 'documentLog':
+      return `/doc/${route.documentId}/log`;
     case 'again':
       return `/again/${route.proposalId}`;
     case 'steward':
@@ -418,6 +447,8 @@ function coalitionHref(route: CoalitionRoute): string {
       return `${home}/doc/${route.documentId}`;
     case 'coalitionPropose':
       return `${home}/propose/${route.atomId}`;
+    case 'coalitionLog':
+      return `${home}/doc/${route.documentId}/log`;
   }
 }
 

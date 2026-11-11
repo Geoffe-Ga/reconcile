@@ -665,6 +665,48 @@ export const messages = {
     markdownLabel: 'The Document as Markdown',
   },
   /**
+   * A section's history, in its side sheet, and a Document's change log
+   * (#104). Where a person's name or a date sits inside a line, the words
+   * around it are kept apart, so the screen sets the name in `<bdi>` and the
+   * date in `<time>`.
+   */
+  history: {
+    open: 'History',
+    /** Each section's History button: its visible word, then the section (WCAG 2.5.3). */
+    openLabel: (section: number) => `History of section ${String(section)}`,
+    title: (section: number) => `History of section ${String(section)}`,
+    /** The sheet's heading for a section a pass has since removed, opened from the change log. */
+    removedTitle: 'History of a removed section',
+    close: 'Close',
+    /** Under the heading while nothing has changed the section since it began. */
+    unchanged: 'No Proposal has changed this section since it began.',
+    founding: 'Founding text',
+    writtenBy: 'Written by',
+    founded: 'Founded',
+    proposedBy: 'Proposed by',
+    decided: 'Decided',
+    /** In place of the text, for the pass that removed the section (#75). */
+    removed: 'This removed the section.',
+    /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
+    noResult: 'No result',
+    seeResult: 'See the full result',
+    notPassed: (proposals: number) => `Proposals that didn’t pass (${count(proposals)})`,
+  },
+  changeLog: {
+    pageTitle: 'Change log',
+    eyebrow: 'Change log',
+    /** The Document view's link to its change log. */
+    link: 'Change log',
+    lede: 'Every change that passed, newest first. Open one to see its section’s history.',
+    /** In place of the lede while the log holds only the Document's beginning. */
+    unchanged: 'Nothing has changed this Document since it began.',
+    founded: 'Founding text',
+    created: 'Started this Document',
+    added: 'Added a section',
+    changed: (words: string) => `Changed ‘${words}’`,
+    removed: (words: string) => `Removed ‘${words}’`,
+  },
+  /**
    * Stewards and suspensions (#102). Where a person's name sits inside a
    * sentence, the words before and after it are kept apart, so the screen
    * sets the name in `<bdi>` (see `Named` in src/app/stewards.tsx).

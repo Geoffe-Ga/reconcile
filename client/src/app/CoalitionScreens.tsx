@@ -1,5 +1,6 @@
 /**
- * A coalition's own screens (#120): its home, its Document and its composer,
+ * A coalition's own screens (#120): its home, its Document, its change log
+ * (#104) and its composer,
  * on the services `main.tsx` builds, as App.tsx wires a group's.
  *
  * Each reads the coalition entries and groups on this device, folded, and
@@ -10,6 +11,8 @@
 import { type ReactNode, useCallback, useMemo } from 'react';
 
 import { seatIn } from '../engine/crossing';
+import { changeLog } from '../engine/history';
+import { ChangeLogView } from '../screens/ChangeLog';
 import { CoalitionHome } from '../screens/CoalitionHome';
 import { CoalitionComposer, type ComposeOutcome } from '../screens/Composer';
 import { CoalitionDocumentView } from '../screens/DocumentView';
@@ -26,6 +29,7 @@ import {
   sectionIsOpen,
   standingIn,
 } from './coalitionHome';
+import { coalitionHistory, type HistorySource } from './historySource';
 import { messages } from './messages';
 import { propose, type ProposalValues } from './proposals';
 import { takePart } from './reconcile';
@@ -122,6 +126,12 @@ interface DocumentScreenProps extends Omit<GateProps, 'children'> {
   readonly documentId: string;
 }
 
+/** The coalition's history source (#104), each motion's result in a group here whose seat decides it. */
+function historyOf(ready: Ready): HistorySource {
+  const view = coalitionHome(ready.held, ready.groups);
+  return coalitionHistory(ready.held.state, [...(view?.open ?? []), ...(view?.decided ?? [])]);
+}
+
 /** One of the coalition's Documents (#120), with Propose a change for whoever may. */
 function DocumentScreen({ services, coalitionId, documentId }: DocumentScreenProps) {
   return (
@@ -136,6 +146,7 @@ function DocumentScreen({ services, coalitionId, documentId }: DocumentScreenPro
           <CoalitionDocumentView
             coalitionId={coalitionId}
             name={state.name}
+            documentId={documentId}
             title={document.title}
             atoms={atoms}
             standing={standingIn(ready.held, ready.groups)}
@@ -145,6 +156,30 @@ function DocumentScreen({ services, coalitionId, documentId }: DocumentScreenPro
             }}
             onTakePart={(name) => ready.onTakePart(takePartGroup(ready), name)}
             copyText={services.copyText}
+            history={historyOf(ready)}
+          />
+        );
+      }}
+    </CoalitionGate>
+  );
+}
+
+/** One of the coalition's Documents' change log (#104), each change opening its section's history. */
+function LogScreen({ services, coalitionId, documentId }: DocumentScreenProps) {
+  return (
+    <CoalitionGate services={services} coalitionId={coalitionId}>
+      {(ready) => {
+        const { state } = ready.held;
+        const document = coalitionDocuments(state).find((each) => each.id === documentId);
+        if (document === undefined) return <CoalitionMissing />;
+        const atoms = documentAtoms(state, documentId);
+        return (
+          <ChangeLogView
+            back={{ name: 'coalitionDocument', coalitionId, documentId }}
+            title={document.title}
+            rows={changeLog(state, documentId)}
+            source={historyOf(ready)}
+            numbers={new Map(atoms.map((atom, i) => [atom.id, i + 1]))}
           />
         );
       }}
@@ -217,5 +252,9 @@ export function CoalitionRouteScreen({
       );
     case 'coalitionPropose':
       return <ProposeScreen services={services} coalitionId={coalitionId} atomId={route.atomId} />;
+    case 'coalitionLog':
+      return (
+        <LogScreen services={services} coalitionId={coalitionId} documentId={route.documentId} />
+      );
   }
 }
