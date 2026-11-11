@@ -119,8 +119,7 @@ function Requests(
             ) : (
               <>
                 <p className="heading-3 request-invited">
-                  {door.invited.before}
-                  <bdi>{groupName}</bdi> {door.invited.after}
+                  <bdi>{groupName}</bdi> {door.invitedYou}
                 </p>
                 <div>
                   <Button

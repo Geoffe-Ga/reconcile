@@ -773,8 +773,8 @@ export const messages = {
     /** Start's list of this device's requests. */
     requestsHeading: 'Asked to join',
     waiting: (day: string) => `Asked ${day}. No invite yet.`,
-    /** Around the group's name: "Riverside Tenants invited you". */
-    invited: { before: '', after: 'invited you' },
+    /** After the group's name: "Riverside Tenants invited you". */
+    invitedYou: 'invited you',
     openInvite: 'Open your invite',
     /** Group home's Applications, for members who may invite. */
     applications: 'Applications',
@@ -782,8 +782,8 @@ export const messages = {
       'People who asked to join at your front door. Only your group’s devices can read these.',
     noApplications: 'No one has asked to join yet.',
     askedOn: (day: string) => `Asked ${day}`,
-    /** Around the inviter's name: "Invited by Ana". */
-    invitedBy: { before: 'Invited by', after: '' },
+    /** Before the inviter's name: "Invited by Ana". */
+    invitedBy: 'Invited by',
     sendInvite: 'Send an invite',
     /** Read after Send an invite's own words, so each button says whose it is. */
     forApplicant: (name: string) => `to ${name}`,

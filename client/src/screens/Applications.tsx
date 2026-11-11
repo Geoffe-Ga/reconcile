@@ -45,11 +45,9 @@ interface CardProps extends Omit<ApplicationsProps, 'applications'> {
 
 /** "Invited by <name>", once the group's log records the invite. */
 function InvitedBy({ state, by }: { readonly state: GroupState; readonly by: string }) {
-  const { before, after } = door.invitedBy;
   return (
     <p className="application-invited">
-      {before} <bdi>{displayName(state, by) ?? ''}</bdi>
-      {after}
+      {door.invitedBy} <bdi>{displayName(state, by) ?? ''}</bdi>
     </p>
   );
 }
