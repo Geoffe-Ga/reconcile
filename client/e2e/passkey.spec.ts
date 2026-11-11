@@ -29,7 +29,7 @@
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
-import type { CDPSession, Page } from '@playwright/test';
+import type { CDPSession, Frame, Page, Request } from '@playwright/test';
 
 import { noFileSharing, withBackupKey } from './support/backupFile';
 
@@ -304,10 +304,18 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
       authenticatorId: anaKey.id,
       isBadUV: true,
     });
+    // Only the reloaded page's requests count: one the page before it started may still land.
     const whileLocked: string[] = [];
-    const record = (request: { url: () => string }) => {
-      if (new URL(request.url()).pathname.startsWith('/v1/')) whileLocked.push(request.url());
+    let reloaded = false;
+    const navigated = (frame: Frame) => {
+      if (frame === page.mainFrame()) reloaded = true;
     };
+    const record = (request: Request) => {
+      if (reloaded && new URL(request.url()).pathname.startsWith('/v1/')) {
+        whileLocked.push(request.url());
+      }
+    };
+    page.on('framenavigated', navigated);
     page.on('request', record);
     await page.goto('/');
     await expect(heading(page, 'Unlock Reconcile')).toBeVisible();
@@ -320,6 +328,8 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     await expectAccessible(ana, 'Unlock, failed');
     // Nothing syncs while locked, so neither a group nor the relay backup (#97) reaches the relay.
     page.off('request', record);
+    page.off('framenavigated', navigated);
+    expect(reloaded).toBe(true);
     expect(whileLocked).toEqual([]);
   });
 
