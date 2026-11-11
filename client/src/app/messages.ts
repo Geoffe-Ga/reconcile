@@ -136,7 +136,6 @@ export const messages = {
     documentTextHint:
       'Leave a blank line between sections. Your group proposes changes one section at a time.',
     documentTextMissing: 'Write at least one section.',
-    section: (section: number) => `Section ${String(section)}`,
     tooLarge: 'This Document is too long to send. Shorten it, then try again.',
     /** Said under the longest block's text when the Documents fit only apart (#92). */
     tooLargeTogether: 'Together, your Documents are too long to send. Shorten one, then try again.',
