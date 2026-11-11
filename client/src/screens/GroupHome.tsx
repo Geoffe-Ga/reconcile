@@ -959,11 +959,15 @@ function InviteSections(props: GroupHomeProps & { readonly current: boolean }) {
 
 /**
  * People, the Stewards (#102), the Rules (#117), the front door's
- * Applications (#121) and the invite, each for whoever may see it. While this member's leave waits for the relay, there's
- * no invite, nor once the group's key changed past this device (#98): its
- * link would carry a key nobody reads any more. A dissolved group has no
- * stewards or opt-ins to speak of, so its copy leaves both out (#108), and a
- * member a vote removed sees none of the four (#115).
+ * Applications (#121) and the invite, each for whoever may see it.
+ *
+ * While this member's leave waits for the relay, there's no invite, nor once
+ * the group's key changed past this device (#98): its link would carry a key
+ * nobody reads any more.
+ *
+ * A dissolved group has no stewards or opt-ins to speak of, so its copy
+ * leaves both out (#108), and a member a vote removed sees none of the four
+ * (#115).
  */
 function MemberSections(props: GroupHomeProps) {
   const { state, me, leaving = false } = props;
