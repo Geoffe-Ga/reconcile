@@ -169,10 +169,13 @@ function BringFields({ found, onBring, onNotNow }: BringFormProps) {
     </Button>
   );
 
+  // A coalition this person takes part in may take the card too (#122).
+  const offersCoalitions = found.groups.some((group) => group.kind === 'coalition');
+  const picked = found.groups.find((group) => group.groupId === groupId);
   return (
     <section className="join-decide stack" aria-labelledby={question}>
       <h2 id={question} className="heading-2">
-        {bring.question}
+        {offersCoalitions ? bring.questionBoth : bring.question}
       </h2>
       {found.groups.length === 0 ? (
         <>
@@ -197,7 +200,7 @@ function BringFields({ found, onBring, onNotNow }: BringFormProps) {
           ) : null}
           <div className="row form-actions">
             <Button type="submit" className="button button-primary">
-              {bring.submit}
+              {picked?.kind === 'coalition' ? bring.submitCoalition : bring.submit}
             </Button>
             {notNow}
           </div>

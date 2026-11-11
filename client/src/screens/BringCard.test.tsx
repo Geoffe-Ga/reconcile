@@ -60,12 +60,16 @@ describe('BringCard, into a coalition (#122)', () => {
       name: messages.bring.groupOrCoalitionLabel,
     });
     expect(screen.getByText(messages.bring.groupOrCoalitionHint)).toBeVisible();
+    expect(
+      screen.getByRole('heading', { level: 2, name: messages.bring.questionBoth }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: messages.bring.submit })).toBeVisible();
     const coalition = within(picker).getByRole('radio', { name: 'Eastside Housing' });
     expect(within(picker).getAllByText(messages.bring.coalitionOption)).toHaveLength(1);
     expect(await axeViolations()).toEqual([]);
     await user.click(coalition);
     await user.type(screen.getByRole('textbox', { name: 'Your name in the coalition' }), 'Ana');
-    await user.click(screen.getByRole('button', { name: 'Bring to my group' }));
+    await user.click(screen.getByRole('button', { name: messages.bring.submitCoalition }));
     expect(onBring).toHaveBeenCalledWith({ ...FOUND, groups }, 'eastside', 'Ana');
   });
 });

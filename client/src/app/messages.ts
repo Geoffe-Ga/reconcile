@@ -1339,6 +1339,9 @@ export const messages = {
     coalitionLede:
       'Propose a coalition of coalitions. Every group in your coalition votes on it, then the other side votes. It forms only if both pass.',
     coalitionWhyHint: 'Tell every group in your coalition why you’d reconcile.',
+    coalitionNameHint: 'A name of its own, apart from either side’s.',
+    coalitionStatementHint:
+      'What both sides would stand for together. Leave a blank line between sections.',
     coalitionWarning:
       'Anyone who opens this link in the next 2 days can read the new coalition from then on. Send it only to someone in the group or coalition you want to reconcile with.',
     coalitionLink: 'Open your coalition',
@@ -1356,6 +1359,8 @@ export const messages = {
     admitLede:
       'This coalition has already formed. Your group votes first, then every group in it votes on letting yours in.',
     question: 'Bring this to one of your groups?',
+    /** When a coalition this person takes part in may take it too (#122). */
+    questionBoth: 'Bring this to one of your groups or coalitions?',
     groupLabel: 'Your group',
     groupHint: 'It votes on this card. Only groups where you can propose are listed.',
     /** When a coalition this person takes part in can take the card too (#122). */
@@ -1370,6 +1375,7 @@ export const messages = {
     yourNameHint: 'This name is only shown in this coalition.',
     yourNameMissing: 'Add the name the coalition will see.',
     submit: 'Bring to my group',
+    submitCoalition: 'Bring to my coalition',
     notNow: 'Not now',
     failed: 'Bringing the card didn’t finish. Try again.',
     badLinkTitle: 'This card doesn’t work',

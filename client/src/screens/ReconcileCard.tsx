@@ -82,11 +82,19 @@ function readValues(form: HTMLFormElement, statement: string): CardValues {
   return { name: read('name'), statement, why: read('why'), yourName: read('yourName') };
 }
 
-/** The form's title, lede and Why hint: a group's card's, or a coalition's (#122). */
+/** The form's title, lede and hints: a group's card's, or a coalition's (#122). */
 function wordsFor(coalitionId: string | undefined) {
-  return coalitionId === undefined
-    ? { title: card.title, lede: card.lede, whyHint: card.whyHint }
-    : { title: card.coalitionTitle, lede: card.coalitionLede, whyHint: card.coalitionWhyHint };
+  if (coalitionId === undefined) {
+    const { title, lede, nameHint, statementHint, whyHint } = card;
+    return { title, lede, nameHint, statementHint, whyHint };
+  }
+  return {
+    title: card.coalitionTitle,
+    lede: card.coalitionLede,
+    nameHint: card.coalitionNameHint,
+    statementHint: card.coalitionStatementHint,
+    whyHint: card.coalitionWhyHint,
+  };
 }
 
 /** Where the screen is: the form, posting the card, a post that failed, or the link. */
@@ -140,12 +148,12 @@ export function CardMade({ groupId, proposalId, link, copyText, coalitionId }: M
 interface FormProps {
   readonly onSubmit: (form: HTMLFormElement, statement: string) => Promise<void>;
   readonly refused: Record<string, string>;
-  /** The hint under Why: to a group, or to every group in a coalition (#122). */
-  readonly whyHint: string;
+  /** The hints under the name, the statement and Why: a group's, or a coalition's (#122). */
+  readonly hints: Pick<ReturnType<typeof wordsFor>, 'nameHint' | 'statementHint' | 'whyHint'>;
 }
 
 /** The coalition's name, its first statement, why, and your name in it. */
-function CardForm({ onSubmit, refused, whyHint }: FormProps) {
+function CardForm({ onSubmit, refused, hints }: FormProps) {
   const [statement, setStatement] = useState('');
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -156,7 +164,7 @@ function CardForm({ onSubmit, refused, whyHint }: FormProps) {
       <Field
         name="name"
         label={card.nameLabel}
-        hint={card.nameHint}
+        hint={hints.nameHint}
         autoComplete="off"
         isRequired
         validate={checkName}
@@ -164,7 +172,7 @@ function CardForm({ onSubmit, refused, whyHint }: FormProps) {
       <MarkdownField
         name="statement"
         label={card.statementLabel}
-        hint={card.statementHint}
+        hint={hints.statementHint}
         value={statement}
         onChange={setStatement}
         isRequired
@@ -174,7 +182,7 @@ function CardForm({ onSubmit, refused, whyHint }: FormProps) {
       <Field
         name="why"
         label={card.whyLabel}
-        hint={whyHint}
+        hint={hints.whyHint}
         multiline
         isRequired
         validate={checkWhy}
@@ -271,7 +279,7 @@ export function ReconcileCard(props: ReconcileCardProps) {
       {phase.kind === 'form' ? (
         <>
           <p className="lede">{words.lede}</p>
-          <CardForm onSubmit={make} refused={refused} whyHint={words.whyHint} />
+          <CardForm onSubmit={make} refused={refused} hints={words} />
         </>
       ) : null}
       {phase.kind === 'posting' || phase.kind === 'unsent' ? (

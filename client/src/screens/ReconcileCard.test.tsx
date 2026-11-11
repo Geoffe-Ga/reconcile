@@ -47,6 +47,9 @@ describe('ReconcileCard, for a coalition (#122)', () => {
     ).toBeVisible();
     expect(screen.getByText(messages.card.coalitionLede)).toBeVisible();
     expect(screen.getByText(messages.card.coalitionWhyHint)).toBeVisible();
+    expect(screen.getByText(messages.card.coalitionNameHint)).toBeVisible();
+    expect(screen.getByText(messages.card.coalitionStatementHint)).toBeVisible();
+    expect(screen.queryByText(messages.card.statementHint)).toBeNull();
     expect(screen.getByRole('link', { name: /Eastside Housing/ })).toHaveAttribute(
       'href',
       '#/c/eastside',
