@@ -16,8 +16,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "Mission statement",
-              "atoms": ["We share what we grow.\n"]
+              "documents": [{ "title": "Mission statement", "atoms": ["We share what we grow.\n"] }]
             }
           }
         },
@@ -141,8 +140,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "Mission statement",
-              "atoms": ["We share what we grow.\n"]
+              "documents": [{ "title": "Mission statement", "atoms": ["We share what we grow.\n"] }]
             }
           }
         },
@@ -229,8 +227,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -351,8 +353,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -461,8 +467,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -669,8 +679,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -863,8 +877,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -1191,8 +1209,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },

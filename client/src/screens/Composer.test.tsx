@@ -120,7 +120,7 @@ describe('Composer', () => {
     expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${state.group ?? ''}/doc`,
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
     expect(document.title).toBe('Propose a change · Reconcile');
     expect(await axeViolations()).toEqual([]);
@@ -560,6 +560,70 @@ describe('Composer, adding a version of a new section', () => {
   });
 });
 
+describe('Composer, adding a version of a new Document (#92)', () => {
+  /** Ben's open new Document, and the composer on it. */
+  async function onNewDocument() {
+    const log = groupLog();
+    const created = log.newDocument('ben', 'Budget', {
+      title: 'Start a budget',
+      text: '# Budget\n\nWe share costs.\n',
+    });
+    const state = log.state();
+    const onAddVersion = vi.fn<OnAddVersion>(() => Promise.resolve('added'));
+    const memory = memoryDrafts();
+    render(
+      <Composer
+        state={state}
+        me={authorOf('ana')}
+        atomId={created}
+        drafts={memory.drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={onAddVersion}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    return { user: userEvent.setup(), state, created, onAddVersion, memory };
+  }
+
+  it('names the new Document, and starts from its own first sections', async () => {
+    const { state, created, memory } = await onNewDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Add your version' })).toBeVisible();
+    expect(
+      screen.getByText(
+        'This new Document has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+      ),
+    ).toBeVisible();
+    expect(document.querySelector('.document-of')).toHaveTextContent('New Document: Budget');
+    expect(box('Your version')).toHaveValue('# Budget\n\nWe share costs.\n');
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, these become the new Document’s first sections. Leave a blank line between sections. ${HINT}`,
+    );
+    expect(screen.getByRole('link', { name: 'Start a budget' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/p/${created}`,
+    );
+    expect(memory.drafts.load).toHaveBeenCalledWith(created);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the version, and refuses blank text with its own reason', async () => {
+    const { user, created, onAddVersion } = await onNewDocument();
+    await replace(user, 'Your version', ' \n\n ');
+    await user.click(addSubmit());
+    expect(onAddVersion).not.toHaveBeenCalled();
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, these become the new Document’s first sections. Leave a blank line between sections. Write at least one section. ${HINT}`,
+    );
+    await replace(user, 'Your version', '# Budget\n\nWe split costs.');
+    await user.click(addSubmit());
+    expect(onAddVersion).toHaveBeenCalledWith({
+      proposal: created,
+      text: '# Budget\n\nWe split costs.',
+    });
+  });
+});
+
 describe('Composer, proposing again', () => {
   /** Ana proposes with a link, Ben adds a version, and nobody votes, so it lapses at its deadline. */
   function lapsed() {
@@ -667,8 +731,9 @@ describe('Composer drafts, against fake IndexedDB', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: null,
-      title: 'House rules',
-      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+      documents: [
+        { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+      ],
     });
     if (created.outcome !== 'created') throw new Error('Expected a group.');
     const { groupId } = created;

@@ -5,7 +5,13 @@
  * lower case, so `authorOf('ana')` names Ana.
  */
 import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
-import type { CarriedDispatch, DispatchBody, EventDraft, Score } from '../engine/event';
+import type {
+  CarriedDispatch,
+  DispatchBody,
+  EventDraft,
+  FoundingDocument,
+  Score,
+} from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { authorOf, signedAs } from './keys';
@@ -30,6 +36,10 @@ export interface ProposalEntry {
   readonly text?: string;
   readonly link?: string;
   readonly atom?: number;
+  /** The Atom a change names by its id (#92), in place of the first Document's `atom`. */
+  readonly atomId?: string;
+  /** An add's Document (#92): the group's first, its genesis id, when left out. */
+  readonly document?: string;
   /** The voting window in days; the class default when left out. */
   readonly window?: number;
   /** The Dispatch it sends if it passes (#112); none when left out. */
@@ -50,8 +60,13 @@ export interface LogBuilder {
   leave(name: string): void;
   /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
-  /** Adds `name`'s Proposal of a new section after Atom `after`, or first for null (#75). */
+  /**
+   * Adds `name`'s Proposal of a new section after Atom `after`, or first for
+   * null (#75), in the entry's `document`, or else the group's first (#92).
+   */
   addSection(name: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal of a new Document titled `title` (#92), its entry's text its first sections. */
+  newDocument(name: string, title: string, entry?: ProposalEntry): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
@@ -103,6 +118,8 @@ export interface GroupStart {
   /** Each member's level at join, by name; a member not named joins as a Co-Creator. */
   readonly levels?: Readonly<Record<string, Level>>;
   readonly atoms?: readonly string[];
+  /** The Documents genesis founds (#92); one, House rules with `atoms`, when left out. */
+  readonly documents?: readonly FoundingDocument[];
   readonly chat?: string;
 }
 
@@ -124,8 +141,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
   const body = {
     name: 'Riverside Tenants',
     founder,
-    title: 'House rules',
-    atoms,
+    documents: start.documents ?? [{ title: 'House rules', atoms }],
     ...(chat === undefined ? {} : { chat }),
   };
   builder.group = add(founder, { type: 'genesis', group: '', ts: 0, body });
@@ -147,7 +163,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text = 'Quiet after 11pm.',
       } = entry;
       const proposal = {
-        atom: `${group}.${String(entry.atom ?? 0)}`,
+        atom: entry.atomId ?? `${group}.${String(entry.atom ?? 0)}`,
         title,
         why,
         text,
@@ -164,11 +180,28 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text = 'Guests leave by 11pm.\n',
       } = entry;
       const proposal = {
-        target: { kind: 'add', after } as const,
+        target: { kind: 'add', document: entry.document ?? group, after } as const,
         title,
         why,
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    newDocument(name: string, documentTitle: string, entry: ProposalEntry = {}) {
+      const {
+        title = 'Start a budget',
+        why = 'We spend together.',
+        text = '# Budget\n\nWe share costs.\n',
+      } = entry;
+      const proposal = {
+        target: { kind: 'new-document', title: documentTitle } as const,
+        title,
+        why,
+        text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
         ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });

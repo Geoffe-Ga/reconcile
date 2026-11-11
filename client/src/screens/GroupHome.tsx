@@ -5,6 +5,8 @@ import { ChatLink } from '../app/ChatLink';
 import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
 import { DispatchCard } from '../app/DispatchCard';
+import { DocumentLine } from '../app/DocumentLine';
+import { documentLead } from '../app/documentLines';
 import { latestLink } from '../app/latestLink';
 import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
@@ -102,6 +104,7 @@ function Section({ title, children }: { readonly title: string; readonly childre
 }
 
 interface ProposalCardsProps {
+  readonly state: GroupState;
   readonly groupId: string;
   readonly proposals: readonly Proposal[];
   readonly now: number;
@@ -109,8 +112,11 @@ interface ProposalCardsProps {
   readonly line?: string;
 }
 
-/** Open Proposals as cards, each with its title and countdown, opening its ballot. */
-function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
+/**
+ * Open Proposals as cards, each led by the Document it changes or creates
+ * (#92), with its title and countdown, opening its ballot.
+ */
+function ProposalCards({ state, groupId, proposals, now, line }: ProposalCardsProps) {
   return (
     <ul className="card-list">
       {proposals.map((proposal) => (
@@ -119,6 +125,7 @@ function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <DocumentLine lead={documentLead(state, proposal)} />
             <span className="card-link-title">
               <span className="heading-3">
                 <bdi>{proposal.title}</bdi>
@@ -140,6 +147,7 @@ function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
 }
 
 interface OpenListsProps {
+  readonly state: GroupState;
   readonly groupId: string;
   /** What waits on this person; nothing while they're leaving. */
   readonly needsYourVote: readonly Proposal[];
@@ -153,19 +161,19 @@ interface OpenListsProps {
  * Proposals: "Open Proposals", or "Other open Proposals" after it. With none
  * open, one line says so.
  */
-function OpenLists({ groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
+function OpenLists({ state, groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
   const { home } = messages;
   const waits = needsYourVote.length > 0;
   return (
     <>
       {waits ? (
         <Section title={home.needsYourVote}>
-          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} />
+          <ProposalCards state={state} groupId={groupId} proposals={needsYourVote} now={now} />
         </Section>
       ) : null}
       {otherOpen.length > 0 ? (
         <Section title={waits ? home.otherOpen : home.openProposals}>
-          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} />
+          <ProposalCards state={state} groupId={groupId} proposals={otherOpen} now={now} />
         </Section>
       ) : null}
       {waits || otherOpen.length > 0 ? null : (
@@ -182,27 +190,34 @@ function OpenLists({ groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
  * under "Not decided", each saying it closed then, with no outcome. Nothing
  * when there were none.
  */
-function Unfinished({ groupId, proposals, now }: Omit<ProposalCardsProps, 'line'>) {
+function Unfinished({ state, groupId, proposals, now }: Omit<ProposalCardsProps, 'line'>) {
   if (proposals.length === 0) return null;
   const { archive } = messages;
   return (
     <Section title={archive.unfinished}>
-      <ProposalCards groupId={groupId} proposals={proposals} now={now} line={archive.closed} />
+      <ProposalCards
+        state={state}
+        groupId={groupId}
+        proposals={proposals}
+        now={now}
+        line={archive.closed}
+      />
     </Section>
   );
 }
 
-/**
- * Decided: the group's history, each closed Proposal with its title, its
- * outcome in a word, and its close date, opening its result.
- */
-function Decided({
-  groupId,
-  closed,
-}: {
+interface DecidedProps {
+  readonly state: GroupState;
   readonly groupId: string;
   readonly closed: readonly Proposal[];
-}) {
+}
+
+/**
+ * Decided: the group's history, each closed Proposal led by the Document it
+ * changed or created (#92), with its title, its outcome in a word, and its
+ * close date, opening its result.
+ */
+function Decided({ state, groupId, closed }: DecidedProps) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
   return (
     <ul className="card-list">
@@ -212,6 +227,7 @@ function Decided({
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <DocumentLine lead={documentLead(state, proposal)} />
             <span className="card-link-title">
               <span className="heading-3">
                 <bdi>{proposal.title}</bdi>
@@ -777,9 +793,10 @@ interface OpenSectionsProps {
  */
 function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps) {
   if (state.dissolved !== null)
-    return <Unfinished groupId={groupId} proposals={lists.open} now={now} />;
+    return <Unfinished state={state} groupId={groupId} proposals={lists.open} now={now} />;
   return (
     <OpenLists
+      state={state}
       groupId={groupId}
       needsYourVote={leaving ? [] : lists.needsYourVote}
       otherOpen={leaving ? lists.open : lists.otherOpen}
@@ -788,10 +805,61 @@ function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps
   );
 }
 
+interface DocumentsProps {
+  readonly state: GroupState;
+  readonly me: string;
+  /** True while this member leaves, or once the group has dissolved: nothing new is proposed. */
+  readonly readOnly: boolean;
+}
+
+/**
+ * The group's Documents (#92), in order, each opening its own view, then
+ * Propose a new Document for whoever may propose, unless the group takes
+ * nothing new.
+ */
+function Documents({ state, me, readOnly }: DocumentsProps) {
+  const groupId = state.group ?? '';
+  const { home } = messages;
+  return (
+    <Section title={home.documentsLabel}>
+      <ul className="card-list">
+        {state.documents.map(({ id, title }) => (
+          <li key={id}>
+            <Link
+              className="card-link"
+              href={routeHref({ name: 'document', groupId, documentId: id })}
+            >
+              <span className="card-link-title">
+                <span className="heading-2">
+                  <bdi>{title}</bdi>
+                </span>
+                <span className="card-link-arrow" aria-hidden="true">
+                  {messages.app.forward}
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {!readOnly && can(state, me, 'propose') ? (
+        <div className="row">
+          <Link
+            className="button button-secondary"
+            href={routeHref({ name: 'newDocument', groupId })}
+          >
+            {home.proposeDocument}
+          </Link>
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
 /**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
  * other open Proposals and the backup card under them (#78), the latest
- * Dispatch (#112), the group's Document, the Decided list of closed ones,
+ * Dispatch (#112), the group's Documents with Propose a new Document (#92),
+ * the Decided list of closed ones,
  * its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
@@ -833,20 +901,9 @@ export function GroupHome(props: GroupHomeProps) {
         {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
         {dissolved === null ? props.backupCard : null}
         {leads ? null : news}
-        <Section title={messages.home.documentLabel}>
-          <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
-            <span className="card-link-title">
-              <span className="heading-2">
-                <bdi>{state.title}</bdi>
-              </span>
-              <span className="card-link-arrow" aria-hidden="true">
-                {messages.app.forward}
-              </span>
-            </span>
-          </Link>
-        </Section>
+        <Documents state={state} me={me} readOnly={readOnly} />
         <Section title={messages.decided.title}>
-          <Decided groupId={groupId} closed={lists.decided} />
+          <Decided state={state} groupId={groupId} closed={lists.decided} />
         </Section>
         <MemberSections {...props} leaving={readOnly} />
         {discussion === null ? null : (

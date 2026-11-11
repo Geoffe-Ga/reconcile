@@ -15,6 +15,7 @@ import {
   againDraft,
   castBallot,
   chooseLevel,
+  NEW_DOCUMENT_DRAFT,
   propose,
   type ProposalValues,
   proposeDissolve,
@@ -42,8 +43,7 @@ async function founded(fake: FakeRelay) {
     groupName: 'Riverside Tenants',
     yourName: 'Ana',
     chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.',
+    documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
   });
   if (created.outcome !== 'created') throw new Error('Expected a group.');
   await device.services.sync.syncOnce();
@@ -287,29 +287,70 @@ describe('propose', () => {
     const fake = createFakeRelay();
     const { device, groupId, atom } = await founded(fake);
     const draft = { title: 'Guests', why: 'They visit.', text: 'Guests leave by 11.', link: '' };
-    await device.services.store.writeDraft(groupId, addDraft(atom), draft);
-    await device.services.store.writeDraft(groupId, addDraft(null), draft);
+    const start = addDraft({ document: groupId, after: null });
+    const after = addDraft({ document: groupId, after: atom });
+    await device.services.store.writeDraft(groupId, after, draft);
+    await device.services.store.writeDraft(groupId, start, draft);
     await device.services.store.writeDraft(groupId, atom, draft);
-    const target = { kind: 'add', after: atom } as const;
+    const target = { kind: 'add', document: groupId, after: atom } as const;
     const values = { ...draft, target, link: null, window: 10 };
     const result = await propose(device.services, groupId, values);
     const [queued] = await outbox(device, groupId);
     expect(queued?.body).toEqual({
-      target: { kind: 'add', after: atom },
+      target: { kind: 'add', document: groupId, after: atom },
       title: 'Guests',
       why: 'They visit.',
       text: 'Guests leave by 11.\n',
       window: 10,
     });
     expect(result.outcome).toBe('proposed');
-    expect(await device.services.store.readDraft(groupId, addDraft(atom))).toBeUndefined();
-    expect(await device.services.store.readDraft(groupId, addDraft(null))).toEqual(draft);
+    expect(await device.services.store.readDraft(groupId, after)).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, start)).toEqual(draft);
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
   });
 
-  it('keeps each add’s draft apart: the start’s, each anchor’s, and no Atom’s own', () => {
-    expect(new Set([addDraft(null), addDraft('a.0'), addDraft('a.1'), 'a.0']).size).toBe(4);
-    expect(new Set([removalDraft('a.0'), addDraft('a.0'), 'a.0']).size).toBe(3);
+  it('keeps each add’s draft apart: each Document’s start, each anchor’s, and no Atom’s own (#92)', () => {
+    const keys = [
+      addDraft({ document: 'a', after: null }),
+      addDraft({ document: 'a:1', after: null }),
+      addDraft({ document: 'a', after: 'a.0' }),
+      addDraft({ document: 'a', after: 'a.1' }),
+      'a.0',
+      NEW_DOCUMENT_DRAFT,
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(
+      new Set([removalDraft('a.0'), addDraft({ document: 'a', after: 'a.0' }), 'a.0']).size,
+    ).toBe(3);
+    expect(NEW_DOCUMENT_DRAFT).toBe('new-document');
+  });
+
+  it('queues a new Document with its target and normalized text, and clears only its draft (#92)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = {
+      title: 'Start a budget',
+      why: 'We spend together.',
+      text: '# Budget  \r\n\r\nWe share costs.',
+      link: '',
+      documentTitle: 'Budget',
+    };
+    const other = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, NEW_DOCUMENT_DRAFT, draft);
+    await device.services.store.writeDraft(groupId, atom, other);
+    const target = { kind: 'new-document', title: 'Budget' } as const;
+    const { title, why, text } = draft;
+    const values = { title, why, text, target, link: null };
+    const result = await propose(device.services, groupId, values);
+    expect(result.outcome).toBe('proposed');
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target: { kind: 'new-document', title: 'Budget' },
+      title: 'Start a budget',
+      why: 'We spend together.',
+      text: '# Budget\n\nWe share costs.\n',
+    });
+    expect(await device.services.store.readDraft(groupId, NEW_DOCUMENT_DRAFT)).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(other);
   });
 
   it('queues a removal as an edit whose text is empty, clearing the removal’s draft, not the Atom’s', async () => {

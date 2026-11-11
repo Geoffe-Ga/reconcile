@@ -103,7 +103,11 @@ function genesisOf(name: string): SignedEvent {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name, founder: CANARY.founder, title: 'House rules', atoms: [CANARY.atom] },
+    body: {
+      name,
+      founder: CANARY.founder,
+      documents: [{ title: 'House rules', atoms: [CANARY.atom] }],
+    },
   });
 }
 

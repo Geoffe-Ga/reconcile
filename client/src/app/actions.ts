@@ -23,6 +23,7 @@ import type { Seal } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
+import { atomsOf } from '../engine/documents';
 import { base64url, type InviteToken, signEvent } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { displayName } from '../engine/names';
@@ -56,13 +57,18 @@ export interface Services {
   readonly now: () => number;
 }
 
-/** Create group's entries: names and title trimmed, the chat link null when blank. */
+/** One Document Create group founds (#92): its title, trimmed, and its text as typed. */
+export interface FoundingEntry {
+  readonly title: string;
+  readonly text: string;
+}
+
+/** Create group's entries: names trimmed, the chat link null when blank, and its Documents in order. */
 export interface CreateGroupValues {
   readonly groupName: string;
   readonly yourName: string;
   readonly chat: string | null;
-  readonly title: string;
-  readonly text: string;
+  readonly documents: readonly FoundingEntry[];
 }
 
 /** A created group's id, or why it wasn't created. */
@@ -70,12 +76,12 @@ export type CreateResult =
   { readonly outcome: 'created'; readonly groupId: string } | { readonly outcome: 'too-large' };
 
 /**
- * Founds a group: a fresh secret and keys, a signed genesis carrying the
- * Document's sections (split at blank lines, each normalized as Atom text)
- * and the founding rules, and the group kept under the genesis id, which is
- * the group id (spec §4). Every group is founded with `DEFAULT_RULES`
- * (ADR-0074). A genesis whose record is over 64,000 bytes is refused before
- * anything is kept.
+ * Founds a group: a fresh secret and keys, a signed genesis carrying each
+ * Document's title and sections (split at blank lines, each normalized as
+ * Atom text), in order (#92), and the founding rules, and the group kept
+ * under the genesis id, which is the group id (spec §4). Every group is
+ * founded with `DEFAULT_RULES` (ADR-0074). A genesis whose record is over
+ * 64,000 bytes, every Document counted, is refused before anything is kept.
  */
 export async function createGroup(
   services: Services,
@@ -84,12 +90,15 @@ export async function createGroup(
   const secret = newGroupSecret();
   const keys = newSigningKeys();
   const kxKey = newKxKey();
-  const { groupName: name, yourName: founder, chat, title, text } = values;
+  const { groupName: name, yourName: founder, chat } = values;
+  const documents = values.documents.map(({ title, text }) => ({
+    title,
+    atoms: genesisAtoms(text),
+  }));
   const body = {
     name,
     founder,
-    title,
-    atoms: genesisAtoms(text),
+    documents,
     ...(chat === null ? {} : { chat }),
     rules: DEFAULT_RULES,
     kx: base64url(kxPublicKeyOf(kxKey)),
@@ -140,13 +149,18 @@ export type InviteLookup =
   | { readonly kind: 'missing' }
   | { readonly kind: 'offline' };
 
-/** What the invite's preview shows of a group: its name, the inviter's, the title and the first section. */
+/**
+ * What the invite's preview shows of a group: its name, the inviter's, and
+ * its first Document's title and first section (#92).
+ */
 function previewOf(state: GroupState, me: Me): InvitePreview {
+  const [first] = state.documents;
+  const opening = first === undefined ? undefined : atomsOf(state, first.id)[0];
   return {
     groupName: state.name,
     inviterName: displayName(state, me.author) ?? me.name,
-    documentTitle: state.title,
-    excerpt: plainText(state.atoms[0]?.text ?? ''),
+    documentTitle: first?.title ?? '',
+    excerpt: plainText(opening?.text ?? ''),
   };
 }
 

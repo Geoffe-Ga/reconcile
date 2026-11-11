@@ -767,11 +767,97 @@ describe('ProposalView, adding and removing sections', () => {
       group: log.group,
       author: authorOf('ana'),
       ts: 0,
-      body: { target: { kind: 'add', after: null }, ...PROPOSAL },
+      body: { target: { kind: 'add', document: log.group, after: null }, ...PROPOSAL },
     });
     setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
     const block = screen.getByRole('region', { name: 'New section' });
     expect(within(block).getByText('Adds a section at the start')).toBeVisible();
+    expect(side(block, 'ins')).toBe('Quiet after 11pm.');
+  });
+});
+
+describe('ProposalView, several Documents (#92)', () => {
+  const DOCUMENTS = [
+    { title: 'Mission statement', atoms: ['We share.\n'] },
+    { title: 'House rules', atoms: ['Quiet after 11pm.\n', 'Bins go out on Tuesday.\n'] },
+  ];
+
+  it('leads with the Document a change is in, as a link to it', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const proposalId = log.propose('ana', { atom: 0, title: 'We share more' });
+    setup({ state: log.state(), proposalId });
+    const lead = screen.getByRole('link', { name: 'Mission statement' });
+    expect(lead).toHaveAttribute('href', `#/g/${log.group}/doc/${log.group}`);
+    expect(lead.closest('.document-of')).not.toBeNull();
+    expect(screen.getByRole('region', { name: 'Changes to section 1' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('leads an add in the second Document with that Document, and numbers sections within each', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const second = `${log.group}:1`;
+    const added = log.addSection('ana', `${second}.1`, { document: second });
+    const reworded = log.propose('ben', { atomId: `${second}.1` });
+    const { rerender } = setup({ state: log.state(), proposalId: added });
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/doc/${second}`,
+    );
+    expect(screen.getByText('Adds a section after ‘Bins go out on Tuesday.’')).toBeVisible();
+    // Section numbers count within each Document: the second Document's second section is 2.
+    rerender({ proposalId: reworded });
+    expect(screen.getByRole('region', { name: 'Changes to section 2' })).toBeVisible();
+  });
+
+  it('reads a new Document’s Proposal as New Document: <title>, its whole text added, with Add your version', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const proposalId = log.newDocument('ana', 'Budget', {
+      title: 'Start a budget',
+      text: '# Budget\n\nWe share costs.\n',
+    });
+    setup({ state: log.state(), proposalId });
+    const lead = document.querySelector('.document-of');
+    expect(lead).toHaveTextContent('New Document: Budget');
+    expect(within(lead as HTMLElement).queryByRole('link')).toBeNull();
+    const block = screen.getByRole('region', { name: 'First sections' });
+    const version = within(block).getByRole('region', { name: 'Version 1 · Ana' });
+    expect(side(version, 'ins')).toBe('# Budget\n\nWe share costs.\n');
+    expect(side(version, 'del')).toBe('');
+    expect(screen.getByRole('link', { name: 'Add your version' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/propose/${proposalId}`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('links a passed new Document from its result, still reading New Document: <title>', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const proposalId = log.newDocument('ana', 'Budget');
+    log.vote('ana', proposalId, 4);
+    log.vote('ben', proposalId, 4);
+    setup({ state: log.state(), proposalId });
+    const lead = document.querySelector('.document-of');
+    expect(lead).toHaveTextContent('New Document: Budget');
+    expect(within(lead as HTMLElement).getByRole('link', { name: 'Budget' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/doc/${proposalId}`,
+    );
+    expect(screen.getByRole('region', { name: 'Result' })).toHaveTextContent('This passed.');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a new Document’s Proposal while it waits to send, its whole text added', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const waiting = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 0,
+      body: { target: { kind: 'new-document', title: 'Budget' }, ...PROPOSAL },
+    });
+    setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
+    expect(document.querySelector('.document-of')).toHaveTextContent('New Document: Budget');
+    const block = screen.getByRole('region', { name: 'First sections' });
     expect(side(block, 'ins')).toBe('Quiet after 11pm.');
   });
 });

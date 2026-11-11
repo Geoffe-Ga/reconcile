@@ -6,6 +6,9 @@ import { navigate, parseRoute, replaceRoute, routeHref, type Route, useRoute } f
 const GROUP = 'g'.repeat(43);
 const ATOM = `${GROUP}.0`;
 const PROPOSAL = 'p'.repeat(43);
+/** The group's second founding Document (#92), and one of its sections. */
+const SECOND = `${GROUP}:1`;
+const SECOND_ATOM = `${SECOND}.0`;
 /** A personal Document's id (#93): 16 bytes in unpadded base64url. */
 const PERSONAL = 'Q2FuYXJ5IHN0YXRlbWVudA';
 /** A share link's payload (#105): its seed and public key, 43 base64url characters each. */
@@ -38,6 +41,20 @@ describe('parseRoute', () => {
     ['#share/has space', { name: 'shared', payload: 'has space' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
+    [`#/g/${GROUP}/doc/${GROUP}`, { name: 'document', groupId: GROUP, documentId: GROUP }],
+    [`#/g/${GROUP}/doc/${SECOND}`, { name: 'document', groupId: GROUP, documentId: SECOND }],
+    [`#/g/${GROUP}/doc/${PROPOSAL}`, { name: 'document', groupId: GROUP, documentId: PROPOSAL }],
+    [`#/g/${GROUP}/doc/new`, { name: 'newDocument', groupId: GROUP }],
+    [
+      `#/g/${GROUP}/add-first/${SECOND}`,
+      { name: 'add', groupId: GROUP, after: null, document: SECOND },
+    ],
+    [`#/g/${GROUP}/add/${SECOND_ATOM}`, { name: 'add', groupId: GROUP, after: SECOND_ATOM }],
+    [
+      `#/g/${GROUP}/propose/${SECOND_ATOM}`,
+      { name: 'propose', groupId: GROUP, atomId: SECOND_ATOM },
+    ],
+    [`#/g/${GROUP}/remove/${SECOND_ATOM}`, { name: 'remove', groupId: GROUP, atomId: SECOND_ATOM }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
     [`#/g/${GROUP}/add`, { name: 'add', groupId: GROUP, after: null }],
@@ -86,7 +103,7 @@ describe('parseRoute', () => {
     '#/g/',
     '#/g/has space',
     '#/g/%2e%2e',
-    `#/g/${GROUP}/doc/extra`,
+    `#/g/${GROUP}/doc/has space`,
     `#/g/${GROUP}/settings`,
     `#/g/${GROUP}/propose`,
     `#/g/${GROUP}/propose/`,
@@ -99,6 +116,17 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/again/${ATOM}`,
     `#/g/${GROUP}/again/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
+    `#/g/${GROUP}/doc/${SECOND_ATOM}`,
+    `#/g/${GROUP}/doc/${GROUP}:x`,
+    `#/g/${GROUP}/doc/${SECOND}:2`,
+    `#/g/${GROUP}/doc/new/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/extra`,
+    `#/g/${GROUP}/add-first`,
+    `#/g/${GROUP}/add-first/`,
+    `#/g/${GROUP}/add-first/${SECOND_ATOM}`,
+    `#/g/${GROUP}/add-first/${SECOND}/extra`,
+    `#/g/${GROUP}/propose/${SECOND}:2.0`,
+    `#/g/${GROUP}/propose/${GROUP}:.0`,
     `#/g/${GROUP}/add/`,
     `#/g/${GROUP}/add/has space`,
     `#/g/${GROUP}/add/${ATOM}/extra`,
@@ -192,6 +220,12 @@ describe('routeHref', () => {
     [{ name: 'shared', payload: SHARE }, `#share/${SHARE}`],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
+    [{ name: 'document', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}`],
+    [{ name: 'newDocument', groupId: GROUP }, `#/g/${GROUP}/doc/new`],
+    [
+      { name: 'add', groupId: GROUP, after: null, document: SECOND },
+      `#/g/${GROUP}/add-first/${SECOND}`,
+    ],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
     [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
     [{ name: 'add', groupId: GROUP, after: null }, `#/g/${GROUP}/add`],

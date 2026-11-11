@@ -90,11 +90,29 @@ function Thanks({ names }: { readonly names: readonly string[] }) {
   );
 }
 
-/** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
-function passSentence(versions: number, winner: number, removed: boolean): string {
+/** What a pass did: changed a section, removed it (#75), or made a new Document (#92). */
+type PassKind = 'changed' | 'removed' | 'created';
+
+/**
+ * A pass's sentence: it names the winning version when there were several, a
+ * removal says the section is gone (#75), and a new Document that it reads
+ * as its winning text (#92).
+ */
+function passSentence(versions: number, winner: number, kind: PassKind): string {
   const { result } = messages;
-  if (removed) return versions > 1 ? result.passedVersionRemoval(winner) : result.passedRemoval;
-  return versions > 1 ? result.passedVersion(winner) : result.passed;
+  const several = versions > 1;
+  if (kind === 'removed')
+    return several ? result.passedVersionRemoval(winner) : result.passedRemoval;
+  if (kind === 'created') {
+    return several ? result.passedVersionDocument(winner) : result.passedDocument;
+  }
+  return several ? result.passedVersion(winner) : result.passed;
+}
+
+/** What a passed Proposal did with its winning `text`. */
+function passKind(proposal: Proposal, text: string): PassKind {
+  if (proposal.target.kind === 'new-document') return 'created';
+  return text === '' ? 'removed' : 'changed';
 }
 
 /** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
@@ -134,7 +152,9 @@ function Passed({ props, versions, winner }: OutcomeProps & { readonly winner: s
   const names = [shown?.author ?? '', ...(byProposer ? [] : [versions[0]?.author ?? ''])];
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+      <p className="outcome-sentence">
+        {passSentence(versions.length, index + 1, passKind(proposal, text))}
+      </p>
       {text === '' ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={names} />
     </div>
@@ -177,6 +197,12 @@ function Failed({ detail, versions }: OutcomeProps) {
   );
 }
 
+/** True for a Proposal that writes text: a change, a removal, an add (#75) or a new Document (#92). */
+function reproposes(proposal: Proposal): boolean {
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add' || kind === 'new-document';
+}
+
 /**
  * Propose again, for someone who can propose and isn't leaving (ADR-0069, as
  * ADR-0073 cuts it: a fresh Proposal with a fresh window). It waits, and says
@@ -185,9 +211,9 @@ function Failed({ detail, versions }: OutcomeProps) {
 function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
   const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  // A steward or rules vote isn't proposed again from here (#102, #117); a change, a removal or an add is (#75).
-  const { kind } = proposal.target;
-  if (leaving || (kind !== 'edit' && kind !== 'add') || !can(state, me, 'propose')) return null;
+  // A steward or rules vote isn't proposed again from here (#102, #117); a change, a removal, an
+  // add (#75) or a new Document (#92) is.
+  if (leaving || !reproposes(proposal) || !can(state, me, 'propose')) return null;
   const busy = composeOption(state, proposal.atom) !== 'propose';
   return (
     <div className="row result-again">

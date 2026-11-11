@@ -111,7 +111,7 @@ export const messages = {
     pageTitle: 'Create a group',
     eyebrow: 'New group',
     title: 'Create a group',
-    lede: 'You write the first draft of your group’s Document. After that, it changes only when a Proposal passes your group’s vote.',
+    lede: 'You write the first draft of your group’s Documents. After that, each one changes only when a Proposal passes your group’s vote.',
     groupName: 'Group name',
     groupNameMissing: 'Give your group a name.',
     yourName: 'Your name',
@@ -120,17 +120,28 @@ export const messages = {
     chat: 'Chat link (optional)',
     chatHint: 'Where your group already talks, such as a Discord, Signal or WhatsApp group.',
     chatInvalid: 'Use a web link that starts with https:// or http://.',
+    /** Each Document block's heading (#92), numbered from 1. */
+    documentBlock: (number: number) => `Document ${String(number)}`,
+    /** The first block's title until the founder changes it (#92). */
+    defaultTitle: 'Mission statement',
     documentTitle: 'Document title',
     documentTitleHint: 'For example, House rules or Our mission.',
     documentTitleMissing: 'Give the Document a title.',
+    documentTitleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    addDocument: 'Add another Document',
+    removeDocument: 'Remove',
+    /** A block's Remove starts with its visible word (WCAG 2.5.3). */
+    removeDocumentLabel: (number: number) => `Remove Document ${String(number)}`,
     documentText: 'Document text',
     documentTextHint:
       'Leave a blank line between sections. Your group proposes changes one section at a time.',
     documentTextMissing: 'Write at least one section.',
     section: (section: number) => `Section ${String(section)}`,
     tooLarge: 'This Document is too long to send. Shorten it, then try again.',
-    visibility:
-      'Everyone you invite sees the group name, your name, the chat link and this Document.',
+    /** Said under the longest block's text when the Documents fit only apart (#92). */
+    tooLargeTogether: 'Together, your Documents are too long to send. Shorten one, then try again.',
+    visibility: (documents: number) =>
+      `Everyone you invite sees the group name, your name, the chat link and ${documents === 1 ? 'this Document' : 'these Documents'}.`,
     submit: 'Create group',
     failed: 'Your group couldn’t be saved on this device. Try again.',
   },
@@ -189,7 +200,9 @@ export const messages = {
   home: {
     pageTitle: 'Your group',
     eyebrow: 'Your group',
-    documentLabel: 'Document',
+    /** Over the list of the group's Documents (#92). */
+    documentsLabel: 'Documents',
+    proposeDocument: 'Propose a new Document',
     needsYourVote: 'Needs your vote',
     openProposals: 'Open Proposals',
     /** The open Proposals after 'Needs your vote', when it lists any. */
@@ -308,6 +321,26 @@ export const messages = {
       'If your group passes this, everyone in it gets the Dispatch. Voters see it on the ballot first.',
     /** Where a carried Dispatch's title starts: the Document's own title, set in the field. */
     dispatchTitle: (document: string) => `Updated: ${document}`,
+    /** Where a new Document's carried Dispatch title starts (#92). */
+    dispatchNewTitle: (document: string) => `New Document: ${document}`,
+    newDocumentPageTitle: 'Propose a new Document',
+    newDocumentTitle: 'Propose a new Document',
+    newDocumentLede:
+      'If your group passes it, your group has a new Document, listed after the others. What you write here becomes its first sections.',
+    documentTitleLabel: 'Document title',
+    documentTitleHint: 'For example, Budget or Chores.',
+    documentTitleMissing: 'Give the new Document a title.',
+    documentTitleTooLong: (max: number) =>
+      `Keep the Document title to ${count(max)} characters or fewer.`,
+    sectionsLabel: 'First sections',
+    sectionsHint: 'Leave a blank line between sections.',
+    sectionsMissing: 'Write at least one section.',
+    section: (section: number) => `Section ${String(section)}`,
+    newDocumentSubmit: 'Propose this Document',
+    newDocumentVersionLede:
+      'This new Document has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+    newDocumentVersionHint:
+      'If your group passes it, these become the new Document’s first sections. Leave a blank line between sections.',
     dispatchTitleLabel: 'Dispatch title',
     dispatchTextLabel: 'Dispatch text (optional)',
   },
@@ -320,6 +353,8 @@ export const messages = {
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
     newSection: 'New section',
+    /** What a new Document's ballot shows: its first sections, wholly added (#92). */
+    firstSections: 'First sections',
     removes: 'Removes this section',
     addsAfter: (words: string) => `Adds a section after ‘${words}’`,
     addsAtStart: 'Adds a section at the start',
@@ -385,6 +420,10 @@ export const messages = {
     passedRemoval: 'This passed. The Document no longer has this section.',
     passedVersionRemoval: (version: number) =>
       `Version ${String(version)} passed. The Document no longer has this section.`,
+    /** A new Document's pass (#92), before its first sections. */
+    passedDocument: 'This passed. The new Document reads:',
+    passedVersionDocument: (version: number) =>
+      `Version ${String(version)} passed. The new Document reads:`,
     failed: 'This didn’t pass.',
     failedVersions: 'No version passed.',
     lapsed: 'Not enough people weighed in. This isn’t a no.',
@@ -524,6 +563,13 @@ export const messages = {
     following: 'You’re following this group. Choose Collaborator or Co-Creator to vote or propose.',
     notProposing: 'You vote on changes here. Choose Co-Creator to propose them.',
     change: 'Change your involvement',
+  },
+  /** Several Documents per group (#92): what leads a Proposal that changes or creates one. */
+  documents: {
+    /** Before a new Document's title, as in "New Document: Budget". */
+    newPrefix: 'New Document:',
+    missingTitle: 'This Document isn’t in this group',
+    missing: 'Go back to your group to see its Documents.',
   },
   document: {
     pageTitle: 'Document',

@@ -44,14 +44,14 @@ function SenderLine({ state, dispatch }: { state: GroupState; dispatch: Dispatch
   );
 }
 
-/** "Open <Document title> →", when the Dispatch points to a Document. */
+/** "Open <Document title> →", when the Dispatch points to one of the group's Documents (#92). */
 function OpenDocument({ state, doc }: { state: GroupState; doc: string | null }) {
   const title = documentTitle(state, doc);
-  if (title === null) return null;
+  if (title === null || doc === null) return null;
   return (
     <Link
       className="forward-link dispatch-open"
-      href={routeHref({ name: 'document', groupId: state.group ?? '' })}
+      href={routeHref({ name: 'document', groupId: state.group ?? '', documentId: doc })}
     >
       <span>
         {messages.dispatches.open} <bdi>{title}</bdi>

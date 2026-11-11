@@ -42,7 +42,9 @@ async function createRiverside(user: UserEvent): Promise<void> {
     ['Document text', 'Quiet hours start at ten.\n\nBins go out on Tuesday.'],
   ];
   for (const [label, value] of entries) {
-    await user.click(await screen.findByRole('textbox', { name: label }));
+    // Create group's first Document starts titled Mission statement (#92), so each field is cleared.
+    await user.clear(await screen.findByRole('textbox', { name: label }));
+    await user.click(screen.getByRole('textbox', { name: label }));
     await user.paste(value);
   }
   await user.click(screen.getByRole('button', { name: 'Create group' }));
@@ -137,7 +139,7 @@ describe('create, invite by link, join, and read the Document', () => {
     );
 
     // B reads A's Document.
-    await user.click(screen.getByRole('link', { name: /House rules/ }));
+    await user.click(screen.getByRole('link', { name: 'House rules' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
     expect(screen.getByText('Bins go out on Tuesday.')).toBeVisible();

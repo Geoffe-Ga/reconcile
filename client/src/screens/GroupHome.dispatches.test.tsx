@@ -69,7 +69,7 @@ describe('GroupHome: Dispatches (#112)', () => {
     expect(latest).toHaveTextContent('From Ana');
     expect(within(latest).getByRole('link', { name: 'Open House rules' })).toHaveAttribute(
       'href',
-      `#/g/${log.group}/doc`,
+      `#/g/${log.group}/doc/${log.group}`,
     );
     expect(within(dispatches()).queryByText('Meet on Sunday')).toBeNull();
     expect(within(dispatches()).getByRole('link', { name: 'See all Dispatches' })).toHaveAttribute(
@@ -83,7 +83,7 @@ describe('GroupHome: Dispatches (#112)', () => {
     const { log } = group();
     log.dispatch('Ana', { title: 'Meet on Sunday', text: '' });
     renderHome(log.state(), 'kim');
-    expect(order().slice(0, 3)).toEqual(['Dispatches', 'Open Proposals', 'Document']);
+    expect(order().slice(0, 3)).toEqual(['Dispatches', 'Open Proposals', 'Documents']);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -91,7 +91,7 @@ describe('GroupHome: Dispatches (#112)', () => {
     const { log } = group();
     log.dispatch('Ana', { title: 'Meet on Sunday', text: '' });
     renderHome(log.state(), 'ben');
-    expect(order().slice(0, 3)).toEqual(['Needs your vote', 'Dispatches', 'Document']);
+    expect(order().slice(0, 3)).toEqual(['Needs your vote', 'Dispatches', 'Documents']);
   });
 
   it('keeps the backup card with the open Proposals, ahead of a voter’s Dispatches (#78)', () => {

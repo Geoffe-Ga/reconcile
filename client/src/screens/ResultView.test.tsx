@@ -241,6 +241,38 @@ describe('ResultView', () => {
     expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
   });
 
+  it('says a passed new Document reads as its winning text, naming the version when there were several (#92)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const alone = log.newDocument('ana', 'Budget', { text: '# Budget\n\nWe share costs.\n' });
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, alone, 4);
+    const { result } = show({ state: log.state(), proposalId: alone });
+    const block = outcomeBlock(result);
+    expect(block.querySelector('.outcome-sentence')).toHaveTextContent(
+      /^This passed\. The new Document reads:$/,
+    );
+    expect(within(block).getByRole('heading', { name: 'Budget' })).toBeVisible();
+    expect(within(block).getByText('We share costs.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+    const shared = log.newDocument('ana', 'Chores', { text: 'Ana cooks.\n' });
+    const other = log.version('ben', shared, 'Ben cooks.\n');
+    for (const name of ['ana', 'ben', 'cal']) log.ballot(name, shared, { [shared]: 2, [other]: 4 });
+    const second = show({ state: log.state(), proposalId: shared });
+    expect(outcomeBlock(second.result).querySelector('.outcome-sentence')).toHaveTextContent(
+      /^Version 2 passed\. The new Document reads:$/,
+    );
+  });
+
+  it('offers Propose again on a lapsed new Document, as on a change (#92)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const proposalId = log.newDocument('ana', 'Budget');
+    const { result, onProposeAgain, user } = show({ state: log.state(DEADLINE), proposalId });
+    const again = within(result).getByRole('button', { name: 'Propose again' });
+    expect(again).toBeEnabled();
+    await user.click(again);
+    expect(onProposeAgain).toHaveBeenCalledTimes(1);
+  });
+
   it('offers no Propose again to someone who can’t propose', () => {
     const log = groupLog({ members: ['Ben', 'Cal'], levels: { Cal: VOTING } });
     const proposalId = log.propose('ana');

@@ -21,10 +21,17 @@ export interface TestMembers {
 }
 
 /** The founding Document: two sections. */
-export const FOUNDING = {
-  groupName: 'Riverside Tenants',
+const FOUNDING_DOCUMENT = {
   title: 'House rules',
   text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+};
+
+/** The group a test founds: its name, and its one Document (#92). */
+export const FOUNDING = {
+  groupName: 'Riverside Tenants',
+  documents: [FOUNDING_DOCUMENT],
+  title: FOUNDING_DOCUMENT.title,
+  text: FOUNDING_DOCUMENT.text,
 };
 
 /** The level the helpers join at unless a test names one: the creating level, so joiners can do all the founder can. */
@@ -45,7 +52,9 @@ export async function members(
   const [founder, ...joiners] = devices;
   const [founderName = ''] = names;
   if (founder === undefined) throw new Error('A group needs a founder.');
-  const created = await createGroup(founder.services, { ...FOUNDING, yourName: founderName, chat });
+  const { groupName, documents } = FOUNDING;
+  const values = { groupName, documents, yourName: founderName, chat };
+  const created = await createGroup(founder.services, values);
   if (created.outcome !== 'created') throw new Error('Expected a group.');
   const { groupId } = created;
   await founder.services.sync.syncOnce();
@@ -76,8 +85,10 @@ async function joinFrom(
 
 /** `device` founds another group as `founder`, with the founding Document, and syncs; returns its id. */
 export async function foundAnother(device: TestDevice, founder: string): Promise<string> {
+  const { groupName, documents } = FOUNDING;
   const created = await createGroup(device.services, {
-    ...FOUNDING,
+    groupName,
+    documents,
     yourName: founder,
     chat: null,
   });

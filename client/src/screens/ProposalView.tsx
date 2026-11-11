@@ -5,6 +5,8 @@ import { Ballot, type Scores } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
 import { type ChatDetails, type ChatMoment, openMoment } from '../app/chatMessages';
 import { Countdown } from '../app/Countdown';
+import { DocumentLine } from '../app/DocumentLine';
+import { documentLead, sectionPlace } from '../app/documentLines';
 import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
@@ -34,6 +36,7 @@ import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
   isDissolveProposal,
+  isNewDocumentProposal,
   isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
@@ -130,41 +133,57 @@ interface Comparison {
 }
 
 /**
- * Each version is a word diff against the section's text now, or for an add
- * (`atom` null, #75), against nothing, so its whole text shows as added. Once
- * a pass has changed the section, or when the section is gone, each version
- * shows as it reads instead.
+ * Each version is a word diff against the section's text now, numbered within
+ * its Document (#92), or for an add (`atom` null, #75) or a new Document's
+ * first sections, against nothing, so its whole text shows as added under
+ * `adding`. Once a pass has changed the section, or when the section is gone,
+ * each version shows as it reads instead.
  */
-function comparisonFor(state: GroupState, atom: string | null, passed: boolean): Comparison {
+function comparisonFor(
+  state: GroupState,
+  atom: string | null,
+  passed: boolean,
+  adding: string = messages.proposal.newSection,
+): Comparison {
   if (passed) return { title: messages.proposal.onBallot, current: null };
-  if (atom === null) return { title: messages.proposal.newSection, current: '' };
-  const index = state.atoms.findIndex((candidate) => candidate.id === atom);
-  const now = state.atoms[index];
-  if (now === undefined) return { title: messages.proposal.proposed, current: null };
-  return { title: messages.proposal.changes(index + 1), current: now.text };
+  if (atom === null) return { title: adding, current: '' };
+  const place = sectionPlace(state, atom);
+  if (place === null) return { title: messages.proposal.proposed, current: null };
+  return { title: messages.proposal.changes(place.number), current: place.atom.text };
 }
 
 /** A steward or rules ballot shows what it decides, never a diff: it changes no section (#102, #117). */
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
 
-/** True for a Proposal with text: an edit or an add (#75), not a steward or rules one (#102, #117). */
+/**
+ * True for a Proposal with text: an edit, an add (#75) or a new Document
+ * (#92), not a steward or rules one (#102, #117).
+ */
 function writesText(proposal: Proposal): boolean {
   const { kind } = proposal.target;
-  return kind === 'edit' || kind === 'add';
+  return kind === 'edit' || kind === 'add' || kind === 'new-document';
 }
 
-/** The section a Proposal changes, or null when it adds one (#75). */
+/** The section a Proposal changes, or null when it adds one (#75) or a new Document (#92). */
 function changedAtom(proposal: Proposal): string | null {
-  return proposal.target.kind === 'add' ? null : proposal.atom;
+  const { kind } = proposal.target;
+  return kind === 'add' || kind === 'new-document' ? null : proposal.atom;
+}
+
+/** What a ballot of added text is headed: a new section (#75), or a new Document's first sections (#92). */
+function addingTitle(proposal: Pick<Proposal, 'target'>): string {
+  const { proposal: words } = messages;
+  return proposal.target.kind === 'new-document' ? words.firstSections : words.newSection;
 }
 
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
- * an add, whose whole text shows as added (#75), or nothing for a steward one.
+ * an add or a new Document, whose whole text shows as added (#75, #92), or
+ * nothing for a steward one.
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
   return writesText(proposal)
-    ? comparisonFor(state, changedAtom(proposal), passed)
+    ? comparisonFor(state, changedAtom(proposal), passed, addingTitle(proposal))
     : STEWARD_BALLOT;
 }
 
@@ -391,7 +410,7 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
       : [],
   );
   if (mine.length === 0) return null;
-  const { current } = comparisonFor(state, changedAtom(proposal), false);
+  const { current } = comparisonFor(state, changedAtom(proposal), false, addingTitle(proposal));
   return (
     <Block title={messages.proposal.yourVersion} className="text-block">
       {mine.map(({ id, text }) =>
@@ -452,6 +471,7 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
+      <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
       <div className="stack">
         <div className="meta-lines">
           <p className="meta">
@@ -515,6 +535,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader eyebrow={eyebrow(proposal.number)} title={proposal.title} pageTitle={pageTitle} />
+      <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
       {proposal.final ? (
         <ResultView
           state={state}
@@ -545,6 +566,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
 interface WaitingProps {
   readonly state: GroupState;
   readonly me: string;
+  /** The Proposal's event id, which is its id once the relay has it. */
+  readonly id: string;
   readonly body: ProposalEventBody;
   readonly pending: boolean;
   readonly reachable: boolean;
@@ -599,16 +622,28 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
       optIn: null,
     };
   }
-  // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
-  const add = isAddProposal(body);
-  const comparison = comparisonFor(state, add ? null : body.atom, false);
-  const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
+  // An add's or a new Document's whole text shows as added, and an add says where it goes
+  // (#75, #92); a removal says so too.
+  const target = 'target' in body ? body.target : ({ kind: 'edit' } as const);
+  const atom = 'atom' in body ? body.atom : null;
+  const comparison = comparisonFor(state, atom, false, addingTitle({ target }));
+  const does = versionDoes(state, target, body.text);
   const version = { id: '', number: 1, author, text: body.text };
   return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
 }
 
+/** What a waiting Proposal changes or creates, as its page leads with it (#92), or null for none. */
+function waitingLead(state: GroupState, id: string, body: ProposalEventBody) {
+  if (isAddProposal(body) || isNewDocumentProposal(body)) {
+    return documentLead(state, { id, atom: id, target: body.target });
+  }
+  return 'atom' in body
+    ? documentLead(state, { id, atom: body.atom, target: { kind: 'edit' } })
+    : null;
+}
+
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
-function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
+function Waiting({ state, me, id, body, pending, reachable }: WaitingProps) {
   const { comparison, versions, optIn } = waitingVersions(state, me, body);
   return (
     <Screen state={state}>
@@ -617,6 +652,7 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
         title={body.title}
         pageTitle={messages.proposal.pageTitle}
       />
+      <DocumentLine lead={waitingLead(state, id, body)} groupId={state.group ?? ''} />
       <p className="lede" dir="auto">
         {body.why}
       </p>
@@ -660,6 +696,7 @@ export function ProposalView(props: ProposalViewProps) {
       <Waiting
         state={state}
         me={props.me}
+        id={proposalId}
         body={waiting.body}
         pending={waiting.pending}
         reachable={reachable}
