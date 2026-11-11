@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
-import { doorChannelsOf } from '../crypto/door';
+import { doorChannelsOf, replyMailboxOf } from '../crypto/door';
 import { LEVELS } from '../engine/capabilities';
 import { type EventDraft, signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
@@ -118,6 +118,16 @@ async function applyAt(fake: FakeRelay, kim: TestDevice): Promise<void> {
   expect(outcome).toBe('sent');
 }
 
+/** Each PUT to `kim`'s reply mailbox since request `before`: its query and its blob's size. */
+async function replyPuts(fake: FakeRelay, before: number, kim: TestDevice) {
+  const [kept] = await kim.services.store.listSent();
+  const path = `/v1/mailbox/${replyMailboxOf(kept?.seed ?? new Uint8Array(32))}`;
+  return fake.requests
+    .slice(before)
+    .filter((request) => request.method === 'PUT' && request.url.startsWith(path))
+    .map((request) => [request.url.slice(path.length), request.body?.length]);
+}
+
 /** A stranger's device on `fake`. */
 async function stranger(fake: FakeRelay) {
   const kim = await testDevice(fake, 'kim');
@@ -212,7 +222,9 @@ describe('the keeper reads the inbox, and Send an invite answers', () => {
     const id = (await inbox(ana, groupId))[0]?.id ?? '';
     const make = makeInvite;
 
+    const before = fake.requests.length;
     expect(await sendInvite({ ...ana.services, makeInvite: make }, groupId, id)).toBe('sent');
+    expect(await replyPuts(fake, before, kim)).toEqual([['?ttl_days=2', 1024]]);
     await ana.services.sync.syncOnce();
     const group = await ana.services.store.getGroup(groupId);
     expect(fold(group?.log ?? [], null).doorInvites).toMatchObject([{ application: id }]);

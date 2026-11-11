@@ -42,6 +42,8 @@ async function setup(options: Options = {}) {
   const fake = createFakeRelay();
   const reader = { relay: createRelay({ fetch: fake.fetch }), seal: xchachaSeal };
   const page = options.page === undefined ? PAGE : options.page;
+  // A closed page goes over an open one, as a narrowing's does: over no copy, none is posted.
+  if (page === CLOSED) await publishPage(reader, DOOR, PAGE, fake.minute);
   if (page !== null) await publishPage(reader, DOOR, page, fake.minute);
   fake.offline = options.offline ?? false;
   const onApply = vi.fn<(a: Uint8Array, p: OpenPage, v: ApplyValues) => Promise<'sent' | 'failed'>>(
