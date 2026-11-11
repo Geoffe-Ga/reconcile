@@ -33,7 +33,7 @@ import {
   test,
 } from './support/fixtures';
 import { type Canary, describeFinding, keyCanaries, scan, textCanary } from './support/scan';
-import { derive, onlyGroup } from './support/stored';
+import { derive, groupMailboxes, onlyGroup } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -174,8 +174,9 @@ test('when Cal leaves, the group gets a new key: nothing after it opens with his
   await test.step('the Proposal opens under the new key, in the new mailbox', () => {
     const underNew = openedWith(relay.db, newSecret);
     expect(underNew.filter((plaintext) => plaintext.includes(canary))).toHaveLength(1);
-    const mailbox = derive(newSecret, 'reconcile/v1/mailbox').toString('base64url');
-    expect(relayBlobs(relay.db).some((row) => row.mailbox === mailbox)).toBe(true);
+    // The new secret's mailbox for this week (#110).
+    const mailboxes = groupMailboxes(newSecret);
+    expect(relayBlobs(relay.db).some((row) => mailboxes.includes(row.mailbox))).toBe(true);
   });
 
   await test.step('Cal’s earlier link opens, but joining from it leaves him outside, and says why', async () => {
@@ -211,7 +212,7 @@ test('when Cal leaves, the group gets a new key: nothing after it opens with his
       ...kxKeys.flat(),
     ];
     expect(scan(files, canaries).map(describeFinding)).toEqual([]);
-    const mailbox = derive(newSecret, 'reconcile/v1/mailbox').toString('base64url');
-    expect(scan(files, [textCanary('the new mailbox id', mailbox)])).not.toEqual([]);
+    const mailboxes = groupMailboxes(newSecret).map((id) => textCanary('the new mailbox id', id));
+    expect(scan(files, mailboxes)).not.toEqual([]);
   });
 });

@@ -37,7 +37,7 @@ import {
   test,
 } from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
-import { derive, onlyGroup } from './support/stored';
+import { derive, groupMailboxes, onlyGroup } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -137,14 +137,16 @@ async function relayRequestsDuring(page: Page, act: () => Promise<void>): Promis
  * Walks the first-run guide on Group home (#91): each card in `titles` in
  * turn, its heading focused and axe checked, then Done. The guide sends
  * nothing: the only relay requests meanwhile are the sync loop's reads of the
- * group's own mailbox. Done leaves the guide's flag set on the device.
+ * group's own weekly mailboxes (#110). Done leaves the guide's flag set on
+ * the device.
  */
 async function walkGuide(person: Person, titles: readonly string[]): Promise<void> {
   const { page } = person;
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   const { secret } = await onlyGroup(page);
-  const mailbox = derive(Uint8Array.from(secret), 'reconcile/v1/mailbox').toString('base64url');
+  // The group's weekly mailboxes (#110): a pass reads last week's and this week's.
+  const reads = groupMailboxes(Uint8Array.from(secret)).map((id) => `GET /v1/mailbox/${id}`);
   const sent = await relayRequestsDuring(page, async () => {
     for (const [i, title] of titles.entries()) {
       await expect(dialog.getByRole('heading', { name: title })).toBeFocused();
@@ -155,7 +157,7 @@ async function walkGuide(person: Person, titles: readonly string[]): Promise<voi
     }
     await expect(dialog).toHaveCount(0);
   });
-  expect(sent.filter((line) => line !== `GET /v1/mailbox/${mailbox}`)).toEqual([]);
+  expect(sent.filter((line) => !reads.includes(line))).toEqual([]);
   expect(await page.evaluate((key) => window.localStorage.getItem(key), GUIDE_KEY)).toBe('1');
 }
 
@@ -241,20 +243,22 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
 
   const group = await onlyGroup(ana.page);
   const secret = Uint8Array.from(group.secret);
-  const mailbox = derive(secret, 'reconcile/v1/mailbox').toString('base64url');
+  // Its weekly mailboxes (#110), whichever weeks this run's records fell in.
+  const mailboxes = groupMailboxes(secret);
+  const inGroup = 'mailbox IN (?, ?, ?)';
 
   await test.step('the test deletes the group’s oldest relay rows, genesis and the Proposal included', () => {
     const db = new DatabaseSync(relay.db, { timeout: 10_000 });
     try {
       const rows = db
-        .prepare('SELECT seq FROM blobs WHERE mailbox = ? ORDER BY seq')
-        .all(mailbox)
+        .prepare(`SELECT seq FROM blobs WHERE ${inGroup} ORDER BY seq`)
+        .all(...mailboxes)
         .map((row) => Number(row.seq));
       // Genesis, Ben's join, the Proposal, then the two ballots.
       expect(rows).toHaveLength(5);
       const proposal = rows[2] ?? 0;
-      db.prepare('DELETE FROM blobs WHERE mailbox = ? AND seq <= ?').run(mailbox, proposal);
-      const left = db.prepare('SELECT COUNT(*) AS n FROM blobs WHERE mailbox = ?').get(mailbox);
+      db.prepare(`DELETE FROM blobs WHERE ${inGroup} AND seq <= ?`).run(...mailboxes, proposal);
+      const left = db.prepare(`SELECT COUNT(*) AS n FROM blobs WHERE ${inGroup}`).get(...mailboxes);
       expect(Number(left?.n)).toBe(2);
     } finally {
       db.close();
@@ -309,7 +313,8 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     for (const link of links) {
       const seed = seedOf(link);
       const inviteMailbox = derive(seed, 'reconcile/v1/invite-mailbox');
-      for (const other of [groupId, Buffer.from(mailbox, 'base64url'), inviteMailbox]) {
+      const weekly = mailboxes.map((id) => Buffer.from(id, 'base64url'));
+      for (const other of [groupId, ...weekly, inviteMailbox]) {
         expect(seed.equals(other)).toBe(false);
       }
     }

@@ -4,21 +4,31 @@
  * While the page is visible, a pass runs every 3 seconds, and at once on focus.
  * After a failure the wait doubles, up to 30 seconds. When the browser comes
  * back online the wait resets and a pass runs at once, so an event saved
- * offline doesn't sit out the backoff. Each pass, for each group:
+ * offline doesn't sit out the backoff. Mailboxes rotate weekly (#110,
+ * ./mailbox.ts), and each pass, for each group:
  *
- * 1. posts the outbox in order, each record sealed for the group's mailbox,
- *    removing an entry only once the relay accepts it. A Proposal, or a
+ * 1. GETs first: the mailbox of the week of the group's last relay minute
+ *    (week 0's, which no one writes to, before it has one). That GET's `now`
+ *    gives the relay's week, so a device back from a long absence never
+ *    writes to a stale week. The week comes from the relay only;
+ * 2. posts the outbox in order to this week's mailbox, each record sealed for
+ *    it, removing an entry only once the relay accepts it. A Proposal, or a
  *    ballot after which this device's fold closes one early, goes with
  *    `wake=1` (#99, `engine/wake.ts`), whether or not this device's own push
  *    is on: the wake is for the others' phones;
- * 2. reads every record after the cursor, opens each blob (skipping one that
- *    won't open), and appends each event the log doesn't hold yet;
- * 3. saves the cursor, the relay's time and instance, and when it synced;
- * 4. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
+ * 3. reads every record after its cursor in each mailbox `pollWeeks` names:
+ *    last week's and this week's, and each week since the last sync, once,
+ *    back to the last 5. It opens each blob (skipping one that won't open),
+ *    and adds each event the log doesn't hold yet, the weeks' records merged
+ *    by seq and each put in relay order (./logOrder.ts);
+ * 4. saves each mailbox's cursor, dropping those older than 5 weeks, the
+ *    relay's time (the earliest of the GETs' `now`s) and instance, and when
+ *    it synced;
+ * 5. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
  *    only while the group has its bot on and hasn't dissolved, and never once
  *    the loop is halted (#78). Nothing the bot does, or fails to do, changes
  *    whether the pass succeeded;
- * 5. posts the push nudges due for this device's own open Proposals (#99,
+ * 6. posts the push nudges due for this device's own open Proposals (#99,
  *    ./push.ts), each once, which likewise never fails the pass. A read-only
  *    archive (#108) posts none.
  *
@@ -28,10 +38,10 @@
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
  * 2. push upkeep, which keeps each group with push on registered at the
- *    relay (#99), under the mailboxes of its current key, so a phone is
- *    under a new mailbox as soon as the pass that moved it. A read-only
- *    archive gets no upkeep: its registration is left to expire at the
- *    relay, so no request names its mailbox again;
+ *    relay (#99), under the weekly mailboxes of its current key for the next
+ *    30 days, so a phone is under a new mailbox as soon as the pass that
+ *    moved it. A read-only archive gets no upkeep: its registration is left
+ *    to expire at the relay, so no request names its mailbox again;
  * 3. `afterPass`: in the app, the relay backup's daily refresh (#97,
  *    ./relayBackup.ts), last because it may send the largest request of the
  *    day, and so that its snapshot holds each group after its key change.
@@ -39,8 +49,8 @@
  *    (`refreshRelayBackup`). Nothing it does changes whether the pass
  *    succeeded.
  *
- * The mailbox id and seal key are derived from the group's secret on each
- * pass (spec §3); the store keeps only the secret. The cursor moves past a
+ * The mailbox ids and seal key are derived from the group's secret on each
+ * pass (spec §3); the store keeps only the secret. A cursor moves past a
  * blob that won't open, so one bad blob never stalls a group.
  *
  * A group this device is leaving (#77) goes once the relay returns a seq for
@@ -61,25 +71,30 @@
  * finishes still settles its dissolve, which touches only the store, but its
  * chat bot doesn't run.
  *
- * A relay `instance` the group hasn't seen means a fresh relay database: the
- * cursor goes back to 0, the outbox is posted again, and the log's dedupe by
- * event id keeps any event from folding twice. Folded state comes from the
- * log alone, so an event still in the outbox is pending and never folded.
+ * A relay `instance` the group hasn't seen, at the pass's first GET, means a
+ * fresh relay database: the pass reads every mailbox from 0, the outbox goes
+ * to the fresh relay, the pull's records go after the whole log, and the
+ * log's dedupe by event id keeps any event from folding twice. A pass that
+ * meets another instance after its first GET fails, and the next starts
+ * over. Folded state comes from the log alone, so an event still in the
+ * outbox is pending and never folded.
  *
  * A group's key changes when someone leaves (#98, `epochs.ts`). Each record
- * read is tagged with the epoch of the mailbox it came from. While a key
+ * read is tagged with the epoch of the mailboxes it came from. While a key
  * change is due, the outbox sends only `key-rotate` and `leave`. After a pass
  * in which every group synced, a device that sees a key change due syncs that
  * group once more and, if none has landed, posts one to the outgoing epoch's
- * mailbox. A pull that brings a canonical key change this member's wrap opens
- * moves the group to the new mailbox, in the same store change, and that
- * mailbox is read at once. A member with no encryption key posts one. A
- * dissolve ends all of this (#108): the fold makes no key change due once a
- * group has dissolved, and an archive neither writes one nor posts a key.
+ * mailbox for this week. A pull that brings a canonical key change this
+ * member's wrap opens moves the group to the new epoch's mailboxes, in the
+ * same store change, and they are read at once, from the key change's seq.
+ * The old epoch's are read no more, so whatever reaches any week of them
+ * after the key change stays ignored. A member with no encryption key posts
+ * one. A dissolve ends all of this (#108): the fold makes no key change due
+ * once a group has dissolved, and an archive neither writes one nor posts a key.
  */
 
 import { newKxKey } from '../crypto/box';
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import type { Seal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
 import type { Relay, RelayRecord } from '../net/relay';
@@ -99,6 +114,7 @@ import {
   passesFreeze,
 } from './epochs';
 import { eventIdOf } from './eventId';
+import { keptWeeks, pollWeeks } from './mailbox';
 import type { PushUpkeep } from './push';
 
 /** The wait between passes while they succeed. */
@@ -276,12 +292,18 @@ export function createSync(options: SyncOptions): Sync {
    * Post the group's current outbox in order; an entry leaves only once the
    * relay accepts it. While `frozen` (#98), every entry but a `key-rotate` or
    * `leave` stays queued, in its place. Once the relay has returned a seq for
-   * the group's leave, the group is purged, and this returns true.
+   * the group's leave, the group is purged: `left`. Else `posted` when the
+   * relay took anything, `none` when it took nothing.
    */
-  async function postOutbox(groupId: string, { mailbox, key }: Channel, frozen: boolean) {
+  async function postOutbox(
+    groupId: string,
+    { mailbox, key }: Channel,
+    frozen: boolean,
+  ): Promise<'left' | 'posted' | 'none'> {
     const current = await store.getGroup(groupId);
-    if (current === undefined) return false;
+    if (current === undefined) return 'none';
     let before: GroupState | null = null;
+    let posted: 'posted' | 'none' = 'none';
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
       before ??= fold(current.log, current.relayNow);
@@ -290,37 +312,88 @@ export function createSync(options: SyncOptions): Sync {
       if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
         push?.forget(current);
         await store.purgeGroup(groupId);
-        return true;
+        return 'left';
       }
       await store.markSent(groupId, bytes);
+      posted = 'posted';
     }
-    return false;
+    return posted;
+  }
+
+  /** GETs week `week`'s mailbox of `secret`, after its cursor in `cursors` (#110). */
+  async function readWeek(secret: Uint8Array, week: number, cursors: Cursors): Promise<WeekRead> {
+    const mailbox = deriveWeekMailboxId(secret, week);
+    const after = cursors.held[mailbox] ?? cursors.base;
+    const { records, now, instance } = await relay.getBlobs(mailbox, after);
+    return { week, mailbox, after, records, now, instance };
+  }
+
+  /** `read`, with whatever its mailbox took since, once this device has posted there. */
+  async function readOn(read: WeekRead): Promise<WeekRead> {
+    const page = await relay.getBlobs(read.mailbox, read.records.at(-1)?.seq ?? read.after);
+    return { ...read, records: [...read.records, ...page.records], instance: page.instance };
   }
 
   /**
-   * Posts the outbox to the group's current mailbox and reads it once:
-   * `left` once the group's leave is posted and the group purged, `moved`
-   * when the pull took the group to its next epoch (#98), else `stayed`.
+   * The pass's first GET (#110): the mailbox of the week of the group's last
+   * relay minute, or week 0's before it has one. A relay instance the group
+   * hasn't seen is a fresh relay database: the pass reads every mailbox from
+   * its start, that one again first, and its pull starts the store's cursors
+   * over (`applyPull`).
+   */
+  async function firstRead(group: Group): Promise<{ first: WeekRead; cursors: Cursors }> {
+    const week = group.relayNow === null ? 0 : weekOf(group.relayNow);
+    const held = { base: group.cursor, held: group.cursors ?? {} };
+    const first = await readWeek(group.secret, week, held);
+    if (group.instance === null || first.instance === group.instance) {
+      return { first, cursors: held };
+    }
+    const cursors = { base: 0, held: {} };
+    return { first: await readWeek(group.secret, week, cursors), cursors };
+  }
+
+  /**
+   * Reads each week `pollWeeks` names for a pass in relay week `week`,
+   * ascending (#110): the first GET stands for its own week, read on when this
+   * device has posted there since. Every read must come from the first's
+   * relay instance, or the pass fails and the next starts over.
+   */
+  async function readWeeks(group: Group, pass: Pass): Promise<WeekRead[]> {
+    const { first, cursors, week, posted } = pass;
+    const last = group.relayNow === null ? null : weekOf(group.relayNow);
+    const reads: WeekRead[] = [];
+    for (const each of pollWeeks(last, week)) {
+      if (each !== first.week) reads.push(await readWeek(group.secret, each, cursors));
+      else reads.push(posted && each === week ? await readOn(first) : first);
+    }
+    if (reads.some((read) => read.instance !== first.instance)) {
+      throw new Error('The relay changed instance during the pass.');
+    }
+    return reads;
+  }
+
+  /**
+   * GETs first, to take this week from the relay's `now` (#110), posts the
+   * outbox to this week's mailbox, then reads each week `pollWeeks` names and
+   * saves what they held in one pull: `left` once the group's leave is posted
+   * and the group purged, `moved` when the pull took the group to its next
+   * epoch (#98), else `stayed`.
    */
   async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
-    const channel = channelOf(group.secret);
     const frozen = isFrozen(fold(group.log, group.relayNow), group);
-    if (await postOutbox(group.groupId, channel, frozen)) return 'left';
-    let after = group.cursor;
-    let page = await relay.getBlobs(channel.mailbox, after);
-    if (group.instance !== null && page.instance !== group.instance) {
-      await store.resetCursor(group.groupId, page.instance);
-      if (await postOutbox(group.groupId, channel, frozen)) return 'left';
-      after = 0;
-      page = await relay.getBlobs(channel.mailbox, after);
-    }
-    const records = openRecords(seal, channel, page.records, epochOf(group));
-    const advance = advanceFor(group, records, page.now);
+    const { first, cursors } = await firstRead(group);
+    const week = weekOf(first.now);
+    const outcome = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
+    if (outcome === 'left') return 'left';
+    const pass = { first, cursors, week, posted: outcome === 'posted' };
+    const reads = await readWeeks(group, pass);
+    const { records, relayNow } = openReads(seal, group, reads);
+    const advance = advanceFor(group, records, relayNow);
     const pull: Pull = {
       records,
-      cursor: page.records[page.records.length - 1]?.seq ?? after,
-      relayNow: page.now,
-      instance: page.instance,
+      cursors: cursorsAfter(group.secret, pass, reads),
+      relayNow,
+      instance: first.instance,
       lastSyncAt: clock(),
       ...(advance === null ? {} : { advance }),
     };
@@ -379,16 +452,19 @@ export function createSync(options: SyncOptions): Sync {
   /**
    * The duty (#98): when the group has a key change due that this device may
    * write, sync it once more, and if one is still due, post it to the
-   * outgoing epoch's mailbox, then sync again to take up the new key.
+   * outgoing epoch's mailbox for the week that sync's relay minute falls in
+   * (#110), then sync again to take up the new key.
    */
   async function rotateIfDue(groupId: string): Promise<void> {
     const group = await store.getGroup(groupId);
     if (group === undefined || !hasDuty(group, fold(group.log, group.relayNow))) return;
     if (!(await syncGroup(group))) return;
     const fresh = await store.getGroup(groupId);
-    const state = fresh === undefined ? null : fold(fresh.log, fresh.relayNow);
-    if (fresh === undefined || state === null || !hasDuty(fresh, state)) return;
-    const { mailbox, key } = channelOf(fresh.secret);
+    // A group that just synced has a relay minute; one without never writes a key change.
+    if (fresh === undefined || fresh.relayNow === null) return;
+    const state = fold(fresh.log, fresh.relayNow);
+    if (!hasDuty(fresh, state)) return;
+    const { mailbox, key } = channelOf(fresh.secret, weekOf(fresh.relayNow));
     const record = keyRotateRecord(fresh, state, clock());
     await relay.putBlob(mailbox, seal.seal(mailbox, key, record), GROUP_TTL_DAYS);
     await syncGroup(fresh);
@@ -471,9 +547,83 @@ export interface Channel {
   readonly key: Uint8Array;
 }
 
-/** The mailbox id and seal key that `secret` derives (spec §3). */
-export function channelOf(secret: Uint8Array): Channel {
-  return { mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+/** The mailbox id for relay week `week` and the seal key that `secret` derives (spec §3, #110). */
+export function channelOf(secret: Uint8Array, week: number): Channel {
+  return { mailbox: deriveWeekMailboxId(secret, week), key: deriveSealKey(secret) };
+}
+
+/** The cursors a pass reads after (#110): each mailbox's own, else the base. */
+interface Cursors {
+  /** The group's base cursor (`Group.cursor`). */
+  readonly base: number;
+  /** Each mailbox's cursor, by its id (`Group.cursors`). */
+  readonly held: Readonly<Record<string, number>>;
+}
+
+/** One weekly mailbox as a pass read it (#110). */
+interface WeekRead {
+  /** Its relay week. */
+  readonly week: number;
+  /** Its id at the relay. */
+  readonly mailbox: string;
+  /** The seq it was read after. */
+  readonly after: number;
+  /** Its records after `after`, in seq order. */
+  readonly records: readonly RelayRecord[];
+  /** The `now` of its first GET: every record left out arrived at or after it. */
+  readonly now: number;
+  /** The relay instance that last answered for it. */
+  readonly instance: string;
+}
+
+/** A pass, once its first GET has given the relay's week (#110). */
+interface Pass {
+  /** The first GET. */
+  readonly first: WeekRead;
+  /** The cursors the pass reads after. */
+  readonly cursors: Cursors;
+  /** The relay's week, from the first GET's `now`. */
+  readonly week: number;
+  /** Whether the relay took anything from the outbox this pass. */
+  readonly posted: boolean;
+}
+
+/**
+ * What a pass's reads hold (#110): every blob that opens, as a log record
+ * tagged with the group's epoch, merged across the weeks in seq order, and
+ * the relay minute they stand at, the earliest of the reads' `now`s, so no
+ * record the pass left out of any mailbox arrived before it.
+ */
+function openReads(
+  seal: Seal,
+  group: Group,
+  reads: readonly WeekRead[],
+): { records: LogRecord[]; relayNow: number } {
+  const key = deriveSealKey(group.secret);
+  const records = reads
+    .flatMap(({ mailbox, records: read }) =>
+      openRecords(seal, { mailbox, key }, read, epochOf(group)),
+    )
+    .sort((a, b) => a.seq - b.seq);
+  return { records, relayNow: Math.min(...reads.map((read) => read.now)) };
+}
+
+/**
+ * The group's cursors after a pass (#110): each mailbox it read at the
+ * highest seq it read there, or where it read from when it found nothing,
+ * and each other cursor it held for the last 5 weeks; older ones, and any of
+ * another secret's mailboxes, are dropped.
+ */
+function cursorsAfter(
+  secret: Uint8Array,
+  { cursors, week }: Pass,
+  reads: readonly WeekRead[],
+): Record<string, number> {
+  const kept = new Set(keptWeeks(week).map((each) => deriveWeekMailboxId(secret, each)));
+  return Object.fromEntries([
+    ...Object.entries(cursors.held).filter(([mailbox]) => kept.has(mailbox)),
+    ...reads.map((read) => [read.mailbox, read.records.at(-1)?.seq ?? read.after] as const),
+  ]);
 }
 
 /**

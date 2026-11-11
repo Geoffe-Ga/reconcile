@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { browserPushPort } from '../platform/pushPort';
-import { mailboxAt } from '../store/mailbox';
+import { mailboxAt, mailboxesFrom } from '../store/mailbox';
 import { createPush } from '../store/push';
 import { createPushRelay } from '../net/push';
 import type { TestDevice } from '../test/appServices';
@@ -52,7 +52,17 @@ async function settings(fake: FakeRelay = createFakeRelay()) {
   const section = await view.findByRole('region', { name: 'Notifications' });
   const stored = await ana.services.store.getGroup(made.groupId);
   if (stored === undefined) throw new Error('Expected the group.');
-  return { fake, ana, groupId: made.groupId, view, section, mailbox: mailboxAt(stored, 0) };
+  // This week's mailbox and each week's for 30 days, as a registration names them (#110).
+  const mailboxes = mailboxesFrom(stored, fake.minute);
+  return {
+    fake,
+    ana,
+    groupId: made.groupId,
+    view,
+    section,
+    mailbox: mailboxAt(stored, fake.minute),
+    mailboxes,
+  };
 }
 
 describe('Settings › Notifications (#99)', () => {
@@ -128,8 +138,8 @@ describe('Settings › Notifications (#99)', () => {
     expect(within(section).getByRole('switch', { name: SWITCH })).not.toBeChecked();
   });
 
-  it('turns the last group off with a DELETE, then ends the subscription', async () => {
-    const { section, ana, fake, mailbox } = await settings();
+  it('turns the last group off with a DELETE for each mailbox, then ends the subscription', async () => {
+    const { section, ana, fake, mailbox, mailboxes } = await settings();
     ana.push.answer = 'granted';
     const user = userEvent.setup();
     const toggle = within(section).getByRole('switch', { name: SWITCH });
@@ -148,7 +158,9 @@ describe('Settings › Notifications (#99)', () => {
       expect(ana.push.subscription).toBeNull();
     });
     const sent = fake.requests.slice(before).filter((r) => r.url.startsWith('/v1/push'));
-    expect(sent.map((r) => [r.method, r.url])).toEqual([['DELETE', `/v1/push/${mailbox}`]]);
+    expect(sent.map((r) => [r.method, r.url])).toEqual(
+      mailboxes.map((each) => ['DELETE', `/v1/push/${each}`]),
+    );
     expect(fake.endpoints(mailbox)).toEqual([]);
   });
 

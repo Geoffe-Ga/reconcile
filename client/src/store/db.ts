@@ -3,9 +3,10 @@
  *
  * A group's record holds its secret and signing key, the relay-ordered log,
  * the outbox of signed records not yet accepted by the relay, and the sync
- * cursor. The mailbox id and seal key aren't kept: they derive from the
- * secret wherever they're needed (spec §3), so nothing stored can drift
- * from it. Each membership
+ * cursors, one for each weekly mailbox it has read lately (#110). The
+ * mailbox ids and seal key aren't kept: they derive from the secret wherever
+ * they're needed (spec §3), so nothing stored can drift from it; a cursor is
+ * filed under its mailbox's id. Each membership
  * has its own signing key, made for that group alone and kept only with its
  * records (ADR-0009), so two groups on one device share no key or id. Nothing
  * here touches the network. Each change reads and writes one group in a
@@ -33,6 +34,7 @@ import type { BotMoment } from '../engine/chatPosts';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
+import { placedInLog } from './logOrder';
 import {
   byCreation,
   isPersonalDocument,
@@ -86,7 +88,7 @@ export interface Group {
   groupId: string;
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
-   * group's mailbox id and seal key derive from it (`crypto/groupKeys.ts`).
+   * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
    */
   secret: Uint8Array;
   /** This membership's 32-byte Ed25519 secret key. It never leaves the device or this group. */
@@ -108,11 +110,26 @@ export interface Group {
   me: Me;
   /** Relay records in relay order, each event once: the input to `fold`. */
   log: LogRecord[];
-  /** The highest seq read so far; the next GET asks for records after it. */
+  /**
+   * The seq after which a weekly mailbox of this epoch is read while it has no
+   * cursor of its own in `cursors` (#110): 0 from creation and after a fresh
+   * relay instance, the invite's highest seq after a join, and the key
+   * change's seq after a move to a new epoch (#98). A sync pass leaves it.
+   */
   cursor: number;
-  /** The relay minute of the last successful GET, or `null` before one. */
+  /**
+   * The highest seq read from each weekly mailbox of this epoch, by mailbox
+   * id, for the last 5 weeks (#110); the next GET of a mailbox asks for the
+   * records after its cursor. Absent until the first pass, and again after a
+   * fresh relay instance or a move to a new epoch, which read from `cursor`.
+   */
+  cursors?: Readonly<Record<string, number>>;
+  /**
+   * The relay minute of the last successful pass, the earliest of its GETs'
+   * `now`s, or `null` before one. Its week is the week the pass read up to.
+   */
   relayNow: number | null;
-  /** The relay instance the cursor belongs to, or `null` before the first GET. */
+  /** The relay instance the cursors belong to, or `null` before the first GET. */
   instance: string | null;
   /** Signed records this device made that the relay hasn't accepted yet, oldest first. */
   outbox: Uint8Array[];
@@ -232,7 +249,7 @@ export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
 
 /**
  * A move to the group's next epoch (#98): its secret, the cursor to read its
- * mailbox from, and this device's own records to post again there first,
+ * mailboxes from, and this device's own records to post again there first,
  * oldest first, since they reached the old mailbox after the key changed.
  */
 export interface EpochAdvance {
@@ -242,13 +259,19 @@ export interface EpochAdvance {
   readonly repost: readonly Uint8Array[];
 }
 
-/** What one sync pass read from the relay. */
+/** What one sync pass, or a join's invite, read from the relay. */
 export interface Pull {
-  /** The opened records, in relay order; ones already in the log are skipped. */
+  /**
+   * The opened records, in relay order; ones already in the log are skipped,
+   * and each goes after the last log record before it in relay order
+   * (`logOrder.ts`, #110).
+   */
   records: LogRecord[];
-  /** The highest seq the pass read up to. */
-  cursor: number;
-  /** The relay minute it reported. */
+  /** A join's base cursor: the invite's highest seq (#110). A sync pass leaves the group's. */
+  cursor?: number;
+  /** A sync pass's cursors, each weekly mailbox's highest seq, in place of the group's (#110). */
+  cursors?: Readonly<Record<string, number>>;
+  /** The relay minute it reported: the earliest `now` of a pass's GETs. */
   relayNow: number;
   /** The relay instance it reported. */
   instance: string;
@@ -381,11 +404,16 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
   markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
-   * Append each record whose event id isn't in the log yet for its epoch, and
-   * save the sync state. A pull more than {@link HISTORY_GAP_MS} after the
-   * last sync sets `missingHistory`. A pull that carries an `advance` moves
-   * the group to its next epoch in the same change (#98): the new secret and
-   * cursor, and the records to post again ahead of the outbox, each once.
+   * Add each record whose event id isn't in the log yet for its epoch, in
+   * relay order (`logOrder.ts`, #110), and save the sync state: the cursors
+   * the pull gives, if any, in place of the group's. A pull from a relay
+   * instance the group hasn't read before, a fresh relay database, puts its
+   * records after the whole log and starts every cursor over from 0. A pull
+   * more than {@link HISTORY_GAP_MS} after the last sync sets
+   * `missingHistory`. A pull that carries an `advance` moves the group to its
+   * next epoch in the same change (#98): the new secret and base cursor with
+   * no other cursors, and the records to post again ahead of the outbox, each
+   * once.
    */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
   /**
@@ -396,7 +424,7 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   ensureKx(groupId: string, fresh: Uint8Array): Promise<Uint8Array>;
   /**
    * Take up a later epoch's secret that an invite carried (#98), reading its
-   * mailbox from `cursor` and posting `repost` again first, when it is later
+   * mailboxes from `cursor` and posting `repost` again first, when it is later
    * than the group's own. The caller checks the secret against the key
    * change's commit first (`epochs.ts`).
    */
@@ -440,8 +468,6 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
    * change. No screen reads them, so no listener hears of it.
    */
   markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
-  /** Start over at seq 0 of a relay `instance` the device hasn't seen. */
-  resetCursor(groupId: string, instance: string): Promise<void>;
   /**
    * Hear which group changed after each change, or {@link RELAY_BACKUP_CHANGED}
    * when the relay backup's state did; returns the way to stop.
@@ -623,8 +649,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
           group.missingHistory = true;
         }
-        group.log.push(...unseen(group.log, pull.records, idOf));
-        group.cursor = pull.cursor;
+        takePull(group, pull, idOf);
         group.relayNow = pull.relayNow;
         group.instance = pull.instance;
         group.lastSyncAt = pull.lastSyncAt;
@@ -717,11 +742,6 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...relayBackupStore(db, () => {
       notify(RELAY_BACKUP_CHANGED);
     }),
-    resetCursor: (groupId, instance) =>
-      change(groupId, (group) => {
-        group.cursor = 0;
-        group.instance = instance;
-      }),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -771,13 +791,35 @@ function relayBackupStore(db: IDBPDatabase<Schema>, changed: () => void): RelayB
 }
 
 /**
- * Moves `group` to the epoch `advance` names: its secret and cursor, and its
- * records to post again ahead of the outbox, skipping any already queued.
+ * Adds a pull's records that `group`'s log lacks, and takes its cursors. A
+ * pull from a relay instance the group hasn't read before is a fresh relay
+ * database's, whose seqs start again from 1: its records go after the whole
+ * log, and every mailbox is read from that relay's start, from its base
+ * cursor of 0 (#110). Otherwise each record goes in relay order
+ * (`logOrder.ts`).
+ */
+function takePull(group: Group, pull: Pull, idOf: EventIdOf): void {
+  const added = unseen(group.log, pull.records, idOf);
+  const fresh = group.instance !== null && pull.instance !== group.instance;
+  group.log = fresh ? [...group.log, ...added] : placedInLog(group.log, added);
+  if (fresh) {
+    group.cursor = 0;
+    delete group.cursors;
+  }
+  if (pull.cursor !== undefined) group.cursor = pull.cursor;
+  if (pull.cursors !== undefined) group.cursors = { ...pull.cursors };
+}
+
+/**
+ * Moves `group` to the epoch `advance` names: its secret and base cursor, with
+ * no cursor of the old epoch's mailboxes (#110), and its records to post
+ * again ahead of the outbox, skipping any already queued.
  */
 function advanceTo(group: Group, { epoch, secret, cursor, repost }: EpochAdvance): void {
   group.epoch = epoch;
   group.secret = secret;
   group.cursor = cursor;
+  delete group.cursors;
   const fresh = repost.filter((bytes) => !group.outbox.some((queued) => sameBytes(queued, bytes)));
   group.outbox = [...fresh, ...group.outbox];
 }

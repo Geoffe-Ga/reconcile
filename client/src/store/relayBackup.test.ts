@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { epochCommit } from '../crypto/epoch';
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey } from '../crypto/groupKeys';
 import { BACKUP_SEAL_INFO, backupIdFor, openRelayBackup } from '../crypto/relayBackup';
 import { sha256 } from '../crypto/hash';
 import { hkdf32 } from '../crypto/hkdf';
@@ -30,6 +30,7 @@ import { keepSharesAlive } from '../share/shareLink';
 import { type Group, openStore, type Store } from './db';
 import { hasDuty } from './epochs';
 import { eventIdOf } from './eventId';
+import { mailboxAt } from './mailbox';
 import { newPersonalId, type PersonalDocument, type ShareState } from './personal';
 import {
   fetchRelayBackup,
@@ -253,7 +254,7 @@ describe('what the relay holds', () => {
     const device = await openDevice(fake, 'ana');
     const founding = await found(device);
     const endpoint = 'https://fcm.googleapis.com/fcm/send/canary-endpoint';
-    const mailbox = deriveMailboxId(secretFor(CANARY.group));
+    const mailbox = mailboxAt({ secret: secretFor(CANARY.group) }, NOON);
     await device.store.setPush(founding.id, {
       endpoint,
       mailboxes: [mailbox],
@@ -285,7 +286,7 @@ describe('what the relay holds', () => {
     await startRelayBackup(device.services);
 
     const [id] = uploads(fake);
-    const mailbox = deriveMailboxId(secretFor(CANARY.group));
+    const mailbox = mailboxAt({ secret: secretFor(CANARY.group) }, NOON);
     expect(id).toBe(backupIdFor(await keyOf(device.store)));
     expect(id).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(id).not.toBe(mailbox);

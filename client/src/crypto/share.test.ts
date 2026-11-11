@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url } from './base64url';
-import { deriveMailboxId, deriveSealKey } from './groupKeys';
+import { deriveSealKey, deriveWeekMailboxId } from './groupKeys';
 import { deriveInviteKey, deriveInviteMailboxId } from './invite';
 import { signRecord, verifyRecord } from './record';
 import {
@@ -117,7 +117,8 @@ describe('the share derivations', () => {
 
         expect(mailbox).toMatch(/^[A-Za-z0-9_-]{43}$/);
         expect(key).toHaveLength(32);
-        for (const other of [deriveMailboxId(seed), deriveInviteMailboxId(seed), base64url(seed)]) {
+        const groupMailbox = deriveWeekMailboxId(seed, 2963);
+        for (const other of [groupMailbox, deriveInviteMailboxId(seed), base64url(seed)]) {
           expect(mailbox).not.toBe(other);
         }
         for (const other of [deriveSealKey(seed), deriveInviteKey(seed), seed]) {

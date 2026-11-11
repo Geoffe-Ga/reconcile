@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { sealBackup } from '../crypto/backup';
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
 import { parseRecord, type Score, type SignedEvent } from '../engine/event';
@@ -51,7 +51,9 @@ afterEach(() => {
 });
 
 /**
- * Ana's genesis, the group secret, and the mailbox and key it derives. Every
+ * Ana's genesis, the group secret, and the mailbox and key it derives: the
+ * mailbox of START's week, where every test here stays (#110), and last
+ * week's, which each pass reads too. Every
  * member carries an encryption key (#98), as the app makes one at Create
  * group and Join, unless `kx` is false: a group kept before #98.
  */
@@ -69,7 +71,17 @@ function founding(kx = true) {
     },
   });
   const secret = new Uint8Array(32).fill(7);
-  return { genesis, secret, kx, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+  const [mailbox, lastWeek] = [0, 1].map((back) =>
+    deriveWeekMailboxId(secret, weekOf(START) - back),
+  );
+  return {
+    genesis,
+    secret,
+    kx,
+    mailbox: mailbox ?? '',
+    lastWeek: lastWeek ?? '',
+    key: deriveSealKey(secret),
+  };
 }
 
 type Founded = ReturnType<typeof founding>;
@@ -159,9 +171,11 @@ async function outboxOf(store: Store, groupId: string) {
   return (group?.outbox ?? []).map((bytes) => parseRecord(bytes)?.event);
 }
 
-/** How many requests named the group's mailbox. */
+/** How many requests named the group's mailbox, this week's or last week's. */
 function mailboxRequests(fake: FakeRelay, group: Founded): number {
-  return fake.requests.filter((request) => request.url.includes(group.mailbox)).length;
+  const named = (url: string): boolean =>
+    url.includes(group.mailbox) || url.includes(group.lastWeek);
+  return fake.requests.filter((request) => named(request.url)).length;
 }
 
 /** A device clock at relay minute `minute`, in device milliseconds. */
@@ -477,9 +491,10 @@ describe('a dissolve beside key changes (#98)', () => {
       0,
       false,
     ]);
-    // One PUT, Ana's dissolve, and the GET that read it back: no key-rotate, in any mailbox.
+    // The GET that gives the week, one PUT, Ana's dissolve, then last week's GET and this
+    // week's, which reads the dissolve back: no key-rotate, in any mailbox.
     const sent = fake.requests.slice(before);
-    expect(sent.map((request) => request.method)).toEqual(['PUT', 'GET']);
+    expect(sent.map((request) => request.method)).toEqual(['GET', 'PUT', 'GET', 'GET']);
     expect(kept.epoch ?? 0).toBe(0);
     fake.minute += 5;
     expect(await sync.syncOnce()).toBe(true);
