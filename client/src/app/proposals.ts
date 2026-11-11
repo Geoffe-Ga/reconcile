@@ -15,17 +15,27 @@
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
+import {
+  type AddTarget,
+  type EventDraft,
+  type Score,
+  type SignedEvent,
+  signEvent,
+} from '../engine/event';
 import type { OptIn, OptInValue } from '../engine/optIns';
-import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
 import type { Services } from './actions';
 
 /** What the actions here use. */
 export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
+/**
+ * Where a Proposal goes (#75): the Atom whose text it would replace, where
+ * blank text proposes removing the Atom, or where a new section goes.
+ */
+export type ProposalPlace = { readonly atom: string } | { readonly target: AddTarget };
+
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
-export interface ProposalValues {
-  /** The Atom whose text it would replace. */
-  readonly atom: string;
+export type ProposalValues = ProposalPlace & {
   readonly title: string;
   readonly why: string;
   /** The proposed text, as typed; `propose` normalizes it. */
@@ -43,7 +53,7 @@ export interface ProposalValues {
   readonly versions?: readonly string[];
   /** The Dispatch to send if it passes (#112), its title and text trimmed; none when absent. */
   readonly dispatch?: DispatchWords;
-}
+};
 
 /** A Dispatch's words (#112): its title and text, trimmed and already within their limits. */
 export interface DispatchWords {
@@ -54,6 +64,27 @@ export interface DispatchWords {
 /** The draft target a lapsed Proposal is proposed again from: apart from its Atom's own draft. */
 export function againDraft(proposalId: string): string {
   return `again:${proposalId}`;
+}
+
+/** The draft key of a removal of Atom `atom`, apart from any change drafted for it (#75). */
+export function removalDraft(atom: string): string {
+  return `remove:${atom}`;
+}
+
+/** The draft key of a new section after Atom `after`, or first for null (#75). */
+export function addDraft(after: string | null): string {
+  return `add:${after ?? ''}`;
+}
+
+/**
+ * The private draft a Proposal is written in (spec §8): the lapsed
+ * Proposal's when proposing again, else its Atom's for a change, the
+ * removal's when its text is blank, or the add's for its spot.
+ */
+function draftOf(values: ProposalValues, text: string): string {
+  if (values.again !== undefined) return againDraft(values.again);
+  if ('target' in values) return addDraft(values.target.after);
+  return text === '' ? removalDraft(values.atom) : values.atom;
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -107,13 +138,13 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, as this device's member of `groupId`, for
- * the voting window the proposer chose, if any. Every string is
- * NFC-normalized before the event is signed, and the text goes through
- * `normalizeAtomText` (spec §4). Queuing the Proposal clears the
- * private draft it was written in, keyed by its Atom, in the same change. A
- * Proposal whose record is over 64,000 bytes is refused before anything is
- * queued, and its draft kept.
+ * Proposes new text for one Atom, its removal (blank text), or a new section
+ * (#75), as this device's member of `groupId`, for the voting window the
+ * proposer chose, if any (#106). Every string is NFC-normalized before the
+ * event is signed, and the text goes through `normalizeAtomText` (spec §4).
+ * Queuing the Proposal clears the private draft it was written in in the same
+ * change. A Proposal whose record is over 64,000 bytes is refused before
+ * anything is queued, and its draft kept.
  *
  * Proposed again (#74), it carries the lapsed Proposal's other versions: one
  * `version` of the new Proposal for each, queued after it in the same change,
@@ -124,12 +155,14 @@ export async function propose(
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link, window, again, versions = [], dispatch } = values;
+  const { title, why, link, window, versions = [], dispatch } = values;
+  const text = normalizeAtomText(values.text);
+  const place = 'target' in values ? { target: values.target } : { atom: values.atom };
   const body = {
-    atom,
+    ...place,
     title: nfc(title),
     why: nfc(why),
-    text: normalizeAtomText(text),
+    text,
     ...(link === null ? {} : { link: nfc(link) }),
     ...(window === undefined ? {} : { window }),
     // Signing NFC-normalizes every string in a body, a Dispatch's too (createEvent).
@@ -148,11 +181,10 @@ export async function propose(
   );
   const events = [event, ...others];
   if (!allFit(events)) return { outcome: 'too-large' };
-  const draft = again === undefined ? atom : againDraft(again);
   await services.store.enqueueAll(
     groupId,
     events.map((signed) => signed.record),
-    draft,
+    draftOf(values, text),
   );
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
@@ -161,10 +193,12 @@ export async function propose(
 /**
  * Adds a version to an open Proposal's ballot (ADR-0004), as this device's
  * member of `groupId`. The text goes through `normalizeAtomText` before it is
- * signed. Queuing it clears the private draft kept for that Proposal in the
- * same change. A version whose record is over 64,000 bytes is refused before
- * anything is queued, and its draft kept. The fold decides whether it joins the ballot:
- * it ignores one that arrives after the close or past the third.
+ * signed, and blank text adds removing the section (#75). Queuing a worded
+ * version clears the private draft kept for that Proposal in the same change;
+ * a removal has no draft, so it leaves that one alone. A version whose record
+ * is over 64,000 bytes is refused before anything is queued, and its draft
+ * kept. The fold decides whether it joins the ballot: it ignores one that
+ * arrives after the close or past the third.
  */
 export async function addVersion(
   services: ProposalServices,
@@ -173,7 +207,9 @@ export async function addVersion(
 ): Promise<AddVersionResult> {
   const event = await signVersion(services, groupId, values);
   if (!allFit([event])) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, values.proposal);
+  // A removal (blank text) is written in no draft, so it leaves the Proposal's own alone.
+  const draft = normalizeAtomText(values.text) === '' ? undefined : values.proposal;
+  await services.store.enqueue(groupId, event.record, draft);
   void services.sync.syncOnce();
   return { outcome: 'added', versionId: event.id };
 }

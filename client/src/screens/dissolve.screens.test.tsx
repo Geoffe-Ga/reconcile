@@ -18,7 +18,7 @@ import { DAY_MINUTES } from '../engine/rules';
 import { clearedArchive } from '../store/archive';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
-import { groupLog } from '../test/votes';
+import { deadlineOf, groupLog } from '../test/votes';
 import { DocumentView } from './DocumentView';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
@@ -72,6 +72,20 @@ function renderProposal(
       onProposeAgain={() => undefined}
       onTell={() => Promise.resolve('copied')}
       {...props}
+    />,
+  );
+}
+
+/** The Document view as `me` sees it, with `copyText` as its clipboard. */
+function renderDocument(state: GroupState, me: string, copyText = () => Promise.resolve()) {
+  render(
+    <DocumentView
+      state={state}
+      me={authorOf(me)}
+      onPropose={() => undefined}
+      onAdd={() => undefined}
+      onRemove={() => undefined}
+      copyText={copyText}
     />,
   );
 }
@@ -259,13 +273,46 @@ describe('a dissolved group on Group home', () => {
 });
 
 describe('a dissolved group’s Document', () => {
-  it('only reads: no Propose a change, and no note about levels', () => {
+  it('only reads: no Propose a change, no section to add or remove, and no note about levels', () => {
     const { state } = dissolved();
     for (const me of ['ana', 'cal']) {
-      render(<DocumentView state={state} me={authorOf(me)} onPropose={() => undefined} />);
+      renderDocument(state, me);
       expect(screen.getByText('Bins on Monday.')).toBeVisible();
       expect(screen.queryByRole('button', { name: /Propose a change/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Add a section here/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Propose removing this section/ })).toBeNull();
       expect(screen.queryByRole('link', { name: 'Change your involvement' })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('still copies as Markdown, so the group can start afresh from its archive (#75)', async () => {
+    const { state } = dissolved();
+    const copyText = vi.fn(() => Promise.resolve());
+    renderDocument(state, 'ana', copyText);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Copy as Markdown' }));
+    expect(copyText).toHaveBeenCalledWith('Quiet hours start at ten.\nBins on Monday.');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Propose again on a lapsed add or removal once the group has dissolved (#75)', () => {
+    const log = group();
+    const add = log.addSection('ana', `${log.group}.0`);
+    const removal = log.propose('ben', { atom: 1, title: 'No bins rule', text: '' });
+    log.minute = deadlineOf(log.minute) + 1;
+    for (const id of [add, removal]) {
+      renderProposal(log.state(), id, 'ana');
+      expect(screen.getByRole('button', { name: 'Propose again' })).toBeVisible();
+      cleanup();
+    }
+    const motion = log.proposeDissolve('ana', false);
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+    log.minute += 1;
+    log.dissolve('ben', motion);
+    for (const id of [add, removal]) {
+      renderProposal(log.state(), id, 'ana');
+      expect(screen.getByText(messages.result.lapsed)).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'Propose again' })).toBeNull();
       cleanup();
     }
   });

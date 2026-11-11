@@ -139,7 +139,7 @@ describe('Propose removing on the People list', () => {
     const people = screen.getByRole('region', { name: 'People' });
     const link = within(people).getByRole('link', { name: 'Propose removing Kim' });
     expect(link).toHaveTextContent(/^Propose removing$/);
-    expect(link).toHaveAttribute('href', `#/g/${state.group ?? ''}/remove/${KIM}`);
+    expect(link).toHaveAttribute('href', `#/g/${state.group ?? ''}/remove-member/${KIM}`);
     expect(within(people).getAllByRole('link', { name: /^Propose removing / })).toHaveLength(4);
     expect(within(people).queryByRole('link', { name: 'Propose removing Ana' })).toBeNull();
     expect(await axeViolations()).toEqual([]);
@@ -310,6 +310,8 @@ describe('a removal’s ballot', () => {
     expect(screen.getByText('one at most, or under 5%')).toBeVisible();
     expect(screen.getByRole('meter', { name: 'Zeros · one at most, or under 5%' })).toBeVisible();
     expect(screen.getByRole('radiogroup', { name: 'Your score' })).toBeVisible();
+    // Its one version has no text, yet it removes a person, never a section (#75).
+    expect(screen.queryByText('Removes this section')).toBeNull();
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -438,6 +440,7 @@ describe('a removal’s result', () => {
     expect(screen.getByText('This passed.', { exact: false })).toHaveTextContent(
       'This passed. Kim is no longer in this group.',
     );
+    expect(screen.queryByText(/no longer has this section/)).toBeNull();
     expect(await axeViolations()).toEqual([]);
     cleanup();
     renderProposal(state, removal, 'kim');

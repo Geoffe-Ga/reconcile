@@ -2,16 +2,17 @@
  * Properties of the fold (fast-check): every device that folds the same relay
  * records builds the same state, the Document changes only on a final pass, a level change
  * or a leave never reaches back into a Proposal that's already open, a member who has left
- * acts no more, and an Atom never has two open
- * Proposals or a ballot more than three versions. And of the bars (#94): the entrenched bar is
- * never easier than the ordinary one, and neither depends on the order ballots arrive in. And of
- * windows (#106): a Proposal opens only for a window its class allows, and runs exactly that long.
- * And of epochs (#98): a record read from another epoch's mailbox changes nothing, not even relay time.
- * And of removal (#115): nothing the member a removal names sends on it counts, they are taken out
- * once whoever posts the remove, and after the pass only their leave counts; removal's bar is never
- * harder than the entrenched one and never depends on ballot order.
- * And of coalitions (#100): a motion's outcome doesn't depend on the order distinct seats' results
- * arrive in, and nothing a group reports carries a name, note, score or key from inside it.
+ * acts no more, an Atom never has two open Proposals or a ballot more than three versions,
+ * and adds and section removals (#75) only ever add or take out whole Atoms. And of the bars (#94):
+ * the entrenched bar is never easier than the ordinary one, and neither depends on the order
+ * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
+ * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
+ * mailbox changes nothing, not even relay time. And of removal (#115): nothing the member a
+ * removal names sends on it counts, they are taken out once whoever posts the remove, and after
+ * the pass only their leave counts; removal's bar is never harder than the entrenched one and
+ * never depends on ballot order. And of coalitions (#100): a motion's outcome doesn't depend on
+ * the order distinct seats' results arrive in, and nothing a group reports carries a name, note,
+ * score or key from inside it.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -83,6 +84,12 @@ class Log {
   /** A Proposal by member 0, for `window` days when given, else the class default. */
   propose(received: number, atom: string, text: string, window?: number): string {
     const body = { atom, title: 'T', why: 'W', text, ...(window === undefined ? {} : { window }) };
+    return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** An add of a new section after `after`, or first for null (#75). */
+  addSection(received: number, after: string | null, text: string): string {
+    const body = { target: { kind: 'add', after } as const, title: 'T', why: 'W', text };
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
@@ -289,6 +296,23 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
             expect(later.received).toBeGreaterThanOrEqual(earlier.closedAt ?? earlier.deadline);
           }
         });
+      }),
+    );
+  });
+
+  it('only adds or takes out whole Atoms: each id at most once, founded or a passed add’s, in founded order', () => {
+    fc.assert(
+      fc.property(arbitraryLog, ({ records, relayNow }) => {
+        const state = fold(records, relayNow);
+        const ids = state.atoms.map((atom) => atom.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        const founded = [0, 1, 2].map((i) => `${state.group ?? ''}.${String(i)}`);
+        const added = state.proposals
+          .filter((p) => p.target.kind === 'add' && p.final && p.outcome.kind === 'pass')
+          .map((p) => p.id);
+        for (const id of ids) expect([...founded, ...added]).toContain(id);
+        const kept = ids.filter((id) => founded.includes(id));
+        expect(kept).toEqual(founded.filter((id) => kept.includes(id)));
       }),
     );
   });
@@ -654,7 +678,7 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
-  it('changes only the target Atom on a final pass, and no Atom on a fail or lapse', () => {
+  it('changes only the target Atom on a final pass, removing it for "", and no Atom on a fail or lapse', () => {
     const scenario = fc.record({
       atoms: fc.array(fc.string({ unit: 'grapheme', maxLength: 12 }), {
         minLength: 1,
@@ -675,9 +699,11 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         const state = fold(log.records, R + minutes);
         const p = state.proposals[0];
         const passed = p?.final === true && p.outcome.kind === 'pass';
-        const expected = before.map((atom, i) =>
-          passed && i === atomIndex ? { ...atom, text: p.text } : atom,
-        );
+        const removed = passed && p.text === '';
+        const expected = before.flatMap((atom, i) => {
+          if (!passed || i !== atomIndex) return [atom];
+          return removed ? [] : [{ ...atom, text: p.text }];
+        });
         expect(state.atoms.map((a) => encoder.encode(a.text))).toEqual(
           expected.map((a) => encoder.encode(a.text)),
         );
@@ -697,6 +723,8 @@ const step = fc.record({
     'join',
     'level',
     'propose',
+    'remove',
+    'add',
     'version',
     'vote',
     'repeat',
@@ -740,6 +768,15 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
   },
   propose: (log, proposals, s, received) => {
     proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));
+  },
+  remove: (log, proposals, s, received) => {
+    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, ''));
+  },
+  // Anchored on a genesis Atom, an earlier add's Atom (once it may have passed), or the start.
+  add: (log, proposals, s, received) => {
+    const anchors = [null, `${log.group}.${String(s.target)}`, ...proposals];
+    const after = anchors[s.who % anchors.length] ?? null;
+    proposals.push(log.addSection(received, after, s.score === 0 ? '' : `Add ${String(s.score)}`));
   },
   version: (log, proposals, s, received) => {
     log.version(received, s.who, proposals[s.target] ?? 'unknown', `V${String(s.score)}`);

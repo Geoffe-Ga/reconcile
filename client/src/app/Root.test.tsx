@@ -227,6 +227,48 @@ describe('Root', () => {
     expect(window.location.hash).toBe(`#share/${sharePayloadOf(started.link)}`);
   });
 
+  it('keeps Add a section and Propose removing behind the unlock step, as every group route (#75, #95)', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const created = await createGroup(ana.services, {
+      groupName: 'Riverside Tenants',
+      yourName: 'Ana',
+      chat: null,
+      title: 'House rules',
+      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+    });
+    if (created.outcome !== 'created') throw new Error('Expected a group.');
+    await ana.services.sync.syncOnce();
+    const { groupId } = created;
+    const unlock = vi.fn(() => Promise.resolve(true));
+    const firstRun = {
+      platform: DESKTOP,
+      notice: { accepted: () => true, accept: vi.fn() },
+      requestPersistence: () => Promise.resolve('denied' as const),
+      lock: { lockedAtLaunch: true, unlock, restore: vi.fn() },
+      passkeyOffer: { answered: () => true, answer: vi.fn() },
+    };
+    const pages = ['add', `add/${groupId}.0`, `remove/${groupId}.1`];
+    window.history.replaceState(null, '', `/#/g/${groupId}/${pages[0] ?? ''}`);
+    render(<Root services={ana.services} firstRun={firstRun} />);
+
+    for (const page of pages) {
+      act(() => {
+        window.history.replaceState(null, '', `/#/g/${groupId}/${page}`);
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+      expect(screen.getByRole('heading', { level: 1, name: messages.unlock.title })).toBeVisible();
+      expect(screen.queryByRole('textbox')).toBeNull();
+    }
+    expect(unlock).not.toHaveBeenCalled();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Propose removing this section' }),
+    ).toBeVisible();
+    expect(unlock).toHaveBeenCalledTimes(1);
+  });
+
   it('goes back to first run when the address leaves the share link', async () => {
     const ben = await device(createFakeRelay(), 'ben');
     window.history.replaceState(null, '', '/#share/damaged');

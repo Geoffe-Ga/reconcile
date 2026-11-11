@@ -294,6 +294,16 @@ describe('the removal bar in the fold (ADR-0075 §3)', () => {
   });
 });
 
+describe('a removal beside sections (#75)', () => {
+  it('leaves every section as it was when it passes, though its one version is empty', () => {
+    const { log } = passed();
+    const before = five().state().atoms;
+    const state = log.state();
+    expect(state.removals).toHaveLength(1);
+    expect(state.atoms).toEqual(before);
+  });
+});
+
 describe('a removal beside Dispatches (#112)', () => {
   it('ignores a Dispatch from the Co-Creator a passed removal names, and takes one from the others', () => {
     const { log } = passed();

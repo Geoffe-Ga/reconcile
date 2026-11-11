@@ -1,27 +1,38 @@
 import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
+import {
+  againStartOf,
+  type ComposeOutcome,
+  lapsed,
+  textCheck,
+  useSend,
+  whyNoForm,
+} from '../app/compose';
 import { latestLink } from '../app/latestLink';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
-import { againDraft, type ProposalValues, type VersionValues } from '../app/proposals';
-import { suspendedLine } from '../app/stewardLines';
+import {
+  againDraft,
+  type ProposalPlace,
+  type ProposalValues,
+  type VersionValues,
+} from '../app/proposals';
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
-import { type DraftState, useDraft } from '../app/useDraft';
+import { useDraft } from '../app/useDraft';
+import { versionDoes } from '../app/versionViews';
 import { WindowField } from '../app/WindowField';
 import { normalizeAtomText } from '../engine/atomText';
-import { can } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import { type ProposalClass, targetClass } from '../engine/rules';
 import { nfcLength } from '../engine/text';
 import type { Draft, DraftDispatch, GroupDrafts } from '../store/drafts';
 
-/** How sending went: `proposed` and `added` move on to the Proposal; the others stay on the form. */
-export type ComposeOutcome = 'proposed' | 'added' | 'too-large' | 'failed';
+export type { ComposeOutcome } from '../app/compose';
 
 /** Props for {@link Composer}. */
 export interface ComposerProps {
@@ -65,19 +76,9 @@ const checkWhy = required(
   messages.composer.whyTooLong(WHY_MAX),
 );
 
-/** Refuses blank text, and text that normalizes to the section's own (spec §4). */
-function textCheck(current: string, missing: string = messages.composer.textMissing) {
-  const now = normalizeAtomText(current);
-  return (value: string): string | null => {
-    const text = normalizeAtomText(value);
-    if (text === '') return missing;
-    return text === now ? messages.composer.textUnchanged : null;
-  };
-}
-
 /** As {@link textCheck}, and refuses text that normalizes to a version already on the ballot. */
-function versionCheck(current: string, proposal: Proposal) {
-  const section = textCheck(current, messages.composer.versionMissing);
+function versionCheck(current: string, proposal: Proposal, missing: string) {
+  const section = textCheck(current, missing);
   const onBallot = new Set(proposal.versions.map((version) => normalizeAtomText(version.text)));
   return (value: string): string | null =>
     section(value) ??
@@ -99,11 +100,11 @@ function preview(value: string): ReactNode {
  * The entries as the Proposal takes them: title, why and link trimmed, a
  * blank link none, and any Dispatch's title and text trimmed (#112).
  */
-function toValues(draft: Draft, atom: string, window: number): ProposalValues {
+function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalValues {
   const link = draft.link.trim();
   const { dispatch } = draft;
   return {
-    atom,
+    ...place,
     title: draft.title.trim(),
     why: draft.why.trim(),
     text: draft.text,
@@ -121,13 +122,13 @@ function withoutDispatch({ title, why, text, link, window }: Draft): Draft {
 }
 
 /** The class `targetClass` gives this Proposal as it stands, which bounds its voting time. */
-function classOf(state: GroupState, draft: Draft, atom: string): ProposalClass {
-  return targetClass(state, { atom, title: draft.title, why: draft.why, text: draft.text });
+function classOf(state: GroupState, draft: Draft, place: ProposalPlace): ProposalClass {
+  return targetClass(state, { ...place, title: draft.title, why: draft.why, text: draft.text });
 }
 
 /** The voting time to show and send: the draft's, or else its class's default. */
-function windowOf(state: GroupState, draft: Draft, atom: string): number {
-  return draft.window ?? state.rules.windows[classOf(state, draft, atom)].default;
+function windowOf(state: GroupState, draft: Draft, place: ProposalPlace): number {
+  return draft.window ?? state.rules.windows[classOf(state, draft, place)].default;
 }
 
 /** Where a new composer starts: a blank title and why, the section's text, the latest link. */
@@ -135,41 +136,21 @@ function startOf(state: GroupState, atom: Atom): Draft {
   return { title: '', why: '', text: atom.text, link: latestLink(state) ?? '' };
 }
 
-/**
- * Where proposing again starts: the lapsed Proposal's title, why, text, link
- * and voting time, and the Dispatch it carried, if any (#112).
- */
-function againStartOf(state: GroupState, again: Proposal): Draft {
-  return {
-    title: again.title,
-    why: again.why,
-    text: again.text,
-    link: again.link ?? latestLink(state) ?? '',
-    window: again.window,
-    ...(again.dispatch === null ? {} : { dispatch: again.dispatch }),
-  };
-}
-
 /** The entries as the Proposal takes them, and, proposing again, the other versions' texts too. */
 function valuesOf(
   draft: Draft,
-  atom: string,
+  place: ProposalPlace,
   again: Proposal | undefined,
   window: number,
 ): ProposalValues {
-  const values = toValues(draft, atom, window);
+  const values = toValues(draft, place, window);
   if (again === undefined) return values;
   return { ...values, again: again.id, versions: again.versions.slice(1).map((v) => v.text) };
 }
 
-/** True for a Proposal whose vote lapsed, which Propose again repeats (ADR-0069). */
-function hasLapsed(proposal: Proposal): boolean {
-  return proposal.final && proposal.outcome.kind === 'lapse';
-}
-
-/** Where a new version starts: the section's text. A version keeps only its text. */
-function versionStartOf(atom: Atom): Draft {
-  return { title: '', why: '', text: atom.text, link: '' };
+/** Where a new version starts: the text it rewords. A version keeps only its text. */
+function versionStartOf(text: string): Draft {
+  return { title: '', why: '', text, link: '' };
 }
 
 interface UnavailableProps {
@@ -179,7 +160,7 @@ interface UnavailableProps {
 }
 
 /** Shown in place of the form when there's nothing here to propose on. */
-function Unavailable({ state, title, text }: UnavailableProps) {
+export function Unavailable({ state, title, text }: UnavailableProps) {
   return (
     <main className="shell">
       <BackLink to={{ name: 'document', groupId: state.group ?? '' }} label={state.title} />
@@ -190,7 +171,7 @@ function Unavailable({ state, title, text }: UnavailableProps) {
 }
 
 /** The section as it reads now, beside which the new text is written. */
-function CurrentText({ atom, section }: { readonly atom: Atom; readonly section: number }) {
+export function CurrentText({ atom, section }: { readonly atom: Atom; readonly section: number }) {
   const heading = useId();
   return (
     <section className="text-block" aria-labelledby={heading}>
@@ -202,34 +183,11 @@ function CurrentText({ atom, section }: { readonly atom: Atom; readonly section:
   );
 }
 
-/**
- * Runs `send` once at a time, keeping the button disabled until it is done.
- * The draft holds still while the Proposal or version is queued, since
- * queuing clears it, and saves again if it couldn't be queued.
- */
-function useSend<V>(send: (values: V) => Promise<ComposeOutcome>, draft: DraftState) {
-  const busy = useRef(false);
-  const [running, setRunning] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [refused, setRefused] = useState<Record<string, string>>({});
-  const run = async (values: V) => {
-    if (busy.current) return;
-    busy.current = true;
-    setRunning(true);
-    setFailed(false);
-    // Each submit starts with no refusals, so `refused` only holds the latest answer.
-    setRefused({});
-    draft.hold();
-    const outcome = await send(values).catch(() => 'failed' as const);
-    // What was queued leaves this screen, so the button stays disabled.
-    if (outcome === 'proposed' || outcome === 'added') return;
-    draft.resume();
-    busy.current = false;
-    setRunning(false);
-    setRefused(outcome === 'too-large' ? { text: messages.composer.tooLarge } : {});
-    setFailed(outcome === 'failed');
-  };
-  return { run, running, failed, refused };
+/** The text field of a Proposal's form: its label, its hint and its check. */
+export interface TextEntry {
+  readonly label: string;
+  readonly hint: string;
+  readonly validate: (value: string) => string | null;
 }
 
 interface DispatchFieldsProps {
@@ -316,16 +274,19 @@ function DispatchChoice({ state, values, onChange }: DispatchChoiceProps) {
 interface FieldsProps {
   readonly state: GroupState;
   readonly values: Draft;
-  readonly atom: Atom;
+  /** The text field, or null for a removal, whose text is `""` (#75). */
+  readonly text: TextEntry | null;
+  /** Where the Proposal goes, whose class bounds its voting time (#106). */
+  readonly place: ProposalPlace;
   readonly now: number;
   readonly onChange: (values: Draft) => void;
 }
 
 /**
- * The four entries, the voting time and any Dispatch it carries (#112), each
- * kept in the draft as it changes.
+ * The four entries, or three for a removal (#75), the voting time and any
+ * Dispatch it carries (#112), each kept in the draft as it changes.
  */
-function Fields({ state, values, atom, now, onChange }: FieldsProps) {
+function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
   const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
   };
@@ -351,16 +312,18 @@ function Fields({ state, values, atom, now, onChange }: FieldsProps) {
         value={values.why}
         onChange={set('why')}
       />
-      <MarkdownField
-        name="text"
-        label={messages.composer.textLabel}
-        hint={messages.composer.textHint}
-        value={values.text}
-        onChange={set('text')}
-        validate={textCheck(atom.text)}
-        isRequired
-        preview={preview}
-      />
+      {text === null ? null : (
+        <MarkdownField
+          name="text"
+          label={text.label}
+          hint={text.hint}
+          value={values.text}
+          onChange={set('text')}
+          validate={text.validate}
+          isRequired
+          preview={preview}
+        />
+      )}
       <Field
         name="link"
         label={messages.composer.linkLabel}
@@ -373,8 +336,8 @@ function Fields({ state, values, atom, now, onChange }: FieldsProps) {
       />
       <WindowField
         rules={state.rules}
-        cls={classOf(state, values, atom.id)}
-        value={windowOf(state, values, atom.id)}
+        cls={classOf(state, values, place)}
+        value={windowOf(state, values, place)}
         onChange={(window) => {
           onChange({ ...values, window });
         }}
@@ -393,7 +356,11 @@ function OtherVersion({ number, text }: { readonly number: number; readonly text
       <h3 id={heading} className="version-heading">
         {messages.ballot.version(number)}
       </h3>
-      <AtomText text={text} className="atom-card" />
+      {text === '' ? (
+        <p className="version-does">{messages.proposal.removes}</p>
+      ) : (
+        <AtomText text={text} className="atom-card" />
+      )}
     </section>
   );
 }
@@ -416,21 +383,50 @@ function OtherVersions({ again }: { readonly again: Proposal | undefined }) {
   );
 }
 
-interface ComposerFormProps {
+/** Proposing again (#74): the line that says this repeats a lapsed Proposal, or nothing. */
+export function AgainLede({ again }: { readonly again: Proposal | undefined }) {
+  return again === undefined ? null : <p className="lede">{messages.composer.againLede}</p>;
+}
+
+/** The words of a Proposal's form: its heading, the tab's title and its button. */
+export interface FormWords {
+  readonly title: string;
+  readonly pageTitle: string;
+  readonly submit: string;
+}
+
+/** Props for {@link ProposalForm}. */
+export interface ProposalFormProps {
   readonly state: GroupState;
-  readonly atom: Atom;
-  readonly section: number;
+  /** Where the Proposal goes: an Atom, or a new section's spot. */
+  readonly place: ProposalPlace;
+  /** The key its private draft is kept under. */
+  readonly draftKey: string;
+  /** Where a new draft starts. */
+  readonly start: Draft;
   readonly drafts: GroupDrafts;
+  /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
   readonly now: number;
   readonly onPropose: ComposerProps['onPropose'];
-  /** The lapsed Proposal this proposes again, or undefined for a new one. */
+  readonly words: FormWords;
+  /** What sits between the heading and the form, such as the section as it reads now. */
+  readonly intro: ReactNode;
+  /** The text field, or null for a removal. */
+  readonly text: TextEntry | null;
+  /** The lapsed Proposal this proposes again (#74), whose other versions it carries, or undefined. */
   readonly again: Proposal | undefined;
 }
 
-function ComposerForm({ state, atom, section, drafts, now, onPropose, again }: ComposerFormProps) {
-  const target = again === undefined ? atom.id : againDraft(again.id);
-  const start = again === undefined ? startOf(state, atom) : againStartOf(state, again);
-  const draft = useDraft(drafts, target, start);
+/**
+ * A Proposal's form: a title, a why, the text (unless it removes a section),
+ * a discussion link and the voting time (#106), kept as a private draft until
+ * it is proposed, with Discard draft once it has changed. Submitting queues
+ * one `proposal`, and proposing again, one `version` for each of the lapsed
+ * Proposal's others.
+ */
+export function ProposalForm(props: ProposalFormProps) {
+  const { state, place, drafts, onPropose, words } = props;
+  const draft = useDraft(drafts, props.draftKey, props.start);
   const { run, running, failed, refused } = useSend(onPropose, draft);
   const form = useRef<HTMLFormElement>(null);
   const [said, setSaid] = useState('');
@@ -439,7 +435,7 @@ function ComposerForm({ state, atom, section, drafts, now, onPropose, again }: C
   if (values === null) return null;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void run(valuesOf(values, atom.id, again, windowOf(state, values, atom.id)));
+    void run(valuesOf(values, place, props.again, windowOf(state, values, place)));
   };
   const change = (next: Draft) => {
     setSaid('');
@@ -453,16 +449,19 @@ function ComposerForm({ state, atom, section, drafts, now, onPropose, again }: C
   return (
     <main className="shell">
       <BackLink to={{ name: 'document', groupId: state.group ?? '' }} label={state.title} />
-      <PageHeader
-        title={again === undefined ? messages.composer.title : messages.composer.againTitle}
-        pageTitle={messages.composer.pageTitle}
-      />
-      {again === undefined ? null : <p className="lede">{messages.composer.againLede}</p>}
-      <CurrentText atom={atom} section={section} />
+      <PageHeader title={words.title} pageTitle={words.pageTitle} />
+      {props.intro}
       {draft.restored ? <p className="draft-note">{messages.composer.draftRestored}</p> : null}
       <Form ref={form} className="form" onSubmit={submit} validationErrors={refused}>
-        <Fields state={state} values={values} atom={atom} now={now} onChange={change} />
-        <OtherVersions again={again} />
+        <Fields
+          state={state}
+          values={values}
+          text={props.text}
+          place={place}
+          now={props.now}
+          onChange={change}
+        />
+        <OtherVersions again={props.again} />
         <p className="caption">{messages.composer.visibility}</p>
         {failed ? (
           <p role="alert" className="form-error">
@@ -471,7 +470,7 @@ function ComposerForm({ state, atom, section, drafts, now, onPropose, again }: C
         ) : null}
         <div className="row form-actions">
           <Button type="submit" className="button button-primary" isDisabled={running}>
-            {messages.composer.submit}
+            {words.submit}
           </Button>
           {draft.changed ? (
             <Button className="button button-quiet" isDisabled={running} onPress={discard}>
@@ -487,22 +486,72 @@ function ComposerForm({ state, atom, section, drafts, now, onPropose, again }: C
   );
 }
 
+/** The section a version rewords, and its number. */
+interface Section {
+  readonly atom: Atom;
+  readonly number: number;
+}
+
 interface VersionFormProps {
   readonly state: GroupState;
-  readonly atom: Atom;
-  readonly section: number;
+  /** The section the Proposal changes, or null when it adds one (#75). */
+  readonly section: Section | null;
   readonly proposal: Proposal;
   readonly drafts: GroupDrafts;
   readonly onAddVersion: ComposerProps['onAddVersion'];
 }
 
+/** What sits above a version's text: the section as it reads now, or where an add's section goes. */
+function VersionIntro({
+  state,
+  section,
+  proposal,
+}: Omit<VersionFormProps, 'drafts' | 'onAddVersion'>) {
+  if (section !== null) {
+    return (
+      <>
+        <p className="lede">{messages.composer.versionLede}</p>
+        <CurrentText atom={section.atom} section={section.number} />
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="lede">{messages.composer.addVersionLede}</p>
+      <p className="version-does">{versionDoes(state, proposal.target, proposal.text)}</p>
+    </>
+  );
+}
+
+/**
+ * What a version rewords and starts from, and its field's hint and blank
+ * refusal: the section as it reads now, or for an add, nothing to reword and
+ * the Proposal's own text to start from.
+ */
+function versionWords(section: Section | null, proposal: Proposal) {
+  const { composer } = messages;
+  if (section === null) {
+    const add = { hint: composer.addVersionHint, missing: composer.addTextMissing };
+    return { current: '', start: proposal.text, ...add };
+  }
+  const { text } = section.atom;
+  return {
+    current: text,
+    start: text,
+    hint: composer.versionHint,
+    missing: composer.versionMissing,
+  };
+}
+
 /**
  * "Add your version" (ADR-0004): the new text alone, for the section's open
- * Proposal, starting from the section as it reads now. Its draft is kept
- * under the Proposal, apart from any Proposal drafted for the section.
+ * Proposal, starting from the section as it reads now, or for an add (#75),
+ * from the Proposal's own text. Its draft is kept under the Proposal, apart
+ * from any Proposal drafted for the section.
  */
-function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: VersionFormProps) {
-  const draft = useDraft(drafts, proposal.id, versionStartOf(atom));
+function VersionForm({ state, section, proposal, drafts, onAddVersion }: VersionFormProps) {
+  const { current, start, hint, missing } = versionWords(section, proposal);
+  const draft = useDraft(drafts, proposal.id, versionStartOf(start));
   const { run, running, failed, refused } = useSend(onAddVersion, draft);
   const form = useRef<HTMLFormElement>(null);
   const [said, setSaid] = useState('');
@@ -529,20 +578,19 @@ function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: V
         title={messages.composer.versionTitle}
         pageTitle={messages.composer.versionPageTitle}
       />
-      <p className="lede">{messages.composer.versionLede}</p>
-      <CurrentText atom={atom} section={section} />
+      <VersionIntro state={state} section={section} proposal={proposal} />
       {draft.restored ? <p className="draft-note">{messages.composer.draftRestored}</p> : null}
       <Form ref={form} className="form" onSubmit={submit} validationErrors={refused}>
         <MarkdownField
           name="text"
           label={messages.composer.versionLabel}
-          hint={messages.composer.versionHint}
+          hint={hint}
           value={values.text}
           onChange={(text) => {
             setSaid('');
             draft.update({ ...values, text });
           }}
-          validate={versionCheck(atom.text, proposal)}
+          validate={versionCheck(current, proposal, missing)}
           isRequired
           preview={preview}
         />
@@ -570,17 +618,70 @@ function VersionForm({ state, atom, section, proposal, drafts, onAddVersion }: V
   );
 }
 
+/** The section `atomId` names, with its number, or null when it isn't in the Document. */
+function sectionOf(state: GroupState, atomId: string): Section | null {
+  const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
+  const atom = state.atoms[index];
+  return atom === undefined ? null : { atom, number: index + 1 };
+}
+
+/** What the composer writes for `atomId`: a version of its open Proposal, a change, or nothing. */
+type Composing =
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'version'; readonly section: Section | null; readonly proposal: Proposal }
+  | { readonly kind: 'change'; readonly section: Section };
+
 /**
- * Why this member gets no form, or null when they get one: their leave waits
- * for the relay (#77), or they may not propose, and a suspended member reads
- * until when rather than that their level can't propose (#102).
+ * A version while a Proposal is open on `atomId`, whether it changes a section
+ * or adds one, whose Atom isn't in the Document until it passes (#75); else a
+ * change to the section, or nothing when there's no such section.
  */
-function whyNoForm(props: ComposerProps): { readonly title: string; readonly text: string } | null {
-  const { state, me } = props;
-  const { composer, leave } = messages;
-  if (props.leaving === true) return { title: leave.noProposingTitle, text: leave.noProposing };
-  if (can(state, me, 'propose')) return null;
-  return { title: composer.notAllowedTitle, text: suspendedLine(state, me) ?? composer.notAllowed };
+function composing(state: GroupState, atomId: string): Composing {
+  const section = sectionOf(state, atomId);
+  const open = openProposalOn(state, atomId);
+  if (open !== undefined) return { kind: 'version', section, proposal: open };
+  return section === null ? { kind: 'missing' } : { kind: 'change', section };
+}
+
+interface ChangeFormProps {
+  readonly state: GroupState;
+  readonly section: Section;
+  readonly drafts: GroupDrafts;
+  readonly now: number;
+  readonly onPropose: ComposerProps['onPropose'];
+  /** The lapsed Proposal this proposes again, or undefined for a new one. */
+  readonly again: Proposal | undefined;
+}
+
+/**
+ * "Propose a change": new text for one section, beside the section as it
+ * reads now. Proposing again (#74), it starts from the lapsed Proposal, and
+ * its draft is kept under that Proposal, apart from the section's.
+ */
+function ChangeForm({ state, section, drafts, now, onPropose, again }: ChangeFormProps) {
+  const { atom, number } = section;
+  const { composer } = messages;
+  const title = again === undefined ? composer.title : composer.againTitle;
+  return (
+    <ProposalForm
+      state={state}
+      place={{ atom: atom.id }}
+      draftKey={again === undefined ? atom.id : againDraft(again.id)}
+      start={again === undefined ? startOf(state, atom) : againStartOf(state, again)}
+      drafts={drafts}
+      now={now}
+      onPropose={onPropose}
+      words={{ title, pageTitle: composer.pageTitle, submit: composer.submit }}
+      intro={
+        <>
+          <AgainLede again={again} />
+          <CurrentText atom={atom} section={number} />
+        </>
+      }
+      text={{ label: composer.textLabel, hint: composer.textHint, validate: textCheck(atom.text) }}
+      again={again}
+    />
+  );
 }
 
 /**
@@ -589,8 +690,10 @@ function whyNoForm(props: ComposerProps): { readonly title: string; readonly tex
  * Preview tabs (prefilled with the current text), a discussion link
  * (prefilled with the group's latest one), the voting time in days (the
  * class default, within its bounds; #106), and "Send a Dispatch if this
- * passes" (#112), and submitting queues one `proposal`. On a section whose Proposal is open, "Add your version": the
- * text alone, and submitting queues one `version`. A full ballot takes no
+ * passes" (#112), and submitting queues one `proposal`. On a section whose
+ * Proposal is open, or an add's open Proposal (#75), "Add your version": the
+ * text alone, and submitting queues one `version`, which runs in its
+ * Proposal's window. A full ballot takes no
  * more. `composeOption` decides which, as it does for the fold. What is typed
  * is kept as a private draft on this device until it is sent or discarded.
  * Only someone who may propose, and isn't leaving, sees a form (`can()`).
@@ -601,43 +704,38 @@ function whyNoForm(props: ComposerProps): { readonly title: string; readonly tex
  */
 export function Composer(props: ComposerProps) {
   const { state, atomId, drafts } = props;
-  const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
-  const atom = state.atoms[index];
+  const what = composing(state, atomId);
   const { composer } = messages;
-  if (atom === undefined) {
+  if (what.kind === 'missing') {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
   const refused = whyNoForm(props);
   if (refused !== null) return <Unavailable state={state} {...refused} />;
-  const open = openProposalOn(state, atom.id);
-  const option = composeOption(state, atom.id);
-  if (option === 'ballot-full') {
-    return <Unavailable state={state} title={composer.fullTitle} text={composer.full} />;
-  }
-  if (open !== undefined) {
+  if (what.kind === 'change') {
+    const again = lapsed(props.again);
     return (
-      <VersionForm
-        key={open.id}
+      <ChangeForm
+        key={again?.id ?? atomId}
         state={state}
-        atom={atom}
-        section={index + 1}
-        proposal={open}
+        section={what.section}
         drafts={drafts}
-        onAddVersion={props.onAddVersion}
+        now={props.now}
+        onPropose={props.onPropose}
+        again={again}
       />
     );
   }
-  const again = props.again !== undefined && hasLapsed(props.again) ? props.again : undefined;
+  if (composeOption(state, atomId) === 'ballot-full') {
+    return <Unavailable state={state} title={composer.fullTitle} text={composer.full} />;
+  }
   return (
-    <ComposerForm
-      key={again?.id ?? atom.id}
+    <VersionForm
+      key={what.proposal.id}
       state={state}
-      atom={atom}
-      section={index + 1}
+      section={what.section}
+      proposal={what.proposal}
       drafts={drafts}
-      now={props.now}
-      onPropose={props.onPropose}
-      again={again}
+      onAddVersion={props.onAddVersion}
     />
   );
 }

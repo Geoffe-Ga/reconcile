@@ -40,6 +40,11 @@ describe('parseRoute', () => {
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
+    [`#/g/${GROUP}/add`, { name: 'add', groupId: GROUP, after: null }],
+    [`#/g/${GROUP}/add/${ATOM}`, { name: 'add', groupId: GROUP, after: ATOM }],
+    [`#/g/${GROUP}/add/${PROPOSAL}`, { name: 'add', groupId: GROUP, after: PROPOSAL }],
+    [`#/g/${GROUP}/remove/${ATOM}`, { name: 'remove', groupId: GROUP, atomId: ATOM }],
+    [`#/g/${GROUP}/remove/${PROPOSAL}`, { name: 'remove', groupId: GROUP, atomId: PROPOSAL }],
     [`#/g/${GROUP}/again/${PROPOSAL}`, { name: 'again', groupId: GROUP, proposalId: PROPOSAL }],
     [`#/g/${GROUP}/steward/1`, { name: 'steward', groupId: GROUP, seat: 1, recall: false }],
     [`#/g/${GROUP}/steward/2`, { name: 'steward', groupId: GROUP, seat: 2, recall: false }],
@@ -58,7 +63,11 @@ describe('parseRoute', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
-    [`#/g/${GROUP}/remove/${PROPOSAL}`, { name: 'removal', groupId: GROUP, member: PROPOSAL }],
+    // A member's removal (#115) has its own page: an added section's id is a Proposal's (#75).
+    [
+      `#/g/${GROUP}/remove-member/${PROPOSAL}`,
+      { name: 'removal', groupId: GROUP, member: PROPOSAL },
+    ],
     [`#/g/${GROUP}/dispatches`, { name: 'dispatches', groupId: GROUP }],
     [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
@@ -95,6 +104,15 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/again/${ATOM}`,
     `#/g/${GROUP}/again/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
+    `#/g/${GROUP}/add/`,
+    `#/g/${GROUP}/add/has space`,
+    `#/g/${GROUP}/add/${ATOM}/extra`,
+    `#/g/${GROUP}/remove`,
+    `#/g/${GROUP}/remove/`,
+    `#/g/${GROUP}/remove/has space`,
+    `#/g/${GROUP}/constructor`,
+    `#/g/${GROUP}/constructor/${ATOM}`,
+    `#/g/${GROUP}/__proto__/${ATOM}`,
     `#/g/${GROUP}/steward`,
     `#/g/${GROUP}/steward/0`,
     `#/g/${GROUP}/steward/3`,
@@ -108,9 +126,11 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/narrow/toString`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
-    `#/g/${GROUP}/remove`,
-    `#/g/${GROUP}/remove/${ATOM}`,
-    `#/g/${GROUP}/remove/${PROPOSAL}/extra`,
+    `#/g/${GROUP}/remove-member`,
+    `#/g/${GROUP}/remove-member/`,
+    `#/g/${GROUP}/remove-member/has space`,
+    `#/g/${GROUP}/remove-member/${ATOM}`,
+    `#/g/${GROUP}/remove-member/${PROPOSAL}/extra`,
     `#/g/${GROUP}/dispatch`,
     `#/g/${GROUP}/dispatch/`,
     `#/g/${GROUP}/dispatch/old`,
@@ -128,6 +148,29 @@ describe('parseRoute', () => {
     'create',
   ])('sends the unknown %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
+  });
+
+  // Add a section and Propose removing (#75) live only inside a group, beside
+  // Personal (#93), linking a device (#96), a share link (#105) and the
+  // Dispatches (#112).
+  it.each<[string, Route]>([
+    ['#/add', { name: 'start' }],
+    [`#/add/${ATOM}`, { name: 'start' }],
+    [`#/remove/${ATOM}`, { name: 'start' }],
+    ['#/me/add', { name: 'start' }],
+    [`#/me/${PERSONAL}/add`, { name: 'start' }],
+    [`#/me/remove/${PERSONAL}`, { name: 'start' }],
+    ['#/link-new/add', { name: 'start' }],
+    [`#/link-this/remove/${ATOM}`, { name: 'start' }],
+    [`#share/${SHARE}/add`, { name: 'shared', payload: `${SHARE}/add` }],
+    [`#share/${SHARE}/remove/${ATOM}`, { name: 'shared', payload: `${SHARE}/remove/${ATOM}` }],
+    // Beside the Dispatches (#112), whose `dispatch/new` is the one two-part fixed page.
+    [`#/g/${GROUP}/dispatch/add`, { name: 'start' }],
+    [`#/g/${GROUP}/dispatches/add`, { name: 'start' }],
+    [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
+    [`#/g/${GROUP}/add`, { name: 'add', groupId: GROUP, after: null }],
+  ])('keeps the section pages inside a group: %j', (hash, route) => {
+    expect(parseRoute(hash)).toEqual(route);
   });
 });
 
@@ -161,6 +204,9 @@ describe('routeHref', () => {
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
     [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
+    [{ name: 'add', groupId: GROUP, after: null }, `#/g/${GROUP}/add`],
+    [{ name: 'add', groupId: GROUP, after: ATOM }, `#/g/${GROUP}/add/${ATOM}`],
+    [{ name: 'remove', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/remove/${ATOM}`],
     [{ name: 'again', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/again/${PROPOSAL}`],
     [{ name: 'steward', groupId: GROUP, seat: 2, recall: false }, `#/g/${GROUP}/steward/2`],
     [{ name: 'steward', groupId: GROUP, seat: 1, recall: true }, `#/g/${GROUP}/recall/1`],
@@ -174,7 +220,10 @@ describe('routeHref', () => {
       `#/g/${GROUP}/narrow/chatBot`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
-    [{ name: 'removal', groupId: GROUP, member: PROPOSAL }, `#/g/${GROUP}/remove/${PROPOSAL}`],
+    [
+      { name: 'removal', groupId: GROUP, member: PROPOSAL },
+      `#/g/${GROUP}/remove-member/${PROPOSAL}`,
+    ],
     [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
     [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
   ])('writes %j as %s, which parses back', (route, href) => {

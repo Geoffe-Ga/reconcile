@@ -1,5 +1,5 @@
 /**
- * Propose removing a member (`#/g/{groupId}/remove/{member}`; ADR-0016,
+ * Propose removing a member (`#/g/{groupId}/remove-member/{member}`; ADR-0016,
  * ADR-0049, ADR-0075 §3, #115): what the ballot will decide, the higher bar
  * it needs and that the person can't vote on it but can post one response,
  * all in words from the engine, then a title and a why. A removal always runs
