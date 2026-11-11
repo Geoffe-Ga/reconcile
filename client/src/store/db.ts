@@ -58,6 +58,7 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import { expiryKeyOf } from '../engine/expiry';
+import { keptInRoom } from '../engine/room';
 import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
@@ -164,8 +165,9 @@ export interface Admitting {
 }
 
 /**
- * Everything the device keeps about one group, or about one coalition whose
- * secret a group on the device holds (#114): its `kind` says which.
+ * Everything the device keeps about one group, about one coalition whose
+ * secret a group on the device holds (#114), or about one coalition's room
+ * (#125): its `kind` says which.
  */
 export interface Group extends CoalitionPlan {
   /**
@@ -175,9 +177,12 @@ export interface Group extends CoalitionPlan {
   groupId: string;
   /**
    * `coalition` for a coalition's entry (#114): its own log, cursors, outbox
-   * and `me`, synced like a group's. Absent for a group.
+   * and `me`, synced like a group's. `room` for a coalition's room (#125,
+   * `./rooms.ts`): its `secret` is the coalition's `inner`, its signing key
+   * and author the coalition entry's, and its log keeps 30 days of relay
+   * time. Absent for a group.
    */
-  kind?: 'coalition';
+  kind?: 'coalition' | 'room';
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
@@ -388,9 +393,14 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
   Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
 
-/** True for a coalition's entry (#114), false for a group. */
+/** True for a coalition's entry (#114), false for a group or a room. */
 export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {
   return group.kind === 'coalition';
+}
+
+/** True for a coalition's room (#125), false for a group or a coalition's entry. */
+export function isRoomEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'room';
 }
 
 /**
@@ -498,10 +508,12 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
  * (#97), and the front-door applications it sent (#121).
  */
 export interface Store extends DraftStore, PersonalStore, RelayBackupStore, SentStore {
-  /** Every group on the device: never a coalition's entry (#114). */
+  /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
   listCoalitions(): Promise<Group[]>;
+  /** Every coalition room on the device (#125). */
+  listRooms(): Promise<Group[]>;
   /** One group or coalition entry, or `undefined` when the device has none by that id. */
   getGroup(groupId: string): Promise<Group | undefined>;
   /** Keep a new group or coalition entry; refuses an id the device already has. */
@@ -838,8 +850,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 
   return {
     listGroups: async () =>
-      (await readWhole(db, session, null)).filter((group) => !isCoalitionEntry(group)),
+      (await readWhole(db, session, null)).filter((group) => group.kind === undefined),
     listCoalitions: async () => (await readWhole(db, session, null)).filter(isCoalitionEntry),
+    listRooms: async () => (await readWhole(db, session, null)).filter(isRoomEntry),
     getGroup: async (groupId) => {
       const [group] = await readWhole(db, session, groupId);
       return group;
@@ -1149,12 +1162,20 @@ function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
   };
 }
 
-/** Saves what a sync pass read into `group`'s record: its new log records, in relay order, and sync state. */
+/**
+ * Saves what a sync pass read into `group`'s record: its new log records, in
+ * relay order, and sync state. A room (#125) then keeps only the records
+ * received at most 30 days of relay time before the pull's `now`, so each
+ * sync deletes the rest in the same change.
+ */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  if (isRoomEntry(group)) {
+    group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
+  }
   group.relayNow = pull.relayNow;
   group.instance = pull.instance;
   group.lastSyncAt = pull.lastSyncAt;

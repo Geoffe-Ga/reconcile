@@ -1633,6 +1633,9 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyLevel(draft, event.body, event.author);
     case 'leave':
       return applyLeave(draft, event.author);
+    case 'message':
+      // A room's message belongs to the room's own log (room.ts, #125), never a group's.
+      return false;
     default:
       return applyLater(draft, event, at);
   }

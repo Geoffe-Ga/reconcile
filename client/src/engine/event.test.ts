@@ -1374,3 +1374,42 @@ describe('coalitions (#100)', () => {
     expect(parseEvent(json(envelope('group-result', body)))).toBeNull();
   });
 });
+
+describe('a room message (#125)', () => {
+  it('reads a message with exactly its text, as written', () => {
+    for (const text of ['Can we meet Thursday?', '', '  <script>alert(1)</script>\n']) {
+      expect(parseEvent(json(envelope('message', { text })))?.event).toEqual({
+        v: 1,
+        type: 'message',
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body: { text },
+      });
+    }
+  });
+
+  it.each([
+    ['an extra key such as a name', { text: 'Hi', name: 'Ana' }],
+    ['an extra key such as a group', { text: 'Hi', group: 'g2' }],
+    ['no text', {}],
+    ['a numeric text', { text: 1 }],
+    ['a list for text', { text: ['Hi'] }],
+  ])('refuses a message with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('message', body)))).toBeNull();
+  });
+
+  it('signs a message as any event, its text in NFC', () => {
+    const signed = signEvent(testKeys('ana').secretKey, {
+      type: 'message',
+      group: 'g1',
+      ts: 7,
+      body: { text: 'Café' },
+    });
+    expect(parseRecord(signed.record)?.event).toMatchObject({
+      type: 'message',
+      author: ANA,
+      body: { text: 'Café' },
+    });
+  });
+});
