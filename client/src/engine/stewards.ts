@@ -101,7 +101,8 @@ export interface StewardChange {
  * #75), a new section after an anchor (#75), a steward seat (#102), an opt-in
  * (#117), or whether the group goes on (#108). Or it reconciles the group
  * into a coalition, or is a coalition's motion, which its seats decide (#100),
- * or in a coalition admits a group (#114).
+ * or in a coalition admits a group (#114). A priority vote changes nothing:
+ * its top option becomes the focus (#107).
  */
 export type ProposalTarget =
   | { readonly kind: 'edit' }
@@ -111,6 +112,7 @@ export type ProposalTarget =
   | DissolveTarget
   | ReconcileChange
   | MotionTarget
+  | { readonly kind: 'priority' }
   | AdmitChange;
 
 /**

@@ -1,0 +1,407 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "priority-dispatch-pass: a priority vote carrying a Dispatch passes once everyone has scored, so the Dispatch goes out at its close, from the Proposal, pointing to no Document, and its top option becomes the focus",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"],
+              "dispatch": {
+                "title": "We chose our focus",
+                "text": "Group home shows what we chose."
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 4,
+                "@4.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 3,
+                "@4.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 4,
+                "@4.1": 2
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "dispatch": {
+              "title": "We chose our focus",
+              "text": "Group home shows what we chose."
+            },
+            "closedAt": 29375022,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4.0"
+            }
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@4",
+            "by": {
+              "proposal": "@4"
+            },
+            "title": "We chose our focus",
+            "text": "Group home shows what we chose.",
+            "doc": null,
+            "received": 29375022
+          }
+        ],
+        "focus": {
+          "proposal": "@4",
+          "option": "@4.0",
+          "text": "Fix the website"
+        },
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "priority-dispatch-lapse: a priority vote carrying a Dispatch that lapses below quorum at its deadline sends nothing and sets no focus",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"],
+              "dispatch": {
+                "title": "We chose our focus",
+                "text": "Group home shows what we chose."
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 4,
+                "@4.1": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29385090,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "dispatch": {
+              "title": "We chose our focus",
+              "text": "Group home shows what we chose."
+            },
+            "final": true,
+            "outcome": {
+              "kind": "lapse"
+            }
+          }
+        ],
+        "dispatches": [],
+        "focus": null
+      }
+    },
+    {
+      "name": "priority-dispatch-ignored: a priority vote whose Dispatch title is over 80 code points is ignored, and one whose Dispatch isn't two strings is a bad shape with no id, so neither opens, takes a number or sends anything",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"],
+              "dispatch": {
+                "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"],
+              "dispatch": {
+                "title": "We chose",
+                "text": 7
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375020,
+      "expect": {
+        "proposals": [],
+        "dispatches": [],
+        "focus": null,
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": null
+          }
+        ]
+      },
+      "unchangedWithout": [4, 5]
+    }
+  ]
+}

@@ -35,6 +35,7 @@ export type Route =
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
+  | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
   | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
@@ -94,7 +95,8 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
 /**
  * The pages inside a group, Group home apart, that take nothing but the
  * group: the Document, the rules (#117), dissolving (#108), the Dispatches
- * and Send a Dispatch (#112), and Reconcile with another group (#114).
+ * and Send a Dispatch (#112), Ask what to focus on (#107), and Reconcile
+ * with another group (#114).
  */
 const FIXED_NAMES = [
   'document',
@@ -102,6 +104,7 @@ const FIXED_NAMES = [
   'dissolve',
   'dispatches',
   'sendDispatch',
+  'priority',
   'reconcile',
 ] as const;
 
@@ -115,6 +118,7 @@ const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
   dissolve: 'dissolve',
   dispatches: 'dispatches',
   sendDispatch: 'dispatch/new',
+  priority: 'priority',
   reconcile: 'reconcile',
 };
 
@@ -145,11 +149,11 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
 ]);
 
 /**
- * A page inside a group: one of the fixed pages, such as `doc` or
- * `dispatch/new`, `add` (a new first section, #75), or `propose/{atomId}`,
- * `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}` (a new section after
- * that Atom), `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`,
- * `rules/{optIn}` or `narrow/{optIn}`.
+ * A page inside a group: one of the fixed pages, such as `doc`, `priority`
+ * (#107) or `dispatch/new`, `add` (a new first section, #75), or
+ * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
+ * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
+ * `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
