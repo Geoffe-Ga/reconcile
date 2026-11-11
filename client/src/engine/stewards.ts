@@ -33,7 +33,7 @@ import {
   type RulesChange,
   rulesChangeOf,
 } from './optIns';
-import { DAY_MINUTES, type Rules } from './rules';
+import { type ClassChange, DAY_MINUTES, type Rules } from './rules';
 import { codePointLength } from './text';
 
 /** The steward seats, in order (ADR-0049). */
@@ -99,7 +99,7 @@ export interface StewardChange {
 /**
  * What a Proposal changes: an Atom's text, where `""` removes it (#63, #72,
  * #75), a new section after an anchor (#75), a new Document (#92), a
- * section's place (#103), a steward
+ * section's place (#103) or class (#116), a steward
  * seat (#102), an opt-in (#117), or whether the group goes on (#108). Or it
  * reconciles the group into a coalition, or is a coalition's motion, which
  * its seats decide (#100), or in a coalition admits a group (#114). A
@@ -110,6 +110,7 @@ export type ProposalTarget =
   | AddTarget
   | NewDocumentTarget
   | MoveTarget
+  | ClassChange
   | StewardChange
   | RulesChange
   | DissolveTarget

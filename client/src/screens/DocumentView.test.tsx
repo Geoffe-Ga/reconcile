@@ -644,8 +644,8 @@ describe('DocumentView: a suspended member (#102)', () => {
 
 describe('CoalitionDocumentView (#120)', () => {
   const ATOMS: Atom[] = [
-    { id: 'c.0', documentId: 'c', text: 'We keep the river clean.' },
-    { id: 'c.1', documentId: 'c', text: 'We meet on the first Sunday.' },
+    { id: 'c.0', documentId: 'c', text: 'We keep the river clean.', class: 'ordinary' },
+    { id: 'c.1', documentId: 'c', text: 'We meet on the first Sunday.', class: 'ordinary' },
   ];
 
   /** The coalition's Document as someone standing `standing` reads it. */

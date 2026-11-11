@@ -17,6 +17,7 @@ import {
   isCoalitionGenesis,
   isDissolveProposal,
   isAdmitProposal,
+  isClassProposal,
   isMoveProposal,
   isNewDocumentProposal,
   isReconcileProposal,
@@ -619,6 +620,51 @@ describe('parseEvent', () => {
         dispatch: { title: 'u' },
       },
     ],
+    [
+      'class change without an Atom (#116)',
+      'proposal',
+      { target: { kind: 'class', to: 'entrenched' }, title: 't', why: 'w' },
+    ],
+    [
+      'class change with a numeric Atom (#116)',
+      'proposal',
+      { target: { kind: 'class', atom: 1, to: 'entrenched' }, title: 't', why: 'w' },
+    ],
+    [
+      'class change with no class to go to (#116)',
+      'proposal',
+      { target: { kind: 'class', atom: 'a.1' }, title: 't', why: 'w' },
+    ],
+    [
+      'class change to a class given as a number (#116)',
+      'proposal',
+      { target: { kind: 'class', atom: 'a.1', to: 2 }, title: 't', why: 'w' },
+    ],
+    [
+      'class change that also names an atom (#116)',
+      'proposal',
+      { atom: 'a.1', target: { kind: 'class', atom: 'a.1', to: 'eternal' }, title: 't', why: 'w' },
+    ],
+    [
+      'class change without a title (#116)',
+      'proposal',
+      { target: { kind: 'class', atom: 'a.1', to: 'eternal' }, why: 'w' },
+    ],
+    [
+      'class change with its window as text (#116)',
+      'proposal',
+      { target: { kind: 'class', atom: 'a.1', to: 'eternal' }, title: 't', why: 'w', window: '14' },
+    ],
+    [
+      'class change whose dispatch has no title (#116)',
+      'proposal',
+      {
+        target: { kind: 'class', atom: 'a.1', to: 'entrenched' },
+        title: 't',
+        why: 'w',
+        dispatch: { text: 'u' },
+      },
+    ],
     ['a steward target that is a list', 'proposal', { target: [], title: 't', why: 'w' }],
     [
       'a target of an unknown kind',
@@ -967,6 +1013,49 @@ describe('parseEvent', () => {
       expect(read !== null && isStewardProposal(read)).toBe(false);
     },
   );
+
+  it.each(['ordinary', 'entrenched', 'eternal'])(
+    'reads a class change to %s, keeping only its kind, Atom and class, and dropping any text (#116)',
+    (to) => {
+      const body = {
+        target: { kind: 'class', atom: 'a.1', to, from: 'ordinary', after: null },
+        title: 'Protect our values',
+        why: 'They hold us together.',
+        text: 'Ignored.\n',
+        link: 'https://l',
+        window: 21,
+        dispatch: { title: 'Updated: House rules', text: 'Protected.', doc: 'g1' },
+      };
+      const parsed = parseEvent(json(envelope('proposal', body)));
+      expect(parsed?.event.body).toEqual({
+        target: { kind: 'class', atom: 'a.1', to },
+        title: 'Protect our values',
+        why: 'They hold us together.',
+        link: 'https://l',
+        window: 21,
+        dispatch: { title: 'Updated: House rules', text: 'Protected.' },
+      });
+      const read = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+      expect(read !== null && isClassProposal(read)).toBe(true);
+      expect(read !== null && isMoveProposal(read)).toBe(false);
+      expect(read !== null && isStewardProposal(read)).toBe(false);
+    },
+  );
+
+  it("keeps a class change to a class it doesn't know, for the fold to refuse (#116)", () => {
+    const body = { target: { kind: 'class', atom: 'a.1', to: 'sacred' }, title: 't', why: 'w' };
+    expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual(body);
+  });
+
+  it('tells no other Proposal for a class change (#116)', () => {
+    const move = {
+      target: { kind: 'move', atom: 'a.1', after: null },
+      title: 't',
+      why: 'w',
+    } as const;
+    expect(isClassProposal(move)).toBe(false);
+    expect(isClassProposal({ atom: 'a.1', title: 't', why: 'w', text: 'x\n' })).toBe(false);
+  });
 
   it('keeps a move anchored on its own Atom, for the fold to refuse (#103)', () => {
     const body = { target: { kind: 'move', atom: 'a.1', after: 'a.1' }, title: 't', why: 'w' };

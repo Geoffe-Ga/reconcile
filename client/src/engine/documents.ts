@@ -78,7 +78,7 @@ function documentOfSection(state: DocumentsState, atom: string): string | null {
 
 /**
  * The Document a Proposal changes (#92): its section's for a change, a
- * removal or a move (#103), the one an add names (#75), or, for a new
+ * removal, a move (#103) or a class (#116), the one an add names (#75), or, for a new
  * Document, the Document it creates, whose id is its own. Null for a
  * Proposal that changes no Document, such as a steward, rules or dissolve one.
  */
@@ -87,6 +87,7 @@ export function documentOf(state: DocumentsState, proposal: ProposedChange): str
   switch (target.kind) {
     case 'edit':
     case 'move':
+    case 'class':
       return documentOfSection(state, proposal.atom);
     case 'add':
       return target.document;

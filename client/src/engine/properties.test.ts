@@ -16,7 +16,9 @@
  * outcomes as one that still holds them. And of moves (#103): passed moves only ever reorder a
  * Document, keeping its Atom ids and their bytes, and every device that folds the same records
  * builds the same order, which follows close time, then the moves' relay order, whatever order
- * their ballots arrive in.
+ * their ballots arrive in. And of section classes (#116): every Proposal on a section opens at
+ * the class its section's last passed class Proposal gave it, a section's class is that
+ * Proposal's, and once a section is eternal no Proposal on it ever opens again.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -29,7 +31,14 @@ import { resultsToReport } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
-import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
+import {
+  closeTime,
+  fold,
+  type GroupState,
+  heldRecord,
+  type LogRecord,
+  type Proposal,
+} from './fold';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { rank, tally, type TallyInput } from './tally';
@@ -106,6 +115,12 @@ class Log {
   /** A move of `atom` right after `after`, or first for null (#103), by member 0. */
   move(received: number, atom: string, after: string | null): string {
     const body = { target: { kind: 'move', atom, after } as const, title: 'T', why: 'W' };
+    return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** A class Proposal giving `atom` the class `to` (#116), by member 0. */
+  classify(received: number, atom: string, to: string): string {
+    const body = { target: { kind: 'class', atom, to } as const, title: 'T', why: 'W' };
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
@@ -544,8 +559,8 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const { proposals, rules } = fold(records, relayNow);
         for (const p of proposals) {
-          // The log proposes only edits, which are ordinary; dissolving is entrenched (#108).
-          expect(p.class).toBe('ordinary');
+          // A class Proposal is entrenched, and so is a change or move of an entrenched section (#116).
+          expect(p.class).toBe(classAtOpening(proposals, p));
           expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
           expect(p.outcome.bar).toEqual(rules.bars[p.class]);
@@ -779,6 +794,7 @@ const step = fc.record({
     'add',
     'new-document',
     'move',
+    'class',
     'version',
     'vote',
     'repeat',
@@ -845,6 +861,13 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
     const after = anchors[s.who % anchors.length] ?? null;
     proposals.push(log.move(received, atom, after));
   },
+  // A founded section or an earlier add's, to any class or one the fold doesn't know (#116).
+  class: (log, proposals, s, received) => {
+    const sections = [sectionOf(log, s), ...proposals];
+    const atom = sections[s.who % sections.length] ?? sectionOf(log, s);
+    const to = ['ordinary', 'entrenched', 'eternal', 'sacred'][s.score % 4] ?? 'eternal';
+    proposals.push(log.classify(received, atom, to));
+  },
   'new-document': (log, proposals, s, received) => {
     const text = s.score === 0 ? ' \n\n' : `N${String(s.score)}\n\nM${String(s.who)}\n`;
     proposals.push(log.newDocument(received, s.target === 3 ? '' : `Doc ${String(s.who)}`, text));
@@ -892,6 +915,128 @@ const arbitraryLog = fc
     }
     return { records: log.records, relayNow: after === null ? null : received + after };
   });
+
+/** The passed class Proposals on `atom` before `p` in relay order, the last of them last (#116). */
+function passedClassesBefore(proposals: readonly Proposal[], atom: string, seq: number) {
+  return proposals.filter(
+    (q) =>
+      q.target.kind === 'class' &&
+      q.atom === atom &&
+      q.seq < seq &&
+      q.final &&
+      q.outcome.kind === 'pass',
+  );
+}
+
+/**
+ * The class a kept Proposal should have opened at, by a model of #116's rule: entrenched for a
+ * class Proposal, and for a change or move of a section whose last passed class Proposal before
+ * it made it entrenched; ordinary otherwise. A kept Proposal on a section never overlaps a class
+ * Proposal on it, so every earlier one had closed by the time it opened.
+ */
+function classAtOpening(proposals: readonly Proposal[], p: Proposal): 'ordinary' | 'entrenched' {
+  const { kind } = p.target;
+  if (kind === 'class') return 'entrenched';
+  if (kind !== 'edit' && kind !== 'move') return 'ordinary';
+  const last = passedClassesBefore(proposals, p.atom, p.seq).at(-1)?.target;
+  return last?.kind === 'class' && last.to === 'entrenched' ? 'entrenched' : 'ordinary';
+}
+
+/**
+ * One step of a log built around section classes (#116): a class Proposal, a change, a removal or a
+ * move of one of three sections, which both members then pass, fail or leave open, after a wait.
+ */
+const classStep = fc.record({
+  kind: fc.constantFrom('class', 'class', 'edit', 'remove', 'move'),
+  section: fc.nat({ max: 2 }),
+  to: fc.constantFrom('ordinary', 'entrenched', 'entrenched', 'eternal'),
+  ballots: fc.constantFrom('pass', 'pass', 'fail', 'none'),
+  wait: fc.integer({ min: 0, max: 30_000 }),
+});
+
+/** A random log of class Proposals and Proposals on the same sections (#116), and a relay time. */
+const classLog = fc
+  .record({ steps: fc.array(classStep, { maxLength: 12 }), after: fc.nat({ max: 30_000 }) })
+  .map(({ steps, after }) => {
+    const log = Log.founded(2, FIRST_SECTIONS);
+    let received = R + 10;
+    for (const s of steps) {
+      received += s.wait;
+      const atom = `${log.group}.${String(s.section)}`;
+      const proposal =
+        s.kind === 'class'
+          ? log.classify(received, atom, s.to)
+          : s.kind === 'move'
+            ? log.move(received, atom, null)
+            : log.propose(received, atom, s.kind === 'remove' ? '' : `New ${String(s.wait)}`);
+      if (s.ballots === 'none') continue;
+      const score = s.ballots === 'pass' ? 4 : 2;
+      log.vote(received + 1, 0, proposal, score);
+      log.vote(received + 2, 1, proposal, score);
+    }
+    return { records: log.records, relayNow: received + after };
+  });
+
+/** Random logs of every kind, and logs built around section classes (#116). */
+const anyLog = fc.oneof(arbitraryLog, classLog);
+
+describe('properties of section classes (#116)', { timeout: 120_000 }, () => {
+  it('opens every Proposal at the class a model of the rule gives: entrenched for a class Proposal, and for a change, removal or move of an entrenched section', () => {
+    fc.assert(
+      fc.property(anyLog, ({ records, relayNow }) => {
+        const { proposals, rules } = fold(records, relayNow);
+        for (const p of proposals) {
+          expect(p.class).toBe(classAtOpening(proposals, p));
+          expect(p.outcome.bar).toEqual(rules.bars[p.class]);
+        }
+      }),
+    );
+  });
+
+  it('gives each section the class of its last passed class Proposal, in close order, or ordinary', () => {
+    fc.assert(
+      fc.property(anyLog, ({ records, relayNow }) => {
+        const { atoms, proposals } = fold(records, relayNow);
+        for (const atom of atoms) {
+          const passed = passedClassesBefore(proposals, atom.id, Number.POSITIVE_INFINITY);
+          const closed = [...passed].sort((a, b) => closeTime(a) - closeTime(b));
+          const last = closed.at(-1)?.target;
+          expect(atom.class).toBe(last?.kind === 'class' ? last.to : 'ordinary');
+        }
+      }),
+    );
+  });
+
+  it('keeps an eternal section for good: it stays, eternal, and no Proposal on it opens after the one that made it so', () => {
+    fc.assert(
+      fc.property(anyLog, ({ records, relayNow }) => {
+        const { atoms, proposals } = fold(records, relayNow);
+        const eternal = proposals.filter(
+          (q) =>
+            q.target.kind === 'class' &&
+            q.target.to === 'eternal' &&
+            q.final &&
+            q.outcome.kind === 'pass',
+        );
+        for (const q of eternal) {
+          expect(atoms.find((atom) => atom.id === q.atom)?.class).toBe('eternal');
+          expect(proposals.filter((p) => p.atom === q.atom && p.seq > q.seq)).toEqual([]);
+        }
+      }),
+    );
+  });
+
+  it('makes sections entrenched and eternal often enough in its logs to test the rule', () => {
+    const samples = fc.sample(classLog, { numRuns: 200, seed: 116 });
+    const states = samples.map(({ records, relayNow }) => fold(records, relayNow));
+    const eternal = states.filter((state) => state.atoms.some((a) => a.class === 'eternal'));
+    const entrenched = states.filter((state) =>
+      state.proposals.some((p) => p.class === 'entrenched' && p.target.kind !== 'class'),
+    );
+    expect(eternal.length).toBeGreaterThan(20);
+    expect(entrenched.length).toBeGreaterThan(20);
+  });
+});
 
 /**
  * A ballot set: each voter's row scores some of up to three versions (null: not scored), and the

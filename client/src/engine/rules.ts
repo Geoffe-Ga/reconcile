@@ -14,7 +14,13 @@
  * Integers only, like the tally: a bar is an average of at least
  * `avgAtLeast` with under `zerosUnderPercent`% zeros, compared as products.
  */
-import { isDissolveProposal, isRulesProposal, type ProposalEventBody } from './event';
+import {
+  isClassProposal,
+  isDissolveProposal,
+  isMoveProposal,
+  isRulesProposal,
+  type ProposalEventBody,
+} from './event';
 import { isOptIn, isWider, type OptIns } from './optIns';
 
 /** How hard a change is: the class whose bar and window a Proposal gets. #115 adds removal's. */
@@ -152,29 +158,112 @@ export function foundingRules(rules: unknown): Rules | null {
   return restates(DEFAULT_RULES, rules) ? DEFAULT_RULES : null;
 }
 
-/** What {@link targetClass} may read of a group: its state at the Proposal's place in relay order. */
+/**
+ * A section's class (#116; ADR-0015 §2–3): ordinary; entrenched, so a change,
+ * removal or move of it needs the entrenched bar and window; or eternal, so no
+ * vote changes, moves or removes it. Every section starts ordinary, and only a
+ * class Proposal's pass changes it.
+ */
+export type AtomClass = 'ordinary' | 'entrenched' | 'eternal';
+
+/** The three section classes, the weakest first. */
+export const ATOM_CLASSES: readonly AtomClass[] = ['ordinary', 'entrenched', 'eternal'];
+
+/**
+ * A class Proposal's target as the fold keeps it (#116): the section, and the
+ * class its pass gives it, which {@link classChangeIsValid} allowed when it
+ * opened.
+ */
+export interface ClassChange {
+  readonly kind: 'class';
+  readonly atom: string;
+  readonly to: AtomClass;
+}
+
+/** What the class rules read of a section: its id and its class (#116). */
+export interface ClassedSection {
+  readonly id: string;
+  readonly class: AtomClass;
+}
+
+/**
+ * The classes a class Proposal may give a section of class `from` (#116), in
+ * the order the composer offers them: an ordinary section may become
+ * entrenched or eternal, an entrenched one eternal or ordinary again, and an
+ * eternal one nothing, ever.
+ */
+export function classChoices(from: AtomClass): readonly AtomClass[] {
+  switch (from) {
+    case 'ordinary':
+      return ['entrenched', 'eternal'];
+    case 'entrenched':
+      return ['eternal', 'ordinary'];
+    case 'eternal':
+      return [];
+  }
+}
+
+/**
+ * True when a class Proposal may take a section of class `from` to `to`
+ * (#116): `to` is a class {@link classChoices} offers, so never the class it
+ * has, and never anything for an eternal section.
+ */
+export function classChangeIsValid(from: AtomClass, to: string): to is AtomClass {
+  return classChoices(from).some((choice) => choice === to);
+}
+
+/** The class of section `id` in `state`, or ordinary for a section it doesn't hold. */
+export function classOfSection(
+  state: { readonly atoms: readonly ClassedSection[] },
+  id: string,
+): AtomClass {
+  return state.atoms.find((atom) => atom.id === id)?.class ?? 'ordinary';
+}
+
+/**
+ * What {@link targetClass} may read of a group: its state at the Proposal's
+ * place in relay order, its sections and their classes included (#116).
+ */
 export interface ClassState {
   readonly rules: Rules;
+  readonly atoms: readonly ClassedSection[];
 }
 
 /** How a Proposal's class is found, from the group's state when it opens and the Proposal's own body. */
 export type TargetClassifier = (state: ClassState, proposal: ProposalEventBody) => ProposalClass;
 
 /**
+ * The section a Proposal changes in place, moves or removes: an edit's Atom,
+ * a removal's included, or a move's (#103). Null for any other Proposal, an
+ * add included, whose anchor it leaves as it is (#116).
+ */
+function sectionChanged(proposal: ProposalEventBody): string | null {
+  if ('atom' in proposal) return proposal.atom;
+  return isMoveProposal(proposal) ? proposal.target.atom : null;
+}
+
+/**
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
  * change. The fold stores it as the Proposal's `class`. Dissolving the group
  * is entrenched (ADR-0051, #108), and so is a rules Proposal that widens an
- * opt-in from its standing value (ADR-0040, #117). Every other target is
- * ordinary, steward elections and recalls included (ADR-0049): entrenched
- * sections (#116) and removal (#115) each add their case here.
+ * opt-in from its standing value (ADR-0040, #117). A class Proposal is
+ * entrenched whatever it asks, so entrenchment is itself entrenched, and so
+ * is a change, a removal or a move of an entrenched section (ADR-0015, #116).
+ * Every other target is ordinary, steward elections and recalls included
+ * (ADR-0049), and so is an add, wherever its anchor: removal (#115) adds its
+ * case here.
  */
 export const targetClass: TargetClassifier = (state, proposal) => {
-  if (isDissolveProposal(proposal)) return 'entrenched';
-  if (!isRulesProposal(proposal)) return 'ordinary';
-  const { optIn, value } = proposal.target;
-  const wider = isOptIn(optIn) && isWider(optIn, state.rules.optIns[optIn], value);
-  return wider ? 'entrenched' : 'ordinary';
+  if (isDissolveProposal(proposal) || isClassProposal(proposal)) return 'entrenched';
+  if (isRulesProposal(proposal)) {
+    const { optIn, value } = proposal.target;
+    const wider = isOptIn(optIn) && isWider(optIn, state.rules.optIns[optIn], value);
+    return wider ? 'entrenched' : 'ordinary';
+  }
+  const section = sectionChanged(proposal);
+  const entrenched = section !== null && classOfSection(state, section) === 'entrenched';
+  return entrenched ? 'entrenched' : 'ordinary';
 };
 
 /** How long a vote of class `cls` runs when the proposer names no window, in relay minutes. */
