@@ -459,7 +459,7 @@ describe('parseEvent', () => {
       'proposal',
       {
         atom: 'a',
-        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        target: { kind: 'rules', optIn: 'frontDoor', value: false },
         title: 't',
         why: 'w',
       },
@@ -467,13 +467,13 @@ describe('parseEvent', () => {
     [
       'a rules Proposal without a title',
       'proposal',
-      { target: { kind: 'rules', optIn: 'frontDoor', value: true }, why: 'w' },
+      { target: { kind: 'rules', optIn: 'frontDoor', value: false }, why: 'w' },
     ],
     [
       'a rules Proposal with its window as text',
       'proposal',
       {
-        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        target: { kind: 'rules', optIn: 'frontDoor', value: false },
         title: 't',
         why: 'w',
         window: '14',
@@ -493,6 +493,9 @@ describe('parseEvent', () => {
       'chat-posted',
       { proposal: 'p', moment: 'open', nonce: 7 },
     ],
+    ['door-invited without an application', 'door-invited', {}],
+    ['door-invited with a numeric application', 'door-invited', { application: 7 }],
+    ['door-invited with a null application', 'door-invited', { application: null }],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -600,7 +603,7 @@ describe('parseEvent', () => {
   });
 
   it('keeps a rules Proposal’s voting window as written, for the fold to bound (#106, #117)', () => {
-    const target = { kind: 'rules', optIn: 'frontDoor', value: true };
+    const target = { kind: 'rules', optIn: 'frontDoor', value: false };
     const parsed = parseEvent(
       json(envelope('proposal', { target, title: 't', why: 'w', window: 13 })),
     );
@@ -609,7 +612,7 @@ describe('parseEvent', () => {
 
   it('tells a rules Proposal from a steward one and from an edit', () => {
     const rules = {
-      target: { kind: 'rules', optIn: 'frontDoor', value: true },
+      target: { kind: 'rules', optIn: 'frontDoor', value: false },
       title: 't',
       why: 'w',
     } as const;
@@ -650,6 +653,19 @@ describe('parseEvent', () => {
     });
     const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
     expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
+  });
+
+  it('reads a door-invited as its application, kept as written, dropping unknown keys (#121)', () => {
+    const body = { application: 'a1', name: 'Kim', message: 'Hello' };
+    const parsed = parseEvent(json(envelope('door-invited', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'door-invited',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { application: 'a1' },
+    });
   });
 
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {

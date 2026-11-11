@@ -9,6 +9,7 @@ import { messages } from '../app/messages';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
+import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { GroupRules } from './GroupRules';
@@ -81,7 +82,7 @@ describe('GroupRules', () => {
 
   it('shows an open front door as Open, with no webhook, and a link to propose closing it', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const open = log.rules('Ana', 'frontDoor', true);
+    const open = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
     renderRules(log.state(), 'ben');
     expect(within(door()).getByText('Open')).toBeVisible();
@@ -109,7 +110,7 @@ describe('GroupRules', () => {
 
   it('says the group is voting while a rules Proposal is open, and links to its vote', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const open = log.rules('Ben', 'frontDoor', true);
+    const open = log.rules('Ben', 'frontDoor', DOOR);
     renderRules(log.state(), 'cal');
     expect(within(door()).getByText(messages.optIns.voting)).toBeVisible();
     expect(within(door()).getByRole('link', { name: 'See the vote' })).toHaveAttribute(

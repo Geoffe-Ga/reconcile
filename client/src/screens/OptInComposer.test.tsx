@@ -3,7 +3,7 @@
  * with its warning; turning the bot on asks for a webhook the engine's own
  * validator accepts; Turn off now also narrows it, for a steward only.
  */
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -11,15 +11,16 @@ import { messages } from '../app/messages';
 import type { RulesValues } from '../app/proposals';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
-import type { OptIn } from '../engine/optIns';
+import { isFrontDoor, isOptInValue, type OptIn } from '../engine/optIns';
 import { axeViolations } from '../test/axe';
+import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { OptInComposer, type OptInOutcome } from './OptInComposer';
 
 const [, VOTING] = LEVELS;
 const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ';
-const { optIns } = messages;
+const { optIns, door } = messages;
 
 interface Options {
   readonly me?: string;
@@ -188,17 +189,61 @@ describe('OptInComposer: the voting time (#106)', () => {
 });
 
 describe('OptInComposer: other changes', () => {
-  it('opens a front door with no webhook field', async () => {
+  it('opens a front door with no webhook field, and fresh door secrets made on this device (#121)', async () => {
     const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
       optIn: 'frontDoor',
     });
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Open a front door');
     expect(screen.getByText(optIns.warnings.frontDoor)).toBeVisible();
     expect(screen.queryByRole('textbox', { name: 'Discord webhook URL' })).toBeNull();
+    const count = screen.getByRole('checkbox', { name: door.countLabel });
+    expect(count).not.toBeChecked();
     await type(user, 'Why', 'People keep asking how to join.');
     await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    const [[values]] = onPropose.mock.calls as [[RulesValues]];
+    expect(values).toMatchObject({ optIn: 'frontDoor', narrow: false, window: 14 });
+    expect(values.value).toEqual({
+      sign: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) as unknown,
+      box: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) as unknown,
+      showCount: false,
+    });
+    expect(isOptInValue('frontDoor', values.value)).toBe(true);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the count only when the proposer ticks it, and each opening makes keys of its own', async () => {
+    const state = groupLog({ members: ['Ben', 'Cal'] }).state();
+    const first = renderComposer(state, { optIn: 'frontDoor' });
+    await first.user.click(screen.getByRole('checkbox', { name: door.countLabel }));
+    await type(first.user, 'Why', 'Show we are many.');
+    await first.user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    cleanup();
+    const second = renderComposer(state, { optIn: 'frontDoor' });
+    await type(second.user, 'Why', 'People keep asking.');
+    await second.user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    const [[counted]] = first.onPropose.mock.calls as [[RulesValues]];
+    const [[hidden]] = second.onPropose.mock.calls as [[RulesValues]];
+    expect(counted.value).toMatchObject({ showCount: true });
+    expect(hidden.value).toMatchObject({ showCount: false });
+    const keys = (value: unknown) => {
+      if (!isFrontDoor(value)) throw new Error('Expected a front door.');
+      return [value.sign, value.box];
+    };
+    expect(keys(counted.value)).not.toEqual(keys(hidden.value));
+    expect(new Set([...keys(counted.value), ...keys(hidden.value)]).size).toBe(4);
+  });
+
+  it('closes an open front door with no count choice', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    const { user, onPropose } = renderComposer(log.state(), { optIn: 'frontDoor' });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Close the front door');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    await type(user, 'Why', 'Too much junk.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
     expect(onPropose).toHaveBeenCalledWith(
-      expect.objectContaining({ optIn: 'frontDoor', value: true, narrow: false }),
+      expect.objectContaining({ optIn: 'frontDoor', value: false, narrow: false }),
     );
   });
 
@@ -252,7 +297,7 @@ describe('OptInComposer: Turn off now', () => {
 describe('OptInComposer: where the fold would refuse it', () => {
   it('offers no form while a rules Proposal for the opt-in is open', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    log.rules('Ben', 'frontDoor', true);
+    log.rules('Ben', 'frontDoor', DOOR);
     renderComposer(log.state(), { optIn: 'frontDoor' });
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(optIns.unavailableTitle);
     expect(screen.getByText(optIns.unavailable)).toBeVisible();

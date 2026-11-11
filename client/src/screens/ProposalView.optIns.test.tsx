@@ -12,6 +12,7 @@ import { messages } from '../app/messages';
 import { createEvent, type ParsedEvent, parseEvent, type Score } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
+import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
@@ -102,7 +103,7 @@ describe('ProposalView: turning the chat bot on (#117)', () => {
 describe('ProposalView: a steward’s Turn off now (#117)', () => {
   it('says who turned it off and that it stays off while the group votes', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const door = log.rules('Ana', 'frontDoor', true, { title: 'Open a front door' });
+    const door = log.rules('Ana', 'frontDoor', DOOR, { title: 'Open a front door' });
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
     const off = log.rules('Ana', 'frontDoor', false, { title: 'Close the front door' });
     log.narrow('Ana', 'frontDoor', off);
@@ -118,7 +119,7 @@ describe('ProposalView: a steward’s Turn off now (#117)', () => {
 
   it('says nothing of a narrowing on an off-Proposal nobody narrowed', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const door = log.rules('Ana', 'frontDoor', true);
+    const door = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
     const off = log.rules('Ben', 'frontDoor', false, { title: 'Close it' });
     setup(log.state(), off, 'cal');

@@ -10,6 +10,7 @@ import { createEvent, type ParsedEvent, parseEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
+import { DOOR } from '../test/door';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
@@ -707,7 +708,7 @@ describe('Leave this group', () => {
 describe('GroupHome: the group’s rules (#117)', () => {
   it('links to the rules, saying where the chat bot and the front door stand', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const door = log.rules('Ana', 'frontDoor', true);
+    const door = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
     renderHome(log.state(), { me: authorOf('ben') });
     const rules = section('Rules');

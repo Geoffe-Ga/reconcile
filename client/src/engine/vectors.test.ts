@@ -37,6 +37,8 @@ describe('vector files', () => {
       'dissolve-terminal.json',
       'dissolve-unfinished.json',
       'dissolve-window.json',
+      'door-class.json',
+      'door-invited.json',
       'fold.json',
       'home-two-open-proposals.json',
       'invite.json',
@@ -88,6 +90,8 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -333,6 +337,16 @@ describe('vector files', () => {
     'dissolve-unfinished: an edit and a steward election still open when the group dissolves never close, apply or seat, even once later records and relay time pass their deadlines, and a Proposal decided before keeps its outcome and its text',
   ])('include the fold vector "%s"', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    'door-invited-first',
+    'door-invited-ignored',
+    'door-count',
+    'door-rotate',
+    'door-shape',
+  ])('include the front door vector "%s" (#121)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 
   it.each([

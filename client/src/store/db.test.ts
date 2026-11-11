@@ -46,11 +46,12 @@ const statement: PersonalDocument = {
 };
 
 /**
- * The schema every upgrade path ends at: version 5, with the groups and
- * personal stores (#93) and the device store, which holds the relay backup's
- * state (#97).
+ * The schema every upgrade path ends at: version 6, with the groups and
+ * personal stores (#93), the device store, which holds the relay backup's
+ * state (#97), and the store of front-door applications this device sent
+ * (#121).
  */
-const CURRENT_SCHEMA = { version: 5, stores: ['device', 'groups', 'personal'] };
+const CURRENT_SCHEMA = { version: 6, stores: ['device', 'groups', 'personal', 'sent'] };
 
 /** The version and object stores of the IndexedDB database `name`, as it now stands. */
 async function schemaOf(name: string): Promise<{ version: number; stores: string[] }> {
@@ -576,13 +577,14 @@ describe('purgeGroup', () => {
   });
 });
 
-describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5)', () => {
-  it('starts a fresh install at version 5, with empty groups, personal and device stores', async () => {
+describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5 → v6)', () => {
+  it('starts a fresh install at version 6, with empty groups, personal, device and sent stores', async () => {
     const store = await openStore();
 
     expect(await store.listGroups()).toEqual([]);
     expect(await store.listPersonal()).toEqual([]);
     expect(await store.getRelayBackup()).toBeUndefined();
+    expect(await store.listSent()).toEqual([]);
     store.close();
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });

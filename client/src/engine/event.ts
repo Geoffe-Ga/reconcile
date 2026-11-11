@@ -227,6 +227,17 @@ export interface ChatPostedBody {
 }
 
 /**
+ * Records that the author sent an invite to someone who asked to join at the
+ * group's front door (#121; ADR-0038): `application` is the SHA-256, in
+ * unpadded base64url, of the sealed application blob the relay holds, so
+ * everyone sees who invited them and nobody sends a second. Kept as written:
+ * the fold checks it (frontDoor.ts).
+ */
+export interface DoorInvitedBody {
+  readonly application: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -293,6 +304,7 @@ export interface EventBodies {
   readonly 'chat-posted': ChatPostedBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'door-invited': DoorInvitedBody;
 }
 
 /** The event types this engine understands. */
@@ -594,6 +606,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseDoorInvited(body: Json): DoorInvitedBody | null {
+  return isString(body.application) ? { application: body.application } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -670,13 +686,15 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
   }
 }
 
-/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+/** {@link withBody} for #98's types, `kx` and `key-rotate`, and #121's `door-invited`. */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'kx':
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'door-invited':
+      return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

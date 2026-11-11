@@ -40,6 +40,7 @@ import { optionFor } from './composeOption';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
 import {
   type ChatPostedBody,
+  type DoorInvitedBody,
   type DissolveBody,
   type DissolveProposalBody,
   EVENT_VERSION,
@@ -65,6 +66,7 @@ import {
   type VoteBody,
   type VouchBody,
 } from './event';
+import { type DoorInvite, mayRecordInvite } from './frontDoor';
 import {
   effectiveOptIns,
   isOptIn,
@@ -262,7 +264,9 @@ export interface IgnoredRecord {
  * order, in force or ended (#117). `vouches` holds every valid vouch in relay
  * order (#101), visible to members like ballots (ADR-0010). `chatPosts` holds
  * the chat bot's winning claims, the first valid `chat-posted` per (Proposal,
- * moment), in relay order (#119). `epoch` is the group key's epoch: 0 at
+ * moment), in relay order (#119). `doorInvites` holds each invite a member
+ * sent from the front door, the first valid `door-invited` per application,
+ * in relay order (#121). `epoch` is the group key's epoch: 0 at
  * genesis, then one more for each canonical key change, which `rotations`
  * keeps in order (#98). `rotationDue` is true once a membership has ended
  * since the last canonical key change, or genesis, until the next, or until
@@ -288,6 +292,7 @@ export interface GroupState {
   readonly narrowings: readonly Narrowing[];
   readonly vouches: readonly Vouch[];
   readonly chatPosts: readonly ChatPost[];
+  readonly doorInvites: readonly DoorInvite[];
   readonly epoch: number;
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
@@ -336,6 +341,7 @@ interface Draft {
   readonly narrowings: Narrowing[];
   readonly vouches: Vouch[];
   readonly chatPosts: ChatPost[];
+  readonly doorInvites: DoorInvite[];
   epoch: number;
   readonly rotations: Rotation[];
   rotationDue: boolean;
@@ -705,6 +711,24 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 }
 
 /**
+ * Keeps a record of an invite sent from the front door (#121) when its author
+ * may record it at its receipt (frontDoor.ts): they may invite, the door is
+ * open in effect, the application id is a SHA-256, and none is kept for it
+ * yet. The first valid one per application in relay order wins.
+ */
+function applyDoorInvited(
+  draft: Draft,
+  body: DoorInvitedBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { application } = body;
+  if (!mayRecordInvite(draft, author, application)) return false;
+  draft.doorInvites.push({ ...at, by: author, application });
+  return true;
+}
+
+/**
  * Adds a version to an open Proposal's ballot, in relay order, while it holds
  * fewer than three (ADR-0004, ADR-0047). The author must hold `propose`.
  */
@@ -836,11 +860,15 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 
 /**
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
- * `vouch` (#101), `chat-posted` (#119), and `kx` and `key-rotate` (#98).
+ * `vouch` (#101), `chat-posted` (#119), `kx` and `key-rotate` (#98), and
+ * `door-invited` (#121).
  */
 type LaterEvent = Extract<
   GroupEvent,
-  { readonly type: 'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'kx' | 'key-rotate' }
+  {
+    readonly type:
+      'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'kx' | 'key-rotate' | 'door-invited';
+  }
 >;
 
 /**
@@ -861,6 +889,8 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
       return applyKeyRotate(draft, event.body, event.author, at);
+    case 'door-invited':
+      return applyDoorInvited(draft, event.body, event.author, at);
     default:
       return applyProposalEvent(draft, event, at);
   }
@@ -1082,6 +1112,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings: [],
     vouches: [],
     chatPosts: [],
+    doorInvites: [],
     epoch: 0,
     rotations: [],
     rotationDue: false,
@@ -1101,7 +1132,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
   const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings, vouches, chatPosts, epoch, rotations, rotationDue } = draft;
+  const { narrowings, vouches, chatPosts, doorInvites, epoch, rotations, rotationDue } = draft;
   return {
     group,
     rules,
@@ -1119,6 +1150,7 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     narrowings,
     vouches,
     chatPosts,
+    doorInvites,
     epoch,
     rotations,
     rotationDue,

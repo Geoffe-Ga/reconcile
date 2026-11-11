@@ -29,6 +29,8 @@ import { noticeRecord } from './platform/notice';
 import { requestPersistence } from './platform/persist';
 import { browserPushPort, closeWhenVisible } from './platform/pushPort';
 import { sweepArchives } from './store/archive';
+import { plainText } from './app/text/markdown';
+import { createDoorKeeper } from './door/keeper';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
@@ -53,7 +55,9 @@ if (root === null) {
  * app closes its notifications whenever it comes to the front. After each
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
- * key (#97). Each launch also posts again any shared personal Document whose
+ * key (#97). Each sync keeps a group's front door, and looks for replies to
+ * the applications this device sent at one (#121). Each launch also posts
+ * again any shared personal Document whose
  * link is due a fresh copy or has an edit waiting (#105). That runs beside the
  * sync loop, not in its pass: a share has its own mailbox and keys, so no
  * group's key change or freeze touches it.
@@ -69,7 +73,8 @@ async function start(container: HTMLElement): Promise<void> {
   const push = createPush({ store, relay: createPushRelay(), port });
   const now = (): number => Date.now();
   const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, afterPass });
+  const door = createDoorKeeper({ store, relay, seal: xchachaSeal, plainText, clock: now });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, door, afterPass });
   closeWhenVisible(port, document);
   sync.start();
   // A share whose post fails stays pending, and the next launch tries again.

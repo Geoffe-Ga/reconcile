@@ -2,16 +2,19 @@
  * One device's `AppServices` for tests: its own IndexedDB database on the
  * shared fake-indexeddb, a relay client on a shared fake relay, a chat bot
  * (#119) that posts to that fake's Discord endpoint, never the network,
- * push (#99) over a fake browser whose permission starts unasked, and the
- * relay backup's daily refresh after each complete pass (#97).
+ * push (#99) over a fake browser whose permission starts unasked, the front
+ * door's keeper (#121), and the relay backup's daily refresh after each
+ * complete pass (#97).
  */
 import { vi } from 'vitest';
 
 import { botNotice } from '../app/chatMessages';
 import type { AppServices } from '../app/services';
+import { plainText } from '../app/text/markdown';
 import { xchachaSeal } from '../crypto/seal';
 import { postWebhook } from '../net/discord';
 import { createPushRelay } from '../net/push';
+import { createDoorKeeper } from '../door/keeper';
 import { createRelay } from '../net/relay';
 import { browserPushPort } from '../platform/pushPort';
 import { createChatBot } from '../store/chatBot';
@@ -75,6 +78,8 @@ export async function testDevice(
   });
   // As in main.tsx, the relay backup refreshes after each complete pass (#97).
   const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  // As in main.tsx, each sync keeps the front door, and looks for replies (#121).
+  const door = createDoorKeeper({ store, relay, seal: xchachaSeal, plainText, clock: now });
   const sync = createSync({
     store,
     relay,
@@ -82,6 +87,7 @@ export async function testDevice(
     clock: now,
     chatBot,
     push,
+    door,
     afterPass,
   });
   const copied: string[] = [];

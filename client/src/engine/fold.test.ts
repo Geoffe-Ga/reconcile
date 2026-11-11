@@ -101,6 +101,7 @@ describe('fold', () => {
       narrowings: [],
       vouches: [],
       chatPosts: [],
+      doorInvites: [],
       epoch: 0,
       rotations: [],
       rotationDue: false,
