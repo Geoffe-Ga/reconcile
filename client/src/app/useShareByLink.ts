@@ -17,7 +17,8 @@ export type ShareStatus =
   | ShareOutcome
   | 'stopping'
   | 'stop-failed'
-  | 'stopped';
+  | 'stopped'
+  | 'locked';
 
 /** One Document's share, as its editor holds it. */
 export interface ShareByLinkState {
@@ -80,23 +81,25 @@ export function useShareByLink(
       await save();
       const started = await sharing.start(id);
       if (started.kind === 'too-large') return 'too-large';
+      if (started.kind === 'locked') return 'locked';
       if (started.kind === 'failed') return 'start-failed';
       if (live.current) setView({ link: started.link, pending: false });
       return sharing.send(started.link);
     });
 
-  const send = () => once('idle', async () => (view ? sharing.send(view.link) : 'idle'));
+  const send = () => once('idle', async () => (view?.link ? sharing.send(view.link) : 'idle'));
 
   const stop = () =>
     once('stopping', async () => {
-      if ((await sharing.stop(id)) === 'failed') return 'stop-failed';
+      const stopped = await sharing.stop(id);
+      if (stopped !== 'stopped') return stopped === 'locked' ? 'locked' : 'stop-failed';
       if (live.current) setView(null);
       return 'stopped';
     });
 
   const stopFirst = async () => {
     if (view === null || view === undefined) return;
-    if ((await sharing.stop(id)) === 'failed') throw new Error('Sharing couldn’t be stopped.');
+    if ((await sharing.stop(id)) !== 'stopped') throw new Error('Sharing couldn’t be stopped.');
     setView(null);
   };
 
