@@ -11,6 +11,7 @@ import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
+import { ChoiceList, OptionList } from '../app/Options';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import type { ShareOutcome } from '../app/share';
@@ -37,6 +38,7 @@ import {
   isAddProposal,
   isDissolveProposal,
   isNewDocumentProposal,
+  isPriorityProposal,
   isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
@@ -49,6 +51,7 @@ import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
+import { isPriority, optionId } from '../engine/priority';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
 import { ConsentMeter } from './ConsentMeter';
@@ -132,6 +135,9 @@ interface Comparison {
   readonly current: string | null;
 }
 
+/** A priority vote's options are shown as they are, under "Options" (#107). */
+const OPTIONS: Comparison = { title: messages.proposal.options, current: null };
+
 /**
  * Each version is a word diff against the section's text now, numbered within
  * its Document (#92), or for an add (`atom` null, #75) or a new Document's
@@ -178,10 +184,12 @@ function addingTitle(proposal: Pick<Proposal, 'target'>): string {
 
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
- * an add or a new Document, whose whole text shows as added (#75, #92), or
- * nothing for a steward one.
+ * an add or a new Document, whose whole text shows as added (#75, #92),
+ * nothing for a steward one, or for a priority vote, its options as they are
+ * (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
+  if (isPriority(proposal)) return OPTIONS;
   return writesText(proposal)
     ? comparisonFor(state, changedAtom(proposal), passed, addingTitle(proposal))
     : STEWARD_BALLOT;
@@ -210,9 +218,20 @@ function NarrowedNote({ state, proposal }: { state: GroupState; proposal: Propos
   );
 }
 
-/** The diff legend, under the heading, whenever the versions show as diffs. */
-function Legend({ comparison }: { readonly comparison: Comparison }) {
+/**
+ * The diff legend, under the heading, whenever the versions show as diffs;
+ * for a priority vote, how its options are scored and ranked, while it's open.
+ */
+function Legend({ comparison, open = true }: { readonly comparison: Comparison; open?: boolean }) {
+  if (comparison === OPTIONS) {
+    return open ? <p className="caption">{messages.proposal.optionsHint}</p> : null;
+  }
   return comparison.current === null ? null : <p className="caption">{messages.diff.legend}</p>;
+}
+
+/** How a ballot or list lays its versions out: as changes, or as a priority vote's options (#107). */
+function layoutOf(comparison: Comparison): 'versions' | 'options' {
+  return comparison === OPTIONS ? 'options' : 'versions';
 }
 
 /** This member's latest ballot on the Proposal: one waiting in the outbox, else the folded one. */
@@ -350,10 +369,12 @@ interface VoteProps {
  */
 function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
   const detail = proposal.final ? null : proposalTally(proposal);
+  const priority = isPriority(proposal);
   return function MeterFor(version) {
     const tallied = detail?.versions.find((candidate) => candidate.id === version.id);
+    const label = priority ? { label: messages.meter.optionLabel(version.text) } : {};
     return detail === null || tallied === undefined ? null : (
-      <ConsentMeter number={version.number} tally={tallied} bar={detail.bar} />
+      <ConsentMeter number={version.number} tally={tallied} bar={detail.bar} {...label} />
     );
   };
 }
@@ -367,14 +388,16 @@ function ballotShown(reason: string | null, proposal: Proposal): boolean {
 }
 
 /**
- * The versions, each with its own pills for someone who can vote on them, then
- * "Add your version". Once this device has cleared a Proposal's ballots
- * (#111), there's no ballot left to show, so the versions stand alone.
+ * The versions, or a priority vote's options, each with its own pills for
+ * someone who can vote on them, then "Add your version". Once this device has
+ * cleared a Proposal's ballots (#111), there's no ballot left to show, so the
+ * versions or options stand alone.
  */
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
   const comparison = comparisonOf(state, proposal, passed);
+  const layout = layoutOf(comparison);
   const reason = whyNoVote(props, proposal);
   const closed = proposal.final || now >= proposal.deadline;
   const suspended = isSuspended(state, me);
@@ -384,7 +407,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
     <Block title={comparison.title} className="vote">
       <OptInWarning optIn={rulesChangeOf(proposal)?.optIn ?? null} />
       <NarrowedNote state={state} proposal={proposal} />
-      <Legend comparison={comparison} />
+      <Legend comparison={comparison} open={!proposal.final} />
       {ballotShown(reason, proposal) ? (
         <Ballot
           key={proposal.id}
@@ -398,13 +421,14 @@ function Vote({ props, proposal, versions }: VoteProps) {
           reachable={reachable}
           onVote={onVote}
           below={meters}
+          layout={layout}
           disabledNote={closed || !suspended ? undefined : <SuspendedNote state={state} me={me} />}
         />
       ) : (
         <>
-          <VersionList versions={versions} current={comparison.current}>
+          <ChoiceList versions={versions} current={comparison.current} layout={layout}>
             {meters}
-          </VersionList>
+          </ChoiceList>
           {reason === null ? null : (
             <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
           )}
@@ -471,8 +495,22 @@ function discussionLink(state: GroupState, proposal: Proposal): string | null {
 }
 
 /**
+ * "Proposal N · Open" or "Proposal N · Closed", with its number among the
+ * group's Proposals (#123), or for a priority vote, "Proposal N · Priority
+ * vote" or "Proposal N · Closed priority vote" (#107).
+ */
+function eyebrowOf(proposal: Proposal, closed: boolean): string {
+  const words = messages.proposal;
+  if (isPriority(proposal)) {
+    return (closed ? words.eyebrowPriorityClosed : words.eyebrowPriority)(proposal.number);
+  }
+  return (closed ? words.eyebrowClosed : words.eyebrowOpen)(proposal.number);
+}
+
+/**
  * A Proposal still open when its group dissolved (#108): closed, with no
- * outcome and no ballot, its versions as they stood.
+ * outcome and no ballot, its versions, or a priority vote's options (#107),
+ * as they stood.
  */
 function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state } = props;
@@ -481,7 +519,7 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={messages.proposal.eyebrowClosed(proposal.number)}
+        eyebrow={eyebrowOf(proposal, true)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
@@ -498,8 +536,12 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
         </p>
       </div>
       <Block title={comparison.title} className="vote">
-        <Legend comparison={comparison} />
-        <VersionList versions={versions} current={comparison.current} />
+        <Legend comparison={comparison} open={false} />
+        <ChoiceList
+          versions={versions}
+          current={comparison.current}
+          layout={layoutOf(comparison)}
+        />
       </Block>
     </Screen>
   );
@@ -544,11 +586,13 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   if (closedByDissolve(state, proposal))
     return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
-  const { eyebrowOpen, eyebrowClosed, pageTitle } = messages.proposal;
-  const eyebrow = proposal.final ? eyebrowClosed : eyebrowOpen;
   return (
     <Screen state={state} wide={versions.length > 1}>
-      <PageHeader eyebrow={eyebrow(proposal.number)} title={proposal.title} pageTitle={pageTitle} />
+      <PageHeader
+        eyebrow={eyebrowOf(proposal, proposal.final)}
+        title={proposal.title}
+        pageTitle={messages.proposal.pageTitle}
+      />
       <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
       {proposal.final ? (
         <ResultView
@@ -611,7 +655,10 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
   return { optIn: change.optIn, versions: [{ id: '', number: 1, author, text: '', rules }] };
 }
 
-/** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
+/**
+ * How a waiting Proposal's versions show: its text against the section, what
+ * its ballot decides, or a priority vote's options (#107).
+ */
 function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
   const author = displayName(state, me) ?? '';
   if (isStewardProposal(body)) {
@@ -620,6 +667,15 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
       versions: waitingSteward(state, author, body),
       optIn: null,
     };
+  }
+  if (isPriorityProposal(body)) {
+    const versions = body.options.map((text, i) => ({
+      id: optionId('', i),
+      number: i + 1,
+      author,
+      text,
+    }));
+    return { comparison: OPTIONS, versions, optIn: null };
   }
   if (isRulesProposal(body))
     return { comparison: STEWARD_BALLOT, ...waitingRules(state, author, body) };
@@ -673,7 +729,11 @@ function Waiting({ state, me, id, body, pending, reachable }: WaitingProps) {
       <Block title={comparison.title} className="vote">
         <OptInWarning optIn={optIn} />
         <Legend comparison={comparison} />
-        <VersionList versions={versions} current={comparison.current} />
+        {comparison === OPTIONS ? (
+          <OptionList options={versions} />
+        ) : (
+          <VersionList versions={versions} current={comparison.current} />
+        )}
       </Block>
       <SendStatus pending={pending} reachable={reachable} sent />
     </Screen>

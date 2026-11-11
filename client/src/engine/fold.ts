@@ -34,11 +34,13 @@
  * (coalition.ts). A group's reconcile Proposals carry its seats, and
  * `outside` opens each coalition motion the group owes a result on as a
  * Proposal of its own (crossing.ts), with no number, no chat bot claims and
- * no Dispatch. A `result` records a decided Proposal's counts and a
- * commitment to its ballots (#111): with the ballots held, the fold checks it
- * against them, and once a device has cleared them, the Proposal closes,
- * counts and decides by the result it reads ahead. The fold is pure: no I/O,
- * no clock, no randomness, so every device that folds the same records builds
+ * no Dispatch. A priority vote changes no Atom: the top option of the latest
+ * one to pass is the group's focus (#107). A `result` records a decided
+ * Proposal's counts and a commitment to its ballots (#111): with the ballots
+ * held, the fold checks it against them, and once a device has cleared them,
+ * the Proposal closes, counts and decides by the result it reads ahead. The
+ * fold is pure: no I/O, no clock, no randomness, so every device that folds
+ * the same records builds
  * the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
@@ -100,6 +102,7 @@ import {
   isCoalitionGenesis,
   isDissolveProposal,
   isNewDocumentProposal,
+  isPriorityProposal,
   isReconcileProposal,
   isRulesProposal,
   type KeyRotateBody,
@@ -110,6 +113,7 @@ import {
   type NewDocumentProposalBody,
   type ParsedEvent,
   parseRecord,
+  type PriorityProposalBody,
   type ProposalBody,
   type ProposalEventBody,
   type ReconcileProposalBody,
@@ -134,6 +138,7 @@ import {
   rulesChangeOf,
   withChange,
 } from './optIns';
+import { isPriority, optionId, optionsAreValid } from './priority';
 import {
   type Bar,
   chosenWindow,
@@ -283,7 +288,10 @@ export interface DecisionRecord {
  * the group (#108). A steward, rules or dissolve
  * Proposal's `atom` and `text` are `""`, and its one version, under its own
  * id, has no text. A recall's eligible set leaves out the steward it would
- * remove.
+ * remove. A priority vote (#107) asks what to focus on: its `title` is the
+ * question, its `atom` its own id, which no Atom has, its `text` `""`, and
+ * its versions its options, option `i` with the id `${id}.${i}`, all by its
+ * proposer.
  *
  * `number` is its 1-based place among the group's Proposals in relay order,
  * counting only the ones the fold kept (#123): the name of its Discord thread
@@ -353,6 +361,16 @@ export interface IgnoredRecord {
 }
 
 /**
+ * The group's current focus (#107): the top option of the latest priority
+ * vote whose pass is final, with the vote's id, the option's id and its text.
+ */
+export interface Focus {
+  readonly proposal: string;
+  readonly option: string;
+  readonly text: string;
+}
+
+/**
  * A group as one device sees it after folding its log. `group` is the genesis
  * id, or null before one. `rules` are the founding rules its genesis set:
  * `DEFAULT_RULES` in every MVP group, and before any genesis. `members` are
@@ -388,7 +406,8 @@ export interface IgnoredRecord {
  * public seat key and outcome. `coalition` is null for a group; for a
  * coalition's log it holds the seats, the participants' bindings, the results
  * the groups posted, each motion's seats and the status (coalition.ts), and
- * once it is declined `at` stays at that minute.
+ * once it is declined `at` stays at that minute. `focus` is the current
+ * focus, or null before any priority vote passes (#107).
  */
 export interface GroupState {
   readonly group: string | null;
@@ -415,6 +434,7 @@ export interface GroupState {
   readonly dissolved: Dissolution | null;
   readonly coalitions: readonly HeldSeat[];
   readonly coalition: Coalition | null;
+  readonly focus: Focus | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -927,8 +947,9 @@ function closeIsPossible(body: ResultBody, deadline: number): boolean {
  * True when a result read ahead can be a Proposal's record (#111): it arrived
  * in a later minute than its close, closes the Proposal between its receipt
  * and its deadline as its counts allow, counts the Proposal's eligible set
- * from version 1 on, and names the outcome its counts give at the
- * Proposal's bar.
+ * from its first version on (version 1, under the Proposal's id, or a
+ * priority vote's first option, `${id}.0`, #107), and names the outcome its
+ * counts give at the Proposal's bar.
  */
 function recordFits(found: ReadAhead, opened: Opening, bar: Bar): boolean {
   const { body } = found;
@@ -938,7 +959,7 @@ function recordFits(found: ReadAhead, opened: Opening, bar: Bar): boolean {
     body.closedAt >= opened.received &&
     body.closedAt <= deadline &&
     body.eligible === opened.eligible.length &&
-    body.versions[0]?.id === opened.id &&
+    body.versions[0]?.id === opened.versions[0]?.id &&
     closeIsPossible(body, deadline) &&
     outcomeFollows(body, bar)
   );
@@ -1099,6 +1120,42 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
   return true;
 }
 
+/** True while a priority vote is open at relay minute `received`. A group has at most one. */
+function priorityOpenAt(draft: Draft, received: number): boolean {
+  return draft.proposals.some((p) => isPriority(p) && isOpenAt(p, received));
+}
+
+/**
+ * Opens a priority vote (#107): its author holds `propose`, it has 2–7
+ * options, each 1–120 code points and no two the same, no other priority
+ * vote is open, its window, if it names one, is within its class's bounds
+ * (#106), and any Dispatch it carries fits (#112). Option `i` goes on the
+ * ballot as the version `${id}.${i}`. Like any of the group's own Proposals
+ * it takes the next number (#123).
+ */
+function applyPriority(
+  draft: Draft,
+  body: PriorityProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!can(draft, author, 'propose') || !fieldsAreValid(body)) return false;
+  if (!optionsAreValid(body.options) || priorityOpenAt(draft, at.received)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  // Like every Proposal, it opens through openProposal, so its ballots and notes expire (#111).
+  openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: at.id,
+    target: { kind: 'priority' },
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: body.options.map((text, i) => ({ id: optionId(at.id, i), author, text })),
+  });
+  return true;
+}
+
 /**
  * Opens a dissolve Proposal (ADR-0051, #108) when its author may propose, no
  * other is open and the group hasn't dissolved (dissolve.ts). It is
@@ -1170,7 +1227,7 @@ function applyReconcile(
  * can still be contested into a fail, and a coalition's followers are #124's.
  * An add (#75) has a target, so it waits too, and so does a removal, an edit
  * whose text is `""`: for now a motion only rewords one of the coalition's
- * Atoms.
+ * Atoms. A priority vote (#107) has a target too, so a coalition asks none.
  */
 function applyMotion(
   draft: Draft,
@@ -1199,6 +1256,7 @@ function applyProposal(
 ): boolean {
   if (draft.coalition !== null) return applyMotion(draft, draft.coalition, body, author, at);
   if (isReconcileProposal(body)) return applyReconcile(draft, body, author, at);
+  if (isPriorityProposal(body)) return applyPriority(draft, body, author, at);
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
@@ -1293,7 +1351,8 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 
 /**
  * Whether a version's text fits its Proposal: a steward, rules or dissolve
- * Proposal has no text, so it takes none (#102, #117, #108), and only an
+ * Proposal has no text, so it takes none (#102, #117, #108), nor does a
+ * priority vote, whose options are fixed when it opens (#107), and only an
  * edit's version may be `""`, a removal; an add's needs text (#75), and a new
  * Document's text that splits into at least one section (#92).
  */
@@ -1911,7 +1970,8 @@ function newDocument(id: string, title: string, text: string): DocumentDraft {
 
 /**
  * The Documents after one Proposal's pass, or as they were when it hasn't
- * passed or changes no Atom (a steward or rules Proposal, #102, #117): an
+ * passed or changes no Atom (a steward, rules or priority Proposal, #102,
+ * #117, #107): an
  * edit sets its Atom's text or, with `""`, removes it; an add puts its Atom
  * after its anchor in the Document it names, or last there once the anchor
  * is gone (#75); and a new Document joins after every other (#92). Atom ids
@@ -1980,9 +2040,31 @@ function applyPasses(
   founded: readonly DocumentDraft[],
   proposals: readonly Proposal[],
 ): readonly DocumentDraft[] {
+  return inCloseOrder(proposals).reduce(applyPass, founded);
+}
+
+/** The Proposals in order of close time, then relay order. */
+function inCloseOrder(proposals: readonly Proposal[]): Proposal[] {
   // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
-  const byClose = [...proposals].sort((a, b) => closeTime(a) - closeTime(b));
-  return byClose.reduce(applyPass, founded);
+  return [...proposals].sort((a, b) => closeTime(a) - closeTime(b));
+}
+
+/** A priority vote's top option, once its pass is final, else null (#107). */
+function topOption(proposal: Proposal): Focus | null {
+  if (!isPriority(proposal) || !proposal.final || proposal.outcome.kind !== 'pass') return null;
+  const option = proposal.outcome.version;
+  const text = proposal.versions.find((v) => v.id === option)?.text;
+  return text === undefined ? null : { proposal: proposal.id, option, text };
+}
+
+/**
+ * The group's focus (#107): the top option of the last priority vote to pass,
+ * in close order. A priority vote that fails or lapses leaves it as it was,
+ * and so does one still open when its group dissolves (#108), which is never
+ * final.
+ */
+function focusOf(proposals: readonly Proposal[]): Focus | null {
+  return inCloseOrder(proposals).reduce<Focus | null>((focus, p) => topOption(p) ?? focus, null);
 }
 
 /**
@@ -2190,6 +2272,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     dissolved: draft.dissolved,
     coalitions: heldSeats(proposals),
     coalition: draft.coalition,
+    focus: focusOf(proposals),
     ignored,
   };
   return { state, distrusted };

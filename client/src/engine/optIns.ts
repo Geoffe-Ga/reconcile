@@ -194,7 +194,14 @@ export interface OptInProposalState {
   readonly target:
     | {
         readonly kind:
-          'edit' | 'add' | 'new-document' | 'steward' | 'dissolve' | 'reconcile' | 'motion';
+          | 'edit'
+          | 'add'
+          | 'new-document'
+          | 'steward'
+          | 'dissolve'
+          | 'reconcile'
+          | 'motion'
+          | 'priority';
       }
     | RulesChange;
   readonly deadline: number;

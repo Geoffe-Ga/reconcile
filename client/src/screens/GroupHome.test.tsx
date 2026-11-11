@@ -284,7 +284,7 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('shows, in order: Needs your vote, the other open Proposals, Dispatches (#112), the Documents, Decided, People', async () => {
+  it('shows, in order: Needs your vote, Focus, the other open Proposals, Dispatches (#112), the Documents, Decided, People', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     const scored = log.propose('ben', { title: 'Bins on Monday', atom: 1 });
     log.vote('ana', scored, 3);
@@ -296,8 +296,9 @@ describe('GroupHome', () => {
     const regions = screen
       .getAllByRole('region')
       .map((region) => region.querySelector('h2')?.textContent);
-    expect(regions.slice(0, 6)).toEqual([
+    expect(regions.slice(0, 7)).toEqual([
       'Needs your vote',
+      'Focus',
       'Other open Proposals',
       'Dispatches',
       'Documents',
@@ -671,6 +672,121 @@ describe('GroupHome', () => {
     setup(chat === undefined ? {} : { chat });
     expect(screen.queryByRole('link', { name: /Join discussion/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Discussion' })).not.toBeInTheDocument();
+  });
+});
+
+describe('GroupHome: the current focus (#107)', () => {
+  /** Ana asks in a group of Ana, Ben and Cal, and all three score both options, closing it early. */
+  function focused() {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const id = log.ask('ana', ['Fix the website', 'Plan the picnic']);
+    const [a, b] = [`${id}.0`, `${id}.1`];
+    log.minute += 5;
+    log.ballot('ana', id, { [a]: 4, [b]: 2 });
+    log.ballot('ben', id, { [a]: 3, [b]: 3 });
+    log.ballot('cal', id, { [a]: 3, [b]: 2 });
+    return { log, id };
+  }
+
+  it('says there is no focus yet, and offers Ask what to focus on to someone who can propose', async () => {
+    const { state } = setup();
+    const focus = section('Focus');
+    expect(within(focus).getByText('Your group hasn’t chosen a focus yet.')).toBeVisible();
+    expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/priority`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Ask what to focus on to someone who can’t propose', () => {
+    setup({ levels: { Ben: VOTING } }, authorOf('ben'));
+    expect(within(section('Focus')).queryByRole('link')).toBeNull();
+  });
+
+  it('shows the current focus after a pass, linking to its result, under Needs your vote', async () => {
+    const { log, id } = focused();
+    renderHome(log.state());
+    const focus = section('Focus');
+    const card = within(focus).getByRole('link', { name: /Current focus/ });
+    expect(card).toHaveTextContent('Current focusFix the website');
+    expect(card).toHaveAttribute('href', `#/g/${log.group}/p/${id}`);
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 5)).toEqual([
+      'Focus',
+      'Open Proposals',
+      'Dispatches',
+      'Documents',
+      'Decided',
+    ]);
+    expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('leads no priority vote with a Document line, open or decided, since it changes none (#92)', () => {
+    const { log } = focused();
+    const open = log.ask('ben', ['Paint the hall', 'Fix the gate']);
+    renderHome(log.state(), { now: log.minute });
+    const card = (region: string, name: RegExp) =>
+      within(section(region)).getByRole('link', { name });
+    expect(card('Decided', /What should we focus on/).querySelector('.document-of')).toBeNull();
+    expect(card('Needs your vote', /What should we focus on/)).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${open}`,
+    );
+    expect(document.querySelector('.document-of')).toBeNull();
+  });
+
+  it('names the top option on the Decided card of a priority vote that passed', () => {
+    const { log } = focused();
+    renderHome(log.state());
+    const card = within(section('Decided')).getByRole('link', { name: /What should we focus on/ });
+    expect(card).toHaveTextContent(/^What should we focus on\?→Fix the websitePassed/);
+  });
+
+  it('keeps the focus, and offers no Ask, while another priority vote is open', () => {
+    const { log } = focused();
+    log.minute += 5;
+    log.ask('ben', ['New bylaws', 'Rent strike']);
+    renderHome(log.state());
+    const focus = section('Focus');
+    expect(within(focus).getByRole('link', { name: /Current focus/ })).toHaveTextContent(
+      'Fix the website',
+    );
+    expect(within(focus).queryByRole('link', { name: 'Ask what to focus on' })).toBeNull();
+    expect(within(section('Needs your vote')).getByText('What should we focus on?')).toBeVisible();
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 2)).toEqual(['Needs your vote', 'Focus']);
+  });
+
+  it('offers no Ask what to focus on while this member is leaving', () => {
+    renderHome(testGroup({ joiners: ['Ben'] }).state, { leaving: true });
+    expect(within(section('Focus')).queryByRole('link')).toBeNull();
+  });
+
+  it('keeps the focus a dissolved group had, after its Proposals that never closed, with no Ask (#108)', async () => {
+    const { log, id } = focused();
+    log.minute += 5;
+    const open = log.ask('ben', ['New bylaws', 'Rent strike']);
+    const end = log.proposeDissolve('ana', false);
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, end, 4);
+    log.minute += 1;
+    log.dissolve('ana', end);
+    renderHome(log.state(log.minute + 50_000));
+
+    const focus = section('Focus');
+    expect(within(focus).getByRole('link', { name: /Current focus/ })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${id}`,
+    );
+    expect(within(focus).queryByRole('link', { name: 'Ask what to focus on' })).toBeNull();
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 2)).toEqual(['Not decided', 'Focus']);
+    expect(within(section('Not decided')).getByRole('link')).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${open}`,
+    );
+    expect(await axeViolations()).toEqual([]);
   });
 });
 

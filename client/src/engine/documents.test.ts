@@ -111,6 +111,10 @@ describe('documentOf (#92)', () => {
     const target = { kind: 'dissolve', wipe: false } as const;
     expect(documentOf(STATE, change('P', '', target))).toBeNull();
   });
+
+  it('names none for a priority vote, whose own-id atom is no section (#107)', () => {
+    expect(documentOf(STATE, change('Q', 'Q', { kind: 'priority' }))).toBeNull();
+  });
 });
 
 describe('atomsOf and documentTitle (#92)', () => {

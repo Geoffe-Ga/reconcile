@@ -232,6 +232,29 @@ export interface RulesTarget {
   readonly value: unknown;
 }
 
+/** A priority vote's target (#107): it asks what the group should focus on, and changes no Atom. */
+export interface PriorityTarget {
+  readonly kind: 'priority';
+}
+
+/**
+ * Asks the group what to focus on (#107): `title` is the question, `why` its
+ * justification, and `options` the 2–7 answers everyone scores, in ballot
+ * order. It carries `target` in place of an Atom, and no text. Its `window`
+ * is kept as written, as an edit's is (#106), and like any of the group's own
+ * Proposals it may carry a Dispatch to send if it passes (#112).
+ */
+export interface PriorityProposalBody {
+  readonly target: PriorityTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly options: readonly string[];
+  readonly link?: string;
+  readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
+}
+
 /**
  * Turns an opt-in on or off, or replaces the chat bot's webhook (#117): a
  * Proposal with a title, a justification, an optional discussion link and an
@@ -313,7 +336,8 @@ export interface ReconcileProposalBody {
 /**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
  * a new Document (#92), a steward seat (#102), an opt-in (#117), dissolving
- * the group (#108), or reconciling into a coalition (#100).
+ * the group (#108), reconciling into a coalition (#100), or a priority vote's
+ * question and options (#107).
  */
 export type ProposalEventBody =
   | ProposalBody
@@ -322,7 +346,8 @@ export type ProposalEventBody =
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
-  | ReconcileProposalBody;
+  | ReconcileProposalBody
+  | PriorityProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -337,6 +362,11 @@ export function isAddProposal(body: ProposalEventBody): body is AddProposalBody 
 /** True when a Proposal's body proposes a new Document (#92). */
 export function isNewDocumentProposal(body: ProposalEventBody): body is NewDocumentProposalBody {
   return 'target' in body && body.target.kind === 'new-document';
+}
+
+/** True when a Proposal's body is a priority vote (#107). */
+export function isPriorityProposal(body: ProposalEventBody): body is PriorityProposalBody {
+  return 'target' in body && body.target.kind === 'priority';
 }
 
 /** True when a Proposal's body targets an opt-in (#117). */
@@ -892,21 +922,6 @@ function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalB
 }
 
 /**
- * A Proposal with a `target` in place of an Atom: an add (#75), a new
- * Document (#92), a steward seat (#102), an opt-in (#117), dissolving the
- * group (#108) or reconciling (#100).
- */
-function parseTargeted(body: Json): ProposalEventBody | null {
-  const { target } = body;
-  if (!isObject(target)) return parseTargetedProposal(body);
-  if (target.kind === 'add') return parseTextProposal(body, parseAddTarget(target));
-  if (target.kind === 'new-document') {
-    return parseTextProposal(body, parseNewDocumentTarget(target));
-  }
-  return parseTargetedProposal(body);
-}
-
-/**
  * An edit's or an add's optional fields (#75): a discussion link, a voting
  * window (#106) and a Dispatch (#112), each kept when present, or null when
  * one is a bad shape.
@@ -922,6 +937,35 @@ function editOptions(body: Json): Pick<ProposalBody, 'link' | 'window' | 'dispat
   };
 }
 
+/**
+ * A priority vote's body (#107): its target, question, why and options, and,
+ * like an edit's, an optional link, window (#106) and Dispatch (#112), or
+ * null for any other shape. It names no Atom and has no text.
+ */
+function parsePriority(body: Json): PriorityProposalBody | null {
+  const { atom, text, title, why, options } = body;
+  if (atom !== undefined || text !== undefined) return null;
+  if (!isString(title) || !isString(why) || !isStringList(options)) return null;
+  const extra = editOptions(body);
+  return extra === null ? null : { target: { kind: 'priority' }, title, why, options, ...extra };
+}
+
+/**
+ * A Proposal with a `target` in place of an Atom: an add (#75), a new
+ * Document (#92), a priority vote (#107), a steward seat (#102), an opt-in
+ * (#117), dissolving the group (#108) or reconciling into a coalition (#100).
+ */
+function parseTargeted(body: Json): ProposalEventBody | null {
+  const { target } = body;
+  if (!isObject(target)) return parseTargetedProposal(body);
+  if (target.kind === 'add') return parseTextProposal(body, parseAddTarget(target));
+  if (target.kind === 'new-document') {
+    return parseTextProposal(body, parseNewDocumentTarget(target));
+  }
+  return target.kind === 'priority' ? parsePriority(body) : parseTargetedProposal(body);
+}
+
+/** An edit names an `atom`; every other Proposal carries `target` (#75, #100, #102, #107, #108, #117). */
 function parseProposal(body: Json): ProposalEventBody | null {
   if (body.target !== undefined) return parseTargeted(body);
   const { atom, title, why, text } = body;

@@ -37,6 +37,7 @@
 h1,
 h2,
 h3,
+h4,
 p,
 ul,
 ol {
@@ -358,6 +359,13 @@ a[data-focus-visible] {
 .card-link-arrow {
   color: var(--primary);
   font: var(--type-ui);
+}
+
+/* A passed priority vote's top option, on its Decided card (#107). */
+.card-link-focus {
+  color: var(--body);
+  font: var(--type-body);
+  overflow-wrap: anywhere;
 }
 
 .sections {
@@ -725,6 +733,39 @@ a[data-focus-visible] {
   background: var(--sunken);
   color: var(--body);
   font: var(--type-ui);
+}
+
+/* The priority composer's options (#107): a fieldset of rows, each a field
+ * with Remove beside its input, then Add option. */
+.options-field {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.options-field > legend {
+  margin-block-end: var(--space-2);
+  padding: 0;
+}
+
+.option-row {
+  display: grid;
+  gap: var(--space-2);
+  align-items: start;
+}
+
+/* Remove sits beside the input once there are more than two options. */
+.option-row:has(.option-remove) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* Remove lines up with the input, under the field's label. */
+.option-remove {
+  margin-block-start: calc(var(--space-2) + 1lh);
+  margin-inline-start: 0;
 }
 
 /* A quiet button beside the primary one keeps its own space. */

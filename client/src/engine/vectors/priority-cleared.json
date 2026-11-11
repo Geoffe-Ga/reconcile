@@ -1,0 +1,343 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "priority-cleared: a priority vote whose ballots this device has cleared closes early, counts and decides by the result it reads ahead, so its top option is still the group's focus, and no Atom changes",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3.0",
+                  "counts": [0, 0, 0, 1, 1]
+                },
+                {
+                  "id": "@3.1",
+                  "counts": [0, 0, 1, 1, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3.0"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "target": {
+              "kind": "priority"
+            },
+            "cleared": true,
+            "ballots": [],
+            "versions": [
+              {
+                "id": "@3.0",
+                "text": "Fix the website"
+              },
+              {
+                "id": "@3.1",
+                "text": "Plan the picnic"
+              }
+            ],
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3.0",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@4",
+              "author": "%ana",
+              "closedAt": 29375021,
+              "commit": "commit-of-the-cleared-ballots",
+              "versions": [
+                {
+                  "id": "@3.0",
+                  "counts": [0, 0, 0, 1, 1]
+                },
+                {
+                  "id": "@3.1",
+                  "counts": [0, 0, 1, 1, 0]
+                }
+              ]
+            },
+            "mismatched": []
+          }
+        ],
+        "focus": {
+          "proposal": "@3",
+          "option": "@3.0",
+          "text": "Fix the website"
+        },
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "priority-cleared-fail: a later priority vote whose ballots this device has cleared, and whose result says no option passed, leaves the focus the earlier one set",
+      "cleared": ["@6"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3.0": 2,
+                "@3.1": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3.0": 3,
+                "@3.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["New bylaws", "Rent strike"]
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501920000,
+            "body": {
+              "proposal": "@6",
+              "closedAt": 29375031,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@6.0",
+                  "counts": [0, 1, 1, 0, 0]
+                },
+                {
+                  "id": "@6.1",
+                  "counts": [0, 1, 1, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "fail"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375040,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": false,
+            "closedAt": 29375012,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3.1"
+            }
+          },
+          {
+            "id": "@6",
+            "cleared": true,
+            "ballots": [],
+            "closedAt": 29375031,
+            "final": true,
+            "outcome": {
+              "kind": "fail"
+            },
+            "result": {
+              "id": "@7"
+            }
+          }
+        ],
+        "focus": {
+          "proposal": "@3",
+          "option": "@3.1",
+          "text": "Plan the picnic"
+        },
+        "ignored": []
+      }
+    }
+  ]
+}

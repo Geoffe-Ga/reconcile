@@ -9,7 +9,9 @@
  * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
  * mailbox changes nothing, not even relay time. And of coalitions (#100): a motion's outcome
  * doesn't depend on the order distinct seats' results arrive in, and nothing a group reports
- * carries a name, note, score or key from inside it. And of ballot expiry (#111): a device that
+ * carries a name, note, score or key from inside it. And of a priority vote's ranking (#107):
+ * it holds exactly the options that pass, best first, its first is always the tally's winner,
+ * and the order ballots arrive in never changes it. And of ballot expiry (#111): a device that
  * has cleared a closed Proposal's ballots, keeping its result, folds the same Document and
  * outcomes as one that still holds them.
  */
@@ -25,8 +27,9 @@ import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
 import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
+import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
-import { tally, type TallyInput } from './tally';
+import { rank, tally, type TallyInput } from './tally';
 
 const R = 29_375_000;
 const [FOLLOWING, , CREATING] = LEVELS;
@@ -1027,6 +1030,95 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         };
         const { commit, versions } = commitOf(first);
         expect(commitOf(second)).toMatchObject({ commit, versions });
+      }),
+    );
+  });
+});
+
+/**
+ * A priority ballot set (#107): 2 to 7 options, and each voter's row scores some of them (null:
+ * not scored). The eligible count is at least the number of voters.
+ */
+const prioritySet = fc
+  .record({
+    options: fc.integer({ min: OPTIONS_MIN, max: OPTIONS_MAX }),
+    rows: fc.array(
+      fc.array(fc.option(score, { nil: null }), {
+        minLength: OPTIONS_MAX,
+        maxLength: OPTIONS_MAX,
+      }),
+      { maxLength: 30 },
+    ),
+    absent: fc.nat({ max: 30 }),
+  })
+  .map(({ options, rows, absent }) => ({
+    eligible: rows.length + absent,
+    rows: rows.map((row) => row.slice(0, options)),
+    options,
+  }));
+
+describe('properties of the ranking (#107)', () => {
+  it('starts with tally()’s winner, and is empty exactly when nothing passes', () => {
+    fc.assert(
+      fc.property(prioritySet, ({ eligible, options, rows }) => {
+        const input = { ...ballots(eligible, options, rows), bar: ORDINARY };
+        const outcome = tally(input);
+        const [first] = rank(input);
+        expect(first?.id).toBe(outcome.kind === 'pass' ? outcome.version : undefined);
+      }),
+    );
+  });
+
+  it('holds every option that passes at quorum, and only those, best first', () => {
+    fc.assert(
+      fc.property(prioritySet, ({ eligible, options, rows }) => {
+        const input = { ...ballots(eligible, options, rows), bar: ORDINARY };
+        const ranking = rank(input);
+        const passing = input.versions.filter((option) => {
+          const n = option.scores.length;
+          const sum = option.scores.reduce((total, s) => total + s, 0);
+          const zeros = option.scores.filter((s) => s === 0).length;
+          const quorum = Math.max(
+            1,
+            Math.min(eligible, Math.max(3, Math.ceil((3 * eligible) / 10))),
+          );
+          return n >= quorum && sum / n >= 2 && zeros / n < 0.1;
+        });
+        expect(ranking.map((option) => option.id).sort()).toEqual(
+          passing.map((option) => option.id).sort(),
+        );
+        for (const option of ranking)
+          expect(option).toMatchObject({ atQuorum: true, passes: true });
+        // Each option is at least as good as the next: a higher average, or an equal one with no
+        // more zeros, and an exact tie keeps ballot order.
+        const at = (id: string) => input.versions.findIndex((option) => option.id === id);
+        ranking.slice(1).forEach((next, i) => {
+          const prev = ranking[i];
+          if (prev === undefined) throw new Error('Expected the previous option.');
+          const left = prev.sum * next.scorers;
+          const right = next.sum * prev.scorers;
+          expect(left).toBeGreaterThanOrEqual(right);
+          if (left === right) expect(prev.zeros).toBeLessThanOrEqual(next.zeros);
+          if (left === right && prev.zeros === next.zeros) {
+            expect(at(prev.id)).toBeLessThan(at(next.id));
+          }
+        });
+      }),
+    );
+  });
+
+  it('gives the same ranking whatever order the ballots arrive in', () => {
+    const scenario = prioritySet.chain((set) =>
+      fc.record({
+        set: fc.constant(set),
+        shuffled: fc.shuffledSubarray([...set.rows], { minLength: set.rows.length }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ set: { eligible, options, rows }, shuffled }) => {
+        const first = rank({ ...ballots(eligible, options, rows), bar: ORDINARY });
+        const second = rank({ ...ballots(eligible, options, shuffled), bar: ORDINARY });
+        expect(second).toEqual(first);
       }),
     );
   });

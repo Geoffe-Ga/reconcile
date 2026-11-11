@@ -32,6 +32,7 @@ import type { ParsedEvent } from '../engine/event';
 import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
 import { homeLists } from '../engine/home';
 import { displayName } from '../engine/names';
+import { isPriority, openPriority } from '../engine/priority';
 import { activeSuspension, maySuspend, seatOf, type Suspension } from '../engine/stewards';
 import type { KeyChange } from '../store/epochs';
 
@@ -149,6 +150,10 @@ function ProposalCards({ state, groupId, proposals, now, line }: ProposalCardsPr
 interface OpenListsProps {
   readonly state: GroupState;
   readonly groupId: string;
+  /** What goes right under Needs your vote: the current focus (#107). */
+  readonly children?: ReactNode;
+  /** What goes right after the last list of open Proposals: the backup card (#78). */
+  readonly after?: ReactNode;
   /** What waits on this person; nothing while they're leaving. */
   readonly needsYourVote: readonly Proposal[];
   /** The other open Proposals, or every open one while they're leaving. */
@@ -157,13 +162,19 @@ interface OpenListsProps {
 }
 
 /**
- * 'Needs your vote', when anything waits on this person, then the other open
- * Proposals: "Open Proposals", or "Other open Proposals" after it. With none
- * open, one line says so.
+ * 'Needs your vote', when anything waits on this person, then the current
+ * focus (#107), then the other open Proposals: "Open Proposals", or "Other
+ * open Proposals" after it. With none open, one line says so. `after`, the
+ * backup card (#78), follows the last list of Proposals, so it sits under
+ * Needs your vote, ahead of the focus, when nothing else is open.
  */
-function OpenLists({ state, groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
+function OpenLists(props: OpenListsProps) {
+  const { state, groupId, needsYourVote, otherOpen, now, children, after } = props;
   const { home } = messages;
   const waits = needsYourVote.length > 0;
+  const others = otherOpen.length > 0;
+  // Needs your vote is the last list when nothing else is open.
+  const lastIsWaits = waits && !others;
   return (
     <>
       {waits ? (
@@ -171,16 +182,19 @@ function OpenLists({ state, groupId, needsYourVote, otherOpen, now }: OpenListsP
           <ProposalCards state={state} groupId={groupId} proposals={needsYourVote} now={now} />
         </Section>
       ) : null}
-      {otherOpen.length > 0 ? (
+      {lastIsWaits ? after : null}
+      {children}
+      {others ? (
         <Section title={waits ? home.otherOpen : home.openProposals}>
           <ProposalCards state={state} groupId={groupId} proposals={otherOpen} now={now} />
         </Section>
       ) : null}
-      {waits || otherOpen.length > 0 ? null : (
+      {waits || others ? null : (
         <Section title={home.openProposals}>
           <p>{home.noProposals}</p>
         </Section>
       )}
+      {lastIsWaits ? null : after}
     </>
   );
 }
@@ -206,6 +220,23 @@ function Unfinished({ state, groupId, proposals, now }: Omit<ProposalCardsProps,
   );
 }
 
+/** A closed priority vote's top option once it passed, else null (#107). */
+function topOption(proposal: Proposal): string | null {
+  if (!isPriority(proposal) || proposal.outcome.kind !== 'pass') return null;
+  const winner = proposal.outcome.version;
+  return proposal.versions.find((version) => version.id === winner)?.text ?? null;
+}
+
+/** A passed priority vote's top option, on its Decided card. */
+function TopOption({ proposal }: { readonly proposal: Proposal }) {
+  const top = topOption(proposal);
+  return top === null ? null : (
+    <span className="card-link-focus">
+      <bdi>{top}</bdi>
+    </span>
+  );
+}
+
 interface DecidedProps {
   readonly state: GroupState;
   readonly groupId: string;
@@ -216,7 +247,9 @@ interface DecidedProps {
  * Decided: the group's history, each closed Proposal led by the Document it
  * changed or created (#92), with its title, its outcome in a word, and its
  * close date, opening its result, and "Scores cleared" once this device has
- * deleted its individual ballots (#111).
+ * deleted its individual ballots (#111). A priority vote, which changes no
+ * Document, has no Document line, and one that passed names its top option
+ * (#107).
  */
 function Decided({ state, groupId, closed }: DecidedProps) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
@@ -237,6 +270,7 @@ function Decided({ state, groupId, closed }: DecidedProps) {
                 {messages.app.forward}
               </span>
             </span>
+            <TopOption proposal={proposal} />
             <span className="meta countdown">
               <span>{messages.decided.outcomes[proposal.outcome.kind]}</span>
               <time dateTime={minuteIso(closeTime(proposal))}>
@@ -250,6 +284,60 @@ function Decided({ state, groupId, closed }: DecidedProps) {
         </li>
       ))}
     </ul>
+  );
+}
+
+interface FocusProps {
+  readonly state: GroupState;
+  readonly me: string;
+  /** True while this member leaves, or once the group has dissolved: nothing new is asked. */
+  readonly readOnly: boolean;
+}
+
+/**
+ * The group's current focus (#107): the top option of the latest priority
+ * vote to pass, opening its result, or a sentence before there is one. Those
+ * who can propose may ask what to focus on while no priority vote is open,
+ * unless they're leaving or the group has dissolved (#77, #108), whose
+ * read-only copy keeps the focus it had.
+ */
+function Focus({ state, me, readOnly }: FocusProps) {
+  const groupId = state.group ?? '';
+  const { focus } = state;
+  const canAsk = !readOnly && can(state, me, 'propose') && openPriority(state) === undefined;
+  return (
+    <Section title={messages.home.focus}>
+      <div className="stack">
+        {focus === null ? (
+          <p>{messages.home.noFocus}</p>
+        ) : (
+          <Link
+            className="card-link"
+            href={routeHref({ name: 'proposal', groupId, proposalId: focus.proposal })}
+          >
+            <span className="eyebrow">{messages.home.currentFocus}</span>
+            <span className="card-link-title">
+              <span className="heading-3">
+                <bdi>{focus.text}</bdi>
+              </span>
+              <span className="card-link-arrow" aria-hidden="true">
+                {messages.app.forward}
+              </span>
+            </span>
+          </Link>
+        )}
+        {canAsk ? (
+          <div>
+            <Link
+              className="button button-secondary"
+              href={routeHref({ name: 'priority', groupId })}
+            >
+              {messages.home.askFocus}
+            </Link>
+          </div>
+        ) : null}
+      </div>
+    </Section>
   );
 }
 
@@ -788,16 +876,27 @@ interface OpenSectionsProps {
   readonly lists: ReturnType<typeof homeLists>;
   readonly now: number;
   readonly leaving: boolean;
+  /** The current focus (#107), right under Needs your vote. */
+  readonly children: ReactNode;
+  /** The backup card (#78), after the open Proposals; none in a dissolved group. */
+  readonly after: ReactNode;
 }
 
 /**
- * The open Proposals: Needs your vote and the rest, or every one together
- * while this member leaves. In a dissolved group, those still open when it
- * dissolved, as closed (#108).
+ * The open Proposals: Needs your vote, the current focus (#107) and the rest,
+ * or every one together while this member leaves. In a dissolved group, those
+ * still open when it dissolved, as closed (#108), then the focus it had.
  */
-function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps) {
-  if (state.dissolved !== null)
-    return <Unfinished state={state} groupId={groupId} proposals={lists.open} now={now} />;
+function OpenSections(props: OpenSectionsProps) {
+  const { groupId, state, lists, now, leaving, children, after } = props;
+  if (state.dissolved !== null) {
+    return (
+      <>
+        <Unfinished state={state} groupId={groupId} proposals={lists.open} now={now} />
+        {children}
+      </>
+    );
+  }
   return (
     <OpenLists
       state={state}
@@ -805,7 +904,10 @@ function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps
       needsYourVote={leaving ? [] : lists.needsYourVote}
       otherOpen={leaving ? lists.open : lists.otherOpen}
       now={now}
-    />
+      after={after}
+    >
+      {children}
+    </OpenLists>
   );
 }
 
@@ -861,10 +963,10 @@ function Documents({ state, me, readOnly }: DocumentsProps) {
 
 /**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
- * other open Proposals and the backup card under them (#78), the latest
- * Dispatch (#112), the group's Documents with Propose a new Document (#92),
- * the Decided list of closed ones,
- * its people with their levels, the viewer's own involvement and Leave this
+ * group's current focus (#107), the other open Proposals and the backup card
+ * under them (#78), the latest Dispatch (#112), the group's Documents with
+ * Propose a new Document (#92), the Decided list of closed ones, its people
+ * with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
  * whoever may propose it, Propose dissolving the group (#108). While the viewer's
@@ -901,9 +1003,17 @@ export function GroupHome(props: GroupHomeProps) {
       {readOnly ? null : <WaitingNote state={state} me={me} />}
       <div className="sections">
         {leads ? news : null}
-        <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
-        {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
-        {dissolved === null ? props.backupCard : null}
+        <OpenSections
+          groupId={groupId}
+          state={state}
+          lists={lists}
+          now={now}
+          leaving={leaving}
+          // No backup file carries a dissolved group's read-only copy, so none is suggested (#108).
+          after={dissolved === null ? props.backupCard : null}
+        >
+          <Focus state={state} me={me} readOnly={readOnly} />
+        </OpenSections>
         {leads ? null : news}
         <Documents state={state} me={me} readOnly={readOnly} />
         <Section title={messages.decided.title}>

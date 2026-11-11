@@ -36,6 +36,7 @@ export type Route =
   /** Propose a new Document (#92). */
   | { readonly name: 'newDocument'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
+  | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
   /**
    * Add a section (#75): after the Atom `after`, in its Document, or at the
@@ -110,9 +111,17 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
 /**
  * The pages inside a group, Group home apart, that take nothing but the
  * group: the rules (#117), dissolving (#108), the Dispatches and Send a
- * Dispatch (#112), and Propose a new Document (#92).
+ * Dispatch (#112), Propose a new Document (#92), and Ask what to focus on
+ * (#107).
  */
-const FIXED_NAMES = ['rules', 'dissolve', 'dispatches', 'sendDispatch', 'newDocument'] as const;
+const FIXED_NAMES = [
+  'rules',
+  'dissolve',
+  'dispatches',
+  'sendDispatch',
+  'newDocument',
+  'priority',
+] as const;
 
 /** A page {@link FIXED_NAMES} lists. */
 type FixedName = (typeof FIXED_NAMES)[number];
@@ -124,6 +133,7 @@ const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
   dispatches: 'dispatches',
   sendDispatch: 'dispatch/new',
   newDocument: 'doc/new',
+  priority: 'priority',
 };
 
 /** The fixed pages by path, as a group's route reads them. */
@@ -170,8 +180,8 @@ const BARE_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
 ]);
 
 /**
- * A page inside a group: one of the fixed pages, such as `dispatch/new` or
- * `doc/new` (#92), `doc` (the first Document) or `add` (a new first section
+ * A page inside a group: one of the fixed pages, such as `dispatch/new`,
+ * `priority` (#107) or `doc/new` (#92), `doc` (the first Document) or `add` (a new first section
  * in it, #75), or `doc/{documentId}` (#92), `add-first/{documentId}` (a new
  * first section in that Document, #92), `propose/{atomId}`, `p/{proposalId}`,
  * `again/{proposalId}`, `add/{atomId}` (a new section after that Atom),
