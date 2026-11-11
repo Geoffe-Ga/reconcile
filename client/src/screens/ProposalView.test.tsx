@@ -14,7 +14,8 @@ import {
   parseEvent,
   type Score,
 } from '../engine/event';
-import type { GroupState } from '../engine/fold';
+import type { GroupState, Proposal } from '../engine/fold';
+import { resultFor } from '../engine/expiry';
 import type { OwnBallot } from '../engine/ownBallot';
 import { axeViolations } from '../test/axe';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
@@ -816,6 +817,26 @@ describe('ProposalView, the consent meter and the result', () => {
     expect(within(result).getByRole('list', { name: 'Totals' })).toHaveTextContent(
       'Scored by 2 · average 3.5 · no zeros',
     );
+  });
+
+  it('shows a cleared Proposal’s versions with no ballot, since its scores are gone (#111)', () => {
+    const { log, proposalId } = openVote();
+    log.vote('ana', proposalId, 3);
+    log.vote('ben', proposalId, 4);
+    const held = setup({ state: log.state(), proposalId });
+    expect(radios().filter((radio) => (radio as HTMLInputElement).checked)).toHaveLength(1);
+    const closedAt = log.minute;
+    log.minute += 1;
+    log.result('ana', resultFor(log.state().proposals[0] as Proposal));
+
+    held.rerender({ state: log.state(closedAt + 43_200, [proposalId]) });
+
+    expect(radios()).toEqual([]);
+    expect(screen.queryByText('Everyone in your group sees your scores and note.')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'On the ballot' })).toBeVisible();
+    expect(
+      within(screen.getByRole('region', { name: 'Result' })).getByRole('list', { name: 'Totals' }),
+    ).toHaveTextContent('Scored by 2 · average 3.5 · no zeros');
   });
 
   it('tells this member when their ballot reached the relay too late to count', () => {

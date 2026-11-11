@@ -39,6 +39,16 @@ function json(value: unknown): Uint8Array {
   return utf8(JSON.stringify(value));
 }
 
+/** A well-formed result body: one version, two ballots, a pass. */
+const RESULT = {
+  proposal: 'p',
+  closedAt: 29_375_100,
+  eligible: 2,
+  versions: [{ id: 'p', counts: [0, 0, 0, 1, 1] }],
+  outcome: { kind: 'pass', version: 'p' },
+  commit: 'the-ballot-commitment',
+};
+
 const PROPOSAL: EventInput = {
   type: 'proposal',
   group: 'g1',
@@ -376,6 +386,34 @@ describe('parseEvent', () => {
     ['version without text', 'version', { proposal: 'p' }],
     ['version with a numeric proposal', 'version', { proposal: 1, text: 'x' }],
     ['version with null text', 'version', { proposal: 'p', text: null }],
+    ['vote with a numeric salt', 'vote', { proposal: 'p', scores: { p: 3 }, salt: 7 }],
+    ['result without a commit', 'result', { ...RESULT, commit: undefined }],
+    ['result with a fractional closedAt', 'result', { ...RESULT, closedAt: 1.5 }],
+    ['result with a negative eligible count', 'result', { ...RESULT, eligible: -1 }],
+    ['result with versions that aren’t a list', 'result', { ...RESULT, versions: {} }],
+    [
+      'result with four counts',
+      'result',
+      { ...RESULT, versions: [{ id: 'p', counts: [0, 0, 0, 1] }] },
+    ],
+    [
+      'result with a negative count',
+      'result',
+      { ...RESULT, versions: [{ id: 'p', counts: [0, 0, 0, 0, -1] }] },
+    ],
+    [
+      'result with a fractional count',
+      'result',
+      { ...RESULT, versions: [{ id: 'p', counts: [0, 0, 0, 0, 0.5] }] },
+    ],
+    [
+      'result with a version without an id',
+      'result',
+      { ...RESULT, versions: [{ counts: [0, 0, 0, 0, 1] }] },
+    ],
+    ['result with an unknown outcome', 'result', { ...RESULT, outcome: { kind: 'win' } }],
+    ['result with a pass naming no version', 'result', { ...RESULT, outcome: { kind: 'pass' } }],
+    ['result with an outcome that isn’t an object', 'result', { ...RESULT, outcome: 'lapse' }],
     [
       'proposal with both an atom and a target',
       'proposal',
@@ -639,6 +677,30 @@ describe('parseEvent', () => {
       ts: 1,
       body: { proposal: 'p1', text: 'Quiet after 11pm.\n' },
     });
+  });
+
+  it('reads a result: its close, eligible count, each version’s five counts, outcome and commit', () => {
+    const parsed = parseEvent(json(envelope('result', { ...RESULT, note: 'dropped' })));
+    expect(parsed?.event.body).toEqual(RESULT);
+    const fail = parseEvent(
+      json(envelope('result', { ...RESULT, outcome: { kind: 'fail', version: 'p' } })),
+    );
+    expect(fail?.event.body).toEqual({ ...RESULT, outcome: { kind: 'fail' } });
+    const lapse = parseEvent(json(envelope('result', { ...RESULT, outcome: { kind: 'lapse' } })));
+    expect(lapse?.event.body).toEqual({ ...RESULT, outcome: { kind: 'lapse' } });
+  });
+
+  it('keeps a vote’s salt, and reads a vote without one, as cast before #111', () => {
+    const salted = parseEvent(
+      json(envelope('vote', { proposal: 'p', scores: { p: 3 }, salt: 'AAAAAAAAAAAAAAAAAAAAAA' })),
+    );
+    expect(salted?.event.body).toEqual({
+      proposal: 'p',
+      scores: { p: 3 },
+      salt: 'AAAAAAAAAAAAAAAAAAAAAA',
+    });
+    const plain = parseEvent(json(envelope('vote', { proposal: 'p', scores: { p: 3 } })));
+    expect(plain?.event.body).toEqual({ proposal: 'p', scores: { p: 3 } });
   });
 
   it.each([

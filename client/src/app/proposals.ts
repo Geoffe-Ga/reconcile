@@ -12,10 +12,12 @@
  * counts, once the relay has ordered and timed it.
  */
 import { MAX_RECORD_BYTES } from '../crypto/record';
+import { newBallotSalt } from '../crypto/salt';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
 import {
   type AddTarget,
+  base64url,
   type EventDraft,
   type Score,
   type SignedEvent,
@@ -218,6 +220,8 @@ export async function addVersion(
  * version it names by version id (version 1's id is the Proposal's). A later
  * ballot replaces this one in full until the vote closes, so it carries every
  * score the voter means to keep. The note is trimmed, and left out when blank.
+ * Each ballot carries 16 fresh random bytes of salt (#111), which its result's
+ * commitment covers, so nobody can test guesses against it once ballots expire.
  */
 export async function castBallot(
   services: ProposalServices,
@@ -226,7 +230,8 @@ export async function castBallot(
 ): Promise<void> {
   const { proposal, scores } = values;
   const note = nfc(values.note.trim());
-  const body = { proposal, scores, ...(note === '' ? {} : { note }) };
+  const salt = base64url(newBallotSalt());
+  const body = { proposal, scores, ...(note === '' ? {} : { note }), salt };
   const event = await signFor(services, groupId, {
     type: 'vote',
     group: groupId,
