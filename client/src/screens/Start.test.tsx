@@ -25,6 +25,17 @@ describe('Start', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers Link to my other device, for a device that joins by another one’s code (#96)', async () => {
+    render(<Start groups={[]} onOpenInvite={vi.fn()} />);
+
+    const section = screen.getByRole('region', { name: 'Have Reconcile on another device?' });
+    expect(within(section).getByRole('link', { name: 'Link to my other device' })).toHaveAttribute(
+      'href',
+      '#/link-this',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('lists every group on the device by name, however many there are', () => {
     const names = ['Riverside Tenants', 'Book club', 'Allotment society', 'Choir'];
     const groups = names.map((name, i) => ({
@@ -56,6 +67,28 @@ describe('Start', () => {
     expect(screen.getByText('You aren’t in any groups on this device yet.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Create group' })).toHaveAttribute('href', '#/create');
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('opens Personal (#93) from one card after the groups, whether or not there are any', async () => {
+    for (const groups of [[], GROUPS]) {
+      const { unmount } = render(<Start groups={groups} onOpenInvite={vi.fn()} />);
+      const personal = screen.getByRole('link', { name: /^Personal/ });
+      expect(personal).toHaveAttribute('href', '#/me');
+      expect(personal).toHaveTextContent(
+        'Your mission statement and other Documents of your own, on this device only.',
+      );
+      const create = screen.getByRole('link', { name: 'Create group' });
+      expect(create.compareDocumentPosition(personal) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(
+        screen
+          .queryAllByRole('list')
+          .flatMap((list) => within(list).queryAllByRole('link', { name: /^Personal/ })),
+      ).toEqual([]);
+      expect(await axeViolations()).toEqual([]);
+      unmount();
+    }
   });
 
   it('names a group whose founding event hasn’t reached the relay yet', () => {

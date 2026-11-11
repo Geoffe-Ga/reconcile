@@ -18,14 +18,25 @@ import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
-import { type VersionView, versionViews } from '../app/versionViews';
 import { rulesView } from '../app/optInLines';
 import { Named, SuspendedNote } from '../app/stewards';
-import { stewardView } from '../app/versionViews';
-import { can, isSuspended } from '../engine/capabilities';
-import { composeOption } from '../engine/composeOption';
 import {
+  dissolveView,
+  stewardView,
+  versionDoes,
+  type VersionView,
+  versionViews,
+} from '../app/versionViews';
+import { rightsAt } from '../engine/admission';
+import { can, holdsRights, isSuspended } from '../engine/capabilities';
+import { threadFor } from '../engine/chatPosts';
+import { composeOption } from '../engine/composeOption';
+import { closedByDissolve } from '../engine/dissolve';
+import {
+  isAddProposal,
+  isDissolveProposal,
   isPriorityProposal,
+  isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -39,6 +50,7 @@ import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/op
 import type { OwnBallot } from '../engine/ownBallot';
 import { isPriority, optionId } from '../engine/priority';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
+import type { TallyDetail } from '../engine/tally';
 import { ConsentMeter } from './ConsentMeter';
 import { ResultView } from './ResultView';
 
@@ -66,6 +78,14 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /**
+   * Once a dissolved group's ballots are cleared on this device (#108): when,
+   * and each decided Proposal's tally as the device kept it, by id.
+   */
+  readonly cleared?: {
+    readonly at: number;
+    readonly tallies: Readonly<Record<string, TallyDetail>>;
+  };
 }
 
 /** A labelled block: an eyebrow heading over its content. */
@@ -116,12 +136,14 @@ interface Comparison {
 const OPTIONS: Comparison = { title: messages.proposal.options, current: null };
 
 /**
- * Each version is a word diff against the section's text now. Once a pass has
- * changed the section, or when the section is gone, each version shows as it
- * reads instead.
+ * Each version is a word diff against the section's text now, or for an add
+ * (`atom` null, #75), against nothing, so its whole text shows as added. Once
+ * a pass has changed the section, or when the section is gone, each version
+ * shows as it reads instead.
  */
-function comparisonFor(state: GroupState, atom: string, passed: boolean): Comparison {
+function comparisonFor(state: GroupState, atom: string | null, passed: boolean): Comparison {
   if (passed) return { title: messages.proposal.onBallot, current: null };
+  if (atom === null) return { title: messages.proposal.newSection, current: '' };
   const index = state.atoms.findIndex((candidate) => candidate.id === atom);
   const now = state.atoms[index];
   if (now === undefined) return { title: messages.proposal.proposed, current: null };
@@ -131,14 +153,26 @@ function comparisonFor(state: GroupState, atom: string, passed: boolean): Compar
 /** A steward or rules ballot shows what it decides, never a diff: it changes no section (#102, #117). */
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
 
+/** True for a Proposal with text: an edit or an add (#75), not a steward or rules one (#102, #117). */
+function writesText(proposal: Proposal): boolean {
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add';
+}
+
+/** The section a Proposal changes, or null when it adds one (#75). */
+function changedAtom(proposal: Proposal): string | null {
+  return proposal.target.kind === 'add' ? null : proposal.atom;
+}
+
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
- * a steward one, or for a priority vote, its options as they are (#107).
+ * an add, whose whole text shows as added (#75), nothing for a steward one,
+ * or for a priority vote, its options as they are (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
   if (isPriority(proposal)) return OPTIONS;
-  return proposal.target.kind === 'edit'
-    ? comparisonFor(state, proposal.atom, passed)
+  return writesText(proposal)
+    ? comparisonFor(state, changedAtom(proposal), passed)
     : STEWARD_BALLOT;
 }
 
@@ -176,6 +210,11 @@ function Legend({ comparison, open = true }: { readonly comparison: Comparison; 
   return comparison.current === null ? null : <p className="caption">{messages.diff.legend}</p>;
 }
 
+/** How a ballot or list lays its versions out: as changes, or as a priority vote's options (#107). */
+function layoutOf(comparison: Comparison): 'versions' | 'options' {
+  return comparison === OPTIONS ? 'options' : 'versions';
+}
+
 /** This member's latest ballot on the Proposal: one waiting in the outbox, else the folded one. */
 function myBallot(props: ProposalViewProps, proposal: Proposal) {
   const waiting = props.pending
@@ -209,8 +248,9 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 
 /**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they joined after it opened, weren't at a voting
- * level then, or are the steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
+ * Outside its eligible set, they joined after it opened, hadn't earned a vote
+ * yet when it opened (#101), weren't at a voting level then, or are the
+ * steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
  */
@@ -221,9 +261,16 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
   const change = stewardChangeOf(proposal);
   if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
-  return member !== undefined && member.seq < proposal.seq
-    ? messages.proposal.notVotingLevel
-    : messages.proposal.joinedAfter;
+  if (member === undefined || member.seq > proposal.seq) return messages.proposal.joinedAfter;
+  return hadNoVote(state, me, proposal)
+    ? messages.admission.noVoteYet
+    : messages.proposal.notVotingLevel;
+}
+
+/** True when `me`'s voting rights hadn't arrived yet when `proposal` opened (#101). */
+function hadNoVote(state: GroupState, me: string, proposal: Proposal): boolean {
+  const arrived = rightsAt(state, me);
+  return arrived === null || arrived > proposal.received;
 }
 
 interface NoVoteProps {
@@ -233,10 +280,14 @@ interface NoVoteProps {
   readonly leaving: boolean;
 }
 
-/** Why they can't vote, and where they change their level when theirs doesn't vote now. */
+/**
+ * Why they can't vote, and where they change their level when theirs doesn't
+ * vote now. A newcomer gets their own line instead: no level votes until
+ * their rights arrive (#101).
+ */
 function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   const levelDoesntVote =
-    !leaving && can(state, me, 'read') && !can(state, me, 'vote') && !isSuspended(state, me);
+    !leaving && holdsRights(state, me) && !can(state, me, 'vote') && !isSuspended(state, me);
   return (
     <div className="stack">
       <p className="lede">{reason}</p>
@@ -270,8 +321,8 @@ function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposa
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
 function AddVersion({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  // A steward Proposal has no text, so it takes no versions (#102).
-  if (proposal.target.kind !== 'edit' || !isOpenToVersions(props, proposal)) return null;
+  // A steward or rules Proposal has no text, so it takes no versions (#102, #117); an edit or an add does.
+  if (!writesText(proposal) || !isOpenToVersions(props, proposal)) return null;
   const option = composeOption(props.state, proposal.atom);
   if (option === 'ballot-full') return <p className="caption">{messages.proposal.ballotFull}</p>;
   const route = {
@@ -317,7 +368,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
   const comparison = comparisonOf(state, proposal, passed);
-  const layout = comparison === OPTIONS ? 'options' : 'versions';
+  const layout = layoutOf(comparison);
   const reason = whyNoVote(props, proposal);
   const closed = proposal.final || now >= proposal.deadline;
   const suspended = isSuspended(state, me);
@@ -366,7 +417,7 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
       : [],
   );
   if (mine.length === 0) return null;
-  const { current } = comparisonFor(state, proposal.atom, false);
+  const { current } = comparisonFor(state, changedAtom(proposal), false);
   return (
     <Block title={messages.proposal.yourVersion} className="text-block">
       {mine.map(({ id, text }) =>
@@ -402,24 +453,111 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
   );
 }
 
-/** "Open Proposal" or "Closed Proposal", or for a priority vote, "Priority vote" or "Closed priority vote". */
-function eyebrowOf(proposal: Proposal): string {
-  const { eyebrowOpen, eyebrowClosed, eyebrowPriority, eyebrowPriorityClosed } = messages.proposal;
-  if (isPriority(proposal)) return proposal.final ? eyebrowPriorityClosed : eyebrowPriority;
-  return proposal.final ? eyebrowClosed : eyebrowOpen;
+/**
+ * Where Join discussion goes: the Proposal's own Discord thread once the log
+ * holds it (#123), else its own link, else the group's latest (#66).
+ */
+function discussionLink(state: GroupState, proposal: Proposal): string | null {
+  const thread = threadFor(state, proposal.id)?.url;
+  if (thread !== undefined) return thread;
+  return proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
+}
+
+/**
+ * "Proposal N · Open" or "Proposal N · Closed", with its number among the
+ * group's Proposals (#123), or for a priority vote, "Proposal N · Priority
+ * vote" or "Proposal N · Closed priority vote" (#107).
+ */
+function eyebrowOf(proposal: Proposal, closed: boolean): string {
+  const words = messages.proposal;
+  if (isPriority(proposal)) {
+    return (closed ? words.eyebrowPriorityClosed : words.eyebrowPriority)(proposal.number);
+  }
+  return (closed ? words.eyebrowClosed : words.eyebrowOpen)(proposal.number);
+}
+
+/**
+ * A Proposal still open when its group dissolved (#108): closed, with no
+ * outcome and no ballot, its versions, or a priority vote's options (#107),
+ * as they stood.
+ */
+function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
+  const { state } = props;
+  const versions = versionViews(state, proposal);
+  const comparison = comparisonOf(state, proposal, false);
+  return (
+    <Screen state={state} wide={versions.length > 1}>
+      <PageHeader
+        eyebrow={eyebrowOf(proposal, true)}
+        title={proposal.title}
+        pageTitle={messages.proposal.pageTitle}
+      />
+      <div className="stack">
+        <div className="meta-lines">
+          <p className="meta">
+            {messages.proposal.proposedBy} <bdi>{displayName(state, proposal.author) ?? ''}</bdi>
+          </p>
+          <p className="meta">{messages.archive.closed}</p>
+        </div>
+        <p className="lede" dir="auto">
+          {proposal.why}
+        </p>
+      </div>
+      <Block title={comparison.title} className="vote">
+        <Legend comparison={comparison} open={false} />
+        <ChoiceList
+          versions={versions}
+          current={comparison.current}
+          layout={layoutOf(comparison)}
+        />
+      </Block>
+    </Screen>
+  );
+}
+
+/** The tally a cleared archive kept for `proposal`, if its ballots are cleared (#108). */
+function clearedOf(props: ProposalViewProps, proposal: Proposal) {
+  const tally = props.cleared?.tallies[proposal.id];
+  return props.cleared === undefined || tally === undefined
+    ? {}
+    : { cleared: { at: props.cleared.at, tally } };
+}
+
+/**
+ * The Dispatch an open Proposal carries (#112): "If this passes", its title
+ * and its text as plain text, and that everyone in the group gets it, so
+ * voters see what passing also sends. Nothing once the vote has closed: the
+ * Dispatches view has it then, or it never went.
+ */
+function CarriedDispatch({ proposal }: { readonly proposal: Proposal }) {
+  const { dispatch } = proposal;
+  if (dispatch === null || proposal.final) return null;
+  const { dispatchHeading, dispatchLine } = messages.proposal;
+  return (
+    <Block title={dispatchHeading} className="card dispatch dispatch-carried">
+      <p className="heading-3 dispatch-title">
+        <bdi>{dispatch.title}</bdi>
+      </p>
+      {dispatch.text === '' ? null : (
+        <p className="dispatch-text" dir="auto">
+          {dispatch.text}
+        </p>
+      )}
+      <p className="caption">{dispatchLine}</p>
+    </Block>
+  );
 }
 
 /** A Proposal the relay has ordered: open with its ballot, or closed with its outcome first. */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state, now } = props;
+  if (closedByDissolve(state, proposal))
+    return <ClosedByDissolve props={props} proposal={proposal} />;
   const versions = versionViews(state, proposal);
-  const link =
-    proposal.link !== null && isHttpLink(proposal.link) ? proposal.link : latestLink(state);
-  const eyebrow = eyebrowOf(proposal);
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={eyebrow}
+        eyebrow={eyebrowOf(proposal, proposal.final)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
@@ -431,7 +569,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           own={props.own}
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
-          leaving={props.leaving === true}
+          leaving={props.leaving === true || state.dissolved !== null}
+          {...clearedOf(props, proposal)}
         />
       ) : null}
       <div className="stack">
@@ -440,7 +579,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           {proposal.why}
         </p>
       </div>
-      <ChatLink href={link} />
+      <CarriedDispatch proposal={proposal} />
+      <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
       <Vote props={props} proposal={proposal} versions={versions} />
       <PendingVersions props={props} proposal={proposal} />
@@ -481,8 +621,8 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
 }
 
 /**
- * How a waiting Proposal's versions show: its text against the section, a
- * steward or rules ballot, or a priority vote's options (#107).
+ * How a waiting Proposal's versions show: its text against the section, what
+ * its ballot decides, or a priority vote's options (#107).
  */
 function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
   const author = displayName(state, me) ?? '';
@@ -504,8 +644,25 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   }
   if (isRulesProposal(body))
     return { comparison: STEWARD_BALLOT, ...waitingRules(state, author, body) };
-  const comparison = comparisonFor(state, body.atom, false);
-  return { comparison, versions: [{ id: '', number: 1, author, text: body.text }], optIn: null };
+  if (isDissolveProposal(body)) {
+    const dissolve = dissolveView(body.target.wipe);
+    const versions = [{ id: '', number: 1, author, text: '', dissolve }];
+    return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
+  // A reconcile Proposal (#100) changes no section; #114 gives it its card.
+  if (isReconcileProposal(body)) {
+    return {
+      comparison: STEWARD_BALLOT,
+      versions: [{ id: '', number: 1, author, text: '' }],
+      optIn: null,
+    };
+  }
+  // An add's whole text shows as added, and it says where it goes (#75); a removal says so too.
+  const add = isAddProposal(body);
+  const comparison = comparisonFor(state, add ? null : body.atom, false);
+  const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
+  const version = { id: '', number: 1, author, text: body.text };
+  return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
@@ -546,8 +703,9 @@ function useWaitingProposal(pending: readonly ParsedEvent[], id: string) {
 }
 
 /**
- * The Proposal and its ballot (`#/g/{groupId}/p/{proposalId}`; spec §8): the
- * title and why, a countdown, Join discussion, then every version side by
+ * The Proposal and its ballot (`#/g/{groupId}/p/{proposalId}`; spec §8): its
+ * number over the title (#123), the why, a countdown, Join discussion (its
+ * Discord thread once the log holds one), then every version side by
  * side, each a word diff of the section's source with its own score pills,
  * and Add your version while the ballot has room. Who may vote, and whether
  * voting is still open, come from engine state and `can()`, never from level

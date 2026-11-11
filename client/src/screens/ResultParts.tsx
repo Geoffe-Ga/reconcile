@@ -1,7 +1,8 @@
 /**
  * The pieces a closed Proposal's result shares with a priority vote's (#107;
  * DESIGN.md, Result): thanks by name, Propose again, a late ballot's notice,
- * each choice's totals, the individual ballots under a disclosure, and when
+ * each choice's totals, the individual ballots under a disclosure, or once a
+ * dissolved group's archive has cleared them, when it did (#108), and when
  * voting ran, in relay time.
  */
 import { Fragment, type ReactNode, useId } from 'react';
@@ -12,7 +13,7 @@ import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { messages } from '../app/messages';
 import type { ShareOutcome } from '../app/share';
 import { MotionTitle } from '../app/stewards';
-import { formatMinute, minuteIso } from '../app/time';
+import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
 import type { VersionView } from '../app/versionViews';
 import { can } from '../engine/capabilities';
 import { composeOption } from '../engine/composeOption';
@@ -36,8 +37,21 @@ export interface ResultViewProps {
   readonly onProposeAgain: () => void;
   /** Shares the result message into the group's chat, or copies it (#113). */
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
-  /** Whether this device's leave waits for the relay (#77): then nothing is proposed again. */
+  /**
+   * Whether this device's leave waits for the relay (#77), or the group has
+   * dissolved (#108): then nothing is proposed again, and the result offers
+   * no message to tell the group.
+   */
   readonly leaving?: boolean;
+  /** Once a dissolved group's ballots are cleared (#108): when, and the tally kept for this Proposal. */
+  readonly cleared?: ClearedResult;
+}
+
+/** A Proposal's result in a cleared archive: when this device cleared it, and its kept tally (#108). */
+export interface ClearedResult {
+  /** When the ballots were cleared, in device milliseconds. */
+  readonly at: number;
+  readonly tally: TallyDetail;
 }
 
 /** "Thank you, Ben and Ana.", each name inside `<bdi>`. */
@@ -57,6 +71,33 @@ export function Thanks({ names }: { readonly names: readonly string[] }) {
   );
 }
 
+/** Whether Propose again waits, and the line that says why. */
+interface Again {
+  readonly busy: boolean;
+  readonly why: string;
+}
+
+/**
+ * Whether `props`' Proposal can be proposed again here, and if so whether it
+ * waits: a change, a removal or an add (#75) while another Proposal is open
+ * on its section, and a priority vote (#107) while another priority vote is
+ * open. A steward or rules vote isn't proposed again from here: Group home
+ * says when an election is due (#102), and the Rules page offers each opt-in
+ * (#117). Nothing is, while this member leaves or for someone who can't
+ * propose.
+ */
+function againOf(props: ResultViewProps): Again | null {
+  const { state, me, proposal, leaving = false } = props;
+  const priority = isPriority(proposal);
+  const { kind } = proposal.target;
+  const again = priority || kind === 'edit' || kind === 'add';
+  if (leaving || !again || !can(state, me, 'propose')) return null;
+  const { result } = messages;
+  return priority
+    ? { busy: openPriority(state) !== undefined, why: result.priorityBusy }
+    : { busy: composeOption(state, proposal.atom) !== 'propose', why: result.busy };
+}
+
 /**
  * Propose again, for someone who can propose and isn't leaving (ADR-0069, as
  * ADR-0073 cuts it: a fresh Proposal with a fresh window). It waits, and says
@@ -64,29 +105,23 @@ export function Thanks({ names }: { readonly names: readonly string[] }) {
  * (#107), while another priority vote is open.
  */
 export function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
-  const { state, me, proposal, onProposeAgain, leaving = false } = props;
   const reason = useId();
-  const priority = isPriority(proposal);
-  // A steward or rules vote isn't proposed again from here: Group home says when an election is
-  // due (#102), and the Rules page offers each opt-in (#117).
-  const again = priority || proposal.target.kind === 'edit';
-  if (leaving || !again || !can(state, me, 'propose')) return null;
-  const busy = priority
-    ? openPriority(state) !== undefined
-    : composeOption(state, proposal.atom) !== 'propose';
+  const again = againOf(props);
+  if (again === null) return null;
+  const { busy, why } = again;
   return (
     <div className="row result-again">
       <Button
         className="button button-primary"
         isDisabled={busy}
         {...(busy ? { 'aria-describedby': reason } : {})}
-        onPress={onProposeAgain}
+        onPress={props.onProposeAgain}
       >
         {messages.result.proposeAgain}
       </Button>
       {busy ? (
         <p id={reason} className="caption">
-          {priority ? messages.result.priorityBusy : messages.result.busy}
+          {why}
         </p>
       ) : null}
     </div>
@@ -103,12 +138,14 @@ export type Naming = 'versions' | 'options';
 
 /**
  * "Version 1 · Ana", the version's heading wherever the result names it, what a
- * steward ballot decided (#102), or a priority option's text (#107).
+ * steward, rules or dissolve ballot decided (#102, #117, #108), or a priority
+ * option's text (#107).
  */
 function VersionName({ version, naming }: { readonly version: VersionView; naming: Naming }) {
   if (naming === 'options') return <bdi>{version.text}</bdi>;
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
+  if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -225,9 +262,44 @@ export interface BallotsProps {
   readonly children?: ReactNode;
 }
 
-/** The individual ballots and notes, by name, one tap away (ADR-0010: open inside the group). */
-export function Ballots({ props, versions, naming, children, ...rest }: BallotsProps) {
+/** "Individual scores and notes were cleared on <date>.", where the ballots were (#108). */
+export function Cleared({ at }: { readonly at: number }) {
+  return (
+    <p className="caption">{messages.archive.cleared(formatDate(Math.floor(at / MINUTE_MS)))}</p>
+  );
+}
+
+/** The ballots, each by its voter's name, or a line that nobody voted. */
+function BallotList({
+  props,
+  versions,
+  naming,
+  label,
+}: Omit<BallotsProps, 'children'> & { label: string }) {
   const { state, proposal } = props;
+  if (proposal.ballots.length === 0) return <p className="caption">{messages.result.noBallots}</p>;
+  return (
+    <ul className="result-list" aria-label={label}>
+      {proposal.ballots.map((ballot) => (
+        <BallotRow
+          key={ballot.voter}
+          state={state}
+          ballot={ballot}
+          versions={versions}
+          naming={naming}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The individual ballots and notes, by name, one tap away (ADR-0010: open
+ * inside the group), or once a dissolved group's archive has cleared them,
+ * when it did (#108).
+ */
+export function Ballots({ props, versions, naming, children, ...rest }: BallotsProps) {
+  const { proposal, cleared } = props;
   const label = rest.label ?? messages.result.ballots(proposal.ballots.length);
   return (
     <Disclosure className="reads-as result-ballots">
@@ -238,20 +310,10 @@ export function Ballots({ props, versions, naming, children, ...rest }: BallotsP
       </Heading>
       <DisclosurePanel className="result-details">
         {children}
-        {proposal.ballots.length === 0 ? (
-          <p className="caption">{messages.result.noBallots}</p>
+        {cleared === undefined ? (
+          <BallotList props={props} versions={versions} naming={naming} label={label} />
         ) : (
-          <ul className="result-list" aria-label={label}>
-            {proposal.ballots.map((ballot) => (
-              <BallotRow
-                key={ballot.voter}
-                state={state}
-                ballot={ballot}
-                versions={versions}
-                naming={naming}
-              />
-            ))}
-          </ul>
+          <Cleared at={cleared.at} />
         )}
       </DisclosurePanel>
     </Disclosure>

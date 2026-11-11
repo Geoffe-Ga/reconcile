@@ -9,8 +9,10 @@
  * under a disclosure, and when voting ran, in relay time. A ballot that
  * reached the relay too late tells its author so. No result offers a
  * part-ways action (ADR-0068). Everything here is read from the group's own
- * log on this device; nothing is sent to the relay. A priority vote's result
- * is PriorityResult.tsx's (#107); the two share ResultParts.tsx.
+ * log on this device; nothing is sent to the relay. Once a dissolved group's
+ * archive has cleared its ballots (#108), the totals come from the tally this
+ * device kept, and the ballots give way to when they were cleared. A priority
+ * vote's result is PriorityResult.tsx's (#107); the two share ResultParts.tsx.
  */
 import { useId } from 'react';
 
@@ -28,6 +30,7 @@ import type { TallyDetail, VersionTally } from '../engine/tally';
 import { PriorityResult } from './PriorityResult';
 import {
   Ballots,
+  Cleared,
   LateNotice,
   ProposeAgain,
   Ran,
@@ -36,13 +39,20 @@ import {
   Totals,
 } from './ResultParts';
 
-export type { ResultViewProps } from './ResultParts';
+export type { ClearedResult, ResultViewProps } from './ResultParts';
 
 /** What the outcome blocks read. */
 interface OutcomeProps {
   readonly props: ResultViewProps;
   readonly detail: TallyDetail;
   readonly versions: readonly VersionView[];
+}
+
+/** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
+function passSentence(versions: number, winner: number, removed: boolean): string {
+  const { result } = messages;
+  if (removed) return versions > 1 ? result.passedVersionRemoval(winner) : result.passedRemoval;
+  return versions > 1 ? result.passedVersion(winner) : result.passed;
 }
 
 /** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
@@ -68,20 +78,22 @@ function RulesPassed({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A pass: its sentence, the winning text as the Document now reads, and thanks. No numbers. */
+/**
+ * A pass: its sentence, the winning text as the Document now reads, or no
+ * text when it removed the section, and thanks. No numbers.
+ */
 function Passed({ props, versions, winner }: OutcomeProps & { readonly winner: string }) {
   const { proposal } = props;
   const index = versions.findIndex((version) => version.id === winner);
   const shown = versions[index];
-  const sentence =
-    versions.length > 1 ? messages.result.passedVersion(index + 1) : messages.result.passed;
+  const text = shown?.text ?? '';
   // The proposer wrote version 1; a later version's author is thanked first.
   const byProposer = proposal.versions[index]?.author === proposal.author;
   const names = [shown?.author ?? '', ...(byProposer ? [] : [versions[0]?.author ?? ''])];
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{sentence}</p>
-      <AtomText text={shown?.text ?? ''} className="atom-card result-text" />
+      <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+      {text === '' ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={names} />
     </div>
   );
@@ -134,21 +146,31 @@ function Lapsed({ props }: OutcomeProps) {
   );
 }
 
+/** A dissolve Proposal's pass (#108): the group has dissolved. */
+function DissolvePassed() {
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{messages.dissolve.passed}</p>
+    </div>
+  );
+}
+
 /** The outcome block the result leads with. */
 function Outcome(props: OutcomeProps) {
   const { outcome } = props.detail;
-  const { steward, rules } = props.versions[0] ?? {};
+  const { steward, rules, dissolve } = props.versions[0] ?? {};
+  if (outcome.kind === 'pass' && dissolve !== undefined) return <DissolvePassed />;
   if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
   if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
   if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** A closed edit's result, from the engine's tally of its ballots. */
+/** A closed edit's result, from the engine's tally of its ballots, or the tally a cleared archive kept. */
 function EditResult(props: ResultViewProps) {
-  const { state, proposal, own } = props;
+  const { state, proposal, own, cleared } = props;
   const heading = useId();
-  const detail = proposalTally(proposal);
+  const detail = cleared?.tally ?? proposalTally(proposal);
   const versions = versionViews(state, proposal);
   return (
     <section className="result" aria-labelledby={heading}>
@@ -161,7 +183,11 @@ function EditResult(props: ResultViewProps) {
         <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
       )}
       <Totals detail={detail} versions={versions} naming="versions" />
-      <Ballots props={props} versions={versions} naming="versions" />
+      {cleared === undefined ? (
+        <Ballots props={props} versions={versions} naming="versions" />
+      ) : (
+        <Cleared at={cleared.at} />
+      )}
       <Ran proposal={proposal} />
     </section>
   );

@@ -19,6 +19,7 @@ import {
   rulesChange,
   sameValue,
   VALIDATORS,
+  webhookParts,
   withChange,
 } from './optIns';
 
@@ -79,12 +80,19 @@ describe('isWebhook: a Discord webhook URL, in the one form the bot will post to
     ['an empty string', ''],
   ])('refuses %s', (_name, url) => {
     expect(isWebhook(url)).toBe(false);
+    expect(webhookParts(url)).toBeNull();
   });
 
   it('refuses anything that is not a string', () => {
     for (const value of [null, undefined, 1, {}, [W1], { webhook: W1 }]) {
       expect(isWebhook(value)).toBe(false);
+      expect(webhookParts(value)).toBeNull();
     }
+  });
+
+  it('reads the id and token of a webhook it accepts, on either host (#119)', () => {
+    expect(webhookParts(W1)).toEqual({ id: '1', token: 'abc' });
+    expect(webhookParts(W2)).toEqual({ id: '1234567890123456789', token: 'Ab_c-9xYz' });
   });
 
   it('accepts only URLs a URL parser reads as https: on Discord with the webhook path', () => {

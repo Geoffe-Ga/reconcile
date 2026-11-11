@@ -17,7 +17,7 @@ import { messages } from '../app/messages';
 import { optionText, type PriorityValues } from '../app/proposals';
 import { routeHref } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
-import { holdPresses } from '../app/useSaving';
+import { holdPresses } from '../app/holdPresses';
 import { WindowField } from '../app/WindowField';
 import { can } from '../engine/capabilities';
 import { type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';

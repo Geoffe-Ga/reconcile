@@ -6,9 +6,9 @@ The pilot runs on one small DigitalOcean droplet that serves the app and the rel
 |---|---|
 | [`Caddyfile`](Caddyfile) | TLS, HSTS, the CSP, `/v1/*` to the relay on `127.0.0.1:8787`, everything else from `/srv/reconcile/app` (the manifest with its own `Content-Type`). Caddy's own error responses get the same headers and a fixed body. Every log goes to discard |
 | [`reconcile-relay.service`](reconcile-relay.service) | The relay under Uvicorn, as the `reconcile` user, with no access log, no proxy headers and no `Server` header. It points at the VAPID key that signs Web Push ([below](#web-push)) |
-| [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)) |
+| [`reconcile-purge.service`](reconcile-purge.service), [`reconcile-purge.timer`](reconcile-purge.timer) | Deletes expired blobs daily (30-day retention, [ADR-0057](../docs/adr/0057-environments-updates-retention.md)), and backups 180 days after their last refresh (#97) |
 | [`deploy.sh`](deploy.sh) | Builds, syncs, installs, restarts and smoke-tests. Run it with `--help` for the steps |
-| [`smoke.sh`](smoke.sh) | Health, a 1 KiB PUT and a GET back, then the push key, against any base URL |
+| [`smoke.sh`](smoke.sh) | Health, a 1 KiB PUT and a GET back, a 64 KiB backup PUT and GET back (#97), then the push key, against any base URL |
 | [`check.sh`](check.sh) | Validates the Caddyfile and the units. CI runs it through `./scripts/check-all.sh --deploy` |
 | [`no-ip-check.sh`](no-ip-check.sh) | Tries to make Caddy or the relay, with push on, write a client IP. Run it locally before changing either |
 
@@ -18,7 +18,7 @@ The founder does this once. The `<placeholders>` are yours; never commit their v
 
 **1. The droplet.** Create an **Ubuntu 24.04 LTS** droplet, the smallest size, in a US region, with your SSH key.
 - Leave **Monitoring** unticked: it installs a metrics agent.
-- Turn **Backups** off, and don't take **snapshots**. Either would keep the relay's database past its 30 days.
+- Turn **Backups** off, and don't take **snapshots**. Either would keep the relay's database past its retention: 30 days for blobs, and 180 days after the last refresh for relay backups (#97).
 
 **2. DNS.** Point an **A record** for `<domain>` at the droplet's IPv4 address. Caddy gets its certificate for that name on the first deploy.
 
@@ -96,7 +96,7 @@ deploy: <commit> to <domain>
 …the client build…
 [sudo] password for deploy:
 built client · synced · restarted reconcile-relay
-smoke: health ok · put seq 1 · get matches · push key · PASS
+smoke: health ok · put seq 1 · get matches · backup matches · push key · PASS
 ```
 
 It exits non-zero if any step fails, including the smoke test. The VM's own Caddy validates the Caddyfile before anything restarts. A deploy restarts Caddy, because `admin off` disables `caddy reload`, so the app is down for a second or two. On the first deploy the script waits up to two minutes for Caddy's certificate.
@@ -124,7 +124,7 @@ RECONCILE_RELAY_VAPID_KEY=.relay-data/vapid.pem RECONCILE_RELAY_VAPID_SUBJECT=ht
 ## Checks
 
 - **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it. It also holds the Caddyfile's CSP and HSTS header to their values, on the site's routes and on [its error routes](#caddys-own-errors) (see [The CSP](#the-csp) and [HSTS](#hsts)).
-- **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy`, `curl` and `openssl` on your PATH. It starts the relay with the unit's flags and push on, and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`, push routes included. Nothing it sends makes the relay call a push service. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. It also checks that the 502 Caddy writes while the relay is down carries the app's security headers and a body that names nothing. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
+- **`deploy/no-ip-check.sh`** runs locally, with `.venv` active and `caddy`, `curl` and `openssl` on your PATH. It starts the relay with the unit's flags and push on, and Caddy with this Caddyfile, both on unprivileged ports, and sends normal, malformed and failing requests from `127.0.0.2`, push and backup routes included. Nothing it sends makes the relay call a push service. Then it searches Caddy's and Uvicorn's output and the SQLite files for that address and for canary values sent in forwarding headers. It also checks that the 502 Caddy writes while the relay is down carries the app's security headers and a body that names nothing. On macOS, first run `sudo ifconfig lo0 alias 127.0.0.2`.
 - **`deploy/smoke.sh <base-url>`** works against any running relay with push on, such as `http://127.0.0.1:8787` from `./scripts/relay.sh` started [with a key](#web-push). Without one, it fails at its last step, `push`.
 
 ## What the VM still sees
@@ -146,10 +146,14 @@ The push services see the VM's address, and when each phone is woken, but never 
 Caddy sends this header on every response, and `vite preview` sends the same one ([`client/vite.config.ts`](../client/vite.config.ts)). The hash is shortened here; the [Caddyfile](Caddyfile) has it in full:
 
 ```
-default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-…'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-…'; connect-src 'self' https://discord.com/api/webhooks/; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
 ```
 
 This CSP and #70's Markdown sanitizer are the main defense against injected script stealing keys. The page can load script only from its own origin: no inline script, no third party, no plugins. No `<base>` tag can redirect its URLs, and no other site can frame it.
+
+**One more place to connect, by its path (#119).** `connect-src` lets the page reach its own origin, where the relay is, and Discord's webhooks, `https://discord.com/api/webhooks/` and nothing else on any host. A group's chat bot posts its content-free notices there once the group turns it on by Proposal ([ADR-0074](../docs/adr/0074-mvp-scope-revised.md)); the webhook URL lives only in the group's sealed events. A static header can't name one group's webhook, so the path allows every webhook, an attacker's own included. That gives a script that got injected one more place to send what it reads, as a relay mailbox of its own choosing already did. Keeping script from being injected (`script-src` and the sanitizer) stays the defense; `connect-src` keeps every other host out:
+- `client/src/net/discord.ts` is the only code that posts there. It rebuilds each webhook URL on `discord.com`, so a `discordapp.com` one works too, and sends `redirect: 'error'`, because a CSP path check doesn't hold across a redirect.
+- `client/src/net/discord.test.ts` pins the directive, and `client/e2e/csp.spec.ts` posts to the webhook path under this CSP and expects a `securitypolicyviolation` for another host, another Discord path and `discordapp.com`.
 
 **One inline style, by its hash (#153).** On iOS and iPadOS, React Aria inserts a `<style>` with one fixed rule, `@layer { * { overscroll-behavior: contain; } }`, while a Modal or a modal Popover (Select, ComboBox, Menu, DatePicker) is open, so scrolling inside the overlay doesn't scroll the page behind it. It has no id, so it can't be claimed the way the pressable style is (#150). `style-src-elem` allows `<style>` and stylesheet elements from `'self'`, plus that one text by the SHA-256 hash of its exact bytes, and nothing else:
 - It isn't `'unsafe-inline'`. An injected `<style>` with any other text is still blocked, `style` attributes still fall back to `default-src 'self'`, and script is untouched.

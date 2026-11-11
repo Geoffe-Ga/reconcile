@@ -2,7 +2,18 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { testGroup } from '../test/groups';
 import { type ChatMoment, chatDetails, chatMessage } from './chatMessages';
-import { browserShare, chatPayload, shareOrCopy, type WebShare } from './share';
+import {
+  backupFile,
+  backupFileName,
+  browserFileTargets,
+  browserShare,
+  chatPayload,
+  downloadFile,
+  type FileTargets,
+  saveFile,
+  shareOrCopy,
+  type WebShare,
+} from './share';
 import { MINUTE_MS } from './time';
 
 /** A relay minute on Friday 14 November 2025 at 12:00 UTC. */
@@ -161,5 +172,141 @@ describe('browserShare', () => {
     vi.stubGlobal('navigator', {});
     expect(browserShare()).toBeUndefined();
     vi.unstubAllGlobals();
+  });
+});
+
+describe('saveFile', () => {
+  const file = new File([Uint8Array.of(1, 2, 3)], 'reconcile-backup-2026-11-08.bin');
+
+  /** Targets whose share sheet takes files when `takesFiles`, recording every call. */
+  function fileTargets(takesFiles: boolean, share?: WebShare) {
+    const shared = vi.fn<WebShare>(share ?? (() => Promise.resolve()));
+    const download = vi.fn<(file: File) => void>();
+    const canShare = vi.fn((data: ShareData) => takesFiles && data.files?.length === 1);
+    const targets: FileTargets = { canShare, share: shared, download };
+    return { targets, shared, download, canShare };
+  }
+
+  it('hands the file alone to the share sheet when it takes files, as an installed iPhone app’s does', async () => {
+    const { targets, shared, download, canShare } = fileTargets(true);
+
+    expect(await saveFile(file, targets)).toBe('shared');
+
+    expect(canShare).toHaveBeenCalledWith({ files: [file] });
+    expect(shared).toHaveBeenCalledWith({ files: [file] });
+    expect(Object.keys(shared.mock.calls[0]?.[0] ?? {})).toEqual(['files']);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('downloads the file when the share sheet won’t take it, as Android Chrome’s won’t', async () => {
+    const { targets, shared, download } = fileTargets(false);
+
+    expect(await saveFile(file, targets)).toBe('downloaded');
+
+    expect(shared).not.toHaveBeenCalled();
+    expect(download).toHaveBeenCalledWith(file);
+  });
+
+  it('downloads it where the browser has no Web Share at all', async () => {
+    const download = vi.fn<(file: File) => void>();
+
+    expect(await saveFile(file, { canShare: undefined, share: undefined, download })).toBe(
+      'downloaded',
+    );
+    expect(download).toHaveBeenCalledWith(file);
+  });
+
+  it('saves nothing when the person closes the share sheet', async () => {
+    const abort = () => Promise.reject(new DOMException('Share canceled', 'AbortError'));
+    const { targets, download } = fileTargets(true, abort);
+
+    expect(await saveFile(file, targets)).toBe('cancelled');
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('downloads it when sharing fails any other way', async () => {
+    const refuse = () => Promise.reject(new DOMException('No activation', 'NotAllowedError'));
+    const { targets, download } = fileTargets(true, refuse);
+
+    expect(await saveFile(file, targets)).toBe('downloaded');
+    expect(download).toHaveBeenCalledWith(file);
+  });
+});
+
+describe('downloadFile', () => {
+  it('clicks an <a download> on a blob URL with the file’s name, then removes it and frees the URL', () => {
+    vi.useFakeTimers();
+    const file = new File([Uint8Array.of(1)], 'reconcile-backup-2026-11-08.bin');
+    const created = vi.fn(() => 'blob:https://reconcile.test/1');
+    const revoked = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL: created, revokeObjectURL: revoked });
+    const clicked: { href: string; download: string; inPage: boolean }[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push({ href: this.href, download: this.download, inPage: this.isConnected });
+    });
+
+    downloadFile(file);
+
+    expect(created).toHaveBeenCalledWith(file);
+    expect(clicked).toEqual([
+      {
+        href: 'blob:https://reconcile.test/1',
+        download: 'reconcile-backup-2026-11-08.bin',
+        inPage: true,
+      },
+    ]);
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(revoked).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(revoked).toHaveBeenCalledWith('blob:https://reconcile.test/1');
+    click.mockRestore();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+});
+
+describe('browserFileTargets', () => {
+  it('are the browser’s own canShare and share, called on navigator, and the download', async () => {
+    const calls: unknown[] = [];
+    const share = vi.fn(function (this: unknown) {
+      calls.push(this);
+      return Promise.resolve();
+    });
+    const canShare = vi.fn(function (this: unknown) {
+      calls.push(this);
+      return true;
+    });
+    vi.stubGlobal('navigator', { share, canShare });
+
+    const found = browserFileTargets();
+    expect(found.canShare?.({})).toBe(true);
+    await found.share?.({});
+
+    expect(calls).toEqual([navigator, navigator]);
+    expect(found.download).toBe(downloadFile);
+    vi.unstubAllGlobals();
+  });
+
+  it('leave out canShare where the browser has none', () => {
+    vi.stubGlobal('navigator', {});
+    expect(browserFileTargets().canShare).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('the backup file', () => {
+  it('has a generic name with the day it was saved, in the device’s time zone', () => {
+    expect(backupFileName(new Date(2026, 10, 8, 23, 59))).toBe('reconcile-backup-2026-11-08.bin');
+    expect(backupFileName(new Date(2027, 0, 3, 0, 1))).toBe('reconcile-backup-2027-01-03.bin');
+  });
+
+  it('is plain bytes, under that name', async () => {
+    const file = backupFile(Uint8Array.of(82, 67, 66, 49), new Date(2026, 10, 8));
+
+    expect(file.name).toBe('reconcile-backup-2026-11-08.bin');
+    expect(file.type).toBe('application/octet-stream');
+    expect(Array.from(new Uint8Array(await file.arrayBuffer()))).toEqual([82, 67, 66, 49]);
   });
 });

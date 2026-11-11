@@ -2,12 +2,15 @@ import { type ReactNode, useId, useState } from 'react';
 import { Button, Link, VisuallyHidden } from 'react-aria-components';
 
 import { ChatLink } from '../app/ChatLink';
+import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
+import { DispatchCard } from '../app/DispatchCard';
 import { latestLink } from '../app/latestLink';
 import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
+import { NewcomerProgress, WaitingNote } from '../app/Newcomer';
 import { routeHref } from '../app/router';
 import { RulesLink } from '../app/RulesLink';
 import { SendStatus } from '../app/SendStatus';
@@ -15,16 +18,21 @@ import { formatDay } from '../app/format';
 import { StewardSeats } from '../app/StewardSeats';
 import { SuspendedNote } from '../app/stewards';
 import { SuspendDialog } from '../app/SuspendDialog';
-import { formatMinute, formatSyncedAt, minuteIso } from '../app/time';
+import { formatDate, formatMinute, formatSyncedAt, minuteIso } from '../app/time';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
-import { can, isLevel, isSuspended, type Level } from '../engine/capabilities';
+import { VouchDialog } from '../app/VouchDialog';
+import { vouchWanted } from '../engine/admission';
+import { can, holdsRights, isLevel, isSuspended, type Level } from '../engine/capabilities';
+import { latestDispatch } from '../engine/dispatches';
+import { type Dissolution, mayProposeDissolve, wipeMinute } from '../engine/dissolve';
 import type { ParsedEvent } from '../engine/event';
 import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
 import { homeLists } from '../engine/home';
 import { displayName } from '../engine/names';
 import { isPriority, openPriority } from '../engine/priority';
 import { activeSuspension, maySuspend, seatOf, type Suspension } from '../engine/stewards';
+import type { KeyChange } from '../store/epochs';
 
 /** Props for {@link GroupHome}. */
 export interface GroupHomeProps {
@@ -49,10 +57,19 @@ export interface GroupHomeProps {
   readonly onChooseLevel: (level: Level) => Promise<void>;
   /** Queues this steward's suspension of the member named, with a reason, blank for none (#102). */
   readonly onSuspend: (member: string, reason: string) => Promise<void>;
+  /** Queues this member's vouch for the newcomer named (#101); rejects when it couldn't be saved. */
+  readonly onVouch: (member: string) => Promise<void>;
   /** Queues this member's leave and marks the group as leaving; rejects when it couldn't be saved. */
   readonly onLeave: () => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): the group reads, but takes no votes. */
   readonly leaving?: boolean;
+  /** Removes a dissolved group's read-only copy from this device (#108); rejects when it couldn't. */
+  readonly onRemove?: () => Promise<void>;
+  /**
+   * The quiet card that suggests a backup (#78), after the open Proposals;
+   * none when absent, or once the group has dissolved (#108).
+   */
+  readonly backupCard?: ReactNode;
 }
 
 /** Whether the relay answers, and when this device last synced. */
@@ -65,6 +82,12 @@ export interface SyncStatus {
   readonly deviceNow: number;
   /** Whether a long gap between syncs may have lost some history (#73). */
   readonly missingHistory: boolean;
+  /**
+   * Why this device can't read what the group writes now (#98): this
+   * membership left on another device, or this device missed the group's new
+   * key. Null or absent while it can.
+   */
+  readonly keyChange?: KeyChange | null;
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
@@ -83,10 +106,12 @@ interface ProposalCardsProps {
   readonly groupId: string;
   readonly proposals: readonly Proposal[];
   readonly now: number;
+  /** What each card says under its title in place of its countdown, such as why it closed (#108). */
+  readonly line?: string;
 }
 
 /** Open Proposals as cards, each with its title and countdown, opening its ballot. */
-function ProposalCards({ groupId, proposals, now }: ProposalCardsProps) {
+function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
   return (
     <ul className="card-list">
       {proposals.map((proposal) => (
@@ -104,7 +129,9 @@ function ProposalCards({ groupId, proposals, now }: ProposalCardsProps) {
               </span>
             </span>
             <span className="meta">
-              <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
+              {line ?? (
+                <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
+              )}
             </span>
           </Link>
         </li>
@@ -151,6 +178,21 @@ function OpenLists({ groupId, needsYourVote, otherOpen, now, children }: OpenLis
         </Section>
       )}
     </>
+  );
+}
+
+/**
+ * In a dissolved group (#108), the Proposals still open when it dissolved,
+ * under "Not decided", each saying it closed then, with no outcome. Nothing
+ * when there were none.
+ */
+function Unfinished({ groupId, proposals, now }: Omit<ProposalCardsProps, 'line'>) {
+  if (proposals.length === 0) return null;
+  const { archive } = messages;
+  return (
+    <Section title={archive.unfinished}>
+      <ProposalCards groupId={groupId} proposals={proposals} now={now} line={archive.closed} />
+    </Section>
   );
 }
 
@@ -217,19 +259,21 @@ function Decided({
 interface FocusProps {
   readonly state: GroupState;
   readonly me: string;
-  readonly leaving: boolean;
+  /** True while this member leaves, or once the group has dissolved: nothing new is asked. */
+  readonly readOnly: boolean;
 }
 
 /**
  * The group's current focus (#107): the top option of the latest priority
  * vote to pass, opening its result, or a sentence before there is one. Those
  * who can propose may ask what to focus on while no priority vote is open,
- * unless they're leaving.
+ * unless they're leaving or the group has dissolved (#77, #108), whose
+ * read-only copy keeps the focus it had.
  */
-function Focus({ state, me, leaving }: FocusProps) {
+function Focus({ state, me, readOnly }: FocusProps) {
   const groupId = state.group ?? '';
   const { focus } = state;
-  const canAsk = !leaving && can(state, me, 'propose') && openPriority(state) === undefined;
+  const canAsk = !readOnly && can(state, me, 'propose') && openPriority(state) === undefined;
   return (
     <Section title={messages.home.focus}>
       <div className="stack">
@@ -266,12 +310,76 @@ function Focus({ state, me, leaving }: FocusProps) {
   );
 }
 
+interface HomeDispatchesProps {
+  readonly state: GroupState;
+  readonly me: string;
+  /** True while this member leaves, or once the group has dissolved: nothing new is sent. */
+  readonly readOnly: boolean;
+}
+
+/** Send a Dispatch, quietly, and See all with an arrow: what follows the latest Dispatch. */
+function DispatchLinks({ groupId, sends, any }: { groupId: string; sends: boolean; any: boolean }) {
+  const { dispatches } = messages;
+  return (
+    <div className="row">
+      {sends ? (
+        <Link
+          className="button button-secondary"
+          href={routeHref({ name: 'sendDispatch', groupId })}
+        >
+          {dispatches.send}
+        </Link>
+      ) : null}
+      {any ? (
+        <Link className="forward-link" href={routeHref({ name: 'dispatches', groupId })}>
+          <span>
+            {dispatches.seeAll} <VisuallyHidden>{dispatches.seeAllWhat}</VisuallyHidden>
+          </span>
+          <span aria-hidden="true">{messages.app.forward}</span>
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 /**
- * "Can't reach the relay right now", and the catch-up line while some history
- * may be missing, in a live region that is always there.
+ * Dispatches (#112): the group's latest, with See all, or a line saying there
+ * are none yet; and Send a Dispatch for whoever may send one, unless the
+ * group takes nothing new.
+ */
+function HomeDispatches({ state, me, readOnly }: HomeDispatchesProps) {
+  const latest = latestDispatch(state);
+  const sends = !readOnly && can(state, me, 'dispatch');
+  const any = latest !== null;
+  return (
+    <Section title={messages.dispatches.title}>
+      <div className="stack home-dispatches">
+        {latest === null ? (
+          <p>{messages.dispatches.empty}</p>
+        ) : (
+          <DispatchCard state={state} dispatch={latest} level={3} />
+        )}
+        {sends || any ? (
+          <DispatchLinks groupId={state.group ?? ''} sends={sends} any={any} />
+        ) : null}
+      </div>
+    </Section>
+  );
+}
+
+/** What group home says when the group's key changed past this device (#98). */
+const KEY_CHANGE_LINE: Readonly<Record<KeyChange, string>> = {
+  left: messages.home.keyLeft,
+  missed: messages.home.keyMissed,
+};
+
+/**
+ * "Can't reach the relay right now", the catch-up line while some history
+ * may be missing, and why this device can't read on once the group's key has
+ * changed past it (#98), in a live region that is always there.
  */
 function SyncNotices({ sync }: { readonly sync: SyncStatus }) {
-  const { reachable, lastSyncAt, deviceNow, missingHistory } = sync;
+  const { reachable, lastSyncAt, deviceNow, missingHistory, keyChange = null } = sync;
   const line =
     lastSyncAt === null
       ? messages.home.unreachable
@@ -279,6 +387,7 @@ function SyncNotices({ sync }: { readonly sync: SyncStatus }) {
   return (
     <div role="status">
       {reachable ? null : <p className="notice">{line}</p>}
+      {keyChange === null ? null : <p className="notice">{KEY_CHANGE_LINE[keyChange]}</p>}
       {missingHistory ? <p className="notice">{messages.home.missingHistory}</p> : null}
     </div>
   );
@@ -315,15 +424,51 @@ interface PersonProps {
   readonly member: Member;
   /** The member this device's `suspend` in the outbox names, if one waits. */
   readonly suspending: string | undefined;
+  /** The members this device's `vouch` events in the outbox name (#101). */
+  readonly vouching: readonly string[];
+}
+
+interface NewcomerProps {
+  readonly props: GroupHomeProps;
+  readonly author: string;
+  readonly name: string;
+  readonly vouching: readonly string[];
+}
+
+/**
+ * A newcomer's progress and who vouched for them, then Vouch for <name> when
+ * this member may vouch for them, has none waiting to send and isn't leaving
+ * (admission.ts decides, as the fold does), or the vouch's status while it
+ * waits (#101). Nothing for someone who holds rights.
+ */
+function NewcomerRow({ props, author, name, vouching }: NewcomerProps) {
+  const { state, me, sync, onVouch } = props;
+  const waiting = vouching.includes(author);
+  const offered = props.leaving !== true && !waiting && vouchWanted(state, me, author);
+  return (
+    <>
+      <NewcomerProgress state={state} author={author} />
+      {offered ? (
+        <div className="person-vouch">
+          <VouchDialog name={name} chat={latestLink(state)} onVouch={() => onVouch(author)} />
+        </div>
+      ) : null}
+      {waiting ? (
+        <div className="person-status">
+          <SendStatus pending reachable={sync.reachable} sent={false} />
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /**
  * One person: their name and who invited them (#73), level and Steward
  * badge, any running suspension, and Suspend when this member may suspend
  * them now, has none waiting to send and isn't leaving (stewards.ts decides,
- * as the fold does).
+ * as the fold does). A newcomer's row also shows their way to a vote (#101).
  */
-function Person({ props, member, suspending }: PersonProps) {
+function Person({ props, member, suspending, vouching }: PersonProps) {
   const { state, me, sync, onSuspend } = props;
   const { author } = member;
   const name = displayName(state, author) ?? '';
@@ -355,12 +500,20 @@ function Person({ props, member, suspending }: PersonProps) {
         ) : null}
       </span>
       {suspension === undefined ? null : <SuspensionLine suspension={suspension} />}
+      <NewcomerRow props={props} author={author} name={name} vouching={vouching} />
       {suspending === author ? (
         <div className="person-status">
           <SendStatus pending reachable={sync.reachable} sent={false} />
         </div>
       ) : null}
     </li>
+  );
+}
+
+/** Whom this member's `vouch` events still in the outbox name (#101). */
+function waitingVouches(me: string, pending: readonly ParsedEvent[]): string[] {
+  return pending.flatMap(({ event }) =>
+    event.type === 'vouch' && event.author === me ? [event.body.member] : [],
   );
 }
 
@@ -380,10 +533,17 @@ function waitingSuspend(me: string, pending: readonly ParsedEvent[]): string | u
  */
 function People(props: GroupHomeProps) {
   const suspending = waitingSuspend(props.me, props.pending);
+  const vouching = waitingVouches(props.me, props.pending);
   return (
     <ul className="people">
       {props.state.members.map((member) => (
-        <Person key={member.author} props={props} member={member} suspending={suspending} />
+        <Person
+          key={member.author}
+          props={props}
+          member={member}
+          suspending={suspending}
+          vouching={vouching}
+        />
       ))}
     </ul>
   );
@@ -406,6 +566,8 @@ interface InvolvementProps {
   readonly reachable: boolean;
   /** True while a suspension runs: the fold ignores a suspended member's level change. */
   readonly suspended: boolean;
+  /** True until this member's voting rights arrive: every level reads and follows until then (#101). */
+  readonly newcomer: boolean;
   readonly onChooseLevel: GroupHomeProps['onChooseLevel'];
 }
 
@@ -415,7 +577,7 @@ interface InvolvementProps {
  * new level once the relay returns it (ADR-0021: self-selected).
  */
 function Involvement(props: InvolvementProps) {
-  const { current, waiting, reachable, suspended, onChooseLevel } = props;
+  const { current, waiting, reachable, suspended, newcomer, onChooseLevel } = props;
   const [choice, setChoice] = useState<Level | null>(null);
   const { run, running, outcome } = useSaving(onChooseLevel);
   const picked = choice ?? current;
@@ -427,6 +589,7 @@ function Involvement(props: InvolvementProps) {
   return (
     <div className="involvement">
       <LevelPicker value={picked} onChange={setChoice} isDisabled={running || suspended} />
+      {newcomer ? <p className="caption">{messages.admission.levelsWait}</p> : null}
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.levels.failed}
@@ -465,6 +628,7 @@ function PeopleSection(props: GroupHomeProps) {
               waiting={waiting !== undefined}
               reachable={sync.reachable}
               suspended={isSuspended(state, me)}
+              newcomer={!holdsRights(state, me)}
               onChooseLevel={onChooseLevel}
             />
             <div>
@@ -474,6 +638,58 @@ function PeopleSection(props: GroupHomeProps) {
         )}
       </div>
     </Section>
+  );
+}
+
+interface ArchiveNoteProps {
+  readonly dissolved: Dissolution;
+  readonly onRemove: GroupHomeProps['onRemove'];
+}
+
+/**
+ * A dissolved group's note (#108): when it dissolved and that this is a
+ * read-only copy, when this device erases it if the vote chose to wipe, and
+ * Remove from this device, behind an alert dialog.
+ */
+function ArchiveNote({ dissolved, onRemove }: ArchiveNoteProps) {
+  const { archive } = messages;
+  return (
+    <div className="archive-note">
+      <p className="eyebrow">{archive.eyebrow}</p>
+      <p>{archive.dissolvedOn(formatDate(dissolved.received))}</p>
+      {dissolved.wipe ? <p>{archive.erasedOn(formatDate(wipeMinute(dissolved)))}</p> : null}
+      {onRemove === undefined ? null : (
+        <div>
+          <ConfirmDialog
+            open={archive.remove}
+            title={archive.removeTitle}
+            body={archive.removeBody}
+            confirm={archive.removeConfirm}
+            cancel={archive.cancel}
+            failed={archive.removeFailed}
+            onConfirm={onRemove}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Propose dissolving the group →", for someone who may propose it now
+ * (#108), and nothing in a group that takes nothing new.
+ */
+function ProposeDissolve({ props, readOnly }: { props: GroupHomeProps; readOnly: boolean }) {
+  const { state, me } = props;
+  if (readOnly || !mayProposeDissolve(state, me)) return null;
+  const groupId = state.group ?? '';
+  return (
+    <p className="dissolve-link">
+      <Link className="forward-link" href={routeHref({ name: 'dissolve', groupId })}>
+        {messages.dissolve.propose}
+        <span aria-hidden="true">{messages.app.forward}</span>
+      </Link>
+    </p>
   );
 }
 
@@ -574,24 +790,30 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 }
 
 /**
- * People, the Stewards (#102) and the invite, each for whoever may see it.
- * While this member's leave waits for the relay, there's no invite.
+ * People, the Stewards (#102), the Rules (#117) and the invite, each for
+ * whoever may see it. While this member's leave waits for the relay, there's
+ * no invite, nor once the group's key changed past this device (#98): its
+ * link would carry a key nobody reads any more. A dissolved group has no
+ * stewards or opt-ins to speak of, so its copy leaves both out (#108).
  */
 function MemberSections(props: GroupHomeProps) {
   const { state, me, makeInviteLink, copyText, leaving = false } = props;
   const roster = can(state, me, 'see-roster');
+  const current = (props.sync.keyChange ?? null) === null;
   return (
     <>
       {roster ? <PeopleSection {...props} /> : null}
-      {roster ? (
+      {roster && state.dissolved === null ? (
         <Section title={messages.stewards.heading}>
           <StewardSeats state={state} me={me} leaving={leaving} />
         </Section>
       ) : null}
-      <Section title={messages.optIns.homeHeading}>
-        <RulesLink state={state} />
-      </Section>
-      {can(state, me, 'invite') && !leaving ? (
+      {state.dissolved === null ? (
+        <Section title={messages.optIns.homeHeading}>
+          <RulesLink state={state} />
+        </Section>
+      ) : null}
+      {can(state, me, 'invite') && !leaving && current ? (
         <Section title={messages.home.invite}>
           <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
         </Section>
@@ -601,19 +823,82 @@ function MemberSections(props: GroupHomeProps) {
 }
 
 /**
+ * Under the heading: how syncing goes and whether this member is leaving, or,
+ * in a dissolved group, the archive's note alone: a read-only copy never
+ * syncs, so the relay's reach and missing history mean nothing to it (#108).
+ */
+function TopNotes(props: GroupHomeProps) {
+  const { state, sync, leaving = false, onRemove } = props;
+  const { dissolved } = state;
+  if (dissolved !== null) return <ArchiveNote dissolved={dissolved} onRemove={onRemove} />;
+  return (
+    <>
+      <SyncNotices sync={sync} />
+      {leaving ? <LeavingNote /> : null}
+    </>
+  );
+}
+
+interface OpenSectionsProps {
+  readonly groupId: string;
+  readonly state: GroupState;
+  readonly lists: ReturnType<typeof homeLists>;
+  readonly now: number;
+  readonly leaving: boolean;
+  /** The current focus (#107), right under Needs your vote. */
+  readonly children: ReactNode;
+}
+
+/**
+ * The open Proposals: Needs your vote, the current focus (#107) and the rest,
+ * or every one together while this member leaves. In a dissolved group, those
+ * still open when it dissolved, as closed (#108), then the focus it had.
+ */
+function OpenSections({ groupId, state, lists, now, leaving, children }: OpenSectionsProps) {
+  if (state.dissolved !== null) {
+    return (
+      <>
+        <Unfinished groupId={groupId} proposals={lists.open} now={now} />
+        {children}
+      </>
+    );
+  }
+  return (
+    <OpenLists
+      groupId={groupId}
+      needsYourVote={leaving ? [] : lists.needsYourVote}
+      otherOpen={leaving ? lists.open : lists.otherOpen}
+      now={now}
+    >
+      {children}
+    </OpenLists>
+  );
+}
+
+/**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
- * group's current focus (#107), the other open Proposals, the group's Document, the Decided list of closed ones,
- * its people with their levels, the viewer's own involvement and Leave this
+ * group's current focus (#107), the other open Proposals and the backup card
+ * under them (#78), the latest Dispatch (#112), the group's Document, the
+ * Decided list of closed ones, its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
- * whose capabilities allow it (`can()` is the only check). While the viewer's
+ * whose capabilities allow it (`can()` is the only check), and last, for
+ * whoever may propose it, Propose dissolving the group (#108). While the viewer's
  * leave waits for the relay, it says so, lists every open Proposal together,
- * and offers no level choice, invite or Leave.
+ * and offers no level choice, invite or Leave. A dissolved group reads the
+ * same way, as a read-only copy with no controls, saying when it dissolved
+ * and offering Remove from this device (#108).
  */
 export function GroupHome(props: GroupHomeProps) {
-  const { state, me, now, sync, leaving = false } = props;
+  const { state, me, now, leaving = false } = props;
   const groupId = state.group ?? '';
   const discussion = latestLink(state);
   const lists = homeLists(state, me, now);
+  const { dissolved } = state;
+  // A dissolved group takes nothing new, as a group being left doesn't (#108).
+  const readOnly = leaving || dissolved !== null;
+  // Every level follows the group (ADR-0003): for someone who doesn't vote, Dispatches lead (#112).
+  const news = <HomeDispatches state={state} me={me} readOnly={readOnly} />;
+  const leads = !can(state, me, 'vote');
   return (
     <main className="shell">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
@@ -623,19 +908,20 @@ export function GroupHome(props: GroupHomeProps) {
           title={state.name}
           pageTitle={messages.home.pageTitle}
         />
-        <SyncNotices sync={sync} />
-        {leaving ? <LeavingNote /> : null}
+        <TopNotes {...props} />
       </div>
-      <SuspendedNote state={state} me={me} />
+      {/* A suspension means nothing once the group has dissolved, though its end is still ahead. */}
+      {dissolved === null ? <SuspendedNote state={state} me={me} /> : null}
+      {/* Nor does a newcomer's wait: no vote opens once the group has dissolved (#101, #108). */}
+      {readOnly ? null : <WaitingNote state={state} me={me} />}
       <div className="sections">
-        <OpenLists
-          groupId={groupId}
-          needsYourVote={leaving ? [] : lists.needsYourVote}
-          otherOpen={leaving ? lists.open : lists.otherOpen}
-          now={now}
-        >
-          <Focus state={state} me={me} leaving={leaving} />
-        </OpenLists>
+        {leads ? news : null}
+        <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving}>
+          <Focus state={state} me={me} readOnly={readOnly} />
+        </OpenSections>
+        {/* No backup file carries a dissolved group's read-only copy, so none is suggested (#108). */}
+        {dissolved === null ? props.backupCard : null}
+        {leads ? null : news}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
             <span className="card-link-title">
@@ -651,7 +937,7 @@ export function GroupHome(props: GroupHomeProps) {
         <Section title={messages.decided.title}>
           <Decided groupId={groupId} closed={lists.decided} />
         </Section>
-        <MemberSections {...props} />
+        <MemberSections {...props} leaving={readOnly} />
         {discussion === null ? null : (
           <Section title={messages.home.discussion}>
             <div>
@@ -660,6 +946,7 @@ export function GroupHome(props: GroupHomeProps) {
           </Section>
         )}
       </div>
+      <ProposeDissolve props={props} readOnly={readOnly} />
     </main>
   );
 }

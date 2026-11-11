@@ -13,6 +13,9 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  isCoalitionGenesis,
+  isDissolveProposal,
+  isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -149,7 +152,14 @@ describe('createEvent', () => {
       author: fc.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       ts: fc.nat(),
       body: fc.record(
-        { atom: text, title: text, why: text, text, link: text },
+        {
+          atom: text,
+          title: text,
+          why: text,
+          text,
+          link: text,
+          dispatch: fc.record({ title: text, text }),
+        },
         { requiredKeys: ['atom', 'title', 'why', 'text'] },
       ),
     });
@@ -367,6 +377,37 @@ describe('parseEvent', () => {
     ['version without text', 'version', { proposal: 'p' }],
     ['version with a numeric proposal', 'version', { proposal: 1, text: 'x' }],
     ['version with null text', 'version', { proposal: 'p', text: null }],
+    [
+      'proposal with both an atom and a target',
+      'proposal',
+      { atom: 'a', target: { kind: 'add', after: null }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'proposal with a target that is a string',
+      'proposal',
+      { target: 'add', title: 't', why: 'w', text: 'x' },
+    ],
+    ['proposal with a null target', 'proposal', { target: null, title: 't', why: 'w', text: 'x' }],
+    [
+      'add with no anchor',
+      'proposal',
+      { target: { kind: 'add' }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'add with a numeric anchor',
+      'proposal',
+      { target: { kind: 'add', after: 0 }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'add without text',
+      'proposal',
+      { target: { kind: 'add', after: null }, title: 't', why: 'w' },
+    ],
+    [
+      'add with its window as text',
+      'proposal',
+      { target: { kind: 'add', after: null }, title: 't', why: 'w', text: 'x', window: '7' },
+    ],
     ['a steward target that is a list', 'proposal', { target: [], title: 't', why: 'w' }],
     [
       'a target of an unknown kind',
@@ -408,6 +449,38 @@ describe('parseEvent', () => {
       'proposal',
       { target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w', link: 1 },
     ],
+    [
+      'a dissolve target whose wipe is text',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: 'true' }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve target that leaves out its wipe',
+      'proposal',
+      { target: { kind: 'dissolve' }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve Proposal that also names an Atom',
+      'proposal',
+      { atom: 'a', target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w' },
+    ],
+    [
+      'a dissolve Proposal without a title',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, why: 'w' },
+    ],
+    [
+      'a dissolve Proposal with a numeric link',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', link: 1 },
+    ],
+    [
+      'a dissolve Proposal with a string window',
+      'proposal',
+      { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', window: '14' },
+    ],
+    ['dissolve without a proposal', 'dissolve', {}],
+    ['dissolve with a numeric proposal', 'dissolve', { proposal: 7 }],
     ['suspend without a member', 'suspend', { reason: 'r' }],
     ['suspend with a numeric member', 'suspend', { member: 1 }],
     ['suspend with a null reason', 'suspend', { member: 'm', reason: null }],
@@ -450,6 +523,82 @@ describe('parseEvent', () => {
     ['narrow without a Proposal', 'narrow', { optIn: 'chatBot' }],
     ['narrow without an opt-in', 'narrow', { proposal: 'p' }],
     ['narrow with a numeric Proposal', 'narrow', { optIn: 'chatBot', proposal: 1 }],
+    ['vouch without a member', 'vouch', {}],
+    ['vouch with a numeric member', 'vouch', { member: 7 }],
+    ['vouch with a null member', 'vouch', { member: null }],
+    ['chat-posted without a Proposal', 'chat-posted', { moment: 'open' }],
+    ['chat-posted without a moment', 'chat-posted', { proposal: 'p' }],
+    ['chat-posted with a numeric moment', 'chat-posted', { proposal: 'p', moment: 1 }],
+    [
+      'chat-posted with a numeric nonce',
+      'chat-posted',
+      { proposal: 'p', moment: 'open', nonce: 7 },
+    ],
+    ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
+    ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
+    ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
+    [
+      'chat-thread with a numeric Proposal',
+      'chat-thread',
+      { proposal: 1, url: 'https://discord.com/channels/1/2' },
+    ],
+    ['dispatch without a title', 'dispatch', { text: 'x' }],
+    ['dispatch without text', 'dispatch', { title: 't' }],
+    ['dispatch with a numeric title', 'dispatch', { title: 1, text: 'x' }],
+    ['dispatch with null text', 'dispatch', { title: 't', text: null }],
+    ['dispatch with a numeric doc', 'dispatch', { title: 't', text: 'x', doc: 1 }],
+    ['dispatch with a null doc', 'dispatch', { title: 't', text: 'x', doc: null }],
+    [
+      'a proposal whose dispatch is text',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: 'Updated' },
+    ],
+    [
+      'a proposal whose dispatch is null',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: null },
+    ],
+    [
+      'a proposal whose dispatch is a list',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: [] },
+    ],
+    [
+      'a proposal whose dispatch has no title',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: { text: '' } },
+    ],
+    [
+      'a proposal whose dispatch has numeric text',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: { title: 'u', text: 1 } },
+    ],
+    [
+      'a rules Proposal whose dispatch has no text',
+      'proposal',
+      {
+        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        title: 't',
+        why: 'w',
+        dispatch: { title: 'u' },
+      },
+    ],
+    [
+      'a steward Proposal whose dispatch is text',
+      'proposal',
+      { target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w', dispatch: 'u' },
+    ],
+    [
+      'an add whose dispatch has no text (#75)',
+      'proposal',
+      {
+        target: { kind: 'add', after: null },
+        title: 't',
+        why: 'w',
+        text: 'x',
+        dispatch: { title: 'u' },
+      },
+    ],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -493,6 +642,54 @@ describe('parseEvent', () => {
     });
   });
 
+  it.each([
+    ['an anchor', 'a.1'],
+    ['no anchor, for the start', null],
+  ])('reads an add Proposal with %s, keeping only its kind and anchor', (_label, after) => {
+    const body = {
+      target: { kind: 'add', after, document: 'd' },
+      title: 't',
+      why: 'w',
+      text: 'New section.\n',
+      link: 'https://l',
+      window: 10,
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({
+      target: { kind: 'add', after },
+      title: 't',
+      why: 'w',
+      text: 'New section.\n',
+      link: 'https://l',
+      window: 10,
+    });
+  });
+
+  it('reads the Dispatch an add carries, keeping its title and text alone (#75, #112)', () => {
+    const body = {
+      target: { kind: 'add', after: 'a.1' },
+      title: 't',
+      why: 'w',
+      text: 'New section.\n',
+      dispatch: { title: 'Updated: House rules', text: 'A new section.', doc: 'g1' },
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({
+      target: { kind: 'add', after: 'a.1' },
+      title: 't',
+      why: 'w',
+      text: 'New section.\n',
+      dispatch: { title: 'Updated: House rules', text: 'A new section.' },
+    });
+  });
+
+  it('reads an edit whose text is empty, as a removal carries it', () => {
+    const parsed = parseEvent(
+      json(envelope('proposal', { atom: 'a', title: 't', why: 'w', text: '' })),
+    );
+    expect(parsed?.event.body).toEqual({ atom: 'a', title: 't', why: 'w', text: '' });
+  });
+
   it('reads a steward election and a recall, dropping text and unknown keys (#102)', () => {
     const target = { kind: 'steward', seat: 2, member: BEN };
     const election = parseEvent(
@@ -504,6 +701,43 @@ describe('parseEvent', () => {
       json(envelope('proposal', { target: recall, title: 't', why: 'w', link: 'https://l' })),
     );
     expect(linked?.event.body).toEqual({ target: recall, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('reads a dissolve Proposal, keeping its wipe and window and dropping text and unknown keys (#108)', () => {
+    const target = { kind: 'dissolve', wipe: true };
+    const parsed = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', text: 'x', window: 21, extra: 1 })),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w', window: 21 });
+    const kept = { kind: 'dissolve', wipe: false };
+    const linked = parseEvent(
+      json(envelope('proposal', { target: kept, title: 't', why: 'w', link: 'https://l' })),
+    );
+    expect(linked?.event.body).toEqual({ target: kept, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('tells a dissolve Proposal from a steward one and from an edit (#108)', () => {
+    const dissolve = { target: { kind: 'dissolve', wipe: false } as const, title: 't', why: 'w' };
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null } as const,
+      title: 't',
+      why: 'w',
+    };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    expect([dissolve, steward, edit].map(isDissolveProposal)).toEqual([true, false, false]);
+    expect([dissolve, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
+  });
+
+  it('reads a dissolve as the Proposal it names, dropping unknown keys (#108)', () => {
+    const parsed = parseEvent(json(envelope('dissolve', { proposal: 'p1', wipe: true })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'dissolve',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1' },
+    });
   });
 
   it('reads a rules Proposal, keeping its value as written for the fold to check (#117)', () => {
@@ -557,6 +791,34 @@ describe('parseEvent', () => {
     });
   });
 
+  it('reads a chat-posted as its Proposal, moment and nonce, kept as written, dropping unknown keys (#119)', () => {
+    const body = { proposal: 'p1', moment: 'version', nonce: 'n1', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-posted', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-posted',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', moment: 'version', nonce: 'n1' },
+    });
+    const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
+    expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
+  });
+
+  it('reads a chat-thread as its Proposal and URL, kept as written, dropping unknown keys (#123)', () => {
+    const body = { proposal: 'p1', url: 'https://example.com/x', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-thread', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-thread',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', url: 'https://example.com/x' },
+    });
+  });
+
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {
     const plain = parseEvent(json(envelope('suspend', { member: BEN, until: 9 })));
     expect(plain?.event).toEqual({
@@ -569,6 +831,54 @@ describe('parseEvent', () => {
     });
     const reasoned = parseEvent(json(envelope('suspend', { member: BEN, reason: 'Threats.' })));
     expect(reasoned?.event.body).toEqual({ member: BEN, reason: 'Threats.' });
+  });
+
+  it('reads a vouch as the member it names, dropping unknown keys (#101)', () => {
+    const vouch = parseEvent(json(envelope('vouch', { member: BEN, weight: 9 })));
+    expect(vouch?.event).toEqual({
+      v: 1,
+      type: 'vouch',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { member: BEN },
+    });
+  });
+
+  it('reads a dispatch as its title, text and optional Document, dropping unknown keys (#112)', () => {
+    const linked = parseEvent(
+      json(envelope('dispatch', { title: 'Meet Sunday', text: 'At 10.', doc: 'g1', to: BEN })),
+    );
+    expect(linked?.event).toEqual({
+      v: 1,
+      type: 'dispatch',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { title: 'Meet Sunday', text: 'At 10.', doc: 'g1' },
+    });
+    const bare = parseEvent(json(envelope('dispatch', { title: 'Meet Sunday', text: '' })));
+    expect(bare?.event.body).toEqual({ title: 'Meet Sunday', text: '' });
+  });
+
+  it('keeps a Proposal’s dispatch as its title and text, dropping a doc and unknown keys (#112)', () => {
+    const dispatch = { title: 'Updated: House rules', text: 'Quiet hours moved.' };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    const parsed = parseEvent(
+      json(envelope('proposal', { ...edit, dispatch: { ...dispatch, doc: 'g1', extra: 1 } })),
+    );
+    expect(parsed?.event.body).toEqual({ ...edit, dispatch });
+    const targets = [
+      { kind: 'steward', seat: 1, member: null },
+      { kind: 'rules', optIn: 'frontDoor', value: true },
+      { kind: 'dissolve', wipe: false },
+    ];
+    for (const target of targets) {
+      const carried = parseEvent(
+        json(envelope('proposal', { target, title: 't', why: 'w', dispatch })),
+      );
+      expect(carried?.event.body).toEqual({ target, title: 't', why: 'w', dispatch });
+    }
   });
 
   it('keeps optional proposal and vote fields', () => {
@@ -708,5 +1018,240 @@ describe('parseRecord', () => {
 
   it('refuses bare event bytes, with no key or signature', () => {
     expect(parseRecord(bytes)).toBeNull();
+  });
+});
+
+describe('encryption keys and key changes (#98)', () => {
+  /** A 32-byte key in base64url, as `kx` and the wraps' keys are spelled. */
+  const KX = base64url(new Uint8Array(32).fill(9));
+  const COMMIT = base64url(new Uint8Array(32).fill(7));
+  const WRAP = base64url(new Uint8Array(104).fill(5));
+
+  it('keeps a genesis’s or join’s well-shaped kx, and drops any other, keeping the event', () => {
+    const genesis = { name: 'G', founder: 'A', title: 'T', atoms: [], kx: KX };
+    expect(parseEvent(json(envelope('genesis', genesis)))?.event.body).toEqual(genesis);
+    expect(parseEvent(json(envelope('join', { name: 'Ben', kx: KX })))?.event.body).toEqual({
+      name: 'Ben',
+      kx: KX,
+    });
+    for (const bad of [KX.slice(1), `${KX.slice(1)}+`, `${KX.slice(0, 42)}B`, 7, null, [KX]]) {
+      const join = parseEvent(json(envelope('join', { name: 'Ben', kx: bad })));
+      expect(join?.event.body, JSON.stringify(bad)).toEqual({ name: 'Ben' });
+      const founded = parseEvent(json(envelope('genesis', { ...genesis, kx: bad })));
+      expect(founded?.event.body, JSON.stringify(bad)).toEqual({ ...genesis, kx: undefined });
+    }
+  });
+
+  it('reads a kx as its key, dropping unknown keys', () => {
+    const parsed = parseEvent(json(envelope('kx', { kx: KX, note: 'mine' })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'kx',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { kx: KX },
+    });
+  });
+
+  it('reads a key-rotate as its epoch, commit and wraps, dropping unknown keys', () => {
+    const body = { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP }, secret: 'no' };
+    const parsed = parseEvent(json(envelope('key-rotate', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'key-rotate',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP } },
+    });
+    const top = parseEvent(json(envelope('key-rotate', { ...body, epoch: 2 ** 32 - 1 })));
+    expect(top?.event.body).toMatchObject({ epoch: 2 ** 32 - 1 });
+  });
+
+  it('refuses a wrap under any key that isn’t a member key, "__proto__" included', () => {
+    const bytes = utf8(
+      `{"v":1,"type":"key-rotate","group":"g1","author":"${ANA}","ts":1,"body":{"epoch":1,"commit":"${COMMIT}","wraps":{"__proto__":"${WRAP}"}}}`,
+    );
+    expect(parseEvent(bytes)).toBeNull();
+  });
+
+  it.each([
+    ['a kx without its key', 'kx', {}],
+    ['a kx of the wrong length', 'kx', { kx: KX.slice(1) }],
+    ['a kx with a bad last character', 'kx', { kx: `${KX.slice(0, 42)}B` }],
+    ['a numeric kx', 'kx', { kx: 7 }],
+    ['a key-rotate without an epoch', 'key-rotate', { commit: COMMIT, wraps: {} }],
+    ['a key-rotate to epoch 0', 'key-rotate', { epoch: 0, commit: COMMIT, wraps: {} }],
+    ['a key-rotate to a fractional epoch', 'key-rotate', { epoch: 1.5, commit: COMMIT, wraps: {} }],
+    ['a key-rotate past u32', 'key-rotate', { epoch: 2 ** 32, commit: COMMIT, wraps: {} }],
+    ['a key-rotate without a commit', 'key-rotate', { epoch: 1, wraps: {} }],
+    ['a key-rotate with a short commit', 'key-rotate', { epoch: 1, commit: 'abc', wraps: {} }],
+    ['a key-rotate without wraps', 'key-rotate', { epoch: 1, commit: COMMIT }],
+    [
+      'a key-rotate whose wraps are a list',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: [WRAP] },
+    ],
+    [
+      'a wrap for a malformed key',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: { ana: WRAP } },
+    ],
+    ['a numeric wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: 7 } }],
+    [
+      'a wrap that isn’t base64url',
+      'key-rotate',
+      { epoch: 1, commit: COMMIT, wraps: { [ANA]: 'a+b' } },
+    ],
+    ['an empty wrap', 'key-rotate', { epoch: 1, commit: COMMIT, wraps: { [ANA]: '' } }],
+  ])('returns null for %s', (_label, type, body) => {
+    expect(parseEvent(json(envelope(type, body)))).toBeNull();
+  });
+});
+
+describe('coalitions (#100)', () => {
+  /** 32-byte values in base64url, as seat keys, secrets and inner are spelled. */
+  const KEY = base64url(new Uint8Array(32).fill(9));
+  const SECRET = base64url(new Uint8Array(32).fill(3));
+  const INNER = base64url(new Uint8Array(32).fill(4));
+  const SEAT = base64url(new Uint8Array(32).fill(5));
+  const PROOF = base64url(new Uint8Array(64).fill(6));
+  const SEATS = [
+    { name: 'Riverside', key: KEY },
+    { name: 'Hillside', key: SECRET },
+  ];
+  const COALITION = { kind: 'coalition', name: 'C', title: 'T', atoms: ['One.'], seats: SEATS };
+  const RECONCILE = {
+    kind: 'reconcile',
+    secret: SECRET,
+    inner: INNER,
+    seat: SEAT,
+    name: 'C',
+    title: 'T',
+    atoms: ['One.'],
+  };
+
+  it('reads a coalition genesis as its seats and a group genesis body, dropping founder and kx', () => {
+    const body = { ...COALITION, founder: 'Nobody', kx: KEY, rules: { vouches: 2 }, chat: 'x' };
+    const parsed = parseEvent(json(envelope('genesis', body, { group: '' })));
+    expect(parsed?.event.body).toEqual({ ...COALITION, rules: { vouches: 2 }, chat: 'x' });
+    const genesis = parsed?.event.type === 'genesis' ? parsed.event.body : null;
+    expect(genesis !== null && isCoalitionGenesis(genesis)).toBe(true);
+    const group = parseEvent(
+      json(envelope('genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] })),
+    );
+    const founded = group?.event.type === 'genesis' ? group.event.body : null;
+    expect(founded !== null && isCoalitionGenesis(founded)).toBe(false);
+  });
+
+  it('drops anything but a seat’s name and key', () => {
+    const seats = [{ name: 'Riverside', key: KEY, secret: SEAT }, SEATS[1]];
+    const parsed = parseEvent(json(envelope('genesis', { ...COALITION, seats })));
+    expect(parsed?.event.body).toEqual(COALITION);
+  });
+
+  it.each([
+    ['without seats', { ...COALITION, seats: undefined }],
+    ['whose seats are no list', { ...COALITION, seats: { a: SEATS[0] } }],
+    ['with a seat that isn’t an object', { ...COALITION, seats: [KEY, SEATS[1]] }],
+    ['with a seat without a name', { ...COALITION, seats: [{ key: KEY }, SEATS[1]] }],
+    ['with a seat whose key is short', { ...COALITION, seats: [{ name: 'R', key: 'abc' }] }],
+    [
+      'with a seat whose key isn’t canonical',
+      { ...COALITION, seats: [{ name: 'R', key: `${KEY.slice(0, 42)}B` }] },
+    ],
+    ['without a title', { ...COALITION, title: undefined }],
+    ['without atoms', { ...COALITION, atoms: undefined }],
+    ['without a name', { ...COALITION, name: undefined }],
+    ['of another kind', { ...COALITION, kind: 'federation' }],
+  ])('refuses a coalition genesis %s', (_label, body) => {
+    expect(parseEvent(json(envelope('genesis', body)))).toBeNull();
+  });
+
+  it('keeps a join’s well-shaped seat and proof, and drops any other, keeping the join', () => {
+    const parsed = parseEvent(json(envelope('join', { name: 'Kim', seat: KEY, proof: PROOF })));
+    expect(parsed?.event.body).toEqual({ name: 'Kim', seat: KEY, proof: PROOF });
+    for (const [seat, proof] of [
+      [KEY.slice(1), PROOF],
+      [KEY, PROOF.slice(1)],
+      [KEY, `${PROOF.slice(0, 85)}+`],
+      [7, PROOF],
+      [KEY, null],
+    ]) {
+      const join = parseEvent(json(envelope('join', { name: 'Kim', seat, proof })));
+      expect(join?.event.body, JSON.stringify([seat, proof])).toEqual({
+        name: 'Kim',
+        ...(typeof seat === 'string' && seat === KEY ? { seat } : {}),
+        ...(typeof proof === 'string' && proof === PROOF ? { proof } : {}),
+      });
+    }
+  });
+
+  it('reads a reconcile Proposal, keeping its window and dropping text and unknown keys', () => {
+    const body = {
+      target: { ...RECONCILE, extra: 1 },
+      title: 'Join C',
+      why: 'W',
+      text: 'x',
+      window: 5,
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({ target: RECONCILE, title: 'Join C', why: 'W', window: 5 });
+    const proposal = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+    expect(proposal !== null && isReconcileProposal(proposal)).toBe(true);
+    const edit = parseEvent(json(envelope('proposal', PROPOSAL.body)));
+    const steward = parseEvent(
+      json(
+        envelope('proposal', {
+          target: { kind: 'steward', seat: 1, member: ANA },
+          title: 'T',
+          why: 'W',
+        }),
+      ),
+    );
+    for (const other of [edit, steward]) {
+      const body = other?.event.type === 'proposal' ? other.event.body : null;
+      expect(body !== null && isReconcileProposal(body)).toBe(false);
+    }
+  });
+
+  it.each([
+    ['a short secret', { ...RECONCILE, secret: SECRET.slice(1) }],
+    ['no inner', { ...RECONCILE, inner: undefined }],
+    ['a numeric seat', { ...RECONCILE, seat: 5 }],
+    ['a seat that isn’t canonical', { ...RECONCILE, seat: `${SEAT.slice(0, 42)}B` }],
+    ['no name', { ...RECONCILE, name: undefined }],
+    ['a numeric title', { ...RECONCILE, title: 1 }],
+    ['atoms that aren’t strings', { ...RECONCILE, atoms: [1] }],
+  ])('refuses a reconcile Proposal with %s', (_label, target) => {
+    const body = { target, title: 'Join C', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  it('reads a group-result with exactly its motion, seat and result', () => {
+    for (const result of ['pass', 'fail']) {
+      const body = { motion: 'm1', seat: KEY, result };
+      expect(parseEvent(json(envelope('group-result', body)))?.event).toEqual({
+        v: 1,
+        type: 'group-result',
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body,
+      });
+    }
+  });
+
+  it.each([
+    ['an extra key such as scores', { motion: 'm1', seat: KEY, result: 'pass', scores: {} }],
+    ['an extra key such as note', { motion: 'm1', seat: KEY, result: 'fail', note: 'n' }],
+    ['a result that is neither pass nor fail', { motion: 'm1', seat: KEY, result: 'lapse' }],
+    ['no motion', { seat: KEY, result: 'pass' }],
+    ['a numeric motion', { motion: 1, seat: KEY, result: 'pass' }],
+    ['a short seat', { motion: 'm1', seat: KEY.slice(1), result: 'pass' }],
+    ['no result', { motion: 'm1', seat: KEY }],
+  ])('refuses a group-result with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('group-result', body)))).toBeNull();
   });
 });

@@ -13,11 +13,12 @@ import {
 import type { Score } from '../engine/event';
 import { NOTE_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { ChoiceList } from './Options';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
-import { holdPresses, useSaving } from './useSaving';
+import { useSaving } from './useSaving';
 import type { VersionView } from './versionViews';
 
 /** A score for each version, by version id. */
@@ -173,20 +174,21 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
 }
 
 /**
- * "Score for version N", a steward or rules ballot's own label (#102, #117),
- * or for a priority option, "Score for <option>" with the option in `<bdi>` (#107).
+ * "Score for version N", a steward, rules or dissolve ballot's own label
+ * (#102, #117, #108), or for a priority option, "Score for <option>" with the
+ * option in `<bdi>` (#107).
  */
 function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
-  if (layout !== 'options') {
-    return version.steward === undefined && version.rules === undefined
-      ? messages.ballot.scoreFor(version.number)
-      : messages.stewards.score;
+  if (layout === 'options') {
+    return (
+      <>
+        {messages.ballot.scoreForOption} <bdi>{version.text}</bdi>
+      </>
+    );
   }
-  return (
-    <>
-      {messages.ballot.scoreForOption} <bdi>{version.text}</bdi>
-    </>
-  );
+  const own =
+    version.steward === undefined && version.rules === undefined && version.dissolve === undefined;
+  return own ? messages.ballot.scoreFor(version.number) : messages.stewards.score;
 }
 
 /**

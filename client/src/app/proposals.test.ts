@@ -10,6 +10,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { deadlineOf } from '../test/votes';
 import { createGroup } from './actions';
 import {
+  addDraft,
   addVersion,
   againDraft,
   askPriority,
@@ -18,9 +19,13 @@ import {
   optionText,
   propose,
   type ProposalValues,
+  proposeDissolve,
   proposeRules,
   proposeSteward,
+  removalDraft,
+  sendDispatch,
   suspend,
+  vouch,
 } from './proposals';
 
 freshIndexedDBPerTest();
@@ -67,6 +72,60 @@ async function queuedProposal(device: TestDevice, groupId: string) {
   return queued.body;
 }
 
+describe('sendDispatch (#112)', () => {
+  it('queues one dispatch, NFC-normalized, with its Document, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const id = await sendDispatch(device.services, groupId, {
+      title: 'Cafe\u0301 on Sunday',
+      text: 'Bring a chair.\nWe start at 10.',
+      doc: groupId,
+    });
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'dispatch',
+        group: groupId,
+        author,
+        ts: expect.any(Number) as number,
+        body: {
+          title: 'Caf\u00e9 on Sunday',
+          text: 'Bring a chair.\nWe start at 10.',
+          doc: groupId,
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    expect(id).toBe(parseRecord(group?.outbox[0] ?? new Uint8Array())?.id);
+  });
+
+  it('leaves out a doc when none is chosen, and sends it once the relay is back', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const id = await sendDispatch(device.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+    });
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(group?.outbox).toEqual([]);
+    expect(state.dispatches).toEqual([
+      expect.objectContaining({
+        id,
+        title: 'Meet on Sunday',
+        text: '',
+        doc: null,
+      }),
+    ]);
+  });
+});
+
 describe('propose', () => {
   it('queues one proposal, NFC-normalized, and returns its id', async () => {
     const fake = createFakeRelay();
@@ -100,6 +159,32 @@ describe('propose', () => {
       outcome: 'proposed',
       proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
     });
+  });
+
+  it('carries a Dispatch, NFC-normalized, when the values hold one (#112)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    await propose(device.services, groupId, {
+      atom,
+      title: 'Quiet hours',
+      why: 'Sleep.',
+      text: 'Quiet after 10pm.',
+      link: null,
+      dispatch: { title: 'Updated: House rules', text: 'Cafe\u0301 hours moved.' },
+    });
+    expect(await queuedProposal(device, groupId)).toMatchObject({
+      dispatch: { title: 'Updated: House rules', text: 'Caf\u00e9 hours moved.' },
+    });
+  });
+
+  it('carries no dispatch key when the values hold none', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const values = { atom, title: 'Quiet hours', why: 'Sleep.', text: 'Quiet.', link: null };
+    await propose(device.services, groupId, values);
+    expect(Object.keys(await queuedProposal(device, groupId))).not.toContain('dispatch');
   });
 
   it('normalizes the proposed text as Atom text before signing it', async () => {
@@ -198,6 +283,54 @@ describe('propose', () => {
     await expect(propose(device.services, 'elsewhere', values)).rejects.toThrow(
       'No such group on this device.',
     );
+  });
+
+  it('queues an add with its target in place of an Atom, and clears only the add’s draft', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = { title: 'Guests', why: 'They visit.', text: 'Guests leave by 11.', link: '' };
+    await device.services.store.writeDraft(groupId, addDraft(atom), draft);
+    await device.services.store.writeDraft(groupId, addDraft(null), draft);
+    await device.services.store.writeDraft(groupId, atom, draft);
+    const target = { kind: 'add', after: atom } as const;
+    const values = { ...draft, target, link: null, window: 10 };
+    const result = await propose(device.services, groupId, values);
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.body).toEqual({
+      target: { kind: 'add', after: atom },
+      title: 'Guests',
+      why: 'They visit.',
+      text: 'Guests leave by 11.\n',
+      window: 10,
+    });
+    expect(result.outcome).toBe('proposed');
+    expect(await device.services.store.readDraft(groupId, addDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, addDraft(null))).toEqual(draft);
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('keeps each add’s draft apart: the start’s, each anchor’s, and no Atom’s own', () => {
+    expect(new Set([addDraft(null), addDraft('a.0'), addDraft('a.1'), 'a.0']).size).toBe(4);
+    expect(new Set([removalDraft('a.0'), addDraft('a.0'), 'a.0']).size).toBe(3);
+  });
+
+  it('queues a removal as an edit whose text is empty, clearing the removal’s draft, not the Atom’s', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const removing = { title: 'No quiet hours', why: 'Nobody keeps them.', text: '', link: '' };
+    const rewording = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, removalDraft(atom), removing);
+    await device.services.store.writeDraft(groupId, atom, rewording);
+    await propose(device.services, groupId, { ...removing, atom, link: null });
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.body).toEqual({
+      atom,
+      title: 'No quiet hours',
+      why: 'Nobody keeps them.',
+      text: '',
+    });
+    expect(await device.services.store.readDraft(groupId, removalDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
   });
 
   it('refuses a Proposal over 64,000 bytes, and queues nothing', async () => {
@@ -384,6 +517,22 @@ describe('addVersion', () => {
     await addVersion(device.services, groupId, { proposal, text: draft.text });
     expect(await device.services.store.readDraft(groupId, proposal)).toBeUndefined();
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('adds a removal as an empty version, and keeps the version drafted for the Proposal', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, proposal } = await proposed(fake);
+    const draft = { title: '', why: '', text: 'Later.', link: '' };
+    await device.services.store.writeDraft(groupId, proposal, draft);
+    const result = await addVersion(device.services, groupId, { proposal, text: '' });
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(state.proposals[0]?.versions.map((v) => [v.id, v.text])).toEqual([
+      [proposal, 'Quiet.\n'],
+      [result.outcome === 'added' ? result.versionId : '', ''],
+    ]);
+    expect(await device.services.store.readDraft(groupId, proposal)).toEqual(draft);
   });
 
   it('takes a version record of exactly 64,000 bytes and refuses one a byte longer', async () => {
@@ -654,6 +803,49 @@ describe('proposeRules', () => {
   });
 });
 
+describe('proposeDissolve', () => {
+  it('queues one dissolve Proposal with its wipe and window, NFC-normalized, and returns its id (#108)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeDissolve(device.services, groupId, {
+      title: 'Dissolve the cafe\u0301 group',
+      why: 'We all moved.',
+      window: 21,
+      wipe: true,
+    });
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: {
+          target: { kind: 'dissolve', wipe: true },
+          title: 'Dissolve the caf\u00e9 group',
+          why: 'We all moved.',
+          window: 21,
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    const id = parseRecord(group?.outbox[0] ?? new Uint8Array())?.id;
+    expect(result).toEqual({ outcome: 'proposed', proposalId: id });
+  });
+
+  it('refuses a dissolve Proposal too large for any blob, and queues nothing', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const values = { title: 'Dissolve', why: 'x'.repeat(70_000), window: 14, wipe: false };
+    expect(await proposeDissolve(device.services, groupId, values)).toEqual({
+      outcome: 'too-large',
+    });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
 describe('suspend', () => {
   it('queues one suspend naming the member, with its reason trimmed and normalized', async () => {
     const fake = createFakeRelay();
@@ -681,5 +873,18 @@ describe('suspend', () => {
     await suspend(device.services, groupId, { member, reason: '   ' });
     const [queued] = await outbox(device, groupId);
     expect(queued?.body).toEqual({ member });
+  });
+});
+
+describe('vouch', () => {
+  it('queues one vouch naming the newcomer, signed by this device’s member (#101)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const member = 'k'.repeat(43);
+    await vouch(device.services, groupId, member);
+    expect(await outbox(device, groupId)).toEqual([
+      { v: 1, type: 'vouch', group: groupId, author, ts: 1_762_650_000_000, body: { member } },
+    ]);
   });
 });

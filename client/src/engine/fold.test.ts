@@ -99,6 +99,16 @@ describe('fold', () => {
       stewards: EMPTY_SEATS,
       suspensions: [],
       narrowings: [],
+      vouches: [],
+      chatPosts: [],
+      chatThreads: [],
+      dispatches: [],
+      epoch: 0,
+      rotations: [],
+      rotationDue: false,
+      dissolved: null,
+      coalitions: [],
+      coalition: null,
       focus: null,
       ignored: [],
     });
@@ -135,6 +145,7 @@ describe('fold', () => {
         id,
         seq: 4,
         received: R + 10,
+        number: 1,
         author: authorOf('ben'),
         atom: '',
         target: { ...target, holder: authorOf('ana') },
@@ -151,6 +162,7 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        dispatch: null,
       },
     ]);
   });
@@ -201,7 +213,10 @@ describe('fold', () => {
       name: 'ben',
       level,
       seq: 2,
+      received: R + 1,
       invitedBy: null,
+      rightsAt: R + 1,
+      kx: null,
     });
   });
 
@@ -218,7 +233,10 @@ describe('fold', () => {
       name: 'ben',
       level: follow,
       seq: 2,
+      received: R + 1,
       invitedBy: null,
+      rightsAt: R + 1,
+      kx: null,
     });
     expect(state.ignored).toEqual([]);
     expect(can(state, authorOf('ben'), 'vote')).toBe(false);
@@ -260,6 +278,7 @@ describe('fold', () => {
         id: proposal,
         seq: 4,
         received: R + 10,
+        number: 1,
         author: authorOf('ana'),
         atom: `${log.group}.0`,
         target: { kind: 'edit' },
@@ -276,6 +295,7 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        dispatch: null,
       },
     ]);
   });

@@ -5,7 +5,9 @@
  * invite's seed in `#join/{seed}` stays on the device. The Join screen
  * replaces that entry with `#/join` once it has read the seed. The tracer's
  * `#/join/{payload}` form still reads as Join, so an old link says plainly
- * that it no longer works.
+ * that it no longer works. A share link's `#share/{seed}.{publicKey}` (#105)
+ * reads as the shared page whatever follows it, and stays in the address
+ * bar, so a reload reads it again; the page reads a damaged one as not shared.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -16,12 +18,25 @@ import { SEATS, type SeatNumber } from '../engine/stewards';
 export type Route =
   | { readonly name: 'start' }
   | { readonly name: 'create' }
+  | { readonly name: 'settings' }
+  /** Personal (#93): this device's personal Documents. */
+  | { readonly name: 'personal' }
+  /** One personal Document, by its id, to read and edit (#93). */
+  | { readonly name: 'personalDocument'; readonly id: string }
+  /** Link a new device, on the existing device (#96). */
+  | { readonly name: 'linkNew' }
+  /** Link to my other device, on the new device (#96). */
+  | { readonly name: 'linkThis' }
   | { readonly name: 'join'; readonly payload: string | null }
+  /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
+  | { readonly name: 'shared'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
+  | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
+  | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
   | {
       readonly name: 'steward';
@@ -37,16 +52,23 @@ export type Route =
       readonly optIn: OptIn;
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
-    };
+    }
+  | { readonly name: 'dissolve'; readonly groupId: string }
+  /** The group's Dispatches, newest first (#112). */
+  | { readonly name: 'dispatches'; readonly groupId: string }
+  /** Send a Dispatch (#112). */
+  | { readonly name: 'sendDispatch'; readonly groupId: string };
 
 /** A route inside one group. */
-type GroupRoute = Extract<Route, { readonly groupId: string }>;
+export type GroupRoute = Extract<Route, { readonly groupId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
 /** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
 const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
+/** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
+const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
 const START: Route = { name: 'start' };
 
@@ -66,37 +88,86 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
   return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
 }
 
-/** A page with no argument: `doc`, `priority` (#107) or `rules` (#117). */
-function barePage(groupId: string, page: string): Route {
-  if (page === 'doc') return { name: 'document', groupId };
-  if (page === 'priority') return { name: 'priority', groupId };
-  return page === 'rules' ? { name: 'rules', groupId } : START;
+/**
+ * The pages inside a group, Group home apart, that take nothing but the
+ * group: the Document, the rules (#117), dissolving (#108), the Dispatches
+ * and Send a Dispatch (#112), and Ask what to focus on (#107).
+ */
+const FIXED_NAMES = [
+  'document',
+  'rules',
+  'dissolve',
+  'dispatches',
+  'sendDispatch',
+  'priority',
+] as const;
+
+/** A page {@link FIXED_NAMES} lists. */
+type FixedName = (typeof FIXED_NAMES)[number];
+
+/** Each fixed page's path after `#/g/{groupId}/`. */
+const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
+  document: 'doc',
+  rules: 'rules',
+  dissolve: 'dissolve',
+  dispatches: 'dispatches',
+  sendDispatch: 'dispatch/new',
+  priority: 'priority',
+};
+
+/** The fixed pages by path, as a group's route reads them. */
+const FIXED_PAGES: ReadonlyMap<string, FixedName> = new Map(
+  FIXED_NAMES.map((name) => [FIXED_PATHS[name], name]),
+);
+
+/** A page inside a group that takes one argument: its route, or Start when the argument doesn't fit. */
+type ArgPage = (groupId: string, arg: string) => Route;
+
+/** A page whose argument must match `pattern`. */
+function idPage(pattern: RegExp, make: (groupId: string, id: string) => Route): ArgPage {
+  return (groupId, arg) => (pattern.test(arg) ? make(groupId, arg) : START);
 }
 
-/** `p/{proposalId}` or `again/{proposalId}`. */
-function proposalPage(groupId: string, page: string, arg: string): Route {
-  if (!ID.test(arg)) return START;
-  if (page === 'p') return { name: 'proposal', groupId, proposalId: arg };
-  return page === 'again' ? { name: 'again', groupId, proposalId: arg } : START;
-}
+/** The pages inside a group that take one argument. */
+const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  ['propose', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId }))],
+  ['p', idPage(ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId }))],
+  ['again', idPage(ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId }))],
+  ['add', idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after }))],
+  ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
+  ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
+  ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
+  ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
+  ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
+]);
 
 /**
- * A page inside a group: `doc`, `rules`, `priority` (#107), `propose/{atomId}`, `p/{proposalId}`,
- * `again/{proposalId}`, `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or
- * `narrow/{optIn}`.
+ * A page inside a group: one of the fixed pages, such as `doc`, `priority`
+ * (#107) or `dispatch/new`, `add` (a new first section, #75), or
+ * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
+ * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
+ * `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (arg === undefined) return barePage(groupId, page);
-  if (page === 'propose' && ATOM_ID.test(arg)) return { name: 'propose', groupId, atomId: arg };
-  if (page === 'steward' || page === 'recall') return stewardPage(groupId, page === 'recall', arg);
-  if (page === 'rules' || page === 'narrow') return optInPage(groupId, page === 'narrow', arg);
-  return proposalPage(groupId, page, arg);
+  const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
+  if (fixed !== undefined) return { name: fixed, groupId };
+  if (arg === undefined) return page === 'add' ? { name: 'add', groupId, after: null } : START;
+  return ARG_PAGES.get(page)?.(groupId, arg) ?? START;
 }
 
 function groupRoute(rest: readonly string[]): Route {
   const [groupId, page, arg, ...extra] = rest;
   if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
+}
+
+/** `#/me` (Personal), or `#/me/{id}`, one personal Document (#93). */
+function personalRoute(rest: readonly string[]): Route {
+  if (rest.length === 0) return { name: 'personal' };
+  const [id] = rest;
+  return rest.length === 1 && id !== undefined && PERSONAL_ID.test(id)
+    ? { name: 'personalDocument', id }
+    : START;
 }
 
 function joinRoute(rest: readonly string[]): Route {
@@ -110,29 +181,51 @@ function joinRoute(rest: readonly string[]): Route {
 /** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
 const INVITE_PREFIX = '#join/';
 
+/**
+ * The pages that take no argument after `#/`: Create group, Settings (#78),
+ * and the two sides of linking a device (#96). A linking code never travels
+ * in a route: it's shown, scanned or pasted, and held only in memory.
+ */
+const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
+  ['create', { name: 'create' }],
+  ['settings', { name: 'settings' }],
+  ['link-new', { name: 'linkNew' }],
+  ['link-this', { name: 'linkThis' }],
+]);
+
+/** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
+const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
+  ['join', joinRoute],
+  ['g', groupRoute],
+  ['me', personalRoute],
+]);
+
+/** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
+const SHARE_PREFIX = '#share/';
+
 /** Reads a `location.hash` value as a route. */
 export function parseRoute(hash: string): Route {
+  if (hash.startsWith(SHARE_PREFIX))
+    return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
   }
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
-  switch (head) {
-    case 'create':
-      return rest.length === 0 ? { name: 'create' } : START;
-    case 'join':
-      return joinRoute(rest);
-    case 'g':
-      return groupRoute(rest);
-    default:
-      return START;
-  }
+  const nested = NESTED.get(head);
+  if (nested !== undefined) return nested(rest);
+  return rest.length === 0 ? (PAGES.get(head) ?? START) : START;
 }
 
 /** Join's `href`: with its invite payload, or bare once Join has read it. */
 function joinHref(payload: string | null): string {
   return payload === null ? '#/join' : `${INVITE_PREFIX}${payload}`;
+}
+
+/** The path after a page's name: `/{id}`, or nothing when there's none. */
+function idPath(id: string | null): string {
+  return id === null ? '' : `/${id}`;
 }
 
 /** A steward composer's path: `/recall/{seat}` for a recall, else `/steward/{seat}` (#102). */
@@ -146,19 +239,25 @@ function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 
+/** A section composer's path (#75): proposing a change, adding a section, or removing one. */
+function sectionPath(
+  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' }>,
+): string {
+  switch (route.name) {
+    case 'propose':
+      return `/propose/${route.atomId}`;
+    case 'add':
+      return `/add${idPath(route.after)}`;
+    case 'remove':
+      return `/remove/${route.atomId}`;
+  }
+}
+
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
   switch (route.name) {
     case 'group':
       return '';
-    case 'document':
-      return '/doc';
-    case 'rules':
-      return '/rules';
-    case 'priority':
-      return '/priority';
-    case 'propose':
-      return `/propose/${route.atomId}`;
     case 'proposal':
       return `/p/${route.proposalId}`;
     case 'again':
@@ -167,6 +266,12 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'propose':
+    case 'add':
+    case 'remove':
+      return sectionPath(route);
+    default:
+      return `/${FIXED_PATHS[route.name]}`;
   }
 }
 
@@ -177,8 +282,20 @@ export function routeHref(route: Route): string {
       return '#/';
     case 'create':
       return '#/create';
+    case 'settings':
+      return '#/settings';
+    case 'personal':
+      return '#/me';
+    case 'personalDocument':
+      return `#/me/${route.id}`;
+    case 'linkNew':
+      return '#/link-new';
+    case 'linkThis':
+      return '#/link-this';
     case 'join':
       return joinHref(route.payload);
+    case 'shared':
+      return `${SHARE_PREFIX}${route.payload}`;
     default:
       return `#/g/${route.groupId}${groupPath(route)}`;
   }

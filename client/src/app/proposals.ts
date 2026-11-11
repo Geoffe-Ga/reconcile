@@ -2,8 +2,9 @@
  * What the composer, the ballot and the level picker do (spec §4 and §8),
  * apart from any screen: propose, add a version, ask what to focus on (#107),
  * vote, and choose a level; for stewards (#102), propose a steward or a
- * recall, and suspend; and for the opt-ins (#117), propose a rules change,
- * with a steward's narrowing.
+ * recall, and suspend; for the opt-ins (#117), propose a rules change, with a
+ * steward's narrowing; propose dissolving the group (#108); and send a
+ * Dispatch (#112).
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -14,17 +15,27 @@
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
+import {
+  type AddTarget,
+  type EventDraft,
+  type Score,
+  type SignedEvent,
+  signEvent,
+} from '../engine/event';
 import type { OptIn, OptInValue } from '../engine/optIns';
-import { type EventDraft, type Score, type SignedEvent, signEvent } from '../engine/event';
 import type { Services } from './actions';
 
 /** What the actions here use. */
 export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
+/**
+ * Where a Proposal goes (#75): the Atom whose text it would replace, where
+ * blank text proposes removing the Atom, or where a new section goes.
+ */
+export type ProposalPlace = { readonly atom: string } | { readonly target: AddTarget };
+
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
-export interface ProposalValues {
-  /** The Atom whose text it would replace. */
-  readonly atom: string;
+export type ProposalValues = ProposalPlace & {
   readonly title: string;
   readonly why: string;
   /** The proposed text, as typed; `propose` normalizes it. */
@@ -40,11 +51,40 @@ export interface ProposalValues {
   readonly again?: string;
   /** The texts of the other versions to put on its ballot after it, as typed, in order. */
   readonly versions?: readonly string[];
+  /** The Dispatch to send if it passes (#112), its title and text trimmed; none when absent. */
+  readonly dispatch?: DispatchWords;
+};
+
+/** A Dispatch's words (#112): its title and text, trimmed and already within their limits. */
+export interface DispatchWords {
+  readonly title: string;
+  readonly text: string;
 }
 
 /** The draft target a lapsed Proposal is proposed again from: apart from its Atom's own draft. */
 export function againDraft(proposalId: string): string {
   return `again:${proposalId}`;
+}
+
+/** The draft key of a removal of Atom `atom`, apart from any change drafted for it (#75). */
+export function removalDraft(atom: string): string {
+  return `remove:${atom}`;
+}
+
+/** The draft key of a new section after Atom `after`, or first for null (#75). */
+export function addDraft(after: string | null): string {
+  return `add:${after ?? ''}`;
+}
+
+/**
+ * The private draft a Proposal is written in (spec §8): the lapsed
+ * Proposal's when proposing again, else its Atom's for a change, the
+ * removal's when its text is blank, or the add's for its spot.
+ */
+function draftOf(values: ProposalValues, text: string): string {
+  if (values.again !== undefined) return againDraft(values.again);
+  if ('target' in values) return addDraft(values.target.after);
+  return text === '' ? removalDraft(values.atom) : values.atom;
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -108,13 +148,13 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, as this device's member of `groupId`, for
- * the voting window the proposer chose, if any. Every string is
- * NFC-normalized before the event is signed, and the text goes through
- * `normalizeAtomText` (spec §4). Queuing the Proposal clears the
- * private draft it was written in, keyed by its Atom, in the same change. A
- * Proposal whose record is over 64,000 bytes is refused before anything is
- * queued, and its draft kept.
+ * Proposes new text for one Atom, its removal (blank text), or a new section
+ * (#75), as this device's member of `groupId`, for the voting window the
+ * proposer chose, if any (#106). Every string is NFC-normalized before the
+ * event is signed, and the text goes through `normalizeAtomText` (spec §4).
+ * Queuing the Proposal clears the private draft it was written in in the same
+ * change. A Proposal whose record is over 64,000 bytes is refused before
+ * anything is queued, and its draft kept.
  *
  * Proposed again (#74), it carries the lapsed Proposal's other versions: one
  * `version` of the new Proposal for each, queued after it in the same change,
@@ -125,14 +165,18 @@ export async function propose(
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { atom, title, why, text, link, window, again, versions = [] } = values;
+  const { title, why, link, window, versions = [], dispatch } = values;
+  const text = normalizeAtomText(values.text);
+  const place = 'target' in values ? { target: values.target } : { atom: values.atom };
   const body = {
-    atom,
+    ...place,
     title: nfc(title),
     why: nfc(why),
-    text: normalizeAtomText(text),
+    text,
     ...(link === null ? {} : { link: nfc(link) }),
     ...(window === undefined ? {} : { window }),
+    // Signing NFC-normalizes every string in a body, a Dispatch's too (createEvent).
+    ...(dispatch === undefined ? {} : { dispatch }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
@@ -147,11 +191,10 @@ export async function propose(
   );
   const events = [event, ...others];
   if (!allFit(events)) return { outcome: 'too-large' };
-  const draft = again === undefined ? atom : againDraft(again);
   await services.store.enqueueAll(
     groupId,
     events.map((signed) => signed.record),
-    draft,
+    draftOf(values, text),
   );
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
@@ -202,10 +245,12 @@ export async function askPriority(
 /**
  * Adds a version to an open Proposal's ballot (ADR-0004), as this device's
  * member of `groupId`. The text goes through `normalizeAtomText` before it is
- * signed. Queuing it clears the private draft kept for that Proposal in the
- * same change. A version whose record is over 64,000 bytes is refused before
- * anything is queued, and its draft kept. The fold decides whether it joins the ballot:
- * it ignores one that arrives after the close or past the third.
+ * signed, and blank text adds removing the section (#75). Queuing a worded
+ * version clears the private draft kept for that Proposal in the same change;
+ * a removal has no draft, so it leaves that one alone. A version whose record
+ * is over 64,000 bytes is refused before anything is queued, and its draft
+ * kept. The fold decides whether it joins the ballot: it ignores one that
+ * arrives after the close or past the third.
  */
 export async function addVersion(
   services: ProposalServices,
@@ -214,7 +259,9 @@ export async function addVersion(
 ): Promise<AddVersionResult> {
   const event = await signVersion(services, groupId, values);
   if (!allFit([event])) return { outcome: 'too-large' };
-  await services.store.enqueue(groupId, event.record, values.proposal);
+  // A removal (blank text) is written in no draft, so it leaves the Proposal's own alone.
+  const draft = normalizeAtomText(values.text) === '' ? undefined : values.proposal;
+  await services.store.enqueue(groupId, event.record, draft);
   void services.sync.syncOnce();
   return { outcome: 'added', versionId: event.id };
 }
@@ -288,6 +335,46 @@ export async function proposeSteward(
     target: { kind: 'steward', seat, member } as const,
     title: nfc(values.title),
     why: nfc(values.why),
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
+/** A dissolve Proposal's entries (#108): title and why, trimmed, the window chosen, and whether to wipe. */
+export interface DissolveValues {
+  readonly title: string;
+  readonly why: string;
+  /** How many whole days voting runs, already checked against the entrenched bounds. */
+  readonly window: number;
+  /** Whether every device also erases the group, a week after it dissolves. */
+  readonly wipe: boolean;
+}
+
+/**
+ * Proposes dissolving `groupId` (ADR-0051, #108), as this device's member,
+ * for the window chosen and with or without a wipe. The title and why are
+ * NFC-normalized before signing. One too large for any blob is refused before
+ * anything is queued. The fold decides whether it opens: it ignores one while
+ * another is open.
+ */
+export async function proposeDissolve(
+  services: ProposalServices,
+  groupId: string,
+  values: DissolveValues,
+): Promise<ProposeResult> {
+  const body = {
+    target: { kind: 'dissolve', wipe: values.wipe } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+    window: values.window,
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
@@ -387,4 +474,55 @@ export async function proposeRules(
   );
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
+}
+
+/**
+ * Vouches for the newcomer named (ADR-0014, #101), as this device's member of
+ * `groupId`. The vouch counts from the relay's receipt, and the fold decides
+ * whether it holds.
+ */
+export async function vouch(
+  services: ProposalServices,
+  groupId: string,
+  member: string,
+): Promise<void> {
+  const event = await signFor(services, groupId, {
+    type: 'vouch',
+    group: groupId,
+    ts: services.now(),
+    body: { member },
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+}
+
+/** A Dispatch's entries (#112): its title and text, trimmed, and the Document it points to, or null. */
+export interface DispatchValues extends DispatchWords {
+  readonly doc: string | null;
+}
+
+/**
+ * Sends a Dispatch to the whole group (#112), as this device's member of
+ * `groupId`: its title and text, which signing NFC-normalizes (createEvent),
+ * and its Document, when one is chosen. Within its limits a Dispatch is a few
+ * kilobytes at most, so it always fits a blob. Its PUT wakes the group's
+ * phones (`wakeFor`), and the fold decides whether it holds: only a
+ * Co-Creator's does. Resolves to the queued Dispatch's id.
+ */
+export async function sendDispatch(
+  services: ProposalServices,
+  groupId: string,
+  values: DispatchValues,
+): Promise<string> {
+  const { title, text, doc } = values;
+  const body = { title, text, ...(doc === null ? {} : { doc }) };
+  const event = await signFor(services, groupId, {
+    type: 'dispatch',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return event.id;
 }

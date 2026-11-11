@@ -7,12 +7,14 @@ import { optionId } from '../engine/priority';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
-import { ResultView } from './ResultView';
+import { formatDate, MINUTE_MS } from '../app/time';
+import { clearedArchive } from '../store/archive';
+import { type ClearedResult, ResultView } from './ResultView';
 
 const ANA = authorOf('ana');
 const FOUR = ['Fix the website', 'Plan the picnic', 'New bylaws', 'Rent strike'];
 
-function show(state: GroupState, proposalId: string) {
+function show(state: GroupState, proposalId: string, cleared?: ClearedResult) {
   const proposal = state.proposals.find((candidate) => candidate.id === proposalId);
   if (proposal === undefined) throw new Error('Expected the priority vote.');
   const onProposeAgain = vi.fn();
@@ -27,6 +29,7 @@ function show(state: GroupState, proposalId: string) {
         own="none"
         onProposeAgain={onProposeAgain}
         onTell={() => Promise.resolve('shared')}
+        {...(cleared === undefined ? {} : { cleared })}
       />
     </main>,
   );
@@ -153,5 +156,35 @@ describe('a priority vote’s result (#107)', () => {
       ),
     ).toBeDefined();
     cleanup();
+  });
+
+  it('ranks from the tally a cleared archive kept, and holds its totals with when the ballots were cleared (#108)', async () => {
+    const { state, id } = rankedVote();
+    const at = Date.UTC(2026, 11, 14, 9);
+    const kept = clearedArchive(state, at);
+    const tally = kept.tallies[id];
+    if (tally === undefined) throw new Error('Expected the kept tally.');
+    const { result, user } = show(kept.state, id, { at, tally });
+    expect(
+      within(result).getByText('Plan the picnic', { selector: '.result-focus bdi' }),
+    ).toBeVisible();
+    expect(
+      within(within(result).getByRole('list', { name: 'Passed, best first' })).getAllByRole(
+        'listitem',
+      ),
+    ).toHaveLength(2);
+    // No totals outside the disclosure.
+    expect(within(result).queryByRole('list', { name: 'Totals' })).toBeNull();
+    await user.click(within(result).getByRole('button', { name: 'Totals' }));
+    expect(within(result).getByRole('list', { name: 'Totals' })).toHaveTextContent(
+      'Plan the picnicScored by 3 · average 3.6 · no zeros',
+    );
+    expect(
+      within(result).getByText(
+        `Individual scores and notes were cleared on ${formatDate(Math.floor(at / MINUTE_MS))}.`,
+      ),
+    ).toBeVisible();
+    expect(within(result).queryByText('Nobody voted.')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
   });
 });

@@ -1,0 +1,28 @@
+{
+  "kind": "key-vault",
+  "about": "One sealed key vault (#95): K = HKDF-SHA-256(ikm = the passkey's 32-byte PRF output, salt = the 32-byte PRF salt, info = \"reconcile/v1/key-vault\", 32 bytes), then XChaCha20-Poly1305 under K with a 24-byte nonce and \"reconcile/v1/key-vault\" || the credential id as associated data, stored as nonce || ciphertext || 16-byte tag. Computed with Python's cryptography package: its HKDF, and its ChaCha20 and ChaCha20Poly1305 (HChaCha20 from its raw ChaCha20 block), each checked against draft-irtf-cfrg-xchacha-03's vectors. Neither is @noble.",
+  "prf": [
+    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+    40, 41, 42, 43, 44, 45, 46, 47
+  ],
+  "prfSalt": [
+    160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178,
+    179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191
+  ],
+  "credentialId": [192, 255, 238, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+  "key": [
+    106, 87, 157, 63, 196, 28, 40, 9, 238, 243, 208, 151, 77, 88, 148, 152, 174, 119, 145, 125, 248,
+    160, 161, 128, 123, 39, 181, 63, 235, 188, 56, 220
+  ],
+  "sealed": [
+    96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+    116, 117, 118, 119, 121, 216, 159, 100, 216, 44, 250, 121, 87, 14, 225, 231, 149, 4, 103, 102,
+    234, 40, 10, 8, 188, 111, 1, 196, 203, 195, 149, 155, 8, 151, 161, 66, 134, 62, 119, 200, 53,
+    90, 57, 154
+  ],
+  "plaintext": "{\"format\":1,\"groups\":{}}",
+  "otherPrf": [
+    48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71,
+    72, 73, 74, 75, 76, 77, 78, 79
+  ]
+}

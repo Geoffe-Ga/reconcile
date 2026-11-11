@@ -50,12 +50,15 @@ export interface ChoiceListProps {
   readonly current: string | null;
   /** `versions` for versions with their changes, `options` for a priority vote's options. */
   readonly layout: 'versions' | 'options';
-  /** What goes under each one, such as its score pills or consent meter. */
-  readonly children: (version: VersionView) => ReactNode;
+  /** What goes under each one, such as its score pills or consent meter; nothing when left out. */
+  readonly children?: (version: VersionView) => ReactNode;
 }
 
+/** Nothing under a version or option. */
+const nothing = (): ReactNode => null;
+
 /** What a ballot holds: versions with their changes, or a priority vote's options (#107). */
-export function ChoiceList({ versions, current, layout, children }: ChoiceListProps) {
+export function ChoiceList({ versions, current, layout, children = nothing }: ChoiceListProps) {
   return layout === 'options' ? (
     <OptionList options={versions}>{children}</OptionList>
   ) : (

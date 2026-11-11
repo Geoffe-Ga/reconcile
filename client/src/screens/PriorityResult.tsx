@@ -9,7 +9,9 @@
  * message (#113). Each option's totals and the
  * individual ballots sit under one disclosure, then when voting ran. Every
  * ranking and flag comes from the engine's tally (`rank`), so this holds no
- * threshold of its own.
+ * threshold of its own. Once a dissolved group's archive has cleared its
+ * ballots (#108), the ranking and totals come from the tally this device
+ * kept, and the disclosure holds the totals and when the ballots were cleared.
  */
 import { useId } from 'react';
 
@@ -124,11 +126,22 @@ function Ranking({ detail, options }: Omit<PriorityProps, 'props'>) {
   );
 }
 
-/** A closed priority vote's result, from the engine's tally and ranking of its ballots. */
+/** The disclosure's label: "Totals and individual ballots (N)", or "Totals" once they're cleared (#108). */
+function detailsLabel(props: ResultViewProps): string {
+  const { result } = messages;
+  return props.cleared === undefined
+    ? result.details(props.proposal.ballots.length)
+    : result.totals;
+}
+
+/**
+ * A closed priority vote's result, from the engine's tally and ranking of its
+ * ballots, or the tally a cleared archive kept (#108).
+ */
 export function PriorityResult(props: ResultViewProps) {
-  const { state, proposal, own } = props;
+  const { state, proposal, own, cleared } = props;
   const heading = useId();
-  const detail = proposalTally(proposal);
+  const detail = cleared?.tally ?? proposalTally(proposal);
   const options = versionViews(state, proposal);
   return (
     <section className="result" aria-labelledby={heading}>
@@ -141,12 +154,7 @@ export function PriorityResult(props: ResultViewProps) {
       {props.leaving === true ? null : (
         <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
       )}
-      <Ballots
-        props={props}
-        versions={options}
-        naming="options"
-        label={messages.result.details(proposal.ballots.length)}
-      >
+      <Ballots props={props} versions={options} naming="options" label={detailsLabel(props)}>
         <Totals detail={detail} versions={options} naming="options" level={4} />
       </Ballots>
       <Ran proposal={proposal} />

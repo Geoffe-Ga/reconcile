@@ -134,7 +134,7 @@ test('A asks what to focus on, both score seven options, and the top one becomes
     await page.getByRole('textbox', { name: 'Option 7' }).fill(OPTIONS[6] ?? '');
     await page.getByRole('button', { name: 'Ask your group' }).click();
     await expect(scores(page, OPTIONS[0] ?? '')).toBeVisible();
-    await expect(page.getByText('Priority vote', { exact: true })).toBeVisible();
+    await expect(page.getByText('Proposal 1 · Priority vote', { exact: true })).toBeVisible();
   });
 
   await test.step('on a phone the seven options stack, with no sideways scroll', async () => {

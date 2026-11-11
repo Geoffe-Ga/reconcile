@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 OCTET_STREAM = {"content-type": "application/octet-stream"}
 BLOB_SIZES = (1024, 4096, 16384, 65536)
+# A backup's five sizes (#97): 64 KiB, 256 KiB, 1 MiB, 4 MiB and 16 MiB.
+BACKUP_SIZES = (65536, 262144, 1048576, 4194304, 16777216)
+MAX_BACKUP = BACKUP_SIZES[-1]
 
 # 2026-11-09T12:00:00Z, the middle of UTC day 20,766.
 NOON = dt.datetime(2026, 11, 9, 12, tzinfo=dt.UTC).timestamp()
@@ -93,6 +96,28 @@ def put(
         content=data,
         headers={**OCTET_STREAM, **(headers or {})},
     )
+
+
+def put_backup(
+    client: TestClient,
+    backup: str,
+    data: bytes,
+    *,
+    headers: Mapping[str, str] | None = None,
+) -> Any:
+    """PUT ``data`` to the backup ``backup`` as an octet stream (#97)."""
+    return client.put(
+        f"/v1/backup/{backup}",
+        content=data,
+        headers={**OCTET_STREAM, **(headers or {})},
+    )
+
+
+def backup_rows(db_path: Path) -> list[tuple[Any, ...]]:
+    """Every ``backups`` row as (id, blob length, expiry), by id."""
+    with closing(sqlite3.connect(db_path)) as db:
+        query = "SELECT id, length(blob), expiry FROM backups ORDER BY id"
+        return list(db.execute(query).fetchall())
 
 
 def row_count(db_path: Path) -> int:
