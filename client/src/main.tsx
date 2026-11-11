@@ -14,7 +14,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
-import { botNotice } from './app/chatMessages';
+import { botNotice, botThreadName } from './app/chatMessages';
 import { openDeviceLock, passkeyOn, whenOpen } from './app/passkey';
 import { Root } from './app/Root';
 import { parseRoute } from './app/router';
@@ -22,7 +22,7 @@ import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
 import { SharedRoot } from './app/SharedRoot';
 import { xchachaSeal } from './crypto/seal';
-import { postWebhook } from './net/discord';
+import { getWebhook, postWebhook } from './net/discord';
 import { createPushRelay } from './net/push';
 import { createRelay } from './net/relay';
 import { guideRecord } from './platform/guide';
@@ -52,9 +52,10 @@ if (root === null) {
  * opens empty on a new device, and nothing makes keys until first run is through.
  * Each launch first wipes, or clears the ballots of, any dissolved group
  * whose time has come by this device's clock (#108). The chat bot posts only
- * for a group that turned it on by Proposal and hasn't dissolved (#119).
- * Push stays off until the person turns a group on in Settings (#99), and the
- * app closes its notifications whenever it comes to the front. After each
+ * for a group that turned it on by Proposal and hasn't dissolved (#119), into
+ * a thread per Proposal when its webhook is a forum channel's (#123). Push
+ * stays off until the person turns a group on in Settings (#99), and the app
+ * closes its notifications whenever it comes to the front. After each
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
  * key (#97). Each launch also posts again any shared personal Document whose
@@ -69,7 +70,13 @@ async function start(container: HTMLElement): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
-  const chatBot = createChatBot({ store, post: postWebhook, notice });
+  const chatBot = createChatBot({
+    store,
+    post: postWebhook,
+    getWebhook,
+    notice,
+    threadName: botThreadName,
+  });
   const port = browserPushPort();
   const push = createPush({ store, relay: createPushRelay(), port });
   const now = (): number => Date.now();

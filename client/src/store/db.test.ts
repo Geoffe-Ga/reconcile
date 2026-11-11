@@ -890,6 +890,17 @@ describe('markArchived', () => {
     expect(heard).toHaveBeenCalledWith('group-1');
   });
 
+  it('forgets what the chat bot learned of the webhook, since it never posts again (#123)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const home = { guild: '1188000000000000001', channel: '1199000000000000777' };
+    await store.noteChatChannel('group-1', { webhook: '1199000000000000001', home });
+
+    await store.markArchived('group-1', 'dissolved');
+
+    expect((await store.getGroup('group-1'))?.chatChannel).toBeUndefined();
+  });
+
   it('forgets this device’s push registration and posted nudges, leaving the relay’s copy to expire (#99)', async () => {
     const store = await openStore();
     await store.addGroup(group);
@@ -1100,6 +1111,33 @@ describe('the chat bot’s claims (#119)', () => {
   });
 });
 
+describe('what this device learned of the group’s webhook (#123)', () => {
+  const forum = { webhook: '1199000000000000001', home: { guild: '1188', channel: '1199' } };
+  const text = { webhook: '1199000000000000001', home: 'text' } as const;
+
+  it('is nothing until noted, then the latest note, without telling subscribers', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+    expect((await store.getGroup(group.groupId))?.chatChannel).toBeUndefined();
+
+    await store.noteChatChannel(group.groupId, forum);
+    expect((await store.getGroup(group.groupId))?.chatChannel).toEqual(forum);
+    await store.noteChatChannel(group.groupId, text);
+    expect((await store.getGroup(group.groupId))?.chatChannel).toEqual(text);
+
+    expect(heard).toEqual([]);
+  });
+
+  it('refuses an unknown group', async () => {
+    const store = await openStore();
+    await expect(store.noteChatChannel('nope', text)).rejects.toThrow(
+      'No such group on this device.',
+    );
+  });
+});
+
 describe('push for a group (#99)', () => {
   const registration = {
     endpoint: 'https://fcm.googleapis.com/fcm/send/device-1',
@@ -1162,6 +1200,7 @@ describe('every change', () => {
           moment: 'open',
         }),
       () => store.settleChatClaim(group.groupId, 'claim-1'),
+      () => store.noteChatChannel(group.groupId, { webhook: '1', home: 'text' }),
       () => store.setPush(group.groupId, null),
       () => store.markNudged(group.groupId, []),
       () => store.markLeaving(group.groupId, utf8('{"leave":1}')),

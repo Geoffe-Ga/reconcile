@@ -12,7 +12,8 @@
  * single transaction, so a crash or a closed tab leaves either the old record
  * or the new one. Everything the device keeps about a group lives in that one
  * record, so Leave deletes the group with a single delete (#77), the chat
- * bot's claims (#119) and its push registration (#99) included. A backup file's groups come back in one
+ * bot's claims (#119), what it learned of the group's webhook (#123) and its
+ * push registration (#99) included. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
  * left open. Personal Documents (#93) sit in a store of their own beside the
@@ -88,6 +89,17 @@ export interface ChatClaim {
   readonly id: string;
   readonly proposal: string;
   readonly moment: BotMoment;
+}
+
+/**
+ * What this device learned of the group's Discord webhook (#123), for the
+ * webhook whose id is `webhook` (never its token): `text` once Discord showed
+ * it posts into a text channel, which takes no threads, or the server and
+ * channel ids Discord gave for it, which tell a new thread from that channel.
+ */
+export interface ChatChannel {
+  readonly webhook: string;
+  readonly home: 'text' | { readonly guild: string; readonly channel: string };
 }
 
 /**
@@ -169,6 +181,11 @@ export interface Group {
    * first: each is posted once if it won, or dropped. Absent until the first.
    */
   chatClaims?: ChatClaim[];
+  /**
+   * What this device learned of the group's webhook (#123), so it asks
+   * Discord once: absent until it learns something. A new webhook starts over.
+   */
+  chatChannel?: ChatChannel;
   /**
    * This device's push registration for the group (#99): absent while push
    * is off for it, as it is until the person turns it on. Never in a backup
@@ -407,6 +424,12 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
    */
   settleChatClaim(groupId: string, id: string): Promise<boolean>;
   /**
+   * Keep `channel` as what this device learned of the group's webhook, in one
+   * change, replacing anything it learned before (#123). No screen reads it,
+   * so no listener hears of it.
+   */
+  noteChatChannel(groupId: string, channel: ChatChannel): Promise<void>;
+  /**
    * Delete everything this device keeps about the group, in one transaction:
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
    * calls it once the relay has returned a seq for the group's leave, a
@@ -416,8 +439,9 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
   purgeGroup(groupId: string): Promise<void>;
   /**
    * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts, any leave and the chat bot's
-   * claims (#119), and mark it archived for `reason`. From then on nothing is
+   * reuses it): drop its outbox, its drafts, any leave, the chat bot's
+   * claims (#119) and what it learned of the webhook (#123), and mark it
+   * archived for `reason`. From then on nothing is
    * queued or claimed for it, and the sync loop sends, reads and posts
    * nothing for it. A group already archived keeps its archive.
    */
@@ -721,6 +745,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       });
       return held;
     },
+    noteChatChannel: (groupId, channel) =>
+      changeQuietly(groupId, (group) => {
+        group.chatChannel = channel;
+      }),
     async purgeGroup(groupId) {
       const found = await writeKeys(db, async (tx) => {
         if ((await tx.objectStore(GROUPS).getKey(groupId)) === undefined) return false;
@@ -737,6 +765,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         delete group.drafts;
         delete group.leaving;
         delete group.chatClaims;
+        delete group.chatChannel;
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;

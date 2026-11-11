@@ -115,8 +115,8 @@ function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow'>): boolean 
 
 /**
  * What a backup keeps of `groups`: each founded group that isn't leaving or
- * a read-only archive (#108), without its outbox, drafts, chat claims (#119)
- * or marks.
+ * a read-only archive (#108), without its outbox, drafts, chat claims (#119),
+ * what the chat bot learned of the webhook (#123) or marks.
  */
 export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
   return groups
