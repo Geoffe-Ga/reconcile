@@ -11,6 +11,7 @@ import { fold, type GroupState } from '../engine/fold';
 import { ownBallot } from '../engine/ownBallot';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
+import { Dispatches } from '../screens/Dispatches';
 import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { GroupHome } from '../screens/GroupHome';
@@ -25,6 +26,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { ProposalView } from '../screens/ProposalView';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
+import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings } from '../screens/Settings';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
@@ -55,12 +57,14 @@ import {
   addVersion,
   castBallot,
   chooseLevel,
+  type DispatchValues,
   type DissolveValues,
   propose,
   proposeDissolve,
   proposeRules,
   proposeSteward,
   type RulesValues,
+  sendDispatch,
   type StewardValues,
   suspend,
   type ProposalValues,
@@ -621,7 +625,38 @@ function DissolveScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
-/** A route inside one group. */
+/** The group's Dispatches (#112), newest first, with this device's own while they wait. */
+function DispatchesScreen({ groupId }: { readonly groupId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, me, pending, reachable, leaving }) => (
+        <Dispatches
+          state={state}
+          me={me.author}
+          pending={pending}
+          reachable={reachable}
+          leaving={leaving}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** Send a Dispatch (#112); sending it replaces the form with the group's Dispatches. */
+function SendDispatchScreen({ services, groupId }: GroupScreenProps) {
+  const onSend = async (values: DispatchValues) => {
+    await sendDispatch(services, groupId, values);
+    // Replace the form, so Back from the Dispatches doesn't open it again.
+    replaceRoute({ name: 'dispatches', groupId });
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <SendDispatch state={state} me={me.author} leaving={leaving} onSend={onSend} />
+      )}
+    </GroupGate>
+  );
+}
 
 /** The screen for a route inside one group. */
 function GroupRouteScreen({ route, services }: { route: GroupRoute; services: AppServices }) {
@@ -633,6 +668,28 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
       return <DocumentScreen services={services} groupId={groupId} />;
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'rules':
+      return <RulesScreen groupId={groupId} />;
+    case 'dispatches':
+      return <DispatchesScreen groupId={groupId} />;
+    default:
+      return <FormRouteScreen route={route} services={services} />;
+  }
+}
+
+/** A route inside one group whose screen is a form of its own. */
+type FormRoute =
+  Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' }> | ComposeRoute;
+
+/**
+ * The screen for a route inside one group that opens a form of its own: the
+ * steward (#102), opt-in (#117) and dissolve (#108) composers, Send a
+ * Dispatch (#112), and the composers that propose a change, add or remove a
+ * section (#75), or propose a lapsed Proposal again (#74).
+ */
+function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
+  const { groupId } = route;
+  switch (route.name) {
     case 'steward':
       return (
         <StewardScreen
@@ -642,8 +699,6 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
           recall={route.recall}
         />
       );
-    case 'rules':
-      return <RulesScreen groupId={groupId} />;
     case 'optIn':
       return (
         <OptInScreen
@@ -655,6 +710,8 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
       );
     case 'dissolve':
       return <DissolveScreen services={services} groupId={groupId} />;
+    case 'sendDispatch':
+      return <SendDispatchScreen services={services} groupId={groupId} />;
     default:
       return (
         <ComposeScreen services={services} groupId={groupId}>

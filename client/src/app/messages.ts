@@ -302,6 +302,14 @@ export const messages = {
     removeVersionVisibility: 'Everyone in your group sees this version and that you added it.',
     removalOnBallotTitle: 'Removing this section is already on the ballot',
     removalOnBallot: 'Score it on the section’s open Proposal.',
+    /** The checkbox that adds a Dispatch to a Proposal (#112). */
+    dispatchLabel: 'Send a Dispatch if this passes',
+    dispatchHint:
+      'If your group passes this, everyone in it gets the Dispatch. Voters see it on the ballot first.',
+    /** Where a carried Dispatch's title starts: the Document's own title, set in the field. */
+    dispatchTitle: (document: string) => `Updated: ${document}`,
+    dispatchTitleLabel: 'Dispatch title',
+    dispatchTextLabel: 'Dispatch text (optional)',
   },
   proposal: {
     pageTitle: 'Proposal',
@@ -323,6 +331,9 @@ export const messages = {
     yourVersion: 'Your version',
     joinedAfter: 'You joined after this opened, so you can’t vote on it.',
     notVotingLevel: 'You weren’t at a voting level when this opened, so you can’t vote on it.',
+    /** Over the Dispatch a Proposal carries (#112). */
+    dispatchHeading: 'If this passes',
+    dispatchLine: 'Everyone in your group gets this Dispatch.',
     missingTitle: 'This Proposal isn’t on this device',
     missing: 'Go back to your group to see its open Proposals.',
   },
@@ -884,6 +895,47 @@ export const messages = {
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
     eraseHeading: 'Erase this device',
+  },
+  /**
+   * Dispatches (#112; ADR-0003, ADR-0074): news for everyone in a group.
+   * Where a name or a title sits inside a sentence, the words around it are
+   * kept apart, so the screen sets it in `<bdi>`.
+   */
+  dispatches: {
+    pageTitle: 'Dispatches',
+    title: 'Dispatches',
+    lede: 'News for everyone in your group, newest first.',
+    empty: 'No Dispatches yet.',
+    /** Group home's link to every Dispatch, read with `seeAllWhat` after it. */
+    seeAll: 'See all',
+    seeAllWhat: 'Dispatches',
+    send: 'Send a Dispatch',
+    from: { before: 'From' },
+    fromProposal: { before: 'From the Proposal ‘', after: '’' },
+    /** Before a Document's title, on the link that opens it. */
+    open: 'Open',
+    /** Read between who sent a Dispatch and its date. */
+    dateSeparator: '·',
+  },
+  sendDispatch: {
+    pageTitle: 'Send a Dispatch',
+    eyebrow: 'Dispatches',
+    title: 'Send a Dispatch',
+    lede: 'A Dispatch goes to everyone in your group, whatever their involvement. Phones with notifications on say only “Something new in Reconcile.”',
+    titleLabel: 'Title',
+    titleHint: 'A few words that say what it’s about.',
+    titleMissing: 'Give your Dispatch a title.',
+    textLabel: 'Text (optional)',
+    textHint: 'Plain text. Links and formatting show just as you type them.',
+    documentLabel: 'Point to a Document (optional)',
+    noDocument: 'No Document',
+    visibility: 'Everyone in your group sees this Dispatch and that you sent it.',
+    submit: 'Send Dispatch',
+    failed: 'Your Dispatch couldn’t be saved on this device. Try again.',
+    notAllowedTitle: 'You can’t send Dispatches here',
+    notAllowed:
+      'Your place in this group doesn’t include sending Dispatches. Co-Creators send them.',
+    leaving: 'You can’t send a Dispatch in a group you’re leaving.',
   },
   /**
    * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows

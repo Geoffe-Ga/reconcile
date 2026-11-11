@@ -1,5 +1,5 @@
 import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
-import { Button, Form } from 'react-aria-components';
+import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
 import {
   againStartOf,
@@ -12,6 +12,7 @@ import {
 import { latestLink } from '../app/latestLink';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
+import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
 import {
   againDraft,
   type ProposalPlace,
@@ -29,7 +30,7 @@ import { composeOption, openProposalOn } from '../engine/composeOption';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import { type ProposalClass, targetClass } from '../engine/rules';
 import { nfcLength } from '../engine/text';
-import type { Draft, GroupDrafts } from '../store/drafts';
+import type { Draft, DraftDispatch, GroupDrafts } from '../store/drafts';
 
 export type { ComposeOutcome } from '../app/compose';
 
@@ -95,9 +96,13 @@ function preview(value: string): ReactNode {
   return text === '' ? null : <AtomText text={text} />;
 }
 
-/** The entries as the Proposal takes them: title, why and link trimmed, a blank link none. */
+/**
+ * The entries as the Proposal takes them: title, why and link trimmed, a
+ * blank link none, and any Dispatch's title and text trimmed (#112).
+ */
 function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalValues {
   const link = draft.link.trim();
+  const { dispatch } = draft;
   return {
     ...place,
     title: draft.title.trim(),
@@ -105,7 +110,15 @@ function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalV
     text: draft.text,
     link: link === '' ? null : link,
     window,
+    ...(dispatch === undefined
+      ? {}
+      : { dispatch: { title: dispatch.title.trim(), text: dispatch.text.trim() } }),
   };
+}
+
+/** `draft` with no Dispatch (#112): "Send a Dispatch if this passes" unchecked. */
+function withoutDispatch({ title, why, text, link, window }: Draft): Draft {
+  return { title, why, text, link, ...(window === undefined ? {} : { window }) };
 }
 
 /** The class `targetClass` gives this Proposal as it stands, which bounds its voting time. */
@@ -177,6 +190,87 @@ export interface TextEntry {
   readonly validate: (value: string) => string | null;
 }
 
+interface DispatchFieldsProps {
+  readonly dispatch: DraftDispatch;
+  readonly onChange: (dispatch: DraftDispatch) => void;
+}
+
+/** The Dispatch's title and text, under the checkbox, checked as a sent Dispatch's are (#112). */
+function DispatchFields({ dispatch, onChange }: DispatchFieldsProps) {
+  const { composer } = messages;
+  return (
+    <>
+      <Field
+        name="dispatchTitle"
+        label={composer.dispatchTitleLabel}
+        autoComplete="off"
+        isRequired
+        validate={checkDispatchTitle}
+        value={dispatch.title}
+        onChange={(title) => {
+          onChange({ ...dispatch, title });
+        }}
+      />
+      <Field
+        name="dispatchText"
+        label={composer.dispatchTextLabel}
+        multiline
+        validate={checkDispatchText}
+        value={dispatch.text}
+        onChange={(text) => {
+          onChange({ ...dispatch, text });
+        }}
+      />
+    </>
+  );
+}
+
+interface DispatchChoiceProps {
+  readonly state: GroupState;
+  readonly values: Draft;
+  readonly onChange: (values: Draft) => void;
+}
+
+/**
+ * "Send a Dispatch if this passes" (#112), a React Aria checkbox, unchecked
+ * to start. Checked, it opens the Dispatch's title, which starts as
+ * 'Updated: {Document title}', and its text, both kept in the draft.
+ */
+function DispatchChoice({ state, values, onChange }: DispatchChoiceProps) {
+  const { composer } = messages;
+  const { dispatch } = values;
+  const toggle = (on: boolean) => {
+    const opened = { title: composer.dispatchTitle(state.title), text: '' };
+    onChange(on ? { ...values, dispatch: opened } : withoutDispatch(values));
+  };
+  return (
+    <div className="stack dispatch-choice">
+      <CheckboxField
+        className="check-option"
+        name="dispatch"
+        isSelected={dispatch !== undefined}
+        onChange={toggle}
+      >
+        <CheckboxButton className="checkbox">
+          <span className="checkbox-box" aria-hidden="true" />
+          {composer.dispatchLabel}
+        </CheckboxButton>
+        <Text slot="description" className="check-description">
+          {composer.dispatchHint}
+        </Text>
+      </CheckboxField>
+      {dispatch === undefined ? null : (
+        <DispatchFields
+          dispatch={dispatch}
+          onChange={(next) => {
+            onChange({ ...values, dispatch: next });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 interface FieldsProps {
   readonly state: GroupState;
   readonly values: Draft;
@@ -188,7 +282,10 @@ interface FieldsProps {
   readonly onChange: (values: Draft) => void;
 }
 
-/** The four entries, or three for a removal, and the voting time, each kept in the draft as it changes. */
+/**
+ * The four entries, or three for a removal (#75), the voting time and any
+ * Dispatch it carries (#112), each kept in the draft as it changes.
+ */
 function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
   const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
@@ -246,6 +343,7 @@ function Fields({ state, values, text, place, now, onChange }: FieldsProps) {
         }}
         now={now}
       />
+      <DispatchChoice state={state} values={values} onChange={onChange} />
     </>
   );
 }
@@ -590,11 +688,12 @@ function ChangeForm({ state, section, drafts, now, onPropose, again }: ChangeFor
  * The composer (`#/g/{groupId}/propose/{atomId}`; spec §8). On a section with
  * no open Proposal: a title, a why, the section's new text in Write and
  * Preview tabs (prefilled with the current text), a discussion link
- * (prefilled with the group's latest one), and the voting time in days
- * (the class default, within its bounds; #106), and submitting queues one
- * `proposal`. On a section whose Proposal is open, or an add's open Proposal
- * (#75), "Add your version": the text alone, and submitting queues one
- * `version`, which runs in its Proposal's window. A full ballot takes no
+ * (prefilled with the group's latest one), the voting time in days (the
+ * class default, within its bounds; #106), and "Send a Dispatch if this
+ * passes" (#112), and submitting queues one `proposal`. On a section whose
+ * Proposal is open, or an add's open Proposal (#75), "Add your version": the
+ * text alone, and submitting queues one `version`, which runs in its
+ * Proposal's window. A full ballot takes no
  * more. `composeOption` decides which, as it does for the fold. What is typed
  * is kept as a private draft on this device until it is sent or discarded.
  * Only someone who may propose, and isn't leaving, sees a form (`can()`).

@@ -2,8 +2,8 @@
  * What the composer, the ballot and the level picker do (spec §4 and §8),
  * apart from any screen: propose, add a version, vote, and choose a level;
  * for stewards (#102), propose a steward or a recall, and suspend; for the
- * opt-ins (#117), propose a rules change, with a steward's narrowing; and
- * propose dissolving the group (#108).
+ * opt-ins (#117), propose a rules change, with a steward's narrowing;
+ * propose dissolving the group (#108); and send a Dispatch (#112).
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -50,7 +50,15 @@ export type ProposalValues = ProposalPlace & {
   readonly again?: string;
   /** The texts of the other versions to put on its ballot after it, as typed, in order. */
   readonly versions?: readonly string[];
+  /** The Dispatch to send if it passes (#112), its title and text trimmed; none when absent. */
+  readonly dispatch?: DispatchWords;
 };
+
+/** A Dispatch's words (#112): its title and text, trimmed and already within their limits. */
+export interface DispatchWords {
+  readonly title: string;
+  readonly text: string;
+}
 
 /** The draft target a lapsed Proposal is proposed again from: apart from its Atom's own draft. */
 export function againDraft(proposalId: string): string {
@@ -146,7 +154,7 @@ export async function propose(
   groupId: string,
   values: ProposalValues,
 ): Promise<ProposeResult> {
-  const { title, why, link, window, versions = [] } = values;
+  const { title, why, link, window, versions = [], dispatch } = values;
   const text = normalizeAtomText(values.text);
   const place = 'target' in values ? { target: values.target } : { atom: values.atom };
   const body = {
@@ -156,6 +164,8 @@ export async function propose(
     text,
     ...(link === null ? {} : { link: nfc(link) }),
     ...(window === undefined ? {} : { window }),
+    // Signing NFC-normalizes every string in a body, a Dispatch's too (createEvent).
+    ...(dispatch === undefined ? {} : { dispatch }),
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
@@ -431,4 +441,35 @@ export async function vouch(
   });
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();
+}
+
+/** A Dispatch's entries (#112): its title and text, trimmed, and the Document it points to, or null. */
+export interface DispatchValues extends DispatchWords {
+  readonly doc: string | null;
+}
+
+/**
+ * Sends a Dispatch to the whole group (#112), as this device's member of
+ * `groupId`: its title and text, which signing NFC-normalizes (createEvent),
+ * and its Document, when one is chosen. Within its limits a Dispatch is a few
+ * kilobytes at most, so it always fits a blob. Its PUT wakes the group's
+ * phones (`wakeFor`), and the fold decides whether it holds: only a
+ * Co-Creator's does. Resolves to the queued Dispatch's id.
+ */
+export async function sendDispatch(
+  services: ProposalServices,
+  groupId: string,
+  values: DispatchValues,
+): Promise<string> {
+  const { title, text, doc } = values;
+  const body = { title, text, ...(doc === null ? {} : { doc }) };
+  const event = await signFor(services, groupId, {
+    type: 'dispatch',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return event.id;
 }

@@ -76,11 +76,22 @@ export interface LevelBody {
 }
 
 /**
+ * The Dispatch a Proposal carries (#112): a title and a short text, kept as
+ * written. The fold checks their lengths, and sends it to the whole group when
+ * the Proposal's pass is final.
+ */
+export interface CarriedDispatch {
+  readonly title: string;
+  readonly text: string;
+}
+
+/**
  * Proposes new text for one Atom, with a title, a justification, an optional
- * discussion link and an optional voting window in whole days (#106). Empty
- * text proposes removing the Atom (#75). The window is kept as written: the
- * fold checks it against the bounds of the Proposal's class, and a Proposal
- * without one runs the class default.
+ * discussion link, an optional voting window in whole days (#106) and an
+ * optional Dispatch to send if it passes (#112). Empty text proposes removing
+ * the Atom (#75). The window is kept as written: the fold checks it against
+ * the bounds of the Proposal's class, and a Proposal without one runs the
+ * class default.
  */
 export interface ProposalBody {
   readonly atom: string;
@@ -89,6 +100,7 @@ export interface ProposalBody {
   readonly text: string;
   readonly link?: string;
   readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -102,7 +114,8 @@ export interface AddTarget {
 
 /**
  * Proposes a new section (#75): it carries `target` in place of an Atom, its
- * text, and, like an edit, an optional voting window in whole days (#106).
+ * text, and, like an edit, an optional voting window in whole days (#106) and
+ * an optional Dispatch to send if it passes (#112).
  */
 export interface AddProposalBody {
   readonly target: AddTarget;
@@ -111,6 +124,7 @@ export interface AddProposalBody {
   readonly text: string;
   readonly link?: string;
   readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -126,14 +140,16 @@ export interface StewardTarget {
 
 /**
  * Elects or recalls a steward (#102): an ordinary Proposal with a title, a
- * justification and an optional discussion link, whose target is a seat. It
- * carries no text, so its ballot has one version, under the Proposal's id.
+ * justification, an optional discussion link and an optional Dispatch to send
+ * if it passes (#112), whose target is a seat. It carries no text, so its
+ * ballot has one version, under the Proposal's id.
  */
 export interface StewardProposalBody {
   readonly target: StewardTarget;
   readonly title: string;
   readonly why: string;
   readonly link?: string;
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -160,6 +176,8 @@ export interface RulesProposalBody {
   readonly why: string;
   readonly link?: string;
   readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -183,6 +201,8 @@ export interface DissolveProposalBody {
   readonly why: string;
   readonly link?: string;
   readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -286,6 +306,17 @@ export interface DissolveBody {
 export type LeaveBody = Readonly<Record<string, never>>;
 
 /**
+ * A Dispatch a Co-Creator sends to the whole group (#112): a title, a short
+ * text and, optionally, the id of a Document it points to. All are kept as
+ * written: the fold checks the sender, the lengths and the Document.
+ */
+export interface DispatchBody {
+  readonly title: string;
+  readonly text: string;
+  readonly doc?: string;
+}
+
+/**
  * Gives a member who has none an encryption key (#98): the X25519 public key,
  * in base64url, that the group's new secrets are wrapped to. A device that
  * joined before #98 posts it once; the fold keeps the first per member.
@@ -319,6 +350,7 @@ export interface EventBodies {
   readonly dissolve: DissolveBody;
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
+  readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
 }
@@ -502,19 +534,12 @@ function parseAddTarget(value: unknown): AddTarget | null {
 
 /** An add carries `target` in place of `atom`, never both, its text, and any window (#75, #106). */
 function parseAddProposal(body: Json): AddProposalBody | null {
-  const { atom, target, title, why, text, link, window } = body;
+  const { atom, target, title, why, text } = body;
   const parsed = parseAddTarget(target);
   if (parsed === null || atom !== undefined || !isString(text)) return null;
-  if (!isString(title) || !isString(why) || !isOptionalString(link)) return null;
-  if (!isOptionalNumber(window)) return null;
-  return {
-    target: parsed,
-    title,
-    why,
-    text,
-    ...(link === undefined ? {} : { link }),
-    ...(window === undefined ? {} : { window }),
-  };
+  if (!isString(title) || !isString(why)) return null;
+  const options = editOptions(body);
+  return options === null ? null : { target: parsed, title, why, text, ...options };
 }
 
 /** A steward target's kind, seat and member, or null for any other shape (#102). */
@@ -534,13 +559,31 @@ function parseRulesTarget(value: unknown): RulesTarget | null {
     : { kind: 'rules', optIn: value.optIn, value: value.value };
 }
 
-/** What every targeted Proposal carries beside its target: a title, a why and an optional link, and no `atom`. */
+/**
+ * A Proposal's `dispatch` (#112) as `{dispatch}`: its title and text, any
+ * other key dropped. `{}` when there is none, and null for any other shape,
+ * which makes the whole Proposal a bad shape.
+ */
+function dispatchField(value: unknown): { readonly dispatch?: CarriedDispatch } | null {
+  if (value === undefined) return {};
+  if (!isObject(value)) return null;
+  const { title, text } = value;
+  return isString(title) && isString(text) ? { dispatch: { title, text } } : null;
+}
+
+/**
+ * What every targeted Proposal carries beside its target: a title, a why, an
+ * optional link and an optional Dispatch (#112), and no `atom`.
+ */
 function parseTargetedFields(body: Json): Omit<StewardProposalBody, 'target'> | null {
   const { atom, title, why, link } = body;
+  const carried = dispatchField(body.dispatch);
   if (atom !== undefined || !isString(title) || !isString(why) || !isOptionalString(link)) {
     return null;
   }
-  return { title, why, ...(link === undefined ? {} : { link }) };
+  return carried === null
+    ? null
+    : { title, why, ...(link === undefined ? {} : { link }), ...carried };
 }
 
 /** A dissolve target's kind and wipe, which must be true or false (#108). */
@@ -594,19 +637,28 @@ function parseTargeted(body: Json): ProposalEventBody | null {
     : parseTargetedProposal(body);
 }
 
-function parseProposal(body: Json): ProposalEventBody | null {
-  if (body.target !== undefined) return parseTargeted(body);
-  const { atom, title, why, text, link, window } = body;
-  if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
-  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
+/**
+ * An edit's or an add's optional fields (#75): a discussion link, a voting
+ * window (#106) and a Dispatch (#112), each kept when present, or null when
+ * one is a bad shape.
+ */
+function editOptions(body: Json): Pick<ProposalBody, 'link' | 'window' | 'dispatch'> | null {
+  const { link, window } = body;
+  const carried = dispatchField(body.dispatch);
+  if (!isOptionalString(link) || !isOptionalNumber(window) || carried === null) return null;
   return {
-    atom,
-    title,
-    why,
-    text,
     ...(link === undefined ? {} : { link }),
     ...(window === undefined ? {} : { window }),
+    ...carried,
   };
+}
+
+function parseProposal(body: Json): ProposalEventBody | null {
+  if (body.target !== undefined) return parseTargeted(body);
+  const { atom, title, why, text } = body;
+  if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
+  const options = editOptions(body);
+  return options === null ? null : { atom, title, why, text, ...options };
 }
 
 function parseSuspend(body: Json): SuspendBody | null {
@@ -632,6 +684,12 @@ function parseChatPosted(body: Json): ChatPostedBody | null {
   const { proposal, moment, nonce } = body;
   if (!isString(proposal) || !isString(moment) || !isOptionalString(nonce)) return null;
   return { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
+}
+
+function parseDispatch(body: Json): DispatchBody | null {
+  const { title, text, doc } = body;
+  if (!isString(title) || !isString(text) || !isOptionalString(doc)) return null;
+  return { title, text, ...(doc === undefined ? {} : { doc }) };
 }
 
 function parseKx(body: Json): KxBody | null {
@@ -712,8 +770,8 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 
 /**
  * {@link withBody} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101) and
- * `chat-posted` (#119).
+ * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
+ * (#119) and `dispatch` (#112).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -727,6 +785,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-posted':
       return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'dispatch':
+      return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return withKeyBody(head, type, body);
   }

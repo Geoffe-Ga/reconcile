@@ -30,6 +30,9 @@ describe('vector files', () => {
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'dispatch-carried.json',
+      'dispatch-limits.json',
+      'dispatch-sent.json',
       'dissolve-bar.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
@@ -64,6 +67,7 @@ describe('vector files', () => {
       'sections-add.json',
       'sections-admission.json',
       'sections-anchor-removed.json',
+      'sections-dispatch.json',
       'sections-dissolve.json',
       'sections-pass-order.json',
       'sections-remove.json',
@@ -109,7 +113,11 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -392,6 +400,34 @@ describe('vector files', () => {
     'bootstrap-after-leave',
     'bootstrap-member-churn',
   ])('include the admission vector "%s" (#101)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'dispatch-co-creator',
+    'dispatch-rights',
+    'dispatch-level',
+    'dispatch-title',
+    'dispatch-text',
+    'dispatch-doc',
+    'dispatch-carried-pass',
+    'dispatch-carried-open',
+    'dispatch-carried-lapse',
+    'dispatch-carried-fail',
+    'dispatch-carried-invalid',
+    'dispatch-carried-close-order',
+    'dispatch-carried-same-deadline',
+    'dispatch-carried-dissolve',
+  ])('include the Dispatch vector "%s" (#112)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'sections-dispatch-add',
+    'sections-dispatch-remove',
+    'sections-dispatch-added-edit',
+    'sections-dispatch-ignored',
+  ])('include the sections Dispatch vector "%s" (#75, #112)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 });

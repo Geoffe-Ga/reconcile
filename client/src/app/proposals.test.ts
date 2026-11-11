@@ -21,6 +21,7 @@ import {
   proposeRules,
   proposeSteward,
   removalDraft,
+  sendDispatch,
   suspend,
   vouch,
 } from './proposals';
@@ -69,6 +70,60 @@ async function queuedProposal(device: TestDevice, groupId: string) {
   return queued.body;
 }
 
+describe('sendDispatch (#112)', () => {
+  it('queues one dispatch, NFC-normalized, with its Document, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const id = await sendDispatch(device.services, groupId, {
+      title: 'Cafe\u0301 on Sunday',
+      text: 'Bring a chair.\nWe start at 10.',
+      doc: groupId,
+    });
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'dispatch',
+        group: groupId,
+        author,
+        ts: expect.any(Number) as number,
+        body: {
+          title: 'Caf\u00e9 on Sunday',
+          text: 'Bring a chair.\nWe start at 10.',
+          doc: groupId,
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    expect(id).toBe(parseRecord(group?.outbox[0] ?? new Uint8Array())?.id);
+  });
+
+  it('leaves out a doc when none is chosen, and sends it once the relay is back', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const id = await sendDispatch(device.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+    });
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(group?.outbox).toEqual([]);
+    expect(state.dispatches).toEqual([
+      expect.objectContaining({
+        id,
+        title: 'Meet on Sunday',
+        text: '',
+        doc: null,
+      }),
+    ]);
+  });
+});
+
 describe('propose', () => {
   it('queues one proposal, NFC-normalized, and returns its id', async () => {
     const fake = createFakeRelay();
@@ -102,6 +157,32 @@ describe('propose', () => {
       outcome: 'proposed',
       proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
     });
+  });
+
+  it('carries a Dispatch, NFC-normalized, when the values hold one (#112)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    await propose(device.services, groupId, {
+      atom,
+      title: 'Quiet hours',
+      why: 'Sleep.',
+      text: 'Quiet after 10pm.',
+      link: null,
+      dispatch: { title: 'Updated: House rules', text: 'Cafe\u0301 hours moved.' },
+    });
+    expect(await queuedProposal(device, groupId)).toMatchObject({
+      dispatch: { title: 'Updated: House rules', text: 'Caf\u00e9 hours moved.' },
+    });
+  });
+
+  it('carries no dispatch key when the values hold none', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const values = { atom, title: 'Quiet hours', why: 'Sleep.', text: 'Quiet.', link: null };
+    await propose(device.services, groupId, values);
+    expect(Object.keys(await queuedProposal(device, groupId))).not.toContain('dispatch');
   });
 
   it('normalizes the proposed text as Atom text before signing it', async () => {

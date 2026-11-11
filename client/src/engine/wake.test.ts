@@ -35,6 +35,15 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
     expect(wakeFor(log.state(), event)).toBe(true);
   });
 
+  it('wakes for a Dispatch, with or without a Document (#112)', () => {
+    const { log } = openProposal();
+    const sent = (body: { title: string; text: string; doc?: string }) =>
+      eventOf('Ana', { type: 'dispatch', group: log.group, ts: 0, body });
+
+    expect(wakeFor(log.state(), sent({ title: 'Meet Sunday', text: 'At 10.' }))).toBe(true);
+    expect(wakeFor(log.state(), sent({ title: 'Read it', text: '', doc: log.group }))).toBe(true);
+  });
+
   it('wakes for the ballot after which this device’s fold closes the Proposal early', () => {
     const { log, proposal, vote } = openProposal();
     log.vote('Ben', proposal, 3);

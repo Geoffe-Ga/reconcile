@@ -43,7 +43,10 @@ export function lapsed(again: Proposal | undefined): Proposal | undefined {
   return again?.final === true && again.outcome.kind === 'lapse' ? again : undefined;
 }
 
-/** Where proposing again starts: the lapsed Proposal's title, why, text, link and voting time. */
+/**
+ * Where proposing again starts: the lapsed Proposal's title, why, text, link
+ * and voting time, and the Dispatch it carried, if any (#112).
+ */
 export function againStartOf(state: GroupState, again: Proposal): Draft {
   return {
     title: again.title,
@@ -51,6 +54,7 @@ export function againStartOf(state: GroupState, again: Proposal): Draft {
     text: again.text,
     link: again.link ?? latestLink(state) ?? '',
     window: again.window,
+    ...(again.dispatch === null ? {} : { dispatch: again.dispatch }),
   };
 }
 

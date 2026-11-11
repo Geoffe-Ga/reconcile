@@ -475,6 +475,70 @@ describe('Adding or removing as a newcomer still earning a vote (#101)', () => {
   });
 });
 
+describe('Send a Dispatch if this passes, on an add or a removal (#75, #112)', () => {
+  const { composer } = messages;
+  const choice = () => screen.getByRole('checkbox', { name: composer.dispatchLabel });
+
+  it('offers it unchecked on Add a section, and the add carries what it opens', async () => {
+    const { user, afterId, onPropose } = await addSection({ after: 0 });
+    expect(choice()).not.toBeChecked();
+    await fill(user, {
+      Title: 'Guests',
+      Why: 'Guests come often.',
+      'Section text': 'Guests leave.',
+    });
+    await user.click(choice());
+    expect(box(composer.dispatchTitleLabel)).toHaveValue('Updated: House rules');
+    await user.click(box(composer.dispatchTextLabel));
+    await user.paste('A rule for guests.');
+    expect(await axeViolations()).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: { kind: 'add', after: afterId },
+        dispatch: { title: 'Updated: House rules', text: 'A rule for guests.' },
+      }),
+    );
+  });
+
+  it('offers it on Propose removing this section, and the removal carries it', async () => {
+    const { user, atomId, onPropose } = await removeSection();
+    await fill(user, { Title: 'No bins rule', Why: 'The council collects now.' });
+    await user.click(choice());
+    await user.click(screen.getByRole('button', { name: 'Propose removing it' }));
+    expect(onPropose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        atom: atomId,
+        text: '',
+        dispatch: { title: 'Updated: House rules', text: '' },
+      }),
+    );
+  });
+
+  it('offers none when the removal only joins an open ballot, which carries its own', async () => {
+    const log = groupLog({ chat: CHAT });
+    log.propose('ben', { atom: 1, title: 'Bins on Monday', text: 'Bins go out on Monday.\n' });
+    await removeSection({ state: log.state() });
+    expect(screen.getByRole('button', { name: composer.removeVersionSubmit })).toBeVisible();
+    expect(screen.queryByRole('checkbox', { name: composer.dispatchLabel })).toBeNull();
+  });
+
+  it('starts a lapsed add again with the Dispatch it carried', async () => {
+    const log = groupLog({ chat: CHAT });
+    const dispatch = { title: 'Updated: House rules', text: 'Guests have a rule.' };
+    const id = log.addSection('ana', `${log.group}.0`, { title: 'Guests', dispatch });
+    const state = log.state(deadlineOf(START_MINUTE));
+    const add = state.proposals.find((proposal) => proposal.id === id);
+    if (add === undefined) throw new Error('Expected the add.');
+    expect(add.dispatch).toEqual(dispatch);
+    const { user, onPropose } = await addSection({ state, after: 0, again: add });
+    expect(choice()).toBeChecked();
+    expect(box(composer.dispatchTextLabel)).toHaveValue('Guests have a rule.');
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose).toHaveBeenCalledWith(expect.objectContaining({ again: id, dispatch }));
+  });
+});
+
 describe('Proposing an add or a removal again (#74)', () => {
   /** Ana's add after section 1 and her removal of section 2, Ben's versions on each, and no ballots: both lapse. */
   function lapsedBoth() {

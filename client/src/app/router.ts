@@ -52,7 +52,11 @@ export type Route =
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
     }
-  | { readonly name: 'dissolve'; readonly groupId: string };
+  | { readonly name: 'dissolve'; readonly groupId: string }
+  /** The group's Dispatches, newest first (#112). */
+  | { readonly name: 'dispatches'; readonly groupId: string }
+  /** Send a Dispatch (#112). */
+  | { readonly name: 'sendDispatch'; readonly groupId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -83,13 +87,29 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
   return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
 }
 
-/** The pages inside a group that take nothing after their name. */
-const BARE_PAGES: ReadonlyMap<string, (groupId: string) => Route> = new Map([
-  ['doc', (groupId: string): Route => ({ name: 'document', groupId })],
-  ['rules', (groupId: string): Route => ({ name: 'rules', groupId })],
-  ['dissolve', (groupId: string): Route => ({ name: 'dissolve', groupId })],
-  ['add', (groupId: string): Route => ({ name: 'add', groupId, after: null })],
-]);
+/**
+ * The pages inside a group, Group home apart, that take nothing but the
+ * group: the Document, the rules (#117), dissolving (#108), and the
+ * Dispatches and Send a Dispatch (#112).
+ */
+const FIXED_NAMES = ['document', 'rules', 'dissolve', 'dispatches', 'sendDispatch'] as const;
+
+/** A page {@link FIXED_NAMES} lists. */
+type FixedName = (typeof FIXED_NAMES)[number];
+
+/** Each fixed page's path after `#/g/{groupId}/`. */
+const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
+  document: 'doc',
+  rules: 'rules',
+  dissolve: 'dissolve',
+  dispatches: 'dispatches',
+  sendDispatch: 'dispatch/new',
+};
+
+/** The fixed pages by path, as a group's route reads them. */
+const FIXED_PAGES: ReadonlyMap<string, FixedName> = new Map(
+  FIXED_NAMES.map((name) => [FIXED_PATHS[name], name]),
+);
 
 /** A page inside a group that takes one argument: its route, or Start when the argument doesn't fit. */
 type ArgPage = (groupId: string, arg: string) => Route;
@@ -113,13 +133,16 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
 ]);
 
 /**
- * A page inside a group: `doc`, `rules`, `dissolve` (#108), `propose/{atomId}`,
- * `p/{proposalId}`, `again/{proposalId}`, `add` (a new first section),
- * `add/{atomId}` (one after that Atom), `remove/{atomId}` (#75),
- * `steward/{seat}`, `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
+ * A page inside a group: one of the fixed pages, such as `doc` or
+ * `dispatch/new`, `add` (a new first section, #75), or `propose/{atomId}`,
+ * `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}` (a new section after
+ * that Atom), `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`,
+ * `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
-  if (arg === undefined) return BARE_PAGES.get(page)?.(groupId) ?? START;
+  const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
+  if (fixed !== undefined) return { name: fixed, groupId };
+  if (arg === undefined) return page === 'add' ? { name: 'add', groupId, after: null } : START;
   return ARG_PAGES.get(page)?.(groupId, arg) ?? START;
 }
 
@@ -226,10 +249,6 @@ function groupPath(route: GroupRoute): string {
   switch (route.name) {
     case 'group':
       return '';
-    case 'document':
-      return '/doc';
-    case 'rules':
-      return '/rules';
     case 'proposal':
       return `/p/${route.proposalId}`;
     case 'again':
@@ -238,10 +257,12 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
-    case 'dissolve':
-      return '/dissolve';
-    default:
+    case 'propose':
+    case 'add':
+    case 'remove':
       return sectionPath(route);
+    default:
+      return `/${FIXED_PATHS[route.name]}`;
   }
 }
 

@@ -63,6 +63,8 @@ describe('parseRoute', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
+    [`#/g/${GROUP}/dispatches`, { name: 'dispatches', groupId: GROUP }],
+    [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
   });
@@ -119,6 +121,13 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/narrow/toString`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
+    `#/g/${GROUP}/dispatch`,
+    `#/g/${GROUP}/dispatch/`,
+    `#/g/${GROUP}/dispatch/old`,
+    `#/g/${GROUP}/dispatch/${PROPOSAL}`,
+    `#/g/${GROUP}/dispatch/new/extra`,
+    `#/g/${GROUP}/dispatches/new`,
+    `#/g/${GROUP}/dispatches/${PROPOSAL}`,
     '#/join/',
     '#join',
     '#join/',
@@ -132,7 +141,8 @@ describe('parseRoute', () => {
   });
 
   // Add a section and Propose removing (#75) live only inside a group, beside
-  // Personal (#93), linking a device (#96) and a share link (#105).
+  // Personal (#93), linking a device (#96), a share link (#105) and the
+  // Dispatches (#112).
   it.each<[string, Route]>([
     ['#/add', { name: 'start' }],
     [`#/add/${ATOM}`, { name: 'start' }],
@@ -144,8 +154,27 @@ describe('parseRoute', () => {
     [`#/link-this/remove/${ATOM}`, { name: 'start' }],
     [`#share/${SHARE}/add`, { name: 'shared', payload: `${SHARE}/add` }],
     [`#share/${SHARE}/remove/${ATOM}`, { name: 'shared', payload: `${SHARE}/remove/${ATOM}` }],
+    // Beside the Dispatches (#112), whose `dispatch/new` is the one two-part fixed page.
+    [`#/g/${GROUP}/dispatch/add`, { name: 'start' }],
+    [`#/g/${GROUP}/dispatches/add`, { name: 'start' }],
+    [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
+    [`#/g/${GROUP}/add`, { name: 'add', groupId: GROUP, after: null }],
   ])('keeps the section pages inside a group: %j', (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
+  });
+});
+
+describe('share links and Dispatches (#105, #112)', () => {
+  it('reads a share link as the shared page whatever follows, and a Dispatch route as itself', () => {
+    expect(parseRoute(`#share/g/${GROUP}/dispatches`)).toEqual({
+      name: 'shared',
+      payload: `g/${GROUP}/dispatches`,
+    });
+    expect(parseRoute(`#/g/${GROUP}/dispatch/new`)).toEqual({
+      name: 'sendDispatch',
+      groupId: GROUP,
+    });
+    expect(parseRoute(`#/g/${GROUP}/dispatches`)).toEqual({ name: 'dispatches', groupId: GROUP });
   });
 });
 
@@ -181,6 +210,8 @@ describe('routeHref', () => {
       `#/g/${GROUP}/narrow/chatBot`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
+    [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
+    [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);
