@@ -45,11 +45,16 @@ describe('vector files', () => {
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'chat-thread-first.json',
+      'chat-thread-ignored.json',
       'coalition-contest.json',
       'coalition-forgery.json',
       'coalition-formation.json',
       'coalition-group.json',
       'coalition-thresholds.json',
+      'dispatch-carried.json',
+      'dispatch-limits.json',
+      'dispatch-sent.json',
       'dissolve-bar.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
@@ -72,6 +77,7 @@ describe('vector files', () => {
       'optin-class.json',
       'optin-ignored.json',
       'optin-narrow.json',
+      'proposal-number.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -112,11 +118,16 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
       'coalition',
       'coalition',
       'coalition',
       'coalition',
       'coalition',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -128,6 +139,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -386,6 +398,35 @@ describe('vector files', () => {
     'bootstrap-after-leave',
     'bootstrap-member-churn',
   ])('include the admission vector "%s" (#101)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'proposal-number',
+    'chat-thread-first',
+    'chat-thread-ignored',
+    'chat-thread-narrowed',
+    'chat-thread-off',
+  ])('include the Discord thread vector "%s" (#123)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'dispatch-co-creator',
+    'dispatch-rights',
+    'dispatch-level',
+    'dispatch-title',
+    'dispatch-text',
+    'dispatch-doc',
+    'dispatch-carried-pass',
+    'dispatch-carried-open',
+    'dispatch-carried-lapse',
+    'dispatch-carried-fail',
+    'dispatch-carried-invalid',
+    'dispatch-carried-close-order',
+    'dispatch-carried-same-deadline',
+    'dispatch-carried-dissolve',
+  ])('include the Dispatch vector "%s" (#112)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 });

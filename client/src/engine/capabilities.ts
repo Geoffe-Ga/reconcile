@@ -23,9 +23,19 @@
 /**
  * Something a member may do in a group. `suspend` (#102) and `narrow`, closing
  * an opt-in at once (#117), come with a steward seat, never a level.
+ * `dispatch`, sending a Dispatch to the whole group, comes with the creating
+ * level (ADR-0074, #112).
  */
 export type Capability =
-  'read' | 'see-roster' | 'vote' | 'vouch' | 'invite' | 'propose' | 'suspend' | 'narrow';
+  | 'read'
+  | 'see-roster'
+  | 'vote'
+  | 'vouch'
+  | 'invite'
+  | 'propose'
+  | 'dispatch'
+  | 'suspend'
+  | 'narrow';
 
 /** The involvement levels, from following to creating. Screens list them in this order. */
 export const LEVELS = ['member', 'collaborator', 'co-creator'] as const;
@@ -35,12 +45,14 @@ export type Level = (typeof LEVELS)[number];
 
 /**
  * The capabilities each level holds. Every level reads the roster: hiding it
- * from Members stays deferred (ADR-0074, ADR-0072 item 12).
+ * from Members stays deferred (ADR-0074, ADR-0072 item 12). Every level
+ * follows and reads the group's Dispatches (ADR-0003), and only the creating
+ * level sends one (#112).
  */
 export const LEVEL_CAPABILITIES = {
   member: ['read', 'see-roster'],
   collaborator: ['read', 'see-roster', 'vote', 'vouch', 'invite'],
-  'co-creator': ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose'],
+  'co-creator': ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose', 'dispatch'],
 } as const satisfies Record<Level, readonly Capability[]>;
 
 /** The level genesis gives the group's founder. */

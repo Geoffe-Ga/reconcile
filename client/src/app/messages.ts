@@ -278,11 +278,20 @@ export const messages = {
       'These versions go on the new ballot after yours. Your group sees that you added them.',
     fullTitle: 'This ballot is full',
     full: 'This ballot already has three versions.',
+    /** The checkbox that adds a Dispatch to a Proposal (#112). */
+    dispatchLabel: 'Send a Dispatch if this passes',
+    dispatchHint:
+      'If your group passes this, everyone in it gets the Dispatch. Voters see it on the ballot first.',
+    /** Where a carried Dispatch's title starts: the Document's own title, set in the field. */
+    dispatchTitle: (document: string) => `Updated: ${document}`,
+    dispatchTitleLabel: 'Dispatch title',
+    dispatchTextLabel: 'Dispatch text (optional)',
   },
   proposal: {
     pageTitle: 'Proposal',
-    eyebrowOpen: 'Open Proposal',
-    eyebrowClosed: 'Closed Proposal',
+    /** Over an ordered Proposal's title: its number among the group's Proposals (#123), and whether it's open. */
+    eyebrowOpen: (number: number) => `Proposal ${String(number)} · Open`,
+    eyebrowClosed: (number: number) => `Proposal ${String(number)} · Closed`,
     eyebrowNew: 'New Proposal',
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
@@ -294,6 +303,9 @@ export const messages = {
     yourVersion: 'Your version',
     joinedAfter: 'You joined after this opened, so you can’t vote on it.',
     notVotingLevel: 'You weren’t at a voting level when this opened, so you can’t vote on it.',
+    /** Over the Dispatch a Proposal carries (#112). */
+    dispatchHeading: 'If this passes',
+    dispatchLine: 'Everyone in your group gets this Dispatch.',
     missingTitle: 'This Proposal isn’t on this device',
     missing: 'Go back to your group to see its open Proposals.',
   },
@@ -421,6 +433,10 @@ export const messages = {
     untitled: '.',
     /** How it ends with the title, such as `: "Quiet hours".` */
     titled: (title: string) => `: "${title}".`,
+    /** The chat bot's result post inside a Proposal's Discord thread (#123; ADR-0011). */
+    concluded: 'The argument has concluded. A vote has finished in Reconcile.',
+    /** The name of a Proposal's Discord thread: its number, never its title (#123; ADR-0039). */
+    threadName: (number: number) => `Proposal ${String(number)} in Reconcile`,
   },
   decided: {
     title: 'Decided',
@@ -619,7 +635,7 @@ export const messages = {
     names: { chatBot: 'Discord chat bot', frontDoor: 'Front door' },
     warnings: {
       chatBot:
-        'Discord’s servers will hold that this group uses Reconcile and when votes open and close. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges. Discord also sees the internet address of the member’s phone that posts each notice.',
+        'Discord’s servers will hold that this group uses Reconcile, when votes open and close, and each Proposal’s number. They won’t see titles, text, names or votes. Anyone in the channel sees the nudges. Discord also sees the internet address of the member’s phone that posts each notice.',
       frontDoor:
         'Anyone with the address can see the group’s name and a short excerpt of its mission statement, and ask to join. It never lists people.',
     },
@@ -686,7 +702,7 @@ export const messages = {
     nowLine: 'It’s off until the group decides. This Proposal asks the group to keep it off.',
     webhookLabel: 'Discord webhook URL',
     webhookHint:
-      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
+      'In Discord, open the channel’s settings › Integrations › Webhooks › Copy Webhook URL. Use a text channel, or a forum channel to give each Proposal its own thread. Only your group’s devices keep it, and the ballot shows only its last 4 characters.',
     webhookMissing: 'Paste the webhook URL from Discord.',
     webhookInvalid: 'Use a Discord webhook URL, starting with https://discord.com/api/webhooks/.',
     submitNow: 'Turn off now',
@@ -839,6 +855,47 @@ export const messages = {
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
     eraseHeading: 'Erase this device',
+  },
+  /**
+   * Dispatches (#112; ADR-0003, ADR-0074): news for everyone in a group.
+   * Where a name or a title sits inside a sentence, the words around it are
+   * kept apart, so the screen sets it in `<bdi>`.
+   */
+  dispatches: {
+    pageTitle: 'Dispatches',
+    title: 'Dispatches',
+    lede: 'News for everyone in your group, newest first.',
+    empty: 'No Dispatches yet.',
+    /** Group home's link to every Dispatch, read with `seeAllWhat` after it. */
+    seeAll: 'See all',
+    seeAllWhat: 'Dispatches',
+    send: 'Send a Dispatch',
+    from: { before: 'From' },
+    fromProposal: { before: 'From the Proposal ‘', after: '’' },
+    /** Before a Document's title, on the link that opens it. */
+    open: 'Open',
+    /** Read between who sent a Dispatch and its date. */
+    dateSeparator: '·',
+  },
+  sendDispatch: {
+    pageTitle: 'Send a Dispatch',
+    eyebrow: 'Dispatches',
+    title: 'Send a Dispatch',
+    lede: 'A Dispatch goes to everyone in your group, whatever their involvement. Phones with notifications on say only “Something new in Reconcile.”',
+    titleLabel: 'Title',
+    titleHint: 'A few words that say what it’s about.',
+    titleMissing: 'Give your Dispatch a title.',
+    textLabel: 'Text (optional)',
+    textHint: 'Plain text. Links and formatting show just as you type them.',
+    documentLabel: 'Point to a Document (optional)',
+    noDocument: 'No Document',
+    visibility: 'Everyone in your group sees this Dispatch and that you sent it.',
+    submit: 'Send Dispatch',
+    failed: 'Your Dispatch couldn’t be saved on this device. Try again.',
+    notAllowedTitle: 'You can’t send Dispatches here',
+    notAllowed:
+      'Your place in this group doesn’t include sending Dispatches. Co-Creators send them.',
+    leaving: 'You can’t send a Dispatch in a group you’re leaving.',
   },
   /**
    * Opt-in push (#99; ADR-0012, ADR-0075 §2). A notification only ever shows

@@ -151,7 +151,14 @@ describe('createEvent', () => {
       author: fc.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       ts: fc.nat(),
       body: fc.record(
-        { atom: text, title: text, why: text, text, link: text },
+        {
+          atom: text,
+          title: text,
+          why: text,
+          text,
+          link: text,
+          dispatch: fc.record({ title: text, text }),
+        },
         { requiredKeys: ['atom', 'title', 'why', 'text'] },
       ),
     });
@@ -495,6 +502,60 @@ describe('parseEvent', () => {
       'chat-posted',
       { proposal: 'p', moment: 'open', nonce: 7 },
     ],
+    ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
+    ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
+    ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
+    [
+      'chat-thread with a numeric Proposal',
+      'chat-thread',
+      { proposal: 1, url: 'https://discord.com/channels/1/2' },
+    ],
+    ['dispatch without a title', 'dispatch', { text: 'x' }],
+    ['dispatch without text', 'dispatch', { title: 't' }],
+    ['dispatch with a numeric title', 'dispatch', { title: 1, text: 'x' }],
+    ['dispatch with null text', 'dispatch', { title: 't', text: null }],
+    ['dispatch with a numeric doc', 'dispatch', { title: 't', text: 'x', doc: 1 }],
+    ['dispatch with a null doc', 'dispatch', { title: 't', text: 'x', doc: null }],
+    [
+      'a proposal whose dispatch is text',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: 'Updated' },
+    ],
+    [
+      'a proposal whose dispatch is null',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: null },
+    ],
+    [
+      'a proposal whose dispatch is a list',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: [] },
+    ],
+    [
+      'a proposal whose dispatch has no title',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: { text: '' } },
+    ],
+    [
+      'a proposal whose dispatch has numeric text',
+      'proposal',
+      { atom: 'a', title: 't', why: 'w', text: 'x', dispatch: { title: 'u', text: 1 } },
+    ],
+    [
+      'a rules Proposal whose dispatch has no text',
+      'proposal',
+      {
+        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        title: 't',
+        why: 'w',
+        dispatch: { title: 'u' },
+      },
+    ],
+    [
+      'a steward Proposal whose dispatch is text',
+      'proposal',
+      { target: { kind: 'steward', seat: 1, member: null }, title: 't', why: 'w', dispatch: 'u' },
+    ],
   ])('returns null for %s', (_label, type, body) => {
     expect(parseEvent(json(envelope(type, body)))).toBeNull();
   });
@@ -654,6 +715,19 @@ describe('parseEvent', () => {
     expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
   });
 
+  it('reads a chat-thread as its Proposal and URL, kept as written, dropping unknown keys (#123)', () => {
+    const body = { proposal: 'p1', url: 'https://example.com/x', title: 'Quiet hours' };
+    const parsed = parseEvent(json(envelope('chat-thread', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'chat-thread',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', url: 'https://example.com/x' },
+    });
+  });
+
   it('reads a suspend as its member and an optional reason, dropping unknown keys (#102)', () => {
     const plain = parseEvent(json(envelope('suspend', { member: BEN, until: 9 })));
     expect(plain?.event).toEqual({
@@ -678,6 +752,42 @@ describe('parseEvent', () => {
       ts: 1,
       body: { member: BEN },
     });
+  });
+
+  it('reads a dispatch as its title, text and optional Document, dropping unknown keys (#112)', () => {
+    const linked = parseEvent(
+      json(envelope('dispatch', { title: 'Meet Sunday', text: 'At 10.', doc: 'g1', to: BEN })),
+    );
+    expect(linked?.event).toEqual({
+      v: 1,
+      type: 'dispatch',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { title: 'Meet Sunday', text: 'At 10.', doc: 'g1' },
+    });
+    const bare = parseEvent(json(envelope('dispatch', { title: 'Meet Sunday', text: '' })));
+    expect(bare?.event.body).toEqual({ title: 'Meet Sunday', text: '' });
+  });
+
+  it('keeps a Proposal’s dispatch as its title and text, dropping a doc and unknown keys (#112)', () => {
+    const dispatch = { title: 'Updated: House rules', text: 'Quiet hours moved.' };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    const parsed = parseEvent(
+      json(envelope('proposal', { ...edit, dispatch: { ...dispatch, doc: 'g1', extra: 1 } })),
+    );
+    expect(parsed?.event.body).toEqual({ ...edit, dispatch });
+    const targets = [
+      { kind: 'steward', seat: 1, member: null },
+      { kind: 'rules', optIn: 'frontDoor', value: true },
+      { kind: 'dissolve', wipe: false },
+    ];
+    for (const target of targets) {
+      const carried = parseEvent(
+        json(envelope('proposal', { target, title: 't', why: 'w', dispatch })),
+      );
+      expect(carried?.event.body).toEqual({ target, title: 't', why: 'w', dispatch });
+    }
   });
 
   it('keeps optional proposal and vote fields', () => {

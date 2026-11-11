@@ -101,6 +101,8 @@ describe('fold', () => {
       narrowings: [],
       vouches: [],
       chatPosts: [],
+      chatThreads: [],
+      dispatches: [],
       epoch: 0,
       rotations: [],
       rotationDue: false,
@@ -142,6 +144,7 @@ describe('fold', () => {
         id,
         seq: 4,
         received: R + 10,
+        number: 1,
         author: authorOf('ben'),
         atom: '',
         target: { ...target, holder: authorOf('ana') },
@@ -158,6 +161,7 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        dispatch: null,
       },
     ]);
   });
@@ -273,6 +277,7 @@ describe('fold', () => {
         id: proposal,
         seq: 4,
         received: R + 10,
+        number: 1,
         author: authorOf('ana'),
         atom: `${log.group}.0`,
         target: { kind: 'edit' },
@@ -289,6 +294,7 @@ describe('fold', () => {
         closedAt: null,
         final: false,
         outcome: { kind: 'lapse', bar: DEFAULT_RULES.bars.ordinary },
+        dispatch: null,
       },
     ]);
   });

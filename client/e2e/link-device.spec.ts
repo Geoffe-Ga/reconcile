@@ -66,13 +66,13 @@ function captureRequests(person: Person, into: Sent[]): void {
   });
 }
 
-/** From Start, `person` scores the Proposal `pill` from Needs your vote, and waits for Sent. */
-async function vote(person: Person, pill: string): Promise<void> {
+/** From Start, `person` scores the Proposal `pill` from the list `region` on Group home, and waits for Sent. */
+async function vote(person: Person, pill: string, region: string): Promise<void> {
   const { page } = person;
   await page.goto('/#/');
   await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();
-  const needs = page.getByRole('region', { name: 'Needs your vote' });
-  await needs.getByRole('link', { name: new RegExp(CANARY.title) }).click();
+  const listed = page.getByRole('region', { name: region });
+  await listed.getByRole('link', { name: new RegExp(CANARY.title) }).click();
   await pick(page, pill);
   await page.getByRole('button', { name: /your vote$/ }).click();
   await expect(page.getByText('Sent', { exact: true })).toBeVisible();
@@ -195,8 +195,9 @@ test('a second device links by a pasted code, the relay learns nothing, and both
   });
 
   await test.step('both vote, and the tally counts one voter with the later ballot', async () => {
-    await vote(phone, '1 · Opposed');
-    await vote(laptop, '4 · Strongly supportive');
+    await vote(phone, '1 · Opposed', 'Needs your vote');
+    // The laptop is the same person, so once it syncs the phone's ballot, nothing needs its vote.
+    await vote(laptop, '4 · Strongly supportive', 'Open Proposals');
     const { page } = ben;
     await page.getByRole('link', { name: 'Your groups' }).click();
     await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();

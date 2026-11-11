@@ -652,6 +652,33 @@ describe('wakes, as each device posts its outbox (#99)', () => {
   });
 });
 
+describe('a Dispatch wakes, as its device posts it (#112)', () => {
+  it('asks for wake=1 on a Dispatch’s PUT, with push off on every device, and the follower reads it', async () => {
+    const fake = createFakeRelay();
+    const { groupId, ana, ben, mailbox } = await group(fake);
+    const puts = (from: number) =>
+      fake.requests
+        .slice(from)
+        .filter((r) => r.method === 'PUT' && r.url.startsWith(`/v1/mailbox/${mailbox}?`));
+    const from = fake.requests.length;
+
+    const id = await say(ana, groupId, {
+      type: 'dispatch',
+      body: { title: 'Meet on Sunday', text: 'Bring a chair.', doc: groupId },
+    });
+
+    expect(puts(from).map((r) => r.url.endsWith('&wake=1'))).toEqual([true]);
+    // The wake is content-free: the URL names only the mailbox, its TTL and the wake.
+    expect(puts(from).map((r) => r.url)).toEqual([`/v1/mailbox/${mailbox}?ttl_days=30&wake=1`]);
+    await ben.services.sync.syncOnce();
+    const held = await ben.services.store.getGroup(groupId);
+    const state = fold(held?.log ?? [], held?.relayNow ?? null);
+    expect(state.dispatches.map((d) => [d.id, d.title, d.doc])).toEqual([
+      [id, 'Meet on Sunday', groupId],
+    ]);
+  });
+});
+
 /** Ana, Ben and Cal in one group on `fake`, synced, with push on for Ana. */
 async function threeWithPush(fake: FakeRelay = createFakeRelay()) {
   const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
