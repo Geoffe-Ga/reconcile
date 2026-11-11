@@ -109,7 +109,10 @@ describe('restoreBackup', () => {
     opened.push(second);
     const syncOnce = vi.spyOn(second.services.sync, 'syncOnce');
 
-    expect(await restoreBackup(second.services, bytes, PASSPHRASE)).toBe(1);
+    expect(await restoreBackup(second.services, bytes, PASSPHRASE)).toEqual({
+      groups: 1,
+      older: false,
+    });
 
     expect((await second.services.store.getGroup(groupId))?.me).toEqual(
       (await ana.services.store.getGroup(groupId))?.me,

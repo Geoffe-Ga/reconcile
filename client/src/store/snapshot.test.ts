@@ -166,7 +166,7 @@ describe('exportGroups and importGroups', () => {
     const second = await openStore('ana-again');
     const restored = await importGroups(second, file, PASSPHRASE);
 
-    expect(restored).toBe(1);
+    expect(restored).toEqual({ groups: 1, older: false });
     expect(groupIds).toEqual([group.groupId]);
     const [held] = await second.listGroups();
     expect(held?.me).toEqual({ author: group.author, name: CANARY.founder });
@@ -249,7 +249,7 @@ describe('exportGroups and importGroups', () => {
     const second = await openStore('second');
 
     expect(groupIds).toEqual([kept.groupId]);
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
     expect((await second.listGroups()).map((group) => group.groupId)).toEqual([kept.groupId]);
   });
 
@@ -259,7 +259,10 @@ describe('exportGroups and importGroups', () => {
     const { file, groupIds } = await exportGroups(empty, PASSPHRASE, CHEAP);
 
     expect(groupIds).toEqual([]);
-    expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toBe(0);
+    expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toEqual({
+      groups: 0,
+      older: false,
+    });
   });
 });
 
@@ -554,7 +557,8 @@ describe('encryption keys and epochs in a backup (#98)', () => {
     const file = await sealBackup(utf8(JSON.stringify(old)), PASSPHRASE, CHEAP);
     const second = await openStore('ana-again');
 
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    // It says it is an older file, which holds no encryption key (#225).
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, older: true });
 
     const [held] = await second.listGroups();
     expect(held?.kxKey).toBeUndefined();
@@ -590,7 +594,7 @@ describe('personal Documents in a backup (#93)', () => {
     const fresh = await openStore('fresh');
     const restored = await importGroups(fresh, file, PASSPHRASE);
 
-    expect([restored, groupIds]).toEqual([1, [group.groupId]]);
+    expect([restored, groupIds]).toEqual([{ groups: 1, older: false }, [group.groupId]]);
     expect((await fresh.listGroups()).map((held) => held.groupId)).toEqual([group.groupId]);
     expect(await fresh.listPersonal()).toEqual([canaryStatement(), READING]);
   });
@@ -615,7 +619,7 @@ describe('personal Documents in a backup (#93)', () => {
     const second = await openStore('second');
     await second.savePersonal({ ...canaryStatement(1_762_000_450_000), text: 'Older.' });
 
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(0);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 0, older: false });
 
     expect(await second.listPersonal()).toEqual([canaryStatement(1_762_000_500_000)]);
   });
@@ -630,7 +634,7 @@ describe('personal Documents in a backup (#93)', () => {
     await second.savePersonal(READING);
 
     expect(Object.keys(older)).toEqual(['format', 'groups']);
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
     expect((await second.listGroups()).map((held) => held.groupId)).toEqual([group.groupId]);
     expect(await second.listPersonal()).toEqual([READING]);
   });
@@ -916,7 +920,7 @@ describe('a dissolved group and personal Documents in one backup (#108, #93)', (
     const file = await fileOf([dissolved], [canaryStatement(), READING]);
     const fresh = await openStore('fresh');
 
-    expect(await importGroups(fresh, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
 
     const held = await fresh.getGroup(groupId);
     expect(held?.archived).toEqual({ reason: 'dissolved' });
@@ -941,7 +945,7 @@ describe('a dissolved group and personal Documents in one backup (#108, #93)', (
 
     expect(groupIds).toEqual([]);
     expect(text(plaintext)).not.toContain(groupId);
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(0);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 0, older: false });
     expect(await second.listGroups()).toEqual([]);
     expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
   });
@@ -956,7 +960,7 @@ describe('a dissolved group and personal Documents in one backup (#108, #93)', (
     const before = await dump(device);
 
     const file = await fileOf([live], [canaryStatement(1_762_000_500_000), READING]);
-    expect(await importGroups(device, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(device, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
 
     expect(await dump(device)).toEqual(before);
     const kept = await device.getGroup(groupId);
@@ -1039,7 +1043,7 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
     const { file, groupIds } = await exportGroups(device, PASSPHRASE, CHEAP);
     const fresh = await openStore('fresh');
 
-    expect(await importGroups(fresh, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
 
     expect(groupIds).toEqual([group.groupId]);
     const [held] = await fresh.listGroups();
@@ -1084,7 +1088,7 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
         await sealBackup(utf8(JSON.stringify(v1)), PASSPHRASE, CHEAP),
         PASSPHRASE,
       ),
-    ).toBe(2);
+    ).toEqual({ groups: 2, older: true });
 
     const live = await fresh.getGroup(group.groupId);
     expect([live?.kxKey, live?.epoch ?? 0, live?.archived]).toEqual([undefined, 0, undefined]);
@@ -1203,7 +1207,10 @@ describe('replaceWithBackup: Restore when the passkey no longer unlocks the vaul
     locked.close();
     const reopened = await openStore('locked');
 
-    expect(await replaceWithBackup(reopened, file, PASSPHRASE)).toBe(1);
+    expect(await replaceWithBackup(reopened, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      older: false,
+    });
 
     expect(await reopened.readVault()).toBeNull();
     const groups = await reopened.listGroups();
@@ -1525,7 +1532,7 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
     const second = await otherDevice();
 
     expect(snapshot.personal).toHaveLength(2);
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
     expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
   });
 
@@ -1540,7 +1547,7 @@ describe('a backup that opens but doesn’t hold valid groups', () => {
     const file = await sealBackup(utf8(JSON.stringify(unsynced(snapshot))), PASSPHRASE, CHEAP);
     const second = await otherDevice();
 
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
     const restored: Group | undefined = (await second.listGroups()).find(
       (group) => group.groupId !== 'unrelated-group',
     );
@@ -1636,7 +1643,7 @@ describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
     const second = await openStore('second');
     await second.setRelayBackupKey(OTHER_KEY);
 
-    expect(await importGroups(second, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
 
     expect(await keyOn(second)).toEqual(local(OTHER_KEY));
   });

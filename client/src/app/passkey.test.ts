@@ -223,7 +223,7 @@ describe('openDeviceLock', () => {
     const lock = await openDeviceLock({ ...deps(store, authenticator.calls), open });
 
     // A group whose genesis the relay never returned isn't in a backup, so this one holds none.
-    expect(await lock.restore(file, passphrase)).toBe(0);
+    expect(await lock.restore(file, passphrase)).toEqual({ groups: 0, older: false });
 
     expect(await store.readVault()).toBeNull();
     expect(await store.listGroups()).toEqual([]);

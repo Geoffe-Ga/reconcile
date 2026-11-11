@@ -566,7 +566,7 @@ describe('a dissolved group and backup files (#78)', () => {
     const later = (held.lastSyncAt ?? 0) + DAY_MINUTES * MINUTE_MS;
     const file = await fileOf([copyOf(held, { log: live, lastSyncAt: later })]);
 
-    expect(await importGroups(store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(store, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
 
     const kept = (await store.getGroup(groupId)) ?? never();
     expect(kept).toEqual({ ...held, backup: 'saved' });
@@ -590,7 +590,7 @@ describe('a dissolved group and backup files (#78)', () => {
     });
     opened.push(sync);
 
-    expect(await importGroups(other, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(other, file, PASSPHRASE)).toEqual({ groups: 1, older: false });
 
     const restored = (await other.getGroup(groupId)) ?? never();
     expect(restored.archived).toEqual({ reason: 'dissolved' });

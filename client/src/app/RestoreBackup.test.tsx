@@ -2,15 +2,21 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAX_BACKUP_BYTES } from '../store/snapshot';
+import { MAX_BACKUP_BYTES, type Restored } from '../store/snapshot';
 import { axeViolations } from '../test/axe';
+import { messages } from './messages';
 import { RestoreBackup } from './RestoreBackup';
 
-type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<number>;
+type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<Restored>;
 
 const FILE = new File([Uint8Array.of(82, 67, 66, 49)], 'reconcile-backup-2026-11-08.bin');
 
-function setup(onRestore = vi.fn<OnRestore>(() => Promise.resolve(2))) {
+/** A restore of `groups` groups from a current file, or an older one (#225). */
+function restored(groups: number, older = false): Restored {
+  return { groups, older };
+}
+
+function setup(onRestore = vi.fn<OnRestore>(() => Promise.resolve(restored(2)))) {
   document.title = 'Settings · Reconcile';
   render(
     <main>
@@ -100,7 +106,10 @@ describe('RestoreBackup', () => {
   });
 
   it('says how many came back for one group, and for none', async () => {
-    const onRestore = vi.fn<OnRestore>().mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const onRestore = vi
+      .fn<OnRestore>()
+      .mockResolvedValueOnce(restored(1))
+      .mockResolvedValueOnce(restored(0));
     const { user } = setup(onRestore);
 
     await user.upload(fileInput(), FILE);
@@ -114,5 +123,35 @@ describe('RestoreBackup', () => {
     await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
     await user.click(screen.getByRole('button', { name: 'Restore' }));
     expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
+    expect(screen.queryByText(messages.restore.older)).not.toBeInTheDocument();
+  });
+
+  it('says plainly when the file is from before groups changed keys, and how this device gets back in (#225)', async () => {
+    const onRestore = vi.fn<OnRestore>(() => Promise.resolve(restored(2, true)));
+    const { user } = setup(onRestore);
+
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    const status = await screen.findByRole('status');
+    await vi.waitFor(() => {
+      expect(status).toHaveTextContent('2 groups are back on this device.');
+    });
+    expect(status).toHaveTextContent(
+      'This backup is from an older version of Reconcile. If you’ve used Reconcile on another device since you saved it, this device won’t get a group’s new key when someone leaves. Ask someone in that group for a new invite link then, or restore a newer backup saved on that device.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of an older file that holds no groups', async () => {
+    const { user } = setup(vi.fn<OnRestore>(() => Promise.resolve(restored(0, true))));
+
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
+    expect(screen.queryByText(messages.restore.older)).not.toBeInTheDocument();
   });
 });

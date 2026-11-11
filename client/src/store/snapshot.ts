@@ -10,7 +10,10 @@
  * history may be missing. Format 2 (#98) adds the encryption key, the
  * secret's epoch, and each record's epoch when it isn't 0; a format 1 file,
  * as #78 saved it, reads as epoch 0 with no encryption key, and the sync loop
- * then makes one. A group whose device has cleared ballots (#111) also lists
+ * then makes one, unless another device of the person's has already given
+ * the group theirs: only the first counts, so this one then gets no new group
+ * key. Restoring a format 1 file says so (`Restored.older`, #225). A group
+ * whose device has cleared ballots (#111) also lists
  * those Proposals as `cleared`, with no new format number: a file without it
  * clears nothing, and a restore folds each listed Proposal's outcome from
  * its result. It leaves out the outbox and drafts, so a restore
@@ -105,6 +108,16 @@ export interface Snapshot {
   readonly personal: readonly PersonalDocument[];
   /** The device's relay backup key; absent when it keeps none, and from the relay's own copy. */
   readonly backupKey?: Uint8Array;
+}
+
+/**
+ * What restoring a backup file brought back: how many groups it held, and
+ * whether it is a format 1 file, saved before #98 gave each member an
+ * encryption key, so it holds none (#225).
+ */
+export interface Restored {
+  readonly groups: number;
+  readonly older: boolean;
 }
 
 /** A saved backup: the sealed file, and the groups it holds. */
@@ -286,19 +299,19 @@ export async function exportGroups(
  * @throws {BackupUnreadable} for a wrong passphrase, a damaged or oversized
  *   file, or contents that don't check out.
  */
-async function readBackup(file: Uint8Array, passphrase: string): Promise<Snapshot> {
+async function readBackup(file: Uint8Array, passphrase: string): Promise<DecodedFile> {
   if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
   const plaintext = await openBackup(file, passphrase);
-  const snapshot = decodeSnapshot(plaintext);
+  const decoded = decodeFile(plaintext);
   plaintext.fill(0);
-  if (snapshot === null) throw new BackupUnreadable();
-  return snapshot;
+  if (decoded === null) throw new BackupUnreadable();
+  return decoded;
 }
 
 /**
  * Opens `file` under `passphrase`, checks every group and personal Document
  * in it, and keeps them all in one transaction. Returns how many groups the
- * file held.
+ * file held, and whether it is an older, format 1 file (#225).
  *
  * @throws {BackupUnreadable} for a wrong passphrase, a damaged or oversized
  *   file, or contents that don't check out; nothing is written then.
@@ -307,14 +320,9 @@ export async function importGroups(
   store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
   file: Uint8Array,
   passphrase: string,
-): Promise<number> {
-  if (file.length > MAX_BACKUP_BYTES) throw new BackupUnreadable();
-  const plaintext = await openBackup(file, passphrase);
-  try {
-    return await importSnapshot(store, plaintext);
-  } finally {
-    plaintext.fill(0);
-  }
+): Promise<Restored> {
+  const { snapshot, older } = await readBackup(file, passphrase);
+  return { groups: await keepSnapshot(store, snapshot, 'backup'), older };
 }
 
 /**
@@ -336,6 +344,19 @@ export async function importSnapshot(
 ): Promise<number> {
   const decoded = decodeSnapshot(plaintext);
   if (decoded === null) throw new BackupUnreadable();
+  return keepSnapshot(store, decoded, from);
+}
+
+/**
+ * Keeps `decoded`'s groups and personal Documents in one transaction, marked
+ * as `from` says, less any share by link from a link (#105), then its relay
+ * backup key if the device has none. Returns how many groups it held.
+ */
+async function keepSnapshot(
+  store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
+  decoded: Snapshot,
+  from: RestoredFrom,
+): Promise<number> {
   const snapshot = from === 'link' ? withoutShares(decoded) : decoded;
   await store.restoreGroups(snapshot.groups, snapshot.personal, from);
   if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
@@ -349,7 +370,8 @@ export async function importSnapshot(
  * vault and so nothing in it can be read. The relay backup's key (#97) went
  * with the vault, so its state goes too, and the file's key, if it holds
  * one, is kept instead. Its personal Documents, which hold no key, merge as
- * {@link importGroups} merges them. Returns how many groups the file held.
+ * {@link importGroups} merges them. Returns how many groups the file held,
+ * and whether it is an older, format 1 file (#225).
  *
  * @throws {BackupUnreadable} as {@link importGroups} does; nothing is written then.
  */
@@ -357,27 +379,39 @@ export async function replaceWithBackup(
   store: Pick<Store, 'replaceGroups' | 'adoptRelayBackupKey'>,
   file: Uint8Array,
   passphrase: string,
-): Promise<number> {
-  const snapshot = await readBackup(file, passphrase);
+): Promise<Restored> {
+  const { snapshot, older } = await readBackup(file, passphrase);
   await store.replaceGroups(snapshot.groups, snapshot.personal);
   if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
-  return snapshot.groups.length;
+  return { groups: snapshot.groups.length, older };
+}
+
+/** A backup's plaintext read: everything in it, and whether it is a format 1 file (#225). */
+interface DecodedFile {
+  readonly snapshot: Snapshot;
+  readonly older: boolean;
 }
 
 /** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
 export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
+  return decodeFile(plaintext)?.snapshot ?? null;
+}
+
+/** Everything in a backup's plaintext and its format, or null when anything in it doesn't check out. */
+function decodeFile(plaintext: Uint8Array): DecodedFile | null {
   const json = parseJson(plaintext);
   if (!isObject(json)) return null;
   const { format } = json;
   if (format !== SNAPSHOT_FORMAT && format !== FORMAT_1) return null;
-  const groups = groupsIn(json.groups, format === FORMAT_1 ? groupIn : groupWithKeysIn);
+  const older = format === FORMAT_1;
+  const groups = groupsIn(json.groups, older ? groupIn : groupWithKeysIn);
   // A file from before #93 has no personal field: it holds no personal Documents.
   const personal = json.personal === undefined ? [] : personalIn(json.personal);
   if (groups === null || personal === null) return null;
-  if (!('backupKey' in json)) return { groups, personal };
+  if (!('backupKey' in json)) return { snapshot: { groups, personal }, older };
   // A file from before #97 has no key; one that has a key holds a well-formed one.
   const backupKey = keyIn(json.backupKey);
-  return backupKey === null ? null : { groups, personal, backupKey };
+  return backupKey === null ? null : { snapshot: { groups, personal, backupKey }, older };
 }
 
 /** Each of `values` read by `read`, or null when any is null or two share a key. */
