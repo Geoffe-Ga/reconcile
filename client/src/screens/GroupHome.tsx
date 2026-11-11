@@ -70,6 +70,12 @@ export interface GroupHomeProps {
    * none when absent, or once the group has dissolved (#108).
    */
   readonly backupCard?: ReactNode;
+  /**
+   * The front door's applications (#121), under their own heading before
+   * Invite people: given only while the door is open and this member may
+   * invite.
+   */
+  readonly applications?: ReactNode;
   /** The group's Coalitions (#114), after Decided; none when absent. */
   readonly coalitions?: ReactNode;
 }
@@ -806,14 +812,38 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 }
 
 /**
- * People, the Stewards (#102), the Rules (#117) and the invite, each for
+ * The front door's Applications (#121), given only while the door is open
+ * and this member may invite, then Invite people, for whoever may invite,
+ * while the group's key is this device's (#98). Neither shows while this
+ * member leaves (#77).
+ */
+function InviteSections(props: GroupHomeProps & { readonly current: boolean }) {
+  const { state, me, makeInviteLink, copyText, leaving = false, current } = props;
+  if (leaving) return null;
+  return (
+    <>
+      {props.applications === undefined ? null : (
+        <Section title={messages.door.applications}>{props.applications}</Section>
+      )}
+      {can(state, me, 'invite') && current ? (
+        <Section title={messages.home.invite}>
+          <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
+        </Section>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * People, the Stewards (#102), the Rules (#117), the front door's
+ * Applications (#121) and the invite, each for
  * whoever may see it. While this member's leave waits for the relay, there's
  * no invite, nor once the group's key changed past this device (#98): its
  * link would carry a key nobody reads any more. A dissolved group has no
  * stewards or opt-ins to speak of, so its copy leaves both out (#108).
  */
 function MemberSections(props: GroupHomeProps) {
-  const { state, me, makeInviteLink, copyText, leaving = false } = props;
+  const { state, me, leaving = false } = props;
   const roster = can(state, me, 'see-roster');
   const current = (props.sync.keyChange ?? null) === null;
   return (
@@ -829,11 +859,7 @@ function MemberSections(props: GroupHomeProps) {
           <RulesLink state={state} />
         </Section>
       ) : null}
-      {can(state, me, 'invite') && !leaving && current ? (
-        <Section title={messages.home.invite}>
-          <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
-        </Section>
-      ) : null}
+      <InviteSections {...props} leaving={leaving} current={current} />
     </>
   );
 }

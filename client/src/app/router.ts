@@ -8,6 +8,8 @@
  * that it no longer works. A share link's `#share/{seed}.{publicKey}` (#105)
  * reads as the shared page whatever follows it, and stays in the address
  * bar, so a reload reads it again; the page reads a damaged one as not shared.
+ * A front door's `#door/{address}` (#121) reads the same way: it carries no
+ * secret, so it stays in the address bar too.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -32,6 +34,8 @@ export type Route =
   | { readonly name: 'card'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
+  /** A group's front door (#121): what follows `#door/`, as written. */
+  | { readonly name: 'door'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
@@ -223,13 +227,19 @@ const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map(
 /** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
 const SHARE_PREFIX = '#share/';
 
+/** A front door link's own form (#121): `#door/{address}`, with no slash after `#`. */
+const DOOR_PREFIX = '#door/';
+
 /**
- * A link's own route, with no slash after `#`: a share link's (#105), an
- * invite's (spec §3) or a reconcile card's (#114); null for any other hash.
+ * A link's own route, with no slash after `#`: a share link's page (#105) or
+ * a front door (#121), each reading its payload itself, an invite's (spec
+ * §3) or a reconcile card's (#114); null for any other hash.
  */
 function linkRoute(hash: string): Route | null {
   if (hash.startsWith(SHARE_PREFIX))
     return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
+  if (hash.startsWith(DOOR_PREFIX))
+    return { name: 'door', payload: hash.slice(DOOR_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
@@ -333,6 +343,8 @@ function topHref(route: Exclude<Route, GroupRoute>): string {
       return route.payload === null ? '#/card' : `${CARD_PREFIX}${route.payload}`;
     case 'shared':
       return `${SHARE_PREFIX}${route.payload}`;
+    case 'door':
+      return `${DOOR_PREFIX}${route.payload}`;
     default:
       return TOP_HREFS[route.name];
   }

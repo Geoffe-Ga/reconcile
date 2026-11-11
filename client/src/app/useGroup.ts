@@ -23,6 +23,7 @@ import {
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
+import type { ReceivedApplication } from '../store/applications';
 import { foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
 import { foldGroup } from '../store/expiry';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
@@ -89,9 +90,17 @@ export interface GroupView {
   loaded: boolean;
   /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
   cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
+  /**
+   * The front door's applications this device read from its inbox (#121),
+   * dismissed ones included, oldest first: none until it has read one.
+   */
+  applications: readonly ReceivedApplication[];
   /** Every coalition on this device, each with its log folded (#114). */
   coalitions: readonly HeldCoalition[];
 }
+
+/** No applications: one shared empty list, so it never looks changed. */
+const NO_APPLICATIONS: readonly ReceivedApplication[] = [];
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
 const NO_RECORDS: readonly LogRecord[] = [];
@@ -117,6 +126,7 @@ export function useGroup(groupId: string): GroupView {
     me: group?.me ?? null,
     loaded,
     cleared: clearedOf(group),
+    applications: group?.door?.applications ?? NO_APPLICATIONS,
     coalitions,
   };
 }
