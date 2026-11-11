@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { folded, foldLogs, Logs, seatKey } from '../test/coalitions';
 import { authorOf } from '../test/keys';
+import { dueClaims, mayClaim } from './chatPosts';
 import type { Motion } from './coalition';
 import { motionsFor, resultMismatches, resultsToReport, seatIn } from './crossing';
 import { parseRecord } from './event';
@@ -185,5 +186,66 @@ describe('outside motions and push (#99)', () => {
     const group = folded(foldLogs(logs.logs, R + 100), 'A').state;
     expect(group.proposals.some((p) => p.id === motion && !p.final)).toBe(true);
     for (const member of ['ana', 'ben']) expect(nudgesFor(group, authorOf(member))).toEqual([]);
+  });
+});
+
+describe('outside motions beside numbers, the chat bot and Dispatches (#123, #112)', () => {
+  /** `who`'s edit of A's first Atom at relay minute `received`. */
+  const edit = (logs: Logs, received: number, who: string) =>
+    logs.add('A', received, who, {
+      type: 'proposal',
+      body: { atom: `${logs.ids.A ?? ''}.0`, title: 'Later', why: 'Weekends.', text: 'Midnight.' },
+    });
+
+  it('numbers the group’s own Proposals the same with or without its outside motions, and a motion 0', () => {
+    const { logs, reconcile, motion, at } = scene();
+    const own = edit(logs, at + 1, 'ana');
+    const withMotions = folded(foldLogs(logs.logs, at + 10), 'A').state;
+    const without = fold(logs.logs.A ?? [], at + 10);
+    const numbers = (state: typeof without) => state.proposals.map((p) => [p.id, p.number]);
+    expect(numbers(withMotions)).toEqual([
+      [reconcile, 1],
+      [motion, 0],
+      [own, 2],
+    ]);
+    expect(numbers(without)).toEqual([
+      [reconcile, 1],
+      [own, 2],
+    ]);
+  });
+
+  it('gives a device no chat bot claim on an outside motion, while it claims the group’s own', () => {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben', 'cal']);
+    const webhook = 'https://discord.com/api/webhooks/1199000000000000001/rV7-first_token';
+    const target = { kind: 'rules', optIn: 'chatBot', value: { webhook } } as const;
+    const rules = logs.add('A', R + 3, 'ana', {
+      type: 'proposal',
+      body: { target, title: 'Turn the chat bot on', why: 'We talked it over.' },
+    });
+    const reconcile = logs.reconcile('A', R + 7, 'ana', 'A');
+    ['ana', 'ben', 'cal'].forEach((who, i) => {
+      logs.vote('A', R + 4 + i, who, rules, 4);
+      logs.vote('A', R + 8 + i, who, reconcile, 4);
+    });
+    const motion = logs.motion(logs.formed(R + 20, ['A', 'B'], ['kim', 'zed']), 'zed');
+    const own = edit(logs, R + 40, 'ana');
+    const state = folded(foldLogs(logs.logs, R + 41), 'A').state;
+    const claimed = dueClaims(state, authorOf('ben')).map((claim) => claim.proposal);
+    expect(state.optIns.chatBot).not.toBeNull();
+    expect(state.proposals.some((p) => p.id === motion)).toBe(true);
+    expect(claimed).toContain(own);
+    expect(claimed).not.toContain(motion);
+    expect(mayClaim(state, authorOf('ben'), motion, 'open')).toBe(false);
+  });
+
+  it('opens an outside motion with no Dispatch, so its pass sends the group none', () => {
+    const { logs, motion } = scene();
+    logs.vote('A', R + 200, 'ana', motion, 4);
+    logs.vote('A', R + 201, 'ben', motion, 4);
+    const state = folded(foldLogs(logs.logs, R + 300), 'A').state;
+    const opened = state.proposals.find((p) => p.id === motion);
+    expect(opened).toMatchObject({ final: true, dispatch: null, outcome: { kind: 'pass' } });
+    expect(state.dispatches).toEqual([]);
   });
 });

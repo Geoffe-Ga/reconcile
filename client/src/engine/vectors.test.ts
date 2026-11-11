@@ -448,12 +448,16 @@ describe('coalition vector files (#100)', () => {
     'forgery-repeat',
     'forgery-extra-key',
     'forgery-vote',
+    'forgery-motion-dispatch',
     'contest-pass-then-fail',
     'contest-fail-then-pass',
     'group-join-after',
     'group-lapse',
     'group-deadline-final',
     'group-mismatch',
+    'group-motion-number',
+    'group-motion-chat',
+    'group-motion-dispatch',
   ])('include "%s"', (name) => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });

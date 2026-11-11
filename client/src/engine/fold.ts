@@ -240,7 +240,11 @@ export interface Ballot {
  *
  * `number` is its 1-based place among the group's Proposals in relay order,
  * counting only the ones the fold kept (#123): the name of its Discord thread
- * carries it, as no title may reach Discord (ADR-0039).
+ * carries it, as no title may reach Discord (ADR-0039). A coalition motion
+ * opened from `outside` (#100) is 0: it isn't the group's own, has no title
+ * or author there, and isn't counted, so the group's own numbers are the same
+ * whether or not a device has the coalition's log yet, as the chat bot's
+ * fold never does.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
  * opened, never from the proposer's own fields. It picks the bar the versions
@@ -667,16 +671,24 @@ interface Term {
 }
 
 /**
- * What every Proposal opens with: its receipt, its number, the next after
- * the Proposals already kept (#123), author, class, window and a deadline
- * `window` days after its receipt (#106), any Dispatch it carries (#112),
- * and no ballots yet.
+ * The number the group's next own Proposal takes (#123): one more than the
+ * Proposals already kept, leaving out the coalition motions opened from
+ * `outside` (#100), which take none.
+ */
+function nextNumber(draft: Draft): number {
+  return draft.proposals.filter((p) => p.target.kind !== 'motion').length + 1;
+}
+
+/**
+ * What every Proposal opens with: its receipt, its number (#123), author,
+ * class, window and a deadline `window` days after its receipt (#106), any
+ * Dispatch it carries (#112), and no ballots yet.
  */
 function opening(draft: Draft, body: ProposalEventBody, author: string, at: Receipt, term: Term) {
   const { cls, window } = term;
   return {
     ...at,
-    number: draft.proposals.length + 1,
+    number: nextNumber(draft),
     author,
     title: body.title,
     why: body.why,
@@ -840,7 +852,8 @@ function applyReconcile(
  * with the seats it holds now as the snapshot that decides it. Every other
  * target waits: a steward, rules or dissolve change would take effect in the
  * fold while a pass can still be contested, and reconciling a coalition is
- * #122's.
+ * #122's. So does a motion carrying a Dispatch (#112): its pass, once closed,
+ * can still be contested into a fail, and a coalition's followers are #124's.
  */
 function applyMotion(
   draft: Draft,
@@ -849,7 +862,9 @@ function applyMotion(
   author: string,
   at: Receipt,
 ): boolean {
-  if (coalition.status !== 'formed' || 'target' in body) return false;
+  if (coalition.status !== 'formed' || 'target' in body || body.dispatch !== undefined) {
+    return false;
+  }
   const motion = openEdit(draft, body, author, at);
   if (motion === null) return false;
   const seats = coalition.seats.map((s) => s.key);
@@ -1583,7 +1598,12 @@ function openMotionsBefore(draft: Draft, motions: Motion[], seq: number): void {
   }
 }
 
-/** Opens one coalition motion as a group Proposal, with the coalition's class, window, deadline and bar. */
+/**
+ * Opens one coalition motion as a group Proposal, with the coalition's class,
+ * window, deadline and bar. It isn't the group's own: it has no number (0,
+ * #123), no title, text or author, and carries no Dispatch (#112), since its
+ * words are the coalition's.
+ */
 function openMotion(draft: Draft, motion: Motion): void {
   if (draft.group === null || draft.coalition !== null || draft.dissolved !== null) return;
   if (draft.proposals.some((p) => p.id === motion.id)) return;
