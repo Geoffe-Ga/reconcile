@@ -158,8 +158,10 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 Build on **React Aria Components** (unstyled, accessible). Style everything from these tokens.
 
 - **Atom block:** Newsreader text with a left gutter for its badge.
-  - Badges: *Entrenched* has a `clay` outline and a lock glyph. *Eternal* has a double `ink` rule and the eyebrow "ETERNAL". #116 builds them.
+  - Badges (#116) open the block, as an eyebrow, so the word says the class and color is never the only signal. *Entrenched* has a `clay` outline, a lock glyph and the eyebrow "ENTRENCHED", in `clay`. *Eternal* has a double `ink` rule above and below and the eyebrow "ETERNAL", in `ink`. An ordinary section has none.
+  - An eternal section offers no action. In their place, one caption line says it can't be changed.
   - History opens in a side sheet. #104 builds it.
+- **Protection choice** (#116): a radio group of cards, as the Level picker's, each class's name over its one line. While Eternal is chosen, the line "This is permanent…" follows in `body`, set off by a `clay` rule at its start, never an alert color.
 - **Proposal card:** title (heading-3), justification (body), a countdown (ui, `muted`), and a "Join discussion" link to the group's linked chat.
 - **Ballot:**
   - Competing versions sit side by side on wide screens and stack on phones.
@@ -171,7 +173,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
   - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
   - On People, Save your choice (secondary) appears only once the choice differs from the person's level.
-- **Consent meter:** two plain bars:
+- **Consent meter:** two plain bars, at the Proposal's own bar (3.0 and 5% for an entrenched one):
   - the average against the 2.0 line
   - the share of zeros against the 10% line
   - Each bar is labeled in words ("Passes", "Short by 0.3"). No gauge dials.
