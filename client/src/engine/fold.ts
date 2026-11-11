@@ -17,15 +17,21 @@
  * records as their `rightsAt`: at once for the founder and the bootstrap's
  * joiners, else after vouches and a wait (admission.ts, #101). The chat bot's
  * claims keep the first per Proposal moment (#119), and each Proposal keeps
- * the first Discord thread its open claimant records (#123). Each Proposal is
- * numbered by its place among the group's Proposals (#123). A Co-Creator's
- * `dispatch` joins the group's Dispatches at its receipt, and a Proposal
- * carrying one sends it when its pass is final, at its close (dispatches.ts,
- * #112). A `dissolve` ends the group (#108): relay time stops at its receipt,
- * and the fold ignores every event after it, so no vouch lands, no wait ends
- * and no key change becomes due or lands from then on (#98). The fold is
- * pure: no I/O, no clock, no randomness, so every device that folds the same
- * records builds the same state.
+ * the first Discord thread its open claimant records (#123). Each of the
+ * group's own Proposals is numbered by its place among them (#123). A
+ * Co-Creator's `dispatch` joins the group's Dispatches at its receipt, and a
+ * Proposal carrying one sends it when its pass is final, at its close
+ * (dispatches.ts, #112). A `dissolve` ends the group (#108): relay time stops
+ * at its receipt, and the fold ignores every event after it, so no vouch
+ * lands, no wait ends and no key change becomes due or lands from then on
+ * (#98). A coalition's log folds here too (#100): its genesis names the seats
+ * of the groups that reconcile, its participants join bound to a seat, and
+ * its motions are decided by the results the groups post, never by ballots
+ * (coalition.ts). A group's reconcile Proposals carry its seats, and
+ * `outside` opens each coalition motion the group owes a result on as a
+ * Proposal of its own (crossing.ts), with no number, no chat bot claims and
+ * no Dispatch. The fold is pure: no I/O, no clock, no randomness, so every
+ * device that folds the same records builds the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
@@ -37,6 +43,7 @@ import {
   isLevel,
   isSuspended,
   type Level,
+  PARTICIPANT_LEVEL,
   wouldVote,
 } from './capabilities';
 import {
@@ -47,6 +54,18 @@ import {
   mayClaim,
   mayRecordThread,
 } from './chatPosts';
+import {
+  bindsSeat,
+  type Coalition,
+  type CoalitionDraft,
+  expireFormation,
+  type Motion,
+  motionOutcome,
+  newCoalition,
+  RESULT_GRACE_MINUTES,
+  recordResult,
+  seatKeyFor,
+} from './coalition';
 import { optionFor } from './composeOption';
 import { type Dispatch, dispatchFits, maySendDispatch } from './dispatches';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
@@ -54,6 +73,7 @@ import {
   type CarriedDispatch,
   type ChatPostedBody,
   type ChatThreadBody,
+  type CoalitionGenesisBody,
   type DispatchBody,
   type DissolveBody,
   type DissolveProposalBody,
@@ -61,8 +81,12 @@ import {
   fromBase64url,
   type GenesisBody,
   type GroupEvent,
+  type GroupResultBody,
+  type GroupResultValue,
   type InviteToken,
+  isCoalitionGenesis,
   isDissolveProposal,
+  isReconcileProposal,
   isRulesProposal,
   type KeyRotateBody,
   type KxBody,
@@ -72,6 +96,7 @@ import {
   parseRecord,
   type ProposalBody,
   type ProposalEventBody,
+  type ReconcileProposalBody,
   type RulesProposalBody,
   type Score,
   type StewardProposalBody,
@@ -215,7 +240,11 @@ export interface Ballot {
  *
  * `number` is its 1-based place among the group's Proposals in relay order,
  * counting only the ones the fold kept (#123): the name of its Discord thread
- * carries it, as no title may reach Discord (ADR-0039).
+ * carries it, as no title may reach Discord (ADR-0039). A coalition motion
+ * opened from `outside` (#100) is 0: it isn't the group's own, has no title
+ * or author there, and isn't counted, so the group's own numbers are the same
+ * whether or not a device has the coalition's log yet, as the chat bot's
+ * fold never does.
  *
  * `class` is how hard the change is, set by `targetClass` from state when it
  * opened, never from the proposer's own fields. It picks the bar the versions
@@ -296,6 +325,11 @@ export interface IgnoredRecord {
  * change can land. `dissolved` is when the group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
+ * `coalitions` lists the group's reconcile Proposals (#100), each with its
+ * public seat key and outcome. `coalition` is null for a group; for a
+ * coalition's log it holds the seats, the participants' bindings, the results
+ * the groups posted, each motion's seats and the status (coalition.ts), and
+ * once it is declined `at` stays at that minute.
  */
 export interface GroupState {
   readonly group: string | null;
@@ -320,7 +354,24 @@ export interface GroupState {
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
   readonly dissolved: Dissolution | null;
+  readonly coalitions: readonly HeldSeat[];
+  readonly coalition: Coalition | null;
   readonly ignored: readonly IgnoredRecord[];
+}
+
+/**
+ * A group's seat in a coalition, as its reconcile Proposal sets it out
+ * (#100): the Proposal's id, the public seat key, the coalition's proposed
+ * name, title and Atoms, and the group's own outcome, `open` until its vote is
+ * final, and a lapse counted as `fail`, as it crosses.
+ */
+export interface HeldSeat {
+  readonly proposal: string;
+  readonly key: string;
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+  readonly outcome: GroupResultValue | 'open';
 }
 
 /** A `join`, as the fold reads it: the envelope's `group` and `author` with its body. */
@@ -375,11 +426,48 @@ interface Draft {
   readonly ruled: Set<string>;
   readonly dispatched: Set<string>;
   dissolved: Dissolution | null;
+  coalition: CoalitionDraft | null;
 }
 
 /** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
 function usableKx(kx: string | undefined): string | null {
   return kx !== undefined && isUsableKxKey(fromBase64url(kx)) ? kx : null;
+}
+
+/**
+ * Founds a coalition (#100), unless its rules differ from the defaults or its
+ * seats aren't two or more distinct keys. Its author isn't a participant: they
+ * join under a seat like anyone else, so it has no members and no steward yet.
+ */
+function applyCoalitionGenesis(draft: Draft, body: CoalitionGenesisBody, at: Receipt): boolean {
+  const rules = foundingRules(body.rules);
+  const coalition = rules === null ? null : newCoalition(body, rules, at.received);
+  if (rules === null || coalition === null) return false;
+  draft.group = at.id;
+  draft.rules = rules;
+  draft.name = body.name;
+  draft.chat = body.chat ?? null;
+  draft.title = body.title;
+  draft.atoms = genesisAtoms(body.atoms, at.id);
+  draft.coalition = coalition;
+  return true;
+}
+
+/** Genesis Atom `i` of `texts`, under the id `${genesisId}.${i}`. */
+function genesisAtoms(texts: readonly string[], genesisId: string): Atom[] {
+  return texts.map((text, i) => ({ id: `${genesisId}.${String(i)}`, documentId: genesisId, text }));
+}
+
+/** Founds a group, or a coalition (#100), from the first valid genesis. */
+function applyAnyGenesis(
+  draft: Draft,
+  body: GenesisBody | CoalitionGenesisBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  return isCoalitionGenesis(body)
+    ? applyCoalitionGenesis(draft, body, at)
+    : applyGenesis(draft, body, author, at);
 }
 
 /** Founds the group, unless its rules differ from the defaults (rules.ts). */
@@ -404,11 +492,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
-  draft.atoms = body.atoms.map((text, i) => ({
-    id: `${at.id}.${String(i)}`,
-    documentId: at.id,
-    text,
-  }));
+  draft.atoms = genesisAtoms(body.atoms, at.id);
   return true;
 }
 
@@ -437,6 +521,7 @@ function hasJoined(draft: Draft, author: string): boolean {
  * (admission.ts, #101); either way they may choose any level.
  */
 function applyJoin(draft: Draft, event: JoinEvent, at: Receipt): boolean {
+  if (draft.coalition !== null) return applyParticipantJoin(draft, draft.coalition, event, at);
   const { author, body } = event;
   const level = body.level ?? DEFAULT_JOIN_LEVEL;
   if (!isLevel(level) || hasJoined(draft, author)) return false;
@@ -445,6 +530,39 @@ function applyJoin(draft: Draft, event: JoinEvent, at: Receipt): boolean {
   const rightsAt = bootstrapOpen(draft) ? received : null;
   const kx = usableKx(body.kx);
   draft.members.push({ author, name: body.name, level, seq, received, invitedBy, rightsAt, kx });
+  return true;
+}
+
+/**
+ * A coalition's join (#100): someone not yet in, bound to a seat of the
+ * coalition by that seat's proof for their key (coalition.ts). They take part
+ * as the participant level, with rights at once, and the fold reads no level,
+ * token or kx: the coalition checks only the seat, never a person's level in
+ * their group, which would link identities (ADR-0009).
+ */
+function applyParticipantJoin(
+  draft: Draft,
+  coalition: CoalitionDraft,
+  event: JoinEvent,
+  at: Receipt,
+): boolean {
+  const { author, body, group } = event;
+  const { seat, proof } = body;
+  if (seat === undefined || proof === undefined || hasJoined(draft, author)) return false;
+  if (!bindsSeat(coalition, group, author, seat, proof)) return false;
+  const { seq, received } = at;
+  const level = PARTICIPANT_LEVEL;
+  draft.members.push({
+    author,
+    name: body.name,
+    level,
+    seq,
+    received,
+    invitedBy: null,
+    rightsAt: received,
+    kx: null,
+  });
+  coalition.bindings.push({ author, seat });
   return true;
 }
 
@@ -535,8 +653,12 @@ function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: R
   );
 }
 
-/** Who may vote on a Proposal that opens now (ADR-0015): everyone `wouldVote` lets in, but `left`. */
+/**
+ * Who may vote on a Proposal that opens now (ADR-0015): everyone `wouldVote`
+ * lets in, but `left`. Nobody in a coalition, where groups decide (#100).
+ */
 function eligibleNow(draft: Draft, left: string | null): string[] {
+  if (draft.coalition !== null) return [];
   return draft.members
     .filter((m) => m.author !== left && wouldVote(draft, m.author))
     .map((m) => m.author);
@@ -549,16 +671,24 @@ interface Term {
 }
 
 /**
- * What every Proposal opens with: its receipt, its number, the next after
- * the Proposals already kept (#123), author, class, window and a deadline
- * `window` days after its receipt (#106), any Dispatch it carries (#112),
- * and no ballots yet.
+ * The number the group's next own Proposal takes (#123): one more than the
+ * Proposals already kept, leaving out the coalition motions opened from
+ * `outside` (#100), which take none.
+ */
+function nextNumber(draft: Draft): number {
+  return draft.proposals.filter((p) => p.target.kind !== 'motion').length + 1;
+}
+
+/**
+ * What every Proposal opens with: its receipt, its number (#123), author,
+ * class, window and a deadline `window` days after its receipt (#106), any
+ * Dispatch it carries (#112), and no ballots yet.
  */
 function opening(draft: Draft, body: ProposalEventBody, author: string, at: Receipt, term: Term) {
   const { cls, window } = term;
   return {
     ...at,
-    number: draft.proposals.length + 1,
+    number: nextNumber(draft),
     author,
     title: body.title,
     why: body.why,
@@ -574,23 +704,30 @@ function opening(draft: Draft, body: ProposalEventBody, author: string, at: Rece
 
 /**
  * Opens an edit at its class's bar, for the window its proposer chose within
- * the class's bounds, or the class default (#106). A window outside those
- * bounds, or not a whole number, makes the fold ignore the Proposal.
+ * the class's bounds, or the class default (#106), and returns it. A window
+ * outside those bounds, or not a whole number, makes the fold ignore the
+ * Proposal, and so returns null.
  */
-function applyEdit(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
-  if (!proposalIsValid(draft, body, author, at)) return false;
+function openEdit(
+  draft: Draft,
+  body: ProposalBody,
+  author: string,
+  at: Receipt,
+): OpenProposal | null {
+  if (!proposalIsValid(draft, body, author, at)) return null;
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
-  if (window === null) return false;
-  draft.proposals.push({
+  if (window === null) return null;
+  const proposal: OpenProposal = {
     ...opening(draft, body, author, at, { cls, window }),
     atom: body.atom,
     target: { kind: 'edit' },
     text: body.text,
     eligible: eligibleNow(draft, null),
     versions: [{ id: at.id, author, text: body.text }],
-  });
-  return true;
+  };
+  draft.proposals.push(proposal);
+  return proposal;
 }
 
 /**
@@ -676,16 +813,77 @@ function applyDissolveProposal(
   return true;
 }
 
+/**
+ * Opens a reconcile Proposal (#100; ADR-0036) when its author may propose:
+ * ordinary, for the window its proposer chose or the default, with one
+ * version that has no text. The fold keeps its target as written, secrets
+ * included, with the public seat key its seat secret makes. A seat key another
+ * reconcile Proposal here already holds is ignored, so each seat is one
+ * Proposal's.
+ */
+function applyReconcile(
+  draft: Draft,
+  body: ReconcileProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!fieldsAreValid(body) || !can(draft, author, 'propose')) return false;
+  const key = seatKeyFor(body.target);
+  if (draft.proposals.some((p) => p.target.kind === 'reconcile' && p.target.key === key)) {
+    return false;
+  }
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  draft.proposals.push({
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: '',
+    target: { ...body.target, key },
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
+}
+
+/**
+ * Opens a coalition motion (#100): once the coalition has formed, an edit of
+ * one of its Atoms, by the group fold's own rules, deadline and bar included,
+ * with the seats it holds now as the snapshot that decides it. Every other
+ * target waits: a steward, rules or dissolve change would take effect in the
+ * fold while a pass can still be contested, and reconciling a coalition is
+ * #122's. So does a motion carrying a Dispatch (#112): its pass, once closed,
+ * can still be contested into a fail, and a coalition's followers are #124's.
+ */
+function applyMotion(
+  draft: Draft,
+  coalition: CoalitionDraft,
+  body: ProposalEventBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (coalition.status !== 'formed' || 'target' in body || body.dispatch !== undefined) {
+    return false;
+  }
+  const motion = openEdit(draft, body, author, at);
+  if (motion === null) return false;
+  const seats = coalition.seats.map((s) => s.key);
+  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats });
+  return true;
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
   author: string,
   at: Receipt,
 ): boolean {
+  if (draft.coalition !== null) return applyMotion(draft, draft.coalition, body, author, at);
+  if (isReconcileProposal(body)) return applyReconcile(draft, body, author, at);
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  return applyEdit(draft, body, author, at);
+  return openEdit(draft, body, author, at) !== null;
 }
 
 /**
@@ -699,9 +897,32 @@ function applyDissolve(draft: Draft, body: DissolveBody, author: string, at: Rec
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal?.target.kind !== 'dissolve' || !can(draft, author, 'read')) return false;
   if (isOpenAt(proposal, at.received)) return false;
-  if (settle(proposal, draft.rules, at.received).outcome.kind !== 'pass') return false;
+  if (settle(proposal, draft, at.received).outcome.kind !== 'pass') return false;
   draft.dissolved = { received: at.received, wipe: proposal.target.wipe };
   draft.rotationDue = false;
+  return true;
+}
+
+/**
+ * Records a member group's result in a coalition (#100), from a current
+ * participant bound to its seat (coalition.ts). A fail decides a motion at
+ * once, so the motion closes at this receipt; a pass stays contestable until
+ * results stop counting, so it closes nothing.
+ */
+function applyGroupResult(
+  draft: Draft,
+  body: GroupResultBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { coalition, group } = draft;
+  if (coalition === null || group === null) return false;
+  if (!draft.members.some((m) => m.author === author)) return false;
+  if (!recordResult(coalition, group, author, body, at)) return false;
+  const motion = draft.proposals.find((p) => p.id === body.motion);
+  if (motion?.closedAt === null && motionOutcome(coalition, motion.id, false).kind === 'fail') {
+    motion.closedAt = at.received;
+  }
   return true;
 }
 
@@ -727,7 +948,7 @@ function applySuspend(draft: Draft, body: SuspendBody, author: string, at: Recei
  * Proposal closes.
  */
 function applyNarrow(draft: Draft, body: NarrowBody, author: string, at: Receipt): boolean {
-  const settled = draft.proposals.map((p) => settle(p, draft.rules, draft.at));
+  const settled = draft.proposals.map((p) => settle(p, draft, draft.at));
   const { optIn, proposal } = body;
   if (!isOptIn(optIn) || !mayNarrow({ ...draft, proposals: settled }, author, body)) return false;
   const { id, seq, received } = at;
@@ -855,15 +1076,41 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
 }
 
 /**
+ * The event types a coalition's log takes (#100). Everything else, `vote` and
+ * `version` included, is ignored there, so a motion has one version and no
+ * ballots, and no `kx` or key change applies.
+ */
+const COALITION_TYPES: ReadonlySet<GroupEvent['type']> = new Set([
+  'genesis',
+  'join',
+  'proposal',
+  'group-result',
+  'leave',
+]);
+
+/** Whether an event's type belongs in this log: a coalition's five, or anything but a result in a group. */
+function fitsLog(draft: Draft, event: GroupEvent): boolean {
+  return draft.coalition === null ? event.type !== 'group-result' : COALITION_TYPES.has(event.type);
+}
+
+/** True once a group has dissolved (#108) or a coalition was declined (#100): nothing applies after. */
+function hasEnded(draft: Draft): boolean {
+  return draft.dissolved !== null || draft.coalition?.status === 'declined';
+}
+
+/**
  * The one event guard: a version-1 event for a group that hasn't dissolved,
- * from someone who isn't suspended. After a `dissolve` the fold ignores every
- * event, a second `dissolve` included (#108). It ignores a suspended member's
- * events until the suspension ends (ADR-0016), except their `leave`, since
- * exit is always possible (ADR-0010, #77).
+ * or a coalition that wasn't declined, of a type its log takes, from someone
+ * who isn't suspended. After a `dissolve` the fold ignores every event, a
+ * second `dissolve` included (#108), and after a coalition is declined every
+ * event (#100). It ignores a suspended member's events until the suspension
+ * ends (ADR-0016), except their `leave`, since exit is always possible
+ * (ADR-0010, #77).
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
   const free = event.type === 'leave' || !isSuspended(draft, event.author);
-  return draft.dissolved === null && event.v === EVENT_VERSION && inGroup(draft, event) && free;
+  const current = !hasEnded(draft) && event.v === EVENT_VERSION;
+  return current && inGroup(draft, event) && fitsLog(draft, event) && free;
 }
 
 /** The events that act on a Proposal: proposing, wording, voting, and dissolving on a pass (#108). */
@@ -892,7 +1139,7 @@ function applyEvent(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
   switch (event.type) {
     case 'genesis':
-      return applyGenesis(draft, event.body, event.author, at);
+      return applyAnyGenesis(draft, event.body, event.author, at);
     case 'join':
       return applyJoin(draft, event, at);
     case 'level':
@@ -907,8 +1154,7 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 /**
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
  * `vouch` (#101), `chat-posted` (#119), `chat-thread` (#123), `dispatch`
- * (#112), and `kx` and
- * `key-rotate` (#98).
+ * (#112), `kx` and `key-rotate` (#98), and `group-result` (#100).
  */
 type LaterEvent = Extract<
   GroupEvent,
@@ -921,7 +1167,8 @@ type LaterEvent = Extract<
       | 'chat-thread'
       | 'dispatch'
       | 'kx'
-      | 'key-rotate';
+      | 'key-rotate'
+      | 'group-result';
   }
 >;
 
@@ -947,6 +1194,8 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
       return applyKeyRotate(draft, event.body, event.author, at);
+    case 'group-result':
+      return applyGroupResult(draft, event.body, event.author, at);
     default:
       return applyProposalEvent(draft, event, at);
   }
@@ -1049,10 +1298,50 @@ export function proposalTally(proposal: TalliedProposal): TallyDetail {
   return tallyAt(proposal, proposal.outcome.bar);
 }
 
-/** Fixes a Proposal's finality and tallies its ballots at its class's bar. */
-function settle(proposal: OpenProposal, rules: Rules, relayNow: number | null): Proposal {
+/**
+ * The bar a Proposal's ballots are tallied at: its class's, or for a coalition
+ * motion the bar the coalition set (#100).
+ */
+function barOf(proposal: OpenProposal, rules: Rules): Bar {
+  return proposal.target.kind === 'motion' ? proposal.target.bar : rules.bars[proposal.class];
+}
+
+/**
+ * Fixes a coalition motion's finality and outcome from the results its seats
+ * posted (#100): a fail is final at once, and a pass once results stop
+ * counting, at deadline + 10,080, since until then a contest can turn it into
+ * a fail. Its one version wins a pass. Until it is decided it reads as a
+ * lapse, as a Proposal no one has scored does.
+ */
+function settleMotion(
+  proposal: OpenProposal,
+  coalition: CoalitionDraft,
+  bar: Bar,
+  relayNow: number | null,
+): Proposal {
+  const expired = relayNow !== null && relayNow >= proposal.deadline + RESULT_GRACE_MINUTES;
+  const { kind } = motionOutcome(coalition, proposal.id, expired);
+  const final = kind === 'fail' || expired;
+  const outcome: TallyOutcome =
+    kind === 'pass'
+      ? { kind, version: proposal.id, bar }
+      : { kind: kind === 'fail' ? kind : 'lapse', bar };
+  return { ...proposal, final, outcome };
+}
+
+/**
+ * Fixes a Proposal's finality and tallies its ballots at its bar; in a
+ * coalition, decides a motion by its seats' results instead (#100).
+ */
+function settle(
+  proposal: OpenProposal,
+  draft: Pick<Draft, 'rules' | 'coalition'>,
+  relayNow: number | null,
+): Proposal {
+  const bar = barOf(proposal, draft.rules);
+  if (draft.coalition !== null) return settleMotion(proposal, draft.coalition, bar, relayNow);
   const final = proposal.closedAt !== null || (relayNow !== null && relayNow >= proposal.deadline);
-  const { outcome } = tallyAt(proposal, rules.bars[proposal.class]);
+  const { outcome } = tallyAt(proposal, bar);
   return { ...proposal, final, outcome };
 }
 
@@ -1087,7 +1376,7 @@ function newlyClosed(
     .sort((a, b) => closeTime(a) - closeTime(b))
     .map((proposal) => {
       applied.add(proposal.id);
-      const passed = settle(proposal, draft.rules, draft.at).outcome.kind === 'pass';
+      const passed = settle(proposal, draft, draft.at).outcome.kind === 'pass';
       return { proposal, passed };
     });
 }
@@ -1185,8 +1474,19 @@ function applyPasses(atoms: readonly Atom[], proposals: readonly Proposal[]): re
  * copy keeps its seq and receipt time), as is any event whose `v` isn't 1 or
  * whose `group` isn't the genesis id. Only members act, except on their own
  * join: `can()` is false for anyone else, including someone who has left.
+ *
+ * `outside` holds the coalition motions this group's seats decide (#100),
+ * from crossing.ts's `motionsFor`: each opens as a Proposal of the group's
+ * right after its records with a lower relay seq, with the coalition's class,
+ * window, deadline and bar, and the group's ballots decide it as any other.
+ * A coalition's own log takes none. `relayNow` should be the relay's latest
+ * `now` from any mailbox: it is one clock.
  */
-export function fold(records: readonly LogRecord[], relayNow: number | null): GroupState {
+export function fold(
+  records: readonly LogRecord[],
+  relayNow: number | null,
+  outside: readonly Motion[] = [],
+): GroupState {
   const draft: Draft = {
     group: null,
     rules: DEFAULT_RULES,
@@ -1212,18 +1512,22 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     ruled: new Set(),
     dispatched: new Set(),
     dissolved: null,
+    coalition: null,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
+  const motions = [...outside].sort((a, b) => a.seq - b.seq);
   for (const record of records) {
+    openMotionsBefore(draft, motions, record.seq);
     if (!foldRecord(draft, record, seen)) ignored.push({ seq: record.seq, id: idOf(record) });
   }
-  const now = draft.dissolved?.received ?? relayNow;
+  openMotionsBefore(draft, motions, Infinity);
+  const now = endTime(draft, relayNow);
   draft.at = now ?? draft.at;
   advanceSeats(draft);
   advanceOptIns(draft);
   advanceDispatches(draft);
-  const proposals = draft.proposals.map((p) => settle(p, draft.rules, now));
+  const proposals = draft.proposals.map((p) => settle(p, draft, now));
   const atoms = applyPasses(draft.atoms, proposals);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
   const { narrowings, vouches, chatPosts, chatThreads, dispatches, epoch, rotations, rotationDue } =
@@ -1251,13 +1555,103 @@ export function fold(records: readonly LogRecord[], relayNow: number | null): Gr
     rotations,
     rotationDue,
     dissolved: draft.dissolved,
+    coalitions: heldSeats(proposals),
+    coalition: draft.coalition,
     ignored,
   };
+}
+
+/**
+ * Where relay time stands once every record is in: `relayNow`, unless the
+ * group dissolved (#108) or the coalition was declined (#100), when it stopped
+ * there. A coalition still forming when `relayNow` reaches its `formsBy` is
+ * declined then.
+ */
+function endTime(draft: Draft, relayNow: number | null): number | null {
+  if (draft.coalition !== null) expireFormation(draft.coalition, relayNow ?? draft.at);
+  return draft.dissolved?.received ?? draft.coalition?.declinedAt ?? relayNow;
+}
+
+/** The group's reconcile Proposals as seats (#100): each one's key, statement and outcome. */
+function heldSeats(proposals: readonly Proposal[]): HeldSeat[] {
+  return proposals.flatMap((p) => {
+    if (p.target.kind !== 'reconcile') return [];
+    const { key, name, title, atoms } = p.target;
+    const pass = p.outcome.kind === 'pass';
+    const outcome = p.final ? (pass ? 'pass' : 'fail') : 'open';
+    return [{ proposal: p.id, key, name, title, atoms, outcome }];
+  });
+}
+
+/**
+ * Opens, in a group, each coalition motion whose relay seq is below `seq`
+ * that hasn't opened yet (#100), taking it from the front of `motions`, which
+ * is in seq order. Relay time moves on to its receipt first, as for a record,
+ * so its eligible set is everyone `wouldVote` lets in there. A group that
+ * hasn't been founded or has dissolved opens none, and a coalition's own log
+ * takes none (#122 nests them).
+ */
+function openMotionsBefore(draft: Draft, motions: Motion[], seq: number): void {
+  while (motions.length > 0 && (motions[0]?.seq ?? seq) < seq) {
+    const motion = motions.shift();
+    if (motion !== undefined) openMotion(draft, motion);
+  }
+}
+
+/**
+ * Opens one coalition motion as a group Proposal, with the coalition's class,
+ * window, deadline and bar. It isn't the group's own: it has no number (0,
+ * #123), no title, text or author, and carries no Dispatch (#112), since its
+ * words are the coalition's.
+ */
+function openMotion(draft: Draft, motion: Motion): void {
+  if (draft.group === null || draft.coalition !== null || draft.dissolved !== null) return;
+  if (draft.proposals.some((p) => p.id === motion.id)) return;
+  advanceTo(draft, motion.received);
+  const { id, seq, received, coalition, bar, window, deadline } = motion;
+  draft.proposals.push({
+    id,
+    seq,
+    received,
+    author: '',
+    atom: '',
+    target: { kind: 'motion', coalition, bar },
+    title: '',
+    why: '',
+    text: '',
+    link: null,
+    class: motion.class,
+    window,
+    deadline,
+    eligible: eligibleNow(draft, null),
+    versions: [{ id, author: '', text: '' }],
+    ballots: [],
+    closedAt: null,
+    number: 0,
+    dispatch: null,
+  });
 }
 
 /** The id of the event a record holds, or null when it doesn't verify or hold one. */
 function idOf(record: LogRecord): string | null {
   return parseRecord(record.bytes)?.id ?? null;
+}
+
+/**
+ * Moves relay time on to `received`, never back, and brings the seats,
+ * opt-ins and carried Dispatches up to it (#112). A coalition still forming
+ * when it reaches its `formsBy` is declined there, and relay time stops at
+ * that minute (#100).
+ */
+function advanceTo(draft: Draft, received: number): void {
+  draft.at = Math.max(draft.at, received);
+  if (draft.coalition !== null) {
+    expireFormation(draft.coalition, draft.at);
+    draft.at = draft.coalition.declinedAt ?? draft.at;
+  }
+  advanceSeats(draft);
+  advanceOptIns(draft);
+  advanceDispatches(draft);
 }
 
 /**
@@ -1274,17 +1668,13 @@ function idOf(record: LogRecord): string | null {
 function foldRecord(draft: Draft, record: LogRecord, seen: Set<string>): boolean {
   const { seq, received, bytes, epoch = 0 } = record;
   if (epoch !== draft.epoch) return false;
-  if (draft.dissolved === null) {
-    draft.at = Math.max(draft.at, received);
-    advanceSeats(draft);
-    advanceOptIns(draft);
-    advanceDispatches(draft);
-  }
+  if (!hasEnded(draft)) advanceTo(draft, received);
   const parsed = parseRecord(bytes);
   if (parsed === null) return false;
   const { event, id } = parsed;
   const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
   seen.add(id);
-  if (applied && endsMembership(event)) draft.rotationDue = true;
+  // A coalition has no group key, so a leave there ends only that participant (#100).
+  if (applied && endsMembership(event) && draft.coalition === null) draft.rotationDue = true;
   return applied;
 }
