@@ -324,6 +324,7 @@ export class VaultLocked extends Error {
  */
 export type BackedUpGroup = Pick<
   Group,
+  | 'kind'
   | 'groupId'
   | 'secret'
   | 'signingKey'

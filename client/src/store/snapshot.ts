@@ -62,6 +62,7 @@ import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { fold, type LogRecord } from '../engine/fold';
 import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
+import { deriveCoalitionEntryId } from '../crypto/card';
 import { epochOf, secretFits } from './epochs';
 import { eventIdOf } from './eventId';
 import {
@@ -108,9 +109,17 @@ export interface SavedBackup {
   readonly groupIds: readonly string[];
 }
 
-/** Whether the relay has returned the group's genesis: its log folds to the group itself. */
-function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow'>): boolean {
-  return fold(group.log, group.relayNow).group === group.groupId;
+/**
+ * Whether the relay has returned the group's genesis: its log folds to the
+ * group itself, or for a coalition's entry (#114), to a coalition whose
+ * entry id is the one its secret derives.
+ */
+function isFounded(
+  group: Pick<Group, 'groupId' | 'log' | 'relayNow' | 'kind' | 'secret'>,
+): boolean {
+  const state = fold(group.log, group.relayNow);
+  if (group.kind !== 'coalition') return state.group === group.groupId;
+  return state.coalition !== null && deriveCoalitionEntryId(group.secret) === group.groupId;
 }
 
 /**
@@ -123,6 +132,7 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     .filter((group) => group.leaving === undefined && group.archived === undefined)
     .filter(isFounded)
     .map((group) => ({
+      ...(group.kind === undefined ? {} : { kind: group.kind }),
       groupId: group.groupId,
       secret: group.secret,
       signingKey: group.signingKey,
@@ -143,14 +153,15 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
  * Document, and its relay backup key.
  */
 export async function deviceSnapshot(
-  store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>,
+  store: Pick<Store, 'listGroups' | 'listCoalitions' | 'listPersonal' | 'getRelayBackup'>,
 ): Promise<Snapshot> {
-  const [groups, personal, relayBackup] = await Promise.all([
+  const [groups, coalitions, personal, relayBackup] = await Promise.all([
     store.listGroups(),
+    store.listCoalitions(),
     store.listPersonal(),
     store.getRelayBackup(),
   ]);
-  const kept = { groups: backedUpGroups(groups), personal };
+  const kept = { groups: backedUpGroups([...groups, ...coalitions]), personal };
   return relayBackup === undefined ? kept : { ...kept, backupKey: relayBackup.key };
 }
 
@@ -189,6 +200,7 @@ export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8
   const json = {
     format: SNAPSHOT_FORMAT,
     groups: groups.map((group) => ({
+      ...(group.kind === undefined ? {} : { kind: group.kind }),
       groupId: group.groupId,
       secret: base64url(group.secret),
       signingKey: base64url(group.signingKey),
@@ -245,7 +257,7 @@ export async function takeSnapshot(
  * `log2N` (17 unless a test asks for less).
  */
 export async function exportGroups(
-  store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>,
+  store: Pick<Store, 'listGroups' | 'listCoalitions' | 'listPersonal' | 'getRelayBackup'>,
   passphrase: string,
   log2N = BACKUP_LOG2_N,
 ): Promise<SavedBackup> {
@@ -512,8 +524,10 @@ function groupIn(value: unknown): BackedUpGroup | null {
   const log = logIn(value.log);
   if (secret === null || signingKey === null || log === null || !hasSyncState(value)) return null;
   const me = meIn(value.me, signingKey);
-  if (me === null) return null;
+  const { kind } = value;
+  if (me === null || (kind !== undefined && kind !== 'coalition')) return null;
   return restoredAs({
+    ...(kind === undefined ? {} : { kind }),
     groupId: value.groupId,
     secret,
     signingKey,
@@ -536,7 +550,7 @@ const DISSOLVED: Archive = { reason: 'dissolved' };
  */
 function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
   const state = fold(group.log, group.relayNow);
-  if (state.group !== group.groupId) return null;
+  if (!isFounded(group)) return null;
   return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
 }
 

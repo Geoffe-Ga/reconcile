@@ -12,121 +12,28 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { parseCardLink } from '../coalition/card';
 import { RESULT_GRACE_MINUTES } from '../engine/coalition';
-import type { Score } from '../engine/event';
-import { fold, type GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
-import { TEST_NOW, type TestDevice, testDevice } from '../test/appServices';
+import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
+import {
+  anaMakesCard,
+  closeAll,
+  coalitionOn,
+  found,
+  open,
+  SLOW,
+  syncAll,
+  twoGroups,
+  vote,
+} from '../test/coalitionDevices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { createGroup, joinGroup, lookupInvite, makeInvite } from './actions';
 import { App } from './App';
-import { parseInviteLink } from './invite';
-import { castBallot } from './proposals';
-import { admitCard, bringCard, lookupCard, makeCard, postCard } from './reconcile';
+import { admitCard, bringCard, lookupCard, postCard } from './reconcile';
 
 freshIndexedDBPerTest();
 
-/** Several devices syncing in turn: these tests run longer than one device's. */
-const SLOW = { timeout: 30_000 };
-
-const devices: TestDevice[] = [];
-
-afterEach(() => {
-  cleanup();
-  for (const device of devices.splice(0)) device.services.store.close();
-  window.history.replaceState(null, '', '#/');
-});
-
-async function open(fake: FakeRelay, name: string): Promise<TestDevice> {
-  const device = await testDevice(fake, name, () => TEST_NOW);
-  devices.push(device);
-  return device;
-}
-
-async function found(device: TestDevice, groupName: string, yourName: string): Promise<string> {
-  const created = await createGroup(device.services, {
-    groupName,
-    yourName,
-    chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.',
-  });
-  if (created.outcome !== 'created') throw new Error('Expected a group.');
-  await device.services.sync.syncOnce();
-  return created.groupId;
-}
-
-async function join(from: TestDevice, groupId: string, device: TestDevice, name: string) {
-  const seed = parseInviteLink(await makeInvite(from.services, groupId, from.services.origin));
-  if (seed === null) throw new Error('Expected an invite link.');
-  const lookup = await lookupInvite(device.services, seed);
-  if (lookup.kind !== 'found') throw new Error('Expected the invite to open.');
-  await joinGroup(device.services, lookup.group, name, 'co-creator');
-  await device.services.sync.syncOnce();
-}
-
-/** Every device syncs, `rounds` times over. */
-async function syncAll(rounds = 2): Promise<void> {
-  for (let round = 0; round < rounds; round += 1) {
-    for (const device of devices) await device.services.sync.syncOnce();
-  }
-}
-
-/** Riverside Tenants (Ana, Cy) and Oak St Co-op (Ben, Cy), all synced. */
-async function twoGroups(fake: FakeRelay) {
-  const ana = await open(fake, 'ana');
-  const ben = await open(fake, 'ben');
-  const cy = await open(fake, 'cy');
-  const riverside = await found(ana, 'Riverside Tenants', 'Ana');
-  const oak = await found(ben, 'Oak St Co-op', 'Ben');
-  await join(ana, riverside, cy, 'Cy');
-  await join(ben, oak, cy, 'Cy');
-  await syncAll(1);
-  return { ana, ben, cy, riverside, oak };
-}
-
-const VALUES = {
-  name: 'Eastside Housing',
-  statement: 'Everyone on the east side has a safe home.\n\nWe meet on the first Sunday.',
-  why: 'We share a landlord.',
-  yourName: 'Ana E.',
-};
-
-/** Ana's card for Riverside, posted, and the card Cy opens from its link. */
-async function anaMakesCard(ana: TestDevice, cy: TestDevice, riverside: string) {
-  const made = await makeCard(ana.services, riverside, VALUES);
-  if (made.outcome !== 'queued') throw new Error('Expected a card.');
-  const link = await postCard(ana.services, made.card, ana.services.origin);
-  await syncAll(1);
-  const seed = parseCardLink(link);
-  if (seed === null) throw new Error('Expected a card link.');
-  const lookup = await lookupCard(cy.services, seed);
-  if (lookup.kind !== 'found') throw new Error(`Expected the card to open, not ${lookup.kind}.`);
-  return { proposal: made.proposalId, found: lookup.found, seed };
-}
-
-/** Each device scores the Proposal `score` in `groupId`, with a reason for a 0. */
-async function vote(
-  groupId: string,
-  proposal: string,
-  voters: readonly TestDevice[],
-  score: Score = 4,
-) {
-  for (const voter of voters) {
-    const note = score === 0 ? 'Not with them.' : '';
-    await castBallot(voter.services, groupId, { proposal, scores: { [proposal]: score }, note });
-  }
-}
-
-/** The coalition as `device` folds its entry, failing when it holds none or more. */
-async function coalitionOn(device: TestDevice): Promise<GroupState> {
-  const entries = await device.services.store.listCoalitions();
-  expect(entries).toHaveLength(1);
-  const [entry] = entries;
-  if (entry === undefined) throw new Error('Expected a coalition entry.');
-  return fold(entry.log, entry.relayNow);
-}
+afterEach(closeAll);
 
 /** Riverside and Oak St, reconciled into Eastside Housing: both groups passed. */
 async function formed(fake: FakeRelay) {
