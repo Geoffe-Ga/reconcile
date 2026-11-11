@@ -60,6 +60,7 @@ function heldStore(store: Store) {
   const reads: { groupId: string; answer: (group: Group | undefined) => void }[] = [];
   const list = deferred<Group[]>();
   const view: RecoveryAlertServices['store'] = {
+    enqueueAll: (groupId, records) => store.enqueueAll(groupId, records),
     listGroups: () => list.promise,
     getGroup: (groupId) => {
       const read = deferred<Group | undefined>();
@@ -68,7 +69,9 @@ function heldStore(store: Store) {
     },
     subscribe: (listener) => {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
   const hear = (id: string) => {
