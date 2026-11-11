@@ -97,12 +97,15 @@ describe('coalitionRows', () => {
     logs.result(R + 12, 'kim', logs.ids.coalition ?? '', 'A', 'pass');
     const held = heldCoalition(logs, R + 20, 'cal');
 
-    const [row] = coalitionRows(groupState(logs, 'A', R + 20, held), authorOf('ana'), [held]);
+    const state = groupState(logs, 'A', R + 20, held);
+    const [row] = coalitionRows(state, authorOf('ana'), [held]);
     expect(row).toMatchObject({
       status: 'forming',
       lines: [{ kind: 'waiting', group: 'B' }],
       me: { kind: 'may-take-part' },
     });
+    // Ben joined as a Collaborator, who votes but doesn't propose, so he takes no part there.
+    expect(coalitionRows(state, authorOf('ben'), [held])[0]?.me).toEqual({ kind: 'none' });
   });
 
   it('says joining while a planned join or anything else waits to send', () => {

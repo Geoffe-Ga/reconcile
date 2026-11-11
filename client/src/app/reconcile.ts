@@ -26,15 +26,8 @@ import { can } from '../engine/capabilities';
 import { signEvent } from '../engine/event';
 import { fold, type GroupState, TITLE_MAX } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
-import {
-  type Card,
-  cardFits,
-  CARD_TTL_DAYS,
-  cardLink,
-  openCard,
-  sealCard,
-} from '../coalition/card';
-import { clip } from '../invite/envelope';
+import { type Card, CARD_TTL_DAYS, cardLink, openCard, sealCard } from '../coalition/card';
+import { clip, NAME_MAX } from '../invite/envelope';
 import { heldSecrets, newEntry, queuedSecrets } from '../store/coalitions';
 import type { Group } from '../store/db';
 import { eventIdOf } from '../store/eventId';
@@ -121,7 +114,7 @@ async function entryFor(
  * and the group's seat, queues the group's reconcile Proposal, and keeps the
  * coalition's entry with the maker's name, planning to join under the
  * group's seat once a genesis names it. The card it returns is posted by
- * {@link postCard}. A Proposal or card too large to send is refused before
+ * {@link postCard}. A Proposal too large to send is refused before
  * anything is kept.
  *
  * @throws {Error} when the device isn't in the group.
@@ -143,9 +136,11 @@ export async function makeCard(
     atoms: genesisAtoms(values.statement),
   };
   const { target, seatKey } = reconcileTarget(coalition);
-  const card: Card = { ...coalition, seat: { name: state.name, key: seatKey }, entries: [] };
+  const seat = { name: clip(state.name, NAME_MAX), key: seatKey };
+  const card: Card = { ...coalition, seat, entries: [] };
   const proposal = reconcileRecord(group, services.now(), { target, why: values.why });
-  if (proposal === null || !cardFits(card)) return { outcome: 'too-large' };
+  // The card holds less than the Proposal, so a Proposal that fits makes a card that fits.
+  if (proposal === null) return { outcome: 'too-large' };
   await store.enqueue(groupId, proposal.record);
   await entryFor(services, coalition.secret, { name: values.yourName, joinAs: groupId });
   void services.sync.syncOnce();
@@ -389,7 +384,7 @@ export async function admitCard(
   return {
     secret: entry.secret,
     inner: fromBase64url(inner),
-    seat: { name: state.name, key },
+    seat: { name: clip(state.name, NAME_MAX), key },
     name: coalition.name,
     title: coalition.title,
     atoms: coalition.atoms.map((atom) => atom.text),

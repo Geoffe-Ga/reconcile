@@ -11,7 +11,8 @@ import { closeAll, found, open, SLOW, twoGroups } from '../test/coalitionDevices
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { newEntry } from '../store/coalitions';
-import { admitCard, bringCard, lookupCard, makeCard, type FoundCard } from './reconcile';
+import { parseCardLink } from '../coalition/card';
+import { admitCard, bringCard, type FoundCard, lookupCard, makeCard, postCard } from './reconcile';
 
 freshIndexedDBPerTest();
 
@@ -36,6 +37,20 @@ describe('makeCard', () => {
   it('refuses a group the device isn’t in', async () => {
     const ana = await open(createFakeRelay(), 'ana');
     await expect(makeCard(ana.services, 'nowhere', VALUES)).rejects.toThrow('No such group');
+  });
+
+  it('cuts a long group name on the card, so the card still opens', async () => {
+    const fake = createFakeRelay();
+    const ana = await open(fake, 'ana');
+    const ben = await open(fake, 'ben');
+    const riverside = await found(ana, 'R'.repeat(200), 'Ana');
+    const made = await makeCard(ana.services, riverside, VALUES);
+    if (made.outcome !== 'queued') throw new Error('Expected a card.');
+    expect(made.card.seat.name).toBe(`${'R'.repeat(120)}…`);
+
+    const seed = parseCardLink(await postCard(ana.services, made.card, ana.services.origin));
+    const lookup = await lookupCard(ben.services, seed ?? new Uint8Array());
+    expect(lookup.kind === 'found' && lookup.found.card.seat.name).toBe(`${'R'.repeat(120)}…`);
   });
 });
 

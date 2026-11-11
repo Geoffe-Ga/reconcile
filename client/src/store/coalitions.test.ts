@@ -186,6 +186,19 @@ describe('settleCoalitions', () => {
     expect(await settleCoalitions(store, clock)).toEqual([]);
   });
 
+  it('waits to join until the person has a name there', async () => {
+    const store = await device();
+    const logs = new Logs();
+    const a = groupA(logs);
+    logs.coalition(R + 10, ['A', 'B']);
+    await keepGroup(store, a, 'ana', logs.logs.A ?? []);
+    await keepEntry(store, logs, 'cal', { joinAs: a, name: '' });
+
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toEqual([]);
+    expect((await store.getGroup(ENTRY))?.joinAs).toBe(a);
+  });
+
   it('waits to join without a name, without a genesis that names the seat, or with a join queued', async () => {
     const store = await device();
     const logs = new Logs();

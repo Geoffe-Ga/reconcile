@@ -91,11 +91,11 @@ function key32(value: unknown): string | null {
   return bytes.length === GROUP_SECRET_BYTES && base64url(bytes) === value ? value : null;
 }
 
-/** Text of 1 to {@link NAME_MAX} code points, or null. */
-function nameText(value: unknown): string | null {
+/** Text of 1 to `max` code points, {@link NAME_MAX} unless given, or null. */
+function nameText(value: unknown, max = NAME_MAX): string | null {
   if (typeof value !== 'string') return null;
   const length = codePointLength(value);
-  return length >= 1 && length <= NAME_MAX ? value : null;
+  return length >= 1 && length <= max ? value : null;
 }
 
 /** The header's JSON bytes. */
@@ -123,10 +123,13 @@ function parseJson(bytes: Uint8Array): unknown {
   }
 }
 
-/** The maker's seat: a group name of 1–120 code points and a public seat key, or null. */
+/**
+ * The maker's seat: a group name of 1–120 code points, or 120 and the "…"
+ * a longer one is cut to (`clip`), and a public seat key; or null.
+ */
 function parseSeat(value: unknown): SeatEntry | null {
   if (!isObject(value)) return null;
-  const name = nameText(value.name);
+  const name = nameText(value.name, NAME_MAX + 1);
   const key = key32(value.key);
   return name === null || key === null ? null : { name, key };
 }
@@ -169,11 +172,6 @@ function decodeHeader(bytes: Uint8Array): CardHeader | null {
   if (secrets === null || seat === null || name === null || title === null) return null;
   if (atoms === null || chunkCount === null) return null;
   return { ...secrets, seat, name, title, atoms, chunkCount };
-}
-
-/** Whether `card`'s header fits one blob, as {@link sealCard} needs. */
-export function cardFits(card: Omit<Card, 'entries'>): boolean {
-  return encodeHeader({ ...card, chunkCount: 0 }).length <= MAX_PLAINTEXT_BYTES;
 }
 
 /**

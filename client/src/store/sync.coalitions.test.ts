@@ -95,12 +95,13 @@ describe('a coalition’s entry in the sync loop', () => {
     logs.join(MINUTE + 1, 'kim', 'A');
     const join = logs.logs.coalition?.at(-1)?.bytes ?? new Uint8Array();
     await store.enqueue(ENTRY, join);
+    const before = fake.requests.length;
 
     expect(await sync.syncOnce()).toBe(true);
-    const putRequest = fake.requests.find(
-      (request) => request.method === 'PUT' && !request.url.includes('push'),
-    );
-    expect(putRequest?.url).not.toContain('wake=1');
+    const puts = fake.requests.slice(before).filter((request) => request.method === 'PUT');
+    expect(puts).toHaveLength(1);
+    expect(puts[0]?.url).toContain('ttl_days=30');
+    expect(puts[0]?.url).not.toContain('wake=1');
     expect((await store.getGroup(ENTRY))?.outbox).toEqual([]);
   });
 

@@ -160,6 +160,13 @@ describe('a card’s envelope', () => {
       (json: Record<string, unknown>) => ({ ...json, seat: { key: SEAT_KEY } }),
     ],
     [
+      'a seat name of 122 code points',
+      (json: Record<string, unknown>) => ({
+        ...json,
+        seat: { name: 'n'.repeat(122), key: SEAT_KEY },
+      }),
+    ],
+    [
       'a seat with a short key',
       (json: Record<string, unknown>) => ({ ...json, seat: { name: 'R', key: 'x' } }),
     ],
