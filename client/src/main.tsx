@@ -65,7 +65,8 @@ if (root === null) {
  * key (#97). Each sync keeps a group's front door, and looks for replies to
  * the applications this device sent at one (#121). Each launch also posts
  * again any shared personal Document whose
- * link is due a fresh copy or has an edit waiting (#105). That runs beside the
+ * link is due a fresh copy or has an edit waiting (#105), but none whose
+ * share a restore paused (#328). That runs beside the
  * sync loop, not in its pass: a share has its own mailbox and keys, so no
  * group's key change or freeze touches it. A device whose keys are locked
  * with a passkey (#95) sweeps, syncs, and so refreshes the relay backup, and

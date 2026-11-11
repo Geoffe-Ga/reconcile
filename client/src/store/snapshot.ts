@@ -22,8 +22,9 @@
  *
  * Each personal Document goes in whole: its id, title, text, and when it
  * was made and last edited, and its share by link while it is shared (#105),
- * so a restore keeps the same link and can stop it; a second device's link
- * (#96) takes `withoutShares`. #93 added them without a new format number,
+ * so a restore keeps the same link and can stop it, though it comes back
+ * paused until the person keeps it (#328, `restoredCopy`); a second device's
+ * link (#96) takes `withoutShares`. #93 added them without a new format number,
  * so a format 1 file may hold them or not: one from before #93 has no
  * `personal` field, and reads as holding no personal Documents. A file from
  * before #105 holds no shares.

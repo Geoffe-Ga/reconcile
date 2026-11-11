@@ -643,7 +643,8 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * id the same way: the file's replaces the device's only when it was
    * edited later (`keepsHeldCopy`), keeping the device's share when the
    * file's copy holds none (`restoredCopy`, #105), as a link bundle's never
-   * does. Nothing is stamped with the time now. A restored copy keeps the
+   * does, and pausing any share the file brings until the person keeps it
+   * (#328). Nothing is stamped with the time now. A restored copy keeps the
    * Proposals either copy has cleared, and none of what expired with them
    * (#111), so a restore never brings a cleared ballot back.
    */
