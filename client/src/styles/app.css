@@ -539,6 +539,13 @@ a[data-focus-visible] {
   padding-block-start: var(--space-3);
 }
 
+/* Move this section and Protect this section (#103, #116) start a row of their own under the
+ * section's change actions, so a wide screen never leaves one of them alone on a second row. */
+.atom-actions-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
 /* Why Move this section and Protect this section wait (#103, #116): one line under the
  * section's actions. */
 .atom-actions .wait-reason {

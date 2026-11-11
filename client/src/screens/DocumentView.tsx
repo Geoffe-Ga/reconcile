@@ -170,10 +170,10 @@ function WaitingAction({ label, text, busy, reason, onPress }: WaitingActionProp
 }
 
 /**
- * One section's actions: changing, removing or versioning it, then moving it
- * (#103) and protecting it (#116), with one line for why those two wait. An
- * entrenched section offers Change its protection; an eternal one offers
- * nothing, and says it can't be changed.
+ * One section's actions: changing, removing or versioning it, then, on a row
+ * of their own, moving it (#103) and protecting it (#116), with one line for
+ * why those two wait. An entrenched section offers Change its protection; an
+ * eternal one offers nothing, and says it can't be changed.
  */
 function SectionAction({ movable, onMove, onProtect, ...props }: SectionActionProps) {
   const reason = useId();
@@ -191,6 +191,7 @@ function SectionAction({ movable, onMove, onProtect, ...props }: SectionActionPr
   return (
     <div className="row atom-actions">
       <ChangeActions {...props} />
+      <span className="atom-actions-break" aria-hidden="true" />
       {movable ? (
         <WaitingAction
           label={document.moveLabel(section)}

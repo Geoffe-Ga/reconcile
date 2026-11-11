@@ -872,6 +872,7 @@ describe('ProposalView, entrenched and eternal sections (#116)', () => {
       const result = screen.getByRole('region', { name: 'Result' });
       expect(within(result).getByText(sentence)).toBeVisible();
       expect(result.querySelector('.result-text')).toHaveTextContent('Quiet hours start at ten.');
+      expect(result.querySelector('.result-outcome .atom-badge')).toHaveClass(`atom-badge-${to}`);
       expect(result.querySelector('.result-thanks')).toHaveTextContent('Thank you, Ana.');
       expect(result.querySelector('.result-totals .result-version')).toHaveTextContent(line);
       expect(
@@ -891,6 +892,7 @@ describe('ProposalView, entrenched and eternal sections (#116)', () => {
     expect(
       within(result).getByText('This passed. The section is no longer protected.'),
     ).toBeVisible();
+    expect(result.querySelector('.atom-badge')).toBeNull();
   });
 
   it('offers Propose again on a lapsed class Proposal, waiting while the section is busy again', async () => {

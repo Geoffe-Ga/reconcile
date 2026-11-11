@@ -20,6 +20,7 @@
  */
 import { type ReactNode, useId } from 'react';
 
+import { AtomBadge } from '../app/AtomBadge';
 import { OutcomeSentence } from '../app/CoalitionProgress';
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
@@ -108,14 +109,16 @@ function sectionPassed(version: VersionView): string {
 
 /**
  * A move's pass (#103) or a class Proposal's (#116): that the section has
- * moved, or what it is now, the section as it reads, and thanks to whoever
- * proposed it.
+ * moved, or what it is now, with its new badge, the section as it reads, and
+ * thanks to whoever proposed it.
  */
 function SectionPassed({ version }: { readonly version: VersionView }) {
   const text = (version.move ?? version.protect)?.text ?? null;
+  const to = version.protect?.to;
   return (
     <div className="result-outcome">
       <p className="outcome-sentence">{sectionPassed(version)}</p>
+      {to === 'entrenched' || to === 'eternal' ? <AtomBadge cls={to} /> : null}
       {text === null ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={[version.author]} />
     </div>

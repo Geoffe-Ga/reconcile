@@ -772,6 +772,23 @@ describe('DocumentView: entrenched and eternal sections (#116)', () => {
     expect(screen.queryByRole('button', { name: /^Move this section/ })).not.toBeInTheDocument();
   });
 
+  it('sets Move and Protect on a row of their own, under the section’s change actions', () => {
+    const { state } = testGroup();
+    const { container } = view(state);
+    const actions = container.querySelector('.document > .atom .atom-actions');
+    const parts = Array.from(actions?.children ?? []).map((child) =>
+      child.classList.contains('atom-actions-break') ? '|' : child.textContent,
+    );
+    expect(parts).toEqual([
+      'Propose a change',
+      'Propose removing this section',
+      '|',
+      'Move this section',
+      'Protect this section',
+    ]);
+    expect(actions?.querySelector('.atom-actions-break')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('offers no Protect to someone who may not propose', () => {
     const { state } = testGroup({ joiners: ['Ben'], levels: { Ben: VOTING } });
     view(state, authorOf('ben'));
