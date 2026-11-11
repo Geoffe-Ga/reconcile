@@ -3,9 +3,10 @@
  * fake relay: Ana proposes it from the bottom of Group home, everyone scores
  * it 4, a device that folds the final pass posts the `dissolve`, and every
  * device turns its copy read-only and stops syncing the group. A composer's
- * route, Add a section and removing one included (#75), then says the group
- * has dissolved, and Remove from this device
- * erases Ana's copy. Every change on screen comes from sync.
+ * route then says the group has dissolved, and Remove from this device
+ * erases Ana's copy. Every change on screen comes from sync. Add a section
+ * and removing one (#75) say so too, on a device seeded with the read-only
+ * copy, so the long loop stays within its time.
  */
 import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -13,10 +14,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { castBallot } from '../app/proposals';
 import { parseRecord } from '../engine/event';
-import type { TestDevice } from '../test/appServices';
+import { eventIdOf } from '../store/eventId';
+import { type TestDevice, testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { testKeys } from '../test/keys';
 import { go, members, type MountedApp, mountApp } from '../test/members';
+import { groupLog } from '../test/votes';
 
 freshIndexedDBPerTest();
 
@@ -105,14 +109,6 @@ describe('dissolving a group in the app', () => {
     expect(
       await within(a).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
     ).toBeVisible();
-    // Adding or removing a section is proposing too (#75).
-    for (const page of ['add', `add/${groupId}.0`, `remove/${groupId}.1`]) {
-      go(`#/g/${groupId}/${page}`);
-      expect(
-        await within(a).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
-      ).toBeVisible();
-      expect(within(a).queryByRole('textbox')).toBeNull();
-    }
     go(`#/g/${groupId}/dissolve`);
     expect(
       await within(b).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
@@ -133,5 +129,57 @@ describe('dissolving a group in the app', () => {
     });
     expect(await ana.services.store.getGroup(groupId)).toBeUndefined();
     expect(await ben.services.store.getGroup(groupId)).toBeDefined();
+  });
+});
+
+/**
+ * Ana's device holding a group that dissolved by a passed Proposal, as a
+ * read-only copy (#108), with no relay behind it: what the loop above ends in.
+ */
+async function seededArchive(): Promise<{ device: TestDevice; groupId: string }> {
+  const device = await testDevice(createFakeRelay(), 'ana');
+  opened.push(device);
+  const log = groupLog({ members: ['Ben', 'Cal'] });
+  const motion = log.proposeDissolve('ana', false);
+  for (const name of ['ana', 'ben', 'cal']) log.vote(name, motion, 4);
+  log.minute += 1;
+  log.dissolve('ana', motion);
+  const { store } = device.services;
+  const { secretKey, author } = testKeys('ana');
+  await store.addGroup({
+    groupId: log.group,
+    secret: new Uint8Array(32).fill(5),
+    signingKey: secretKey,
+    me: { author, name: 'Ana' },
+  });
+  const pull = {
+    records: [...log.records],
+    cursor: log.records.length,
+    relayNow: log.minute + 5,
+    instance: 'relay-1',
+    lastSyncAt: 1_762_000_000_000,
+  };
+  await store.applyPull(log.group, pull, eventIdOf);
+  await store.markArchived(log.group, 'dissolved');
+  return { device, groupId: log.group };
+}
+
+describe('a dissolved group’s section routes (#75, #108)', () => {
+  it('say the group has dissolved, with no form, for Add a section and removing one', async () => {
+    const { device, groupId } = await seededArchive();
+    go(`#/g/${groupId}`);
+    const a = mount(device, 'a');
+    expect(
+      await within(a).findByText(/^This group dissolved on .+\. This is a read-only copy\.$/),
+    ).toBeVisible();
+
+    // Adding or removing a section is proposing too.
+    for (const page of ['add', `add/${groupId}.0`, `remove/${groupId}.1`]) {
+      go(`#/g/${groupId}/${page}`);
+      expect(
+        await within(a).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
+      ).toBeVisible();
+      expect(within(a).queryByRole('textbox')).toBeNull();
+    }
   });
 });
