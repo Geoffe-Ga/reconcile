@@ -242,10 +242,11 @@ describe('personal Documents in the store', () => {
       'device',
       'groups',
       'personal',
+      'sent',
       'vault',
     ]);
-    // Version 5 adds #97's device store after #93's version 4, and version 6 the passkey vault (#95).
-    expect(upgraded.version).toBe(6);
+    // Version 5 adds #97's device store after #93's version 4, version 6 the passkey vault (#95), and version 7 the front door's sent store (#121).
+    expect(upgraded.version).toBe(7);
     upgraded.close();
   });
 });

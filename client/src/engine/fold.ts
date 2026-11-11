@@ -89,6 +89,7 @@ import {
   type ChatThreadBody,
   type CoalitionGenesisBody,
   type DispatchBody,
+  type DoorInvitedBody,
   type DissolveBody,
   type DissolveProposalBody,
   EVENT_VERSION,
@@ -131,6 +132,7 @@ import {
   type VoteBody,
   type VouchBody,
 } from './event';
+import { type DoorInvite, mayRecordInvite } from './frontDoor';
 import {
   effectiveOptIns,
   isOptIn,
@@ -400,9 +402,11 @@ export interface Focus {
  * `dispatches` holds the group's Dispatches in the order they went out
  * (#112): each valid `dispatch` at its receipt, and each passed Proposal's at
  * its close, in close order, ahead of any record received from that minute
- * on. `epoch` is the group key's epoch: 0 at genesis, then one more for each
- * canonical key change, which `rotations` keeps in order (#98). `rotationDue`
- * is true once a membership has ended since the last canonical key change, or
+ * on. `doorInvites` holds each invite a member sent from the front door, the
+ * first valid `door-invited` per application, in relay order (#121). `epoch`
+ * is the group key's epoch: 0 at genesis, then one more for each canonical
+ * key change, which `rotations` keeps in order (#98). `rotationDue` is true
+ * once a membership has ended since the last canonical key change, or
  * genesis, until the next, or until the group dissolves, after which no key
  * change can land. `dissolved` is when the group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
@@ -439,6 +443,7 @@ export interface GroupState {
   readonly chatPosts: readonly ChatPost[];
   readonly chatThreads: readonly ChatThread[];
   readonly dispatches: readonly Dispatch[];
+  readonly doorInvites: readonly DoorInvite[];
   readonly epoch: number;
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
@@ -539,6 +544,7 @@ interface Draft {
   readonly chatPosts: ChatPost[];
   readonly chatThreads: ChatThread[];
   readonly dispatches: Dispatch[];
+  readonly doorInvites: DoorInvite[];
   epoch: number;
   readonly rotations: Rotation[];
   rotationDue: boolean;
@@ -1380,6 +1386,24 @@ function applyDispatch(draft: Draft, body: DispatchBody, author: string, at: Rec
 }
 
 /**
+ * Keeps a record of an invite sent from the front door (#121) when its author
+ * may record it at its receipt (frontDoor.ts): they may invite, the door is
+ * open in effect, the application id is a SHA-256, and none is kept for it
+ * yet. The first valid one per application in relay order wins.
+ */
+function applyDoorInvited(
+  draft: Draft,
+  body: DoorInvitedBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { application } = body;
+  if (!mayRecordInvite(draft, author, application)) return false;
+  draft.doorInvites.push({ ...at, by: author, application });
+  return true;
+}
+
+/**
  * True when a cleared Proposal's record puts this version on its ballot: it
  * arrived in the minute of the early close, before the closing ballot (#111).
  */
@@ -1710,7 +1734,8 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
 /**
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
  * `vouch` (#101), `chat-posted` (#119), `chat-thread` (#123), `dispatch`
- * (#112), `kx` and `key-rotate` (#98), and `group-result` (#100).
+ * (#112), `kx` and `key-rotate` (#98), `group-result` (#100), and
+ * `door-invited` (#121).
  */
 type LaterEvent = Extract<
   GroupEvent,
@@ -1724,7 +1749,8 @@ type LaterEvent = Extract<
       | 'dispatch'
       | 'kx'
       | 'key-rotate'
-      | 'group-result';
+      | 'group-result'
+      | 'door-invited';
   }
 >;
 
@@ -1746,12 +1772,38 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
       return applyChatThread(draft, event.body, event.author, at);
     case 'dispatch':
       return applyDispatch(draft, event.body, event.author, at);
+    default:
+      return applyKeyed(draft, event, at);
+  }
+}
+
+/**
+ * {@link applyLater} for `kx` and `key-rotate` (#98), `group-result` (#100)
+ * and `door-invited` (#121), and the events that act on a Proposal
+ * ({@link applyProposalEvent}).
+ */
+function applyKeyed(
+  draft: Draft,
+  event:
+    | Exclude<
+        LaterEvent,
+        {
+          readonly type:
+            'suspend' | 'narrow' | 'vouch' | 'chat-posted' | 'chat-thread' | 'dispatch';
+        }
+      >
+    | ProposalEvent,
+  at: Receipt,
+): boolean {
+  switch (event.type) {
     case 'kx':
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
       return applyKeyRotate(draft, event.body, event.author, at);
     case 'group-result':
       return applyGroupResult(draft, event.body, event.author, at);
+    case 'door-invited':
+      return applyDoorInvited(draft, event.body, event.author, at);
     default:
       return applyProposalEvent(draft, event, at);
   }
@@ -2279,6 +2331,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatPosts: [],
     chatThreads: [],
     dispatches: [],
+    doorInvites: [],
     epoch: 0,
     rotations: [],
     rotationDue: false,
@@ -2311,7 +2364,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
   const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
-  const { dispatches, epoch, rotations, rotationDue } = draft;
+  const { dispatches, doorInvites, epoch, rotations, rotationDue } = draft;
   const state = {
     group,
     rules,
@@ -2333,6 +2386,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatPosts,
     chatThreads,
     dispatches,
+    doorInvites,
     epoch,
     rotations,
     rotationDue,

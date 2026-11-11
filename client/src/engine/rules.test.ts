@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { COUNTED, DOOR, ROTATED } from '../test/door';
 import type { ProposalBody, RemovalProposalBody, RulesProposalBody } from './event';
 import { OFF } from './optIns';
 import {
@@ -182,7 +183,7 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
   });
 
   it('refuses a genesis that opens an opt-in: only a passed Proposal opens one (ADR-0040)', () => {
-    expect(foundingRules({ optIns: { frontDoor: true } })).toBeNull();
+    expect(foundingRules({ optIns: { frontDoor: DOOR } })).toBeNull();
     expect(foundingRules({ optIns: { chatBot: { webhook: W1 } } })).toBeNull();
     expect(foundingRules({ optIns: { chatBot: false } })).toBeNull();
     expect(foundingRules({ optIns: { chatBot: null, frontDoor: false } })).toEqual(DEFAULT_RULES);
@@ -235,20 +236,28 @@ describe('targetClass: how hard a change is', () => {
 
   it('makes turning an opt-in on entrenched (ADR-0040)', () => {
     expect(targetClass(standing({}), rules('chatBot', { webhook: W1 }))).toBe('entrenched');
-    expect(targetClass(standing({}), rules('frontDoor', true))).toBe('entrenched');
+    expect(targetClass(standing({}), rules('frontDoor', DOOR))).toBe('entrenched');
   });
 
   it('makes turning an opt-in off, or replacing one webhook with another, ordinary (ADR-0075 §5)', () => {
-    const on = standing({ chatBot: { webhook: W1 }, frontDoor: true });
+    const on = standing({ chatBot: { webhook: W1 }, frontDoor: DOOR });
     expect(targetClass(on, rules('chatBot', null))).toBe('ordinary');
     expect(targetClass(on, rules('frontDoor', false))).toBe('ordinary');
     expect(targetClass(on, rules('chatBot', { webhook: W2 }))).toBe('ordinary');
   });
 
   it('reads the standing value when the Proposal opens, never one the proposer wrote', () => {
-    const forged = { ...rules('frontDoor', true), from: true, class: 'ordinary' };
+    const forged = { ...rules('frontDoor', DOOR), from: DOOR, class: 'ordinary' };
     expect(targetClass(standing({}), forged)).toBe('entrenched');
-    expect(targetClass(standing({ frontDoor: true }), rules('frontDoor', true))).toBe('ordinary');
+    expect(targetClass(standing({ frontDoor: DOOR }), rules('frontDoor', ROTATED))).toBe(
+      'ordinary',
+    );
+    expect(targetClass(standing({ frontDoor: DOOR }), rules('frontDoor', COUNTED))).toBe(
+      'entrenched',
+    );
+    expect(targetClass(standing({ frontDoor: COUNTED }), rules('frontDoor', DOOR))).toBe(
+      'ordinary',
+    );
   });
 
   it('makes a rules target for an opt-in it doesn’t know ordinary, which the fold ignores anyway', () => {

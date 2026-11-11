@@ -3,12 +3,16 @@
  * link to propose a change, never a toggle; Turn off now for a steward only.
  */
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
+import { base64url } from '../crypto/base64url';
+import { addressOf } from '../door/page';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
+import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { GroupRules } from './GroupRules';
@@ -81,7 +85,7 @@ describe('GroupRules', () => {
 
   it('shows an open front door as Open, with no webhook, and a link to propose closing it', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const open = log.rules('Ana', 'frontDoor', true);
+    const open = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
     renderRules(log.state(), 'ben');
     expect(within(door()).getByText('Open')).toBeVisible();
@@ -109,7 +113,7 @@ describe('GroupRules', () => {
 
   it('says the group is voting while a rules Proposal is open, and links to its vote', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const open = log.rules('Ben', 'frontDoor', true);
+    const open = log.rules('Ben', 'frontDoor', DOOR);
     renderRules(log.state(), 'cal');
     expect(within(door()).getByText(messages.optIns.voting)).toBeVisible();
     expect(within(door()).getByRole('link', { name: 'See the vote' })).toHaveAttribute(
@@ -155,5 +159,66 @@ describe('GroupRules', () => {
     const log = groupLog({ members: ['Ben', 'Kim'], levels: { Kim: FOLLOWING } });
     renderRules(log.state(), 'kim');
     expect(screen.getAllByText(messages.levels.following)).toHaveLength(2);
+  });
+});
+
+describe('GroupRules: an open front door (#121)', () => {
+  const ORIGIN = 'https://reconcile.test';
+
+  /** Ana, Ben and Cal's group with its front door open as `value`. */
+  function doorOpen(value: unknown = DOOR) {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', value);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    return log;
+  }
+
+  it('gives its link to copy and post anywhere, and says the count stays hidden', async () => {
+    const user = userEvent.setup();
+    const copyText = vi.fn(() => Promise.resolve());
+    render(
+      <GroupRules
+        state={doorOpen().state()}
+        me={authorOf('ben')}
+        origin={ORIGIN}
+        copyText={copyText}
+      />,
+    );
+    const link = `${ORIGIN}/#door/${base64url(addressOf(DOOR))}`;
+    expect(within(door()).getByText('Open')).toBeVisible();
+    expect(within(door()).getByRole('textbox', { name: 'Front door link' })).toHaveValue(link);
+    expect(within(door()).getByText(messages.door.uncounted)).toBeVisible();
+    await user.click(within(door()).getByRole('button', { name: 'Copy link' }));
+    expect(copyText).toHaveBeenCalledWith(link);
+    expect(document.body.innerHTML).not.toContain(DOOR.sign);
+    expect(document.body.innerHTML).not.toContain(DOOR.box);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says when the page shows the count', () => {
+    render(
+      <GroupRules
+        state={doorOpen({ ...DOOR, showCount: true }).state()}
+        me={authorOf('ben')}
+        origin={ORIGIN}
+        copyText={() => Promise.resolve()}
+      />,
+    );
+    expect(within(door()).getByText(messages.door.counted)).toBeVisible();
+  });
+
+  it('gives no link once a steward has narrowed it', () => {
+    const log = doorOpen();
+    const off = log.rules('Ana', 'frontDoor', false);
+    log.narrow('Ana', 'frontDoor', off);
+    render(
+      <GroupRules
+        state={log.state()}
+        me={authorOf('ben')}
+        origin={ORIGIN}
+        copyText={() => Promise.resolve()}
+      />,
+    );
+    expect(within(door()).queryByRole('textbox', { name: 'Front door link' })).toBeNull();
   });
 });

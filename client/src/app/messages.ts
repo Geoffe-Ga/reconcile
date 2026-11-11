@@ -842,7 +842,11 @@ export const messages = {
         off: 'Turn off the Discord chat bot',
         replace: 'Replace the chat bot’s webhook',
       },
-      frontDoor: { on: 'Open a front door', off: 'Close the front door' },
+      frontDoor: {
+        on: 'Open a front door',
+        off: 'Close the front door',
+        replace: 'Change the front door',
+      },
     },
     /** What passing does, under the ballot's heading. */
     lines: {
@@ -855,7 +859,14 @@ export const messages = {
       frontDoor: {
         on: 'If this passes, your group gets a public page where people can ask to join.',
         off: 'If this passes, the front door closes.',
+        replace: 'If this passes, the front door changes.',
       },
+    },
+    /** What else a front door change does, after its line (#121). */
+    doorCount: {
+      shows: 'Its page shows how many people are in your group.',
+      hides: 'Its page stops showing how many people are in your group.',
+      moves: 'It moves to a new link, and the old link closes.',
     },
     /** A pass's outcome sentence. */
     passed: {
@@ -867,6 +878,7 @@ export const messages = {
       frontDoor: {
         on: 'This passed. Your group’s front door is open.',
         off: 'This passed. The front door is closed.',
+        replace: 'This passed. The front door changed.',
       },
     },
     narrowedBallot: {
@@ -889,6 +901,91 @@ export const messages = {
       'Your group may be voting on this already. Go back to your group’s rules to see where it stands.',
     nowUnavailable:
       'You can’t turn this off at once right now. You can still propose turning it off.',
+  },
+  /**
+   * A group's front door (#121; ADR-0038): the public page, its form, and
+   * what members and applicants see of what follows. Where a name sits inside
+   * a sentence, the words around it are kept apart, so the screen sets the
+   * name in `<bdi>`.
+   */
+  door: {
+    /** The tab's title on every state: never the group's own name, which browser history would keep. */
+    pageTitle: 'Front door',
+    eyebrow: 'Front door',
+    loading: 'Opening the front door…',
+    closed: 'This front door is closed.',
+    closedHint: 'If you know someone in the group, ask them for an invite link.',
+    damaged: 'This front door link is damaged. Check you copied all of it.',
+    offlineTitle: 'Can’t open this front door yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+    /** The page's excerpt, read as a quotation from the group. */
+    excerptLabel: 'From their Document',
+    people: (n: number) =>
+      n === 1 ? '1 person is in this group.' : `${count(n)} people are in this group.`,
+    askHeading: 'Ask to join',
+    nameLabel: 'Name you’d like to use',
+    nameHint: 'Only this group sees it. It doesn’t have to be your real name.',
+    nameMissing: 'Add the name you’d like to use.',
+    nameTooLong: (max: number) => `Use ${count(max)} characters or fewer.`,
+    messageLabel: 'Why you’d like to join',
+    messageHint: (max: number) => `Up to ${count(max)} characters.`,
+    messageMissing: 'Say a little about why you’d like to join.',
+    messageTooLong: (max: number) => `Use ${count(max)} characters or fewer.`,
+    careful: 'Don’t include anything you wouldn’t want this group to read.',
+    send: 'Send',
+    failed: 'Your request didn’t go. Check your connection, then try again.',
+    /** Around the group's name: "Sent. If someone in Riverside Tenants invites you, it shows on Your groups." */
+    sent: { before: 'Sent. If someone in', after: 'invites you, it shows on Your groups.' },
+    asked: {
+      before: 'You asked to join',
+      after: 'from this device. Any invite shows on Your groups.',
+    },
+    yourGroups: 'Go to Your groups',
+    /** The install guide (ADR-0029): an iPhone outside the installed app copies the link instead. */
+    installLabel: 'This front door’s link',
+    installHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
+    copyLink: 'Copy link',
+    openToApply: 'Open Reconcile from your Home Screen and tap Open the front door.',
+    /** Start's field for a front door link. */
+    startHeading: 'Have a front door link?',
+    startLabel: 'Front door link',
+    startHint: 'Paste the link a group posted.',
+    startOpen: 'Open the front door',
+    startBadLink: 'This isn’t a front door link. Check you copied all of it.',
+    /** Start's list of this device's requests. */
+    requestsHeading: 'Asked to join',
+    waiting: (day: string) => `Asked ${day}. No invite yet.`,
+    /** After the group's name: "Riverside Tenants invited you". */
+    invitedYou: 'invited you',
+    openInvite: 'Open your invite',
+    /** Group home's Applications, for members who may invite. */
+    applications: 'Applications',
+    applicationsLede:
+      'People who asked to join at your front door. Only your group’s devices can read these.',
+    noApplications: 'No one has asked to join yet.',
+    askedOn: (day: string) => `Asked ${day}`,
+    /** Before the inviter's name: "Invited by Ana". */
+    invitedBy: 'Invited by',
+    sendInvite: 'Send an invite',
+    /** Read after Send an invite's own words, so each button says whose it is. */
+    forApplicant: (name: string) => `to ${name}`,
+    dismiss: 'Dismiss',
+    /** Read after Dismiss's own word: "Dismiss Kim’s application". */
+    applicationOf: (name: string) => `${name}’s application`,
+    dismissHint: 'Hides it on this device only.',
+    sending: 'Sending the invite…',
+    inviteSent: 'Invite sent. It waits 2 days for their device.',
+    inviteFailed: 'The invite didn’t go. Check your connection, then try again.',
+    /** Group rules' front door card, while the door is open. */
+    linkLabel: 'Front door link',
+    linkHint:
+      'Post it anywhere. Whoever opens it sees your group’s name and the first section of your Document, and can ask to join.',
+    counted: 'It shows how many people are in your group.',
+    uncounted: 'It doesn’t show how many people are in your group.',
+    /** The opt-in composer's one choice when it opens the door. */
+    countLabel: 'Show how many people are in the group',
+    countHint: 'Off unless your group chooses it. The page never shows who they are.',
   },
   // Personal (#93): a person's own Documents, kept on this device only (ADR-0001).
   personal: {

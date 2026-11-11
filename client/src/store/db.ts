@@ -26,7 +26,11 @@
  * member from (#115), which keeps what it already had. The relay backup's
  * key and state (#97) are one record in a store of their own, in no group,
  * so no group's record ever holds the key. Under a vault that record keeps
- * its state, and the vault its key.
+ * its state, and the vault its key. A front door's applications (#121) stay
+ * on the device too: those a member's device read from its group's inbox on
+ * the group's record, and those this device sent, with the reply keys only
+ * it holds, in a store of their own (`./applications.ts`), outside the vault
+ * for now, as a share's keys are.
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
@@ -55,6 +59,7 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import { expiryKeyOf } from '../engine/expiry';
+import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
@@ -228,6 +233,12 @@ export interface Group {
    * queued, claimed or synced for it from then on.
    */
   archived?: Archive;
+  /**
+   * The front door's inbox as this device last read it (#121): absent until
+   * the group's door is open and this member may invite. Never in a backup
+   * file, and dropped with an archive.
+   */
+  door?: DoorInbox;
   /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
    * takes, oldest first. Absent until the first. #73's invite header, #78's
@@ -427,8 +438,11 @@ export interface RelayBackupStore {
 /** The id of the event a record carries, or `null` when the record doesn't hold a signed event. */
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
-/** The device's groups, its personal Documents (#93), and its relay backup's state (#97). */
-export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
+/**
+ * The device's groups, its personal Documents (#93), its relay backup's state
+ * (#97), and the front-door applications it sent (#121).
+ */
+export interface Store extends DraftStore, PersonalStore, RelayBackupStore, SentStore {
   /** Every group on the device. */
   listGroups(): Promise<Group[]>;
   /** One group, or `undefined` when the device isn't in it. */
@@ -583,6 +597,15 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore {
    */
   markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /**
+   * Replace the group's front-door inbox with `edit` of it (#121), in one
+   * change, or drop it when `edit` returns undefined. A group this device is
+   * leaving or keeps read-only takes none (#77, #108).
+   */
+  updateInbox(
+    groupId: string,
+    edit: (held: DoorInbox | undefined) => DoorInbox | undefined,
+  ): Promise<void>;
+  /**
    * The passkey that opens this device's vault and the salt it's asked with,
    * or null when its keys aren't locked with a passkey (#95).
    */
@@ -639,10 +662,12 @@ interface Schema extends DBSchema {
   personal: { key: string; value: PersonalDocument };
   device: { key: string; value: StoredRelayBackup };
   vault: { key: string; value: VaultRecord };
+  sent: { key: string; value: SentApplication };
 }
 
 /**
- * The schema version. Version 6 adds the key vault (#95), version 5 the
+ * The schema version. Version 7 adds the store of front-door applications
+ * this device sent (#121), version 6 the key vault (#95), version 5 the
  * device store, which holds the relay backup's state (#97), and version 4
  * the personal store (#93); none of them deletes anything. Version 3 holds a
  * real group secret, from which the mailbox id and seal key derive (#71);
@@ -656,13 +681,14 @@ interface Schema extends DBSchema {
  * link (#105): a version 4 or 5 Document that holds one keeps it whole
  * through the upgrade.
  */
-const VERSION = 6;
+const VERSION = 7;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
 /** The device store's one key: the relay backup's record. */
 const RELAY_BACKUP = 'relay-backup';
 const VAULT = 'vault';
+const SENT = 'sent';
 
 /**
  * The stores a key transaction spans: the records, the personal Documents,
@@ -676,7 +702,8 @@ type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
 /**
  * Brings a database at `oldVersion` up to {@link VERSION}, one version at a
  * time: groups from before version 3 are deleted, then the personal store,
- * the device store and the vault are added, in that order, beside whatever
+ * the device store, the vault and the sent applications' store (#121) are
+ * added, in that order, beside whatever
  * groups version 3 kept.
  */
 function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
@@ -687,6 +714,7 @@ function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
   if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
   if (oldVersion < 5) database.createObjectStore(DEVICE);
   if (oldVersion < 6) database.createObjectStore(VAULT, { keyPath: 'id' });
+  if (oldVersion < 7) database.createObjectStore(SENT, { keyPath: 'id' });
 }
 
 /** The IndexedDB database the app keeps its groups in. */
@@ -835,6 +863,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;
+        // A dissolved group's front door has closed, and a removed member reads it no more:
+        // its applications go (#121, #115).
+        delete group.door;
       }),
     clearArchive: (groupId, cleared) =>
       change(groupId, (group) => {
@@ -917,6 +948,16 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       changeQuietly(groupId, (group) => {
         group.nudged = [...nudged];
       }),
+    updateInbox: (groupId, edit) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined || group.archived !== undefined) return;
+        const door = edit(group.door);
+        if (door === undefined) delete group.door;
+        else group.door = door;
+      }),
+    ...sentStore(db, () => {
+      notify(SENT_CHANGED);
+    }),
     async listPersonal() {
       return (await db.getAll(PERSONAL)).sort(byCreation);
     },
@@ -1013,6 +1054,30 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     },
     close: () => {
       db.close();
+    },
+  };
+}
+
+/** The applications this device sent, in `db`'s sent store (#121), telling `changed` after each write. */
+function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
+  return {
+    async listSent() {
+      return (await db.getAll(SENT)).sort((a, b) => a.sentAt - b.sentAt);
+    },
+    async addSent(application) {
+      await db.put(SENT, application);
+      changed();
+    },
+    async updateSent(id, edit) {
+      const tx = db.transaction(SENT, 'readwrite');
+      const held = await tx.store.get(id);
+      if (held !== undefined) await tx.store.put({ ...edit(held), id });
+      await tx.done;
+      if (held !== undefined) changed();
+    },
+    async dropSent(id) {
+      await db.delete(SENT, id);
+      changed();
     },
   };
 }

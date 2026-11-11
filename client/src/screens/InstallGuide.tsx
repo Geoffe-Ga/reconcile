@@ -1,17 +1,23 @@
-import { useEffect, useEffectEvent, useId, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useMemo, useState } from 'react';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
 import { CopyLink } from '../app/CopyLink';
 import { inviteLink } from '../app/invite';
 import { messages } from '../app/messages';
 import { PageHeader } from '../app/ui';
+import { doorLinkOf, type DoorView, parseDoorPayload } from '../door/page';
+import { DoorExcerpt } from './FrontDoor';
 import { InvitePreview } from './InvitePreview';
 
-/** How the page was opened: plainly, with an invite link, or with one that can't be read. */
+/**
+ * How the page was opened: plainly, with an invite link, with one that can't
+ * be read, or with a front door's link (#121), whose address is no secret.
+ */
 export type Arrival =
   | { readonly kind: 'plain' }
   | { readonly kind: 'invite'; readonly seed: Uint8Array }
-  | { readonly kind: 'damaged' };
+  | { readonly kind: 'damaged' }
+  | { readonly kind: 'door'; readonly payload: string };
 
 /** Props for {@link InstallGuide}. */
 export interface InstallGuideProps {
@@ -23,9 +29,14 @@ export interface InstallGuideProps {
   readonly lookup: (seed: Uint8Array) => Promise<InviteLookup>;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
+  /** Reads a front door's page (#121). It stores nothing and makes no keys. */
+  readonly readDoor: (address: Uint8Array) => Promise<DoorView>;
 }
 
 type Phase = { readonly kind: 'loading' } | InviteLookup;
+
+/** Where reading a front door has got to. */
+type DoorPhase = { readonly kind: 'loading' } | DoorView | { readonly kind: 'offline' };
 
 /** Copies the app's own address, for leaving an in-app browser for Safari. */
 function CopyAppAddress({ origin, copyText }: Pick<InstallGuideProps, 'origin' | 'copyText'>) {
@@ -114,6 +125,108 @@ function ExpiredLink({ origin, copyText }: Pick<InstallGuideProps, 'origin' | 'c
   );
 }
 
+/** Reads a front door's page once, with nothing kept on the device (#121). */
+function useDoorRead(address: Uint8Array | null, read: InstallGuideProps['readDoor']): DoorPhase {
+  const [phase, setPhase] = useState<DoorPhase>({ kind: 'loading' });
+  const readNow = useEffectEvent((which: Uint8Array) => read(which));
+  useEffect(() => {
+    if (address === null) return;
+    let live = true;
+    readNow(address).then(
+      (view) => {
+        if (live) setPhase(view);
+      },
+      () => {
+        if (live) setPhase({ kind: 'offline' });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [address]);
+  return phase;
+}
+
+interface DoorAreaProps extends Pick<InstallGuideProps, 'origin' | 'copyText' | 'readDoor'> {
+  readonly payload: string;
+}
+
+/**
+ * A front door opened outside the installed app (#121): its page, as the
+ * front door shows it, with its link to copy into the installed app instead
+ * of the form. A closed or damaged door says so, then the app's address.
+ */
+function DoorArea({ payload, origin, copyText, readDoor }: DoorAreaProps) {
+  const address = useMemo(() => parseDoorPayload(payload), [payload]);
+  const phase = useDoorRead(address, readDoor);
+  const heading = useId();
+  const { door } = messages;
+  if (address === null || phase.kind === 'closed') {
+    return (
+      <>
+        <p className="lede">{address === null ? door.damaged : door.closed}</p>
+        <CopyAppAddress origin={origin} copyText={copyText} />
+      </>
+    );
+  }
+  if (phase.kind === 'loading') {
+    return (
+      <p role="status" className="lede">
+        {door.loading}
+      </p>
+    );
+  }
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <div className="page-head">
+        <p className="eyebrow">{door.eyebrow}</p>
+        <h2 id={heading} className="heading-2">
+          {phase.kind === 'open' ? <bdi>{phase.page.name}</bdi> : door.installLabel}
+        </h2>
+      </div>
+      {phase.kind === 'open' ? <DoorExcerpt page={phase.page} /> : null}
+      <CopyLink
+        link={doorLinkOf(origin, address)}
+        label={door.installLabel}
+        hint={door.installHint}
+        button={door.copyLink}
+        primary
+        copyText={copyText}
+      />
+    </section>
+  );
+}
+
+/** The last step: open the app, and with an invite or a door, where to paste its link. */
+function lastStep(arrival: Arrival, phase: Phase): string {
+  if (arrival.kind === 'door') return messages.door.openToApply;
+  // Join with an invite link is the next step only while the link still works.
+  const toJoin = arrival.kind === 'invite' && phase.kind !== 'missing';
+  return toJoin ? messages.install.openToJoin : messages.install.open;
+}
+
+/** What follows the steps: the invite, the door, a damaged link's line, or the app's address. */
+function ArrivalArea(props: InstallGuideProps & { readonly phase: Phase }) {
+  const { arrival, origin, copyText, readDoor, phase } = props;
+  switch (arrival.kind) {
+    case 'invite':
+      return <InviteArea seed={arrival.seed} phase={phase} origin={origin} copyText={copyText} />;
+    case 'damaged':
+      return <ExpiredLink origin={origin} copyText={copyText} />;
+    case 'door':
+      return (
+        <DoorArea
+          payload={arrival.payload}
+          origin={origin}
+          copyText={copyText}
+          readDoor={readDoor}
+        />
+      );
+    case 'plain':
+      return <CopyAppAddress origin={origin} copyText={copyText} />;
+  }
+}
+
 /** Reads the invite's preview once, with nothing kept on the device. */
 function useInviteLookup(arrival: Arrival, lookup: InstallGuideProps['lookup']): Phase {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
@@ -141,16 +254,13 @@ function useInviteLookup(arrival: Arrival, lookup: InstallGuideProps['lookup']):
  * The install guide (ADR-0029, spec §8.1): what an iPhone or iPad shows in
  * any browser outside the installed app, where nothing may create keys. One
  * guide for every iOS browser. An invite link opened here still shows its
- * preview, and its link to copy into the installed app.
+ * preview, and its link to copy into the installed app; a front door's link
+ * shows its page, and its link to copy, in place of the form (#121).
  */
-export function InstallGuide({ arrival, origin, lookup, copyText }: InstallGuideProps) {
+export function InstallGuide(props: InstallGuideProps) {
+  const { arrival, lookup } = props;
   const phase = useInviteLookup(arrival, lookup);
-  // Join with an invite link is the next step only while the link still works.
-  const toJoin = arrival.kind === 'invite' && phase.kind !== 'missing';
-  const steps = [
-    ...messages.install.steps,
-    toJoin ? messages.install.openToJoin : messages.install.open,
-  ];
+  const steps = [...messages.install.steps, lastStep(arrival, phase)];
   return (
     <main className="shell">
       <PageHeader title={messages.install.title} pageTitle={messages.install.pageTitle} />
@@ -160,13 +270,7 @@ export function InstallGuide({ arrival, origin, lookup, copyText }: InstallGuide
           <li key={step}>{step}</li>
         ))}
       </ol>
-      {arrival.kind === 'invite' ? (
-        <InviteArea seed={arrival.seed} phase={phase} origin={origin} copyText={copyText} />
-      ) : arrival.kind === 'damaged' ? (
-        <ExpiredLink origin={origin} copyText={copyText} />
-      ) : (
-        <CopyAppAddress origin={origin} copyText={copyText} />
-      )}
+      <ArrivalArea {...props} phase={phase} />
       <p className="caption">{messages.install.why}</p>
     </main>
   );
