@@ -494,6 +494,9 @@ describe('the removed member’s copy (ADR-0016)', () => {
       expect(screen.queryByRole('region', { name })).toBeNull();
     }
     expect(screen.queryByRole('link', { name: 'Propose dissolving the group' })).toBeNull();
+    // The focus it had stays, with no way to ask a new question (#107).
+    expect(screen.getByRole('region', { name: 'Focus' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Ask what to focus on' })).toBeNull();
     expect(screen.queryByText(/A steward suspended you/)).toBeNull();
     expect(await axeViolations()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Remove from this device' }));

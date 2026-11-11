@@ -9,6 +9,7 @@ import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
+import { ChoiceList, OptionList } from '../app/Options';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import type { ShareOutcome } from '../app/share';
@@ -36,12 +37,16 @@ import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
   isDissolveProposal,
+  isPriorityProposal,
   isReconcileProposal,
   isRemovalProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
+  type DissolveProposalBody,
   type ProposalEventBody,
+  type ReconcileProposalBody,
+  type RemovalProposalBody,
   type RulesProposalBody,
   type StewardProposalBody,
 } from '../engine/event';
@@ -49,6 +54,7 @@ import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
+import { isPriority, optionId } from '../engine/priority';
 import { removalTarget, removedFrom } from '../engine/removal';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
@@ -138,6 +144,9 @@ interface Comparison {
   readonly current: string | null;
 }
 
+/** A priority vote's options are shown as they are, under "Options" (#107). */
+const OPTIONS: Comparison = { title: messages.proposal.options, current: null };
+
 /**
  * Each version is a word diff against the section's text now, or for an add
  * (`atom` null, #75), against nothing, so its whole text shows as added. Once
@@ -169,9 +178,11 @@ function changedAtom(proposal: Proposal): string | null {
 
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
- * an add, whose whole text shows as added (#75), or nothing for a steward one.
+ * an add, whose whole text shows as added (#75), nothing for a steward one,
+ * or for a priority vote, its options as they are (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
+  if (isPriority(proposal)) return OPTIONS;
   return writesText(proposal)
     ? comparisonFor(state, changedAtom(proposal), passed)
     : STEWARD_BALLOT;
@@ -200,9 +211,20 @@ function NarrowedNote({ state, proposal }: { state: GroupState; proposal: Propos
   );
 }
 
-/** The diff legend, under the heading, whenever the versions show as diffs. */
-function Legend({ comparison }: { readonly comparison: Comparison }) {
+/**
+ * The diff legend, under the heading, whenever the versions show as diffs;
+ * for a priority vote, how its options are scored and ranked, while it's open.
+ */
+function Legend({ comparison, open = true }: { readonly comparison: Comparison; open?: boolean }) {
+  if (comparison === OPTIONS) {
+    return open ? <p className="caption">{messages.proposal.optionsHint}</p> : null;
+  }
   return comparison.current === null ? null : <p className="caption">{messages.diff.legend}</p>;
+}
+
+/** How a ballot or list lays its versions out: as changes, or as a priority vote's options (#107). */
+function layoutOf(comparison: Comparison): 'versions' | 'options' {
+  return comparison === OPTIONS ? 'options' : 'versions';
 }
 
 /** This member's latest ballot on the Proposal: one waiting in the outbox, else the folded one. */
@@ -348,10 +370,12 @@ interface VoteProps {
  */
 function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
   const detail = proposal.final ? null : proposalTally(proposal);
+  const priority = isPriority(proposal);
   return function MeterFor(version) {
     const tallied = detail?.versions.find((candidate) => candidate.id === version.id);
+    const label = priority ? { label: messages.meter.optionLabel(version.text) } : {};
     return detail === null || tallied === undefined ? null : (
-      <ConsentMeter number={version.number} tally={tallied} bar={detail.bar} />
+      <ConsentMeter number={version.number} tally={tallied} bar={detail.bar} {...label} />
     );
   };
 }
@@ -365,14 +389,16 @@ function ballotShown(reason: string | null, proposal: Proposal): boolean {
 }
 
 /**
- * The versions, each with its own pills for someone who can vote on them, then
- * "Add your version". Once this device has cleared a Proposal's ballots
- * (#111), there's no ballot left to show, so the versions stand alone.
+ * The versions, or a priority vote's options, each with its own pills for
+ * someone who can vote on them, then "Add your version". Once this device has
+ * cleared a Proposal's ballots (#111), there's no ballot left to show, so the
+ * versions or options stand alone.
  */
 function Vote({ props, proposal, versions }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const passed = proposal.final && proposal.outcome.kind === 'pass';
   const comparison = comparisonOf(state, proposal, passed);
+  const layout = layoutOf(comparison);
   const reason = whyNoVote(props, proposal);
   const closed = proposal.final || now >= proposal.deadline;
   const suspended = isSuspended(state, me);
@@ -382,7 +408,7 @@ function Vote({ props, proposal, versions }: VoteProps) {
     <Block title={comparison.title} className="vote">
       <OptInWarning optIn={rulesChangeOf(proposal)?.optIn ?? null} />
       <NarrowedNote state={state} proposal={proposal} />
-      <Legend comparison={comparison} />
+      <Legend comparison={comparison} open={!proposal.final} />
       {ballotShown(reason, proposal) ? (
         <Ballot
           key={proposal.id}
@@ -396,13 +422,14 @@ function Vote({ props, proposal, versions }: VoteProps) {
           reachable={reachable}
           onVote={onVote}
           below={meters}
+          layout={layout}
           disabledNote={closed || !suspended ? undefined : <SuspendedNote state={state} me={me} />}
         />
       ) : (
         <>
-          <VersionList versions={versions} current={comparison.current}>
+          <ChoiceList versions={versions} current={comparison.current} layout={layout}>
             {meters}
-          </VersionList>
+          </ChoiceList>
           {reason === null ? null : (
             <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
           )}
@@ -458,9 +485,10 @@ function Byline({ state, proposal, now }: { state: GroupState; proposal: Proposa
   );
 }
 
-/** How a cut-off Proposal reads: its eyebrow, by its number, and the line saying why it shows no outcome. */
+/** How a cut-off Proposal reads: closed or still open, for its eyebrow, and the line saying why it shows no outcome. */
 interface CutOffWords {
-  readonly eyebrow: (number: number) => string;
+  /** True when it reads as closed, as a dissolve leaves it; false when it reads as still open. */
+  readonly closed: boolean;
   readonly line: string;
 }
 
@@ -475,6 +503,19 @@ function discussionLink(state: GroupState, proposal: Proposal): string | null {
 }
 
 /**
+ * "Proposal N · Open" or "Proposal N · Closed", with its number among the
+ * group's Proposals (#123), or for a priority vote, "Proposal N · Priority
+ * vote" or "Proposal N · Closed priority vote" (#107).
+ */
+function eyebrowOf(proposal: Proposal, closed: boolean): string {
+  const words = messages.proposal;
+  if (isPriority(proposal)) {
+    return (closed ? words.eyebrowPriorityClosed : words.eyebrowPriority)(proposal.number);
+  }
+  return (closed ? words.eyebrowClosed : words.eyebrowOpen)(proposal.number);
+}
+
+/**
  * How this device shows a Proposal it has cut off, or null when it hasn't:
  * closed, when it was still open as the group dissolved (#108), or open,
  * when a vote removed this member while it was (#115), so this device never
@@ -483,29 +524,27 @@ function discussionLink(state: GroupState, proposal: Proposal): string | null {
 function cutOffOf(props: ProposalViewProps, proposal: Proposal): CutOffWords | null {
   const { state, me } = props;
   if (closedByDissolve(state, proposal)) {
-    return { eyebrow: messages.proposal.eyebrowClosed, line: messages.archive.closed };
+    return { closed: true, line: messages.archive.closed };
   }
   const removed = removedFrom(state, me) !== undefined && !proposal.final;
-  return removed
-    ? { eyebrow: messages.proposal.eyebrowOpen, line: messages.removal.stillOpenLine }
-    : null;
+  return removed ? { closed: false, line: messages.removal.stillOpenLine } : null;
 }
 
 /**
  * A Proposal still open when its group dissolved (#108), or when a vote
- * removed this member (#115): closed here, with no outcome and no ballot, its
- * versions as they stood, and `line` saying why.
+ * removed this member (#115): with no outcome and no ballot, its versions, or
+ * a priority vote's options (#107), as they stood, and `line` saying why.
  */
 function CutOff(props: { props: ProposalViewProps; proposal: Proposal; words: CutOffWords }) {
   const { proposal } = props;
-  const { eyebrow, line } = props.words;
+  const { closed, line } = props.words;
   const { state } = props.props;
   const versions = versionViews(state, proposal);
   const comparison = comparisonOf(state, proposal, false);
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={eyebrow(proposal.number)}
+        eyebrow={eyebrowOf(proposal, closed)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       />
@@ -521,8 +560,12 @@ function CutOff(props: { props: ProposalViewProps; proposal: Proposal; words: Cu
         </p>
       </div>
       <Block title={comparison.title} className="vote">
-        <Legend comparison={comparison} />
-        <VersionList versions={versions} current={comparison.current} />
+        <Legend comparison={comparison} open={false} />
+        <ChoiceList
+          versions={versions}
+          current={comparison.current}
+          layout={layoutOf(comparison)}
+        />
       </Block>
     </Screen>
   );
@@ -576,11 +619,13 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
   const readOnly = props.leaving === true || isArchived(state, props.me);
   const versions = versionViews(state, proposal);
-  const { eyebrowOpen, eyebrowClosed, pageTitle } = messages.proposal;
-  const eyebrow = proposal.final ? eyebrowClosed : eyebrowOpen;
   return (
     <Screen state={state} wide={versions.length > 1}>
-      <PageHeader eyebrow={eyebrow(proposal.number)} title={proposal.title} pageTitle={pageTitle} />
+      <PageHeader
+        eyebrow={eyebrowOf(proposal, proposal.final)}
+        title={proposal.title}
+        pageTitle={messages.proposal.pageTitle}
+      />
       {proposal.final ? (
         <ResultView
           state={state}
@@ -650,7 +695,32 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
   return { optIn: change.optIn, versions: [{ id: '', number: 1, author, text: '', rules }] };
 }
 
-/** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
+/** A dissolve (#108), member removal (#115) or reconcile (#100) Proposal: no text, and not a steward or rules one. */
+type TargetlessBody = DissolveProposalBody | RemovalProposalBody | ReconcileProposalBody;
+
+/** True for a {@link TargetlessBody}. */
+function isTargetless(body: ProposalEventBody): body is TargetlessBody {
+  return isDissolveProposal(body) || isRemovalProposal(body) || isReconcileProposal(body);
+}
+
+/**
+ * A waiting Proposal's one version when it has no text: what a dissolve's or
+ * a member removal's ballot decides, or a reconcile Proposal's, which changes
+ * no section and gets its card in #114.
+ */
+function waitingTargetless(state: GroupState, author: string, body: TargetlessBody): VersionView {
+  const version = { id: '', number: 1, author, text: '' };
+  if (isDissolveProposal(body)) return { ...version, dissolve: dissolveView(body.target.wipe) };
+  if (isRemovalProposal(body)) {
+    return { ...version, removal: removalView(state, body.target.member) };
+  }
+  return version;
+}
+
+/**
+ * How a waiting Proposal's versions show: its text against the section, what
+ * its ballot decides, or a priority vote's options (#107).
+ */
 function waitingVersions(state: GroupState, me: string, body: ProposalEventBody) {
   const author = displayName(state, me) ?? '';
   if (isStewardProposal(body)) {
@@ -660,25 +730,20 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
       optIn: null,
     };
   }
+  if (isPriorityProposal(body)) {
+    const versions = body.options.map((text, i) => ({
+      id: optionId('', i),
+      number: i + 1,
+      author,
+      text,
+    }));
+    return { comparison: OPTIONS, versions, optIn: null };
+  }
   if (isRulesProposal(body))
     return { comparison: STEWARD_BALLOT, ...waitingRules(state, author, body) };
-  if (isDissolveProposal(body)) {
-    const dissolve = dissolveView(body.target.wipe);
-    const versions = [{ id: '', number: 1, author, text: '', dissolve }];
+  if (isTargetless(body)) {
+    const versions = [waitingTargetless(state, author, body)];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
-  }
-  if (isRemovalProposal(body)) {
-    const removal = removalView(state, body.target.member);
-    const versions = [{ id: '', number: 1, author, text: '', removal }];
-    return { comparison: STEWARD_BALLOT, versions, optIn: null };
-  }
-  // A reconcile Proposal (#100) changes no section; #114 gives it its card.
-  if (isReconcileProposal(body)) {
-    return {
-      comparison: STEWARD_BALLOT,
-      versions: [{ id: '', number: 1, author, text: '' }],
-      optIn: null,
-    };
   }
   // An add's whole text shows as added, and it says where it goes (#75); a section's removal says so too.
   const add = isAddProposal(body);
@@ -704,7 +769,11 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
       <Block title={comparison.title} className="vote">
         <OptInWarning optIn={optIn} />
         <Legend comparison={comparison} />
-        <VersionList versions={versions} current={comparison.current} />
+        {comparison === OPTIONS ? (
+          <OptionList options={versions} />
+        ) : (
+          <VersionList versions={versions} current={comparison.current} />
+        )}
       </Block>
       <SendStatus pending={pending} reachable={reachable} sent />
     </Screen>

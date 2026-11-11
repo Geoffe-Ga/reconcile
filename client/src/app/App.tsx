@@ -7,9 +7,10 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Level } from '../engine/capabilities';
-import type { GroupState } from '../engine/fold';
+import type { GroupState, Proposal } from '../engine/fold';
 import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
+import { isPriority } from '../engine/priority';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
@@ -25,6 +26,7 @@ import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
+import { PriorityComposer } from '../screens/PriorityComposer';
 import { ProposalView } from '../screens/ProposalView';
 import { RemovalComposer } from '../screens/RemovalComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
@@ -59,6 +61,7 @@ import { FirstRunGuide } from './FirstRunGuide';
 import type { Passkey } from './passkey';
 import {
   addVersion,
+  askPriority,
   castBallot,
   chooseLevel,
   type DispatchValues,
@@ -74,6 +77,7 @@ import {
   sendDispatch,
   type StewardValues,
   suspend,
+  type PriorityValues,
   type ProposalValues,
   type VersionValues,
   vouch,
@@ -458,6 +462,8 @@ interface ComposeProps {
   readonly leaving: boolean;
   readonly onPropose: (values: ProposalValues) => Promise<ComposeOutcome>;
   readonly onAddVersion: (values: VersionValues) => Promise<ComposeOutcome>;
+  /** Asks what to focus on (#107). */
+  readonly onAsk: (values: PriorityValues) => Promise<ComposeOutcome>;
 }
 
 interface ComposeScreenProps extends GroupScreenProps {
@@ -466,8 +472,9 @@ interface ComposeScreenProps extends GroupScreenProps {
 }
 
 /**
- * A composer's screen: proposing, or adding a version, queues the event and
- * replaces the composer with the Proposal, so Back returns to where it opened.
+ * A composer's screen: proposing, adding a version or asking what to focus on
+ * (#107) queues the event and replaces the composer with the Proposal, so
+ * Back returns to where it opened.
  */
 function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
   // One stable handle per group, so the composer reads its draft once, not on every sync.
@@ -490,6 +497,13 @@ function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
           replaceRoute({ name: 'proposal', groupId, proposalId: values.proposal });
           return result.outcome;
         };
+        const onAsk = async (values: PriorityValues): Promise<ComposeOutcome> => {
+          const result = await askPriority(services, groupId, values);
+          if (result.outcome === 'too-large') return result.outcome;
+          // Replace the composer, so Back from the vote returns to where it opened.
+          replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+          return result.outcome;
+        };
         return children({
           state,
           me: me.author,
@@ -498,20 +512,37 @@ function ComposeScreen({ services, groupId, children }: ComposeScreenProps) {
           leaving,
           onPropose,
           onAddVersion,
+          onAsk,
         });
       }}
     </GroupGate>
   );
 }
 
+/** Ask what to focus on (#107), starting from a lapsed priority vote when there is one. */
+function Ask({ again, ...props }: ComposeProps & { readonly again?: Proposal }) {
+  return (
+    <PriorityComposer
+      state={props.state}
+      me={props.me}
+      now={props.now}
+      leaving={props.leaving}
+      onAsk={props.onAsk}
+      {...(again === undefined ? {} : { again })}
+    />
+  );
+}
+
 /**
  * Propose again (#74): the composer for what the lapsed Proposal targets,
  * starting from it. A change opens the composer on its section, a removal the
- * removal composer, and an add Add a section at its spot (#75).
+ * removal composer, an add Add a section at its spot (#75), and a priority
+ * vote Ask what to focus on (#107).
  */
 function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
   const again = props.state.proposals.find((proposal) => proposal.id === againId);
   if (again === undefined) return <Composer {...props} atomId="" />;
+  if (isPriority(again)) return <Ask {...props} again={again} />;
   const { target } = again;
   if (target.kind === 'add') return <AddSection {...props} after={target.after} again={again} />;
   if (again.text === '') return <RemoveSection {...props} atomId={again.atom} again={again} />;
@@ -560,7 +591,10 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
 }
 
 /** A route that opens a composer. */
-type ComposeRoute = Extract<Route, { readonly name: 'propose' | 'add' | 'remove' | 'again' }>;
+type ComposeRoute = Extract<
+  Route,
+  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'priority' }
+>;
 
 /** The composer a route opens, given what every composer is handed. */
 function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
@@ -573,6 +607,8 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
       return (props) => <RemoveSection {...props} atomId={route.atomId} />;
     case 'again':
       return (props) => <ProposeAgain {...props} againId={route.proposalId} />;
+    case 'priority':
+      return (props) => <Ask {...props} />;
   }
 }
 
@@ -758,7 +794,8 @@ type FormRoute =
  * The screen for a route inside one group that opens a form of its own: the
  * steward (#102), opt-in (#117), dissolve (#108) and removal (#115)
  * composers, Send a Dispatch (#112), and the composers that propose a change,
- * add or remove a section (#75), or propose a lapsed Proposal again (#74).
+ * add or remove a section (#75), ask what to focus on (#107), or propose a
+ * lapsed Proposal again (#74).
  */
 function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;

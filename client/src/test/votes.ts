@@ -52,6 +52,12 @@ export interface LogBuilder {
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds `name`'s Proposal of a new section after Atom `after`, or first for null (#75). */
   addSection(name: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
+  ask(
+    name: string,
+    options: readonly string[],
+    entry?: Omit<ProposalEntry, 'text' | 'atom'>,
+  ): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
@@ -184,6 +190,19 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    ask(name: string, options: readonly string[], entry: ProposalEntry = {}) {
+      const { title = 'What should we focus on?', why = 'One thing at a time.' } = entry;
+      const body = {
+        target: { kind: 'priority' } as const,
+        title,
+        why,
+        options,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
     },
     vote(name: string, proposal: string, score: Score, note?: string) {
       log.ballot(name, proposal, { [proposal]: score }, note);

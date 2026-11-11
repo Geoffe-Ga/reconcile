@@ -1,0 +1,416 @@
+{
+  "kind": "coalition",
+  "vectors": [
+    {
+      "name": "priority-coalition: in a group that holds a coalition seat, a priority vote is numbered among its own Proposals around the motion, which takes 0, and its top option becomes the group's focus without touching its Atoms; a coalition's log ignores a priority vote, as it does every targeted Proposal, so it has no focus",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 6,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Hillside",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@6",
+              "author": "%kim",
+              "ts": 1762500660000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@6", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762500720000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@6", "%zed"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@6",
+              "author": "%kim",
+              "ts": 1762500780000,
+              "body": {
+                "motion": "@6",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762500840000,
+              "body": {
+                "motion": "@6",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375021,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762501260000,
+              "body": {
+                "atom": "@6.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean."
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375027,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@6",
+              "author": "%kim",
+              "ts": 1762501620000,
+              "body": {
+                "target": {
+                  "kind": "priority"
+                },
+                "title": "What should we focus on?",
+                "why": "We can only do one thing well at a time.",
+                "options": ["Clean the riverbank", "Plan the picnic"]
+              }
+            }
+          }
+        ],
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500000000,
+              "body": {
+                "name": "Riverside Tenants",
+                "founder": "Ana",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Ben"
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500120000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~coalition",
+                  "inner": "~inner",
+                  "seat": "!A",
+                  "name": "Rivers United",
+                  "title": "Shared ground",
+                  "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                },
+                "title": "Reconcile with Hillside",
+                "why": "We share a river."
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375020,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501200000,
+              "body": {
+                "target": {
+                  "kind": "priority"
+                },
+                "title": "What should we focus on?",
+                "why": "We can only do one thing well at a time.",
+                "options": ["Clean the riverbank", "Plan the picnic"]
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375022,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501320000,
+              "body": {
+                "atom": "@1.1",
+                "title": "Bins on Monday",
+                "why": "It reads better.",
+                "text": "Bins out on Monday.\n"
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375023,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501380000,
+              "body": {
+                "proposal": "@11",
+                "scores": {
+                  "@11.0": 4,
+                  "@11.1": 3
+                }
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375024,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762501440000,
+              "body": {
+                "proposal": "@11",
+                "scores": {
+                  "@11.0": 4,
+                  "@11.1": 2
+                }
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501500000,
+              "body": {
+                "proposal": "@13",
+                "scores": {
+                  "@13": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 17,
+            "received": 29375026,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762501560000,
+              "body": {
+                "proposal": "@13",
+                "scores": {
+                  "@13": 4
+                }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375030,
+      "expect": {
+        "A": {
+          "proposals": [
+            {
+              "id": "@3",
+              "number": 1
+            },
+            {
+              "id": "@11",
+              "number": 2,
+              "atom": "@11",
+              "target": {
+                "kind": "priority"
+              },
+              "closedAt": 29375024,
+              "final": true,
+              "outcome": {
+                "kind": "pass",
+                "version": "@11.0"
+              }
+            },
+            {
+              "id": "@12",
+              "number": 0,
+              "target": {
+                "kind": "motion"
+              }
+            },
+            {
+              "id": "@13",
+              "number": 3,
+              "final": true,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ],
+          "focus": {
+            "proposal": "@11",
+            "option": "@11.0",
+            "text": "Clean the riverbank"
+          },
+          "atoms": [
+            {
+              "id": "@1.0",
+              "documentId": "@1",
+              "text": "Quiet after 11pm.\n"
+            },
+            {
+              "id": "@1.1",
+              "documentId": "@1",
+              "text": "Bins out on Monday.\n"
+            }
+          ],
+          "ignored": []
+        },
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@12",
+              "number": 1
+            }
+          ],
+          "focus": null,
+          "ignored": [
+            {
+              "seq": 18,
+              "id": "@18"
+            }
+          ]
+        }
+      },
+      "unchangedWithout": {
+        "coalition": [18]
+      }
+    }
+  ]
+}
