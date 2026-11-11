@@ -278,4 +278,48 @@ describe('following a coalition (#124)', SLOW, () => {
     await expect(unfollow(ana.services, anaEntry.groupId)).rejects.toThrow(/No followed coalition/);
     expect(await ana.services.store.listCoalitions()).toHaveLength(1);
   });
+
+  it('follows from the link through the app, the seed leaving the address bar', async () => {
+    const user = userEvent.setup();
+    const fake = createFakeRelay();
+    const { ana } = await formedCoalition(fake, { ...CARD_VALUES, name: CANARY_NAME });
+    const link = await shareFollowLink(
+      ana.services,
+      (await entryOn(ana)).groupId,
+      'https://x.test',
+    );
+    const gus = await open(fake, 'gus');
+
+    openApp(gus, new URL(link).hash);
+    const follow = await screen.findByRole('button', { name: 'Follow' });
+    expect(window.location.hash).toBe('#/follow');
+    await user.click(follow);
+
+    expect(await screen.findByRole('heading', { level: 1, name: CANARY_NAME })).toBeVisible();
+    expect(window.location.hash).toBe(`#/c/${(await coalitionOn(ana)).group ?? ''}`);
+    expect((await entryOn(gus)).following).toBe(true);
+  });
+
+  it('opens a follow link pasted on Start, and Not now keeps nothing', async () => {
+    const user = userEvent.setup();
+    const fake = createFakeRelay();
+    const { ana } = await formedCoalition(fake, { ...CARD_VALUES, name: CANARY_NAME });
+    const link = await shareFollowLink(
+      ana.services,
+      (await entryOn(ana)).groupId,
+      'https://x.test',
+    );
+    const gus = await open(fake, 'gus');
+
+    openApp(gus, '#/');
+    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.paste(link);
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    expect(await screen.findByRole('heading', { level: 1, name: CANARY_NAME })).toBeVisible();
+    expect(window.location.hash).toBe('#/follow');
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your groups' })).toBeVisible();
+    expect(await gus.services.store.listCoalitions()).toEqual([]);
+  });
 });
