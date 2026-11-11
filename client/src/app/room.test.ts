@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { deriveRoomEntryId } from '../crypto/room';
+import { LEVELS } from '../engine/capabilities';
 import { parseRecord } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
@@ -20,6 +21,9 @@ import type { DeviceGroup } from './coalitionHome';
 import { roomStanding, roomView, sendMessage } from './room';
 
 freshIndexedDBPerTest();
+
+/** The level that follows: it can't propose. */
+const [FOLLOWING] = LEVELS;
 
 const R = 29_375_000;
 const SECRET = fromBase64url(testSecret('coalition'));
@@ -180,7 +184,7 @@ describe('roomStanding', () => {
     expect(
       roomStanding(heldBy(logs, at, 'ana', { joinAs: riverside.groupId }), [riverside]),
     ).toEqual({ kind: 'joining' });
-    logs.add('A', at, 'ben', { type: 'level', body: { level: 'member' } });
+    logs.add('A', at, 'ben', { type: 'level', body: { level: FOLLOWING } });
     const ben = deviceGroup(logs, 'A', at + 1, 'ben');
     expect(roomStanding(heldBy(logs, at + 1, 'ben'), [ben])).toEqual({ kind: 'reads' });
   });

@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { deriveRoomEntryId } from '../crypto/room';
+import { LEVELS } from '../engine/capabilities';
 import { fold, type LogRecord } from '../engine/fold';
 import { foldRoom, ROOM_KEEP_MINUTES } from '../engine/room';
 import { Logs, testSecret } from '../test/coalitions';
@@ -24,6 +25,9 @@ import { backedUpGroups, deviceSnapshot, encodeSnapshot, takeSnapshot } from './
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
 
 freshIndexedDBPerTest();
+
+/** The level that follows: it can't propose. */
+const [FOLLOWING] = LEVELS;
 
 const R = 29_375_000;
 const SECRET = fromBase64url(testSecret('coalition'));
@@ -170,7 +174,7 @@ describe('keepRooms', () => {
       type: 'level',
       group: built.ids.A ?? '',
       ts: 5,
-      body: { level: 'member' },
+      body: { level: FOLLOWING },
     }).record;
     await store.applyPull(
       built.ids.A ?? '',
