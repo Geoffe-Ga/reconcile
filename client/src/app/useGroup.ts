@@ -223,8 +223,11 @@ interface Loaded {
   readonly group: Group | undefined;
 }
 
-/** The stored group, read again whenever the store says it changed, and whether it has been read. */
-function useStoredGroup(
+/**
+ * The stored group, or any entry (a coalition's room, #125), read again
+ * whenever the store says it changed, and whether it has been read.
+ */
+export function useStoredGroup(
   store: GroupServices['store'],
   groupId: string,
 ): { group: Group | undefined; loaded: boolean } {
