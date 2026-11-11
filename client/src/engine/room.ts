@@ -68,12 +68,23 @@ export function keptInRoom(received: number, relayNow: number): boolean {
 }
 
 /** The keys of the coalition's current participants, each bound to one of its seats. */
-function participantsOf(coalition: GroupState): Set<string> {
+function participantsOf(coalition: Pick<GroupState, 'members' | 'coalition'>): Set<string> {
   const seats = new Set(coalition.coalition?.seats.map((seat) => seat.key));
   const bound = new Set(
     coalition.coalition?.bindings.filter((b) => seats.has(b.seat)).map((b) => b.author),
   );
   return new Set(coalition.members.map((m) => m.author).filter((author) => bound.has(author)));
+}
+
+/**
+ * Whether `author` writes in the room: a current participant bound to one of
+ * the coalition's seats, whose messages {@link foldRoom} shows.
+ */
+export function isParticipant(
+  coalition: Pick<GroupState, 'members' | 'coalition'>,
+  author: string,
+): boolean {
+  return participantsOf(coalition).has(author);
 }
 
 /** A message of this coalition, from one of `speakers`, with text that fits, or null. */

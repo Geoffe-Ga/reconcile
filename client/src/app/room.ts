@@ -11,7 +11,14 @@
  * coalition name.
  */
 import { signEvent, parseRecord } from '../engine/event';
-import { foldRoom, messageText, MESSAGE_MAX, type RoomMessage } from '../engine/room';
+import { displayName } from '../engine/names';
+import {
+  foldRoom,
+  isParticipant,
+  messageText,
+  MESSAGE_MAX,
+  type RoomMessage,
+} from '../engine/room';
 import type { HeldCoalition } from '../store/coalitions';
 import type { Group, Store } from '../store/db';
 import { keepRooms, roomEntryFor } from '../store/rooms';
@@ -48,19 +55,20 @@ export interface RoomView {
   readonly pending: readonly PendingMessage[];
   /** This person's key in the coalition, which signs what they write. */
   readonly me: string;
-  /** The name this person writes under: their coalition name. */
+  /** The name this person writes under: their coalition name, as the room shows it. */
   readonly myName: string;
   readonly standing: RoomStanding;
 }
 
 /**
- * Where this person stands in the room: bound to a seat, they write, whatever
- * their level in their group, since the room checks only the seat; otherwise
- * as on the coalition's home, without a seat they can't write.
+ * Where this person stands in the room: a current participant bound to a
+ * seat writes, whatever their level in their group, since the room checks
+ * only the seat; otherwise, as on the coalition's home, they may take part
+ * or are joining, and anyone else, one who left the coalition included,
+ * reads.
  */
 export function roomStanding(held: HeldCoalition, groups: readonly DeviceGroup[]): RoomStanding {
-  const bound = held.state.coalition?.bindings.some((b) => b.author === held.entry.me.author);
-  if (bound === true) return { kind: 'writes' };
+  if (isParticipant(held.state, held.entry.me.author)) return { kind: 'writes' };
   const standing = standingIn(held, groups);
   return standing.kind === 'take-part' || standing.kind === 'joining'
     ? standing
@@ -98,7 +106,7 @@ export function roomView(
     messages: room === undefined ? [] : foldRoom(room.log, state, room.relayNow),
     pending: room === undefined ? [] : pendingIn(room.outbox, state.group),
     me: entry.me.author,
-    myName: entry.me.name,
+    myName: displayName(state, entry.me.author) ?? entry.me.name,
     standing: roomStanding(held, groups),
   };
 }

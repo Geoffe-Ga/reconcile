@@ -131,6 +131,12 @@ describe('roomView', () => {
     expect(view?.pending.map((m) => m.text)).toEqual(['On its way.']);
   });
 
+  it('names what waits under the writer’s coalition name, as the others will read it', () => {
+    const { logs, at } = formed();
+    const held = heldBy(logs, at, 'kim', { me: { author: authorOf('kim'), name: '' } });
+    expect(roomView(held, [deviceGroup(logs, 'A', at, 'ana')], undefined)?.myName).toBe('kim');
+  });
+
   it('is an empty room before its entry exists, and none for a device in no member group, as a follower’s', () => {
     const { logs, at } = formed();
     const held = heldBy(logs, at, 'kim');
@@ -157,9 +163,11 @@ describe('roomView', () => {
 });
 
 describe('roomStanding', () => {
-  it('writes once bound to a seat, whatever their level in the group', () => {
+  it('writes once bound to a seat, whatever their level in the group, until they leave the coalition', () => {
     const { logs, at } = formed();
     expect(roomStanding(heldBy(logs, at, 'kim'), [])).toEqual({ kind: 'writes' });
+    logs.add('coalition', at + 1, 'kim', { type: 'leave', body: {} });
+    expect(roomStanding(heldBy(logs, at + 2, 'kim'), [])).toEqual({ kind: 'reads' });
   });
 
   it('takes part first from a member group where they may propose, joins while a join waits, else reads', () => {

@@ -234,8 +234,9 @@ function RoomReady({ services, ready, deviceNow }: RoomReadyProps) {
   const reachable = useSyncExternalStore(subscribe, () => sync.isReachable());
   const roomId = roomEntryFor(held.state, groups.map(holderOf));
   const { group: room, loaded } = useStoredGroup(services.store, roomId ?? '');
+  // Folding the room checks each message's signature: only again once something it reads changed.
+  const view = useMemo(() => roomView(held, groups, room), [held, groups, room]);
   if (!loaded) return null;
-  const view = roomView(held, groups, room);
   if (view === null) {
     return <RoomMissing coalitionId={held.state.group ?? ''} name={held.state.name} />;
   }
