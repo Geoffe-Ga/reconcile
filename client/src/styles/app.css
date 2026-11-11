@@ -581,10 +581,12 @@ a[data-focus-visible] {
 /* A protected section's badge (#116; DESIGN.md Atom block): an eyebrow at the top of its
  * block, in the gutter its text starts from. Entrenched has a clay outline and a lock glyph;
  * eternal a double ink rule above and below. The word says the class, never the color alone. */
+/* As wide as its word wherever it sits: the Document, a composer's section or a result. */
 .atom-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  width: fit-content;
   padding: var(--space-1) var(--space-2);
 }
 
