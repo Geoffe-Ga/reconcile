@@ -10,10 +10,15 @@
  */
 import { type Atom, fold, type GroupState, type LogRecord } from '../engine/fold';
 
-/** What {@link foldInvite} reads from an opened invite: its entries and the invite GET's `now`. */
+/**
+ * What {@link foldInvite} reads from an opened invite: its entries, the
+ * invite GET's `now`, and the Proposals whose ballots the inviter cleared
+ * (#111), whose outcomes the fold takes from their results.
+ */
 export interface InvitePage {
   readonly records: readonly LogRecord[];
   readonly relayNow: number;
+  readonly cleared?: readonly string[];
 }
 
 /**
@@ -27,6 +32,10 @@ export function genesisDocument(state: GroupState): readonly Atom[] | null {
 }
 
 /** The genesis Document folded from an invite's entries, or null when they hold no genesis. */
-export function foldInvite({ records, relayNow }: InvitePage): readonly Atom[] | null {
-  return genesisDocument(fold(records, relayNow));
+export function foldInvite({
+  records,
+  relayNow,
+  cleared = [],
+}: InvitePage): readonly Atom[] | null {
+  return genesisDocument(fold(records, relayNow, [], cleared));
 }

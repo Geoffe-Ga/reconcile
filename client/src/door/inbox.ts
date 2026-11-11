@@ -25,12 +25,12 @@ import {
   sealPadded,
 } from '../crypto/door';
 import { signEvent } from '../engine/event';
-import { fold } from '../engine/fold';
 import { mayRecordInvite } from '../engine/frontDoor';
 import type { FrontDoor } from '../engine/optIns';
 import type { Relay, RelayPage } from '../net/relay';
 import { type DoorInbox, type ReceivedApplication, withApplications } from '../store/applications';
 import type { Store } from '../store/db';
+import { foldGroup } from '../store/expiry';
 import { parseApplication } from './apply';
 import { addressOf } from './page';
 
@@ -119,7 +119,7 @@ export async function sendInvite(
   const group = await services.store.getGroup(groupId);
   const application = group?.door?.applications.find((held) => held.id === id);
   if (group === undefined || application === undefined) return 'missing';
-  if (!mayRecordInvite(fold(group.log, group.relayNow), group.me.author, id)) return 'missing';
+  if (!mayRecordInvite(foldGroup(group), group.me.author, id)) return 'missing';
   try {
     const link = await services.makeInvite();
     const mailbox = replyMailboxOf(fromBase64url(application.reply.seed));

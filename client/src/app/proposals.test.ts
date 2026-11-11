@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { publicKeyOf } from '../crypto/sign';
 import { LEVELS } from '../engine/capabilities';
-import { base64url, parseRecord } from '../engine/event';
+import { base64url, fromBase64url, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -27,6 +27,9 @@ import {
 } from './proposals';
 
 freshIndexedDBPerTest();
+
+/** A ballot's salt: 16 bytes in unpadded base64url. */
+const SALT: unknown = expect.stringMatching(/^[A-Za-z0-9_-]{22}$/);
 
 const devices: TestDevice[] = [];
 
@@ -536,9 +539,25 @@ describe('castBallot', () => {
           proposal: 'proposal-1',
           scores: { 'proposal-1': 0 },
           note: 'Too early for the café.',
+          salt: SALT,
         },
       }),
     ]);
+  });
+
+  it('salts each ballot with 16 fresh random bytes, so a result’s commitment can’t be tested (#111)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    fake.offline = true;
+    const values = { proposal: 'proposal-1', scores: { 'proposal-1': 3 as const }, note: '' };
+    await castBallot(device.services, groupId, values);
+    await castBallot(device.services, groupId, values);
+    const salts = (await outbox(device, groupId)).map((event) =>
+      event?.type === 'vote' ? event.body.salt : undefined,
+    );
+    expect(salts).toEqual([SALT, SALT]);
+    expect(fromBase64url(salts[0] ?? '')).toHaveLength(16);
+    expect(salts[0]).not.toBe(salts[1]);
   });
 
   it('scores every version it is given, by version id', async () => {
@@ -554,6 +573,7 @@ describe('castBallot', () => {
     expect(vote?.body).toEqual({
       proposal: 'proposal-1',
       scores: { 'proposal-1': 2, 'version-2': 4, 'version-3': 1 },
+      salt: SALT,
     });
   });
 
@@ -567,7 +587,7 @@ describe('castBallot', () => {
       note: '  \n ',
     });
     const [vote] = await outbox(device, groupId);
-    expect(vote?.body).toEqual({ proposal: 'proposal-1', scores: { 'proposal-1': 4 } });
+    expect(vote?.body).toEqual({ proposal: 'proposal-1', scores: { 'proposal-1': 4 }, salt: SALT });
   });
 });
 

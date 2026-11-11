@@ -44,6 +44,12 @@
  * there is one and refuses while it's locked, in the same transaction as the
  * records it writes. Every read of the relay backup's state opens the vault
  * too, so a locked device neither reads nor writes its key.
+ *
+ * Once a decided Proposal's ballots expire (#111), `clearBallots` deletes
+ * them, its other results and anything else that expires with them from the
+ * log and the outbox, and marks the Proposal `cleared`. From then on every
+ * ingest drops such records for it, a pull, an invite's merge and a backup
+ * file's or a link's restore alike, so none comes back.
  */
 
 import { openDB } from 'idb';
@@ -51,6 +57,7 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
+import { expiryKeyOf } from '../engine/expiry';
 import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
@@ -230,6 +237,19 @@ export interface Group {
    * file, and dropped with an archive.
    */
   door?: DoorInbox;
+  /**
+   * The Proposals whose ballots this device has deleted (#111), which `fold`
+   * takes, oldest first. Absent until the first. #73's invite header, #78's
+   * backup file and #96's link carry it, so a newcomer or a restored device
+   * knows which it can't check.
+   */
+  cleared?: string[];
+}
+
+/** A Proposal whose ballots expire now, and the event id of the result that stays. */
+export interface Clearing {
+  readonly proposal: string;
+  readonly keep: string;
 }
 
 /** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
@@ -288,7 +308,8 @@ export class VaultLocked extends Error {
  * relay-ordered log and sync state, and whether some history may be missing.
  * Never the outbox or drafts, so a restore never sends stale intent. A file
  * never holds `archived`: a restore sets it when the log folds to a
- * `dissolve` (#108), so the group comes back read-only.
+ * `dissolve` (#108), so the group comes back read-only. `cleared` lists the
+ * Proposals whose ballots the device had deleted (#111).
  */
 export type BackedUpGroup = Pick<
   Group,
@@ -304,6 +325,7 @@ export type BackedUpGroup = Pick<
   | 'instance'
   | 'lastSyncAt'
   | 'archived'
+  | 'cleared'
 > & { readonly missingHistory: boolean };
 
 /**
@@ -315,11 +337,12 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
 
 /**
  * What a device knows about a group when it creates or joins it: Create group
- * and Join hand over its encryption key too, and a joiner the epoch of the
- * secret its invite carried (#98).
+ * and Join hand over its encryption key too, a joiner the epoch of the
+ * secret its invite carried (#98), and through an invite the Proposals the
+ * inviter has cleared (#111).
  */
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
-  Partial<Pick<Group, 'kxKey' | 'epoch'>>;
+  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared'>>;
 
 /**
  * A move to the group's next epoch (#98): its secret, the cursor to read its
@@ -502,6 +525,8 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * next epoch in the same change (#98): the new secret and base cursor with
    * no other cursors, and the records to post again ahead of the outbox, each
    * once.
+   * A ballot, a result or anything else that expires with ballots, for a
+   * Proposal in `cleared`, is dropped (#111).
    */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
   /**
@@ -521,9 +546,16 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * Add each of an invite's `records` whose event id the log lacks, each in
    * seq order among the records already there, and clear `missingHistory`
    * (#73). The cursor and sync state stay as they are. A read-only archive
-   * takes nothing (#108), so a cleared one never gets its ballots back.
+   * takes nothing (#108), so a cleared one never gets its ballots back. Like
+   * `applyPull`, it drops what expired with a Proposal in `cleared` (#111).
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
+  /**
+   * In one change, delete from the log and the outbox every record that
+   * expires with each Proposal's ballots, apart from the result it keeps, and
+   * add the Proposal to `cleared` (#111).
+   */
+  clearBallots(groupId: string, clearings: readonly Clearing[]): Promise<void>;
   /**
    * Keep a backup file's groups and personal Documents, or a link bundle's
    * (#96), in one transaction (#78, #93). A group new to the device is kept
@@ -537,7 +569,9 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * id the same way: the file's replaces the device's only when it was
    * edited later (`keepsHeldCopy`), keeping the device's share when the
    * file's copy holds none (`restoredCopy`, #105), as a link bundle's never
-   * does. Nothing is stamped with the time now.
+   * does. Nothing is stamped with the time now. A restored copy keeps the
+   * Proposals either copy has cleared, and none of what expired with them
+   * (#111), so a restore never brings a cleared ballot back.
    */
   restoreGroups(
     groups: readonly BackedUpGroup[],
@@ -869,10 +903,15 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       changeKeys(groupId, (group) => {
         if (next.epoch > (group.epoch ?? 0)) advanceTo(group, next);
       }),
+    clearBallots: (groupId, clearings) =>
+      change(groupId, (group) => {
+        clearIn(group, clearings);
+      }),
     mergeLog: (groupId, records, idOf) =>
       change(groupId, (group) => {
         if (group.archived !== undefined) return;
-        group.log = inSeqOrder(group.log, unseen(group.log, records, idOf));
+        const kept = withoutCleared(group.log, records, group.cleared ?? []);
+        group.log = inSeqOrder(group.log, unseen(group.log, kept, idOf));
         group.missingHistory = false;
       }),
     async restoreGroups(groups, personal = [], from = 'backup') {
@@ -1099,7 +1138,8 @@ function relayBackupStore(
 }
 
 /**
- * Adds a pull's records that `group`'s log lacks, and takes its cursors. A
+ * Adds a pull's records that `group`'s log lacks, but none that expired with
+ * a Proposal it has cleared (#111), and takes its cursors. A
  * pull from a relay instance the group hasn't read before is a fresh relay
  * database's, whose seqs start again from 1: its records go after the whole
  * log, and every mailbox is read from that relay's start, from its base
@@ -1107,11 +1147,12 @@ function relayBackupStore(
  * (`logOrder.ts`).
  */
 function takePull(
-  group: Pick<Group, 'log' | 'cursor' | 'cursors' | 'instance'>,
+  group: Pick<Group, 'log' | 'cursor' | 'cursors' | 'instance' | 'cleared'>,
   pull: Pull,
   idOf: EventIdOf,
 ): void {
-  const added = unseen(group.log, pull.records, idOf);
+  const kept = withoutCleared(group.log, pull.records, group.cleared ?? []);
+  const added = unseen(group.log, kept, idOf);
   const fresh = group.instance !== null && pull.instance !== group.instance;
   group.log = fresh ? [...group.log, ...added] : placedInLog(group.log, added);
   if (fresh) {
@@ -1220,9 +1261,10 @@ function markFor(held: Group | undefined, from: RestoredFrom): Pick<Group, 'back
  * `restored` and the device holds `held` (#78, #96): the restored one, with
  * no outbox, drafts or chat claims, unless the device's synced at least as
  * late, is leaving, or is a read-only archive, which a restore never brings
- * back to life (#108). Either is marked as `markFor` says. The device's push
- * registration and posted nudges (#99) stay either way: they belong to this
- * device, and neither a file nor a link bundle holds them, so a linked
+ * back to life (#108). A restored copy also clears what `held` had cleared
+ * (#111, `heldClearings`). Either is marked as `markFor` says. The device's
+ * push registration and posted nudges (#99) stay either way: they belong to
+ * this device, and neither a file nor a link bundle holds them, so a linked
  * device starts with push off.
  */
 function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: RestoredFrom): Group {
@@ -1232,13 +1274,50 @@ function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: Restor
   }
   // A copy that comes back read-only takes no push (#108), as `markArchived` keeps none.
   const { push, nudged } = restored.archived === undefined ? (held ?? {}) : {};
-  return {
+  const copy: Group = {
     ...restored,
+    log: [...restored.log],
     outbox: [],
     ...mark,
     ...(push === undefined ? {} : { push }),
     ...(nudged === undefined ? {} : { nudged }),
   };
+  if (held !== undefined) clearIn(copy, heldClearings(held, copy));
+  return copy;
+}
+
+/**
+ * The Proposals `held` has cleared that `restored` still holds ballots for
+ * (#111), each with the result `held` kept, when `restored`'s log holds that
+ * result too, so a restore clears them again as `held` did.
+ */
+function heldClearings(held: Group, restored: Pick<Group, 'log' | 'cleared'>): Clearing[] {
+  const already = restored.cleared ?? [];
+  const pending = new Set((held.cleared ?? []).filter((id) => !already.includes(id)));
+  const restoredIds = new Set(restored.log.map((record) => expiryKeyOf(record.bytes)?.id));
+  return held.log.flatMap((record) => {
+    const key = expiryKeyOf(record.bytes);
+    if (key?.result !== true || !pending.has(key.proposal) || !restoredIds.has(key.id)) return [];
+    return [{ proposal: key.proposal, keep: key.id }];
+  });
+}
+
+/**
+ * Deletes from `group`'s log and outbox every record that expires with each
+ * Proposal's ballots in `clearings`, apart from the result it keeps, and adds
+ * the Proposal to `cleared` (#111).
+ */
+function clearIn(group: Pick<Group, 'log' | 'outbox' | 'cleared'>, clearings: readonly Clearing[]) {
+  if (clearings.length === 0) return;
+  const keep = new Map(clearings.map(({ proposal, keep }) => [proposal, keep]));
+  const expires = (bytes: Uint8Array): boolean => {
+    const key = expiryKeyOf(bytes);
+    return key !== null && keep.has(key.proposal) && keep.get(key.proposal) !== key.id;
+  };
+  group.log = group.log.filter((record) => !expires(record.bytes));
+  group.outbox = group.outbox.filter((bytes) => !expires(bytes));
+  const cleared = group.cleared ?? [];
+  group.cleared = [...cleared, ...[...keep.keys()].filter((id) => !cleared.includes(id))];
 }
 
 /** Whether a restore leaves `held` as it is: the device is leaving it, or keeps it read-only. */
@@ -1501,6 +1580,41 @@ function unseen(
       return false;
     }
     seen.add(key);
+    return true;
+  });
+}
+
+/** The cleared Proposals that `log` already holds a result for. */
+function resultsHeld(log: readonly LogRecord[], cleared: readonly string[]): Set<string> {
+  const held = new Set<string>();
+  for (const record of log) {
+    const key = expiryKeyOf(record.bytes);
+    if (key?.result === true && cleared.includes(key.proposal)) held.add(key.proposal);
+  }
+  return held;
+}
+
+/**
+ * The records of `incoming` that don't expire with a Proposal in `cleared`
+ * (#111): no ballot or other expiring record for one, and no result for one
+ * once the log, or an earlier record of `incoming`, holds one. So a device
+ * keeps the one result it cleared by, and a newcomer whose invite carried
+ * `cleared` keeps the first, the one the fold reads ahead.
+ */
+function withoutCleared(
+  log: readonly LogRecord[],
+  incoming: readonly LogRecord[],
+  cleared: readonly string[],
+): LogRecord[] {
+  if (cleared.length === 0) return [...incoming];
+  let held: Set<string> | null = null;
+  return incoming.filter((record) => {
+    const key = expiryKeyOf(record.bytes);
+    if (key === null || !cleared.includes(key.proposal)) return true;
+    if (!key.result) return false;
+    held ??= resultsHeld(log, cleared);
+    if (held.has(key.proposal)) return false;
+    held.add(key.proposal);
     return true;
   });
 }

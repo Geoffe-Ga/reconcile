@@ -386,11 +386,48 @@ export interface VersionBody {
   readonly text: string;
 }
 
-/** Scores the versions of one Proposal, keyed by version id, with one optional note. */
+/**
+ * Scores the versions of one Proposal, keyed by version id, with one optional
+ * note. `salt` is 16 random bytes in base64url (#111), so nobody can test
+ * guesses against a result's commitment once the ballots are gone. A ballot
+ * cast before #111 has none, and enters the commitment with an empty salt.
+ */
 export interface VoteBody {
   readonly proposal: string;
   readonly scores: Readonly<Record<string, Score>>;
   readonly note?: string;
+  readonly salt?: string;
+}
+
+/** How many ballots gave a version each score, from 0 to 4. */
+export type ScoreCounts = readonly [number, number, number, number, number];
+
+/** One version's line in a result: its id and its counts. */
+export interface ResultVersion {
+  readonly id: string;
+  readonly counts: ScoreCounts;
+}
+
+/** A decided Proposal's outcome as its result names it, without the bar, which its class sets. */
+export type RecordedOutcome =
+  | { readonly kind: 'pass'; readonly version: string }
+  | { readonly kind: 'fail' }
+  | { readonly kind: 'lapse' };
+
+/**
+ * A decided Proposal's signed record (#111, ADR-0017): when it closed (the
+ * early close's minute, or its deadline), the size of its eligible set, each
+ * version's counts in ballot order, the outcome, and `commit`, a commitment
+ * to the counted ballots (`commit.ts`) that never covers notes (ADR-0065).
+ * Devices keep it, and only it, once they clear the ballots.
+ */
+export interface ResultBody {
+  readonly proposal: string;
+  readonly closedAt: number;
+  readonly eligible: number;
+  readonly versions: readonly ResultVersion[];
+  readonly outcome: RecordedOutcome;
+  readonly commit: string;
 }
 
 /**
@@ -465,6 +502,7 @@ export interface EventBodies {
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
+  readonly result: ResultBody;
   readonly dissolve: DissolveBody;
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
@@ -928,10 +966,64 @@ function parseScores(value: unknown): Record<string, Score> | null {
 }
 
 function parseVote(body: Json): VoteBody | null {
-  const { proposal, note } = body;
+  const { proposal, note, salt } = body;
   const scores = parseScores(body.scores);
   if (!isString(proposal) || scores === null || !isOptionalString(note)) return null;
-  return { proposal, scores, ...(note === undefined ? {} : { note }) };
+  if (!isOptionalString(salt)) return null;
+  return {
+    proposal,
+    scores,
+    ...(note === undefined ? {} : { note }),
+    ...(salt === undefined ? {} : { salt }),
+  };
+}
+
+function isCount(value: unknown): value is number {
+  return isWholeNumber(value) && value >= 0;
+}
+
+/** Five whole numbers of at least 0: how many ballots gave a version each score. */
+function parseCounts(value: unknown): ScoreCounts | null {
+  if (!Array.isArray(value) || value.length !== SCORE_MAX + 1) return null;
+  const list: readonly unknown[] = value;
+  const [n0, n1, n2, n3, n4] = list;
+  const whole = isCount(n0) && isCount(n1) && isCount(n2) && isCount(n3) && isCount(n4);
+  return whole ? [n0, n1, n2, n3, n4] : null;
+}
+
+function parseResultVersion(value: unknown): ResultVersion | null {
+  if (!isObject(value) || !isString(value.id)) return null;
+  const counts = parseCounts(value.counts);
+  return counts === null ? null : { id: value.id, counts };
+}
+
+/** Every version a result lists, in order, or null when the list or any version is malformed. */
+function parseResultVersions(value: unknown): ResultVersion[] | null {
+  if (!Array.isArray(value)) return null;
+  const list: readonly unknown[] = value;
+  const versions: ResultVersion[] = [];
+  for (const item of list) {
+    const version = parseResultVersion(item);
+    if (version === null) return null;
+    versions.push(version);
+  }
+  return versions;
+}
+
+function parseOutcome(value: unknown): RecordedOutcome | null {
+  if (!isObject(value)) return null;
+  const { kind, version } = value;
+  if (kind === 'pass') return isString(version) ? { kind, version } : null;
+  return kind === 'fail' || kind === 'lapse' ? { kind } : null;
+}
+
+function parseResult(body: Json): ResultBody | null {
+  const { proposal, closedAt, eligible, commit } = body;
+  if (!isString(proposal) || !isTimestamp(closedAt) || !isCount(eligible)) return null;
+  const versions = parseResultVersions(body.versions);
+  const outcome = parseOutcome(body.outcome);
+  if (versions === null || outcome === null || !isString(commit)) return null;
+  return { proposal, closedAt, eligible, versions, outcome, commit };
 }
 
 /** The event a parsed body makes, or null when the body didn't parse. */
@@ -990,7 +1082,10 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
   }
 }
 
-/** {@link withBody} for #98's types, `kx` and `key-rotate`, #100's `group-result` and #121's `door-invited`. */
+/**
+ * {@link withBody} for #98's types, `kx` and `key-rotate`, #100's
+ * `group-result`, #111's `result`, and #121's `door-invited`.
+ */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'kx':
@@ -999,6 +1094,8 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'group-result':
       return attach(parseGroupResult(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'result':
+      return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'door-invited':
       return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
     default:

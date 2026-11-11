@@ -5,6 +5,9 @@ import { DOOR, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder } from '../test/votes';
 import { LEVELS } from './capabilities';
+import { parseRecord } from './event';
+import { EXPIRES_WITH_BALLOTS, expiringProposal, resultFor } from './expiry';
+import { fold } from './fold';
 import { inviteFor, isApplicationId, mayRecordInvite } from './frontDoor';
 
 /** The follower level, which reads but doesn't invite, by place, so no level id is spelled out here. */
@@ -128,5 +131,51 @@ describe('door-invited in the fold (#121)', () => {
     const state = log.state();
     expect(state.doorInvites).toEqual([]);
     expect(state.ignored.map((record) => record.id)).toEqual([early]);
+  });
+});
+
+describe('a cleared “open a front door” Proposal (#111)', () => {
+  /** 30 days in relay minutes: how long ballots outlive a decision. */
+  const THIRTY_DAYS = 43_200;
+
+  it('keeps the door open with its keys, its outcome and the invites recorded after it, once its ballots expire', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR, { title: 'Open a front door' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.minute += 1;
+    const [opened] = log.state().proposals;
+    if (opened === undefined) throw new Error('Expected the opening Proposal.');
+    log.result('Cal', resultFor(opened));
+    log.doorInvited('Ben', A1);
+    const now = log.minute + THIRTY_DAYS;
+    const held = log.state(now);
+    const kept = log.records.filter((record) => parseRecord(record.bytes)?.event.type !== 'vote');
+
+    const cleared = fold(kept, now, [], [open]);
+
+    expect(held.optIns.frontDoor).toEqual(DOOR);
+    expect(cleared.rules.optIns.frontDoor).toEqual(DOOR);
+    expect(cleared.optIns.frontDoor).toEqual(DOOR);
+    expect(cleared.proposals[0]).toMatchObject({
+      id: open,
+      cleared: true,
+      final: true,
+      class: 'entrenched',
+      outcome: { kind: 'pass' },
+      ballots: [],
+    });
+    expect(cleared.proposals[0]?.outcome).toEqual(held.proposals[0]?.outcome);
+    expect(cleared.doorInvites).toEqual(held.doorInvites);
+    expect(mayRecordInvite(cleared, authorOf('cal'), A2)).toBe(true);
+  });
+
+  it('expires nothing of the door’s own: no door-invited goes with a Proposal’s ballots', () => {
+    const log = opened();
+    const invite = log.doorInvited('Ben', A1);
+    const [record] = log.records.filter((r) => parseRecord(r.bytes)?.id === invite);
+    const event = record === undefined ? null : parseRecord(record.bytes)?.event;
+    expect(event?.type).toBe('door-invited');
+    expect(event === null || event === undefined ? 'missing' : expiringProposal(event)).toBeNull();
+    expect(EXPIRES_WITH_BALLOTS).not.toContain('door-invited');
   });
 });

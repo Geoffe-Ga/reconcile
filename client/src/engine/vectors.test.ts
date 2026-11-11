@@ -80,6 +80,10 @@ describe('vector files', () => {
       'optin-ignored.json',
       'optin-narrow.json',
       'proposal-number.json',
+      'result-checks.json',
+      'result-cleared.json',
+      'result-mismatch.json',
+      'result-no-votes.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -153,6 +157,10 @@ describe('vector files', () => {
       'fold',
       'fold',
       'keys',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -374,6 +382,31 @@ describe('vector files', () => {
     "leave-steward: a steward's leave empties their seat, and a suspend they send after it is ignored",
     "leave-suspended: a suspended member's leave is honored though their level change is ignored, and the suspension stays on record",
     'window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days',
+    "result-mismatch: with 2 eligible, Ana scores 4 and Ben 0 with a reason; Ben's result counting two 4s is ignored and flagged, and Ana's [1,0,0,0,1] is canonical",
+    "a result whose commit doesn't match this device's ballots is ignored and flagged",
+    "a result whose closedAt isn't the close this device's ballots give is ignored and flagged",
+    "a result whose outcome its own counts don't give is ignored and flagged, even when its counts match",
+    "a result whose eligible count isn't the Proposal's is ignored and flagged",
+    "a result naming versions the Proposal doesn't have is ignored and flagged",
+    "a result received before the close is ignored, and isn't flagged",
+    "a result received in the close's own minute, after the closing ballot, is ignored, and isn't flagged",
+    "a result from someone who isn't a member is ignored, and isn't flagged",
+    'the first valid result in relay order wins, and a later valid one is ignored',
+    'a mismatching result after the canonical one is ignored and still flagged',
+    'a Proposal that closes at its deadline takes a result whose closedAt is the deadline, received after it, not in it',
+    'a result claiming a pass on a Proposal nobody voted on is ignored and flagged, and the Proposal lapses',
+    'a result claiming a pass on a Proposal in cleared is taken as it stands, and the Atom changes',
+    'a zero-count lapse is the canonical result of a Proposal nobody voted on',
+    'a Proposal in cleared takes its outcome and early close from its result, and its pass applies',
+    "with the ballots held, a version in the early close's minute but after the closing ballot is ignored, as is one after",
+    "with the ballots cleared, a version in the early close's minute joins only if the result lists it, and one after is ignored",
+    "with the ballots held, a second Proposal on the same Atom opens in the minute of the first's early close, after the closing ballot",
+    "with the ballots cleared, a second Proposal on the same Atom opens in the minute of the first's early close, before the result arrives",
+    'for a Proposal in cleared, a ballot left in the log is ignored, and only the first result counts',
+    "for a Proposal in cleared, a result from someone who isn't a member is ignored, so it neither closes nor decides it",
+    "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
+    "for a Proposal in cleared, a result whose outcome its counts don't give is ignored",
+    'for a Proposal in cleared, an early close whose counts leave an eligible voter out is ignored',
     'turning the chat bot on is entrenched: its deadline is received plus 14 × 1,440 minutes, and an average of 2.5 with no zeros fails it',
     'turning the chat bot on passes at the entrenched bar and sets its webhook, and turning it off again is ordinary: received plus 7 × 1,440 minutes',
     'replacing one webhook with another is ordinary, so an average of 2.5 passes it and sets the new webhook',
@@ -583,11 +616,14 @@ describe('coalition vectors (#100)', () => {
 
 describe('fold vectors', () => {
   it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    const { records, ids } = buildRecords(vector);
-    const state = fold(records, vector.relayNow);
+    const { records, ids, cleared } = buildRecords(vector);
+    const state = fold(records, vector.relayNow, [], cleared);
     expect(state).toMatchObject(resolve(vector.expect, ids) as object);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
-    expect({ ...fold(kept, vector.relayNow), ignored: [] }).toEqual({ ...state, ignored: [] });
+    expect({ ...fold(kept, vector.relayNow, [], cleared), ignored: [] }).toEqual({
+      ...state,
+      ignored: [],
+    });
   });
 });

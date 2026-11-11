@@ -26,11 +26,12 @@
  * comes due. Nothing the keeper does, or fails to do, fails a sync pass.
  */
 import { can } from '../engine/capabilities';
-import { fold, type GroupState } from '../engine/fold';
+import type { GroupState } from '../engine/fold';
 import { type FrontDoor, isFrontDoor, rulesChangeOf } from '../engine/optIns';
 import type { Relay } from '../net/relay';
 import type { Seal } from '../crypto/seal';
 import type { Store } from '../store/db';
+import { foldGroup } from '../store/expiry';
 import { checkReplies } from './apply';
 import { readInbox } from './inbox';
 import {
@@ -120,7 +121,8 @@ export function createDoorKeeper(options: DoorKeeperOptions): DoorKeeper {
     async run(groupId) {
       const group = await store.getGroup(groupId);
       if (group === undefined || group.leaving !== undefined || group.relayNow === null) return;
-      const state = fold(group.log, group.relayNow);
+      // Expired ballots stay expired (#111): the door reads the group as every screen does.
+      const state = foldGroup(group);
       const me = group.me.author;
       if (state.group === null || !can(state, me, 'read')) return;
       for (const [door, page] of pagesDue(state, plainText)) await keep(door, page, state.at);
