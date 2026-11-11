@@ -1189,6 +1189,32 @@ describe('encryption keys and key changes (#98)', () => {
   });
 });
 
+describe('a key change that doesn’t open, and one taken up (#224)', () => {
+  it.each(['unwrap-failed', 'key-taken'] as const)(
+    'reads a %s as the key change it names, dropping unknown keys',
+    (type) => {
+      const parsed = parseEvent(json(envelope(type, { rotation: 'r1', why: 'no' })));
+      expect(parsed?.event).toEqual({
+        v: 1,
+        type,
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body: { rotation: 'r1' },
+      });
+    },
+  );
+
+  it.each([
+    ['an unwrap-failed without its key change', 'unwrap-failed', {}],
+    ['an unwrap-failed naming a number', 'unwrap-failed', { rotation: 7 }],
+    ['a key-taken without its key change', 'key-taken', {}],
+    ['a key-taken naming a list', 'key-taken', { rotation: ['r1'] }],
+  ])('returns null for %s', (_label, type, body) => {
+    expect(parseEvent(json(envelope(type, body)))).toBeNull();
+  });
+});
+
 describe('coalitions (#100)', () => {
   /** 32-byte values in base64url, as seat keys, secrets and inner are spelled. */
   const KEY = base64url(new Uint8Array(32).fill(9));

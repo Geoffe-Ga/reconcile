@@ -540,6 +540,17 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * Names a key change by its event id (#224): a member's `unwrap-failed` says
+ * their wrap in it doesn't open, or opens to a secret that doesn't make every
+ * other wrap (`crypto/epoch.ts`), and goes to the old epoch's mailbox; a
+ * `key-taken` says a device took it up all the same, and goes to the new
+ * epoch's. An id, unlike a commit, can't be copied into another key change.
+ */
+export interface KeyCheckBody {
+  readonly rotation: string;
+}
+
 /** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
 export type GroupResultValue = 'pass' | 'fail';
 
@@ -574,6 +585,8 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'unwrap-failed': KeyCheckBody;
+  readonly 'key-taken': KeyCheckBody;
   readonly 'door-invited': DoorInvitedBody;
   readonly 'group-result': GroupResultBody;
 }
@@ -1023,6 +1036,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseKeyCheck(body: Json): KeyCheckBody | null {
+  return isString(body.rotation) ? { rotation: body.rotation } : null;
+}
+
 function parseDoorInvited(body: Json): DoorInvitedBody | null {
   return isString(body.application) ? { application: body.application } : null;
 }
@@ -1173,8 +1190,9 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
 }
 
 /**
- * {@link withBody} for #98's types, `kx` and `key-rotate`, #100's
- * `group-result`, #111's `result`, and #121's `door-invited`.
+ * {@link withBody} for #98's types, `kx` and `key-rotate`, #224's
+ * `unwrap-failed` and `key-taken`, #100's `group-result`, #111's `result`,
+ * and #121's `door-invited`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1182,6 +1200,9 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'unwrap-failed':
+    case 'key-taken':
+      return attach(parseKeyCheck(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'group-result':
       return attach(parseGroupResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'result':
