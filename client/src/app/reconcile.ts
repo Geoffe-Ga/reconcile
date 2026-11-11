@@ -50,6 +50,7 @@ import { foldGroup } from '../store/expiry';
 import { readRecentLog, type RecentLog } from '../store/sync';
 import type { Services } from './actions';
 import { messages } from './messages';
+import type { Route } from './router';
 
 /** What Reconcile with another group asks for, each trimmed. */
 export interface CardValues {
@@ -288,7 +289,7 @@ async function groupsFor(services: Services, secret: string): Promise<CardGroup[
 }
 
 /** Whether this person may bring a card into the coalition `state` as it folds now (#122). */
-function bringsInto(state: GroupState, me: string): boolean {
+export function bringsInto(state: GroupState, me: string): boolean {
   const info = state.coalition;
   if (info?.status !== 'formed' || info.level >= MAX_LEVEL) return false;
   return info.bindings.some((b) => b.author === me) && can(state, me, 'propose');
@@ -437,6 +438,24 @@ export async function bringCard(
   }
   void services.sync.syncOnce();
   return proposal.id;
+}
+
+/**
+ * Where Bring a card goes once it has brought `found` to `groupId`: the
+ * group's new reconcile Proposal, or for a coalition (#122), its home, where
+ * its motion shows, since its members vote on it in their own groups.
+ */
+export async function broughtTo(
+  services: Services,
+  found: FoundCard,
+  groupId: string,
+  proposalId: string,
+): Promise<Route> {
+  const picked = found.groups.find((group) => group.groupId === groupId);
+  if (picked?.kind !== 'coalition') return { name: 'proposal', groupId, proposalId };
+  const entry = await services.store.getGroup(groupId);
+  const coalitionId = entry === undefined ? null : foldGroup(entry).group;
+  return coalitionId === null ? { name: 'start' } : { name: 'coalition', coalitionId };
 }
 
 /** What {@link admitPlan} needs of the group a formed coalition's card was brought to. */

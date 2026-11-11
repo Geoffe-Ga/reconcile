@@ -11,9 +11,9 @@ import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import { signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
-import type { HeldCoalition } from '../store/coalitions';
+import { foldCoalitions, type HeldCoalition } from '../store/coalitions';
 import type { Group } from '../store/db';
-import { COALITION_STATEMENT, Logs, testSecret } from '../test/coalitions';
+import { COALITION_STATEMENT, Logs, NestedLogs, testSecret, threeLevels } from '../test/coalitions';
 import { authorOf, testKeys } from '../test/keys';
 import {
   coalitionById,
@@ -236,5 +236,43 @@ describe('the coalition’s Document', () => {
 
     logs.motion(at, 'kim');
     expect(sectionIsOpen(heldBy(logs, at + 1, 'kim').state, `${genesis}.0`)).toBe(true);
+  });
+});
+
+describe('a coalition’s home when a member is a coalition (#122)', () => {
+  it('marks the member coalition, and opens a motion in a group beneath it on this device', () => {
+    const logs = new NestedLogs();
+    const motion = threeLevels(logs);
+    const now = R + 100;
+    const entry = (log: string, who: string) =>
+      ({
+        kind: 'coalition',
+        groupId: deriveCoalitionEntryId(fromBase64url(testSecret(log))),
+        me: { author: authorOf(who), name: who },
+        outbox: [],
+        log: logs.logs[log] ?? [],
+        relayNow: now,
+      }) as unknown as Group;
+    const [c, d] = foldCoalitions([entry('C', 'cal'), entry('D', 'nobody')]);
+    if (c === undefined || d === undefined) throw new Error('Expected C and D.');
+    const groups: DeviceGroup[] = [
+      deviceGroup(logs, 'A', now, 'ana'),
+      {
+        groupId: c.entry.groupId,
+        me: authorOf('cal'),
+        state: c.state,
+        leaving: false,
+        kind: 'coalition',
+      },
+    ];
+    const view = coalitionHome(d, groups);
+    expect(view?.members).toEqual([
+      { name: 'C', mine: true, coalition: true },
+      { name: 'E', mine: false, coalition: false },
+    ]);
+    // Its motion opens as the vote of group A, beneath Eastside Housing, never of the coalition.
+    expect(view?.open.find((item) => item.id === motion)?.groupId).toBe(logs.ids.A);
+    // Cal takes part in Eastside Housing, so may take part in Metro Renters through its seat.
+    expect(standingIn(d, groups)).toEqual({ kind: 'take-part', groupId: c.entry.groupId });
   });
 });

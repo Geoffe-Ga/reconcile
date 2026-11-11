@@ -334,3 +334,36 @@ export class NestedLogs extends Logs {
     return Object.fromEntries(names.map((name, i) => [name, states[i] ?? fold([], relayNow)]));
   }
 }
+
+/** The statements of the nested coalitions {@link threeLevels} builds. */
+export const NESTED_STATEMENTS = {
+  C: { name: 'Eastside Housing', title: 'Shared ground', atoms: ['Everyone has a home.'] },
+  D: { name: 'Metro Renters', title: 'Shared ground', atoms: ['Rent stays fair.'] },
+  F: { name: 'State Renters', title: 'Shared ground', atoms: ['Renters have a voice.'] },
+} as const;
+
+/**
+ * Three levels (#122): group A (ana) and seat B form C, with cal for A and
+ * dee for B; C, by a sealed motion its seats pass, and seat E form D, with
+ * fay for C and hal for E; D the same way and group G (gus) form F, with ivy
+ * for D and jon for G. A motion in D waits on its seats. Returns the motion.
+ */
+export function threeLevels(logs: NestedLogs, at = 29_375_000): string {
+  const { C, D, F } = NESTED_STATEMENTS;
+  logs.group('A', at, ['ana'], 'Riverside');
+  const intoC = logs.reconcileInto('A', at + 1, 'ana', 'C', 'A', C);
+  logs.vote('A', at + 2, 'ana', intoC, 4);
+  logs.formedIn('C', at + 3, [['A'], ['B']], ['cal', 'dee'], C);
+  const intoD = logs.sealedInto('C', at + 7, 'cal', 'D', D);
+  logs.resultIn('C', at + 8, 'cal', intoD, 'A', 'pass');
+  logs.resultIn('C', at + 8, 'dee', intoD, 'B', 'pass');
+  logs.formedIn('D', at + 9, [['C', 1], ['E']], ['fay', 'hal'], D);
+  const intoF = logs.sealedInto('D', at + 13, 'fay', 'F', F);
+  logs.resultIn('D', at + 14, 'fay', intoF, 'C', 'pass');
+  logs.resultIn('D', at + 14, 'hal', intoF, 'E', 'pass');
+  logs.group('G', at, ['gus'], 'Grove');
+  const intoG = logs.reconcileInto('G', at + 1, 'gus', 'F', 'G', F);
+  logs.vote('G', at + 2, 'gus', intoG, 4);
+  logs.formedIn('F', at + 15, [['D', 2], ['G']], ['ivy', 'jon'], F);
+  return logs.motionIn('D', at + 20, 'hal', 'Rent stays fair for everyone.');
+}

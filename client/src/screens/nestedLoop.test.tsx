@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from '../app/App';
 import { propose } from '../app/proposals';
-import { admitCard, bringCard, lookupCard, makeCard, postCard } from '../app/reconcile';
+import { admitCard, bringCard, broughtTo, lookupCard, makeCard, postCard } from '../app/reconcile';
 import { base64url } from '../crypto/base64url';
 import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { openSeatSecrets } from '../crypto/innerSeal';
@@ -322,6 +322,17 @@ describe('nested coalitions', SLOW, () => {
     ]);
     const eastside = await entryNamed(ana, 'Eastside Housing');
     const motion = await bringCard(ana.services, card.found, eastside, 'Ana W.');
+    // Bring a card goes on to the coalition's home, and for a group, to its Proposal.
+    const eastsideId = (await coalitionNamed(ana, 'Eastside Housing')).group ?? '';
+    expect(await broughtTo(ana.services, card.found, eastside, motion)).toEqual({
+      name: 'coalition',
+      coalitionId: eastsideId,
+    });
+    expect(await broughtTo(ana.services, card.found, riverside, 'p')).toEqual({
+      name: 'proposal',
+      groupId: riverside,
+      proposalId: 'p',
+    });
     await syncAll(1);
     await vote(riverside, motion, [ana, cy]);
     await vote(oak, motion, [ben, cy]);
