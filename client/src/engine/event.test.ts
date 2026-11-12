@@ -1714,6 +1714,11 @@ describe('coalitions (#100)', () => {
     expect(founded !== null && isCoalitionGenesis(founded)).toBe(false);
   });
 
+  it('keeps a genesis’s commitment to the room’s inner, 32 bytes in canonical base64url (#371)', () => {
+    const parsed = parseEvent(json(envelope('genesis', { ...COALITION, commit: INNER })));
+    expect(parsed?.event.body).toEqual({ ...COALITION, commit: INNER });
+  });
+
   it('drops anything but a seat’s name and key', () => {
     const seats = [{ name: 'Riverside', key: KEY, secret: SEAT }, SEATS[1]];
     const parsed = parseEvent(json(envelope('genesis', { ...COALITION, seats })));
@@ -1738,6 +1743,9 @@ describe('coalitions (#100)', () => {
     ['with a Document without atoms (#92)', { ...COALITION, documents: [{ title: 'T' }] }],
     ['without a name', { ...COALITION, name: undefined }],
     ['of another kind', { ...COALITION, kind: 'federation' }],
+    ['whose commitment is short (#371)', { ...COALITION, commit: INNER.slice(1) }],
+    ['whose commitment isn’t canonical (#371)', { ...COALITION, commit: `${INNER.slice(0, 42)}B` }],
+    ['whose commitment isn’t text (#371)', { ...COALITION, commit: [4] }],
   ])('refuses a coalition genesis %s', (_label, body) => {
     expect(parseEvent(json(envelope('genesis', body)))).toBeNull();
   });

@@ -70,7 +70,10 @@ export interface SeatEntry {
  * founder, since its author isn't a participant, plus the seats of the groups
  * that reconcile. Carries `group: ""` like a group's genesis. The fold checks
  * that the seats hold two or more distinct keys, and that it founds exactly
- * one Document (#92): a coalition's statement.
+ * one Document (#92): a coalition's statement. `commit` is the commitment to
+ * the room's `inner` (`crypto/room.ts`'s `roomCommit`, #371), 32 bytes in
+ * canonical base64url, which a group admitted later checks each wrap of
+ * `inner` against; a genesis from before #371 has none.
  */
 export interface CoalitionGenesisBody {
   readonly kind: 'coalition';
@@ -79,6 +82,7 @@ export interface CoalitionGenesisBody {
   readonly documents: readonly FoundingDocument[];
   readonly rules?: Readonly<Record<string, unknown>>;
   readonly seats: readonly SeatEntry[];
+  readonly commit?: string;
 }
 
 /** True when a genesis founds a coalition rather than a group (#100). */
@@ -1132,20 +1136,30 @@ function parseDocuments(value: unknown): FoundingDocument[] | null {
 }
 
 /** A coalition genesis: a group genesis body without its founder, plus its seats (#100). */
-function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
-  const { kind, name, chat, rules } = body;
-  const documents = parseDocuments(body.documents);
-  const seats = parseSeats(body.seats);
-  if (kind !== 'coalition' || !isString(name) || documents === null) return null;
-  if (!isOptionalString(chat) || !isOptionalObject(rules) || seats === null) return null;
+/**
+ * A coalition genesis's optional fields, each as given: its chat link, its
+ * rules, and its commitment to the room's `inner` (#371); or null when any is
+ * a bad shape.
+ */
+function coalitionExtras(
+  body: Json,
+): Pick<CoalitionGenesisBody, 'chat' | 'rules' | 'commit'> | null {
+  const { chat, rules, commit } = body;
+  if (!isOptionalString(chat) || !isOptionalObject(rules) || !isOptionalKey32(commit)) return null;
   return {
-    kind,
-    name,
-    documents,
-    seats,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
+    ...(commit === undefined ? {} : { commit }),
   };
+}
+
+function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
+  const { kind, name } = body;
+  const documents = parseDocuments(body.documents);
+  const seats = parseSeats(body.seats);
+  const extras = coalitionExtras(body);
+  if (kind !== 'coalition' || !isString(name) || documents === null) return null;
+  return seats === null || extras === null ? null : { kind, name, documents, seats, ...extras };
 }
 
 function parseGenesis(body: Json): GenesisBody | CoalitionGenesisBody | null {

@@ -3,7 +3,9 @@
  * outside @noble, pins its weekly mailbox ids, seal key and entry id, all from
  * the coalition's `inner`, and one message sealed for it, which the coalition
  * secret's own keys, all a follower holds (#124), never open. `vectors/room-wrap.json`
- * pins how a group admitted later receives `inner` through its seat (#313).
+ * pins how a group admitted later receives `inner` through its seat (#313),
+ * and `vectors/room-commit.json` the commitment to `inner` a coalition's
+ * genesis carries, which a wrap's `inner` must match (#371).
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -14,8 +16,10 @@ import { deriveCoalitionEntryId } from './card';
 import { deriveSealKey, deriveWeekMailboxId, MAILBOX_WEEK_INFO, SEAL_KEY_INFO } from './groupKeys';
 import {
   deriveRoomEntryId,
+  ROOM_COMMIT_TAG,
   ROOM_ENTRY_INFO,
   ROOM_WRAP_INFO,
+  roomCommit,
   roomWrapAad,
   SEAT_KX_INFO,
   seatKxKeyOf,
@@ -184,7 +188,8 @@ describe('room-wrap.json', () => {
     const place = { coalitionId: vector.coalitionId, seat: id(vector.seatKey) };
     const seatSecret = bytes(vector.seatSecret);
     const wrap = id(vector.wrap);
-    expect(unwrapInner({ ...place, seatSecret, wrap })).toEqual(bytes(vector.inner));
+    const commit = roomCommit(bytes(vector.inner));
+    expect(unwrapInner({ ...place, seatSecret, wrap, commit })).toEqual(bytes(vector.inner));
     expect(roomWrapAad(place)).toEqual(bytes(vector.aad));
   });
 });
@@ -193,8 +198,12 @@ describe('wrapInner and unwrapInner', () => {
   const [, known] = wrapVectors[0] ?? [];
   if (known === undefined) throw new Error('vectors/room-wrap.json holds no vector.');
   const seatSecret = bytes(known.seatSecret);
-  const place = { coalitionId: known.coalitionId, seat: id(known.seatKey) };
   const inner = bytes(known.inner);
+  const place = {
+    coalitionId: known.coalitionId,
+    seat: id(known.seatKey),
+    commit: roomCommit(inner),
+  };
 
   it('round-trips inner to the seat that holds the secret, under a fresh box each time', () => {
     const first = wrapInner({ ...place, kx: seatKxOf(seatSecret), inner });
@@ -230,6 +239,19 @@ describe('wrapInner and unwrapInner', () => {
     expect(unwrapInner({ ...place, seatSecret, wrap: short })).toBeNull();
   });
 
+  it('opens nothing whose inner isn’t the one the commitment names, though the box opens (#371)', () => {
+    const wrap = id(known.wrap);
+    const other = new Uint8Array(32).fill(3);
+    expect(unwrapInner({ ...place, wrap, seatSecret, commit: roomCommit(other) })).toBeNull();
+    const kx = seatKxOf(seatSecret);
+    const wrong = wrapInner({ ...place, kx, inner: other });
+    expect(unwrapInner({ ...place, seatSecret, wrap: wrong })).toBeNull();
+    expect(unwrapInner({ ...place, seatSecret, wrap: wrong, commit: roomCommit(other) })).toEqual(
+      other,
+    );
+    expect(unwrapInner({ ...place, seatSecret, wrap, commit: '' })).toBeNull();
+  });
+
   it('refuses a seat secret or an inner that isn’t 32 bytes, and a key no box can be sealed to', () => {
     expect(() => seatKxKeyOf(new Uint8Array(31))).toThrow('A seat secret is 32 bytes.');
     expect(() => seatKxOf(new Uint8Array(33))).toThrow(RangeError);
@@ -253,6 +275,58 @@ describe('wrapInner and unwrapInner', () => {
         expect(seatKxOf(secret)).not.toBe(base64url(publicKeyOf(secret)));
         expect(seatKxOf(secret)).toBe(base64url(kxPublicKeyOf(kx)));
       }),
+    );
+  });
+});
+
+/** `vectors/room-commit.json` (#371): commitments to `inner` made with Python's hashlib. Each is its bytes. */
+interface RoomCommitFile {
+  readonly kind: 'room-commit';
+  readonly tag: string;
+  readonly vectors: readonly {
+    readonly name: string;
+    readonly inner: readonly number[];
+    readonly digest: readonly number[];
+  }[];
+}
+
+const [commits] = Object.values(
+  import.meta.glob<RoomCommitFile>('./vectors/room-commit.json', {
+    import: 'default',
+    eager: true,
+  }),
+);
+if (commits === undefined) throw new Error('vectors/room-commit.json is missing.');
+
+describe('room-commit.json', () => {
+  it('names the tag a commitment hashes before inner', () => {
+    expect(commits.kind).toBe('room-commit');
+    expect(commits.tag).toBe(ROOM_COMMIT_TAG);
+    expect(ROOM_COMMIT_TAG).toBe('reconcile/v1/room-commit');
+    expect(commits.vectors.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(commits.vectors.map((vector) => [vector.name, vector] as const))(
+    'commits to %s as hashlib did',
+    (_n, vector) => {
+      expect(roomCommit(bytes(vector.inner))).toBe(id(vector.digest));
+    },
+  );
+
+  it('refuses an inner that isn’t 32 bytes, and gives each inner its own commitment', () => {
+    expect(() => roomCommit(new Uint8Array(31))).toThrow('A room’s inner is 32 bytes.');
+    expect(() => roomCommit(new Uint8Array(33))).toThrow(RangeError);
+    fc.assert(
+      fc.property(
+        fc.uint8Array({ minLength: 32, maxLength: 32 }),
+        fc.uint8Array({ minLength: 32, maxLength: 32 }),
+        (a, b) => {
+          expect(roomCommit(a) === roomCommit(b)).toBe(base64url(a) === base64url(b));
+          // It names no mailbox or seal key the room's inner derives.
+          expect(roomCommit(a)).not.toBe(base64url(deriveSealKey(a)));
+          expect(roomCommit(a)).not.toBe(deriveRoomEntryId(a));
+        },
+      ),
     );
   });
 });

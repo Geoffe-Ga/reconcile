@@ -7,17 +7,21 @@
  * Renters opens in Elm Row, and through Eastside Housing in Riverside and
  * Oak St; each group votes inside itself, Eastside Housing reports its one
  * result up, and the motion resolves once its pass is final. No request
- * carries a secret of the coalition above.
+ * carries a secret of the coalition above. A coalition asking into a formed
+ * one reads its room only once seated (#344).
  */
 import { act, cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from '../app/App';
+import { messages } from '../app/messages';
 import { propose } from '../app/proposals';
 import { admitCard, bringCard, broughtTo, lookupCard, makeCard, postCard } from '../app/reconcile';
 import { base64url } from '../crypto/base64url';
 import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { openSeatSecrets } from '../crypto/innerSeal';
+import { deriveRoomEntryId } from '../crypto/room';
 import { parseCardLink } from '../coalition/card';
 import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
@@ -279,7 +283,135 @@ function sealedIn(state: GroupState, id: string): string {
   return target.sealed;
 }
 
+/** Opens the room of the coalition `id`, called `name`, on `device`, as its home's link would. */
+async function openRoom(device: TestDevice, id: string, name: string): Promise<void> {
+  showAt(device, `#/c/${id}/room`);
+  await screen.findByRole('heading', { level: 1, name });
+}
+
+/** Types `text` in the open room's box and sends it. */
+async function write(text: string): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('textbox', { name: messages.room.messageLabel }));
+  await user.paste(text);
+  await user.click(screen.getByRole('button', { name: messages.room.send }));
+  await screen.findByText(text, { normalizer: (shown) => shown });
+}
+
+/** The messages the open room lists, as "name: text". */
+function listed(): string[] {
+  const list = screen.queryByRole('list', { name: messages.room.listLabel });
+  if (list === null) return [];
+  return within(list)
+    .getAllByRole('listitem')
+    .map((item) => {
+      const name = item.querySelector('.room-author')?.textContent ?? '';
+      const text = item.querySelector('.room-text')?.textContent ?? '';
+      return `${name}: ${text}`;
+    });
+}
+
+/** What Eve writes in Metro Renters' room before Eastside Housing's card, and during its vote. */
+const BEFORE = 'CANARY-BEFORE-344 Should Eastside Housing join?';
+const DURING = 'CANARY-DURING-344 They share our landlord.';
+
+/**
+ * Shows that none of `devices` can read Metro Renters' room, whose `inner` is
+ * `metroInner`: none keeps it or holds its `inner`, and its address shows no
+ * room, with none of `written` on screen.
+ */
+async function expectNoMetroRoom(
+  devices: readonly TestDevice[],
+  ids: { readonly metroId: string; readonly metroEntry: string },
+  metroInner: Uint8Array,
+  written: readonly string[],
+) {
+  for (const device of devices) {
+    const rooms = (await device.services.store.listRooms()).map((room) => room.groupId);
+    expect(rooms).not.toContain(deriveRoomEntryId(metroInner));
+    expect(await innerOn(device, ids.metroEntry)).toBeNull();
+  }
+  const [first] = devices;
+  if (first === undefined) return;
+  showAt(first, `#/c/${ids.metroId}/room`);
+  expect(await screen.findByRole('heading', { name: messages.room.missingTitle })).toBeVisible();
+  for (const text of written) expect(screen.queryByText(text)).toBeNull();
+}
+
 describe('nested coalitions', SLOW, () => {
+  it('lets a coalition asking into a formed one read its room only once seated: nothing before or during its vote, then it reads and writes (#344)', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cy, riverside, oak } = await eastsideFormed(fake);
+    const eve = await open(fake, 'eve');
+    const elm = await found(eve, 'Elm Row', 'Eve');
+    const pine = await open(fake, 'pine');
+    const pineGroup = await found(pine, 'Pine Row', 'Pat');
+    const founding = await cardFor(eve, elm, pine, { ...METRO, yourName: 'Eve M.' });
+    const pineProposal = await bringCard(pine.services, founding.found, pineGroup, 'Pat M.');
+    await syncAll(1);
+    await vote(elm, founding.proposal, [eve]);
+    await vote(pineGroup, pineProposal, [pine]);
+    await syncAll(SETTLE);
+    const metroId = (await coalitionNamed(eve, 'Metro Renters')).group ?? '';
+    const metroEntry = await entryNamed(eve, 'Metro Renters');
+    const metroInner = await innerOn(eve, metroEntry);
+    if (metroInner === null) throw new Error('Expected Metro Renters’ inner on Eve’s device.');
+    await openRoom(eve, metroId, 'Metro Renters');
+    await write(BEFORE);
+    cleanup();
+    await syncAll();
+
+    // Eve makes Metro Renters' card for another group; Ana brings it into Eastside Housing.
+    const card = await admitCardFor(eve, metroEntry, elm, ana);
+    const into = await bringCard(
+      ana.services,
+      card,
+      await entryNamed(ana, 'Eastside Housing'),
+      'Ana M.',
+    );
+    await syncAll(1);
+    await vote(riverside, into, [ana, cy]);
+    await vote(oak, into, [ben, cy]);
+    await syncAll(SETTLE);
+    const admit = admitMotion(await coalitionNamed(eve, 'Metro Renters'));
+
+    // During the vote Eve writes again, and Elm Row and Pine Row pass it.
+    await openRoom(eve, metroId, 'Metro Renters');
+    await write(DURING);
+    cleanup();
+    await vote(elm, admit.id, [eve]);
+    await vote(pineGroup, admit.id, [pine]);
+    await syncAll(SETTLE);
+    const ids = { metroId, metroEntry };
+    await expectNoMetroRoom([ana, ben, cy], ids, metroInner, [BEFORE, DURING]);
+
+    act(() => {
+      fake.minute += PAST_FINAL;
+    });
+    await syncAll(SETTLE);
+
+    // Seated, a participant from a seated group wraps inner to Eastside Housing's seat, and every
+    // device in its groups keeps Metro Renters' room and reads it; Ana, taking part, writes.
+    for (const device of [ana, ben, cy]) {
+      const rooms = (await device.services.store.listRooms()).map((room) => room.groupId);
+      expect(rooms).toContain(deriveRoomEntryId(metroInner));
+    }
+    await openRoom(ben, metroId, 'Metro Renters');
+    expect(listed()).toEqual([`Eve M.: ${BEFORE}`, `Eve M.: ${DURING}`]);
+    await openRoom(ana, metroId, 'Metro Renters');
+    expect(listed()).toEqual([`Eve M.: ${BEFORE}`, `Eve M.: ${DURING}`]);
+    await write('Eastside Housing is glad to be here.');
+    cleanup();
+    await syncAll();
+    await openRoom(eve, metroId, 'Metro Renters');
+    expect(listed()).toEqual([
+      `Eve M.: ${BEFORE}`,
+      `Eve M.: ${DURING}`,
+      'Ana M.: Eastside Housing is glad to be here.',
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('forms Metro Renters from Eastside Housing and Elm Row, with every device of theirs reading it', async () => {
     const fake = createFakeRelay();
     const { ana, ben, cy, eve, card } = await nested(fake);

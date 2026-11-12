@@ -913,6 +913,13 @@ describe('vector files', () => {
     },
   );
 
+  it.each(['room-commit-kept', 'room-commit-missing'])(
+    'include the room commitment vector "%s" (#371)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
   it('include the sections vector "sections-coalition" (#75, #100)', () => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
       'sections-coalition',

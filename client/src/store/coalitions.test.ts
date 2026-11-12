@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
-import { seatKxOf, unwrapInner } from '../crypto/room';
+import { roomCommit, seatKxOf, unwrapInner } from '../crypto/room';
 import { verifySeatProof } from '../crypto/seat';
 import { parseRecord, type ParsedEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
@@ -378,19 +378,20 @@ describe('settleCoalitions admitting a group', () => {
 
 /**
  * A device in Riverside (A, with inner) whose coalition entry is kim's, bound
- * to seat A, after Elm Row (C) was admitted into the coalition of A and B, with
- * `more` added to the logs first, pulled at `at` minutes past C's seat, on the
- * device `name`.
+ * to seat A, after Elm Row (C) was admitted into the coalition of A and B,
+ * whose genesis commits to `committed` (#371), with `more` added to the logs
+ * first, pulled at `at` minutes past C's seat, on the device `name`.
  */
 async function seatedWith(
   more: (logs: Logs, seated: number) => void = () => undefined,
   at = 1,
   name = 'device',
+  committed = testSecret('inner'),
 ) {
   const store = await device(name);
   const logs = new Logs();
   const a = groupA(logs);
-  const formed = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+  const formed = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed'], committed);
   const seated = logs.admitted(formed, 'dee', 'C', 'Elm Row', [
     ['kim', 'A'],
     ['zed', 'B'],
@@ -405,7 +406,8 @@ async function seatedWith(
 function opened(event: ParsedEvent['event'] | undefined, coalitionId: string, seat: string) {
   if (event?.type !== 'room-wrap') return null;
   const place = { coalitionId, seat: event.body.seat, wrap: event.body.wrap };
-  return unwrapInner({ ...place, seatSecret: seatSecret(seat) });
+  const commit = roomCommit(fromBase64url(testSecret('inner')));
+  return unwrapInner({ ...place, seatSecret: seatSecret(seat), commit });
 }
 
 describe('settleCoalitions wrapping the room’s inner for an admitted seat (#313)', () => {
@@ -433,16 +435,32 @@ describe('settleCoalitions wrapping the room’s inner for an admitted seat (#31
     expect(await queued(store)).toEqual([]);
   });
 
-  it('wraps nothing once someone from its own seat has, and still wraps when only another seat has', async () => {
-    const own = await seatedWith((logs, seated) => {
-      logs.join(seated + 1, 'ben', 'A');
-      logs.wrap(seated + 2, 'ben', 'C');
-    }, 3);
+  it('wraps nothing once its own participant has, and still wraps when another of its seat or another seat has (#371)', async () => {
+    const own = await seatedWith((logs, seated) => logs.wrap(seated + 1, 'kim', 'C'), 2);
     expect(await settleCoalitions(own.store, clock)).toEqual([]);
+
+    // Ben's wrap, from kim's own seat, may hold a room of his own: kim's device can't open it to
+    // check, so it wraps the one the genesis commits to all the same, which repairs a wrong one.
+    const seatMate = await seatedWith(
+      (logs, seated) => {
+        logs.join(seated + 1, 'ben', 'A');
+        logs.wrap(seated + 2, 'ben', 'C');
+      },
+      3,
+      'seat-mate',
+    );
+    expect(await settleCoalitions(seatMate.store, clock)).toEqual([ENTRY]);
+    expect((await queued(seatMate.store)).map(({ event }) => event.type)).toEqual(['room-wrap']);
 
     const other = await seatedWith((logs, seated) => logs.wrap(seated + 1, 'zed', 'C'), 2, 'other');
     expect(await settleCoalitions(other.store, clock)).toEqual([ENTRY]);
     expect((await queued(other.store)).map(({ event }) => event.type)).toEqual(['room-wrap']);
+  });
+
+  it('wraps nothing when the inner its group holds isn’t the one the genesis commits to, which no device takes (#371)', async () => {
+    const { store } = await seatedWith(undefined, 1, 'device', testSecret('another-inner'));
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toEqual([]);
   });
 
   it('wraps nothing from the admitted group’s own participant, before or after it holds inner', async () => {
@@ -749,7 +767,16 @@ describe('coalitionKeys (#122)', () => {
     expect([...(before?.seats.keys() ?? [])]).toEqual([seatKey('C')]);
     expect(before?.inner).toBeNull();
 
-    logs.wrap(seated + 1, 'kim', 'C');
+    // A wrap whose inner the coalition's genesis doesn't commit to opens, and gives nothing (#371).
+    logs.wrap(
+      seated + 1,
+      'zed',
+      'C',
+      logs.wrapFor('C', logs.ids.coalition, testSecret('zed-room')),
+    );
+    expect(keysAt().get(ENTRY)?.inner).toBeNull();
+
+    logs.wrap(seated + 2, 'kim', 'C');
     const after = keysAt().get(ENTRY);
     expect(base64url(after?.inner ?? new Uint8Array())).toBe(testSecret('inner'));
   });

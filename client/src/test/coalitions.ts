@@ -9,7 +9,7 @@
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
 import { sealSeatSecrets } from '../crypto/innerSeal';
-import { seatKxOf, wrapInner } from '../crypto/room';
+import { roomCommit, seatKxOf, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import { foldTogether, motionsFor, seatIn } from '../engine/crossing';
@@ -39,6 +39,11 @@ export function seatKey(name: string): string {
 /** 32 bytes in base64url for a coalition secret or `inner`, from SHA-256("reconcile/test-secret/" + name). */
 export function testSecret(name: string): string {
   return base64url(sha256(encoder.encode(`reconcile/test-secret/${name}`)));
+}
+
+/** A genesis's commitment to `inner`, in base64url (#371), as a field, or none for null. */
+function commitTo(inner: string | null): { readonly commit?: string } {
+  return inner === null ? {} : { commit: roomCommit(fromBase64url(inner)) };
 }
 
 /** An event before the log stamps its group and time. */
@@ -158,14 +163,25 @@ export class Logs {
     return this.add(log, received, voter, { type: 'vote', body });
   }
 
-  /** A coalition genesis by `author`, which isn't a participant, naming `seats`. */
-  coalition(received: number, seats: readonly string[], author = 'kim'): string {
+  /**
+   * A coalition genesis by `author`, which isn't a participant, naming
+   * `seats`, and committing to the room's `inner` (#371): the test `inner`,
+   * unless `committed` names another, or is null for a genesis with none, as
+   * one from before #371.
+   */
+  coalition(
+    received: number,
+    seats: readonly string[],
+    author = 'kim',
+    committed: string | null = testSecret('inner'),
+  ): string {
     const { name, title, atoms } = COALITION_STATEMENT;
     const body = {
       kind: 'coalition',
       name,
       documents: [{ title, atoms }],
       seats: seats.map((seat) => ({ name: seat, key: seatKey(seat) })),
+      ...commitTo(committed),
     } as const;
     return this.add('coalition', received, author, { type: 'genesis', body });
   }
@@ -223,13 +239,21 @@ export class Logs {
     return this.add('coalition', received, who, { type: 'room-wrap', body });
   }
 
-  /** The test `inner`, wrapped to seat `seat`'s key in this coalition (#313). */
-  wrapFor(seat: string, coalitionId = this.ids.coalition ?? ''): string {
+  /**
+   * `inner`, the test `inner` unless given, wrapped to seat `seat`'s key in
+   * this coalition (#313): a wrap with another, which the genesis doesn't
+   * commit to, is a wrong one (#371).
+   */
+  wrapFor(
+    seat: string,
+    coalitionId = this.ids.coalition ?? '',
+    inner = testSecret('inner'),
+  ): string {
     return wrapInner({
       coalitionId,
       seat: seatKey(seat),
       kx: seatKxOf(seatSecret(seat)),
-      inner: fromBase64url(testSecret('inner')),
+      inner: fromBase64url(inner),
     });
   }
 
@@ -274,10 +298,16 @@ export class Logs {
 
   /**
    * A formed coalition of `seats` from relay minute `received`: its genesis,
-   * then `participants[i]` joining under `seats[i]` and passing the genesis.
+   * committing to `committed` as {@link coalition} does, then `participants[i]`
+   * joining under `seats[i]` and passing the genesis.
    */
-  formed(received: number, seats: readonly string[], participants: readonly string[]): number {
-    this.coalition(received, seats);
+  formed(
+    received: number,
+    seats: readonly string[],
+    participants: readonly string[],
+    committed: string | null = testSecret('inner'),
+  ): number {
+    this.coalition(received, seats, 'kim', committed);
     let at = received + 1;
     seats.forEach((seat, i) => this.join((at += 1), participants[i] ?? '', seat));
     const genesis = this.ids.coalition ?? '';
@@ -330,6 +360,7 @@ export class NestedLogs extends Logs {
         key: seatKey(seat),
         ...(level === undefined ? {} : { level }),
       })),
+      ...commitTo(testSecret(log === 'coalition' ? 'inner' : `inner${log}`)),
     } as const;
     return this.add(log, received, author, { type: 'genesis', body });
   }
