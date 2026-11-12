@@ -160,7 +160,8 @@ export interface Admission {
  * recorded it: where the relay put it, the participant who posted it and the
  * seat they're bound to, the admitted seat it is for, and the wrap itself
  * (`crypto/room.ts`). The fold can't open a wrap; the admitted group's
- * devices do, and take the first that opens.
+ * devices do, and take the first that opens to the `inner` the genesis
+ * commits to (#371).
  */
 export interface RoomWrap {
   readonly id: string;
@@ -189,10 +190,13 @@ export interface RoomWrap {
  * wrap of the room's `inner` for an admitted seat, in relay order (#313).
  * `level` is one above its highest seat's stated level (#122), so 1 for a
  * coalition of groups, rising when a higher-level seat is admitted.
+ * `commit` is the genesis's commitment to the room's `inner` (#371), or null
+ * for a genesis from before it, whose admitted seats take no wrap.
  */
 export interface Coalition {
   readonly status: CoalitionStatus;
   readonly level: number;
+  readonly commit: string | null;
   readonly declinedAt: number | null;
   readonly seats: readonly SeatEntry[];
   readonly founding: CoalitionStatement;
@@ -325,6 +329,7 @@ export function newCoalition(
   return {
     status: 'forming',
     level: levelOf(seats),
+    commit: body.commit ?? null,
     declinedAt: null,
     seats: [...seats],
     founding: { name, title: statement.title, atoms: statement.atoms },

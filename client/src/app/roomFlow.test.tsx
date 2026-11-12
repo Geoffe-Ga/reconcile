@@ -27,10 +27,10 @@ import {
   GROUP_SECRET_BYTES,
   weekOf,
 } from '../crypto/groupKeys';
-import { deriveRoomEntryId } from '../crypto/room';
+import { deriveRoomEntryId, wrapInner } from '../crypto/room';
 import { BLOB_SIZES, xchachaSeal } from '../crypto/seal';
 import { RESULT_GRACE_MINUTES } from '../engine/coalition';
-import { parseRecord } from '../engine/event';
+import { parseRecord, signEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
 import { newEntry } from '../store/coalitions';
@@ -387,6 +387,30 @@ async function expectShut(
   expect(screen.queryByText(BEFORE)).toBeNull();
 }
 
+/**
+ * Posts, as `device`'s participant in the coalition `id`, a wrap to `seat`
+ * of a room of their own: a forged `inner` the genesis doesn't commit to,
+ * sealed to the seat's key as an honest wrap is (#371). Returns its author
+ * and the forged `inner`.
+ */
+async function forgeWrap(
+  fake: FakeRelay,
+  device: TestDevice,
+  id: string,
+  seat: { readonly key: string; readonly kx: string },
+) {
+  const [entry] = await device.services.store.listCoalitions();
+  if (entry === undefined) throw new Error('Expected the coalition.');
+  const forged = new Uint8Array(GROUP_SECRET_BYTES).fill(0x6b);
+  const wrap = wrapInner({ coalitionId: id, seat: seat.key, kx: seat.kx, inner: forged });
+  const draft = { type: 'room-wrap', group: id, ts: 0, body: { seat: seat.key, wrap } } as const;
+  const { record } = signEvent(entry.signingKey, draft);
+  const mailbox = deriveWeekMailboxId(entry.secret, weekOf(fake.minute));
+  const sealed = xchachaSeal.seal(mailbox, deriveSealKey(entry.secret), record);
+  await device.services.relay.putBlob(mailbox, sealed, 30);
+  return { author: entry.me.author, forged };
+}
+
 describe('a group asking into a coalition, and its room (#313)', SLOW, () => {
   it('can’t open the room’s messages from before or during its admission vote, and reads the room once seated', async () => {
     const fake = createFakeRelay();
@@ -494,6 +518,46 @@ describe('a group asking into a coalition, and its room (#313)', SLOW, () => {
     const name = await screen.findByRole('textbox', { name: messages.card.nameLabel });
     expect(name).toBeVisible();
     expect(screen.queryByText(messages.card.coalitionKeyWaits)).toBeNull();
+  });
+
+  it('refuses a seated participant’s wrap of a room of their own, takes an honest one after it, and reads the real room (#371)', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cy, dee, riverside, oak, id, motion } = await elmRowAsks(fake);
+    await vote(riverside, motion, [ana, cy]);
+    await vote(oak, motion, [ben, cy]);
+    await syncAll(3);
+    act(() => {
+      fake.minute += PAST_FINAL;
+    });
+    // Dee's device alone syncs: Elm Row takes its seat, and Dee joins under it.
+    for (let pass = 0; pass < 3; pass += 1) await dee.services.sync.syncOnce();
+    const [elmSeat] = (await coalitionOn(dee)).coalition?.admitted ?? [];
+    if (elmSeat === undefined) throw new Error('Expected Elm Row’s seat.');
+
+    // Cy, seated through Oak St, wraps a room of his own to Elm Row's seat before anyone else.
+    const { author, forged } = await forgeWrap(fake, cy, id, elmSeat);
+    for (let pass = 0; pass < 2; pass += 1) await dee.services.sync.syncOnce();
+    expect((await coalitionOn(dee)).coalition?.wraps.map((w) => w.by)).toEqual([author]);
+    // The wrap opens with Elm Row's seat secret, but its inner isn't the one the genesis commits to.
+    expect(await dee.services.store.listRooms()).toEqual([]);
+
+    await syncAll(3);
+    const inner = await innerOf(ana);
+    const wraps = (await coalitionOn(dee)).coalition?.wraps ?? [];
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(wraps[0]?.by).toBe(author);
+    const rooms = await dee.services.store.listRooms();
+    expect(rooms.map((held) => held.groupId)).toEqual([deriveRoomEntryId(inner)]);
+    expect(rooms.map((held) => held.groupId)).not.toContain(deriveRoomEntryId(forged));
+    await openRoom(dee, id);
+    expect(listed()).toEqual([`Mara Okafor: ${BEFORE}`]);
+    await write('Elm Row reads the room everyone else does.');
+    await syncAll();
+    await openRoom(ana, id);
+    expect(listed()).toEqual([
+      `Mara Okafor: ${BEFORE}`,
+      'Dee M.: Elm Row reads the room everyone else does.',
+    ]);
   });
 
   it('never opens the room to a group the coalition didn’t admit: no wrap is made for it', async () => {

@@ -19,18 +19,31 @@
  * admitted group holds its seat secret, so each opens the wrap
  * ({@link unwrapInner}); a candidate group holds no seated group's.
  *
+ * Nothing but the coalition's genesis says which `inner` a wrap should hold,
+ * so the genesis carries a commitment to it ({@link roomCommit}, #371;
+ * ADR-0075's 2026-11-12 amendment), written by the founding group's device
+ * that brought the card, which holds `inner`. {@link unwrapInner} gives a
+ * wrap's `inner` only when it is the one the commitment names, so a seated
+ * participant who wraps a room of their own to an admitted seat is refused,
+ * and the admitted group takes the next honest wrap. The commitment is a hash
+ * of 32 random bytes under a tag of its own: it names no mailbox, key or
+ * entry id that `inner` derives, and no one can test a guess of `inner`
+ * against it in any number of tries that matters.
+ *
  * A device keeps the room as one entry in its store, beside its groups and
  * coalitions, under an id derived from `inner` under a label of its own, so
  * every tab finds the same entry, and the id names no mailbox. It never
  * leaves the device: no backup file or link bundle carries a room.
- * `engine/vectors/room-keys.json` and `vectors/room-wrap.json` pin every
- * derivation and wrap here, computed outside @noble.
+ * `engine/vectors/room-keys.json`, `vectors/room-wrap.json` and
+ * `vectors/room-commit.json` pin every derivation, wrap and commitment here,
+ * computed outside @noble.
  */
 import { concatBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
 import { base64url, fromBase64url } from './base64url';
 import { kxPublicKeyOf, openBox, sealTo } from './box';
 import { GROUP_SECRET_BYTES } from './groupKeys';
+import { sha256 } from './hash';
 import { hkdf32 } from './hkdf';
 
 /** The HKDF label of a room's entry id on a device. */
@@ -41,6 +54,9 @@ export const SEAT_KX_INFO = 'reconcile/v1/seat-kx';
 
 /** The HKDF label of a room wrap's box (#313). */
 export const ROOM_WRAP_INFO = 'reconcile/v1/room-wrap';
+
+/** The tag a room commitment hashes before `inner` (#371). */
+export const ROOM_COMMIT_TAG = 'reconcile/v1/room-commit';
 
 /** A wrap's text: unpadded base64url. */
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -54,6 +70,18 @@ const BASE64URL = /^[A-Za-z0-9_-]+$/;
 export function deriveRoomEntryId(inner: Uint8Array): string {
   if (inner.length !== GROUP_SECRET_BYTES) throw new RangeError('A room’s inner is 32 bytes.');
   return base64url(hkdf32(inner, ROOM_ENTRY_INFO));
+}
+
+/**
+ * The commitment to a coalition room's `inner` that its genesis carries
+ * (#371): the SHA-256 of UTF-8 {@link ROOM_COMMIT_TAG} ‖ 0x00 ‖ the 32
+ * bytes of `inner`, in unpadded base64url.
+ *
+ * @throws {RangeError} when `inner` isn't 32 bytes.
+ */
+export function roomCommit(inner: Uint8Array): string {
+  if (inner.length !== GROUP_SECRET_BYTES) throw new RangeError('A room’s inner is 32 bytes.');
+  return base64url(sha256(concatBytes(utf8ToBytes(ROOM_COMMIT_TAG), Uint8Array.of(0), inner)));
 }
 
 /**
@@ -123,20 +151,26 @@ function bytesOf(text: string): Uint8Array | null {
 }
 
 /**
- * The `inner` in `wrap`, opened with the seat's key from `seatSecret`, or
- * null when it doesn't open there or holds anything but 32 bytes: a wrap
- * for another seat or coalition, a changed byte, or a seat secret of the
- * wrong length.
+ * The `inner` in `wrap`, opened with the seat's key from `seatSecret`, when
+ * it is the one `commit`, the coalition genesis's commitment, names (#371);
+ * or null when it doesn't open there, holds anything but 32 bytes, or holds
+ * another `inner`: a wrap for another seat or coalition, a changed byte, a
+ * seat secret of the wrong length, or a room someone made of their own.
  */
 export function unwrapInner(
-  place: RoomWrapPlace & { readonly wrap: string; readonly seatSecret: Uint8Array },
+  place: RoomWrapPlace & {
+    readonly wrap: string;
+    readonly seatSecret: Uint8Array;
+    readonly commit: string;
+  },
 ): Uint8Array | null {
   const box = bytesOf(place.wrap);
   if (box === null || place.seatSecret.length !== GROUP_SECRET_BYTES) return null;
   const secretKey = seatKxKeyOf(place.seatSecret);
   try {
     const inner = openBox(secretKey, box, ROOM_WRAP_INFO, roomWrapAad(place));
-    return inner?.length === GROUP_SECRET_BYTES ? inner : null;
+    if (inner?.length !== GROUP_SECRET_BYTES) return null;
+    return roomCommit(inner) === place.commit ? inner : null;
   } finally {
     secretKey.fill(0);
   }

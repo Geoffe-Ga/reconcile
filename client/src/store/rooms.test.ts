@@ -54,12 +54,15 @@ function pullOf(records: readonly LogRecord[], relayNow = R + 100) {
   return { records: [...records], relayNow, instance: 'i', lastSyncAt: 1 };
 }
 
-/** Riverside (A: ana, ben) passed its reconcile Proposal; the coalition formed with kim and zed. */
-function logs(): Logs {
+/**
+ * Riverside (A: ana, ben) passed its reconcile Proposal; the coalition formed
+ * with kim and zed, its genesis committing to `committed` (#371).
+ */
+function logs(committed: string | null = testSecret('inner')): Logs {
   const built = new Logs();
   built.group('A', R, ['ana', 'ben']);
   built.reconcile('A', R + 10, 'ana', 'A');
-  built.formed(R + 20, ['A', 'B'], ['kim', 'zed']);
+  built.formed(R + 20, ['A', 'B'], ['kim', 'zed'], committed);
   return built;
 }
 
@@ -298,12 +301,13 @@ describe('keepRooms', () => {
 });
 
 /**
- * Eastside formed of A (kim) and B (zed), then Elm Row (C, dee) asked in
- * with a card that carried no inner, and both seats passed its admission.
- * Returns the logs and the minute Elm Row takes its seat.
+ * Eastside formed of A (kim) and B (zed), its genesis committing to
+ * `committed` (#371), then Elm Row (C, dee) asked in with a card that carried
+ * no inner, and both seats passed its admission. Returns the logs and the
+ * minute Elm Row takes its seat.
  */
-function asksIn(): { built: Logs; seated: number } {
-  const built = logs();
+function asksIn(committed: string | null = testSecret('inner')): { built: Logs; seated: number } {
+  const built = logs(committed);
   built.group('C', R, ['dee'], 'Elm Row');
   const proposal = built.reconcile('C', R + 30, 'dee', 'C', { inner: false });
   built.vote('C', R + 31, 'dee', proposal, 4);
@@ -394,6 +398,40 @@ describe('a group admitted into the coalition (#313)', () => {
     await store.applyPull(ENTRY, pullOf(built.logs.coalition ?? [], seated + 6), eventIdOf);
 
     expect(await innerOnDevice(store)).toEqual(INNER);
+  });
+
+  it('refuses a wrap whose inner the genesis doesn’t commit to, though it opens, and takes an honest one after it (#371)', async () => {
+    const store = await device();
+    const { built, seated } = asksIn();
+    const id = built.ids.coalition ?? '';
+    // Zed, seated through B, wraps a room of his own to Elm Row's seat before anyone else.
+    built.wrap(seated + 1, 'zed', 'C', built.wrapFor('C', id, testSecret('zed-room')));
+    built.join(seated + 2, 'dee', 'C');
+    await admittedDevice(store, built, seated + 3);
+    await keepRooms(store);
+    expect(await innerOnDevice(store)).toBeNull();
+    expect(await store.listRooms()).toEqual([]);
+
+    built.wrap(seated + 4, 'kim', 'C');
+    await store.applyPull(ENTRY, pullOf(built.logs.coalition ?? [], seated + 5), eventIdOf);
+    await keepRooms(store);
+
+    expect(await innerOnDevice(store)).toEqual(INNER);
+    const [room, ...more] = await store.listRooms();
+    expect([room?.groupId, more]).toEqual([ROOM, []]);
+  });
+
+  it('takes no wrap at all for a coalition whose genesis commits to no inner, as one from before #371', async () => {
+    const store = await device();
+    const { built, seated } = asksIn(null);
+    built.wrap(seated + 1, 'kim', 'C');
+    built.join(seated + 2, 'dee', 'C');
+    await admittedDevice(store, built, seated + 3);
+
+    await keepRooms(store);
+
+    expect(await innerOnDevice(store)).toBeNull();
+    expect(await store.listRooms()).toEqual([]);
   });
 
   it('opens no wrap made before it was seated: the fold ignores it, so the room stays shut', async () => {

@@ -17,7 +17,12 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+                "documents": [
+                  {
+                    "title": "House rules",
+                    "atoms": ["Quiet after 11pm."]
+                  }
+                ]
               }
             }
           },
@@ -108,7 +113,12 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+                "documents": [
+                  {
+                    "title": "House rules",
+                    "atoms": ["Quiet after 11pm."]
+                  }
+                ]
               }
             }
           },
@@ -184,7 +194,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean."]
+                  }
+                ],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -506,7 +521,12 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+                "documents": [
+                  {
+                    "title": "House rules",
+                    "atoms": ["Quiet after 11pm."]
+                  }
+                ]
               }
             }
           },
@@ -616,7 +636,12 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+                "documents": [
+                  {
+                    "title": "House rules",
+                    "atoms": ["Quiet after 11pm."]
+                  }
+                ]
               }
             }
           },
@@ -707,7 +732,12 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+                "documents": [
+                  {
+                    "title": "House rules",
+                    "atoms": ["Quiet after 11pm."]
+                  }
+                ]
               }
             }
           },
@@ -783,7 +813,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean."]
+                  }
+                ],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1105,7 +1140,12 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+                "documents": [
+                  {
+                    "title": "House rules",
+                    "atoms": ["Quiet after 11pm."]
+                  }
+                ]
               }
             }
           },
@@ -1180,6 +1220,111 @@
               "id": "@30"
             }
           ]
+        }
+      }
+    },
+    {
+      "name": "room-commit-kept: a coalition's genesis carries the commitment to its room's inner, the SHA-256 of 'reconcile/v1/room-commit' ‖ 0x00 ‖ ~inner, computed with Python's hashlib, and the coalition keeps it, so an admitted seat's devices take only a wrap whose inner it names (#371)",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean."]
+                  }
+                ],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Hillside",
+                    "key": "^B"
+                  }
+                ],
+                "commit": {
+                  "$base64url": [
+                    188, 189, 195, 61, 181, 147, 65, 89, 201, 158, 79, 153, 220, 63, 184, 241, 72,
+                    26, 135, 148, 5, 226, 166, 57, 115, 224, 116, 238, 83, 192, 225, 75
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375004,
+      "expect": {
+        "coalition": {
+          "coalition": {
+            "status": "forming",
+            "commit": {
+              "$base64url": [
+                188, 189, 195, 61, 181, 147, 65, 89, 201, 158, 79, 153, 220, 63, 184, 241, 72, 26,
+                135, 148, 5, 226, 166, 57, 115, 224, 116, 238, 83, 192, 225, 75
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "room-commit-missing: a coalition founded with no commitment, as one from before #371 was, keeps none, so its admitted seats' devices take no wrap at all",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean."]
+                  }
+                ],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Hillside",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375004,
+      "expect": {
+        "coalition": {
+          "coalition": {
+            "status": "forming",
+            "commit": null
+          }
         }
       }
     }
