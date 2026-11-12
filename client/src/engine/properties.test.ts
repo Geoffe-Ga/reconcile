@@ -16,7 +16,7 @@
  * options that pass, best first, its first is always the tally's winner, and the order ballots
  * arrive in never changes it. And of ballot expiry (#111): a device that has cleared a closed
  * Proposal's ballots, keeping its result, folds the same Document and outcomes as one that still
- * holds them.
+ * holds them, even for an event in the closing minute before the closing ballot (#289).
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -1103,6 +1103,81 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
           return event === undefined || event.type !== 'vote' || expiringProposal(event) !== pId;
         });
         const now = Math.max(resultAt, ...full.map((record) => record.received)) + scenario.later;
+        const held = fold(full, now);
+        expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
+        expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));
+      }),
+    );
+  });
+
+  it('folds the same from the cleared log wherever a Proposal on the same Atom falls in the closing minute (#289)', () => {
+    const scenario = fc.record({
+      count: fc.integer({ min: 2, max: 3 }),
+      ballots: fc.array(fc.record({ at: fc.integer({ min: 1, max: 3 }), value: score }), {
+        minLength: 3,
+        maxLength: 3,
+      }),
+      anchor: fc.nat(),
+      slot: fc.nat(),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, ballots, anchor, slot }) => {
+        const start = Log.founded(count);
+        const group = start.group;
+        const [genesis] = start.records;
+        if (genesis === undefined) throw new Error('Expected a genesis.');
+        const p0 = R + 20;
+        const pInput: Unstamped = {
+          type: 'proposal',
+          body: { atom: `${group}.0`, title: 'P', why: 'W', text: 'P text' },
+        };
+        const pId = signedAs(member(0), { ...pInput, group, ts: p0 * 60_000 }).id;
+        const planned: Planned[] = start.records.slice(1).map((record, i) => ({
+          received: record.received,
+          author: member(i + 1),
+          input: { type: 'join', body: { name: member(i + 1) } },
+        }));
+        planned.push({ received: p0, author: member(0), input: pInput });
+        const after = planned.length;
+        // Everyone scores P once, so its last ballot in relay order closes it early.
+        const voters = ballots.slice(0, count);
+        voters.forEach(({ at, value }, i) => {
+          const note = value === 0 ? { note: 'A reason.' } : {};
+          const body = {
+            proposal: pId,
+            scores: { [pId]: value },
+            ...note,
+            salt: `salt-${String(i)}`,
+          };
+          planned.push({ received: p0 + at, author: member(i), input: { type: 'vote', body } });
+        });
+        // Q lands in some ballot's minute, before or after any of P's ballots in relay order.
+        const qAt = p0 + (voters[anchor % count]?.at ?? 0);
+        const qInput: Unstamped = {
+          type: 'proposal',
+          body: { atom: `${group}.0`, title: 'Q', why: 'W', text: 'Q text' },
+        };
+        planned.splice(after + (slot % (count + 1)), 0, {
+          received: qAt,
+          author: member(0),
+          input: qInput,
+        });
+        const p = fold(signAll(group, genesis, planned), p0 + WINDOW).proposals.find(
+          (candidate) => candidate.id === pId,
+        );
+        if (p === undefined || p.closedAt === null) throw new Error('Expected P to close early.');
+        const resultAt = p.closedAt + 1;
+        planned.push({
+          received: resultAt,
+          author: member(0),
+          input: { type: 'result', body: resultFor(p) },
+        });
+        const full = signAll(group, genesis, planned);
+        const cleared = full.filter((record) => {
+          const event = parseRecord(record.bytes)?.event;
+          return event === undefined || event.type !== 'vote' || expiringProposal(event) !== pId;
+        });
+        const now = resultAt + 1;
         const held = fold(full, now);
         expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
         expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));

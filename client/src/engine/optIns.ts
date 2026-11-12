@@ -23,6 +23,7 @@
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { can, type Roster } from './capabilities';
+import { type Closing, isOpenAt } from './open';
 
 /** The opt-ins, in the order screens list them. */
 export const OPT_INS = ['chatBot', 'frontDoor'] as const;
@@ -246,8 +247,11 @@ export interface Narrowing {
   readonly proposal: string;
 }
 
-/** What the opt-in rules read of a Proposal: who made it, what it changes, and when it closes. */
-export interface OptInProposalState {
+/**
+ * What the opt-in rules read of a Proposal: who made it, what it changes, and
+ * when it closes, which they read as every rule does ({@link isOpenAt}, #289).
+ */
+export interface OptInProposalState extends Closing {
   readonly id: string;
   readonly author: string;
   /** A rules change, or any other kind of target, whose details the opt-in rules don't read. */
@@ -265,8 +269,6 @@ export interface OptInProposalState {
           | 'admit';
       }
     | RulesChange;
-  readonly deadline: number;
-  readonly closedAt: number | null;
 }
 
 /** What the opt-in rules read of a group, at relay minute `at`. */
@@ -282,17 +284,12 @@ export function rulesChangeOf(proposal: Pick<OptInProposalState, 'target'>): Rul
   return target.kind === 'rules' ? target : null;
 }
 
-/** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
-function isOpen(proposal: OptInProposalState, at: number): boolean {
-  return proposal.closedAt === null && at < proposal.deadline;
-}
-
 /** The rules Proposal open on `optIn` at `state.at`, if any. An opt-in takes one at a time. */
 export function openRulesProposal(
   state: Pick<OptInState, 'proposals' | 'at'>,
   optIn: OptIn,
 ): OptInProposalState | undefined {
-  return state.proposals.find((p) => rulesChangeOf(p)?.optIn === optIn && isOpen(p, state.at));
+  return state.proposals.find((p) => rulesChangeOf(p)?.optIn === optIn && isOpenAt(p, state.at));
 }
 
 /** True while a steward's narrowing of `optIn` is in force: its off-Proposal is still open. */
@@ -303,7 +300,7 @@ export function isNarrowed(
   return state.narrowings.some((narrowing) => {
     if (narrowing.optIn !== optIn) return false;
     const proposal = state.proposals.find((p) => p.id === narrowing.proposal);
-    return proposal !== undefined && isOpen(proposal, state.at);
+    return proposal !== undefined && isOpenAt(proposal, state.at);
   });
 }
 

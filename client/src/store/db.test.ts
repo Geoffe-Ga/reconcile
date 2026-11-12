@@ -348,6 +348,28 @@ describe('applyPull', () => {
     });
   });
 
+  it('drops the first outbox entry with each sent record’s bytes in the change that saves its records (#343)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    for (const n of [1, 2, 1, 3]) {
+      await store.enqueue(group.groupId, utf8(`{"n":${String(n)}}`));
+    }
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+    const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
+    transaction.mockClear();
+
+    const read = [{ seq: 4, received: 7, bytes: utf8('{"n":1}') }];
+    const sent = [utf8('{"n":1}'), utf8('{"n":3}'), utf8('{"n":9}')];
+    await store.applyPull(group.groupId, { ...pull(read, 4), sent }, idOf);
+
+    expect(transaction.mock.calls.map((call) => call[1])).toEqual(['readwrite']);
+    expect(heard).toEqual([group.groupId]);
+    const saved = await store.getGroup(group.groupId);
+    expect(saved?.log.map((record) => text(record.bytes))).toEqual(['{"n":1}']);
+    expect(saved?.outbox.map(text)).toEqual(['{"n":2}', '{"n":1}']);
+  });
+
   it('puts a record that reached last week’s mailbox late before the later records read first (#110)', async () => {
     const store = await openStore();
     await store.addGroup(group);

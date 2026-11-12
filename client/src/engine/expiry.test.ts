@@ -5,7 +5,7 @@ import { authorOf, signedAs } from '../test/keys';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { utf8 } from '../test/bytes';
 import { ballotCommit, commitEntries } from './commit';
-import { parseRecord } from './event';
+import { parseRecord, type ResultBody } from './event';
 import {
   ballotsExpireAt,
   ballotsExpired,
@@ -32,7 +32,7 @@ function decidedLog() {
   log.minute += 1;
   log.ballot('ben', proposalId, { [proposalId]: 0 }, 'It ends too late.');
   const closedAt = log.minute;
-  return { log, proposalId, closedAt };
+  return { log, proposalId, closedAt, closedSeq: log.records.length };
 }
 
 function only(proposals: readonly Proposal[]): Proposal {
@@ -42,12 +42,13 @@ function only(proposals: readonly Proposal[]): Proposal {
 }
 
 describe('resultFor', () => {
-  it('records the close, the eligible count, each version’s counts, the outcome and the commitment', () => {
-    const { log, proposalId, closedAt } = decidedLog();
+  it('records the close and the closing ballot’s seq, the eligible count, each version’s counts, the outcome and the commitment', () => {
+    const { log, proposalId, closedAt, closedSeq } = decidedLog();
     const proposal = only(log.state().proposals);
     expect(resultFor(proposal)).toEqual({
       proposal: proposalId,
       closedAt,
+      closedSeq,
       eligible: 2,
       versions: [{ id: proposalId, counts: [1, 0, 0, 0, 1] }],
       outcome: { kind: 'fail' },
@@ -89,7 +90,27 @@ describe('resultFor', () => {
     const deadline = deadlineOf(START_MINUTE);
     const proposal = only(log.state(deadline).proposals);
     expect(resultFor(proposal)).toMatchObject({ proposal: proposalId, closedAt: deadline });
+    expect(resultFor(proposal)).not.toHaveProperty('closedSeq');
     expect(closeTime(proposal)).toBe(deadline);
+  });
+
+  it('names the ballot that closed it early as its last, even when that voter had voted before (#289)', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana');
+    const versionId = log.version('ana', proposalId, 'Quiet after 9pm.');
+    log.minute += 1;
+    log.ballot('ben', proposalId, { [proposalId]: 4 });
+    log.ballot('ana', proposalId, { [proposalId]: 3, [versionId]: 4 });
+    const open = only(log.state().proposals);
+    expect(open.closedAt).toBeNull();
+    log.minute += 1;
+    log.ballot('ben', proposalId, { [proposalId]: 4, [versionId]: 2 });
+    const closedSeq = log.records.length;
+    log.minute += 1;
+    log.ballot('ana', proposalId, { [proposalId]: 0, [versionId]: 0 }, 'Too late.');
+    const proposal = only(log.state().proposals);
+    expect(proposal.ballots.map((ballot) => ballot.seq)).toEqual([closedSeq - 1, closedSeq]);
+    expect(resultFor(proposal)).toMatchObject({ closedAt: proposal.closedAt, closedSeq });
   });
 });
 
@@ -359,4 +380,195 @@ describe('cleared ballots across group lines (#100)', () => {
 
 function never(): never {
   throw new Error('Expected a Proposal.');
+}
+
+describe('the closing ballot’s place (#289)', () => {
+  /** decidedLog with `body` posted as Ben's result the minute after the close. */
+  function withResult(body: (held: Proposal) => ResultBody) {
+    const decided = decidedLog();
+    const { log, closedAt } = decided;
+    const posted = body(only(log.state().proposals));
+    log.minute = closedAt + 1;
+    log.result('ben', posted);
+    return { ...decided, posted };
+  }
+
+  /** The Proposal as a device that has cleared it folds it, its ballots gone. */
+  function clearedProposal(records: readonly LogRecord[], proposalId: string): Proposal {
+    const now = (records.at(-1)?.received ?? 0) + THIRTY_DAYS;
+    return only(fold(withoutBallots(records, [proposalId]), now, [], [proposalId]).proposals);
+  }
+
+  it('is checked against the ballots held: the closing ballot’s seq counts and any other is flagged', () => {
+    const named = withResult((held) => resultFor(held));
+    expect(only(named.log.state().proposals)).toMatchObject({
+      result: { closedAt: named.closedAt },
+      mismatched: [],
+    });
+    expect(named.posted.closedSeq).toBe(named.closedSeq);
+
+    const other = withResult((held) => ({ ...resultFor(held), closedSeq: named.closedSeq - 1 }));
+    expect(only(other.log.state().proposals)).toMatchObject({
+      result: null,
+      mismatched: [authorOf('ben')],
+    });
+  });
+
+  it('may be left out, as every result from before #289 does, and the result still counts', () => {
+    const before = withResult((held) => {
+      const { proposal, closedAt, eligible, versions, outcome, commit } = resultFor(held);
+      return { proposal, closedAt, eligible, versions, outcome, commit };
+    });
+    expect(before.posted).not.toHaveProperty('closedSeq');
+    expect(only(before.log.state().proposals)).toMatchObject({
+      result: { closedAt: before.closedAt },
+      mismatched: [],
+    });
+  });
+
+  it('is flagged on a Proposal that closed at its deadline, which has no closing ballot', () => {
+    const log = groupLog({ members: ['Ben'] });
+    log.propose('ana');
+    const deadline = deadlineOf(START_MINUTE);
+    const body = resultFor(only(log.state(deadline).proposals));
+    log.minute = deadline + 1;
+    log.result('ben', { ...body, closedSeq: 3 });
+    expect(only(log.state().proposals)).toMatchObject({
+      result: null,
+      mismatched: [authorOf('ben')],
+    });
+    log.result('ana', body);
+    expect(only(log.state().proposals)).toMatchObject({ result: { author: authorOf('ana') } });
+  });
+
+  it('isn’t named for a deadline close, and a cleared result that names one there isn’t its record', () => {
+    const log = groupLog({ members: ['Ben', 'Cal', 'Kim'] });
+    const proposalId = log.propose('ana');
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, proposalId, 4);
+    const deadline = deadlineOf(START_MINUTE);
+    const held = only(log.state(deadline).proposals);
+    expect(held).toMatchObject({ closedAt: null, final: true, outcome: { kind: 'pass' } });
+    const body = resultFor(held);
+    expect(body).not.toHaveProperty('closedSeq');
+    log.minute = deadline + 1;
+    // The last ballot's seq, between the Proposal's and the result's, on a close that wasn't early.
+    log.result('ben', { ...body, closedSeq: log.records.length });
+    expect(only(log.state().proposals)).toMatchObject({
+      result: null,
+      mismatched: [authorOf('ben')],
+    });
+    expect(clearedProposal(log.records, proposalId)).toMatchObject({
+      closedAt: null,
+      result: null,
+      outcome: { kind: 'lapse' },
+    });
+  });
+
+  it('when a result names none, as before #289, keeps a cleared Proposal open until its close’s minute', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const first = log.propose('ana');
+    log.minute += 1;
+    log.vote('ana', first, 4);
+    const second = log.propose('ana', { text: 'Quiet after midnight.' });
+    log.minute += 1;
+    log.vote('ben', first, 4);
+    const held = only(log.state().proposals);
+    const { proposal, closedAt, eligible, versions, outcome, commit } = resultFor(held);
+    log.minute += 1;
+    log.result('ana', { proposal, closedAt, eligible, versions, outcome, commit });
+
+    const state = fold(withoutBallots(log.records, [first]), log.minute, [], [first]);
+
+    expect(state.proposals.map((p) => [p.id, p.closedAt])).toEqual([[first, closedAt]]);
+    expect(state.ignored.map((record) => record.id)).toEqual([second]);
+  });
+
+  it('is read ahead on a cleared device only between the Proposal’s seq and the result’s own', () => {
+    // decidedLog's Proposal is seq 3, its ballots 4 and 5, and the result 6.
+    const closesAt = (closedSeq: number) => {
+      const { log, proposalId } = withResult((held) => ({ ...resultFor(held), closedSeq }));
+      return clearedProposal(log.records, proposalId).closedAt;
+    };
+    const { closedAt } = decidedLog();
+    expect(closesAt(3)).toBeNull();
+    expect(closesAt(4)).toBe(closedAt);
+    expect(closesAt(5)).toBe(closedAt);
+    expect(closesAt(6)).toBeNull();
+  });
+
+  it('closes a cleared Proposal right after it, so the record at that seq still finds it open', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const first = log.propose('ana');
+    log.minute += 1;
+    log.vote('ana', first, 4);
+    log.minute += 1;
+    const second = log.propose('ana', { text: 'Quiet after midnight.' });
+    const atSecond = log.records.length;
+    log.vote('ben', first, 4);
+    const third = log.propose('ben', { text: 'Quiet after 9pm.' });
+    const held = only(log.state().proposals.filter((p) => p.id === first));
+    log.minute += 1;
+    // A result that names the second Proposal's seq as the closing ballot's.
+    log.result('ana', { ...resultFor(held), closedSeq: atSecond });
+
+    const state = fold(withoutBallots(log.records, [first]), log.minute, [], [first]);
+
+    expect(state.proposals.map((p) => p.id)).toEqual([first, third]);
+    expect(state.ignored.map((record) => record.id)).toEqual([second]);
+  });
+
+  it('puts a version in the close’s minute on a cleared ballot by place alone, even one the result lists', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana');
+    log.minute += 1;
+    const before = log.version('ana', proposalId, 'Quiet after 9pm.');
+    log.ballot('ana', proposalId, { [proposalId]: 4, [before]: 3 });
+    log.ballot('ben', proposalId, { [proposalId]: 4, [before]: 4 });
+    const after = log.version('ben', proposalId, 'Quiet after 8pm.');
+    const held = only(log.state().proposals);
+    expect(held.versions.map((v) => v.id)).toEqual([proposalId, before]);
+    const honest = resultFor(held);
+    const listed = {
+      ...honest,
+      versions: [...honest.versions, { id: after, counts: [0, 0, 0, 0, 2] as const }],
+    };
+
+    const kept = withResultBody(log, honest);
+    const lying = withResultBody(log, listed);
+
+    expect(clearedProposal(kept.records, proposalId)).toMatchObject({
+      versions: [{ id: proposalId }, { id: before }],
+      closedAt: held.closedAt,
+      outcome: { kind: 'pass', version: proposalId },
+    });
+    // The later version finds it closed, so the result lists a version it doesn't have and isn't
+    // its record: with none, the Proposal has no early close, as #111 has it, and stays open.
+    expect(clearedProposal(lying.records, proposalId)).toMatchObject({
+      versions: [{ id: proposalId }, { id: before }, { id: after }],
+      closedAt: null,
+      result: null,
+    });
+  });
+
+  it('gives a cleared Proposal decided at its deadline no early close', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana');
+    const deadline = deadlineOf(START_MINUTE);
+    log.minute = deadline + 1;
+    log.result('ben', resultFor(only(log.state(deadline).proposals)));
+    expect(clearedProposal(log.records, proposalId)).toMatchObject({
+      closedAt: null,
+      final: true,
+      outcome: { kind: 'lapse' },
+    });
+  });
+});
+
+/** A copy of `log`'s records with `body` posted as Ana's result the minute after the last. */
+function withResultBody(log: ReturnType<typeof groupLog>, body: ResultBody) {
+  const at = (log.records.at(-1)?.received ?? 0) + 1;
+  const { record } = signedAs('ana', { type: 'result', group: log.group, ts: 0, body });
+  return {
+    records: [...log.records, { seq: log.records.length + 1, received: at, bytes: record }],
+  };
 }
