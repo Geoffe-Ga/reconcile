@@ -206,8 +206,17 @@ describe('choosing recovery contacts', DEVICES, () => {
   });
 
   it('names no contact in any event: the rest of the group sees only an opaque box from the person', async () => {
-    const { groupId, device, devices } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
-    const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
+    // Names only these people use, each long enough (MIN_CANARY_BYTES) that no random box or id
+    // spells one by chance, as a 3-letter name in base64url text did about once in 110 runs.
+    const NAMES = {
+      ana: 'Anastasia Canary',
+      ben: 'Benedetta Canary',
+      cal: 'Calloway Canary',
+      dee: 'Delphine Canary',
+    };
+    const { groupId, device, devices } = await group(Object.values(NAMES));
+    const [ana, ben, cal, dee] = [NAMES.ana, NAMES.ben, NAMES.cal, NAMES.dee].map(device);
+    if (!ana || !ben || !cal || !dee) throw new Error('Expected four devices.');
 
     await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
     await syncAll(devices);
@@ -223,7 +232,8 @@ describe('choosing recovery contacts', DEVICES, () => {
     const keys = contacts.flatMap((contact) =>
       keyCanaries('a contact’s key', fromBase64url(contact)),
     );
-    const records = (await groupOn(dee, groupId)).log.slice(-3).map(({ bytes }) => bytes);
+    const log = (await groupOn(dee, groupId)).log.map(({ bytes }) => bytes);
+    const records = log.slice(-3);
     expect(records.flatMap((bytes) => findCanaries(bytes.subarray(96), keys))).toEqual([]);
     const events = records.map((bytes) => new TextDecoder().decode(bytes.subarray(96)));
     expect(events.map((event) => JSON.parse(event) as object)).toEqual(
@@ -231,7 +241,12 @@ describe('choosing recovery contacts', DEVICES, () => {
         expect.objectContaining({ type: 'recovery-share', author, body: { box } }),
       ),
     );
-    for (const event of events) expect(event).not.toMatch(/Ben|Cal|Dee/);
+    const names = [NAMES.ben, NAMES.cal, NAMES.dee].map((name) => textCanary(name, name));
+    expect(records.flatMap((bytes) => findCanaries(bytes, names))).toEqual([]);
+    // The control: the same scan finds each name in the join that carries it.
+    for (const name of names) {
+      expect(log.some((bytes) => findCanaries(bytes, [name]).length > 0)).toBe(true);
+    }
   });
 
   it('sends a share only in the group the contact shares, by their name there', async () => {
