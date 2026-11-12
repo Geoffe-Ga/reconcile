@@ -1,0 +1,276 @@
+{
+  "kind": "coalition",
+  "vectors": [
+    {
+      "name": "follow-join-no-seat: a join with a name and nothing else, as someone who only follows would never post, is ignored, and so is one with a level, token or kx but no seat: the coalition has only its participants",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375020,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%eve",
+              "ts": 1762500360000,
+              "body": { "name": "Eve" }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375021,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%fay",
+              "ts": 1762500420000,
+              "body": { "name": "Fay", "level": "member", "kx": "&fay" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375022,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%gus",
+              "ts": 1762500480000,
+              "body": { "name": "Gus", "proof": { "$seatProof": ["A", "@1", "%gus"] } }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375030,
+      "expect": {
+        "coalition": {
+          "members": [
+            { "author": "%kim", "name": "Kim" },
+            { "author": "%zed", "name": "Zed" }
+          ],
+          "coalition": {
+            "bindings": [
+              { "author": "%kim", "seat": "^A" },
+              { "author": "%zed", "seat": "^B" }
+            ]
+          },
+          "ignored": [
+            { "seq": 6, "id": "@6" },
+            { "seq": 7, "id": "@7" },
+            { "seq": 8, "id": "@8" }
+          ]
+        }
+      },
+      "unchangedWithout": { "coalition": [6, 7, 8] }
+    },
+    {
+      "name": "follow-join-no-seat-then-seat: a key whose seatless join was ignored can still join under a seat it proves, since the ignored join never made it a participant",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375020,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%eve",
+              "ts": 1762500360000,
+              "body": { "name": "Eve" }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375021,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%eve",
+              "ts": 1762500420000,
+              "body": {
+                "name": "Eve",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%eve"] }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375030,
+      "expect": {
+        "coalition": {
+          "members": [
+            { "author": "%kim" },
+            { "author": "%zed" },
+            { "author": "%eve", "name": "Eve", "level": "co-creator", "kx": null }
+          ],
+          "coalition": {
+            "bindings": [
+              { "author": "%kim", "seat": "^A" },
+              { "author": "%zed", "seat": "^B" },
+              { "author": "%eve", "seat": "^A" }
+            ]
+          },
+          "ignored": [{ "seq": 6, "id": "@6" }]
+        }
+      }
+    }
+  ]
+}
