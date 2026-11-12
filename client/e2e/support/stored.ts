@@ -20,6 +20,8 @@ export interface StoredGroup {
   readonly archived: string | null;
   /** `coalition` for a coalition's entry (#114), null for a group. */
   readonly kind: string | null;
+  /** The relay minute its last sync read (#110), or null before any. */
+  readonly relayNow: number | null;
 }
 
 /** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's derivations. */
@@ -80,9 +82,11 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         me: { author: string };
         archived?: { reason: string };
         kind?: string;
+        relayNow: number | null;
       }[];
       return groups.map((group) => ({
         kind: group.kind ?? null,
+        relayNow: group.relayNow,
         groupId: group.groupId,
         secret: Array.from(group.secret),
         signingKey: Array.from(group.signingKey),
