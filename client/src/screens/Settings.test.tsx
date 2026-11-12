@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { Settings, type SettingsProps } from './Settings';
 
 function setup(props: Partial<SettingsProps> = {}) {
@@ -355,5 +356,24 @@ describe('Settings › Notifications (#99)', () => {
     await waitFor(() => {
       expect(toggle).toBeEnabled();
     });
+  });
+
+  it('turns off once when the switch is tapped again while it turns off (#193)', async () => {
+    const turning = held<undefined>();
+    const pending = notify({ onTurnOff: vi.fn(() => turning.promise) });
+    const { user } = setup({ notify: pending });
+    const toggle = screen.getByRole('switch', { name: 'Notify me about Riverside Tenants' });
+
+    await user.click(toggle);
+    expect(toggle).toBeDisabled();
+    await user.click(toggle);
+    turning.resolve(undefined);
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
+    await pastPressFallback();
+
+    expect(pending.onTurnOff).toHaveBeenCalledTimes(1);
+    expect(pending.onTurnOn).not.toHaveBeenCalled();
   });
 });

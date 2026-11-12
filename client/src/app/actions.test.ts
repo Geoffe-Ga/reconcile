@@ -28,10 +28,12 @@ import { type Envelope, INVITE_TTL_DAYS, openEnvelope, sealEnvelope } from '../i
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
 import { keyChangeOf } from '../store/epochs';
+import { clearExpiredBallots } from '../store/expiry';
 import { mailboxAt } from '../store/mailbox';
 import { createSync, type Sync } from '../store/sync';
 import { contains, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
+import { forgedLog, keepLog } from '../test/forgedResult';
 import { freshIndexedDBPerTest } from '../test/idb';
 import {
   createGroup,
@@ -249,7 +251,9 @@ describe('createGroup', () => {
 
     const [put] = fake.requests.filter((request) => request.method === 'PUT');
     const blob = put?.body ?? new Uint8Array();
-    expect(blob).toHaveLength(1024);
+    // The genesis carries every founding rule, removal's bar and window (#115) among them,
+    // which takes even this small group's genesis past the 1 KiB blob into the 4 KiB one.
+    expect(blob).toHaveLength(4096);
     const readable = [
       ...['Riverside Tenants', 'Ana', 'House rules', 'Quiet hours start at ten.'].map(utf8),
       ...[group.groupId, group.me.author, base64url(group.secret)].map(utf8),
@@ -589,6 +593,39 @@ describe('lookupInvite', () => {
     expect(after.me).toEqual(before.me);
     expect(base64url(after.signingKey)).toBe(base64url(before.signingKey));
     expect(after.outbox).toEqual([]);
+  });
+
+  it('merges no forged result back into a log whose ballots the device cleared (#268)', async () => {
+    const fake = createFakeRelay();
+    const forged = forgedLog();
+    const { group: groupId, proposal, genuine } = forged;
+    const at = { relayNow: forged.closedAt + 43_200, lastSyncAt: NOW };
+    const ana = await device(fake, 'ana');
+    await keepLog(ana.store, forged, 'ana', at);
+    expect(await clearExpiredBallots(ana.store, groupId)).toEqual([proposal]);
+    // Ben's device hasn't cleared yet, so the log his invite carries still holds the forgery.
+    const ben = await device(fake, 'ben');
+    await keepLog(ben.store, forged, 'ben', at);
+    const link = await linkTo(ben, groupId);
+    const carried = envelopeAt(fake, link)?.entries.map((entry) => parseRecord(entry.bytes)?.id);
+    expect(carried).toContain(forged.forged.id);
+
+    expect(await lookupInvite(ana, seedOf(link))).toEqual({ kind: 'joined', groupId });
+
+    const after = await stored(ana, groupId);
+    const events = after.log.flatMap((record) => parseRecord(record.bytes) ?? []);
+    expect(events.map(({ event }) => event.type)).not.toContain('vote');
+    expect(events.filter(({ event }) => event.type === 'result').map(({ id }) => id)).toEqual([
+      genuine.id,
+    ]);
+    const state = fold(after.log, after.relayNow, [], after.cleared);
+    expect(state.proposals[0]?.result?.id).toBe(genuine.id);
+    expect(state.proposals[0]?.outcome.kind).toBe('pass');
+    // Merged in its place, the forgery would have been read ahead as the record instead.
+    const merged = [...after.log, forged.forged.record].sort((a, b) => a.seq - b.seq);
+    expect(fold(merged, after.relayNow, [], after.cleared).proposals[0]?.result?.id).toBe(
+      forged.forged.id,
+    );
   });
 });
 

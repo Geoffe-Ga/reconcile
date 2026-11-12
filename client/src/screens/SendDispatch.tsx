@@ -10,6 +10,7 @@ import { type SyntheticEvent, useState } from 'react';
 import { Button, Form, Label, RadioButton, RadioField, RadioGroup } from 'react-aria-components';
 
 import { documentTitle } from '../app/dispatchLines';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
 import type { DispatchValues } from '../app/proposals';
@@ -124,7 +125,7 @@ function DispatchForm({ state, onSend }: Pick<SendDispatchProps, 'state' | 'onSe
           {sendDispatch.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {sendDispatch.submit}
         </Button>
