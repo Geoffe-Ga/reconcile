@@ -790,3 +790,87 @@ describe('the database upgrade that adds the vault', () => {
     expect(kept?.cursor).toBe(7);
   });
 });
+
+describe('a malformed key never reaches the vault (#390)', () => {
+  /** The relay backup key the sealed device keeps beside Ana's and Ben's groups. */
+  const BACKUP_KEY = new Uint8Array(32).fill(0x5b);
+
+  /** The sealed device, keeping a relay backup key too. */
+  async function sealedWithBackup() {
+    const store = await sealedDevice();
+    await store.setRelayBackupKey(BACKUP_KEY);
+    return store;
+  }
+
+  /** What a fresh session finds once the passkey's key unlocks it: every group's keys, and the backup key. */
+  async function afterUnlock() {
+    const store = await openStore();
+    try {
+      expect(await store.unlock(KEY)).toBe(true);
+      const backup = await store.getRelayBackup();
+      return {
+        groups: (await store.listGroups()).map(keysOf),
+        backup: backup === undefined ? undefined : local(backup.key),
+      };
+    } finally {
+      store.close();
+    }
+  }
+
+  const intact = { groups: [keysOf(ANA), keysOf(BEN)], backup: local(BACKUP_KEY) };
+
+  it.each([
+    [
+      'a group with a 31-byte encryption key',
+      { ...newGroup('group-cal', 3), kxKey: new Uint8Array(31).fill(5) },
+    ],
+    [
+      'a group with a 16-byte secret',
+      { ...newGroup('group-cal', 3), secret: new Uint8Array(16).fill(5) },
+    ],
+  ])(
+    'refuses %s, writing nothing, and every key still opens in this session and the next',
+    async (_, group) => {
+      const store = await sealedWithBackup();
+      const before = await rawDatabase();
+
+      await expect(store.addGroup(group)).rejects.toThrow(
+        'A key doesn’t fit the vault, so nothing was sealed.',
+      );
+
+      expect(local(await rawDatabase())).toEqual(local(before));
+      expect((await store.listGroups()).map(keysOf)).toEqual(intact.groups);
+      store.close();
+      expect(await afterUnlock()).toEqual(intact);
+    },
+  );
+
+  it('refuses a 16-byte relay backup key, keeping the one it had, and every key still opens', async () => {
+    const store = await sealedWithBackup();
+    const before = await rawDatabase();
+
+    await expect(store.setRelayBackupKey(new Uint8Array(16).fill(8))).rejects.toThrow(
+      'A key doesn’t fit the vault, so nothing was sealed.',
+    );
+
+    expect(local(await rawDatabase())).toEqual(local(before));
+    expect(backupOf(await store.getRelayBackup())?.key).toEqual(local(BACKUP_KEY));
+    store.close();
+    expect(await afterUnlock()).toEqual(intact);
+  });
+
+  it.each([
+    ['a 31-byte salt', { ...LOCK, prfSalt: new Uint8Array(31).fill(0x33) }],
+    ['no credential id', { ...LOCK, credentialId: new Uint8Array(0) }],
+  ])('makes no vault for a passkey with %s, changing nothing', async (_, lock) => {
+    const store = await openStore();
+    await store.addGroup(ANA);
+    const before = await rawDatabase();
+
+    await expect(store.sealKeys(lock, KEY)).rejects.toThrow(RangeError);
+
+    expect(local(await rawDatabase())).toEqual(local(before));
+    expect(await store.readVault()).toBeNull();
+    expect(keysOf(await store.getGroup(ANA.groupId))).toEqual(keysOf(ANA));
+  });
+});

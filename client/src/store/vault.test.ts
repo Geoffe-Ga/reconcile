@@ -16,9 +16,11 @@ import {
   openKeys,
   resealKeys,
   type Secrets,
+  UnsealableKeys,
   VAULT_FORMAT,
   type VaultKeys,
   type VaultRecord,
+  zeroVaultKeys,
 } from './vault';
 
 const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(1), new Uint8Array(32).fill(2));
@@ -372,5 +374,181 @@ describe('newVault, openKeys and resealKeys', () => {
     const second = resealKeys(vault, KEY, only(keys));
 
     expect(local(first.sealed)).not.toEqual(local(second.sealed));
+  });
+});
+
+/** Any bytes, from none to a few past the longest secret: keys of every wrong length, and the right ones. */
+const anyBytes = fc.oneof(
+  fc.uint8Array({ minLength: 32, maxLength: 32 }),
+  fc.uint8Array({ minLength: 0, maxLength: 70 }),
+);
+
+/** Any secret's name: one a record's field could have, or any string at all. */
+const anyName = fc.oneof(fc.constantFrom('seed', 'secretKey', 'replyKey', 'a1'), fc.string());
+
+/** Any store's name: one a sealed store has, or any string at all. */
+const anyStore = fc.oneof(fc.constantFrom('personal', 'sent', 'device'), fc.string());
+
+/** Anything a caller could hand `encodeVaultKeys`: well-formed or not, in every part. */
+const anyKeys: fc.Arbitrary<VaultKeys> = fc
+  .record({
+    groups: fc.array(
+      fc.tuple(
+        fc.string(),
+        fc.record({ secret: anyBytes, signingKey: anyBytes }),
+        fc.option(anyBytes, { nil: undefined }),
+      ),
+      { maxLength: 3 },
+    ),
+    backupKey: fc.option(anyBytes, { nil: undefined }),
+    records: fc.array(
+      fc.tuple(
+        anyStore,
+        fc.array(fc.tuple(fc.string(), fc.dictionary(anyName, anyBytes, { maxKeys: 3 })), {
+          maxLength: 2,
+        }),
+      ),
+      { maxLength: 2 },
+    ),
+  })
+  .map(({ groups, backupKey, records }) => ({
+    groups: new Map(
+      groups.map(([id, keys, kxKey]) => [id, kxKey === undefined ? keys : { ...keys, kxKey }]),
+    ),
+    ...(backupKey === undefined ? {} : { backupKey }),
+    records: new Map(records.map(([store, entries]) => [store, new Map(entries)])),
+  }));
+
+/** `keys` with each byte array in the test's realm, and no store that holds no record. */
+function exactly(keys: VaultKeys) {
+  const bytesOf = (secrets: Secrets) =>
+    Object.fromEntries(Object.entries(secrets).map(([name, bytes]) => [name, local(bytes)]));
+  return {
+    groups: [...keys.groups].map(([id, { secret, signingKey, kxKey }]) => [
+      id,
+      local(secret),
+      local(signingKey),
+      kxKey === undefined ? null : local(kxKey),
+    ]),
+    backupKey: keys.backupKey === undefined ? null : local(keys.backupKey),
+    records: [...keys.records]
+      .filter(([, entries]) => entries.size > 0)
+      .map(([store, entries]) => [
+        store,
+        [...entries].map(([id, secrets]) => [id, bytesOf(secrets)]),
+      ]),
+  };
+}
+
+describe('only keys the vault reads back are sealed (#390)', () => {
+  it('encodes any keys so they round-trip exactly, or refuses them (property)', () => {
+    fc.assert(
+      fc.property(anyKeys, (keys) => {
+        let plaintext: Uint8Array;
+        try {
+          plaintext = encodeVaultKeys(keys);
+        } catch (error) {
+          expect(error).toBeInstanceOf(UnsealableKeys);
+          return;
+        }
+        const decoded = decodeVaultKeys(plaintext);
+        expect(decoded).not.toBeNull();
+        expect(exactly(decoded ?? only(new Map()))).toEqual(exactly(keys));
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('never refuses keys of the right shape (property)', () => {
+    const key = fc.uint8Array({ minLength: 32, maxLength: 32 });
+    const secret = fc.uint8Array({ minLength: 1, maxLength: 64 });
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(fc.string(), key, key, fc.option(key, { nil: undefined })), {
+          maxLength: 3,
+        }),
+        fc.option(key, { nil: undefined }),
+        fc.array(fc.tuple(fc.string({ minLength: 1 }), secret), { maxLength: 3 }),
+        (groups, backupKey, records) => {
+          const keys: VaultKeys = {
+            groups: new Map(
+              groups.map(([id, secretKey, signingKey, kxKey]) => [
+                id,
+                { secret: secretKey, signingKey, ...(kxKey === undefined ? {} : { kxKey }) },
+              ]),
+            ),
+            ...(backupKey === undefined ? {} : { backupKey }),
+            records: new Map([['personal', new Map(records.map(([id, seed]) => [id, { seed }]))]]),
+          };
+          expect(exactly(decodeVaultKeys(encodeVaultKeys(keys)) ?? only(new Map()))).toEqual(
+            exactly(keys),
+          );
+        },
+      ),
+    );
+  });
+
+  it.each([
+    [
+      'a 31-byte encryption key',
+      { groups: new Map([['g', { ...keysOf(1), kxKey: new Uint8Array(31) }]]) },
+    ],
+    [
+      'a 33-byte group secret',
+      { groups: new Map([['g', { ...keysOf(1), secret: new Uint8Array(33) }]]) },
+    ],
+    ['a 16-byte relay backup key', { groups: new Map(), backupKey: new Uint8Array(16) }],
+    [
+      'a record with no secret',
+      { groups: new Map(), records: new Map([['sent', new Map([['a', {}]])]]) },
+    ],
+    [
+      'a 65-byte secret',
+      {
+        groups: new Map(),
+        records: new Map([['sent', new Map([['a', { seed: new Uint8Array(65) }]])]]),
+      },
+    ],
+    [
+      'a store with a capital',
+      {
+        groups: new Map(),
+        records: new Map([['Sent', new Map([['a', { seed: new Uint8Array(1) }]])]]),
+      },
+    ],
+  ])('refuses %s, so resealing writes nothing the vault couldn’t read back', (_, partial) => {
+    const keys: VaultKeys = { records: new Map(), ...partial };
+    const vault = newVault(LOCK, KEY);
+
+    expect(() => encodeVaultKeys(keys)).toThrow(UnsealableKeys);
+    expect(() => resealKeys(vault, KEY, keys)).toThrow(
+      'A key doesn’t fit the vault, so nothing was sealed.',
+    );
+  });
+
+  it.each([
+    ['a 31-byte salt', { ...LOCK, prfSalt: new Uint8Array(31) }],
+    ['a 33-byte salt', { ...LOCK, prfSalt: new Uint8Array(33) }],
+    ['an empty credential id', { ...LOCK, credentialId: new Uint8Array(0) }],
+  ])('makes no vault for a passkey with %s', (_, lock) => {
+    expect(() => newVault(lock, KEY)).toThrow(RangeError);
+  });
+});
+
+describe('zeroVaultKeys (#391)', () => {
+  it('zeroes every key it holds, best effort: groups’, the backup key and every record’s secrets', () => {
+    const keys: VaultKeys = {
+      groups: new Map([['g', { ...keysOf(1), kxKey: new Uint8Array(32).fill(9) }]]),
+      backupKey: new Uint8Array(32).fill(7),
+      records: new Map([['sent', new Map([['a', { seed: new Uint8Array(16).fill(5) }]])]]),
+    };
+
+    zeroVaultKeys(keys);
+
+    expect(exactly(keys)).toEqual({
+      groups: [['g', new Uint8Array(32), new Uint8Array(32), new Uint8Array(32)]],
+      backupKey: new Uint8Array(32),
+      records: [['sent', [['a', { seed: new Uint8Array(16) }]]]],
+    });
   });
 });

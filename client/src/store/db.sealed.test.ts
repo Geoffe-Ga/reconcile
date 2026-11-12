@@ -863,3 +863,51 @@ describe('a recovering device’s request under the vault (#118)', () => {
     expect(heard).not.toContain(RECOVERY_CHANGED);
   });
 });
+
+describe('a record missing some of its keys, under a vault (#391)', () => {
+  it('refuses a recovery request with no secret key, writing nothing, so its seed never lands in the clear', async () => {
+    const store = await offeredDevice();
+    const before = await rawDatabase();
+    const partial = {
+      seed: REQUEST.seed,
+      startedAt: REQUEST.startedAt,
+    } as unknown as RecoverRequest;
+
+    await expect(store.keepRecoverRequest(partial)).rejects.toThrow(
+      'A record’s keys are incomplete, so nothing was written.',
+    );
+
+    expect(await found(REQUEST_KEYS)).toEqual([]);
+    expect(local(await rawDatabase())).toEqual(local(before));
+    expect(await store.getRecoverRequest()).toBeUndefined();
+  });
+
+  it('refuses a sent application with no reply key, writing nothing, so its reply seed never lands in the clear', async () => {
+    const store = await sealedDevice();
+    const before = await rawDatabase();
+    const fresh = sentOf('app-3', 60);
+    const partial = { ...fresh, replyKey: undefined } as unknown as SentApplication;
+
+    await expect(store.addSent(partial)).rejects.toThrow(
+      'A record’s keys are incomplete, so nothing was written.',
+    );
+
+    expect(await found(replyCanaries(fresh))).toEqual([]);
+    expect(local(await rawDatabase())).toEqual(local(before));
+    expect((await store.listSent()).map(({ id }) => id)).toEqual([SENT.id, INVITED.id]);
+  });
+
+  it('still keeps such a record whole on a device with no vault, where its record is where its keys live', async () => {
+    const store = await openStore();
+    const partial = {
+      seed: REQUEST.seed,
+      startedAt: REQUEST.startedAt,
+    } as unknown as RecoverRequest;
+
+    await store.keepRecoverRequest(partial);
+
+    const raw = await rawRequest();
+    expect(Object.keys(raw ?? {}).sort()).toEqual(['seed', 'startedAt']);
+    expect(local(raw?.seed as Uint8Array)).toEqual(local(REQUEST.seed));
+  });
+});
