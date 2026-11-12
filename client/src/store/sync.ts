@@ -362,12 +362,13 @@ export function createSync(options: SyncOptions): Sync {
 
   /**
    * Post the group's current outbox in order; an entry leaves only once the
-   * relay accepts it. While `frozen` (#98), every entry but a `key-rotate` or
-   * `leave` stays queued, in its place. Once the relay has returned a seq for
-   * the group's leave, the group is purged: `left`. Else the records the
-   * relay took, in order. A room's stay queued (#343): the pull that reads
-   * them back drops them in the change that saves it (`Pull.sent`), so the
-   * room lists each message from its outbox or its log at every moment.
+   * relay accepts it. While `frozen` (#98), every entry but a `key-rotate`, a
+   * `leave`, an `unwrap-failed` or a `key-taken` (#224) stays queued, in its
+   * place. Once the relay has returned a seq for the group's leave, the group
+   * is purged: `left`. Else the records the relay took, in order. A room's
+   * stay queued (#343): the pull that reads them back drops them in the
+   * change that saves it (`Pull.sent`), so the room lists each message from
+   * its outbox or its log at every moment.
    */
   async function postOutbox(
     groupId: string,

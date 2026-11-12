@@ -66,8 +66,9 @@ function isMember(state: GroupState, me: string): boolean {
 }
 
 /**
- * Whether the outbox holds back everything but `key-rotate` and `leave`: a key
- * change is due, or the group has one this device hasn't taken up.
+ * Whether the outbox holds back everything {@link passesFreeze} doesn't let
+ * through: a key change is due, or the group has one this device hasn't
+ * taken up.
  */
 export function isFrozen(state: GroupState, group: Pick<Group, 'epoch'>): boolean {
   return state.rotationDue || state.epoch > epochOf(group);
