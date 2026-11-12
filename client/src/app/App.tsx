@@ -57,7 +57,7 @@ import { Start, type StartFollowing, type StartRequest } from '../screens/Start'
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
 import { dispatchOf, notesElsewhere, skipCarry } from '../store/carry';
-import type { HeldCoalition } from '../store/coalitions';
+import { coalitionKeys, type HeldCoalition } from '../store/coalitions';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import { foldGroup } from '../store/expiry';
@@ -78,7 +78,13 @@ import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
 import { HeldShareCard } from './HeldShares';
 import { CoalitionSection } from './CoalitionSection';
-import { coalitionRows, sitsInFormed, withMotionWords } from './coalitionLines';
+import {
+  coalitionRows,
+  misstatedSeat,
+  sealedSeatMotion,
+  sitsInFormed,
+  withMotionWords,
+} from './coalitionLines';
 import {
   admitCard,
   bringCard,
@@ -1020,6 +1026,45 @@ function useNotesElsewhere(services: AppServices, groupId: string, dispatch: str
   return notes;
 }
 
+/**
+ * Whether `proposal`, a coalition's motion to take a seat above (#122), shows
+ * a ballot as far as its seat goes (#375): `misstated` when the seat secret
+ * its sealed target holds doesn't make the seat key it states, `checking`
+ * until this device's keys are read, and null once the seat holds, or for
+ * any other Proposal.
+ */
+function useSeatCheck(
+  services: AppServices,
+  proposal: Pick<Proposal, 'id' | 'target'> | undefined,
+  coalitions: readonly HeldCoalition[],
+): 'checking' | 'misstated' | null {
+  const motion = useMemo(
+    () => (proposal === undefined ? null : sealedSeatMotion(proposal, coalitions)),
+    [proposal, coalitions],
+  );
+  const [checked, setChecked] = useState<{ readonly id: string; readonly misstated: boolean }>();
+  const id = motion === null ? null : `${motion.entryId} ${motion.target.sealed}`;
+  useEffect(() => {
+    let live = true;
+    if (motion === null || id === null) return;
+    const { store } = services;
+    Promise.all([store.listGroups(), store.listCoalitions()]).then(
+      ([groups, entries]) => {
+        if (live)
+          setChecked({ id, misstated: misstatedSeat(motion, coalitionKeys(groups, entries)) });
+      },
+      // Until the keys read, the ballot stays away.
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [services, motion, id]);
+  if (id === null) return null;
+  if (checked?.id !== id) return 'checking';
+  return checked.misstated ? 'misstated' : null;
+}
+
 interface GroupProposalProps {
   readonly services: AppServices;
   readonly group: ReadyGroup;
@@ -1035,6 +1080,7 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
   const deviceNow = useNow(services.now);
   const groupId = group.state.group ?? '';
   const proposal = group.state.proposals.find((p) => p.id === proposalId);
+  const seatCheck = useSeatCheck(services, proposal, group.coalitions);
   const dispatch = proposal === undefined ? null : dispatchOf(proposal, group.coalitions);
   const notes = useNotesElsewhere(services, groupId, dispatch?.id ?? null);
   const author = group.me.author;
@@ -1058,6 +1104,7 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
       own={ownBallot(group.state, group.log, proposalId, author)}
       leaving={group.leaving}
       unconfirmed={group.unconfirmed}
+      {...(seatCheck === null ? {} : { seatCheck })}
       {...(group.cleared === null ? {} : { cleared: group.cleared })}
       coalitions={group.coalitions}
       onVote={onVote}
