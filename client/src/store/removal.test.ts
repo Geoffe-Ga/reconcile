@@ -570,7 +570,7 @@ describe('a removal beside ballot expiry (#111)', () => {
 });
 
 describe('a removal beside coalitions (#114)', () => {
-  it('stops syncing the coalition only the removed group held, once its remove folds', async () => {
+  it('purges the coalition only the removed group held, once its remove folds, and no later loop reads or makes it again (#278)', async () => {
     const fake = createFakeRelay({ minute: START });
     const group = founding();
     const groupId = group.genesis.id;
@@ -602,14 +602,13 @@ describe('a removal beside coalitions (#114)', () => {
     fake.minute += 1;
     expect(await device.sync.syncOnce()).toBe(true);
     expect((await device.store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
-    expect((await device.store.getGroup(entry))?.archived).toEqual({ reason: 'removed' });
+    expect(await device.store.getGroup(entry)).toBeUndefined();
 
     const before = named();
     fake.minute += 5;
     expect(await device.sync.syncOnce()).toBe(true);
     expect(named()).toBe(before);
     // Nor is one made again from the removed copy by a fresh loop, as after a restore.
-    await device.store.purgeGroup(entry);
     device.sync.stop();
     const fresh = await openDevice(fake.fetch);
     fake.minute += 5;

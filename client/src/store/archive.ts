@@ -26,6 +26,7 @@ import { parseRecord, signEvent } from '../engine/event';
 import { type GroupState, proposalTally } from '../engine/fold';
 import { removedClearMinute, removedFrom } from '../engine/removal';
 import { type ClearedArchive, type Group, isArchive, type Store, takesNew } from './db';
+import { dropCoalitionsOf } from './coalitions';
 import { foldGroup } from './expiry';
 
 /** One minute in device milliseconds: the device clock counts the archive's days in relay minutes. */
@@ -43,7 +44,8 @@ function dissolveQueued(group: Group): boolean {
 
 /**
  * Settles a dissolve for one group after a pass (#108): archives it once a
- * `dissolve` has folded, or else, when a dissolve Proposal's pass is final,
+ * `dissolve` has folded, and purges the coalitions only it held here (#278),
+ * or else, when a dissolve Proposal's pass is final,
  * queues this member's `dissolve`, unless one is queued already, the group is
  * leaving or a restored copy that sends nothing yet (#231), or the fold
  * wouldn't take one from this member (not yet in, or suspended). `clock` is
@@ -59,6 +61,8 @@ export async function settleDissolve(
   const state = foldGroup(group);
   if (state.dissolved !== null) {
     await store.markArchived(groupId, 'dissolved');
+    // The coalitions only it held go from the device with it (#278).
+    await dropCoalitionsOf(store, group);
     return;
   }
   const due = dissolveDue(state);

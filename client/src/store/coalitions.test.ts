@@ -26,6 +26,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import {
   coalitionKeys,
+  dropCoalitionsOf,
   ensureEntries,
   foldWithCoalitions,
   heldCoalitions,
@@ -33,7 +34,6 @@ import {
   misstatesSeat,
   newEntry,
   outsideFor,
-  retireCoalitionsOf,
   settleCoalitions,
   stillSyncs,
 } from './coalitions';
@@ -167,6 +167,20 @@ describe('ensureEntries', () => {
     await ensureEntries(store);
     expect((await store.listCoalitions()).map((e) => e.groupId)).toEqual([ENTRY]);
   });
+
+  it.each(['removed', 'dissolved'] as const)(
+    'makes no entry from a group this device holds only as a %s archive (#115, #108, #278)',
+    async (reason) => {
+      const store = await device();
+      const logs = new Logs();
+      const a = groupA(logs);
+      await keepGroup(store, a, 'ana', logs.logs.A ?? []);
+      await store.markArchived(a, reason);
+
+      await ensureEntries(store);
+      expect(await store.listCoalitions()).toEqual([]);
+    },
+  );
 });
 
 describe('settleCoalitions', () => {
@@ -799,7 +813,12 @@ describe('coalitionKeys (#122)', () => {
 
 describe('retiring the coalitions a removed group alone held (#115, #122)', () => {
   /** Keeps the coalition `name`'s entry on `store`, with `records` as its log. */
-  async function keepCoalition(store: Store, name: string, records: readonly LogRecord[]) {
+  async function keepCoalition(
+    store: Store,
+    name: string,
+    records: readonly LogRecord[],
+    following = false,
+  ) {
     const secret = fromBase64url(testSecret(name));
     const groupId = deriveCoalitionEntryId(secret);
     await store.addGroup({
@@ -808,6 +827,7 @@ describe('retiring the coalitions a removed group alone held (#115, #122)', () =
       secret,
       signingKey: testKeys('cal').secretKey,
       me: { author: authorOf('cal'), name: 'cal' },
+      ...(following ? { following: true } : {}),
     });
     if (records.length > 0) {
       const pull = { records: [...records], relayNow: R + 100, instance: 'i', lastSyncAt: 1 };
@@ -822,7 +842,7 @@ describe('retiring the coalitions a removed group alone held (#115, #122)', () =
    * too, its target carrying C's inner or not, as `b` says. Returns the
    * entries' ids.
    */
-  async function nestedOn(store: Store, b: 'none' | 'inner' | 'no-inner') {
+  async function nestedOn(store: Store, b: 'none' | 'inner' | 'no-inner', followC = false) {
     const logs = new NestedLogs();
     logs.group('A', R, ['ana']);
     logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', NESTED_STATEMENTS.C);
@@ -841,31 +861,35 @@ describe('retiring the coalitions a removed group alone held (#115, #122)', () =
     }
     const at = logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee'], NESTED_STATEMENTS.C);
     logs.sealedInto('C', at, 'cal', 'D', NESTED_STATEMENTS.D);
-    const c = await keepCoalition(store, 'C', logs.logs.C ?? []);
+    const c = await keepCoalition(store, 'C', logs.logs.C ?? [], followC);
     const d = await keepCoalition(store, 'D', []);
     return { c, d };
   }
 
-  /** Removes group A from `store`'s member, as `settleRemoval` does, and retires what it alone held. */
-  async function removeA(store: Store) {
-    const removed = await store.getGroup('A');
-    if (removed === undefined) throw new Error('Expected group A.');
-    await store.markArchived('A', 'removed');
-    await retireCoalitionsOf(store, removed);
+  /** Archives group A as `reason` leaves it, as `settleRemoval` or `settleDissolve` does, and drops what it alone held (#278). */
+  async function loseA(store: Store, reason: 'removed' | 'dissolved' = 'removed') {
+    const lost = await store.getGroup('A');
+    if (lost === undefined) throw new Error('Expected group A.');
+    await store.markArchived('A', reason);
+    await dropCoalitionsOf(store, lost);
   }
 
-  it('retires the coalitions above that only its coalitions reached, as well as its own', async () => {
-    const store = await device();
-    const { c, d } = await nestedOn(store, 'none');
-    await removeA(store);
-    expect((await store.getGroup(c))?.archived).toEqual({ reason: 'removed' });
-    expect((await store.getGroup(d))?.archived).toEqual({ reason: 'removed' });
-  });
+  it.each(['removed', 'dissolved'] as const)(
+    'purges the coalitions above that only its coalitions reached, as well as its own, once it is %s (#278)',
+    async (reason) => {
+      const store = await device();
+      const { c, d } = await nestedOn(store, 'none');
+      await loseA(store, reason);
+      expect(await store.getGroup(c)).toBeUndefined();
+      expect(await store.getGroup(d)).toBeUndefined();
+      expect(await store.listCoalitions()).toEqual([]);
+    },
+  );
 
   it('keeps every coalition another group on the device still reaches, above it included', async () => {
     const store = await device();
     const { c, d } = await nestedOn(store, 'inner');
-    await removeA(store);
+    await loseA(store);
     expect((await store.getGroup(c))?.archived).toBeUndefined();
     expect((await store.getGroup(d))?.archived).toBeUndefined();
   });
@@ -873,9 +897,17 @@ describe('retiring the coalitions a removed group alone held (#115, #122)', () =
   it('keeps a coalition above one another group still holds, though it holds no inner there yet (#313)', async () => {
     const store = await device();
     const { c, d } = await nestedOn(store, 'no-inner');
-    await removeA(store);
+    await loseA(store);
     // B reaches D again once a wrap gives it C's inner, so D's entry stays to sync then.
     expect((await store.getGroup(c))?.archived).toBeUndefined();
     expect((await store.getGroup(d))?.archived).toBeUndefined();
+  });
+
+  it('keeps a coalition this device follows by its link, which no group needs to hold (#124)', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'none', true);
+    await loseA(store);
+    expect(await store.getGroup(c)).toBeDefined();
+    expect(await store.getGroup(d)).toBeUndefined();
   });
 });

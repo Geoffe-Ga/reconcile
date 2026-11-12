@@ -10,15 +10,15 @@
  * read anything new anyway; it keeps what it already has (ADR-0016). Its push
  * registration is forgotten first, as a leave's is (#99): its DELETEs go at a
  * random minute within the next day, so the relay can't line them up with the
- * key change (#356). The coalitions only that group held here stop syncing
- * too (#114). Until then, a device whose member may post
+ * key change (#356). The coalitions only that group held here go from the
+ * device (#114, #278). Until then, a device whose member may post
  * it, and that folds a removal's final pass with no `remove` yet, queues one;
  * the fold takes the first, and the key changes once.
  */
 import { parseRecord, signEvent } from '../engine/event';
 import { mayRemove, removalDue, removedFrom } from '../engine/removal';
 import { type Group, isArchive, type Store, takesNew } from './db';
-import { retireCoalitionsOf } from './coalitions';
+import { dropCoalitionsOf } from './coalitions';
 import { foldGroup } from './expiry';
 
 /** True when this member's own `remove` of `proposal` already waits in the outbox. */
@@ -31,7 +31,7 @@ function removeQueued(group: Group, proposal: string): boolean {
 
 /**
  * Archives `group`, whose fold holds a `remove` of this device's member, as
- * removed (#115), and the coalitions only it held here, calling `forget`
+ * removed (#115), and purges the coalitions only it held here (#278), calling `forget`
  * with it first so its push registration goes, within the day (#99, #356).
  * A restored copy that hasn't heard from its group (#231) sends nothing, so
  * it forgets nothing: `markArchived` drops its registration, which the relay
@@ -40,7 +40,7 @@ function removeQueued(group: Group, proposal: string): boolean {
 async function archiveRemoved(store: Store, group: Group, forget: (group: Group) => Promise<void>) {
   if (group.archived === undefined) await forget(group);
   await store.markArchived(group.groupId, 'removed');
-  await retireCoalitionsOf(store, group);
+  await dropCoalitionsOf(store, group);
 }
 
 /**
