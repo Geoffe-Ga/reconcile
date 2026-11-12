@@ -11,6 +11,7 @@ import { type FoldedLog, folded, foldLogs, seatOf } from '../test/coalitions';
 import {
   buildLogs,
   buildRecords,
+  clearedLog,
   COALITION_VECTORS,
   FOLD_VECTORS,
   publicKeyNamed,
@@ -20,7 +21,7 @@ import {
   VECTOR_FILES,
 } from '../test/vectors';
 import { resultMismatches, resultsToReport } from './crossing';
-import { fold } from './fold';
+import { fold, type GroupState } from './fold';
 import { DEFAULT_RULES } from './rules';
 import { rank, tally } from './tally';
 
@@ -59,6 +60,7 @@ describe('vector files', () => {
       'dispatch-limits.json',
       'dispatch-sent.json',
       'dissolve-bar.json',
+      'dissolve-cleared.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
       'dissolve-rotate.json',
@@ -80,6 +82,7 @@ describe('vector files', () => {
       'levels-step-down.json',
       'levels-step-up-after-open.json',
       'optin-class.json',
+      'optin-cleared.json',
       'optin-ignored.json',
       'optin-narrow.json',
       'priority-admission.json',
@@ -93,6 +96,8 @@ describe('vector files', () => {
       'priority-rank.json',
       'priority-suspend.json',
       'proposal-number.json',
+      'recovery-share-coalition.json',
+      'recovery-share.json',
       'removal-bar.json',
       'removal-priority.json',
       'removal-proposal.json',
@@ -103,6 +108,7 @@ describe('vector files', () => {
       'removal-target-ineligible.json',
       'result-checks.json',
       'result-cleared.json',
+      'result-closing-minute.json',
       'result-forged-early.json',
       'result-mismatch.json',
       'result-no-votes.json',
@@ -129,6 +135,7 @@ describe('vector files', () => {
       'sections-remove.json',
       'sections-rotate.json',
       'signatures.json',
+      'steward-cleared.json',
       'steward-recall.json',
       'steward-seats.json',
       'steward-step-down.json',
@@ -184,7 +191,9 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -205,6 +214,9 @@ describe('vector files', () => {
       'fold',
       'fold',
       'tally',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -237,6 +249,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'coalition',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -490,6 +503,9 @@ describe('vector files', () => {
     'after the group turns an off-Proposal down, a narrow 30 × 1,440 minutes later is ignored and one a minute after that holds',
     'a narrow from a steward facing an open recall is ignored',
     "a steward closes the front door at once the same way, and the chat bot isn't touched",
+    'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
     'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
     'priority-options: a priority vote with 7 options opens',
     'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
@@ -680,6 +696,14 @@ describe('vector files', () => {
       'priority-coalition',
     );
   });
+
+  it.each(['steward-cleared', 'optin-cleared', 'dissolve-cleared', 'closing-minute'])(
+    'include the vector "%s", folded both with the ballots held and cleared (#289)',
+    (name) => {
+      const found = FOLD_VECTORS.find((vector) => vector.name.split(':')[0] === name);
+      expect(found?.alsoCleared ?? []).not.toEqual([]);
+    },
+  );
 });
 
 describe('coalition vector files (#100)', () => {
@@ -775,16 +799,42 @@ describe('coalition vectors (#100)', () => {
   );
 });
 
+/**
+ * What a device that holds the ballots and one that has cleared them must
+ * agree on (#289): the whole state but the ballots, whether each Proposal is
+ * cleared, whom it flagged for a result its ballots don't match, and the
+ * ignored records the cleared log no longer has.
+ */
+function agreed(state: GroupState, seqs: ReadonlySet<number>) {
+  return {
+    ...state,
+    proposals: state.proposals.map((p) => ({ ...p, ballots: [], cleared: false, mismatched: [] })),
+    ignored: state.ignored.filter((record) => seqs.has(record.seq)),
+  };
+}
+
 describe('fold vectors', () => {
   it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    const { records, ids, cleared } = buildRecords(vector);
+    const log = buildRecords(vector);
+    const { records, ids, cleared } = log;
     const state = fold(records, vector.relayNow, [], cleared);
-    expect(state).toMatchObject(resolve(vector.expect, ids) as object);
+    const expected = resolve(vector.expect, ids) as object;
+    expect(state).toMatchObject(expected);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
-    expect({ ...fold(kept, vector.relayNow, [], cleared), ignored: [] }).toEqual({
-      ...state,
-      ignored: [],
-    });
+    // `ignored` always differs, and so may whatever `unchangedExcept` names (#109's recoveryShares).
+    const apart = (folded: object): object =>
+      Object.fromEntries(
+        Object.entries(folded).filter(
+          ([key]) => key !== 'ignored' && !(vector.unchangedExcept ?? []).includes(key),
+        ),
+      );
+    expect(apart(fold(kept, vector.relayNow, [], cleared))).toEqual(apart(state));
+    if (log.alsoCleared.length === 0) return;
+    const after = clearedLog(log, state);
+    const clearedState = fold(after.records, vector.relayNow, [], after.cleared);
+    expect(clearedState, 'cleared').toMatchObject(expected);
+    const seqs = new Set(after.records.map((record) => record.seq));
+    expect(agreed(clearedState, seqs)).toEqual(agreed(state, seqs));
   });
 });

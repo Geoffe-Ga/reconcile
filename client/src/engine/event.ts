@@ -522,10 +522,16 @@ export type RecordedOutcome =
  * version's counts in ballot order, the outcome, and `commit`, a commitment
  * to the counted ballots (`commit.ts`) that never covers notes (ADR-0065).
  * Devices keep it, and only it, once they clear the ballots.
+ *
+ * `closedSeq` is the relay seq of the ballot that closed it early (#289), so
+ * a device that has cleared the ballots knows where in the close's minute the
+ * Proposal closed. A deadline close has none, and nor does a result from
+ * before #289, which still counts.
  */
 export interface ResultBody {
   readonly proposal: string;
   readonly closedAt: number;
+  readonly closedSeq?: number;
   readonly eligible: number;
   readonly versions: readonly ResultVersion[];
   readonly outcome: RecordedOutcome;
@@ -597,6 +603,17 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
+ * `box` is the share sealed to the contact's encryption key
+ * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
+ * the rest of the group sees only that the author sent one. The fold keeps
+ * it from any current member and changes nothing else.
+ */
+export interface RecoveryShareBody {
+  readonly box: string;
+}
+
 /** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
 export type GroupResultValue = 'pass' | 'fail';
 
@@ -653,6 +670,7 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'recovery-share': RecoveryShareBody;
   readonly 'removal-response': RemovalResponseBody;
   readonly remove: RemoveBody;
   readonly 'door-invited': DoorInvitedBody;
@@ -1127,6 +1145,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseRecoveryShare(body: Json): RecoveryShareBody | null {
+  return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
+}
+
 function parseRemovalResponse(body: Json): RemovalResponseBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -1242,13 +1264,20 @@ function parseOutcome(value: unknown): RecordedOutcome | null {
   return kind === 'fail' || kind === 'lapse' ? { kind } : null;
 }
 
+/** A result's `closedSeq` (#289) as a field: `{}` when it has none, or null when it isn't a seq. */
+function closedSeqField(value: unknown): { readonly closedSeq?: number } | null {
+  if (value === undefined) return {};
+  return isCount(value) ? { closedSeq: value } : null;
+}
+
 function parseResult(body: Json): ResultBody | null {
   const { proposal, closedAt, eligible, commit } = body;
   if (!isString(proposal) || !isTimestamp(closedAt) || !isCount(eligible)) return null;
   const versions = parseResultVersions(body.versions);
   const outcome = parseOutcome(body.outcome);
-  if (versions === null || outcome === null || !isString(commit)) return null;
-  return { proposal, closedAt, eligible, versions, outcome, commit };
+  const place = closedSeqField(body.closedSeq);
+  if (versions === null || outcome === null || place === null || !isString(commit)) return null;
+  return { proposal, closedAt, ...place, eligible, versions, outcome, commit };
 }
 
 /** The event a parsed body makes, or null when the body didn't parse. */
@@ -1284,7 +1313,7 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 /**
  * {@link withBody} for the types the restored features added: `suspend`
  * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
- * (#119), `chat-thread` (#123) and `dispatch` (#112).
+ * (#119), `chat-thread` (#123), `dispatch` (#112) and `recovery-share` (#109).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1302,6 +1331,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dispatch':
       return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-share':
+      return attach(parseRecoveryShare(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return withKeyBody(head, type, body);
   }

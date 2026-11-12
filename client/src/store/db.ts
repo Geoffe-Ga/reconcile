@@ -45,6 +45,10 @@
  * there is one and refuses while it's locked, in the same transaction as the
  * records it writes. Every read of the relay backup's state opens the vault
  * too, so a locked device neither reads nor writes its key.
+ * The person's recovery contacts (#109) are another record in the device
+ * store, under its own key: the one place the device lists them, which no
+ * backup file, link bundle or relay copy carries. They hold no key, so they
+ * stay out of the vault.
  *
  * Once a decided Proposal's ballots expire (#111), `clearBallots` deletes
  * them, its other results and anything else that expires with them from the
@@ -282,6 +286,11 @@ export interface Group extends CoalitionPlan {
    */
   archived?: Archive;
   /**
+   * The ids of the `recovery-share` events whose held-share line group home
+   * has already shown, and the person put away (#109). Absent until the first.
+   */
+  recoverySeen?: string[];
+  /**
    * The front door's inbox as this device last read it (#121): absent until
    * the group's door is open and this member may invite. Never in a backup
    * file, and dropped with an archive.
@@ -289,9 +298,9 @@ export interface Group extends CoalitionPlan {
   door?: DoorInbox;
   /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
-   * takes, oldest first. Absent until the first. #73's invite header, #78's
-   * backup file and #96's link carry it, so a newcomer or a restored device
-   * knows which it can't check.
+   * takes, oldest first. Absent until the first. #73's invite marks the
+   * result each keeps (#269), and #78's backup file and #96's link carry it,
+   * so a newcomer or a restored device knows which it can't check.
    */
   cleared?: string[];
 }
@@ -451,6 +460,13 @@ export interface Pull {
   lastSyncAt: number;
   /** The move to the next epoch this pull found the group's key change for, if any (#98). */
   advance?: EpochAdvance;
+  /**
+   * Outbox entries the relay took this pass, by their bytes, each dropped in
+   * the change that saves the records this pull read back. A room's message
+   * stays queued until then (#343), so the room lists it once throughout:
+   * from its outbox, then from its log.
+   */
+  sent?: readonly Uint8Array[];
 }
 
 /**
@@ -477,6 +493,35 @@ export interface RelayBackupState {
   readonly uploaded?: readonly string[];
 }
 
+/** One recovery contact as this device chose them (#109): who, and where, as they were then. */
+export interface ChosenContact {
+  /** The group they share with the person: the group the share went to. */
+  readonly groupId: string;
+  /** Their key in that group: the `author` of their events there. */
+  readonly member: string;
+  /** Their name in that group, as the picker showed it. */
+  readonly name: string;
+  /** The group's name. */
+  readonly groupName: string;
+}
+
+/**
+ * The person's recovery contacts (#109; ADR-0043 §1): the split their
+ * shares came from, `t` needed of `n`, who holds them, and when this device
+ * chose them. `retired` lists the relay backup ids an earlier key named,
+ * which still have to be overwritten with random bytes before every older
+ * share opens nothing.
+ */
+export interface RecoveryPlan {
+  readonly split: string;
+  readonly t: number;
+  readonly n: number;
+  readonly contacts: readonly ChosenContact[];
+  /** When this device chose them, in device milliseconds. */
+  readonly chosenAt: number;
+  readonly retired: readonly string[];
+}
+
 /** What a relay backup update may change: everything but the key. */
 export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
 
@@ -485,6 +530,22 @@ export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
  * changes: never a group id, which is 43 base64url characters.
  */
 export const RELAY_BACKUP_CHANGED = 'relay-backup';
+
+/**
+ * What {@link Store.subscribe}'s listeners hear when the recovery contacts
+ * change (#109): never a group id either.
+ */
+export const RECOVERY_CHANGED = 'recovery';
+
+/** The recovery contacts' one device-wide record (#109). */
+export interface RecoveryStore {
+  /** The person's recovery contacts, or undefined while they've chosen none on this device. */
+  getRecoveryPlan(): Promise<RecoveryPlan | undefined>;
+  /** Keep `plan` in place of any earlier one. */
+  setRecoveryPlan(plan: RecoveryPlan): Promise<void>;
+  /** Drop `id` from the plan's retired backup ids, in one transaction, once it is overwritten. */
+  forgetRetired(id: string): Promise<void>;
+}
 
 /**
  * The relay backup's one device-wide record (#97). Its key is a secret like a
@@ -517,9 +578,11 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
 
 /**
  * The device's groups, its personal Documents (#93), its relay backup's state
- * (#97), and the front-door applications it sent (#121).
+ * (#97), its recovery contacts (#109), and the front-door applications it
+ * sent (#121).
  */
-export interface Store extends DraftStore, PersonalStore, RelayBackupStore, SentStore {
+export interface Store
+  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, SentStore {
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
@@ -673,6 +736,11 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /**
+   * Add `ids` to the held shares group home has shown for the group, each
+   * once, in one change (#109), so its quiet card shows each line once.
+   */
+  markRecoverySeen(groupId: string, ids: readonly string[]): Promise<void>;
+  /**
    * Keep the group's push registration once the relay has taken it, or with
    * null turn push off for the group, in one change (#99).
    */
@@ -743,12 +811,33 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   close(): void;
 }
 
+/**
+ * A record of the device store: the relay backup's (#97) or the recovery
+ * contacts' (#109), each under its own key.
+ */
+type DeviceRecord = StoredRelayBackup | RecoveryPlan;
+
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
   personal: { key: string; value: PersonalDocument };
-  device: { key: string; value: StoredRelayBackup };
+  device: { key: string; value: DeviceRecord };
   vault: { key: string; value: VaultRecord };
   sent: { key: string; value: SentApplication };
+}
+
+/** Whether a device record is the recovery contacts': only they have a split. */
+function isRecoveryPlan(record: DeviceRecord): record is RecoveryPlan {
+  return 'split' in record;
+}
+
+/** The relay backup's record in a device record read from its key, or undefined. */
+function relayBackupIn(record: DeviceRecord | undefined): StoredRelayBackup | undefined {
+  return record === undefined || isRecoveryPlan(record) ? undefined : record;
+}
+
+/** The recovery contacts in a device record read from their key, or undefined. */
+function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefined {
+  return record !== undefined && isRecoveryPlan(record) ? record : undefined;
 }
 
 /**
@@ -771,8 +860,10 @@ const VERSION = 7;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
-/** The device store's one key: the relay backup's record. */
+/** The device store's key for the relay backup's record. */
 const RELAY_BACKUP = 'relay-backup';
+/** The device store's key for the recovery contacts' record (#109): a key of its own, so no new version. */
+const RECOVERY = 'recovery';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -969,11 +1060,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       }),
     markSent: (groupId, bytes) =>
       change(groupId, (group) => {
-        // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
-        const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
-        if (index >= 0) {
-          group.outbox.splice(index, 1);
-        }
+        dropSent(group, bytes);
       }),
     applyPull(groupId, pull, idOf) {
       const { advance } = pull;
@@ -1020,6 +1107,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await writeKeys(db, (tx) => restoreInto(tx, session, { groups, personal, from }));
       for (const { groupId } of groups) notify(groupId);
     },
+    markRecoverySeen: (groupId, ids) =>
+      change(groupId, (group) => {
+        const seen = group.recoverySeen ?? [];
+        group.recoverySeen = [...seen, ...ids.filter((id) => !seen.includes(id))];
+      }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const marked: string[] = [];
@@ -1087,6 +1179,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...relayBackupStore(db, session, () => {
       notify(RELAY_BACKUP_CHANGED);
     }),
+    ...recoveryStore(db, () => {
+      notify(RECOVERY_CHANGED);
+    }),
     async readVault() {
       const vault = await db.get(VAULT, VAULT_ID);
       return vault === undefined
@@ -1103,7 +1198,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
           }
           await vaults.put(newVault(lock, key));
           const records = await tx.objectStore(GROUPS).getAll();
-          const backup = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+          const backup = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
           await keepKeys(tx, sealing, {
             put: records.map((record) => wholeGroup(record, null)),
             ...(backup === undefined ? {} : { relayBackup: wholeBackup(backup, null) }),
@@ -1176,9 +1271,19 @@ function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
   };
 }
 
+/** Drops the first outbox entry of `group` with exactly `bytes`, once the relay has it. */
+function dropSent(group: Pick<Group, 'outbox'>, bytes: Uint8Array): void {
+  // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
+  const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
+  if (index >= 0) {
+    group.outbox.splice(index, 1);
+  }
+}
+
 /**
  * Saves what a sync pass read into `group`'s record: its new log records, in
- * relay order, and sync state. A room (#125) then keeps only the records
+ * relay order, and sync state, dropping from the outbox each entry the pull
+ * says the relay took (#343). A room (#125) then keeps only the records
  * received at most 30 days of relay time before the pull's `now`, so each
  * sync deletes the rest in the same change.
  */
@@ -1187,6 +1292,7 @@ function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  for (const bytes of pull.sent ?? []) dropSent(group, bytes);
   if (isRoomEntry(group)) {
     group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
   }
@@ -1243,6 +1349,26 @@ function relayBackupStore(
         held !== undefined && sameBytes(held.key, key) ? { ...held, ...update } : undefined,
       );
       return result.wrote;
+    },
+  };
+}
+
+/** The recovery contacts' record in `db`'s device store (#109), telling `changed` after each write. */
+function recoveryStore(db: IDBPDatabase<Schema>, changed: () => void): RecoveryStore {
+  return {
+    getRecoveryPlan: async () => recoveryPlanIn(await db.get(DEVICE, RECOVERY)),
+    async setRecoveryPlan(plan) {
+      await db.put(DEVICE, plan, RECOVERY);
+      changed();
+    },
+    async forgetRetired(id) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      const held = recoveryPlanIn(await tx.store.get(RECOVERY));
+      const kept = held?.retired.filter((retired) => retired !== id);
+      const wrote = held !== undefined && kept?.length !== held.retired.length;
+      if (wrote) await tx.store.put({ ...held, retired: kept ?? [] }, RECOVERY);
+      await tx.done;
+      if (wrote) changed();
     },
   };
 }
@@ -1518,7 +1644,7 @@ async function backupIn<Mode extends IDBTransactionMode>(
   session: Session,
 ): Promise<RelayBackupState | undefined> {
   const opened = await vaultKeys(tx, session);
-  const record = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+  const record = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
   return record === undefined ? undefined : wholeBackup(record, opened);
 }
 

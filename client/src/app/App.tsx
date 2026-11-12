@@ -22,6 +22,7 @@ import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
+import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
@@ -64,6 +65,7 @@ import {
 import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
+import { HeldShareCard } from './HeldShares';
 import { CoalitionSection } from './CoalitionSection';
 import { coalitionRows, withMotionWords } from './coalitionLines';
 import {
@@ -119,6 +121,8 @@ import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { chooseContacts } from '../store/recovery';
+import { useRecovery } from './useRecovery';
 import { useSentApplications } from './useSent';
 import { useRelayBackupStatus } from './useRelayBackup';
 
@@ -229,17 +233,18 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
 }
 
 /**
- * Settings (#78, #95, #96, #99): Notifications, Save a backup with the relay
- * backup's line (#97), Restore a backup, Link a new device, Lock with a
- * passkey, and Erase.
+ * Settings (#78, #95, #96, #99, #109): Notifications, Save a backup with the
+ * relay backup's line (#97), Recovery contacts (#109), Restore a backup, Link
+ * a new device, Lock with a passkey, and Erase.
  */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
   const relayBackup = useRelayBackupStatus(services.store);
+  const recovery = useRecovery(services.store);
   const { push, passkey } = services;
   const passkeyState = usePasskeyState(passkey);
-  const loaded = groups !== null && switches !== null && relayBackup !== null;
+  const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
   return !loaded || passkeyState === null ? null : (
     <Settings
       notify={{
@@ -250,6 +255,11 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       }}
       hasGroups={groups.length > 0}
       relayBackup={relayBackup}
+      recovery={{
+        status: recovery.status,
+        held: recovery.held,
+        canChoose: recovery.groups.length > 0,
+      }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
@@ -271,6 +281,25 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
 function useKeepsRelayBackup(store: AppServices['store']): boolean | null {
   const status = useRelayBackupStatus(store);
   return status === null ? null : status.kind !== 'off';
+}
+
+/**
+ * Choose recovery contacts (#109): the picker, from the people in this
+ * device's groups. Saving chooses them, then goes back to Settings, where
+ * their status shows.
+ */
+function RecoveryScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  return recovery === null ? null : (
+    <RecoveryContacts
+      groups={recovery.groups}
+      current={recovery.status}
+      onSave={async (choice) => {
+        await chooseContacts(services, choice);
+        replaceRoute({ name: 'settings' });
+      }}
+    />
+  );
 }
 
 /** Personal (#93): this device's personal Documents, and the id a new one opens at. */
@@ -527,6 +556,12 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
             ) : null
+          }
+          recoveryCard={
+            <HeldShareCard
+              held={group.newShares}
+              onDismiss={(ids) => services.store.markRecoverySeen(groupId, ids)}
+            />
           }
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
           onLeave={async () => {
@@ -1083,7 +1118,10 @@ interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'hol
   readonly openCard: (seed: Uint8Array) => void;
 }
 
-/** Start, Create group, Settings, Personal and the two sides of linking a device. */
+/**
+ * Start, Create group, Settings, Personal, the two sides of linking a device,
+ * and Choose recovery contacts (#109).
+ */
 function PlainScreen(props: PlainScreenProps) {
   const { route, services, persistence, guide, openInvite, openCard } = props;
   switch (route.name) {
@@ -1109,6 +1147,8 @@ function PlainScreen(props: PlainScreenProps) {
       return <LinkNewScreen services={services} />;
     case 'linkThis':
       return <LinkThisScreen services={services} />;
+    case 'recovery':
+      return <RecoveryScreen services={services} />;
   }
 }
 

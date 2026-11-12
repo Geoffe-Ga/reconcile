@@ -417,6 +417,10 @@ describe('parseEvent', () => {
     ['result with an unknown outcome', 'result', { ...RESULT, outcome: { kind: 'win' } }],
     ['result with a pass naming no version', 'result', { ...RESULT, outcome: { kind: 'pass' } }],
     ['result with an outcome that isn’t an object', 'result', { ...RESULT, outcome: 'lapse' }],
+    ['result with a string closedSeq', 'result', { ...RESULT, closedSeq: '7' }],
+    ['result with a fractional closedSeq', 'result', { ...RESULT, closedSeq: 7.5 }],
+    ['result with a negative closedSeq', 'result', { ...RESULT, closedSeq: -1 }],
+    ['result with a null closedSeq', 'result', { ...RESULT, closedSeq: null }],
     [
       'proposal with both an atom and a target',
       'proposal',
@@ -730,6 +734,15 @@ describe('parseEvent', () => {
     expect(fail?.event.body).toEqual({ ...RESULT, outcome: { kind: 'fail' } });
     const lapse = parseEvent(json(envelope('result', { ...RESULT, outcome: { kind: 'lapse' } })));
     expect(lapse?.event.body).toEqual({ ...RESULT, outcome: { kind: 'lapse' } });
+  });
+
+  it('keeps a result’s closedSeq, the closing ballot’s place, and reads one without it (#289)', () => {
+    const placed = parseEvent(json(envelope('result', { ...RESULT, closedSeq: 7 })));
+    expect(placed?.event.body).toEqual({ ...RESULT, closedSeq: 7 });
+    const first = parseEvent(json(envelope('result', { ...RESULT, closedSeq: 0 })));
+    expect(first?.event.body).toEqual({ ...RESULT, closedSeq: 0 });
+    const without = parseEvent(json(envelope('result', RESULT)));
+    expect(without?.event.body).not.toHaveProperty('closedSeq');
   });
 
   it('keeps a vote’s salt, and reads a vote without one, as cast before #111', () => {
@@ -1223,6 +1236,28 @@ describe('encryption keys and key changes (#98)', () => {
       ts: 1,
       body: { kx: KX },
     });
+  });
+
+  it('reads a recovery-share as its box alone, dropping a recipient or any other key (#109)', () => {
+    const parsed = parseEvent(json(envelope('recovery-share', { box: WRAP, to: BEN, t: 3 })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'recovery-share',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { box: WRAP },
+    });
+  });
+
+  it.each([
+    ['no box', {}],
+    ['a numeric box', { box: 7 }],
+    ['a box outside base64url', { box: 'a box' }],
+    ['a padded box', { box: `${WRAP}=` }],
+    ['a one-character box', { box: 'A' }],
+  ])('returns null for a recovery-share with %s (#109)', (_label, body) => {
+    expect(parseEvent(json(envelope('recovery-share', body)))).toBeNull();
   });
 
   it('reads a key-rotate as its epoch, commit and wraps, dropping unknown keys', () => {

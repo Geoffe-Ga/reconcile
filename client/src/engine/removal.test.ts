@@ -457,6 +457,26 @@ describe('a removal beside ballot expiry (#111)', () => {
     expect(state.proposals.map((p) => p.id)).toEqual([removal]);
   });
 
+  it('ignores a second removal of her in the closing minute before the closing ballot, on a cleared device too (#289)', () => {
+    const log = five();
+    const removal = log.proposeRemoval('Ben', 'Kim');
+    log.minute += 1;
+    for (const voter of ['Ana', 'Ben', 'Cal']) log.vote(voter, removal, 4);
+    // In the minute the removal closes early, but before Dee's closing ballot: it is still open.
+    log.proposeRemoval('Cal', 'Kim', { title: 'Remove Kim now' });
+    log.vote('Dee', removal, 4);
+    log.minute += 1;
+    const proposal = log.state().proposals.find((p) => p.id === removal);
+    if (proposal === undefined) throw new Error('Expected the removal.');
+    const result = log.result('Dee', resultFor(proposal));
+    const now = log.minute + THIRTY_DAYS;
+
+    const state = fold(clearedOf(log.records, removal, result), now, [], [removal]);
+
+    expect(log.state(now).proposals.map((p) => p.id)).toEqual([removal]);
+    expect(state.proposals.map((p) => p.id)).toEqual([removal]);
+  });
+
   it('expires the response with the ballots, and never the remove, which keeps her out', () => {
     const { log, removal, response, remove } = decided();
     const recordOf = (id: string) =>
