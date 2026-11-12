@@ -8,6 +8,7 @@
  * and removing one (#75) say so too, on a device seeded with the read-only
  * copy, so the long loop stays within its time.
  */
+import userEvent from '@testing-library/user-event';
 import { act, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -18,7 +19,7 @@ import { type TestDevice, testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { testKeys } from '../test/keys';
-import { appUser, go, members, type MountedApp, mountApp } from '../test/members';
+import { APP_USER, go, members, type MountedApp, mountApp } from '../test/members';
 import { groupLog } from '../test/votes';
 
 freshIndexedDBPerTest();
@@ -44,7 +45,7 @@ async function syncAll(devices: readonly TestDevice[]): Promise<void> {
 
 /** From Group home, through the composer, to the new dissolve Proposal; returns its id. */
 async function proposeDissolving(app: HTMLElement, groupId: string): Promise<string> {
-  const user = appUser();
+  const user = userEvent.setup(APP_USER);
   await user.click(await within(app).findByRole('link', { name: 'Propose dissolving the group' }));
   await user.click(await within(app).findByRole('textbox', { name: 'Title' }));
   await user.paste('Dissolve Riverside');
@@ -70,7 +71,7 @@ async function expectArchived(devices: readonly TestDevice[], groupId: string): 
 
 describe('dissolving a group in the app', () => {
   it('passes, ends the group on every device, and leaves each a read-only copy it can remove', async () => {
-    const user = appUser();
+    const user = userEvent.setup(APP_USER);
     const fake = createFakeRelay();
     const { groupId, devices } = await members(fake, ['Ana', 'Ben']);
     opened.push(...devices);

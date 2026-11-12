@@ -3,8 +3,6 @@
  * actions (Create group, then Join from the founder's invite), for tests of
  * what comes after: proposing and voting.
  */
-import { within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -113,15 +111,15 @@ export async function settle(device: TestDevice): Promise<void> {
 }
 
 /**
- * A user-event session for whole apps. Its clicks skip moving the pointer onto
- * each control first: React Aria re-renders every control the pointer enters
- * or leaves for its hover state, which no test of the whole app reads, and that
- * came to over a quarter of a loop test's time (#260). A test of hovering still
- * calls `user.hover`.
+ * The user-event options for whole apps, as `userEvent.setup(APP_USER)`. Its
+ * clicks skip moving the pointer onto each control first: React Aria
+ * re-renders every control the pointer enters or leaves for its hover state,
+ * which no test of the whole app reads, and that came to over a quarter of a
+ * loop test's time (#260). A test of hovering still calls `user.hover`. Only
+ * test files import Testing Library (dependency-cruiser's
+ * no-test-imports-in-prod), so each makes its own session from these.
  */
-export function appUser() {
-  return userEvent.setup({ skipHover: true });
-}
+export const APP_USER = { skipHover: true } as const;
 
 /** One device's app, mounted in its own container with its own React id prefix. */
 export interface MountedApp {
@@ -206,13 +204,13 @@ export async function proposeFrom(
 
 /**
  * Picks a score pill on an app's open ballot and sends the ballot. It waits
- * for the pills' group, whose name is quick to read, then finds the pill in it
+ * for the pills' group, whose name is quick to read, then finds the pill
  * once: a pill's name is its label's whole text, which a wait would read again
  * for every pill on every render while the ballot loads (#260).
  */
 export async function score(where: AppQueries, user: Typist, pill: string): Promise<void> {
-  const pills = await where.findByRole('radiogroup', { name: /^Score for version/ });
-  await user.click(within(pills).getByRole('radio', { name: pill }));
+  await where.findByRole('radiogroup', { name: /^Score for version/ });
+  await user.click(where.getByRole('radio', { name: pill }));
   await user.click(where.getByRole('button', { name: /your vote$/ }));
 }
 

@@ -12,7 +12,7 @@ import { testDevice, type TestDevice, TEST_NOW } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { appUser } from '../test/members';
+import { APP_USER } from '../test/members';
 import { App } from './App';
 import { messages } from './messages';
 
@@ -36,7 +36,7 @@ const CANARY = 'Canary statement: I show up for my neighbors.';
 
 describe('Personal in the app', () => {
   it('goes from Start to a mission statement kept on this device, then lists it, telling the relay nothing', async () => {
-    const user = appUser();
+    const user = userEvent.setup(APP_USER);
     const ana = await device('ana');
     render(<App services={ana.services} />);
 

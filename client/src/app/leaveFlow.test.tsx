@@ -15,7 +15,7 @@ import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { mailboxAt } from '../store/mailbox';
 import {
-  appUser,
+  APP_USER,
   go,
   members,
   type MountedApp,
@@ -58,7 +58,7 @@ async function sync(device: TestDevice | undefined): Promise<void> {
 
 describe('Group home brings people back', () => {
   it('lists a new Proposal under Needs your vote for the others, and not once they’ve voted', async () => {
-    const user = appUser();
+    const user = userEvent.setup(APP_USER);
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);

@@ -7,7 +7,7 @@ import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { appUser, go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
+import { APP_USER, go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
 import { pastPressFallback } from '../test/press';
 import { Ballot, type BallotProps } from './Ballot';
 import { castBallot } from './proposals';
@@ -363,7 +363,7 @@ describe('Ballot, in the app', () => {
   });
 
   it('replaces a voter’s earlier ballot in the result when they vote again before the close', async () => {
-    const user = appUser();
+    const user = userEvent.setup(APP_USER);
     const { groupId, devices } = await members(createFakeRelay(), ['Ana', 'Ben']);
     opened.push(...devices);
     const [ana, ben] = devices;
