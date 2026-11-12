@@ -6,7 +6,7 @@
  * 43-character Ed25519 public key (`crypto/door.ts`). Whoever opens it reads
  * the page from its mailbox: UTF-8 JSON, `{v: 1, open: true, name, excerpt,
  * count?, box}`, or `{v: 1, open: false}` once the door closes. `name` is the
- * group's name, `excerpt` the first section of its Document as plain text, cut
+ * group's name, `excerpt` the first section of its first Document (#92) as plain text, cut
  * to 280 code points and "…", `count` how many people are in the group only
  * when the group chose to show it, and `box` the X25519 key applications are
  * sealed to. Never a member's name, key or anything else of the group.
@@ -53,7 +53,7 @@ export interface OpenPage {
   readonly open: true;
   /** The group's name, cut to 120 code points and "…". */
   readonly name: string;
-  /** The first section of the group's Document as plain text, cut to 280 code points and "…". */
+  /** The first section of the group's first Document (#92) as plain text, cut to 280 code points and "…". */
   readonly excerpt: string;
   /** How many people are in the group, only when the group chose to show it. */
   readonly count?: number;
@@ -148,13 +148,20 @@ export function excerptOf(plain: string): string {
   return clip(plain, EXCERPT_MAX);
 }
 
+/** The text of the first section of `state`'s first Document, or "" when it has none (#92). */
+function firstSection(state: Pick<GroupState, 'documents' | 'atoms'>): string {
+  const first = state.documents[0]?.id;
+  return state.atoms.find((atom) => atom.documentId === first)?.text ?? '';
+}
+
 /**
- * The page `door` shows for `state`: the group's name, its first section as
- * plain text (`plainText` turns its Markdown into words, as the invite
- * preview does), the box key, and the member count only when `showCount`.
+ * The page `door` shows for `state`: the group's name, the first section of
+ * its first Document as plain text (`plainText` turns its Markdown into words,
+ * as the invite preview does), or none once that Document has no sections
+ * (#92), the box key, and the member count only when `showCount`.
  */
 export function pageFor(
-  state: Pick<GroupState, 'name' | 'atoms' | 'members'>,
+  state: Pick<GroupState, 'name' | 'documents' | 'atoms' | 'members'>,
   door: FrontDoor,
   plainText: (markdown: string) => string,
 ): OpenPage {
@@ -163,7 +170,7 @@ export function pageFor(
     v: PAGE_VERSION,
     open: true,
     name: clip(state.name, NAME_MAX),
-    excerpt: excerptOf(plainText(state.atoms[0]?.text ?? '')),
+    excerpt: excerptOf(plainText(firstSection(state))),
     ...(door.showCount ? { count: state.members.length } : {}),
     box: base64url(boxPublic),
   };

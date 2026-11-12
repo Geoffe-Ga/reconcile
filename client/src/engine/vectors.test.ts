@@ -11,6 +11,7 @@ import { type FoldedLog, folded, foldLogs, seatOf } from '../test/coalitions';
 import {
   buildLogs,
   buildRecords,
+  clearedLog,
   COALITION_VECTORS,
   FOLD_VECTORS,
   publicKeyNamed,
@@ -20,7 +21,7 @@ import {
   VECTOR_FILES,
 } from '../test/vectors';
 import { resultMismatches, resultsToReport } from './crossing';
-import { fold } from './fold';
+import { fold, type GroupState } from './fold';
 import { DEFAULT_RULES } from './rules';
 import { rank, tally } from './tally';
 
@@ -41,6 +42,7 @@ describe('vector files', () => {
       'atom-text.json',
       'bars-entrenched-edges.json',
       'bars-ordinary-pairs.json',
+      'bars-removal-edges.json',
       'bootstrap-joins.json',
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
@@ -52,20 +54,31 @@ describe('vector files', () => {
       'coalition-forgery.json',
       'coalition-formation.json',
       'coalition-group.json',
+      'coalition-room-wrap.json',
       'coalition-thresholds.json',
       'dispatch-carried.json',
       'dispatch-limits.json',
       'dispatch-sent.json',
       'dissolve-bar.json',
+      'dissolve-cleared.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
       'dissolve-rotate.json',
       'dissolve-terminal.json',
       'dissolve-unfinished.json',
       'dissolve-window.json',
+      'documents-add.json',
+      'documents-chat-thread.json',
+      'documents-cleared.json',
+      'documents-coalition.json',
+      'documents-dispatch.json',
+      'documents-genesis.json',
+      'documents-new.json',
       'door-class.json',
       'door-invited.json',
       'fold.json',
+      'follow-dispatch.json',
+      'follow-join.json',
       'home-two-open-proposals.json',
       'invite.json',
       'keys.json',
@@ -78,6 +91,7 @@ describe('vector files', () => {
       'levels-step-down.json',
       'levels-step-up-after-open.json',
       'optin-class.json',
+      'optin-cleared.json',
       'optin-ignored.json',
       'optin-narrow.json',
       'priority-admission.json',
@@ -91,10 +105,28 @@ describe('vector files', () => {
       'priority-rank.json',
       'priority-suspend.json',
       'proposal-number.json',
+      'recovery-alert-coalition.json',
+      'recovery-alert.json',
+      'recovery-cancel.json',
+      'recovery-share-coalition.json',
+      'recovery-share.json',
+      'removal-bar.json',
+      'removal-priority.json',
+      'removal-proposal.json',
+      'removal-remove.json',
+      'removal-response.json',
+      'removal-rotate.json',
+      'removal-suspension.json',
+      'removal-target-ineligible.json',
       'result-checks.json',
       'result-cleared.json',
+      'result-closing-minute.json',
+      'result-forged-early.json',
       'result-mismatch.json',
       'result-no-votes.json',
+      'room-fold.json',
+      'room-ignored.json',
+      'room-keys.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -115,6 +147,7 @@ describe('vector files', () => {
       'sections-remove.json',
       'sections-rotate.json',
       'signatures.json',
+      'steward-cleared.json',
       'steward-recall.json',
       'steward-seats.json',
       'steward-step-down.json',
@@ -141,6 +174,7 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'tally',
       'fold',
       'fold',
       'fold',
@@ -153,6 +187,7 @@ describe('vector files', () => {
       'coalition',
       'coalition',
       'coalition',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -166,9 +201,20 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'coalition',
       'fold',
       'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -191,10 +237,28 @@ describe('vector files', () => {
       'tally',
       'fold',
       'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'room',
+      'fold',
+      'room-keys',
       'fold',
       'fold',
       'fold',
@@ -209,6 +273,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'coalition',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -436,6 +501,10 @@ describe('vector files', () => {
     "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
     "for a Proposal in cleared, a result whose outcome its counts don't give is ignored",
     'for a Proposal in cleared, an early close whose counts leave an eligible voter out is ignored',
+    "with the ballots held, a Member's result received a minute after the Proposal opens, closing it then with counts nobody cast, is ignored and isn't flagged, and the result the ballots give counts",
+    "with the ballots held, a Member's result received a minute after the Proposal opens, matching the ballots then, none cast, with a lapse at the deadline, is ignored and isn't flagged, and the result the ballots give counts",
+    "with the ballots held, a Member's result received after the close, with counts the ballots don't give, is ignored and flagged, and the result the ballots give counts",
+    'once the ballots are cleared, the log that clearing leaves, with the result the ballots gave as its only result, decides the Proposal as the ballots did',
     'turning the chat bot on is entrenched: its deadline is received plus 14 × 1,440 minutes, and an average of 2.5 with no zeros fails it',
     'turning the chat bot on passes at the entrenched bar and sets its webhook, and turning it off again is ordinary: received plus 7 × 1,440 minutes',
     'replacing one webhook with another is ordinary, so an average of 2.5 passes it and sets the new webhook',
@@ -458,6 +527,15 @@ describe('vector files', () => {
     'after the group turns an off-Proposal down, a narrow 30 × 1,440 minutes later is ignored and one a minute after that holds',
     'a narrow from a steward facing an open recall is ignored',
     "a steward closes the front door at once the same way, and the chat bot isn't touched",
+    'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
+    'a recovery-alert from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-alert from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order with its receipt, drops any other field, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-alert still counts: it governs nothing, and the person it warns must hear of it, so the suspension that ignores their proposal leaves it in",
+    'a recovery-cancel from someone who never joined, naming an event id or a tag of 15 bytes instead of 16, naming nothing, or from someone who has left is ignored and changes nothing',
+    'a recovery-cancel from a member changes no Atom, Proposal or member: the fold keeps each one, with the tag it names, in relay order with its receipt, drops any other field, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-cancel still counts: cancelling a recovery is always possible, as leaving is, so the suspension that ignores their proposal leaves it in",
     'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
     'priority-options: a priority vote with 7 options opens',
     'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
@@ -533,6 +611,37 @@ describe('vector files', () => {
   });
 
   it.each([
+    'removal-target-ineligible',
+    'removal-average-2.5',
+    'removal-one-zero',
+    'removal-lapse',
+    'removal-proposal',
+    'removal-proposal-who',
+    'removal-proposal-shape',
+    'removal-dissolved',
+    'removal-response-length',
+    'removal-response-who',
+    'removal-response-after-close',
+    'removal-response-deadline',
+    'removal-response-last-minute',
+    'removal-response-suspended',
+    'removal-remove-first',
+    'removal-remove-suspended',
+    'removal-ballot-before',
+    'removal-steward-seat',
+    'removal-pending-only-leave',
+    'removal-rotate',
+    'removal-suspension-day-6',
+    'removal-suspension-failed',
+    'removal-suspension-none',
+    'removal-suspension-early-fail',
+    'removal-suspension-opened-before',
+    'removal-suspension-opened-before-closes-early',
+  ])('include the removal vector "%s" (#115)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
     'proposal-number',
     'chat-thread-first',
     'chat-thread-ignored',
@@ -540,6 +649,19 @@ describe('vector files', () => {
     'chat-thread-off',
   ])('include the Discord thread vector "%s" (#123)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'removal pass with 20 scorers and one 0',
+    'removal fail with two 0s among 10 scorers',
+    'removal pass with 41 scorers and two 0s',
+    'removal fail with two 0s among 40 scorers, exactly 5%',
+    'removal fail at an average of 2.99',
+    'removal pass at an average of exactly 3.0 among 100 scorers',
+    'a dissolve’s entrenched bar still fails 20 scorers with one 0',
+    'an average of exactly 2.5 with no zeros fails the removal bar',
+  ])('include the removal bar vector "%s" (#115)', (name) => {
+    expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 
   it.each([
@@ -569,6 +691,41 @@ describe('vector files', () => {
   ])('include the sections Dispatch vector "%s" (#75, #112)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
+
+  it.each([
+    'documents-genesis-two',
+    'documents-genesis-none',
+    'documents-genesis-blank-title',
+    'documents-genesis-title-length',
+    'documents-genesis-no-atoms',
+    'documents-genesis-edit-second',
+    'documents-new-passes',
+    'documents-new-close-order',
+    'documents-new-versions',
+    'documents-new-ignored',
+    'documents-new-sections',
+    'documents-new-dissolve',
+    'documents-add-other-document',
+    'documents-add-start',
+    'documents-add-anchor-removed',
+    'documents-add-unknown-document',
+    'documents-add-emptied',
+    'documents-dispatch-new',
+    'documents-dispatch-second',
+    'documents-dispatch-sent',
+    'documents-chat-thread',
+    'documents-cleared-new',
+    'documents-cleared-add',
+  ])('include the Documents vector "%s" (#92)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each(['documents-coalition-genesis', 'documents-coalition-motion'])(
+    'include the coalition Documents vector "%s" (#92, #100)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
 
   it('include the sections vector "sections-coalition" (#75, #100)', () => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
@@ -604,6 +761,14 @@ describe('vector files', () => {
       'priority-coalition',
     );
   });
+
+  it.each(['steward-cleared', 'optin-cleared', 'dissolve-cleared', 'closing-minute'])(
+    'include the vector "%s", folded both with the ballots held and cleared (#289)',
+    (name) => {
+      const found = FOLD_VECTORS.find((vector) => vector.name.split(':')[0] === name);
+      expect(found?.alsoCleared ?? []).not.toEqual([]);
+    },
+  );
 });
 
 describe('coalition vector files (#100)', () => {
@@ -623,7 +788,6 @@ describe('coalition vector files (#100)', () => {
     'forgery-repeat',
     'forgery-extra-key',
     'forgery-vote',
-    'forgery-motion-dispatch',
     'contest-pass-then-fail',
     'contest-fail-then-pass',
     'group-join-after',
@@ -633,6 +797,7 @@ describe('coalition vector files (#100)', () => {
     'group-motion-number',
     'group-motion-chat',
     'group-motion-dispatch',
+    'recovery-alert-coalition',
     'admit-pass',
     'admit-open',
     'admit-fail',
@@ -645,6 +810,18 @@ describe('coalition vector files (#100)', () => {
     'forgery-admit-in-group',
     'forgery-admit-genesis-result',
     'forgery-admit-forming',
+    'follow-motion-dispatch',
+    'follow-motion-dispatch-not-yet',
+    'follow-motion-dispatch-fail',
+    'follow-motion-dispatch-contested',
+    'follow-motion-dispatch-lapse',
+    'follow-motion-dispatch-order',
+    'follow-motion-dispatch-limits',
+    'follow-motion-dispatch-admit',
+    'follow-motion-dispatch-group',
+    'follow-dispatch-participant',
+    'follow-join-no-seat',
+    'follow-join-no-seat-then-seat',
   ])('include "%s"', (name) => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
@@ -699,16 +876,42 @@ describe('coalition vectors (#100)', () => {
   );
 });
 
+/**
+ * What a device that holds the ballots and one that has cleared them must
+ * agree on (#289): the whole state but the ballots, whether each Proposal is
+ * cleared, whom it flagged for a result its ballots don't match, and the
+ * ignored records the cleared log no longer has.
+ */
+function agreed(state: GroupState, seqs: ReadonlySet<number>) {
+  return {
+    ...state,
+    proposals: state.proposals.map((p) => ({ ...p, ballots: [], cleared: false, mismatched: [] })),
+    ignored: state.ignored.filter((record) => seqs.has(record.seq)),
+  };
+}
+
 describe('fold vectors', () => {
   it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    const { records, ids, cleared } = buildRecords(vector);
+    const log = buildRecords(vector);
+    const { records, ids, cleared } = log;
     const state = fold(records, vector.relayNow, [], cleared);
-    expect(state).toMatchObject(resolve(vector.expect, ids) as object);
+    const expected = resolve(vector.expect, ids) as object;
+    expect(state).toMatchObject(expected);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
-    expect({ ...fold(kept, vector.relayNow, [], cleared), ignored: [] }).toEqual({
-      ...state,
-      ignored: [],
-    });
+    // `ignored` always differs, and so may whatever `unchangedExcept` names (#109's recoveryShares).
+    const apart = (folded: object): object =>
+      Object.fromEntries(
+        Object.entries(folded).filter(
+          ([key]) => key !== 'ignored' && !(vector.unchangedExcept ?? []).includes(key),
+        ),
+      );
+    expect(apart(fold(kept, vector.relayNow, [], cleared))).toEqual(apart(state));
+    if (log.alsoCleared.length === 0) return;
+    const after = clearedLog(log, state);
+    const clearedState = fold(after.records, vector.relayNow, [], after.cleared);
+    expect(clearedState, 'cleared').toMatchObject(expected);
+    const seqs = new Set(after.records.map((record) => record.seq));
+    expect(agreed(clearedState, seqs)).toEqual(agreed(state, seqs));
   });
 });

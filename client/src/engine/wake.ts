@@ -35,7 +35,7 @@ function closesEarly(before: GroupState, vote: Extract<GroupEvent, { type: 'vote
 
 /**
  * Whether sending `event` should wake the group's phones: true for a
- * Proposal and a Dispatch (#112), and for a ballot after which this device's
+ * Proposal, a Dispatch (#112) and a recovery alert (#118), and for a ballot after which this device's
  * fold, as it stands at `before`, closes the Proposal early. Nothing else
  * wakes anyone.
  */
@@ -43,6 +43,7 @@ export function wakeFor(before: GroupState, event: GroupEvent): boolean {
   switch (event.type) {
     case 'proposal':
     case 'dispatch':
+    case 'recovery-alert':
       return true;
     case 'vote':
       return closesEarly(before, event);

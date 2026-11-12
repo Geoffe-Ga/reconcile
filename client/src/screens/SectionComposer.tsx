@@ -8,7 +8,10 @@
 import { type SyntheticEvent, useId } from 'react';
 import { Button, Form } from 'react-aria-components';
 
+import { documentBack, groupBack } from '../app/backLinks';
 import { againStartOf, lapsed, textCheck, useSend, whyNoForm } from '../app/compose';
+import { documentNamed, sectionPlace } from '../app/documentLines';
+import { holdPresses } from '../app/holdPresses';
 import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
 import { addDraft, againDraft, removalDraft, type VersionValues } from '../app/proposals';
@@ -16,6 +19,7 @@ import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
 import { composeOption, openProposalOn } from '../engine/composeOption';
+import type { GroupDocument } from '../engine/documents';
 import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { GroupDrafts } from '../store/drafts';
 import { AgainLede, type ComposerProps, CurrentText, ProposalForm, Unavailable } from './Composer';
@@ -26,6 +30,11 @@ export interface AddSectionProps {
   readonly me: string;
   /** The Atom the new section would follow, from the route, or null for the start. */
   readonly after: string | null;
+  /**
+   * The Document whose start it goes at when `after` is null (#92), from the
+   * route; the group's first when absent. An anchor's own Document wins.
+   */
+  readonly document?: string;
   readonly drafts: GroupDrafts;
   /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
   readonly now: number;
@@ -64,11 +73,34 @@ function AddIntro({ anchor }: { readonly anchor: { atom: Atom; number: number } 
   );
 }
 
+/** Where a new section goes (#92): its Document, and the section it follows there, if any. */
+interface AddSpot {
+  readonly document: GroupDocument;
+  readonly anchor: { readonly atom: Atom; readonly number: number } | null;
+}
+
 /**
- * Add a section (`#/g/{groupId}/add` for the start, `…/add/{atomId}` after an
- * Atom): a title, a why, the new section's text, starting empty, and a
- * discussion link. Submitting queues one add Proposal, which the fold places
- * after its anchor once it passes, or at the end if the anchor is gone by then.
+ * Where Add a section puts its section: after the anchor, in the anchor's
+ * Document, or at the start of the Document the route names, or of the
+ * group's first; null when the anchor or the Document isn't in the group.
+ */
+function addSpot(state: GroupState, after: string | null, document?: string): AddSpot | null {
+  if (after !== null) {
+    const place = sectionPlace(state, after);
+    if (place === null) return null;
+    return { document: place.document, anchor: { atom: place.atom, number: place.number } };
+  }
+  const named = documentNamed(state, document);
+  return named === undefined ? null : { document: named, anchor: null };
+}
+
+/**
+ * Add a section (`#/g/{groupId}/add` for the start of the first Document,
+ * `…/add-first/{documentId}` for the start of another (#92), `…/add/{atomId}`
+ * after an Atom, in its Document): a title, a why, the new section's text,
+ * starting empty, and a discussion link. Submitting queues one add Proposal
+ * naming its Document, which the fold places after its anchor once it
+ * passes, or at the end of that Document if the anchor is gone by then.
  * Proposing a lapsed add again (#74) starts from it and carries its versions.
  */
 export function AddSection({
@@ -80,22 +112,28 @@ export function AddSection({
   onPropose,
   ...props
 }: AddSectionProps) {
-  const index = after === null ? -1 : state.atoms.findIndex((atom) => atom.id === after);
-  const atom = state.atoms[index];
-  const { composer } = messages;
-  if (after !== null && atom === undefined) {
-    return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
+  const { composer, documents } = messages;
+  const spot = addSpot(state, after, props.document);
+  if (spot === null) {
+    // A gone anchor is a missing section; a start in no Document is a missing Document (#92).
+    const missing =
+      after === null
+        ? { title: documents.missingTitle, text: documents.missing }
+        : { title: composer.missingTitle, text: composer.missing };
+    return <Unavailable state={state} {...missing} back={groupBack(state)} />;
   }
   const refused = whyNoForm({ state, me, ...props });
-  if (refused !== null) return <Unavailable state={state} {...refused} />;
-  const anchor = atom === undefined ? null : { atom, number: index + 1 };
+  if (refused !== null) {
+    return <Unavailable state={state} {...refused} back={documentBack(state, spot.document.id)} />;
+  }
+  const target = { kind: 'add', document: spot.document.id, after } as const;
   const again = lapsed(props.again);
-  const { draftKey, start } = formStart(state, addDraft(after), again);
+  const { draftKey, start } = formStart(state, addDraft(target), again);
   return (
     <ProposalForm
       key={draftKey}
       state={state}
-      place={{ target: { kind: 'add', after } }}
+      place={{ target }}
       draftKey={draftKey}
       start={start}
       drafts={drafts}
@@ -105,7 +143,7 @@ export function AddSection({
       intro={
         <>
           <AgainLede again={again} />
-          <AddIntro anchor={anchor} />
+          <AddIntro anchor={spot.anchor} />
         </>
       }
       again={again}
@@ -184,7 +222,7 @@ function RemovalVersion({ state, atom, section, proposal, onAddVersion }: Remova
             {composer.versionFailed}
           </p>
         ) : null}
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
           <Button type="submit" className="button button-primary" isDisabled={running}>
             {composer.removeVersionSubmit}
           </Button>
@@ -217,14 +255,17 @@ function unavailable(props: RemoveSectionProps) {
  */
 export function RemoveSection(props: RemoveSectionProps) {
   const { state, atomId, drafts } = props;
-  const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
-  const atom = state.atoms[index];
+  const place = sectionPlace(state, atomId);
   const { composer } = messages;
-  if (atom === undefined) {
+  if (place === null) {
     return <Unavailable state={state} title={composer.missingTitle} text={composer.missing} />;
   }
+  const { atom, number } = place;
+  const back = documentBack(state, place.document.id);
   const reason = unavailable(props);
-  if (reason !== null) return <Unavailable state={state} title={reason.title} text={reason.text} />;
+  if (reason !== null) {
+    return <Unavailable state={state} title={reason.title} text={reason.text} back={back} />;
+  }
   const open = openProposalOn(state, atomId);
   if (open !== undefined) {
     return (
@@ -232,7 +273,7 @@ export function RemoveSection(props: RemoveSectionProps) {
         key={open.id}
         state={state}
         atom={atom}
-        section={index + 1}
+        section={number}
         proposal={open}
         onAddVersion={props.onAddVersion}
       />
@@ -260,7 +301,7 @@ export function RemoveSection(props: RemoveSectionProps) {
         <>
           <AgainLede again={again} />
           <p className="lede">{composer.removeLede}</p>
-          <StruckSection atom={atom} section={index + 1} />
+          <StruckSection atom={atom} section={number} />
         </>
       }
       text={null}

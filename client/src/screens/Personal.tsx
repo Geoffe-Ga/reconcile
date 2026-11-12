@@ -3,12 +3,12 @@ import { Link } from 'react-aria-components';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { BackLink, PageHeader } from '../app/ui';
-import type { PersonalDocument } from '../store/personal';
+import type { PersonalEntry } from '../store/personal';
 
 /** Props for {@link Personal}. */
 export interface PersonalProps {
   /** This device's personal Documents, oldest first. */
-  readonly documents: readonly PersonalDocument[];
+  readonly documents: readonly PersonalEntry[];
   /** The id a new Document opens at; nothing is stored under it until its first save. */
   readonly newId: string;
   /**
@@ -51,6 +51,14 @@ function DocumentCard({
   );
 }
 
+/** The line under a Document's title on Personal: shared by link (#105), or paused after a restore (#328). */
+function shareLine({ share }: PersonalEntry): { readonly line?: string } {
+  if (share === undefined) return {};
+  return {
+    line: share.paused === true ? messages.personal.pausedLine : messages.personal.sharedLine,
+  };
+}
+
 /** Every Document by title, a shared one marked as such (#105), then New document. */
 function DocumentList({ documents, newId }: Pick<PersonalProps, 'documents' | 'newId'>) {
   return (
@@ -58,11 +66,7 @@ function DocumentList({ documents, newId }: Pick<PersonalProps, 'documents' | 'n
       <ul className="card-list">
         {documents.map((document) => (
           <li key={document.id}>
-            <DocumentCard
-              id={document.id}
-              title={document.title}
-              {...(document.share === undefined ? {} : { line: messages.personal.sharedLine })}
-            />
+            <DocumentCard id={document.id} title={document.title} {...shareLine(document)} />
           </li>
         ))}
       </ul>
@@ -81,7 +85,7 @@ function DocumentList({ documents, newId }: Pick<PersonalProps, 'documents' | 'n
  * Documents, one list, each opening at `#/me/{id}`, then New document. With
  * none yet, it offers My mission statement with one prompt line, and nothing
  * is stored until its first save. A Document shared by link says so under
- * its title (#105). One line says what stays on this device, and, once the
+ * its title (#105), and one whose share a restore paused says that (#328). One line says what stays on this device, and, once the
  * device keeps a relay backup key, that its sealed relay backup has them too
  * (#248).
  */

@@ -11,6 +11,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
 import { DOOR } from '../test/door';
+import { held, pastPressFallback } from '../test/press';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
@@ -80,7 +81,8 @@ const rows = () =>
     .getAllByRole('listitem')
     .map((item) => {
       const copy = item.cloneNode(true) as HTMLElement;
-      for (const button of copy.querySelectorAll('button')) button.remove();
+      // Its actions, Suspend and Propose removing (#115), aren't part of what the row says.
+      for (const action of copy.querySelectorAll('button, .person-action')) action.remove();
       return copy.textContent;
     });
 
@@ -98,8 +100,11 @@ describe('GroupHome', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Riverside Tenants' })).toBeVisible();
     expect(screen.getByText('Your group', { selector: 'p' })).toBeVisible();
-    const documentLink = screen.getByRole('link', { name: /House rules/ });
-    expect(documentLink).toHaveAttribute('href', `#/g/${state.group ?? ''}/doc`);
+    const documentLink = within(section('Documents')).getByRole('link', { name: 'House rules' });
+    expect(documentLink).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
+    );
     expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
     expect(rows()).toEqual(['Ana, Co-Creator, Steward', 'Ben, Co-Creator']);
     expect(screen.getByRole('button', { name: 'Copy invite link' })).toBeVisible();
@@ -282,7 +287,7 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('shows, in order: Needs your vote, Focus, the other open Proposals, Dispatches (#112), the Document, Decided, People', async () => {
+  it('shows, in order: Needs your vote, Focus, the other open Proposals, Dispatches (#112), the Documents, Decided, People', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     const scored = log.propose('ben', { title: 'Bins on Monday', atom: 1 });
     log.vote('ana', scored, 3);
@@ -299,7 +304,7 @@ describe('GroupHome', () => {
       'Focus',
       'Other open Proposals',
       'Dispatches',
-      'Document',
+      'Documents',
       'Decided',
       'People',
     ]);
@@ -311,9 +316,9 @@ describe('GroupHome', () => {
       'href',
       `#/g/${log.group}/p/${scored}`,
     );
-    expect(within(section('Document')).getByRole('link', { name: /House rules/ })).toHaveAttribute(
+    expect(within(section('Documents')).getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${log.group}/doc`,
+      `#/g/${log.group}/doc/${log.group}`,
     );
     expect(await axeViolations()).toEqual([]);
   });
@@ -392,15 +397,36 @@ describe('GroupHome', () => {
       `#/g/${log.group}/p/${passed}`,
     ]);
     expect(cards.map((card) => card.textContent)).toEqual([
-      `Paint the hall→Lapsed${formatDay(deadlineOf(START_MINUTE))}`,
-      `No quiet hours→Didn’t pass${formatDay(START_MINUTE + 1_440)}`,
-      `Later quiet hours→Passed${formatDay(START_MINUTE + 10)}`,
+      `House rulesPaint the hall→Lapsed${formatDay(deadlineOf(START_MINUTE))}`,
+      `House rulesNo quiet hours→Didn’t pass${formatDay(START_MINUTE + 1_440)}`,
+      `House rulesLater quiet hours→Passed${formatDay(START_MINUTE + 10)}`,
     ]);
     const [date] = within(cards[0] as HTMLElement).getAllByText(
       formatDay(deadlineOf(START_MINUTE)),
     );
     expect(date?.tagName).toBe('TIME');
     expect(within(section('Open Proposals')).getByText('Nothing to vote on yet.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('lists every Document, in order, each opening its own view, then Propose a new Document (#92)', async () => {
+    const documents = [
+      { title: 'Mission statement', atoms: ['We share.\n'] },
+      { title: 'House rules', atoms: ['Quiet after 11pm.\n'] },
+    ];
+    const log = groupLog({ documents });
+    const created = log.newDocument('ana', 'Budget');
+    log.vote('ana', created, 4);
+    log.vote('ben', created, 4);
+    renderHome(log.state());
+    const list = section('Documents');
+    const links = within(list).getAllByRole('link');
+    expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Mission statement→', `#/g/${log.group}/doc/${log.group}`],
+      ['House rules→', `#/g/${log.group}/doc/${log.group}:1`],
+      ['Budget→', `#/g/${log.group}/doc/${created}`],
+      ['Propose a new Document', `#/g/${log.group}/doc/new`],
+    ]);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -426,9 +452,79 @@ describe('GroupHome', () => {
       `#/g/${log.group}/p/${cleared}`,
     ]);
     expect(cards.map((card) => card.textContent)).toEqual([
-      `Paint the hall→Lapsed${formatDay(deadlineOf(START_MINUTE))}`,
-      `Later quiet hours→Passed${formatDay(START_MINUTE + 1)}${messages.decided.cleared}`,
+      `House rulesPaint the hall→Lapsed${formatDay(deadlineOf(START_MINUTE))}`,
+      `House rulesLater quiet hours→Passed${formatDay(START_MINUTE + 1)}${messages.decided.cleared}`,
     ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps Propose a new Document in the content column, with the Document list, as Dispatches keeps Send a Dispatch (#92)', () => {
+    renderHome(groupLog({ members: ['Ben'] }).state());
+    const content = (name: string) => {
+      const children = Array.from(section(name).children);
+      // The heading takes the label column; everything else shares one content cell.
+      expect(children.map((child) => child.tagName)).toEqual(['H2', 'DIV']);
+      return children[1] as HTMLElement;
+    };
+    const documents = content('Documents');
+    expect(documents).toHaveClass('stack');
+    expect(documents).toContainElement(within(documents).getByRole('list'));
+    expect(documents).toContainElement(
+      within(documents).getByRole('link', { name: 'Propose a new Document' }),
+    );
+    expect(content('Dispatches')).toHaveClass('stack');
+  });
+
+  it('gives every section on Group home its heading and one content cell, nothing in the label column (#92)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.propose('ana', { title: 'Later quiet hours' });
+    renderHome(log.state(), { applications: <p>No one has asked yet.</p> });
+    const sections = Array.from(document.querySelectorAll('section.section'));
+    expect(sections.length).toBeGreaterThan(8);
+    for (const each of sections) {
+      const label = each.querySelector('h2')?.textContent;
+      expect([label, Array.from(each.children).map((child) => child.tagName)]).toEqual([
+        label,
+        ['H2', expect.any(String)],
+      ]);
+    }
+  });
+
+  it('offers Propose a new Document only to someone who may propose, and not while leaving (#92)', () => {
+    const log = groupLog({ members: ['Ben'], levels: { Ben: VOTING } });
+    renderHome(log.state(), { me: authorOf('ben') });
+    expect(screen.queryByRole('link', { name: 'Propose a new Document' })).not.toBeInTheDocument();
+    cleanup();
+    renderHome(log.state(), { leaving: true });
+    expect(screen.queryByRole('link', { name: 'Propose a new Document' })).not.toBeInTheDocument();
+  });
+
+  it('leads each open and decided Proposal with the Document it changes, or New Document: <title> (#92)', async () => {
+    const documents = [
+      { title: 'Mission statement', atoms: ['We share.\n'] },
+      { title: 'House rules', atoms: ['Quiet after 11pm.\n'] },
+    ];
+    const log = groupLog({ documents });
+    const edit = log.propose('ben', { title: 'Later quiet hours', atom: 0 });
+    const decided = log.newDocument('ana', 'Budget', { title: 'Start a budget' });
+    log.vote('ana', decided, 4);
+    log.vote('ben', decided, 4);
+    const open = log.newDocument('ben', 'Chores', { title: 'Share the chores' });
+    const added = log.addSection('ana', null, { title: 'A heading', document: `${log.group}:1` });
+    renderHome(log.state(), { now: log.minute });
+    const lines = (region: string) =>
+      within(section(region))
+        .getAllByRole('link')
+        .map((card) => [
+          card.querySelector('.document-of')?.textContent,
+          card.getAttribute('href'),
+        ]);
+    expect(lines('Needs your vote')).toEqual([
+      ['Mission statement', `#/g/${log.group}/p/${edit}`],
+      ['New Document: Chores', `#/g/${log.group}/p/${open}`],
+      ['House rules', `#/g/${log.group}/p/${added}`],
+    ]);
+    expect(lines('Decided')).toEqual([['New Document: Budget', `#/g/${log.group}/p/${decided}`]]);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -586,6 +682,26 @@ describe('GroupHome', () => {
     });
   });
 
+  it('keeps the choice when another level is tapped while it saves and saving fails (#193)', async () => {
+    const saving = held<undefined>();
+    const onChooseLevel = vi.fn<OnChooseLevel>(() => saving.promise);
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
+      me: authorOf('ben'),
+      onChooseLevel,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    await user.click(screen.getByRole('button', { name: 'Save your choice' }));
+    const collaborator = screen.getByRole('radio', { name: 'Collaborator' });
+    expect(collaborator).toBeDisabled();
+    await user.click(collaborator);
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(collaborator).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
+    expect(onChooseLevel).toHaveBeenCalledTimes(1);
+  });
+
   it('reads Sent once the change has left the outbox', async () => {
     const { user, rerender } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
       me: authorOf('ben'),
@@ -655,11 +771,25 @@ describe('GroupHome: the current focus (#107)', () => {
       'Focus',
       'Open Proposals',
       'Dispatches',
-      'Document',
+      'Documents',
       'Decided',
     ]);
     expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('leads no priority vote with a Document line, open or decided, since it changes none (#92)', () => {
+    const { log } = focused();
+    const open = log.ask('ben', ['Paint the hall', 'Fix the gate']);
+    renderHome(log.state(), { now: log.minute });
+    const card = (region: string, name: RegExp) =>
+      within(section(region)).getByRole('link', { name });
+    expect(card('Decided', /What should we focus on/).querySelector('.document-of')).toBeNull();
+    expect(card('Needs your vote', /What should we focus on/)).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${open}`,
+    );
+    expect(document.querySelector('.document-of')).toBeNull();
   });
 
   it('names the top option on the Decided card of a priority vote that passed', () => {

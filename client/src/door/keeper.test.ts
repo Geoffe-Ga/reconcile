@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { base64url } from '../crypto/base64url';
 import { doorChannelsOf, replyMailboxOf } from '../crypto/door';
 import { LEVELS } from '../engine/capabilities';
-import { type EventDraft, signEvent } from '../engine/event';
+import { type EventDraft, type RemovalProposalBody, signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { createRelay } from '../net/relay';
 import { xchachaSeal } from '../crypto/seal';
@@ -268,6 +268,51 @@ describe('the keeper reads the inbox, and Send an invite answers', () => {
     expect(await sendInvite({ ...ana.services, makeInvite: make }, groupId, 'nobody')).toBe(
       'missing',
     );
+  });
+});
+
+describe('the keeper beside a removal (#115)', () => {
+  /** The PUTs to the open door's page mailbox since request `before`. */
+  function pagePuts(fake: FakeRelay, before: number) {
+    const page = doorChannelsOf(addressOf(DOOR)).page;
+    return fake.requests
+      .slice(before)
+      .filter((request) => request.method === 'PUT' && request.url.includes(page));
+  }
+
+  /** Ben proposes removing Cal, and Ana and Ben pass it with 4s, closing it early. */
+  async function removeCal(devices: readonly TestDevice[], groupId: string, cals: string) {
+    const [ana, ben] = present(devices);
+    const target = { kind: 'remove' as const, member: cals };
+    const body: RemovalProposalBody = { target, title: 'Remove Cal', why: 'Threats.' };
+    const removal = await post(ben, groupId, { type: 'proposal', body });
+    for (const device of [ana, ben]) {
+      const scores = { [removal]: 4 as const };
+      await post(device, groupId, { type: 'vote', body: { proposal: removal, scores } });
+    }
+  }
+
+  it('posts no page for the person a passed removal names, and their removed copy keeps no applications', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const cal = devices[2];
+    if (cal === undefined) throw new Error('Expected Cal.');
+    const { store } = cal.services;
+    await applyAt(fake, await stranger(fake));
+    expect(await inbox(cal, groupId)).toHaveLength(1);
+    await removeCal(devices, groupId, (await store.getGroup(groupId))?.me.author ?? '');
+    // Cal's device sees the pass before any remove has landed, once the page has come due.
+    fake.minute += REFRESH_MINUTES;
+    const before = fake.requests.length;
+    await cal.services.sync.syncOnce();
+    expect((await store.getGroup(groupId))?.archived).toBeUndefined();
+    expect(pagePuts(fake, before)).toEqual([]);
+
+    for (const device of devices) await device.services.sync.syncOnce();
+    const archived = await store.getGroup(groupId);
+    expect(archived?.archived).toEqual({ reason: 'removed' });
+    expect(archived?.door).toBeUndefined();
+    // The group's own devices keep its door: Ana's posts the page that came due.
+    expect(await readDoor(reader(fake), addressOf(DOOR))).toMatchObject({ kind: 'open' });
   });
 });
 

@@ -18,12 +18,23 @@ import type {
   GroupResultValue,
   JoinBody,
   ReconcileTarget,
+  RoomWrapBody,
   SeatEntry,
 } from './event';
 import { type Bar, DAY_MINUTES, type ProposalClass, type Rules } from './rules';
 
 /** How long after a motion's deadline its results still count: 7 days, in relay minutes. */
 export const RESULT_GRACE_MINUTES = 7 * DAY_MINUTES;
+
+/**
+ * The relay minute a motion's outcome turns final at the latest: its
+ * deadline plus {@link RESULT_GRACE_MINUTES}, when results on it stop
+ * counting and a pass can no longer be contested into a fail. A pass is
+ * final only then, and so is a coalition Dispatch it carries (#124).
+ */
+export function settlesAt(motion: { readonly deadline: number }): number {
+  return motion.deadline + RESULT_GRACE_MINUTES;
+}
 
 /** The largest coalition in which every seat must pass. From one more, two-thirds will do. */
 export const UNANIMOUS_UP_TO = 4;
@@ -96,6 +107,11 @@ export interface GroupResult {
   readonly result: GroupResultValue;
 }
 
+/** The seat an admit motion would add (#114), with the seat's X25519 key for the room's `inner` (#313). */
+export interface AdmitSeat extends SeatEntry {
+  readonly kx: string;
+}
+
 /**
  * A motion's deadline, and the seats in its snapshot at receipt: who decides
  * it. `admit` is the seat an admit motion would add (#114), or null for an
@@ -105,18 +121,36 @@ export interface MotionSeats {
   readonly id: string;
   readonly deadline: number;
   readonly seats: readonly string[];
-  readonly admit: SeatEntry | null;
+  readonly admit: AdmitSeat | null;
 }
 
 /**
  * A group admitted into a formed coalition (#114): the admit motion that
- * admitted it, its public seat key, and the relay minute its pass became
- * final, when it took its seat.
+ * admitted it, its public seat key, the seat's X25519 key its motion named,
+ * to which the room's `inner` is wrapped (#313), and the relay minute its
+ * pass became final, when it took its seat.
  */
 export interface Admission {
   readonly motion: string;
   readonly key: string;
+  readonly kx: string;
   readonly at: number;
+}
+
+/**
+ * A wrap of the room's `inner` for an admitted seat (#313), as the fold
+ * recorded it: where the relay put it, the participant who posted it and the
+ * seat they're bound to, the admitted seat it is for, and the wrap itself
+ * (`crypto/room.ts`). The fold can't open a wrap; the admitted group's
+ * devices do, and take the first that opens.
+ */
+export interface RoomWrap {
+  readonly id: string;
+  readonly seq: number;
+  readonly by: string;
+  readonly from: string;
+  readonly seat: string;
+  readonly wrap: string;
 }
 
 /**
@@ -125,31 +159,45 @@ export interface Admission {
  * `status` is as of the state's `at`. `declinedAt` is the relay minute it was
  * declined, at which relay time stops, or null. `seats` are the genesis's,
  * then each admitted group's, in the order they were admitted (#114), and
- * `founding` its name, title and Atoms as written, which each founding
- * group checks against the target it passed. `formsBy` is the relay minute
- * from which results on the genesis no longer count: the latest a founding
- * group's reconcile vote can close, `windows.ordinary.max` days after the
- * genesis, plus {@link RESULT_GRACE_MINUTES}. `bindings` holds every
+ * `founding` its name and its one Document's title and Atoms as written
+ * (#92), which each founding group checks against the target it passed.
+ * `formsBy` is the relay minute from which results on the genesis no longer
+ * count: the latest a founding group's reconcile vote can close,
+ * `windows.ordinary.max` days after the genesis, plus
+ * {@link RESULT_GRACE_MINUTES}. `bindings` holds every
  * participant's seat in join order, and `results` every valid result in relay
  * order. `motions` holds each motion's snapshot of seats, and `admitted`
- * each group admitted after the genesis, in order (#114).
+ * each group admitted after the genesis, in order (#114). `wraps` holds each
+ * wrap of the room's `inner` for an admitted seat, in relay order (#313).
  */
 export interface Coalition {
   readonly status: CoalitionStatus;
   readonly declinedAt: number | null;
   readonly seats: readonly SeatEntry[];
-  readonly founding: Pick<CoalitionGenesisBody, 'name' | 'title' | 'atoms'>;
+  readonly founding: CoalitionStatement;
   readonly formsBy: number;
   readonly bindings: readonly SeatBinding[];
   readonly results: readonly GroupResult[];
   readonly motions: readonly MotionSeats[];
   readonly admitted: readonly Admission[];
+  readonly wraps: readonly RoomWrap[];
+}
+
+/**
+ * What a coalition is founded on, as its genesis wrote it: its name, and its
+ * one Document's title and Atoms (#92), the statement each founding group's
+ * reconcile Proposal passed.
+ */
+export interface CoalitionStatement {
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
 }
 
 /** A {@link Coalition} while the fold runs. */
 export interface CoalitionDraft extends Omit<
   Coalition,
-  'status' | 'declinedAt' | 'seats' | 'bindings' | 'results' | 'motions' | 'admitted'
+  'status' | 'declinedAt' | 'seats' | 'bindings' | 'results' | 'motions' | 'admitted' | 'wraps'
 > {
   status: CoalitionStatus;
   declinedAt: number | null;
@@ -158,6 +206,7 @@ export interface CoalitionDraft extends Omit<
   readonly results: GroupResult[];
   readonly motions: MotionSeats[];
   readonly admitted: Admission[];
+  readonly wraps: RoomWrap[];
 }
 
 /**
@@ -219,24 +268,30 @@ export function seatsAreValid(seats: readonly SeatEntry[]): boolean {
   return seats.length >= 2 && keys.size === seats.length;
 }
 
-/** A coalition as its genesis founds it, forming, or null when its seats can't found one. */
+/**
+ * A coalition as its genesis founds it, forming, or null when its seats can't
+ * found one or it founds no Document. Its statement is its first Document;
+ * the fold founds a coalition only on exactly one (#92).
+ */
 export function newCoalition(
   body: CoalitionGenesisBody,
   rules: Rules,
   received: number,
 ): CoalitionDraft | null {
-  if (!seatsAreValid(body.seats)) return null;
-  const { name, title, atoms, seats } = body;
+  const [statement] = body.documents;
+  if (!seatsAreValid(body.seats) || statement === undefined) return null;
+  const { name, seats } = body;
   return {
     status: 'forming',
     declinedAt: null,
     seats: [...seats],
-    founding: { name, title, atoms },
+    founding: { name, title: statement.title, atoms: statement.atoms },
     formsBy: received + rules.windows.ordinary.max * DAY_MINUTES + RESULT_GRACE_MINUTES,
     bindings: [],
     results: [],
     motions: [],
     admitted: [],
+    wraps: [],
   };
 }
 
@@ -277,8 +332,32 @@ export function mayAdmit(
  */
 export function admitSeat(coalition: CoalitionDraft, motion: MotionSeats, at: number): void {
   if (motion.admit === null || coalition.admitted.some((a) => a.motion === motion.id)) return;
-  coalition.seats.push(motion.admit);
-  coalition.admitted.push({ motion: motion.id, key: motion.admit.key, at });
+  const { name, key, kx } = motion.admit;
+  coalition.seats.push({ name, key });
+  coalition.admitted.push({ motion: motion.id, key, kx, at });
+}
+
+/**
+ * Records a wrap of the room's `inner` for an admitted seat (#313) from
+ * `author`, a current participant (the fold checks that), when they are
+ * bound to another seat, the seat it names was admitted by the wrap's
+ * receipt, and they haven't wrapped for that seat before. A founding seat's
+ * group holds `inner` from its card, so none is wrapped for it. Returns
+ * whether it was recorded.
+ */
+export function recordWrap(
+  coalition: CoalitionDraft,
+  author: string,
+  body: RoomWrapBody,
+  at: Receipt,
+): boolean {
+  const from = coalition.bindings.find((b) => b.author === author)?.seat;
+  const { seat, wrap } = body;
+  if (from === undefined || from === seat) return false;
+  if (!coalition.admitted.some((a) => a.key === seat)) return false;
+  if (coalition.wraps.some((w) => w.by === author && w.seat === seat)) return false;
+  coalition.wraps.push({ id: at.id, seq: at.seq, by: author, from, seat, wrap });
+  return true;
 }
 
 /** The public seat key, in base64url, that a reconcile target's seat secret makes. */

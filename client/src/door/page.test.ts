@@ -119,6 +119,34 @@ describe('pageFor: what the page says, and nothing else', () => {
     expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Everyone is welcome here.\n');
   });
 
+  it('takes its excerpt from the first Document only, even once that Document has no sections (#92)', () => {
+    const log = groupLog({
+      members: ['Ben', 'Cal'],
+      documents: [
+        { title: 'Mission statement', atoms: ['We keep rents **fair**.\n'] },
+        { title: 'House rules', atoms: ['Bins go out on **Sunday**.\n'] },
+      ],
+    });
+    const door = log.rules('Ana', 'frontDoor', DOOR, { title: 'Open a front door' });
+    const removal = log.propose('Ana', { atom: 0, text: '', title: 'Drop the mission' });
+    for (const name of ['Ana', 'Ben', 'Cal']) {
+      log.vote(name, door, 4);
+      log.vote(name, removal, 4);
+    }
+    log.minute += 1;
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('');
+    const added = log.newDocument('Ana', 'Budget', { text: 'We **share** costs.\n' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, added, 4);
+    log.minute += 1;
+    const state = log.state();
+    expect(state.atoms.map((atom) => atom.documentId)).toEqual([`${log.group}:1`, added]);
+    expect(pageFor(state, DOOR, plain).excerpt).toBe('');
+    const restored = log.addSection('Ana', null, { text: 'Everyone is **welcome**.\n' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, restored, 4);
+    log.minute += 1;
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Everyone is welcome.\n');
+  });
+
   it('shows the member count only when the group chose to', () => {
     const state = opened(COUNTED).state();
     expect(pageFor(state, COUNTED, plain)).toMatchObject({ count: 3 });

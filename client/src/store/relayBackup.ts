@@ -406,8 +406,8 @@ function sameIds(
  * a linked device's live link, which a restore must bring back so it can be
  * stopped, or one this device stopped. Once its link can no longer open,
  * nothing is lost by leaving it out; until then, a device restored from the
- * copy finds its tombstone at its first post, as from a file saved before
- * Stop sharing.
+ * copy gets it back paused (#328, `restoredCopy`), so nothing posts to it,
+ * even once its tombstone has lapsed, unless the person keeps it.
  */
 export function mergePersonal(
   own: readonly PersonalDocument[],

@@ -22,11 +22,18 @@
  *
  * Each personal Document goes in whole: its id, title, text, and when it
  * was made and last edited, and its share by link while it is shared (#105),
- * so a restore keeps the same link and can stop it; a second device's link
- * (#96) takes `withoutShares`. #93 added them without a new format number,
+ * so a restore keeps the same link and can stop it, though it comes back
+ * paused until the person keeps it (#328, `restoredCopy`); a second device's
+ * link (#96) takes `withoutShares`. #93 added them without a new format number,
  * so a format 1 file may hold them or not: one from before #93 has no
  * `personal` field, and reads as holding no personal Documents. A file from
  * before #105 holds no shares.
+ *
+ * A coalition's entry (#114) goes in beside the groups once its genesis is
+ * back, and one kept by following its link (#124) says so with `following:
+ * true`, no new format number, so a restore keeps it followed; a file
+ * without it holds no followed coalition, and only a coalition's entry may
+ * carry it.
  *
  * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
  * device keeps one, so a device restored from the file keeps the relay
@@ -70,10 +77,11 @@
  * `importSnapshot` from one.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
-import { base64url, fromBase64url } from '../crypto/base64url';
+import { base64url, canonicalBytes } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import type { LogRecord } from '../engine/fold';
+import { removedFrom } from '../engine/removal';
 import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { epochOf, secretFits } from './epochs';
@@ -192,6 +200,7 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     .filter(isFounded)
     .map((group) => ({
       ...(group.kind === undefined ? {} : { kind: group.kind }),
+      ...(group.following === true ? { following: true as const } : {}),
       groupId: group.groupId,
       secret: group.secret,
       signingKey: group.signingKey,
@@ -270,6 +279,7 @@ export function encodeSnapshot({
 }: Snapshot): Uint8Array<ArrayBuffer> {
   const own = groups.map((group) => ({
     ...(group.kind === undefined ? {} : { kind: group.kind }),
+    ...(group.following === true ? { following: true } : {}),
     groupId: group.groupId,
     secret: base64url(group.secret),
     signingKey: base64url(group.signingKey),
@@ -606,20 +616,9 @@ function isCountOrNull(value: unknown): value is number | null {
   return value === null || isCount(value);
 }
 
-/** The bytes `value` spells in canonical unpadded base64url, or null. */
-function bytesIn(value: unknown): Uint8Array<ArrayBuffer> | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const bytes = fromBase64url(value);
-    return base64url(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-}
-
 /** A 32-byte key in `value`, or null. */
 function keyIn(value: unknown): Uint8Array<ArrayBuffer> | null {
-  const bytes = bytesIn(value);
+  const bytes = canonicalBytes(value);
   return bytes?.length === KEY_BYTES ? bytes : null;
 }
 
@@ -634,7 +633,7 @@ function isLaterEpoch(value: unknown): value is number {
  */
 function recordIn(value: unknown): LogRecord | null {
   if (!isObject(value) || !isCount(value.seq) || !isCount(value.received)) return null;
-  const bytes = bytesIn(value.bytes);
+  const bytes = canonicalBytes(value.bytes);
   if (bytes === null || bytes.length > MAX_RECORD_BYTES || eventIdOf(bytes) === null) return null;
   const { epoch } = value;
   if (epoch !== undefined && !isLaterEpoch(epoch)) return null;
@@ -679,15 +678,29 @@ function kindIn(value: unknown): Pick<BackedUpGroup, 'kind'> | null {
 }
 
 /**
+ * Whether a coalition entry is only followed (#124), as its own field: none
+ * when absent, and null for anything but `true` on a coalition's entry.
+ */
+function followingIn(
+  value: unknown,
+  kind: Pick<BackedUpGroup, 'kind'>,
+): Pick<BackedUpGroup, 'following'> | null {
+  if (value === undefined) return {};
+  return value === true && kind.kind === 'coalition' ? { following: value } : null;
+}
+
+/**
  * What a backed-up group says of who it is and what it holds: your
- * membership, its kind (#114) and its cleared Proposals (#111), or null when
- * any of them doesn't check out.
+ * membership, its kind (#114), whether it's only followed (#124) and its
+ * cleared Proposals (#111), or null when any of them doesn't check out.
  */
 function marksIn(value: Record<string, unknown>, signingKey: Uint8Array) {
   const me = meIn(value.me, signingKey);
   const kind = kindIn(value.kind);
+  const following = kind === null ? null : followingIn(value.following, kind);
   const cleared = clearedIn(value.cleared);
-  return me === null || kind === null || cleared === null ? null : { me, kind, cleared };
+  if (me === null || kind === null || following === null || cleared === null) return null;
+  return { me, kind: { ...kind, ...following }, cleared };
 }
 
 /** One backed-up group in `value`, or null when any part of it doesn't check out. */
@@ -735,14 +748,21 @@ function clearedIn(value: unknown): Pick<BackedUpGroup, 'cleared'> | null {
 /** A dissolved group's read-only mark (#108). */
 const DISSOLVED: Archive = { reason: 'dissolved' };
 
+/** The read-only mark of a group a vote removed this member from (#115). */
+const REMOVED: Archive = { reason: 'removed' };
+
 /**
  * `group` as a restore keeps it, or null when its log doesn't fold to the
- * group itself. A log holding a `dissolve` comes back read-only (#108).
+ * group itself. A log holding a `dissolve` comes back read-only (#108), and
+ * so does one holding a `remove` of this member (#115).
  */
 function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
   const state = foldGroup(group);
   if (!isFounded(group)) return null;
-  return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
+  if (state.dissolved !== null) return { ...group, archived: DISSOLVED };
+  return removedFrom(state, group.me.author) === undefined
+    ? group
+    : { ...group, archived: REMOVED };
 }
 
 /**

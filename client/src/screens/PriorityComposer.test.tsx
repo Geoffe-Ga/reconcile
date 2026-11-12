@@ -8,6 +8,7 @@ import type { GroupState, Proposal } from '../engine/fold';
 import { optionId } from '../engine/priority';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { groupLog, START_MINUTE } from '../test/votes';
 import type { ComposeOutcome } from './Composer';
 import { PriorityComposer } from './PriorityComposer';
@@ -148,6 +149,22 @@ describe('PriorityComposer (#107)', () => {
     expect(submit()).toHaveProperty('disabled', false);
     await user.click(submit());
     expect(onAsk).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks once when it is tapped again while it asks and the save fails (#193)', async () => {
+    const asking = held<ComposeOutcome>();
+    const { user, onAsk } = setup({ onAsk: () => asking.promise });
+    await type(user, 'Why', 'Because.');
+    await type(user, 'Option 1', 'Fix the website');
+    await type(user, 'Option 2', 'Plan the picnic');
+    await user.click(submit());
+    expect(submit()).toHaveProperty('disabled', true);
+    await user.click(submit());
+    asking.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeDefined();
+    await pastPressFallback();
+    expect(submit()).toHaveProperty('disabled', false);
+    expect(onAsk).toHaveBeenCalledTimes(1);
   });
 
   it('runs the ordinary default of 7 days, and sends the voting time chosen within 3 to 14 (#106)', async () => {

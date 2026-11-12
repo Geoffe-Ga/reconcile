@@ -12,10 +12,13 @@
  * writes the coalition's genesis naming both seats, and joins under the
  * bringer's seat. A card from a formed coalition admits the group instead:
  * once its reconcile Proposal passes, the sync loop proposes the admission
- * (`store/coalitions.ts`). Nothing here sends anything readable: every event
- * goes sealed, through the store's outbox or the card's envelope.
+ * (`store/coalitions.ts`). Such a card carries no `inner`, and the group's
+ * reconcile Proposal holds none even from a card that does: the group gets it
+ * through its seat once admitted, so it can't read the room while it's
+ * decided on (#313). Nothing here sends anything readable: every event goes
+ * sealed, through the store's outbox or the card's envelope.
  */
-import { base64url, fromBase64url } from '../crypto/base64url';
+import { base64url } from '../crypto/base64url';
 import { cardChannelOf, deriveCoalitionEntryId, newCardSeed } from '../crypto/card';
 import { newGroupSecret } from '../crypto/groupKeys';
 import { MAX_RECORD_BYTES } from '../crypto/record';
@@ -23,6 +26,7 @@ import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import { can } from '../engine/capabilities';
+import { atomsOf } from '../engine/documents';
 import { signEvent } from '../engine/event';
 import { fold, type GroupState, TITLE_MAX } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
@@ -58,18 +62,24 @@ function proposalTitle(name: string): string {
   return clip(messages.card.proposalTitle(name), TITLE_MAX);
 }
 
-/** A reconcile target and the public seat key its fresh seat secret makes. */
-function reconcileTarget(card: Pick<Card, 'secret' | 'inner' | 'name' | 'title' | 'atoms'>) {
+/**
+ * A reconcile target and the public seat key its fresh seat secret makes,
+ * carrying `inner` only when given: a founding group's (#313).
+ */
+function reconcileTarget(
+  card: Pick<Card, 'secret' | 'name' | 'title' | 'atoms'>,
+  inner: Uint8Array | undefined,
+) {
   const seatSecret = newSigningKeys().secretKey;
-  const target = {
+  const fields = {
     kind: 'reconcile',
     secret: base64url(card.secret),
-    inner: base64url(card.inner),
     seat: base64url(seatSecret),
     name: card.name,
     title: card.title,
     atoms: card.atoms,
   } as const;
+  const target = inner === undefined ? fields : { ...fields, inner: base64url(inner) };
   return { target, seatSecret, seatKey: base64url(seatKeyOf(seatSecret)) };
 }
 
@@ -135,7 +145,7 @@ export async function makeCard(
     title: messages.card.documentTitle,
     atoms: genesisAtoms(values.statement),
   };
-  const { target, seatKey } = reconcileTarget(coalition);
+  const { target, seatKey } = reconcileTarget(coalition, coalition.inner);
   const seat = { name: clip(state.name, NAME_MAX), key: seatKey };
   const card: Card = { ...coalition, seat, entries: [] };
   const proposal = reconcileRecord(group, services.now(), { target, why: values.why });
@@ -216,9 +226,13 @@ async function coalitionLog(services: Services, card: Card, now: number, instanc
   return readRecentLog(services.relay, services.seal, card.secret, now);
 }
 
-/** Whether a coalition's log takes a card that founds it, admits a group into it, or neither. */
-function modeOf(state: GroupState): FoundCard['mode'] | 'used' {
-  if (state.group === null) return 'found';
+/**
+ * Whether a coalition's log takes a card that founds it, admits a group into
+ * it, or neither, or the card is damaged: one that would found a coalition
+ * must carry `inner`, which the room derives from (#313).
+ */
+function modeOf(state: GroupState, card: Card): FoundCard['mode'] | 'used' | 'missing' {
+  if (state.group === null) return card.inner === undefined ? 'missing' : 'found';
   return state.coalition?.status === 'formed' ? 'admit' : 'used';
 }
 
@@ -241,8 +255,8 @@ export async function lookupCard(services: Services, seed: Uint8Array): Promise<
     );
     if (card === null) return { kind: 'missing' };
     const log = await coalitionLog(services, card, page.now, page.instance);
-    const mode = modeOf(fold(log.records, log.relayNow));
-    if (mode === 'used') return { kind: 'used' };
+    const mode = modeOf(fold(log.records, log.relayNow), card);
+    if (mode === 'used' || mode === 'missing') return { kind: mode };
     const groups = await groupsFor(services, base64url(card.secret));
     return { kind: 'found', found: { card, mode, log, groups } };
   } catch {
@@ -255,8 +269,8 @@ function genesisRecord(entry: Group, card: Card, seat: { name: string; key: stri
   const body = {
     kind: 'coalition',
     name: card.name,
-    title: card.title,
-    atoms: card.atoms,
+    // A coalition founds exactly one Document, its statement (#92).
+    documents: [{ title: card.title, atoms: card.atoms }],
     rules: DEFAULT_RULES,
     seats: [card.seat, seat],
   } as const;
@@ -297,7 +311,9 @@ export async function bringCard(
   if (group === undefined) throw new Error('No such group on this device.');
   const state = foldGroup(group);
   const { card } = found;
-  const { target, seatSecret, seatKey } = reconcileTarget(card);
+  // A group asking into a formed coalition holds no inner until it's admitted (#313).
+  const inner = found.mode === 'admit' ? undefined : card.inner;
+  const { target, seatSecret, seatKey } = reconcileTarget(card, inner);
   const proposal = reconcileRecord(group, services.now(), { target, why: '' });
   if (proposal === null) throw new Error('This card is too large to bring.');
   await store.enqueue(groupId, proposal.record);
@@ -359,9 +375,10 @@ export async function takePart(
 }
 
 /**
- * A card from a formed coalition's row (#114): its secret and `inner`, the
- * participant's group's seat, the coalition's name and statement as they
- * read now, and its whole log, so the group it's brought to reads all of it.
+ * A card from a formed coalition's row (#114): its secret, the participant's
+ * group's seat, the coalition's name and statement as they read now, and its
+ * whole log, so the group it's brought to reads all of it. It carries no
+ * `inner`: the group gets that through its seat once admitted (#313).
  *
  * @throws {Error} when the device holds no such coalition or group seat.
  */
@@ -379,15 +396,17 @@ export async function admitCard(
   const target = state.proposals
     .map((p) => p.target)
     .find((t) => t.kind === 'reconcile' && seats.has(t.key));
-  if (target?.kind !== 'reconcile') throw new Error('This group holds no seat here.');
-  const { inner, key } = target;
+  // A coalition's statement is its one Document (#92).
+  const [statement] = coalition.documents;
+  if (target?.kind !== 'reconcile' || statement === undefined) {
+    throw new Error('This group holds no seat here.');
+  }
   return {
     secret: entry.secret,
-    inner: fromBase64url(inner),
-    seat: { name: clip(state.name, NAME_MAX), key },
+    seat: { name: clip(state.name, NAME_MAX), key: target.key },
     name: coalition.name,
-    title: coalition.title,
-    atoms: coalition.atoms.map((atom) => atom.text),
+    title: statement.title,
+    atoms: atomsOf(coalition, statement.id).map((atom) => atom.text),
     entries: entry.log,
   };
 }

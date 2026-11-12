@@ -44,7 +44,7 @@ function heldBy(logs: Logs, relayNow: number, who: string, plan: Partial<Group> 
 /** Group `log` on this device, as `me`. */
 function deviceGroup(logs: Logs, log: string, relayNow: number, me: string): DeviceGroup {
   const state = fold(logs.logs[log] ?? [], relayNow);
-  return { groupId: state.group ?? '', me: authorOf(me), state, leaving: false };
+  return { groupId: state.group ?? '', me: authorOf(me), state, leaving: false, archived: false };
 }
 
 /**
@@ -151,12 +151,68 @@ describe('coalitionHome', () => {
     expect(home?.standing).toEqual({ kind: 'reads' });
   });
 
+  it('offers the room to a device in a member group, never to one that only holds the coalition (#125)', () => {
+    const logs = new Logs();
+    const at = formed(logs);
+    const held = heldBy(logs, at, 'kim');
+    const riverside = deviceGroup(logs, 'A', at, 'ana');
+    expect(coalitionHome(held, [riverside])?.room).toBe(true);
+    // A follower's device (#124) holds the coalition and no member group, so never its inner.
+    expect(coalitionHome(held, [])?.room).toBe(false);
+    logs.group('C', R, ['ana'], 'Elm Row');
+    expect(coalitionHome(held, [deviceGroup(logs, 'C', at, 'ana')])?.room).toBe(false);
+    // A group asking to join holds the card's inner, but its seat isn't the coalition's yet.
+    logs.reconcile('C', at, 'ana', 'Elm Row');
+    expect(coalitionHome(held, [deviceGroup(logs, 'C', at + 1, 'ana')])?.room).toBe(false);
+    expect(coalitionHome(held, [{ ...riverside, leaving: true }])?.room).toBe(false);
+    expect(coalitionHome(held, [{ ...riverside, archived: true }])?.room).toBe(false);
+  });
+
   it('finds a coalition on this device by its genesis id', () => {
     const logs = new Logs();
     const at = formed(logs);
     const held = heldBy(logs, at, 'kim');
     expect(coalitionById([held], logs.ids.coalition ?? '')).toBe(held);
     expect(coalitionById([held], 'nope')).toBeUndefined();
+  });
+});
+
+describe('a coalition home for followers and sharers (#124)', () => {
+  it('lets a participant bound to a seat share a follow link, and no one else', () => {
+    const logs = new Logs();
+    const at = formed(logs);
+    const groups = [deviceGroup(logs, 'A', at, 'ana')];
+
+    expect(coalitionHome(heldBy(logs, at, 'kim'), groups)?.share).toBe(true);
+    expect(coalitionHome(heldBy(logs, at, 'ana'), groups)?.share).toBe(false);
+    expect(coalitionHome(heldBy(logs, at, 'eve', { following: true }), [])?.share).toBe(false);
+  });
+
+  it('reads as a follower only for an entry followed with no group of its own here', () => {
+    const logs = new Logs();
+    const at = formed(logs);
+    const following = heldBy(logs, at, 'eve', { following: true });
+
+    expect(coalitionHome(following, [])?.follower).toBe(true);
+    expect(coalitionHome(following, [deviceGroup(logs, 'A', at, 'ana')])?.follower).toBe(false);
+    expect(coalitionHome(heldBy(logs, at, 'eve'), [])?.follower).toBe(false);
+  });
+
+  it('lists the coalition’s Dispatches newest first, for everyone who opens it', () => {
+    const logs = new Logs();
+    const at = formed(logs);
+    const first = logs.motion(at, 'kim', 'Banks too.', { title: 'First', text: '' });
+    logs.result(at + 1, 'kim', first, 'Riverside', 'pass');
+    logs.result(at + 2, 'zed', first, 'Oak St', 'pass');
+    const later = at + 8 * DAY_MINUTES;
+    const second = logs.motion(later, 'zed', 'Banks and bridges.', { title: 'Second', text: '' });
+    logs.result(later + 1, 'kim', second, 'Riverside', 'pass');
+    logs.result(later + 2, 'zed', second, 'Oak St', 'pass');
+    const now = later + 2 * WEEK;
+
+    const home = coalitionHome(heldBy(logs, now, 'eve', { following: true }), []);
+    expect(home?.dispatches.map((d) => d.title)).toEqual(['Second', 'First']);
+    expect(coalitionHome(heldBy(logs, at + 5, 'kim'), [])?.dispatches).toEqual([]);
   });
 });
 

@@ -42,8 +42,7 @@ function founding(name: string, fill: number) {
     body: {
       name,
       founder: 'Ana',
-      title: `${name} rules`,
-      atoms: [`${name}: be kind.`],
+      documents: [{ title: `${name} rules`, atoms: [`${name}: be kind.`] }],
       kx: testKx('ana').kx,
     },
   });

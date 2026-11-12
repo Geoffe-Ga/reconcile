@@ -135,7 +135,7 @@ test('a backup restores on two fresh devices, holds nothing readable, and votes 
     await expect(
       ana.page.getByText('Save a backup so you can get this group back if you lose your phone.'),
     ).toBeVisible();
-    await ana.page.getByRole('link', { name: 'Our garden' }).click();
+    await ana.page.getByRole('link', { name: 'Our garden', exact: true }).click();
     await ana.page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await ana.page.getByRole('textbox', { name: 'Title' }).fill(CANARY.title);
     await ana.page.getByRole('textbox', { name: 'Why' }).fill('Mornings are cooler.');

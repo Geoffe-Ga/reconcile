@@ -551,8 +551,9 @@ describe('Not now, in the app (#91)', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: null,
-      title: 'House rules',
-      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+      documents: [
+        { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+      ],
     });
     if (created.outcome !== 'created') throw new Error('Expected a group.');
     await ana.services.sync.syncOnce();

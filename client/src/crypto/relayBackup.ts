@@ -87,6 +87,17 @@ export function newBackupKey(): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(randomBytes(BACKUP_KEY_BYTES));
 }
 
+/**
+ * 65,536 random bytes from the platform's CSPRNG, the smallest backup size:
+ * what a device PUTs to a relay backup id its key no longer names (#109), in
+ * place of the backup there, so the shares of that old key open nothing. The
+ * relay can tell it from a backup, which starts with the magic, and learns
+ * only that the id was retired.
+ */
+export function newScrubBlob(): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(randomBytes(RELAY_BACKUP_SIZES[0]));
+}
+
 /** HKDF-SHA-256 of `key` under `info`, after checking the key's length. */
 function derive(key: Uint8Array, info: Info): Uint8Array<ArrayBuffer> {
   if (key.length !== BACKUP_KEY_BYTES) {

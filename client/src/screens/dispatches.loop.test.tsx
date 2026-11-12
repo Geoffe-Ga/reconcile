@@ -104,7 +104,7 @@ describe('Dispatches in the app (#112)', () => {
     expect(within(card).getByText(/Canary bring gloves\./).textContent).toBe(TEXT);
     expect(within(card).getByRole('link', { name: 'Open House rules' })).toHaveAttribute(
       'href',
-      `#/g/${groupId}/doc`,
+      `#/g/${groupId}/doc/${groupId}`,
     );
 
     go(`#/g/${groupId}`);

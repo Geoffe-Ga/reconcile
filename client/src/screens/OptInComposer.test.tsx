@@ -15,6 +15,7 @@ import { isFrontDoor, isOptInValue, type OptIn } from '../engine/optIns';
 import { axeViolations } from '../test/axe';
 import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { groupLog } from '../test/votes';
 import { OptInComposer, type OptInOutcome } from './OptInComposer';
 
@@ -26,7 +27,7 @@ interface Options {
   readonly me?: string;
   readonly optIn?: OptIn;
   readonly narrow?: boolean;
-  readonly outcome?: OptInOutcome;
+  readonly outcome?: OptInOutcome | Promise<OptInOutcome>;
 }
 
 /** The device clock in tests, in ms. */
@@ -140,6 +141,24 @@ describe('OptInComposer: turning the chat bot on', () => {
     await user.click(screen.getByRole('button', { name: 'Propose this change' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(messages.stewards.failed);
     expect(screen.getByRole('button', { name: 'Propose this change' })).toBeEnabled();
+  });
+
+  it('proposes once when it is tapped again while it proposes and the save fails (#193)', async () => {
+    const proposing = held<OptInOutcome>();
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      outcome: proposing.promise,
+    });
+    await type(user, 'Discord webhook URL', WEBHOOK);
+    await type(user, 'Why', 'Nudges help.');
+    const send = screen.getByRole('button', { name: 'Propose this change' });
+    await user.click(send);
+    expect(send).toBeDisabled();
+    await user.click(send);
+    proposing.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(send).toBeEnabled();
+    expect(onPropose).toHaveBeenCalledTimes(1);
   });
 
   it('ties a too-large Proposal’s message to the why', async () => {

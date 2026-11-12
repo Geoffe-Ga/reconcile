@@ -15,6 +15,7 @@ import {
   newVault,
   openKeys,
   resealKeys,
+  type Secrets,
   VAULT_FORMAT,
   type VaultKeys,
   type VaultRecord,
@@ -36,12 +37,12 @@ const ONES = base64url(new Uint8Array(32).fill(1));
 /** One valid entry for `groupId`, holding {@link ZEROS} and {@link ONES}. */
 const entry = (groupId: string) => ({ groupId, secret: ZEROS, signingKey: ONES });
 
-/** A vault plaintext holding `groups`, under `format`. */
-const vaultJson = (groups: readonly unknown[], format = 1): string =>
-  JSON.stringify({ format, groups });
+/** A vault plaintext holding `groups`, under `format`, with no other record's secrets. */
+const vaultJson = (groups: readonly unknown[], format = 2): string =>
+  JSON.stringify({ format, groups, ...(format === 2 ? { records: [] } : {}) });
 
 /** A vault's contents holding only `groups`, as a device without a relay backup key has. */
-const only = (groups: Map<string, GroupKeys>): VaultKeys => ({ groups });
+const only = (groups: Map<string, GroupKeys>): VaultKeys => ({ groups, records: new Map() });
 
 /** The groups' entries with their bytes in the test's realm, so `toEqual` can compare them. */
 function comparable(keys: VaultKeys | Map<string, GroupKeys> | null | undefined) {
@@ -56,10 +57,11 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
 
     const json: unknown = JSON.parse(text(encodeVaultKeys(only(keys))));
 
-    expect(VAULT_FORMAT).toBe(1);
+    expect(VAULT_FORMAT).toBe(2);
     expect(json).toEqual({
-      format: 1,
+      format: 2,
       groups: [{ groupId: 'group-1', secret: ZEROS, signingKey: ONES }],
+      records: [],
     });
     expect(ZEROS).toBe('A'.repeat(43));
   });
@@ -89,9 +91,10 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
 
   it.each([
     ['not JSON', 'nope'],
-    ['another format', vaultJson([], 2)],
-    ['no groups', '{"format":1}'],
-    ['groups that isn’t a list', '{"format":1,"groups":{}}'],
+    ['another format', vaultJson([], 3)],
+    ['format 0', vaultJson([], 0)],
+    ['no groups', '{"format":2,"records":[]}'],
+    ['groups that isn’t a list', '{"format":2,"groups":{},"records":[]}'],
     ['a group that isn’t an object', vaultJson([1])],
     ['a group id that isn’t text', vaultJson([{ ...entry('g'), groupId: 1 }])],
     ['a short secret', vaultJson([{ ...entry('g'), secret: ZEROS.slice(0, 4) }])],
@@ -123,21 +126,25 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
 
   it('carries the device’s relay backup key (#97) beside the groups, and reads a bad one as nothing', () => {
     const backupKey = new Uint8Array(32).fill(0xb7);
-    const keys: VaultKeys = { groups: new Map([['g', keysOf(0)]]), backupKey };
+    const keys: VaultKeys = { groups: new Map([['g', keysOf(0)]]), records: new Map(), backupKey };
 
     const json: unknown = JSON.parse(text(encodeVaultKeys(keys)));
     const decoded = decodeVaultKeys(encodeVaultKeys(keys));
 
     expect(json).toEqual({
-      format: 1,
+      format: 2,
       groups: [{ groupId: 'g', secret: ZEROS, signingKey: ONES }],
       backupKey: base64url(backupKey),
+      records: [],
     });
     expect(local(decoded?.backupKey ?? new Uint8Array())).toEqual(local(backupKey));
     expect(comparable(decoded)).toEqual(comparable(keys));
-    expect(decodeVaultKeys(encodeVaultKeys(only(new Map())))).toEqual({ groups: new Map() });
+    expect(decodeVaultKeys(encodeVaultKeys(only(new Map())))).toEqual({
+      groups: new Map(),
+      records: new Map(),
+    });
     const withKey = (backup: unknown) =>
-      JSON.stringify({ format: 1, groups: [], backupKey: backup });
+      JSON.stringify({ format: 2, groups: [], backupKey: backup, records: [] });
     expect(decodeVaultKeys(utf8(withKey(ZEROS.slice(2))))).toBeNull();
     expect(decodeVaultKeys(utf8(withKey(`${ZEROS}=`)))).toBeNull();
     expect(decodeVaultKeys(utf8(withKey(7)))).toBeNull();
@@ -154,6 +161,170 @@ describe('encodeVaultKeys and decodeVaultKeys', () => {
   });
 });
 
+describe('other records’ secrets in the vault (#255, #265)', () => {
+  const SEED = new Uint8Array(32).fill(0x51);
+  const SIGNING = new Uint8Array(32).fill(0x52);
+  const REPLY = new Uint8Array(32).fill(0x53);
+  /** A secret of #303's length: a recovery request's 16-byte seed. */
+  const SHORT = new Uint8Array(16).fill(0x54);
+  const LONGEST = new Uint8Array(64).fill(0x55);
+
+  /** A vault's contents holding no group, only `records`. */
+  const recordsOnly = (records: VaultKeys['records']): VaultKeys => ({
+    groups: new Map(),
+    records,
+  });
+
+  /** One record's entry in the plaintext, holding `secrets` as spelled. */
+  const recordEntry = (store: unknown, id: unknown, secrets: unknown) => ({ store, id, secrets });
+
+  /** A format 2 plaintext holding `records` and no group. */
+  const withRecords = (...records: readonly unknown[]): string =>
+    JSON.stringify({ format: 2, groups: [], records });
+
+  /** The records' secrets with their bytes in the test's realm, so `toEqual` can compare them. */
+  function recordsOf(keys: VaultKeys | null) {
+    if (keys === null) return null;
+    return [...keys.records].map(([store, entries]) => [
+      store,
+      [...entries].map(([id, secrets]) => [
+        id,
+        Object.fromEntries(Object.entries(secrets).map(([name, bytes]) => [name, local(bytes)])),
+      ]),
+    ]);
+  }
+
+  it('write each record’s secrets by its store and id, in unpadded base64url', () => {
+    const records: VaultKeys['records'] = new Map([
+      ['personal', new Map<string, Secrets>([['doc-1', { seed: SEED, secretKey: SIGNING }]])],
+      ['sent', new Map<string, Secrets>([['app-1', { replyKey: REPLY }]])],
+    ]);
+
+    const json: unknown = JSON.parse(text(encodeVaultKeys(recordsOnly(records))));
+
+    expect(json).toEqual({
+      format: 2,
+      groups: [],
+      records: [
+        {
+          store: 'personal',
+          id: 'doc-1',
+          secrets: { seed: base64url(SEED), secretKey: base64url(SIGNING) },
+        },
+        { store: 'sent', id: 'app-1', secrets: { replyKey: base64url(REPLY) } },
+      ],
+    });
+  });
+
+  it('round-trip any store’s records, from a 16-byte secret to a 64-byte one, beside the groups', () => {
+    const records: VaultKeys['records'] = new Map([
+      ['personal', new Map<string, Secrets>([['doc-1', { seed: SEED, secretKey: SIGNING }]])],
+      [
+        'device',
+        new Map<string, Secrets>([
+          ['recover-request', { seed: SHORT }],
+          ['other', { long: LONGEST, one: Uint8Array.of(7) }],
+        ]),
+      ],
+    ]);
+    const keys: VaultKeys = { groups: new Map([['g', keysOf(0)]]), records };
+
+    const decoded = decodeVaultKeys(encodeVaultKeys(keys));
+
+    expect(recordsOf(decoded)).toEqual(recordsOf(keys));
+    expect(comparable(decoded)).toEqual(comparable(keys));
+  });
+
+  it('round-trip any record ids and secret names', () => {
+    const name = fc.stringMatching(/^[A-Za-z][A-Za-z0-9]{0,31}$/);
+    const secret = fc.uint8Array({ minLength: 1, maxLength: 64 });
+    const secrets = fc.dictionary(name, secret, { minKeys: 1, maxKeys: 4 });
+    const ids = fc.uniqueArray(fc.string({ minLength: 1, maxLength: 50 }), {
+      minLength: 1,
+      maxLength: 6,
+    });
+    fc.assert(
+      fc.property(ids, fc.array(secrets, { minLength: 6, maxLength: 6 }), (names, held) => {
+        const entries = new Map(names.map((id, i) => [id, held[i] ?? { a: SEED }] as const));
+        const keys = recordsOnly(new Map([['sent', entries]]));
+
+        expect(recordsOf(decodeVaultKeys(encodeVaultKeys(keys)))).toEqual(recordsOf(keys));
+      }),
+    );
+  });
+
+  it('read a format 1 vault, as #95 sealed it, as holding no record’s secrets', () => {
+    const decoded = decodeVaultKeys(utf8(vaultJson([entry('g')], 1)));
+
+    expect(comparable(decoded)).toEqual(comparable(new Map([['g', keysOf(0)]])));
+    expect(decoded?.records).toEqual(new Map());
+  });
+
+  it('read the valid entry these tests break, so each refusal is the change’s', () => {
+    const decoded = decodeVaultKeys(
+      utf8(withRecords(recordEntry('sent', 'a', { seed: ZEROS, replyKey: ONES }))),
+    );
+
+    expect(recordsOf(decoded)).toEqual([
+      [
+        'sent',
+        [['a', { seed: local(new Uint8Array(32)), replyKey: local(new Uint8Array(32).fill(1)) }]],
+      ],
+    ]);
+  });
+
+  it.each([
+    ['format 2 with no records', vaultJson([], 2).replace(',"records":[]', '')],
+    ['format 1 with records', JSON.stringify({ format: 1, groups: [], records: [] })],
+    ['records that aren’t a list', JSON.stringify({ format: 2, groups: [], records: {} })],
+    ['a record that isn’t an object', withRecords(1)],
+    ['a store that isn’t text', withRecords(recordEntry(1, 'a', { seed: ZEROS }))],
+    ['an empty store', withRecords(recordEntry('', 'a', { seed: ZEROS }))],
+    ['a store with a capital', withRecords(recordEntry('Sent', 'a', { seed: ZEROS }))],
+    ['an id that isn’t text', withRecords(recordEntry('sent', 1, { seed: ZEROS }))],
+    ['an empty id', withRecords(recordEntry('sent', '', { seed: ZEROS }))],
+    ['secrets that aren’t an object', withRecords(recordEntry('sent', 'a', [ZEROS]))],
+    ['no secrets', withRecords(recordEntry('sent', 'a', {}))],
+    [
+      'a secret named __proto__',
+      '{"format":2,"groups":[],"records":[{"store":"sent","id":"a","secrets":{"__proto__":"AA"}}]}',
+    ],
+    [
+      'a secret named with a digit first',
+      withRecords(recordEntry('sent', 'a', { '1seed': ZEROS })),
+    ],
+    ['an empty secret', withRecords(recordEntry('sent', 'a', { seed: '' }))],
+    [
+      'a secret over 64 bytes',
+      withRecords(recordEntry('sent', 'a', { seed: base64url(new Uint8Array(65)) })),
+    ],
+    ['a padded secret', withRecords(recordEntry('sent', 'a', { seed: `${ZEROS}=` }))],
+    ['a secret that isn’t text', withRecords(recordEntry('sent', 'a', { seed: 7 }))],
+    [
+      'one record twice',
+      withRecords(
+        recordEntry('sent', 'a', { seed: ZEROS }),
+        recordEntry('sent', 'a', { seed: ONES }),
+      ),
+    ],
+  ])('read nothing from %s', (_name, json) => {
+    expect(decodeVaultKeys(utf8(json))).toBeNull();
+  });
+
+  it('take one id in two stores as two records', () => {
+    const decoded = decodeVaultKeys(
+      utf8(
+        withRecords(
+          recordEntry('sent', 'a', { seed: ZEROS }),
+          recordEntry('personal', 'a', { seed: ONES }),
+        ),
+      ),
+    );
+
+    expect([...(decoded?.records.keys() ?? [])]).toEqual(['sent', 'personal']);
+  });
+});
+
 describe('newVault, openKeys and resealKeys', () => {
   it('seal an empty vault for the passkey, which opens to no keys', () => {
     const vault = newVault(LOCK, KEY);
@@ -164,6 +335,7 @@ describe('newVault, openKeys and resealKeys', () => {
     expect(local(vault.prfSalt)).toEqual(local(LOCK.prfSalt));
     expect(comparable(openKeys(vault, KEY))).toEqual([]);
     expect(openKeys(vault, KEY)?.backupKey).toBeUndefined();
+    expect(openKeys(vault, KEY)?.records).toEqual(new Map());
   });
 
   it('keep the keys sealed under the vault key, with the credential id as associated data', () => {

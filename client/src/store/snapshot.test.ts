@@ -805,7 +805,7 @@ function plain(value: unknown): unknown {
 }
 
 describe('a shared Document in a backup (#105)', () => {
-  it('brings its share back whole, so the restored device keeps the same link and counts on', async () => {
+  it('brings its share back whole, paused until the person keeps it (#328), so the restored device keeps the same link and counts on', async () => {
     const device = await openStore('ana');
     await keepShared(device);
     await device.savePersonal(READING);
@@ -815,7 +815,7 @@ describe('a shared Document in a backup (#105)', () => {
     await importGroups(fresh, file, PASSPHRASE);
 
     expect(plain(await fresh.listPersonal())).toEqual(
-      plain([{ ...canaryStatement(), share: SHARE }, READING]),
+      plain([{ ...canaryStatement(), share: { ...SHARE, paused: true } }, READING]),
     );
   });
 
@@ -988,7 +988,7 @@ describe('a shared Document in a link bundle (#96, #105)', () => {
     );
   });
 
-  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97)', async () => {
+  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97), paused (#328)', async () => {
     const device = await openStore('ana');
     await keepShared(device);
     const fresh = await openStore('fresh');
@@ -996,7 +996,7 @@ describe('a shared Document in a link bundle (#96, #105)', () => {
     await importSnapshot(fresh, await snapshotOf(device));
 
     expect(plain(await fresh.listPersonal())).toEqual(
-      plain([{ ...canaryStatement(), share: SHARE }]),
+      plain([{ ...canaryStatement(), share: { ...SHARE, paused: true } }]),
     );
   });
 });
@@ -1943,11 +1943,12 @@ describe('importSnapshot', () => {
 });
 
 describe('a coalition’s entry in a backup (#114)', () => {
-  /** A formed coalition's entry, kept on `store` with a key of its own and its log. */
-  async function keepCoalition(store: Store) {
+  /** A formed coalition's entry, kept on `store` with a key of its own and its log, followed or not (#124). */
+  async function keepCoalition(store: Store, following = false) {
     const logs = new Logs();
     logs.formed(29_000_000, ['A', 'B'], ['kim', 'zed']);
-    const entry = newEntry(fromBase64url(testSecret('coalition')), { name: 'Kim K.' });
+    const plan = following ? { following } : { name: 'Kim K.' };
+    const entry = newEntry(fromBase64url(testSecret('coalition')), plan);
     await store.addGroup(entry);
     const records = logs.logs.coalition ?? [];
     const pull = { records, cursor: 40, relayNow: 29_000_100, instance: 'i', lastSyncAt: 1 };
@@ -1975,6 +1976,38 @@ describe('a coalition’s entry in a backup (#114)', () => {
     to.close();
   });
 
+  it('keeps that a coalition is only followed (#124), and an entry that isn’t says nothing', async () => {
+    const from = await openStore('from');
+    const to = await openStore('to');
+    const entry = await keepCoalition(from, true);
+
+    const { plaintext } = await takeSnapshot(from);
+    const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
+    expect(json.groups.map((group) => group.following)).toEqual([true]);
+    await importSnapshot(to, plaintext);
+
+    const [restored] = await to.listCoalitions();
+    expect(restored?.groupId).toBe(entry.groupId);
+    expect(restored?.following).toBe(true);
+    const plain = await openStore('plain');
+    await keepCoalition(plain);
+    const kept = JSON.parse(text((await takeSnapshot(plain)).plaintext)) as typeof json;
+    expect(kept.groups.map((group) => 'following' in group)).toEqual([false]);
+    for (const each of [from, to, plain]) each.close();
+  });
+
+  it('refuses a file whose group, not a coalition, says it’s only followed (#124)', async () => {
+    const store = await openStore('device');
+    await keepCanary(store);
+    const { plaintext } = await takeSnapshot(store);
+    const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
+    expect(decodeSnapshot(plaintext)).not.toBeNull();
+    json.groups = json.groups.map((group) => ({ ...group, following: true }));
+
+    expect(decodeSnapshot(utf8(JSON.stringify(json)))).toBeNull();
+    store.close();
+  });
+
   it('leaves out an entry whose genesis hasn’t come back yet', async () => {
     const store = await openStore('device');
     await store.addGroup(newEntry(fromBase64url(testSecret('coalition'))));
@@ -1986,6 +2019,7 @@ describe('a coalition’s entry in a backup (#114)', () => {
   it.each([
     ['whose id isn’t the one its secret makes', { groupId: 'A'.repeat(43) }],
     ['of a kind it doesn’t know', { kind: 'federation' }],
+    ['followed by anything but true', { following: 'yes' }],
   ])('leaves out a coalition entry %s, and counts it (#336)', async (_label, change) => {
     const store = await openStore('device');
     await keepCoalition(store);

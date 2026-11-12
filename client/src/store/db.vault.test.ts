@@ -466,10 +466,10 @@ describe('every later write of key material, with a vault', () => {
         relayNow: 3,
         instance: 'r',
         lastSyncAt: 4,
+        sent: [record],
       },
       (bytes) => text(bytes),
     );
-    await store.markSent(ANA.groupId, record);
     await store.markBackup([ANA.groupId, BEN.groupId], 'saved');
     await store.writeDraft(ANA.groupId, 'atom-1', { title: 'T', why: 'W', text: 'X', link: '' });
     // A pull from a fresh relay instance starts every cursor over (#110), still writing no key.

@@ -22,28 +22,44 @@
  * transaction; a shared one keeps its share state on its own record (#105).
  * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay. The relay backup's key and state (#97) are
- * one record in a store of their own, in no group, so no group's record ever
- * holds the key. Under a vault that record keeps its state, and the vault
- * its key. A front door's applications (#121) stay on the device too: those
+ * cleared while its outcomes stay. So does a group a vote removed this
+ * member from (#115), which keeps what it already had. The relay backup's key
+ * and state (#97) are one record in a store of their own, in no group, so no
+ * group's record ever holds the key. Under a vault that record keeps its
+ * state, and the vault its key. A front door's applications (#121) stay on the device too: those
  * a member's device read from its group's inbox on the group's record, and
  * those this device sent, with the reply keys only it holds, in a store of
- * their own (`./applications.ts`), outside the vault for now, as a share's
- * keys are.
+ * their own (`./applications.ts`).
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
- * (`./vault.ts`), and the records keep the rest. A shared personal
- * Document's seed and signing key (#105) stay on its record for now. A store opened on such a device reads nothing until
- * {@link Store.unlock} gets the vault key from the passkey; it keeps that key
- * in memory for the session, opens the vault inside each read's transaction
- * and hands back whole groups, so nothing else in the app changes. Every
- * write of key material (Create group and Join, a backup's or a link's
- * import, a group leaving or removed, and the relay backup's key) goes
- * through one function, `keepKeys`, which seals the keys into the vault when
- * there is one and refuses while it's locked, in the same transaction as the
- * records it writes. Every read of the relay backup's state opens the vault
- * too, so a locked device neither reads nor writes its key.
+ * (`./vault.ts`), and the records keep the rest. So do a shared personal
+ * Document's seed, signing key and public key (#255), its record keeping the
+ * share's mark, and a sent application's reply seed, reply key and invite
+ * seed (#265), its record keeping the door, the group's name and when it was
+ * sent, and a recovering device's request seed and X25519 secret key (#118),
+ * its record keeping when it started: one mechanism, `./sealing.ts`, serves
+ * all three. A store opened on such a
+ * device reads nothing that holds a key until {@link Store.unlock} gets the
+ * vault key from the passkey; it keeps that key in memory for the session,
+ * opens the vault inside each read's transaction and hands back whole groups,
+ * Documents and applications, so nothing else in the app changes. Personal
+ * and its editor read each Document's words and share mark with no key
+ * (`listPersonalEntries`), so a locked device still shows them. Every write
+ * of key material (Create group and Join, a backup's or a link's import, a
+ * group leaving or removed, the relay backup's key, a share set, changed or
+ * dropped, an application kept, changed or forgotten, and a recovery request
+ * kept, stopped or finished) goes through one
+ * function, `keepKeys`, which seals the keys into the vault when there is
+ * one and refuses while it's locked, in the same transaction as the records
+ * it writes. Every read of the relay backup's state opens the vault too, so
+ * a locked device neither reads nor writes its key. Share, reply and request
+ * keys a device kept on their records, before #255, #265 and #118's sealing
+ * or before it had a vault, move into the vault when it seals, or at its
+ * first unlock after them. The person's recovery contacts (#109) are
+ * another record in the device store, under its own key: the one place the
+ * device lists them, which no backup file, link bundle or relay copy
+ * carries. They hold no key, so they stay out of the vault.
  *
  * Once a decided Proposal's ballots expire (#111), `clearBallots` deletes
  * them, its other results and anything else that expires with them from the
@@ -58,7 +74,15 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import { expiryKeyOf } from '../engine/expiry';
-import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
+import { keptInRoom } from '../engine/room';
+import {
+  type DoorInbox,
+  replySealing,
+  SENT_CHANGED,
+  type SentApplication,
+  type SentStore,
+  type StoredSent,
+} from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
@@ -68,6 +92,7 @@ import {
   newVault,
   openKeys,
   resealKeys,
+  type Secrets,
   VAULT_ID,
   type VaultKeys,
   type VaultLock,
@@ -75,6 +100,7 @@ import {
 } from './vault';
 import {
   byCreation,
+  entryOf,
   isPersonalDocument,
   isShareState,
   keepsHeldCopy,
@@ -82,9 +108,15 @@ import {
   type PersonalDocument,
   restoredCopy,
   type PersonalStore,
+  shareSealing,
   type ShareState,
+  type StoredDocument,
   textOf,
 } from './personal';
+import { type RecoverRequest, requestSealing, type StoredRecoverRequest } from './recoverRequest';
+import { plainRecords, type Sealing, wholeRecord } from './sealing';
+
+export type { RecoverRequest } from './recoverRequest';
 
 /** Who this device is in a group. */
 export interface Me {
@@ -164,8 +196,9 @@ export interface Admitting {
 }
 
 /**
- * Everything the device keeps about one group, or about one coalition whose
- * secret a group on the device holds (#114): its `kind` says which.
+ * Everything the device keeps about one group, about one coalition whose
+ * secret a group on the device holds (#114), or about one coalition's room
+ * (#125): its `kind` says which.
  */
 export interface Group extends CoalitionPlan {
   /**
@@ -175,9 +208,20 @@ export interface Group extends CoalitionPlan {
   groupId: string;
   /**
    * `coalition` for a coalition's entry (#114): its own log, cursors, outbox
-   * and `me`, synced like a group's. Absent for a group.
+   * and `me`, synced like a group's. `room` for a coalition's room (#125,
+   * `./rooms.ts`): its `secret` is the coalition's `inner`, its signing key
+   * and author the coalition entry's, and its log keeps 30 days of relay
+   * time. Absent for a group.
    */
-  kind?: 'coalition';
+  kind?: 'coalition' | 'room';
+  /**
+   * Set on a coalition's entry kept by following its link (#124): the person
+   * reads it without joining any member group, and posts nothing to it, so
+   * nothing outside this device records that they follow. Its `signingKey`
+   * signs nothing. Unfollow purges the entry. Absent for a group, and for an
+   * entry a group on the device holds the secret of.
+   */
+  following?: true;
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
@@ -270,10 +314,22 @@ export interface Group extends CoalitionPlan {
    */
   nudged?: string[];
   /**
-   * Set once the group is read-only on this device (#108): absent while it
-   * goes on. Nothing is queued, claimed or synced for it from then on.
+   * Set once the group is read-only on this device: it dissolved (#108), or
+   * a vote removed this member (#115). Absent while it goes on. Nothing is
+   * queued, claimed or synced for it from then on.
    */
   archived?: Archive;
+  /**
+   * The ids of the `recovery-share` events whose held-share line group home
+   * has already shown, and the person put away (#109). Absent until the first.
+   */
+  recoverySeen?: string[];
+  /**
+   * The shares this device, as a recovery contact, agreed to hand back (#118),
+   * oldest first: each from its alert's approval until it went or stopped.
+   * Absent until the first. No backup file or link carries them.
+   */
+  recoveryHolds?: RecoveryHold[];
   /**
    * The front door's inbox as this device last read it (#121): absent until
    * the group's door is open and this member may invite. Never in a backup
@@ -282,9 +338,9 @@ export interface Group extends CoalitionPlan {
   door?: DoorInbox;
   /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
-   * takes, oldest first. Absent until the first. #73's invite header, #78's
-   * backup file and #96's link carry it, so a newcomer or a restored device
-   * knows which it can't check.
+   * takes, oldest first. Absent until the first. #73's invite marks the
+   * result each keeps (#269), and #78's backup file and #96's link carry it,
+   * so a newcomer or a restored device knows which it can't check.
    */
   cleared?: string[];
 }
@@ -295,8 +351,8 @@ export interface Clearing {
   readonly keep: string;
 }
 
-/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
-export type ArchiveReason = 'dissolved';
+/** Why a group only reads on this device: it dissolved (#108), or a vote removed this member (#115). */
+export type ArchiveReason = 'dissolved' | 'removed';
 
 /**
  * A dissolved archive once this device has cleared its ballots and notes
@@ -313,7 +369,10 @@ export interface ClearedArchive {
   readonly tallies: Readonly<Record<string, TallyDetail>>;
 }
 
-/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+/**
+ * A group this device keeps read-only: why (#108, #115), and its cleared
+ * state once a dissolved archive's ballots are cleared.
+ */
 export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
@@ -322,8 +381,12 @@ export interface Archive {
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
 export type BackupMark = 'saved' | 'not-now';
 
-/** Where restored groups came from: a backup file (#78), or another of the person's devices (#96). */
-export type RestoredFrom = 'backup' | 'link';
+/**
+ * Where restored groups came from: a backup file (#78), another of the
+ * person's devices (#96), or the relay backup that recovery contacts helped
+ * open (#118).
+ */
+export type RestoredFrom = 'backup' | 'link' | 'relay';
 
 /**
  * A group as its IndexedDB record holds it: everything but its secret and
@@ -357,6 +420,7 @@ export class VaultLocked extends Error {
 export type BackedUpGroup = Pick<
   Group,
   | 'kind'
+  | 'following'
   | 'groupId'
   | 'secret'
   | 'signingKey'
@@ -386,11 +450,18 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
  * inviter has cleared (#111).
  */
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
-  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
+  Partial<
+    Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'following' | 'joinAs' | 'admitting'>
+  >;
 
-/** True for a coalition's entry (#114), false for a group. */
+/** True for a coalition's entry (#114), false for a group or a room. */
 export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {
   return group.kind === 'coalition';
+}
+
+/** True for a coalition's room (#125), false for a group or a coalition's entry. */
+export function isRoomEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'room';
 }
 
 /**
@@ -436,6 +507,13 @@ export interface Pull {
   lastSyncAt: number;
   /** The move to the next epoch this pull found the group's key change for, if any (#98). */
   advance?: EpochAdvance;
+  /**
+   * Outbox entries the relay took this pass, by their bytes, each dropped in
+   * the change that saves the records this pull read back. Every entry stays
+   * queued until then (#343, #349), so a screen shows it once throughout:
+   * pending from the outbox, then folded from the log, never neither.
+   */
+  sent?: readonly Uint8Array[];
 }
 
 /**
@@ -475,6 +553,65 @@ export interface RelayBackupState {
   readonly uploadedGroups?: readonly string[];
 }
 
+/** One recovery contact as this device chose them (#109): who, and where, as they were then. */
+export interface ChosenContact {
+  /** The group they share with the person: the group the share went to. */
+  readonly groupId: string;
+  /** Their key in that group: the `author` of their events there. */
+  readonly member: string;
+  /** Their name in that group, as the picker showed it. */
+  readonly name: string;
+  /** The group's name. */
+  readonly groupName: string;
+}
+
+/**
+ * The person's recovery contacts (#109; ADR-0043 §1): the split their
+ * shares came from, `t` needed of `n`, who holds them, and when this device
+ * chose them. `retired` lists the relay backup ids an earlier key named,
+ * which still have to be overwritten with random bytes before every older
+ * share opens nothing.
+ */
+export interface RecoveryPlan {
+  readonly split: string;
+  readonly t: number;
+  readonly n: number;
+  readonly contacts: readonly ChosenContact[];
+  /** When this device chose them, in device milliseconds. */
+  readonly chosenAt: number;
+  readonly retired: readonly string[];
+}
+
+/** How a hold ended (#118): the share went to the new device, or the recovery stopped, and when, in device ms. */
+export interface HoldEnd {
+  readonly kind: 'sent' | 'stopped';
+  readonly at: number;
+}
+
+/**
+ * A share this device holds for someone recovering on a new device (#118;
+ * ADR-0043 §2, ADR-0075 §4): the `recovery-alert` it posted, whose share it
+ * is (the person's key in the group), the split approved, the tag a cancel
+ * names, and the code that says where the share goes. The code goes once the
+ * hold ends.
+ */
+export interface RecoveryHold {
+  /** The alert's event id. */
+  readonly alert: string;
+  /** The person's key in the group: the author of the share. */
+  readonly person: string;
+  /** The split of the share approved: a later choice of contacts stops the hold. */
+  readonly split: string;
+  /** The 16-byte tag sealed in the alert, which the person's cancel names. */
+  readonly tag: string;
+  /** The recovery code, while the share waits to go. */
+  readonly code?: string;
+  /** When this device approved, in device ms. */
+  readonly approvedAt: number;
+  /** How the hold ended; absent while it holds. */
+  readonly ended?: HoldEnd;
+}
+
 /** What a relay backup update may change: everything but the key. */
 export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
 
@@ -483,6 +620,38 @@ export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
  * changes: never a group id, which is 43 base64url characters.
  */
 export const RELAY_BACKUP_CHANGED = 'relay-backup';
+
+/**
+ * What {@link Store.subscribe}'s listeners hear when the recovery contacts
+ * change (#109): never a group id either.
+ */
+export const RECOVERY_CHANGED = 'recovery';
+
+/** The recovery contacts' one device-wide record (#109). */
+export interface RecoveryStore {
+  /** The person's recovery contacts, or undefined while they've chosen none on this device. */
+  getRecoveryPlan(): Promise<RecoveryPlan | undefined>;
+  /** Keep `plan` in place of any earlier one. */
+  setRecoveryPlan(plan: RecoveryPlan): Promise<void>;
+  /** Drop `id` from the plan's retired backup ids, in one transaction, once it is overwritten. */
+  forgetRetired(id: string): Promise<void>;
+  /** This device's request to recover with contacts (#118), or undefined while it has none. */
+  getRecoverRequest(): Promise<RecoverRequest | undefined>;
+  /**
+   * In one transaction, the request this device keeps, or `fresh`, kept, when
+   * it keeps none: two screens starting at once both get the one kept.
+   */
+  keepRecoverRequest(fresh: RecoverRequest): Promise<RecoverRequest>;
+  /** Forget the request: the person stopped. */
+  dropRecoverRequest(): Promise<void>;
+  /**
+   * In one transaction, forget the request and mark the device recovered at
+   * `at` (device ms), once a backup has opened and its groups are kept.
+   */
+  finishRecovery(at: number): Promise<void>;
+  /** When this device was recovered with contacts, in device ms, or undefined if it never was. */
+  getRecoveredAt(): Promise<number | undefined>;
+}
 
 /**
  * The relay backup's one device-wide record (#97). Its key is a secret like a
@@ -515,13 +684,17 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
 
 /**
  * The device's groups, its personal Documents (#93), its relay backup's state
- * (#97), and the front-door applications it sent (#121).
+ * (#97), its recovery contacts (#109), and the front-door applications it
+ * sent (#121).
  */
-export interface Store extends DraftStore, PersonalStore, RelayBackupStore, SentStore {
-  /** Every group on the device: never a coalition's entry (#114). */
+export interface Store
+  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, SentStore {
+  /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
   listCoalitions(): Promise<Group[]>;
+  /** Every coalition room on the device (#125). */
+  listRooms(): Promise<Group[]>;
   /** One group or coalition entry, or `undefined` when the device has none by that id. */
   getGroup(groupId: string): Promise<Group | undefined>;
   /** Keep a new group or coalition entry; refuses an id the device already has. */
@@ -589,12 +762,13 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
-   * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts, any leave, the chat bot's
-   * claims (#119) and what it learned of the webhook (#123), and mark it
-   * archived for `reason`. From then on nothing is
-   * queued or claimed for it, and the sync loop sends, reads and posts
-   * nothing for it. A group already archived keeps its archive.
+   * Keep the group read-only on this device, in one change: once it has
+   * dissolved (#108), or a vote has removed this member (#115). Drop its
+   * outbox, its drafts, any leave, the chat bot's claims (#119) and what it
+   * learned of the webhook (#123), and mark it archived for `reason`. From
+   * then on nothing is queued or claimed for it, and the sync loop sends,
+   * reads and posts nothing for it. A group already archived keeps its
+   * archive.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
@@ -603,8 +777,6 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * them. Refuses a group that isn't archived.
    */
   clearArchive(groupId: string, cleared: ClearedArchive): Promise<void>;
-  /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
-  markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
    * Add each record whose event id isn't in the log yet for its epoch, in
    * relay order (`logOrder.ts`, #110), and save the sync state: the cursors
@@ -612,10 +784,11 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * instance the group hasn't read before, a fresh relay database, puts its
    * records after the whole log and starts every cursor over from 0. A pull
    * more than {@link HISTORY_GAP_MS} after the last sync sets
-   * `missingHistory`. A pull that carries an `advance` moves the group to its
-   * next epoch in the same change (#98): the new secret and base cursor with
-   * no other cursors, and the records to post again ahead of the outbox, each
-   * once.
+   * `missingHistory`. Each entry the pull says the relay took (`sent`) leaves
+   * the outbox in the same change (#343, #349). A pull that carries an
+   * `advance` moves the group to its next epoch in the same change too (#98):
+   * the new secret and base cursor with no other cursors, and the records to
+   * post again ahead of the outbox, each once, after the sent entries left it.
    * A ballot, a result or anything else that expires with ballots, for a
    * Proposal in `cleared`, is dropped (#111).
    */
@@ -660,7 +833,8 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * id the same way: the file's replaces the device's only when it was
    * edited later (`keepsHeldCopy`), keeping the device's share when the
    * file's copy holds none (`restoredCopy`, #105), as a link bundle's never
-   * does. Nothing is stamped with the time now. A restored copy keeps the
+   * does, and pausing any share the file brings until the person keeps it
+   * (#328). Nothing is stamped with the time now. A restored copy keeps the
    * Proposals either copy has cleared, and none of what expired with them
    * (#111), so a restore never brings a cleared ballot back.
    */
@@ -671,6 +845,20 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   ): Promise<void>;
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
+  /**
+   * Add `ids` to the held shares group home has shown for the group, each
+   * once, in one change (#109), so its quiet card shows each line once.
+   */
+  markRecoverySeen(groupId: string, ids: readonly string[]): Promise<void>;
+  /**
+   * Queue the signed `recovery-alert` and keep `hold` beside it, in one
+   * change (#118), so a hold never exists without its alert on its way.
+   *
+   * @throws {Error} when the group is leaving or read-only on this device.
+   */
+  holdShare(groupId: string, alert: Uint8Array, hold: RecoveryHold): Promise<void>;
+  /** End the hold of `alert` as `end` says, dropping its code, unless it has ended already (#118). */
+  endHold(groupId: string, alert: string, end: HoldEnd): Promise<void>;
   /**
    * Keep the group's push registration once the relay has taken it, or with
    * null turn push off for the group, in one change (#99).
@@ -698,16 +886,23 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   /**
    * Seal every secret on the device under the vault `key`, for the passkey
    * `lock`, and delete the plain copies, in one transaction (#95): each
-   * group's keys and the relay backup's key (#97). From then on this session
-   * holds the key, and every later secret goes into the vault.
+   * group's keys, the relay backup's key (#97), each shared personal
+   * Document's share keys (#255) and each sent application's reply keys
+   * (#265). From then on this session holds the key, and every later secret
+   * goes into the vault.
    *
    * @throws {Error} when the device already has a vault; nothing changes.
    */
   sealKeys(lock: VaultLock, key: Uint8Array): Promise<void>;
   /**
    * Open the vault under `key` for this session, keeping a copy of it, and
-   * return true; false, keeping nothing, when the device has no vault or the
-   * key doesn't open it. It never writes.
+   * return true; false, keeping nothing and writing nothing, when the device
+   * has no vault or the key doesn't open it. Its one write moves into the
+   * vault any share key or reply key a record still holds in the clear, as a
+   * device sealed before #255 and #265 does, in one transaction; with none,
+   * it writes nothing.
+   *
+   * @throws {Error} when that move fails; the session keeps no key then.
    */
   unlock(key: Uint8Array): Promise<boolean>;
   /**
@@ -725,9 +920,12 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    * groups, in one transaction: Restore when the passkey no longer unlocks
    * the vault (#95). Each is kept as a restore keeps a new group, its keys in
    * its record, since no vault is left to seal them in. The relay backup's
-   * state goes too (#97), since its key went with the vault. The file's
-   * personal Documents, which hold no key, merge as
-   * {@link Store.restoreGroups} merges them.
+   * state goes too (#97), since its key went with the vault, and so does
+   * each sent application whose reply keys it held (#265), whose reply can
+   * no longer open. A shared personal Document whose share keys it held
+   * (#255) takes the file's share of that Document, marked pending, or none;
+   * then the file's personal Documents merge as {@link Store.restoreGroups}
+   * merges them.
    */
   replaceGroups(
     groups: readonly BackedUpGroup[],
@@ -742,12 +940,44 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   close(): void;
 }
 
+/** The mark a device keeps once it was recovered with contacts (#118). */
+interface RecoveredMark {
+  readonly recoveredAt: number;
+}
+
+/**
+ * A record of the device store, each under its own key: the relay backup's
+ * (#97), the recovery contacts' (#109), and a recovering device's request and
+ * the mark it leaves (#118).
+ */
+type DeviceRecord = StoredRelayBackup | RecoveryPlan | StoredRecoverRequest | RecoveredMark;
+
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
-  personal: { key: string; value: PersonalDocument };
-  device: { key: string; value: StoredRelayBackup };
+  personal: { key: string; value: StoredDocument };
+  device: { key: string; value: DeviceRecord };
   vault: { key: string; value: VaultRecord };
-  sent: { key: string; value: SentApplication };
+  sent: { key: string; value: StoredSent };
+}
+
+/** The relay backup's record in a device record read from its key, or undefined: only it is checked daily. */
+function relayBackupIn(record: DeviceRecord | undefined): StoredRelayBackup | undefined {
+  return record !== undefined && 'checkedDay' in record ? record : undefined;
+}
+
+/** The recovery contacts in a device record read from their key, or undefined: only they have contacts. */
+function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefined {
+  return record !== undefined && 'contacts' in record ? record : undefined;
+}
+
+/** A recovering device's request in a device record read from its key, or undefined: only it has a start (#118). */
+function recoverRequestIn(record: DeviceRecord | undefined): StoredRecoverRequest | undefined {
+  return record !== undefined && 'startedAt' in record ? record : undefined;
+}
+
+/** When the device was recovered, in a device record read from its key, or undefined (#118). */
+function recoveredAtIn(record: DeviceRecord | undefined): number | undefined {
+  return record !== undefined && 'recoveredAt' in record ? record.recoveredAt : undefined;
 }
 
 /**
@@ -770,16 +1000,22 @@ const VERSION = 7;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
-/** The device store's one key: the relay backup's record. */
+/** The device store's key for the relay backup's record. */
 const RELAY_BACKUP = 'relay-backup';
+/** The device store's key for the recovery contacts' record (#109): a key of its own, so no new version. */
+const RECOVERY = 'recovery';
+/** The device store's key for a recovering device's request (#118). */
+const RECOVER_REQUEST = 'recover-request';
+/** The device store's key for the mark a recovered device keeps (#118). */
+const RECOVERED = 'recovered';
 const VAULT = 'vault';
 const SENT = 'sent';
 
 /**
  * The stores a key transaction spans: the records, the personal Documents,
- * the relay backup's record and the vault.
+ * the relay backup's record, the vault and the sent applications (#265).
  */
-type Stores = ('groups' | 'personal' | 'device' | 'vault')[];
+type Stores = ('groups' | 'personal' | 'device' | 'vault' | 'sent')[];
 
 /** A read-write transaction over those stores, the only kind that writes key material. */
 type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
@@ -862,8 +1098,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 
   return {
     listGroups: async () =>
-      (await readWhole(db, session, null)).filter((group) => !isCoalitionEntry(group)),
+      (await readWhole(db, session, null)).filter((group) => group.kind === undefined),
     listCoalitions: async () => (await readWhole(db, session, null)).filter(isCoalitionEntry),
+    listRooms: async () => (await readWhole(db, session, null)).filter(isRoomEntry),
     getGroup: async (groupId) => {
       const [group] = await readWhole(db, session, groupId);
       return group;
@@ -956,7 +1193,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;
-        // A dissolved group's front door has closed: its applications go (#121).
+        // A dissolved group's front door has closed, and a removed member reads it no more:
+        // its applications go (#121, #115).
         delete group.door;
       }),
     clearArchive: (groupId, cleared) =>
@@ -964,14 +1202,6 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         if (group.archived === undefined) throw new Error('This group isn’t archived.');
         group.archived = { ...group.archived, cleared };
         group.log = [];
-      }),
-    markSent: (groupId, bytes) =>
-      change(groupId, (group) => {
-        // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
-        const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
-        if (index >= 0) {
-          group.outbox.splice(index, 1);
-        }
       }),
     applyPull(groupId, pull, idOf) {
       const { advance } = pull;
@@ -1018,6 +1248,25 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await writeKeys(db, (tx) => restoreInto(tx, session, { groups, personal, from }));
       for (const { groupId } of groups) notify(groupId);
     },
+    markRecoverySeen: (groupId, ids) =>
+      change(groupId, (group) => {
+        const seen = group.recoverySeen ?? [];
+        group.recoverySeen = [...seen, ...ids.filter((id) => !seen.includes(id))];
+      }),
+    holdShare: (groupId, alert, hold) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined) throw new Error('This group is leaving this device.');
+        if (group.archived !== undefined)
+          throw new Error('This group is read-only on this device.');
+        group.outbox.push(alert);
+        group.recoveryHolds = [...(group.recoveryHolds ?? []), hold];
+      }),
+    endHold: (groupId, alert, end) =>
+      change(groupId, (group) => {
+        group.recoveryHolds = (group.recoveryHolds ?? []).map((hold) =>
+          endedHold(hold, alert, end),
+        );
+      }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const marked: string[] = [];
@@ -1047,13 +1296,24 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         if (door === undefined) delete group.door;
         else group.door = door;
       }),
-    ...sentStore(db, () => {
+    ...sentStore(db, session, () => {
       notify(SENT_CHANGED);
     }),
     async listPersonal() {
-      return (await db.getAll(PERSONAL)).sort(byCreation);
+      const tx = db.transaction([PERSONAL, VAULT]);
+      const stored = await tx.objectStore(PERSONAL).getAll();
+      return (await wholeIn(SHARES, stored, () => vaultKeys(tx, session))).sort(byCreation);
     },
-    getPersonal: (id) => db.get(PERSONAL, id),
+    async getPersonal(id) {
+      const tx = db.transaction([PERSONAL, VAULT]);
+      const stored = await tx.objectStore(PERSONAL).get(id);
+      const held = stored === undefined ? [] : [stored];
+      const [document] = await wholeIn(SHARES, held, () => vaultKeys(tx, session));
+      return document;
+    },
+    async listPersonalEntries() {
+      return (await db.getAll(PERSONAL)).map(entryOf).sort(byCreation);
+    },
     async savePersonal(document) {
       const saved = textOf(document);
       if (!isPersonalDocument(saved)) {
@@ -1064,26 +1324,33 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       const share = keptShare(await tx.store.get(saved.id), saved);
       await Promise.all([tx.store.put(share === undefined ? saved : { ...saved, share }), tx.done]);
     },
-    async updateShare(id, edit) {
+    updateShare: (id, edit) =>
+      writeKeys(db, async (tx) => {
+        // The vault opens first, so a locked device refuses even a share it would drop (#255).
+        const opened = await vaultKeys(tx, session);
+        const stored = await tx.objectStore(PERSONAL).get(id);
+        if (stored === undefined) return undefined;
+        const held = wholeRecord(shareSealing, stored, sealedFor(opened, PERSONAL, id));
+        const kept = withShare(held, edit(held));
+        await keepKeys(tx, session, { personal: { put: [kept] } });
+        return kept;
+      }),
+    async deletePersonal(id) {
+      // A Document that isn't shared holds no key, so it goes in one change of its own store.
       const tx = db.transaction(PERSONAL, 'readwrite');
-      const held = await tx.store.get(id);
-      let kept: PersonalDocument | undefined;
-      try {
-        kept = held && withShare(held, edit(held));
-      } catch (error) {
-        await abandonPersonal(tx);
-        throw error;
-      }
-      if (kept === undefined) {
-        await abandonPersonal(tx);
-        return undefined;
-      }
-      await Promise.all([tx.store.put(kept), tx.done]);
-      return kept;
+      const stored = await tx.store.get(id);
+      const shared = stored !== undefined && shareSealing.hasSecrets(stored);
+      if (!shared) await tx.store.delete(id);
+      await tx.done;
+      // A shared one's keys leave the vault with it, through the one key-writing path (#255).
+      if (shared)
+        await writeKeys(db, (keys) => keepKeys(keys, session, { personal: { drop: [id] } }));
     },
-    deletePersonal: (id) => db.delete(PERSONAL, id),
     ...relayBackupStore(db, session, () => {
       notify(RELAY_BACKUP_CHANGED);
+    }),
+    ...recoveryStore(db, session, () => {
+      notify(RECOVERY_CHANGED);
     }),
     async readVault() {
       const vault = await db.get(VAULT, VAULT_ID);
@@ -1101,10 +1368,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
           }
           await vaults.put(newVault(lock, key));
           const records = await tx.objectStore(GROUPS).getAll();
-          const backup = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+          const backup = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
           await keepKeys(tx, sealing, {
             put: records.map((record) => wholeGroup(record, null)),
             ...(backup === undefined ? {} : { relayBackup: wholeBackup(backup, null) }),
+            ...(await plainSecrets(tx)),
           });
         });
       } catch (error) {
@@ -1116,7 +1384,14 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     async unlock(key) {
       const vault = await db.get(VAULT, VAULT_ID);
       if (vault === undefined || openKeys(vault, key) === null) return false;
-      session.key = Uint8Array.from(key);
+      const opening: Session = { key: Uint8Array.from(key) };
+      try {
+        await writeKeys(db, (tx) => sealPlain(tx, opening));
+      } catch (error) {
+        opening.key?.fill(0);
+        throw error;
+      }
+      session.key = opening.key;
       return true;
     },
     async requireUnlocked() {
@@ -1132,13 +1407,17 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         const backups = tx.objectStore(DEVICE);
         const held = (await backups.getKey(RELAY_BACKUP)) !== undefined;
         await backups.delete(RELAY_BACKUP);
+        const lost = await forgetSealed(tx, personal);
+        const request = await forgetSealedRequest(tx);
         await restoreInto(tx, session, { groups, personal, from: 'backup' });
-        return held;
+        return { backup: held, sent: lost, request };
       });
       session.key?.fill(0);
       session.key = null;
       for (const { groupId } of groups) notify(groupId);
-      if (dropped) notify(RELAY_BACKUP_CHANGED);
+      if (dropped.backup) notify(RELAY_BACKUP_CHANGED);
+      if (dropped.sent) notify(SENT_CHANGED);
+      if (dropped.request) notify(RECOVERY_CHANGED);
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -1150,36 +1429,69 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
   };
 }
 
-/** The applications this device sent, in `db`'s sent store (#121), telling `changed` after each write. */
-function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
+/**
+ * The applications this device sent, in `db`'s sent store (#121), telling
+ * `changed` after each write. Their reply keys are secrets (#265): with a
+ * vault, every read opens it and every write goes through `keepKeys`, so a
+ * locked session gets {@link VaultLocked} and changes nothing.
+ */
+function sentStore(db: IDBPDatabase<Schema>, session: Session, changed: () => void): SentStore {
   return {
     async listSent() {
-      return (await db.getAll(SENT)).sort((a, b) => a.sentAt - b.sentAt);
+      const tx = db.transaction([SENT, VAULT]);
+      const stored = await tx.objectStore(SENT).getAll();
+      const sent = await wholeIn(REPLIES, stored, () => vaultKeys(tx, session));
+      return sent.sort((a, b) => a.sentAt - b.sentAt);
     },
     async addSent(application) {
-      await db.put(SENT, application);
+      await writeKeys(db, (tx) => keepKeys(tx, session, { sent: { put: [application] } }));
       changed();
     },
     async updateSent(id, edit) {
-      const tx = db.transaction(SENT, 'readwrite');
-      const held = await tx.store.get(id);
-      if (held !== undefined) await tx.store.put({ ...edit(held), id });
-      await tx.done;
-      if (held !== undefined) changed();
+      const updated = await writeKeys(db, async (tx) => {
+        const stored = await tx.objectStore(SENT).get(id);
+        if (stored === undefined) return false;
+        const opened = await vaultKeys(tx, session);
+        const held = wholeRecord(replySealing, stored, sealedFor(opened, SENT, id));
+        await keepKeys(tx, session, { sent: { put: [{ ...edit(held), id }] } });
+        return true;
+      });
+      if (updated) changed();
     },
     async dropSent(id) {
-      await db.delete(SENT, id);
+      await writeKeys(db, (tx) => keepKeys(tx, session, { sent: { drop: [id] } }));
       changed();
     },
   };
 }
 
-/** Saves what a sync pass read into `group`'s record: its new log records, in relay order, and sync state. */
+/** Drops the first outbox entry of `group` with exactly `bytes`, once the relay has it. */
+function dropSent(group: Pick<Group, 'outbox'>, bytes: Uint8Array): void {
+  // Bytes are enough: a record's bytes fix its event, and the outbox posts in order.
+  const index = group.outbox.findIndex((entry) => sameBytes(entry, bytes));
+  if (index >= 0) {
+    group.outbox.splice(index, 1);
+  }
+}
+
+/**
+ * Saves what a sync pass read into `group`'s record: its new log records, in
+ * relay order, and sync state, dropping from the outbox each entry the pull
+ * says the relay took (#343, #349), before any `advance` queues records to
+ * post again (`applyPull`), so none is skipped as queued and then dropped. A
+ * room (#125) then keeps only the records received at most 30 days of relay
+ * time before the pull's `now`, so each sync deletes the rest in the same
+ * change.
+ */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  for (const bytes of pull.sent ?? []) dropSent(group, bytes);
+  if (isRoomEntry(group)) {
+    group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
+  }
   group.relayNow = pull.relayNow;
   group.instance = pull.instance;
   group.lastSyncAt = pull.lastSyncAt;
@@ -1236,6 +1548,77 @@ function relayBackupStore(
       return result.wrote;
     },
   };
+}
+
+/** The recovery contacts' record in `db`'s device store (#109), telling `changed` after each write. */
+function recoveryStore(
+  db: IDBPDatabase<Schema>,
+  session: Session,
+  changed: () => void,
+): RecoveryStore {
+  return {
+    getRecoveryPlan: async () => recoveryPlanIn(await db.get(DEVICE, RECOVERY)),
+    async setRecoveryPlan(plan) {
+      await db.put(DEVICE, plan, RECOVERY);
+      changed();
+    },
+    async forgetRetired(id) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      const held = recoveryPlanIn(await tx.store.get(RECOVERY));
+      const kept = held?.retired.filter((retired) => retired !== id);
+      const wrote = held !== undefined && kept?.length !== held.retired.length;
+      if (wrote) await tx.store.put({ ...held, retired: kept ?? [] }, RECOVERY);
+      await tx.done;
+      if (wrote) changed();
+    },
+    async getRecoverRequest() {
+      const tx = db.transaction([DEVICE, VAULT]);
+      const stored = recoverRequestIn(await tx.objectStore(DEVICE).get(RECOVER_REQUEST));
+      return stored && wholeRequest(stored, await vaultKeys(tx, session));
+    },
+    async keepRecoverRequest(fresh) {
+      const kept = await writeKeys(db, async (tx) => {
+        // The vault opens first, so a locked device refuses even a request it holds already.
+        const opened = await vaultKeys(tx, session);
+        const stored = recoverRequestIn(await tx.objectStore(DEVICE).get(RECOVER_REQUEST));
+        if (stored !== undefined) return { request: wholeRequest(stored, opened), wrote: false };
+        await keepKeys(tx, session, { recoverRequest: fresh });
+        return { request: fresh, wrote: true };
+      });
+      if (kept.wrote) changed();
+      return kept.request;
+    },
+    async dropRecoverRequest() {
+      await writeKeys(db, (tx) => keepKeys(tx, session, { recoverRequest: null }));
+      changed();
+    },
+    async finishRecovery(at) {
+      await writeKeys(db, async (tx) => {
+        await keepKeys(tx, session, { recoverRequest: null });
+        await tx.objectStore(DEVICE).put({ recoveredAt: at }, RECOVERED);
+      });
+      changed();
+    },
+    getRecoveredAt: async () => recoveredAtIn(await db.get(DEVICE, RECOVERED)),
+  };
+}
+
+/**
+ * `stored` whole (#118): with the seed and secret key it holds itself, or
+ * else the vault's for it in `opened`.
+ *
+ * @throws {Error} when its keys are in neither.
+ */
+function wholeRequest(stored: StoredRecoverRequest, opened: OpenedVault | null): RecoverRequest {
+  return wholeRecord(requestSealing, stored, sealedFor(opened, DEVICE, RECOVER_REQUEST));
+}
+
+/** `hold` ended as `end` says, without its code, when it is the hold of `alert` and still holds (#118). */
+function endedHold(hold: RecoveryHold, alert: string, end: HoldEnd): RecoveryHold {
+  if (hold.alert !== alert || hold.ended !== undefined) return hold;
+  const ended: RecoveryHold & { code?: string } = { ...hold, ended: end };
+  delete ended.code;
+  return ended;
 }
 
 /**
@@ -1304,14 +1687,6 @@ function withShare(document: PersonalDocument, share: ShareState | undefined): P
   return { ...textOf(document), share };
 }
 
-/** Ends a personal-store transaction that writes nothing. */
-async function abandonPersonal(
-  tx: IDBPTransaction<Schema, ['personal'], 'readwrite'>,
-): Promise<void> {
-  tx.abort();
-  await tx.done.catch(() => undefined);
-}
-
 /** What one restore keeps: a backup file's or a link bundle's groups and Documents (#96). */
 interface Restored {
   readonly groups: readonly BackedUpGroup[];
@@ -1339,12 +1714,68 @@ async function restoreInto(
     const held = await records.get(restored.groupId);
     kept.push(keptCopy(held === undefined ? undefined : wholeGroup(held, opened), restored, from));
   }
-  await keepKeys(tx, session, { put: kept });
   const documents = tx.objectStore(PERSONAL);
+  const keptDocuments: PersonalDocument[] = [];
   for (const restored of personal) {
-    const held = await documents.get(restored.id);
-    if (!keepsHeldCopy(held, restored)) await documents.put(restoredCopy(held, restored));
+    const stored = await documents.get(restored.id);
+    const held =
+      stored && wholeRecord(shareSealing, stored, sealedFor(opened, PERSONAL, restored.id));
+    if (!keepsHeldCopy(held, restored)) keptDocuments.push(restoredCopy(held, restored));
   }
+  await keepKeys(tx, session, { put: kept, personal: { put: keptDocuments } });
+}
+
+/**
+ * What Restore on the unlock screen does before it restores (#95, #255,
+ * #265): the vault and every key in it are gone, so a shared Document whose
+ * keys it held takes the file's share of it, marked pending and paused, or
+ * none, and a sent application whose reply keys it held is forgotten, since
+ * its reply can't open. A record that still holds its own keys keeps them.
+ * Returns whether any sent application went.
+ *
+ * The file's share is one the restore brought: with the vault gone, nothing
+ * says it's the one the device held, and the person may have stopped it
+ * since the file was saved. So it waits, paused, until they keep it (#328).
+ */
+async function forgetSealed(
+  tx: KeyTransaction,
+  personal: readonly PersonalDocument[],
+): Promise<boolean> {
+  const shares = new Map(personal.map(({ id, share }) => [id, share]));
+  const documents = tx.objectStore(PERSONAL);
+  const orphaned = (await documents.getAll()).filter(isSealedShare);
+  for (const document of orphaned) {
+    const share = shares.get(document.id);
+    await documents.put({
+      ...textOf(document),
+      ...(share && { share: { ...share, pending: true, paused: true } }),
+    });
+  }
+  const sent = tx.objectStore(SENT);
+  const lost = (await sent.getAll()).filter(
+    (record) => replySealing.split(record).secrets === null,
+  );
+  for (const { id } of lost) await sent.delete(id);
+  return lost.length > 0;
+}
+
+/**
+ * What Restore on the unlock screen does with a recovering device's request
+ * (#118): its seed and secret key went with the vault, so its record goes
+ * too, and the person starts again. One that still holds its own keys stays.
+ * Returns whether it went.
+ */
+async function forgetSealedRequest(tx: KeyTransaction): Promise<boolean> {
+  const devices = tx.objectStore(DEVICE);
+  const request = recoverRequestIn(await devices.get(RECOVER_REQUEST));
+  const lost = request !== undefined && requestSealing.split(request).secrets === null;
+  if (lost) await devices.delete(RECOVER_REQUEST);
+  return lost;
+}
+
+/** Whether `document` is shared with its keys in the vault, not on its record (#255). */
+function isSealedShare(document: StoredDocument): boolean {
+  return shareSealing.hasSecrets(document) && shareSealing.split(document).secrets === null;
 }
 
 /**
@@ -1509,7 +1940,7 @@ async function backupIn<Mode extends IDBTransactionMode>(
   session: Session,
 ): Promise<RelayBackupState | undefined> {
   const opened = await vaultKeys(tx, session);
-  const record = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+  const record = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
   return record === undefined ? undefined : wholeBackup(record, opened);
 }
 
@@ -1535,14 +1966,65 @@ async function readWhole(
   return read.flatMap((record) => (record === undefined ? [] : [wholeGroup(record, keys)]));
 }
 
+/** Records of one sealed store to put whole, and ids to delete (#255, #265). */
+interface RecordChange<Whole> {
+  readonly put?: readonly Whole[];
+  readonly drop?: readonly string[];
+}
+
+/**
+ * The stores whose records keep their secrets in the vault, as the vault
+ * names them: personal Documents (#255), sent applications (#265), and the
+ * device store, for a recovering device's request (#118).
+ */
+type SealedStore = typeof PERSONAL | typeof SENT | typeof DEVICE;
+
+/** A store whose records keep their secrets in the vault, and how each splits (#255, #265). */
+interface SealedKind<Whole extends Kept, Kept extends { readonly id: string }> {
+  readonly store: SealedStore;
+  readonly sealing: Sealing<Whole, Kept>;
+}
+
+/** Personal Documents, whose shares' keys the vault keeps (#255). */
+const SHARES: SealedKind<PersonalDocument, StoredDocument> = {
+  store: PERSONAL,
+  sealing: shareSealing,
+};
+
+/** Sent applications, whose reply keys the vault keeps (#265). */
+const REPLIES: SealedKind<SentApplication, StoredSent> = { store: SENT, sealing: replySealing };
+
+/**
+ * Each of `records` of `kind`, whole (#255, #265): with the secrets it holds
+ * itself, or else the vault's. `vault` opens the vault, and runs only when
+ * one of them has secrets, so a Document that isn't shared reads while it's
+ * locked.
+ *
+ * @throws {VaultLocked} when one has secrets and the device has a vault this session hasn't opened.
+ */
+async function wholeIn<Whole extends Kept, Kept extends { readonly id: string }>(
+  kind: SealedKind<Whole, Kept>,
+  records: readonly Kept[],
+  vault: () => Promise<OpenedVault | null>,
+): Promise<Whole[]> {
+  const { store, sealing } = kind;
+  const keys = records.some((record) => sealing.hasSecrets(record)) ? await vault() : null;
+  return records.map((record) => wholeRecord(sealing, record, sealedFor(keys, store, record.id)));
+}
+
 /**
  * What one write of key material does: the groups to put, whole, the ones to
- * delete, and the relay backup's state to keep, key and all (#97).
+ * delete, the relay backup's state to keep, key and all (#97), the personal
+ * Documents (#255) and sent applications (#265) to put, whole, or delete, and
+ * a recovering device's request (#118) to keep, whole, or with null forget.
  */
 interface KeyChange {
   readonly put?: readonly Group[];
   readonly drop?: readonly string[];
   readonly relayBackup?: RelayBackupState;
+  readonly personal?: RecordChange<PersonalDocument>;
+  readonly sent?: RecordChange<SentApplication>;
+  readonly recoverRequest?: RecoverRequest | null;
 }
 
 /**
@@ -1557,13 +2039,130 @@ interface KeyChange {
  */
 async function keepKeys(tx: KeyTransaction, session: Session, change: KeyChange): Promise<void> {
   const opened = await vaultKeys(tx, session);
-  await keepGroups(tx, opened?.keys ?? null, change);
-  if (change.relayBackup !== undefined) {
-    await keepBackup(tx, opened?.keys ?? null, change.relayBackup);
-  }
+  const sealed = opened?.keys ?? null;
+  await keepGroups(tx, sealed, change);
+  if (change.relayBackup !== undefined) await keepBackup(tx, sealed, change.relayBackup);
+  await keepRecords(tx.objectStore(PERSONAL), SHARES, sealed, change.personal);
+  await keepRecords(tx.objectStore(SENT), REPLIES, sealed, change.sent);
+  if (change.recoverRequest !== undefined) await keepRequest(tx, sealed, change.recoverRequest);
   if (opened !== null) {
     await tx.objectStore(VAULT).put(resealKeys(opened.vault, opened.key, opened.keys));
   }
+}
+
+/** Where the vault keeps the secrets of `store`'s records, made when it holds none yet; null without a vault. */
+function entriesIn(sealed: VaultKeys | null, store: SealedStore): Map<string, Secrets> | null {
+  if (sealed === null) return null;
+  const entries = sealed.records.get(store) ?? new Map<string, Secrets>();
+  sealed.records.set(store, entries);
+  return entries;
+}
+
+/** The vault's secrets for the record `id` of `store`, or undefined without a vault or any. */
+function sealedFor(
+  opened: OpenedVault | null,
+  store: SealedStore,
+  id: string,
+): Secrets | undefined {
+  return opened?.keys.records.get(store)?.get(id);
+}
+
+/** Just what `keepRecords` asks of a sealed store: to put a record, and delete one by id. */
+interface RecordStore<Kept> {
+  put(value: Kept): Promise<unknown>;
+  delete(key: string): Promise<void>;
+}
+
+/**
+ * `keepKeys`' records of one sealed store (#255, #265): each in `drop`
+ * deleted, and each in `put` kept whole without a vault, or split by its
+ * kind's sealing with one, its secrets into `sealed` and the rest into its
+ * record.
+ */
+async function keepRecords<Whole extends Kept, Kept extends { readonly id: string }>(
+  records: RecordStore<Kept>,
+  { store, sealing }: SealedKind<Whole, Kept>,
+  sealed: VaultKeys | null,
+  change: RecordChange<Whole> = {},
+): Promise<void> {
+  const entries = entriesIn(sealed, store);
+  for (const id of change.drop ?? []) {
+    await records.delete(id);
+    entries?.delete(id);
+  }
+  for (const whole of change.put ?? []) {
+    if (entries === null) {
+      await records.put(whole);
+      continue;
+    }
+    const { kept, secrets } = sealing.split(whole);
+    if (secrets === null) entries.delete(whole.id);
+    else entries.set(whole.id, secrets);
+    await records.put(kept);
+  }
+}
+
+/**
+ * `keepKeys`' recovery request (#118): deleted for null, or put whole without
+ * a vault, or split by {@link requestSealing} with one, its seed and secret
+ * key into `sealed` and when it started into its record.
+ */
+async function keepRequest(
+  tx: KeyTransaction,
+  sealed: VaultKeys | null,
+  request: RecoverRequest | null,
+): Promise<void> {
+  const records = tx.objectStore(DEVICE);
+  const entries = entriesIn(sealed, DEVICE);
+  if (request === null) {
+    entries?.delete(RECOVER_REQUEST);
+    await records.delete(RECOVER_REQUEST);
+    return;
+  }
+  if (entries === null) {
+    await records.put(request, RECOVER_REQUEST);
+    return;
+  }
+  const { kept, secrets } = requestSealing.split(request);
+  if (secrets === null) entries.delete(RECOVER_REQUEST);
+  else entries.set(RECOVER_REQUEST, secrets);
+  await records.put(kept, RECOVER_REQUEST);
+}
+
+/**
+ * The personal Documents, sent applications and recovery request that still
+ * hold their keys in the clear, whole: records kept before #255, #265 and
+ * #118's sealing, or on a device with no vault, for `keepKeys` to seal.
+ */
+async function plainSecrets(tx: KeyTransaction): Promise<PlainSecrets> {
+  const documents = await tx.objectStore(PERSONAL).getAll();
+  const sent = await tx.objectStore(SENT).getAll();
+  const request = recoverRequestIn(await tx.objectStore(DEVICE).get(RECOVER_REQUEST));
+  const [plainRequest] = plainRecords(requestSealing, request === undefined ? [] : [request]);
+  return {
+    personal: { put: plainRecords(SHARES.sealing, documents) },
+    sent: { put: plainRecords(REPLIES.sealing, sent) },
+    ...(plainRequest === undefined ? {} : { recoverRequest: plainRequest }),
+  };
+}
+
+/** The records `plainSecrets` finds, as a {@link KeyChange} puts them. */
+interface PlainSecrets {
+  readonly personal: { readonly put: readonly PersonalDocument[] };
+  readonly sent: { readonly put: readonly SentApplication[] };
+  readonly recoverRequest?: RecoverRequest;
+}
+
+/**
+ * Seals into the vault, under `session`'s key, every share key, reply key and
+ * recovery request key a record still holds in the clear: what a device #95
+ * sealed before #255, #265 and #118's sealing holds until its first unlock
+ * after them. Writes nothing when there are none.
+ */
+async function sealPlain(tx: KeyTransaction, session: Session): Promise<void> {
+  const plain = await plainSecrets(tx);
+  const records = plain.personal.put.length + plain.sent.put.length;
+  if (records > 0 || plain.recoverRequest !== undefined) await keepKeys(tx, session, plain);
 }
 
 /**
@@ -1626,7 +2225,7 @@ async function writeKeys<T>(
   db: IDBPDatabase<Schema>,
   work: (tx: KeyTransaction) => Promise<T>,
 ): Promise<T> {
-  const tx = db.transaction([GROUPS, PERSONAL, DEVICE, VAULT], 'readwrite');
+  const tx = db.transaction([GROUPS, PERSONAL, DEVICE, VAULT, SENT], 'readwrite');
   try {
     const result = await work(tx);
     await tx.done;

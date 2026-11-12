@@ -3,7 +3,7 @@
  * B opens it on another device, picks a name, joins, and reads the same
  * Document with both names listed. Two stores share one fake relay.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -14,6 +14,7 @@ import type { FakeRequest } from '../test/fakeRelay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { TEST_ORIGIN, type TestDevice, testDevice } from '../test/appServices';
+import { personRows } from '../test/members';
 import { App } from './App';
 import { parseInviteLink } from './invite';
 
@@ -42,7 +43,9 @@ async function createRiverside(user: UserEvent): Promise<void> {
     ['Document text', 'Quiet hours start at ten.\n\nBins go out on Tuesday.'],
   ];
   for (const [label, value] of entries) {
-    await user.click(await screen.findByRole('textbox', { name: label }));
+    // Create group's first Document starts titled Mission statement (#92), so each field is cleared.
+    await user.clear(await screen.findByRole('textbox', { name: label }));
+    await user.click(screen.getByRole('textbox', { name: label }));
     await user.paste(value);
   }
   await user.click(screen.getByRole('button', { name: 'Create group' }));
@@ -125,11 +128,10 @@ describe('create, invite by link, join, and read the Document', () => {
     // Collaborator, the level Join preselects.
     const people = await screen.findByRole('region', { name: 'People' });
     await waitFor(() => {
-      expect(
-        within(people)
-          .getAllByRole('listitem')
-          .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Collaborator']);
+      expect(personRows(people)).toEqual([
+        'Ana, Co-Creator, Steward',
+        'Ben, invited by Ana, Collaborator',
+      ]);
     });
     expect(screen.getByRole('link', { name: /Join discussion/ })).toHaveAttribute(
       'href',
@@ -137,7 +139,7 @@ describe('create, invite by link, join, and read the Document', () => {
     );
 
     // B reads A's Document.
-    await user.click(screen.getByRole('link', { name: /House rules/ }));
+    await user.click(screen.getByRole('link', { name: 'House rules' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
     expect(screen.getByText('Bins go out on Tuesday.')).toBeVisible();

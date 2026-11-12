@@ -9,6 +9,7 @@ import { DAY_MINUTES } from '../engine/rules';
 import type { SeatNumber } from '../engine/stewards';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { groupLog, START_MINUTE } from '../test/votes';
 import { StewardComposer, type StewardComposerProps, type StewardOutcome } from './StewardComposer';
 
@@ -20,7 +21,7 @@ interface Options {
   readonly me?: string;
   readonly seat?: SeatNumber;
   readonly recall?: boolean;
-  readonly outcome?: StewardOutcome | Error;
+  readonly outcome?: StewardOutcome | Error | Promise<StewardOutcome>;
 }
 
 function renderComposer(state: GroupState, options: Options = {}) {
@@ -137,6 +138,24 @@ describe('StewardComposer: Propose a steward', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Your Proposal couldn’t be saved on this device. Try again.',
     );
+  });
+
+  it('proposes once when it is tapped again while it proposes and the save fails (#193)', async () => {
+    const proposing = held<StewardOutcome>();
+    const { user, onPropose } = renderComposer(threeVoting().state(), {
+      outcome: proposing.promise,
+    });
+    await choose(user, 'Ben');
+    await fillWhy(user, 'Calm.');
+    const propose = screen.getByRole('button', { name: 'Propose this steward' });
+    await user.click(propose);
+    expect(propose).toBeDisabled();
+    await user.click(propose);
+    proposing.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(propose).toBeEnabled();
+    expect(onPropose).toHaveBeenCalledTimes(1);
   });
 });
 
