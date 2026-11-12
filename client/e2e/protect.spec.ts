@@ -5,7 +5,7 @@
  * making the second eternal, from Protect this section; each class Proposal
  * runs 14 days at the higher bar, and both pass. Both profiles then read the
  * first section as entrenched and the second as eternal, with no action on
- * it. Ana proposes a change to the entrenched section, whose ballot shows the
+ * it but its History (#104). Ana proposes a change to the entrenched section, whose ballot shows the
  * higher bar.
  *
  * Ana uses a wide desktop window in the light theme; Ben a 390 px phone in
@@ -181,7 +181,9 @@ test('a group entrenches one section and makes another eternal, and every profil
         'true',
       );
       const eternal = blocks(page).nth(1);
-      await expect(eternal.getByRole('button')).toHaveCount(0);
+      // Only its History stays, as on every section (#104).
+      await expect(eternal.getByRole('button')).toHaveCount(1);
+      await expect(eternal.getByRole('button', { name: 'History of section 2' })).toBeVisible();
       await expect(eternal.getByText(ETERNAL_LINE)).toBeVisible();
       await expect(
         page.getByRole('button', { name: 'Change its protection, section 1' }),
