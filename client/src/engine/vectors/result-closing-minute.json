@@ -1,0 +1,202 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "closing-minute: in the minute of an early close, a Proposal on the same Atom before the closing ballot finds the first open and is ignored, and one after it finds it closed and opens, on a device that holds the ballots and on one that has cleared them, which reads the closing ballot's place from the result's closedSeq",
+      "alsoCleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 3
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501260000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Even later",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after midnight."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              },
+              "salt": "salt-of-bens-ballot"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Even earlier",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 9pm."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "closedSeq": 6,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": {
+                "$base64url": [
+                  20, 100, 41, 161, 43, 142, 47, 59, 194, 204, 14, 214, 180, 166, 15, 132, 126, 213,
+                  35, 163, 171, 218, 221, 105, 63, 61, 147, 224, 25, 0, 213, 240
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "text": "Quiet after 10pm."
+          },
+          {}
+        ],
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@8"
+            }
+          },
+          {
+            "id": "@7",
+            "received": 29375021,
+            "atom": "@1.0",
+            "final": false
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      }
+    }
+  ]
+}
