@@ -37,7 +37,7 @@ import {
 } from '../invite/envelope';
 import type { Relay } from '../net/relay';
 import type { Me, Store } from '../store/db';
-import { adoptionFor, epochOf, secretFits } from '../store/epochs';
+import { adoptionFor, epochOf, keyFits, secretFits } from '../store/epochs';
 import { eventIdOf } from '../store/eventId';
 import { foldGroup } from '../store/expiry';
 import type { Sync } from '../store/sync';
@@ -235,7 +235,8 @@ async function mergeInvite(services: Services, groupId: string, envelope: Envelo
  * and takes up a later key the invite carries (#98). An empty mailbox (an
  * expired link), a missing chunk, a blob that won't open, entries holding no
  * genesis, or a secret its epoch's key change doesn't commit to all read as
- * `missing`.
+ * `missing`, and so, for a newcomer, does a key change with a wrap its secret
+ * doesn't make (#372).
  */
 export async function lookupInvite(services: Services, seed: Uint8Array): Promise<InviteLookup> {
   const channel = inviteChannelOf(seed);
@@ -255,7 +256,24 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
     await mergeInvite(services, groupId, envelope);
     return { kind: 'joined', groupId };
   }
+  return newcomerFinds(state, envelope, { groupId, now: page.now, instance: page.instance });
+}
+
+/**
+ * What a newcomer finds from an invite's `envelope`, its entries folded as
+ * `state`: the group, read from the relay at `now` on `instance`, unless the
+ * key change into the invite's epoch has a wrap its secret doesn't make, which
+ * every member's device refuses (#224), so the newcomer would be stuck where
+ * the group recovers (#372): then `missing`, as a damaged link.
+ */
+function newcomerFinds(
+  state: GroupState,
+  envelope: Envelope,
+  read: { readonly groupId: string; readonly now: number; readonly instance: string },
+): InviteLookup {
+  if (!keyFits(state, envelope.epoch, envelope.groupSecret)) return { kind: 'missing' };
   const { preview, groupSecret: secret, epoch, token, entries, cleared } = envelope;
+  const { groupId, now, instance } = read;
   const cursor = highestSeq(entries);
   return {
     kind: 'found',
@@ -266,7 +284,7 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
       epoch,
       token,
       cleared,
-      page: { records: entries, cursor, relayNow: page.now, instance: page.instance },
+      page: { records: entries, cursor, relayNow: now, instance },
     },
   };
 }
