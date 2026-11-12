@@ -51,51 +51,65 @@ async function sync(device: TestDevice | undefined): Promise<void> {
   await act(() => device?.services.sync.syncOnce());
 }
 
+/**
+ * The heaviest loop here: two devices' apps, two ballots and both Documents,
+ * about 1.1 s once the app is compiled. As the file's first test it also
+ * compiles the whole app, which takes it to about 2 s alone and past 5 s
+ * under two concurrent runs (#260).
+ */
+const FIRST_AND_HEAVIEST = { timeout: 10_000 };
+
 describe('propose, vote, and see the Update', () => {
-  it('closes early once everyone has scored, and both devices show the new text', async () => {
-    const user = appUser();
-    const { fake, groupId, devices } = await group(['Ana', 'Ben']);
-    const [ana, ben] = devices;
-    if (ana === undefined || ben === undefined) throw new Error('Expected two devices.');
-    const startMinute = fake.minute;
-    go(`#/g/${groupId}/doc`);
-    const a = mount(ana, 'a');
+  it(
+    'closes early once everyone has scored, and both devices show the new text',
+    FIRST_AND_HEAVIEST,
+    async () => {
+      const user = appUser();
+      const { fake, groupId, devices } = await group(['Ana', 'Ben']);
+      const [ana, ben] = devices;
+      if (ana === undefined || ben === undefined) throw new Error('Expected two devices.');
+      const startMinute = fake.minute;
+      go(`#/g/${groupId}/doc`);
+      const a = mount(ana, 'a');
 
-    // A proposes new wording for the first section, and lands on its ballot.
-    await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
-    // Proposing reads the group's key from the store and signs before the route moves on.
-    await waitFor(() => {
-      expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
-    });
-    // The Proposal's pass finishes first, so the ballot's send starts a pass of its own.
-    await settle(ana);
-    await score(within(a), user, '3 · Supportive');
-    expect(await within(a).findByText('Sent')).toBeVisible();
+      // A proposes new wording for the first section, and lands on its ballot.
+      await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+      // Proposing reads the group's key from the store and signs before the route moves on.
+      await waitFor(() => {
+        expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+      });
+      // The Proposal's pass finishes first, so the ballot's send starts a pass of its own.
+      await settle(ana);
+      await score(within(a), user, '3 · Supportive');
+      expect(await within(a).findByText('Sent')).toBeVisible();
 
-    // B, open on the same route, syncs, sees the Proposal appear, and scores it.
-    const b = mount(ben, 'b');
-    await sync(ben);
-    expect(await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
-    await score(within(b), user, '4 · Strongly supportive');
+      // B, open on the same route, syncs, sees the Proposal appear, and scores it.
+      const b = mount(ben, 'b');
+      await sync(ben);
+      expect(
+        await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' }),
+      ).toBeVisible();
+      await score(within(b), user, '4 · Strongly supportive');
 
-    // B's send reads back both ballots: everyone has scored, so the vote closes early.
-    const bResult = await within(b).findByRole('region', { name: 'Result' });
-    expect(bResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
-    await sync(ana);
-    const aResult = await within(a).findByRole('region', { name: 'Result' });
-    expect(aResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
-    expect(fake.minute).toBe(startMinute);
-    for (const app of [a, b]) {
-      for (const radio of within(app).getAllByRole('radio')) expect(radio).toBeDisabled();
-    }
+      // B's send reads back both ballots: everyone has scored, so the vote closes early.
+      const bResult = await within(b).findByRole('region', { name: 'Result' });
+      expect(bResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
+      await sync(ana);
+      const aResult = await within(a).findByRole('region', { name: 'Result' });
+      expect(aResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
+      expect(fake.minute).toBe(startMinute);
+      for (const app of [a, b]) {
+        for (const radio of within(app).getAllByRole('radio')) expect(radio).toBeDisabled();
+      }
 
-    // Both Documents now read the new text.
-    go(`#/g/${groupId}/doc`);
-    for (const app of [a, b]) {
-      expect(await within(app).findByText('Quiet after 10pm.')).toBeVisible();
-      expect(within(app).queryByText('Quiet hours start at ten.')).not.toBeInTheDocument();
-    }
-  });
+      // Both Documents now read the new text.
+      go(`#/g/${groupId}/doc`);
+      for (const app of [a, b]) {
+        expect(await within(app).findByText('Quiet after 10pm.')).toBeVisible();
+        expect(within(app).queryByText('Quiet hours start at ten.')).not.toBeInTheDocument();
+      }
+    },
+  );
 
   it('lapses with only the proposer’s ballot once relay time passes the deadline', async () => {
     const user = appUser();
