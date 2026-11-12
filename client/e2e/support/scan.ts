@@ -4,10 +4,14 @@
  *
  * A canary is checked in every spelling `src/test/scan.ts` lists, the one
  * list the unit tests scan with too: its own bytes, hex in either case, and
- * standard and URL-safe base64 at all three byte alignments.
+ * standard and URL-safe base64 at all three byte alignments. It also makes
+ * a run's canary tag, and the control blob a scan must find (#127).
  */
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+
+import { type APIRequestContext, expect } from '@playwright/test';
 
 import { spellings as spellingsOf } from '../../src/test/scan';
 
@@ -70,4 +74,25 @@ export function scan(files: readonly string[], canaries: readonly Canary[]): Fin
 /** A finding as one line of a test report. */
 export function describeFinding({ label, encoding, file }: Finding): string {
   return `${label}, as ${encoding}, in ${file}`;
+}
+
+/** A random tag, so no two runs plant the same canaries. */
+export function tag(): string {
+  return randomBytes(8).toString('hex');
+}
+
+/**
+ * The scan's control: one readable 1,024-byte blob holding `control`, PUT
+ * straight to a throwaway mailbox, so a scan that finds it there has read
+ * what the relay stored and can't pass by reading nothing.
+ */
+export async function putControl(request: APIRequestContext, control: string): Promise<void> {
+  const blob = Buffer.alloc(1024);
+  blob.write(control, 100, 'utf8');
+  const throwaway = randomBytes(32).toString('base64url');
+  const response = await request.put(`/v1/mailbox/${throwaway}?ttl_days=1`, {
+    data: blob,
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  expect(response.status()).toBe(201);
 }

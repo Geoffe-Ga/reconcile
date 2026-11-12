@@ -12,6 +12,7 @@ import { testDevice, type TestDevice, TEST_NOW } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { APP_USER } from '../test/members';
 import { App } from './App';
 import { messages } from './messages';
 
@@ -35,7 +36,7 @@ const CANARY = 'Canary statement: I show up for my neighbors.';
 
 describe('Personal in the app', () => {
   it('goes from Start to a mission statement kept on this device, then lists it, telling the relay nothing', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const ana = await device('ana');
     render(<App services={ana.services} />);
 
@@ -46,8 +47,9 @@ describe('Personal in the app', () => {
 
     expect(window.location.hash).toMatch(/^#\/me\/[A-Za-z0-9_-]{21}[AQgw]$/);
     const id = window.location.hash.slice('#/me/'.length);
-    const text = await screen.findByRole('textbox', { name: 'Text' });
-    await user.type(text, CANARY);
+    // Pasted, not typed key by key: each keystroke re-renders the whole app (#260).
+    await user.click(await screen.findByRole('textbox', { name: 'Text' }));
+    await user.paste(CANARY);
     expect(await screen.findByText('Saved on this device.', {}, { timeout: 2_000 })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
 
@@ -147,5 +149,36 @@ describe('Personal in the app', () => {
     expect(await screen.findByText('I show up.')).toBeVisible();
     expect(screen.getByText(messages.shared.note)).toBeVisible();
     expect(screen.getByRole('heading', { level: 1, name: 'My mission statement' })).toBeVisible();
+  });
+});
+
+describe('Personal’s line on where Documents go, in the app (#248)', () => {
+  it('says the sealed relay backup has them once the device keeps a key, and follows the key as it comes', async () => {
+    const ana = await device('ana');
+    const id = 'Q2FuYXJ5IHN0YXRlbWVudA';
+    await ana.services.store.savePersonal({
+      id,
+      title: 'My mission statement',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const { privacy, privacyRelayBackup, documentPrivacy, documentPrivacyRelayBackup } =
+      messages.personal;
+    window.history.replaceState(null, '', '#/me');
+    render(<App services={ana.services} />);
+
+    expect(await screen.findByText(privacy)).toBeVisible();
+
+    // #109 keeps a key once someone chooses recovery contacts: the line follows at once.
+    await ana.services.store.setRelayBackupKey(new Uint8Array(32).fill(7));
+    expect(await screen.findByText(privacyRelayBackup)).toBeVisible();
+    expect(screen.queryByText(privacy)).not.toBeInTheDocument();
+
+    window.history.pushState(null, '', `#/me/${id}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(await screen.findByText(documentPrivacyRelayBackup)).toBeVisible();
+    expect(screen.queryByText(documentPrivacy)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
   });
 });

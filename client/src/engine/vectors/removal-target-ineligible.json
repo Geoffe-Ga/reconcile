@@ -1,0 +1,719 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "removal-target-ineligible: 9 members, and Ana proposes removing Kim. Eligible is the other 8. Kim’s ballot is ignored and Kim’s response is kept; a second response from Kim, and a response from Ben, are ignored. Eight 4s close it early, Ben’s remove takes Kim out, and Kim’s later vote on another Proposal is ignored, though her ballot from before still counts",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "name": "Zed"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990006,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500420000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990007,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762500480000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990008,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762500540000,
+            "body": {
+              "name": "Gus"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500780000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29990024,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500840000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29990025,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500900000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29990026,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29990027,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501020000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29990028,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501080000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29990029,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501140000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29990030,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29990031,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 22,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 23,
+          "received": 30010270,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@22",
+              "scores": {
+                "@22": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 24,
+          "received": 30010280,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501440000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 25,
+          "received": 30010290,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501500000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 0
+              },
+              "note": "I wasn’t there that night."
+            }
+          }
+        },
+        {
+          "seq": 26,
+          "received": 30010300,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501560000,
+            "body": {
+              "proposal": "@24",
+              "text": "I wasn’t there that night. Ask Dee, she was."
+            }
+          }
+        },
+        {
+          "seq": 27,
+          "received": 30010310,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501620000,
+            "body": {
+              "proposal": "@24",
+              "text": "And another thing."
+            }
+          }
+        },
+        {
+          "seq": 28,
+          "received": 30010320,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501680000,
+            "body": {
+              "proposal": "@24",
+              "text": "Kim is right."
+            }
+          }
+        },
+        {
+          "seq": 29,
+          "received": 30010360,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501740000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 30,
+          "received": 30010361,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 31,
+          "received": 30010362,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 32,
+          "received": 30010363,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501920000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 33,
+          "received": 30010364,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 34,
+          "received": 30010365,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762502040000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 35,
+          "received": 30010366,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762502100000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 36,
+          "received": 30010367,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762502160000,
+            "body": {
+              "proposal": "@24",
+              "scores": {
+                "@24": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 37,
+          "received": 30010460,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502220000,
+            "body": {
+              "proposal": "@24"
+            }
+          }
+        },
+        {
+          "seq": 38,
+          "received": 30010470,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762502280000,
+            "body": {
+              "proposal": "@22",
+              "scores": {
+                "@22": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 30010560,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          },
+          {
+            "author": "%dee"
+          },
+          {
+            "author": "%zed"
+          },
+          {
+            "author": "%eve"
+          },
+          {
+            "author": "%fay"
+          },
+          {
+            "author": "%gus"
+          }
+        ],
+        "former": [
+          {
+            "author": "%kim",
+            "name": "Kim"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@22",
+            "eligible": ["%ana", "%ben", "%cal", "%dee", "%kim", "%zed", "%eve", "%fay", "%gus"],
+            "ballots": [
+              {
+                "id": "@23",
+                "voter": "%kim",
+                "scores": {
+                  "@22": 3
+                }
+              }
+            ],
+            "final": false
+          },
+          {
+            "id": "@24",
+            "class": "removal",
+            "window": 14,
+            "deadline": 30030440,
+            "atom": "",
+            "text": "",
+            "target": {
+              "kind": "remove",
+              "member": "%kim"
+            },
+            "eligible": ["%ana", "%ben", "%cal", "%dee", "%zed", "%eve", "%fay", "%gus"],
+            "versions": [
+              {
+                "id": "@24",
+                "author": "%ana",
+                "text": ""
+              }
+            ],
+            "closedAt": 30010367,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@24",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5,
+                "zerosAllowed": 1
+              }
+            }
+          }
+        ],
+        "responses": [
+          {
+            "id": "@26",
+            "seq": 26,
+            "received": 30010300,
+            "by": "%kim",
+            "proposal": "@24",
+            "text": "I wasn’t there that night. Ask Dee, she was."
+          }
+        ],
+        "removals": [
+          {
+            "proposal": "@24",
+            "member": "%kim",
+            "passedAt": 30010367,
+            "removed": {
+              "id": "@37",
+              "seq": 37,
+              "received": 30010460,
+              "by": "%ben"
+            }
+          }
+        ],
+        "rotationDue": true,
+        "ignored": [
+          {
+            "seq": 25,
+            "id": "@25"
+          },
+          {
+            "seq": 27,
+            "id": "@27"
+          },
+          {
+            "seq": 28,
+            "id": "@28"
+          },
+          {
+            "seq": 38,
+            "id": "@38"
+          }
+        ]
+      },
+      "unchangedWithout": [25, 27, 28, 38]
+    }
+  ]
+}

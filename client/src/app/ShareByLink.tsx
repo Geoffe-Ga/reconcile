@@ -6,7 +6,10 @@
  * sees, before anything is sent. 'Share link' posts the first copy, then
  * hands the link on with fixed words; on, the link shows as selectable text
  * beside its warning, with 'Stop sharing', which says plainly what it can't
- * call back. Every outcome is read out in a polite live region.
+ * call back. Every outcome is read out in a polite live region. While the
+ * device's keys are locked with a passkey, a share's seed waits in the vault
+ * (#255): the section says it's on and how to unlock, with no link and no
+ * button.
  */
 import { useId } from 'react';
 import { Button } from 'react-aria-components';
@@ -29,6 +32,7 @@ const STATUS_LINE: Readonly<Record<ShareStatus, string>> = {
   stopping: messages.personal.share.stopping,
   'stop-failed': messages.personal.share.stopFailed,
   stopped: messages.personal.share.stopped,
+  locked: messages.personal.share.lockedNow,
 };
 
 /** Props for {@link ShareByLink}. */
@@ -72,8 +76,23 @@ function ShareOff({ share }: Pick<ShareByLinkProps, 'share'>) {
   );
 }
 
+/** On, while the device's keys are locked (#255): that it's shared, how to unlock, and whether an edit waits. */
+function ShareLocked({ view }: { readonly view: ShareView }) {
+  const { personal } = messages;
+  return (
+    <div className="stack">
+      <p className="lede">{personal.share.locked}</p>
+      {view.pending ? <p className="caption">{personal.share.pending}</p> : null}
+    </div>
+  );
+}
+
 /** On: the link beside its warning, how edits reach it, then Share link again and Stop sharing. */
-function ShareOn({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView }) {
+function ShareOn({
+  share,
+  view,
+  fits,
+}: ShareByLinkProps & { readonly view: ShareView & { readonly link: string } }) {
   const { personal } = messages;
   return (
     <div className="stack">
@@ -119,6 +138,17 @@ function ShareOn({ share, view, fits }: ShareByLinkProps & { readonly view: Shar
   );
 }
 
+/** The section's body: off, on, or on with the device's keys locked (#255). */
+function ShareBody({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView | null }) {
+  if (view === null) return <ShareOff share={share} />;
+  const { link } = view;
+  return link === null ? (
+    <ShareLocked view={view} />
+  ) : (
+    <ShareOn share={share} view={{ ...view, link }} fits={fits} />
+  );
+}
+
 /**
  * The Share by link section of a personal Document's editor (#105): off
  * until 'Share link', then the link and 'Stop sharing'. Nothing shows until
@@ -137,11 +167,7 @@ export function ShareByLink({ share, fits }: ShareByLinkProps) {
       <h2 id={heading} className="eyebrow">
         {messages.personal.share.heading}
       </h2>
-      {view === null ? (
-        <ShareOff share={share} />
-      ) : (
-        <ShareOn share={share} view={view} fits={fits} />
-      )}
+      <ShareBody share={share} view={view} fits={fits} />
     </section>
   );
 }
