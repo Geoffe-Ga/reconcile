@@ -23,7 +23,7 @@ import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
 import { fold, type GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
-import { coalitionKeys, foldCoalitions, newEntry } from '../store/coalitions';
+import { coalitionKeys, type CoalitionKeys, foldCoalitions, newEntry } from '../store/coalitions';
 import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import {
@@ -223,6 +223,13 @@ function requestBytes(fake: FakeRelay): Uint8Array {
   );
 }
 
+/** `id`'s keys in `keys`, its `inner` included, failing when the device holds either short. */
+function heldKeys(keys: ReadonlyMap<string, CoalitionKeys>, id: string) {
+  const held = keys.get(id);
+  if (held?.inner === undefined || held.inner === null) throw new Error(`Expected ${id}’s keys.`);
+  return { ...held, inner: held.inner };
+}
+
 /**
  * What Ana's device holds above Eastside Housing: Metro Renters' keys, every
  * secret of them as canaries, with Eastside Housing's seat secret there, and
@@ -233,13 +240,11 @@ async function secretsAbove(ana: TestDevice) {
   const keys = coalitionKeys(await ana.services.store.listGroups(), entries);
   const eastsideState = await coalitionNamed(ana, 'Eastside Housing');
   const metro = await coalitionNamed(ana, 'Metro Renters');
-  const above = keys.get(await entryNamed(ana, 'Metro Renters'));
-  const seatSecret = above?.seats.get(seatIn(eastsideState, metro) ?? '');
+  const above = heldKeys(keys, await entryNamed(ana, 'Metro Renters'));
+  const seatSecret = above.seats.get(seatIn(eastsideState, metro) ?? '');
   const entryId = await entryNamed(ana, 'Eastside Housing');
-  const own = keys.get(entryId);
-  if (above === undefined || seatSecret === undefined || own === undefined) {
-    throw new Error('Expected Ana to hold both coalitions’ keys.');
-  }
+  const own = heldKeys(keys, entryId);
+  if (seatSecret === undefined) throw new Error('Expected Ana to hold both coalitions’ keys.');
   const canaries = [
     ...keyCanaries('Metro Renters’ secret', above.secret),
     ...keyCanaries('Metro Renters’ inner', above.inner),

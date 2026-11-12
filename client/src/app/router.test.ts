@@ -217,6 +217,13 @@ describe('coalitions (#120)', () => {
     });
   });
 
+  it('reads a coalition’s room (#125)', () => {
+    expect(parseRoute(`#/c/${COALITION}/room`)).toEqual({
+      name: 'coalitionRoom',
+      coalitionId: COALITION,
+    });
+  });
+
   it('reads a later Document’s id, as several Documents name it (#92)', () => {
     expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}:1`)).toEqual({
       name: 'coalitionDocument',
@@ -235,6 +242,8 @@ describe('coalitions (#120)', () => {
     `#/c/${COALITION}/propose/a.b`,
     `#/c/${COALITION}/p/${COALITION}`,
     `#/c/${COALITION}/reconcile/more`,
+    `#/c/${COALITION}/room/${COALITION}`,
+    `#/c/${COALITION}/rooms`,
     '#/c/a+b',
   ])('sends %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
@@ -290,6 +299,7 @@ describe('routeHref', () => {
       `#/c/${GROUP}/propose/${ATOM}`,
     ],
     [{ name: 'coalitionReconcile', coalitionId: GROUP }, `#/c/${GROUP}/reconcile`],
+    [{ name: 'coalitionRoom', coalitionId: GROUP }, `#/c/${GROUP}/room`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

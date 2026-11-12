@@ -15,6 +15,7 @@ import { openProposalOn } from '../engine/composeOption';
 import { type ParsedEvent, parseRecord } from '../engine/event';
 import type { Atom, GroupState } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
+import { roomEntryFor } from '../store/rooms';
 
 /**
  * A group on this device, as the coalition's screens read it; or a coalition
@@ -29,6 +30,8 @@ export interface DeviceGroup {
   readonly state: GroupState;
   /** Whether this device's leave waits for the relay (#77). */
   readonly leaving: boolean;
+  /** Whether the group only reads on this device (#108). */
+  readonly archived: boolean;
   readonly kind?: 'coalition';
 }
 
@@ -91,6 +94,13 @@ export interface CoalitionHomeView {
   /** Motions this device proposed that the relay hasn't ordered yet, oldest first. */
   readonly pending: readonly { readonly id: string; readonly title: string }[];
   readonly standing: CoalitionStanding;
+  /**
+   * Whether this device may read the coalition's room (#125): a group it goes
+   * on in holds one of its seats and `inner`, which a group admitted later
+   * holds only once a seated group's participant wraps it to its seat (#313).
+   * Never on a device in none of its member groups, as a follower's (#124).
+   */
+  readonly room: boolean;
 }
 
 /** The coalition on this device whose genesis id is `coalitionId`, or undefined. */
@@ -234,7 +244,13 @@ export function coalitionHome(
     decided: motions.filter((m) => m.progress.final).sort((a, b) => b.decidedAt - a.decidedAt),
     pending: pendingIn(held),
     standing: standingIn(held, groups),
+    room: roomEntryFor(state, groups.map(holderOf)) !== null,
   };
+}
+
+/** A group on this device as the room reads it (#125): its fold, and whether it goes on here. */
+export function holderOf({ state, leaving, archived }: DeviceGroup) {
+  return { state, live: !leaving && !archived };
 }
 
 /**

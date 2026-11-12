@@ -562,6 +562,7 @@
                   "proof": {
                     "$seatProof": ["C", "@1", "%fay"]
                   },
+                  "kx": "&^C",
                   "groups": ["Hill Co-op", "Elm Row"]
                 },
                 "title": "Admit Eastside Housing",
@@ -778,6 +779,7 @@
                   "proof": {
                     "$seatProof": ["C", "@1", "%fay"]
                   },
+                  "kx": "&^C",
                   "groups": ["Hill Co-op", "Elm Row"]
                 },
                 "title": "Admit Eastside Housing",
@@ -921,6 +923,7 @@
                   "proof": {
                     "$seatProof": ["C", "@1", "%fay"]
                   },
+                  "kx": "&^C",
                   "groups": ["Hill Co-op", "Elm Row"]
                 },
                 "title": "Admit Eastside Housing",
@@ -1063,6 +1066,7 @@
                   "proof": {
                     "$seatProof": ["A", "@1", "%fay"]
                   },
+                  "kx": "&^A",
                   "groups": ["Hill Co-op"]
                 },
                 "title": "Admit Riverside again",
@@ -1349,6 +1353,7 @@
                   "proof": {
                     "$seatProof": ["C", "@7", "%fay"]
                   },
+                  "kx": "&^C",
                   "groups": ["Riverside", "Oak St"]
                 },
                 "title": "Admit Eastside Housing",

@@ -1,23 +1,27 @@
 /**
  * A coalition's own screens (#120): its home, its Document and its composer,
- * on the services `main.tsx` builds, as App.tsx wires a group's.
+ * and its room (#125), on the services `main.tsx` builds, as App.tsx wires a
+ * group's.
  *
  * Each reads the coalition entries and groups on this device, folded, and
  * turns what the screens report into actions on the store: taking part
- * (#114) and proposing a motion, which goes to the coalition's outbox under
- * this device's key there (ADR-0009) and to the relay at once.
+ * (#114), proposing a motion, which goes to the coalition's outbox under
+ * this device's key there (ADR-0009) and to the relay at once, and writing
+ * in the room, which goes to the room's outbox under that same key.
  */
-import { type ReactNode, useCallback, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import { MAX_LEVEL } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
 import { CoalitionHome } from '../screens/CoalitionHome';
+import { CoalitionRoom } from '../screens/CoalitionRoom';
 import { CoalitionComposer, type ComposeOutcome } from '../screens/Composer';
 import { CoalitionDocumentView } from '../screens/DocumentView';
 import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { shownState } from '../store/archive';
 import type { HeldCoalition } from '../store/coalitions';
 import type { Group } from '../store/db';
+import { roomEntryFor } from '../store/rooms';
 import { groupDrafts } from '../store/drafts';
 import {
   coalitionById,
@@ -25,17 +29,19 @@ import {
   coalitionHome,
   type DeviceGroup,
   documentAtoms,
+  holderOf,
   sectionIsOpen,
   standingIn,
 } from './coalitionHome';
 import { messages } from './messages';
 import { propose, type ProposalValues } from './proposals';
 import { type CardValues, makeCard, postCard, takePart } from './reconcile';
+import { roomView, sendMessage } from './room';
 import { type CoalitionRoute, navigate, replaceRoute } from './router';
 import type { AppServices } from './services';
 import { relayMinuteNow } from './time';
 import { BackLink, PageHeader } from './ui';
-import { useCoalitionList } from './useGroup';
+import { useCoalitionList, useStoredGroup } from './useGroup';
 import { useGroups } from './useGroupList';
 import { useNow } from './useNow';
 
@@ -46,6 +52,7 @@ function deviceGroupOf(group: Group): DeviceGroup {
     me: group.me.author,
     state: shownState(group),
     leaving: group.leaving !== undefined,
+    archived: group.archived !== undefined,
   };
 }
 
@@ -77,7 +84,8 @@ interface GateProps {
 
 /** A coalition on this device as its screens read one above it (#122): it may hold a seat there. */
 function deviceCoalitionOf({ entry, state }: HeldCoalition): DeviceGroup {
-  return { groupId: entry.groupId, me: entry.me.author, state, leaving: false, kind: 'coalition' };
+  const { groupId, me } = entry;
+  return { groupId, me: me.author, state, leaving: false, archived: false, kind: 'coalition' };
 }
 
 /**
@@ -262,6 +270,65 @@ function CantReconcile({ coalitionId }: { readonly coalitionId: string }) {
   );
 }
 
+/** Shown when this device may read no room of the coalition's: it is in none of its member groups (#125). */
+function RoomMissing({
+  coalitionId,
+  name,
+}: {
+  readonly coalitionId: string;
+  readonly name: string;
+}) {
+  const { room } = messages;
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'coalition', coalitionId }} label={name} />
+      <PageHeader eyebrow={room.eyebrow} title={room.missingTitle} pageTitle={room.pageTitle} />
+      <p className="lede">{room.missing}</p>
+    </main>
+  );
+}
+
+interface RoomReadyProps {
+  readonly services: AppServices;
+  readonly ready: Ready;
+  readonly deviceNow: number;
+}
+
+/** The room once the coalition and groups are read: its entry, read as the store changes. */
+function RoomReady({ services, ready, deviceNow }: RoomReadyProps) {
+  const { held, groups } = ready;
+  const { sync } = services;
+  const subscribe = useCallback((heard: () => void) => sync.subscribe(heard), [sync]);
+  const reachable = useSyncExternalStore(subscribe, () => sync.isReachable());
+  const roomId = roomEntryFor(held.state, groups.map(holderOf));
+  const { group: room, loaded } = useStoredGroup(services.store, roomId ?? '');
+  // Folding the room checks each message's signature: only again once something it reads changed.
+  const view = useMemo(() => roomView(held, groups, room), [held, groups, room]);
+  if (!loaded) return null;
+  if (view === null) {
+    return <RoomMissing coalitionId={held.state.group ?? ''} name={held.state.name} />;
+  }
+  return (
+    <CoalitionRoom
+      view={view}
+      now={relayMinuteNow(room ?? held.entry, deviceNow)}
+      reachable={reachable}
+      onSend={(text) => sendMessage(services, view.coalitionId, view.roomId, text)}
+      onTakePart={(name) => ready.onTakePart(takePartGroup(ready), name)}
+    />
+  );
+}
+
+/** The coalition's room (#125). */
+function RoomScreen({ services, coalitionId }: Omit<GateProps, 'children'>) {
+  const deviceNow = useNow(services.now);
+  return (
+    <CoalitionGate services={services} coalitionId={coalitionId}>
+      {(ready) => <RoomReady services={services} ready={ready} deviceNow={deviceNow} />}
+    </CoalitionGate>
+  );
+}
+
 /** The screen for a route inside one coalition (#120). */
 export function CoalitionRouteScreen({
   route,
@@ -286,5 +353,7 @@ export function CoalitionRouteScreen({
       return <ProposeScreen services={services} coalitionId={coalitionId} atomId={route.atomId} />;
     case 'coalitionReconcile':
       return <ReconcileScreen services={services} coalitionId={coalitionId} />;
+    case 'coalitionRoom':
+      return <RoomScreen services={services} coalitionId={coalitionId} />;
   }
 }

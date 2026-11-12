@@ -272,15 +272,18 @@ export interface DissolveProposalBody {
 /**
  * Reconciling with other groups into a coalition (#100; ADR-0036): the
  * coalition secret its mailbox derives from; `inner`, 32 random bytes that
- * followers never get, which #125's room and #122's higher seats derive from;
- * this group's 32-byte Ed25519 seat secret; and the coalition's proposed name
- * and founding statement. Each secret is 32 bytes in canonical base64url, and
- * lives only in this group's sealed log.
+ * only seated groups hold, which #125's room and #122's higher seats derive
+ * from; this group's 32-byte Ed25519 seat secret; and the coalition's
+ * proposed name and founding statement. Each secret is 32 bytes in canonical
+ * base64url, and lives only in this group's sealed log. A founding group's
+ * target carries `inner`, from the card that founded the coalition; a group
+ * asking into a formed coalition writes none, since its card carries none,
+ * and receives it through its seat once admitted (#313, `crypto/room.ts`).
  */
 export interface ReconcileTarget {
   readonly kind: 'reconcile';
   readonly secret: string;
-  readonly inner: string;
+  readonly inner?: string;
   readonly seat: string;
   readonly name: string;
   readonly title: string;
@@ -335,13 +338,17 @@ export interface SealedReconcileProposalBody extends Omit<ReconcileProposalBody,
  * Admitting a further group into a formed coalition (#114; ADR-0036): the
  * group's seat, its name there and public seat key, and that seat's proof for
  * the author's key (`crypto/seat.ts`), which shows that the author holds the
- * group's seat secret. A coalition asking in (#122) states its level on its
- * seat, and its member groups' names in `groups`, which the ballot shows.
+ * group's seat secret. `kx` is the seat's X25519 public key, from its seat
+ * secret (`crypto/room.ts`), to which a seated group's participant seals
+ * the room's `inner` once the group is admitted (#313). A coalition asking in
+ * (#122) states its level on its seat, and its member groups' names in
+ * `groups`, which the ballot shows.
  */
 export interface AdmitTarget {
   readonly kind: 'admit';
   readonly seat: SeatEntry;
   readonly proof: string;
+  readonly kx: string;
   readonly groups?: readonly string[];
 }
 
@@ -597,6 +604,28 @@ export interface GroupResultBody {
   readonly result: GroupResultValue;
 }
 
+/**
+ * A message in a coalition's room (#125; ADR-0011): plain text, kept as
+ * written. A body with any other key is a bad shape. It belongs to the room's
+ * own log, sealed under keys from the coalition's `inner`, and `room.ts`
+ * reads it there: the fold of a group's or a coalition's own log ignores it.
+ */
+export interface MessageBody {
+  readonly text: string;
+}
+
+/**
+ * The room's `inner` for a group admitted into a coalition (#313): exactly
+ * the admitted seat's public key and `wrap`, a box of `inner` sealed to the
+ * seat's `kx` (`crypto/room.ts`), in unpadded base64url. A body with any
+ * other key is a bad shape. It belongs to the coalition's own log, from a
+ * participant whose group already holds `inner`.
+ */
+export interface RoomWrapBody {
+  readonly seat: string;
+  readonly wrap: string;
+}
+
 /** The body each event type carries. */
 export interface EventBodies {
   readonly genesis: GenesisBody | CoalitionGenesisBody;
@@ -618,6 +647,8 @@ export interface EventBodies {
   readonly 'key-rotate': KeyRotateBody;
   readonly 'door-invited': DoorInvitedBody;
   readonly 'group-result': GroupResultBody;
+  readonly message: MessageBody;
+  readonly 'room-wrap': RoomWrapBody;
 }
 
 /** The event types this engine understands. */
@@ -671,6 +702,9 @@ const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
 
 /** Unpadded base64url of at least one byte: a wrap's text. */
 const BASE64URL = /^[A-Za-z0-9_-]{2,}$/;
+
+/** A room wrap (#313): a box of 32 bytes, 104 in all, in 139 unpadded base64url characters. */
+const ROOM_WRAP = /^[A-Za-z0-9_-]{139}$/;
 
 /** The largest epoch a key change names: a big-endian u32 carries it (#98). */
 const MAX_EPOCH = 0xffff_ffff;
@@ -737,6 +771,11 @@ function isAuthor(value: unknown): value is string {
  */
 function isKey32(value: unknown): value is string {
   return isAuthor(value) && base64url(fromBase64url(value)) === value;
+}
+
+/** A key, as {@link isKey32} reads one, or nothing (#313). */
+function isOptionalKey32(value: unknown): value is string | undefined {
+  return value === undefined || isKey32(value);
 }
 
 function isTimestamp(value: unknown): value is number {
@@ -935,26 +974,38 @@ function parseSealedTarget(value: Json): SealedReconcileTarget | null {
 }
 
 /**
- * A reconcile target's kind, secrets, name, title and Atoms (#100), or a
- * coalition's sealed one (#122), or null for any other shape.
+ * A group's reconcile target (#100): its secrets, name, title and Atoms, or
+ * null for any other shape. `inner` may be missing, as a group asking into a
+ * formed coalition writes it (#313), but a present one must be a key.
+ */
+function parsePlainTarget(value: Json): ReconcileTarget | null {
+  const { secret, inner, seat, name, title, atoms } = value;
+  if (!isKey32(secret) || !isKey32(seat) || !isOptionalKey32(inner)) return null;
+  if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
+  const target = { kind: 'reconcile', secret, seat, name, title, atoms } as const;
+  return inner === undefined ? target : { ...target, inner };
+}
+
+/**
+ * A reconcile target: a group's, with its secrets readable (#100), or a
+ * coalition's sealed one (#122); or null for any other shape.
  */
 function parseReconcileTarget(value: unknown): ReconcileTarget | SealedReconcileTarget | null {
   if (!isObject(value) || value.kind !== 'reconcile') return null;
-  if (value.sealed !== undefined) return parseSealedTarget(value);
-  const { secret, inner, seat, name, title, atoms } = value;
-  if (!isKey32(secret) || !isKey32(inner) || !isKey32(seat)) return null;
-  if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
-  return { kind: 'reconcile', secret, inner, seat, name, title, atoms };
+  return value.sealed === undefined ? parsePlainTarget(value) : parseSealedTarget(value);
 }
 
-/** An admit target's kind, seat, proof and any member groups' names, or null for any other shape (#114, #122). */
+/**
+ * An admit target's kind, seat, proof, seat `kx` (#313) and any member
+ * groups' names (#122), or null for any other shape (#114).
+ */
 function parseAdmitTarget(value: unknown): AdmitTarget | null {
   if (!isObject(value) || value.kind !== 'admit') return null;
   const seat = parseSeat(value.seat);
-  const { proof, groups } = value;
-  if (seat === null || !isString(proof) || !SIGNATURE.test(proof)) return null;
-  if (groups === undefined) return { kind: 'admit', seat, proof };
-  return isStringList(groups) ? { kind: 'admit', seat, proof, groups } : null;
+  const { proof, kx, groups } = value;
+  if (seat === null || !isString(proof) || !SIGNATURE.test(proof) || !isKey32(kx)) return null;
+  if (groups === undefined) return { kind: 'admit', seat, proof, kx };
+  return isStringList(groups) ? { kind: 'admit', seat, proof, kx, groups } : null;
 }
 
 /**
@@ -1110,6 +1161,28 @@ function parseGroupResult(body: Json): GroupResultBody | null {
   return result === 'pass' || result === 'fail' ? { motion, seat, result } : null;
 }
 
+/** The keys a room wrap carries, sorted (#313). */
+const ROOM_WRAP_KEYS = ['seat', 'wrap'];
+
+/** A wrap: 104 bytes in canonical unpadded base64url (#313). */
+function isRoomWrap(value: unknown): value is string {
+  return isString(value) && ROOM_WRAP.test(value) && base64url(fromBase64url(value)) === value;
+}
+
+/** A room wrap's body: exactly its seat and wrap (#313). */
+function parseRoomWrap(body: Json): RoomWrapBody | null {
+  const { seat, wrap } = body;
+  const exact = Object.keys(body).sort().join() === ROOM_WRAP_KEYS.join();
+  return exact && isKey32(seat) && isRoomWrap(wrap) ? { seat, wrap } : null;
+}
+
+/** A room message's body: exactly its text (#125). */
+function parseMessage(body: Json): MessageBody | null {
+  const { text } = body;
+  const exact = Object.keys(body).join() === 'text';
+  return exact && isString(text) ? { text } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -1246,7 +1319,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
 
 /**
  * {@link withBody} for #98's types, `kx` and `key-rotate`, #100's
- * `group-result`, #111's `result`, and #121's `door-invited`.
+ * `group-result`, #111's `result`, #121's `door-invited`, #125's `message`
+ * and #313's `room-wrap`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1260,6 +1334,10 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'door-invited':
       return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'message':
+      return attach(parseMessage(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'room-wrap':
+      return attach(parseRoomWrap(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

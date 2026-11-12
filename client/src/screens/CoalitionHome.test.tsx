@@ -49,6 +49,7 @@ const VIEW: CoalitionHomeView = {
   decided: [],
   pending: [],
   standing: { kind: 'proposes', groupId: 'riverside' },
+  room: true,
 };
 
 function props(overrides: Partial<CoalitionHomeProps> = {}): CoalitionHomeProps {
@@ -81,6 +82,19 @@ describe('CoalitionHome, with a coalition among its members (#122)', () => {
 });
 
 describe('CoalitionHome', () => {
+  it('opens the room for a device in a member group, and shows no room otherwise (#125)', async () => {
+    const { unmount } = render(<CoalitionHome {...props()} />);
+    const room = within(region('Room')).getByRole('link', { name: /Open the room/ });
+    expect(room).toHaveAttribute('href', '#/c/coalition-1/room');
+    expect(region('Room')).toHaveTextContent(messages.room.homeLine);
+    expect(await axeViolations()).toEqual([]);
+    unmount();
+
+    render(<CoalitionHome {...props({ view: { ...VIEW, room: false } })} />);
+    expect(screen.queryByRole('region', { name: 'Room' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /room/i })).toBeNull();
+  });
+
   it('names the coalition and lists its open Proposals, Documents, Decided and member groups', async () => {
     render(<CoalitionHome {...props()} />);
 

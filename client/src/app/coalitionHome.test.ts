@@ -44,7 +44,7 @@ function heldBy(logs: Logs, relayNow: number, who: string, plan: Partial<Group> 
 /** Group `log` on this device, as `me`. */
 function deviceGroup(logs: Logs, log: string, relayNow: number, me: string): DeviceGroup {
   const state = fold(logs.logs[log] ?? [], relayNow);
-  return { groupId: state.group ?? '', me: authorOf(me), state, leaving: false };
+  return { groupId: state.group ?? '', me: authorOf(me), state, leaving: false, archived: false };
 }
 
 /**
@@ -149,6 +149,23 @@ describe('coalitionHome', () => {
 
     expect(home?.pending).toEqual([{ id: signed.id, title: 'Paths too' }]);
     expect(home?.standing).toEqual({ kind: 'reads' });
+  });
+
+  it('offers the room to a device in a member group, never to one that only holds the coalition (#125)', () => {
+    const logs = new Logs();
+    const at = formed(logs);
+    const held = heldBy(logs, at, 'kim');
+    const riverside = deviceGroup(logs, 'A', at, 'ana');
+    expect(coalitionHome(held, [riverside])?.room).toBe(true);
+    // A follower's device (#124) holds the coalition and no member group, so never its inner.
+    expect(coalitionHome(held, [])?.room).toBe(false);
+    logs.group('C', R, ['ana'], 'Elm Row');
+    expect(coalitionHome(held, [deviceGroup(logs, 'C', at, 'ana')])?.room).toBe(false);
+    // A group asking to join holds the card's inner, but its seat isn't the coalition's yet.
+    logs.reconcile('C', at, 'ana', 'Elm Row');
+    expect(coalitionHome(held, [deviceGroup(logs, 'C', at + 1, 'ana')])?.room).toBe(false);
+    expect(coalitionHome(held, [{ ...riverside, leaving: true }])?.room).toBe(false);
+    expect(coalitionHome(held, [{ ...riverside, archived: true }])?.room).toBe(false);
   });
 
   it('finds a coalition on this device by its genesis id', () => {
@@ -262,6 +279,7 @@ describe('a coalition’s home when a member is a coalition (#122)', () => {
         me: authorOf('cal'),
         state: c.state,
         leaving: false,
+        archived: false,
         kind: 'coalition',
       },
     ];

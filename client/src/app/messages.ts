@@ -1508,4 +1508,34 @@ export const messages = {
     composerVisibility:
       'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
   },
+  /** A coalition's room (#125): one small encrypted room where its member groups' people talk. */
+  room: {
+    /** The room's entry on the coalition's home. */
+    homeTitle: 'Room',
+    open: 'Open the room',
+    homeLine: 'Where people from every member group talk. Only the member groups can read it.',
+    eyebrow: 'Room',
+    pageTitle: 'Room',
+    /** Under the room's heading: who can read it, and the 30-day rule. */
+    note: 'Only people in the coalition’s member groups can read this room. The relay can’t, and neither can anyone who only follows the coalition. Each device deletes a message 30 days after the relay received it.',
+    listLabel: 'Messages',
+    empty: 'No messages yet.',
+    /** The polite announcement of messages that arrive while the person is at the bottom. */
+    newFrom: (name: string, text: string) => `New message from ${name}: ${text}`,
+    newMessages: (n: number) => `${count(n)} new messages`,
+    messageLabel: 'Message',
+    messageHint:
+      'Plain text. Everyone in the coalition’s member groups sees it under your coalition name.',
+    send: 'Send',
+    emptyMessage: 'Write a message first.',
+    longMessage: 'A message can be up to 2,000 characters.',
+    failed: 'That didn’t save. Try again.',
+    takePartFirst: 'To write here, take part in the coalition first.',
+    joining: 'You can write here once you’ve joined the coalition. That happens at the next sync.',
+    reads:
+      'People who take part in the coalition write here. To take part, you need to be able to propose in your group.',
+    missingTitle: 'There’s no room for you here',
+    missing:
+      'Only people in the coalition’s member groups can read its room. Go back to the coalition’s home.',
+  },
 } as const;

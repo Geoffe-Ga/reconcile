@@ -77,6 +77,7 @@ import {
   newCoalition,
   RESULT_GRACE_MINUTES,
   recordResult,
+  recordWrap,
   seatKeyFor,
 } from './coalition';
 import { ballotCommit, commitEntries, scoreCounts, scoresOf } from './commit';
@@ -123,6 +124,7 @@ import {
   type SealedReconcileTarget,
   type ReconcileProposalBody,
   type RecordedOutcome,
+  type RoomWrapBody,
   type ResultBody,
   type ResultVersion,
   type RulesProposalBody,
@@ -1228,13 +1230,15 @@ function applyMotion(
 /**
  * Opens a motion to admit a group into a formed coalition (#114; ADR-0036):
  * the one motion the fold takes from someone who isn't a participant, when
- * its seat's proof for their key verifies and no seat or earlier admit
- * motion holds that seat (coalition.ts). A coalition asking in states its
- * level and member groups (#122); a level that would put this coalition past
- * level 3, or this coalition's own seat key above, is ignored. It is ordinary, for the window its
- * proposer chose or the default, with one version that has no text, and
- * every seat in its snapshot must pass it, whatever their number. Once its
- * pass is final, the group takes its seat ({@link advanceAdmissions}).
+ * its seat's proof for their key verifies, no seat or earlier admit motion
+ * holds that seat (coalition.ts), and its seat's `kx` can take a box, for the
+ * room's `inner` to reach the group once it's admitted (#313). A coalition
+ * asking in states its level and member groups (#122); a level that would put
+ * this coalition past level 3, or this coalition's own seat key above, is
+ * ignored. It is ordinary, for the window its proposer chose or the default,
+ * with one version that has no text, and every seat in its snapshot must pass
+ * it, whatever their number. Once its pass is final, the group takes its seat
+ * ({@link advanceAdmissions}).
  */
 function applyAdmit(
   draft: Draft,
@@ -1244,6 +1248,8 @@ function applyAdmit(
   at: Receipt,
 ): boolean {
   if (draft.group === null || hasJoined(draft, author) || !fieldsAreValid(body)) return false;
+  // The room's inner is wrapped to its seat's kx once it's admitted (#313): it must take a box.
+  if (usableKx(body.target.kx) === null) return false;
   if (!mayAdmit(coalition, draft.group, author, body.target, seatKeysAbove(draft))) return false;
   const window = chosenWindow(draft.rules, 'ordinary', body.window);
   if (window === null) return false;
@@ -1260,7 +1266,7 @@ function applyAdmit(
     id: at.id,
     deadline: proposal.deadline,
     seats,
-    admit: body.target.seat,
+    admit: { ...body.target.seat, kx: body.target.kx },
   });
   return true;
 }
@@ -1323,6 +1329,18 @@ function applyGroupResult(
     motion.closedAt = at.received;
   }
   return true;
+}
+
+/**
+ * Records a wrap of the room's `inner` for a seat admitted into a coalition
+ * (#313), from a current participant bound to another seat
+ * (`coalition.ts`'s `recordWrap`). A wrap changes nothing else: the admitted
+ * group's devices open it to read the room.
+ */
+function applyRoomWrap(draft: Draft, body: RoomWrapBody, author: string, at: Receipt): boolean {
+  const { coalition } = draft;
+  if (coalition === null || !draft.members.some((m) => m.author === author)) return false;
+  return recordWrap(coalition, author, body, at);
 }
 
 /**
@@ -1621,12 +1639,18 @@ const COALITION_TYPES: ReadonlySet<GroupEvent['type']> = new Set([
   'join',
   'proposal',
   'group-result',
+  'room-wrap',
   'leave',
 ]);
 
-/** Whether an event's type belongs in this log: a coalition's five, or anything but a result in a group. */
+/** The event types only a coalition's log takes: a result (#100) and a room wrap (#313). */
+const COALITION_ONLY: ReadonlySet<GroupEvent['type']> = new Set(['group-result', 'room-wrap']);
+
+/** Whether an event's type belongs in this log: a coalition's six, or anything but theirs alone in a group. */
 function fitsLog(draft: Draft, event: GroupEvent): boolean {
-  return draft.coalition === null ? event.type !== 'group-result' : COALITION_TYPES.has(event.type);
+  return draft.coalition === null
+    ? !COALITION_ONLY.has(event.type)
+    : COALITION_TYPES.has(event.type);
 }
 
 /** True once a group has dissolved (#108) or a coalition was declined (#100): nothing applies after. */
@@ -1690,6 +1714,9 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
       return applyLevel(draft, event.body, event.author);
     case 'leave':
       return applyLeave(draft, event.author);
+    case 'message':
+      // A room's message belongs to the room's own log (room.ts, #125), never a group's.
+      return false;
     default:
       return applyLater(draft, event, at);
   }
@@ -1714,7 +1741,8 @@ type LaterEvent = Extract<
       | 'kx'
       | 'key-rotate'
       | 'group-result'
-      | 'door-invited';
+      | 'door-invited'
+      | 'room-wrap';
   }
 >;
 
@@ -1768,6 +1796,8 @@ function applyKeyed(
       return applyGroupResult(draft, event.body, event.author, at);
     case 'door-invited':
       return applyDoorInvited(draft, event.body, event.author, at);
+    case 'room-wrap':
+      return applyRoomWrap(draft, event.body, event.author, at);
     default:
       return applyProposalEvent(draft, event, at);
   }

@@ -8,8 +8,10 @@
  * this device is in. Each motion opens as the coalition vote in a member
  * group on this device whose seat decides it, where that group's own ballot
  * lives. Someone in a member group who may propose and hasn't joined is
- * offered Take part first. No count of people, ballot or voter's name from
- * any group appears here: the coalition's log holds none (ADR-0036).
+ * offered Take part first. A device in a member group also finds the
+ * coalition's room here (#125), and one in none, as a follower's, never does.
+ * No count of people, ballot or voter's name from any group appears here:
+ * the coalition's log holds none (ADR-0036).
  */
 import { type ReactNode } from 'react';
 import { Link } from 'react-aria-components';
@@ -119,6 +121,22 @@ function Decided({ decided }: { readonly decided: readonly MotionItem[] }) {
   );
 }
 
+/** The room's entry (#125): a card that opens it, and who can read it. */
+function RoomEntry({ coalitionId }: { readonly coalitionId: string }) {
+  const { room } = messages;
+  return (
+    <Link className="card-link" href={routeHref({ name: 'coalitionRoom', coalitionId })}>
+      <span className="card-link-title">
+        <span className="heading-3">{room.open}</span>
+        <span className="card-link-arrow" aria-hidden="true">
+          {messages.app.forward}
+        </span>
+      </span>
+      <span className="meta">{room.homeLine}</span>
+    </Link>
+  );
+}
+
 /** The coalition's Documents, each opening the coalition's Document view. */
 function Documents({ view }: { readonly view: CoalitionHomeView }) {
   return (
@@ -204,6 +222,11 @@ export function CoalitionHome({ view, now, back, onTakePart }: CoalitionHomeProp
         <Section title={coalitions.openMotions}>
           <OpenMotions view={view} now={now} />
         </Section>
+        {view.room ? (
+          <Section title={messages.room.homeTitle}>
+            <RoomEntry coalitionId={view.coalitionId} />
+          </Section>
+        ) : null}
         <Section title={coalitions.documents}>
           <Documents view={view} />
         </Section>

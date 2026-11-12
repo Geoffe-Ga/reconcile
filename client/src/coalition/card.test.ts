@@ -105,6 +105,24 @@ describe('a card’s envelope', () => {
     expect(Object.keys((JSON.parse(text) as { seat: object }).seat)).toEqual(['name', 'key']);
   });
 
+  it('carries no inner on a card from a formed coalition, and opens without one (#313)', () => {
+    const seed = newCardSeed();
+    const channel = cardChannelOf(seed);
+    const { secret, seat, name, title, atoms, entries } = card({ entries: [entry(1, 30)] });
+    const formed = { secret, seat, name, title, atoms, entries };
+    const blobs = sealCard(stubSeal, channel, formed);
+    const text = new TextDecoder().decode(
+      stubSeal.open(channel.mailbox, channel.key, blobs[0] ?? new Uint8Array()) ?? new Uint8Array(),
+    );
+
+    expect(Object.keys(JSON.parse(text) as object)).not.toContain('inner');
+    const opened = openCard(stubSeal, channel, blobs);
+    expect(opened).toEqual(formed);
+    expect(opened !== null && 'inner' in opened).toBe(false);
+    const dropped = headerBlob(seed, (json) => ({ ...json, inner: undefined }));
+    expect(openCard(stubSeal, channel, [dropped])?.inner).toBeUndefined();
+  });
+
   it('refuses a statement too large for one blob', () => {
     const atoms = ['x'.repeat(MAX_PLAINTEXT_BYTES)];
     expect(() => sealCard(stubSeal, cardChannelOf(newCardSeed()), card({ atoms }))).toThrow(
@@ -135,6 +153,7 @@ describe('a card’s envelope', () => {
   it.each([
     ['no secret', (json: Record<string, unknown>) => ({ ...json, secret: undefined })],
     ['a short inner', (json: Record<string, unknown>) => ({ ...json, inner: 'abc' })],
+    ['a numeric inner', (json: Record<string, unknown>) => ({ ...json, inner: 4 })],
     [
       'a secret that isn’t canonical',
       (json: Record<string, unknown>) => ({
