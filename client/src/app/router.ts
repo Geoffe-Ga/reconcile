@@ -463,10 +463,23 @@ function addPath(route: Extract<Route, { readonly name: 'add' }>): string {
   return `/add${suffix}${idPath(route.after)}`;
 }
 
+/** A section composer's route (#75): proposing a change, adding, removing or moving a section (#103). */
+type SectionRoute = Extract<GroupRoute, { readonly name: 'propose' | 'add' | 'remove' | 'move' }>;
+
+const SECTION_NAMES: ReadonlySet<string> = new Set<SectionRoute['name']>([
+  'propose',
+  'add',
+  'remove',
+  'move',
+]);
+
+/** True for a section composer's route, whose path {@link sectionPath} writes. */
+function isSectionRoute(route: GroupRoute): route is SectionRoute {
+  return SECTION_NAMES.has(route.name);
+}
+
 /** A section composer's path (#75): proposing a change, adding, removing or moving a section (#103). */
-function sectionPath(
-  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' | 'move' }>,
-): string {
+function sectionPath(route: SectionRoute): string {
   switch (route.name) {
     case 'propose':
       return `/propose/${route.atomId}`;
@@ -481,6 +494,7 @@ function sectionPath(
 
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
+  if (isSectionRoute(route)) return sectionPath(route);
   switch (route.name) {
     case 'group':
       return '';
@@ -494,11 +508,6 @@ function groupPath(route: GroupRoute): string {
       return optInPath(route);
     case 'removal':
       return `/remove-member/${route.member}`;
-    case 'propose':
-    case 'add':
-    case 'remove':
-    case 'move':
-      return sectionPath(route);
     default:
       return pagePath(route);
   }
