@@ -275,14 +275,20 @@ export async function expectAccessible(person: Person, screen: string): Promise<
 
 /**
  * Presses the React Aria radio `name`, inside `within` when given: React Aria
- * hides the native input under its label, so this presses the label.
+ * hides the native input under its label, so this presses the label. A ballot
+ * re-renders as the device syncs, and WebKit once dropped a press that landed
+ * then (#297's CI), so this presses again until the radio is checked. Whether a
+ * real voter's choice can be lost that way is #354.
  */
 export async function pick(page: Page, name: string, within?: Locator): Promise<void> {
   const scope = within ?? page;
   const radio = scope.getByRole('radio', { name });
   // `has` is matched inside each label, so it names the radio from the page, not the scope.
-  await scope.locator('label', { has: page.getByRole('radio', { name }) }).click();
-  await expect(radio).toBeChecked();
+  const label = scope.locator('label', { has: page.getByRole('radio', { name }) });
+  await expect(async () => {
+    if (!(await radio.isChecked())) await label.click();
+    await expect(radio).toBeChecked({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /**
@@ -362,21 +368,34 @@ export interface NewGroup {
 }
 
 /**
- * From Start, founds `group`, waits for Group home (its genesis is back from
- * the relay), presses Copy invite link, and returns the link it made (#73).
+ * On Create a group, founds `group` and waits for Group home, which appears
+ * once its genesis is back from the relay.
  */
-export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
-  await page.getByRole('link', { name: 'Create group' }).click();
+export async function createGroup(page: Page, group: NewGroup): Promise<void> {
   await page.getByRole('textbox', { name: 'Group name' }).fill(group.name);
   await page.getByRole('textbox', { name: 'Your name' }).fill(group.founder);
   await page.getByRole('textbox', { name: 'Document title' }).fill(group.title);
   await page.getByRole('textbox', { name: 'Document text' }).fill(group.atoms.join('\n\n'));
   await page.getByRole('button', { name: 'Create group' }).click();
   await expect(heading(page, group.name)).toBeVisible();
+}
+
+/** On Group home, presses Copy invite link and returns the link it made (#73). */
+export async function copyInvite(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Copy invite link' }).click();
   const link = page.getByRole('textbox', { name: 'Invite link' });
   await expect(link).toHaveValue(/#join\/[\w-]{43}$/);
   return link.inputValue();
+}
+
+/**
+ * From Start, founds `group`, waits for Group home (its genesis is back from
+ * the relay), presses Copy invite link, and returns the link it made (#73).
+ */
+export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
+  await page.getByRole('link', { name: 'Create group' }).click();
+  await createGroup(page, group);
+  return copyInvite(page);
 }
 
 /** The number of records in every IndexedDB database the page's origin holds. */
