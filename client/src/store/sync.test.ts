@@ -474,24 +474,142 @@ describe('a sync pass', () => {
     expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
-  it('shares one pass between callers that ask at the same time', async () => {
-    const fake = createFakeRelay();
-    const keys = newKeys();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), keys);
-    await ana.store.enqueue(GROUP, genesis().record);
-
-    const results = await Promise.all([ana.sync.syncOnce(), ana.sync.syncOnce()]);
-
-    expect(results).toEqual([true, true]);
-    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
-  });
-
   it('fails without throwing when the store itself fails', async () => {
     const fake = createFakeRelay();
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     vi.spyOn(ana.store, 'listGroups').mockRejectedValue(new Error('closed'));
 
     expect(await ana.sync.syncOnce()).toBe(false);
+  });
+});
+
+/**
+ * A relay that, once armed, holds every request after its next PUT until the
+ * test lets them go: a pass held just after it has posted its outbox. `held`
+ * counts the requests waiting now.
+ */
+function holdAfterPut(fake: FakeRelay) {
+  let armed = true;
+  let gate: Promise<void> | null = null;
+  let letGo = (): void => undefined;
+  let held = 0;
+  const fetch: Fetch = async (input, init) => {
+    if (gate !== null) {
+      held += 1;
+      await gate;
+      held -= 1;
+    }
+    const response = await fake.fetch(input, init);
+    if (armed && init?.method === 'PUT') {
+      armed = false;
+      gate = new Promise((resolve) => {
+        letGo = resolve;
+      });
+    }
+    return response;
+  };
+  return {
+    relay: createRelay({ fetch }),
+    held: () => held,
+    /** Lets every held request go, and holds none until armed again. */
+    release: () => {
+      gate = null;
+      letGo();
+    },
+    /** Holds the requests after the next PUT. */
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
+describe('calls made while a pass runs (#260)', () => {
+  /** Ana's device on a relay that holds her first pass once its outbox is posted, counting complete passes. */
+  async function heldAna() {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const gate = holdAfterPut(fake);
+    const ana = await device('ana', gate.relay, keys);
+    const afterPass = vi.fn(() => Promise.resolve());
+    const sync = createSync({
+      store: ana.store,
+      relay: gate.relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+      afterPass,
+    });
+    opened.push(sync);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+    const first = sync.syncOnce();
+    await expect.poll(() => gate.held()).toBe(1);
+    return { fake, keys, gate, ana, sync, afterPass, founding, first };
+  }
+
+  it('sends an event queued after the running pass posted its outbox, before the call resolves', async () => {
+    const { fake, keys, gate, ana, sync, founding, first } = await heldAna();
+
+    await ana.store.enqueue(GROUP, proposal(founding, 'Quiet after 11pm.').record);
+    const second = sync.syncOnce();
+    gate.release();
+
+    expect(await second).toBe(true);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'proposal:']);
+    expect((await ana.group()).outbox).toEqual([]);
+    expect(await first).toBe(true);
+  });
+
+  it('runs one trailing pass for every call made meanwhile, after the running one and never beside it', async () => {
+    const { gate, sync, afterPass, first } = await heldAna();
+
+    const during = [sync.syncOnce(), sync.syncOnce(), sync.syncOnce()];
+    // A pass started beside the held one would reach the relay and be held too.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(gate.held()).toBe(1);
+    expect(during[1]).toBe(during[0]);
+    expect(during[2]).toBe(during[0]);
+    gate.release();
+
+    expect(await Promise.all([first, ...during])).toEqual([true, true, true, true]);
+    expect(afterPass).toHaveBeenCalledTimes(2);
+    expect(await sync.syncOnce()).toBe(true);
+    expect(afterPass).toHaveBeenCalledTimes(3);
+  });
+
+  it('starts no trailing pass once halted, and its callers get false', async () => {
+    const { fake, gate, sync, afterPass, first } = await heldAna();
+
+    const trailing = sync.syncOnce();
+    const halting = sync.halt();
+    gate.release();
+    await halting;
+    const requests = fake.requests.length;
+
+    expect(await trailing).toBe(false);
+    expect(await first).toBe(true);
+    expect(fake.requests.length).toBe(requests);
+    expect(afterPass).not.toHaveBeenCalled();
+  });
+
+  it('waits, when halted, for a trailing pass already running', async () => {
+    const { fake, keys, gate, ana, sync, founding } = await heldAna();
+    const trailing = sync.syncOnce();
+    await ana.store.enqueue(GROUP, proposal(founding, 'Quiet after 11pm.').record);
+    gate.arm();
+    gate.release();
+    await expect.poll(() => gate.held()).toBe(1);
+
+    let halted = false;
+    const halting = sync.halt().then(() => {
+      halted = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(halted).toBe(false);
+    gate.release();
+    await halting;
+
+    expect(await trailing).toBe(true);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'proposal:']);
   });
 });
 
@@ -1737,6 +1855,91 @@ describe('the result duty (#111)', () => {
     expect(putTypes(fake, keys, from)).toEqual([]);
     expect((await ana.group()).outbox).toEqual([]);
   });
+
+  /** One way the group goes from `holder`'s device (#270), whose member there is `name`. */
+  type Goes = (holder: Device, founding: SignedEvent, name: string) => Promise<void>;
+
+  const WAYS: [string, Goes][] = [
+    [
+      'leaves it',
+      async (holder, founding, name) => {
+        const leave = signedAs(name, { type: 'leave', group: founding.id, ts: TS, body: {} });
+        await holder.store.markLeaving(GROUP, leave.record);
+        // The pass that posts the leave purges the group (#77).
+        await holder.sync.syncOnce();
+        expect(await holder.store.getGroup(GROUP)).toBeUndefined();
+      },
+    ],
+    ['is removed', (holder) => holder.store.purgeGroup(GROUP)],
+    ['dissolves', (holder) => holder.store.markArchived(GROUP, 'dissolved')],
+  ];
+
+  /**
+   * The group goes from `holder`'s device in `goes`, a pass runs, and the
+   * device then holds it again under Ben's keys, as linking his phone would
+   * (#96), in the same relay minute: the event type each PUT carried from
+   * when it went until then, and the device's outbox after each of the next
+   * two passes.
+   */
+  async function goesAndComesBack(
+    { fake, keys, founding }: Awaited<ReturnType<typeof closedEarly>>,
+    holder: Device,
+    goes: Goes,
+    name: string,
+  ) {
+    const from = fake.requests.length;
+    await goes(holder, founding, name);
+    await holder.sync.syncOnce();
+    const whileGone = putTypes(fake, keys, from);
+    // Remove from this device (#108): a dissolved group's archive goes before it can come back.
+    await holder.store.purgeGroup(GROUP);
+    const me = { author: authorOf(BEN), name: 'Ben' };
+    const { secretKey: signingKey } = testKeys(BEN);
+    const { kxKey } = testKx(BEN);
+    await holder.store.addGroup({ groupId: GROUP, secret: keys.secret, signingKey, kxKey, me });
+    const outboxes: string[][] = [];
+    for (let pass = 0; pass < 2; pass += 1) {
+      await holder.sync.syncOnce();
+      outboxes.push(types((await holder.group()).outbox.map((bytes) => ({ bytes }))));
+    }
+    return { whileGone, outboxes };
+  }
+
+  it.each(WAYS)(
+    'forgets the result it found due once the group %s, so none comes due at once when it is back (#270)',
+    async (_label, goes) => {
+      const held = await closedEarly();
+      const { fake, ana } = held;
+      fake.minute += 1;
+      await ana.sync.syncOnce();
+      // Found due, to queue on the next pass if it still is.
+      expect((await ana.group()).outbox).toEqual([]);
+
+      const { whileGone, outboxes } = await goesAndComesBack(held, ana, goes, ANA);
+
+      expect(whileGone).not.toContain('result');
+      // Queued only once the device has synced once more since it found the result due as Ben.
+      expect(outboxes).toEqual([[], ['result']]);
+    },
+  );
+
+  it.each(WAYS)(
+    'forgets the minute it settled once the group %s, so the duty runs in that minute when it is back (#270)',
+    async (_label, goes) => {
+      const held = await closedEarly();
+      const { fake, keys } = held;
+      // Kim's key isn't a member, so Kim's device settles this minute owing nothing.
+      const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+      fake.minute += 1;
+      await kim.sync.syncOnce();
+      expect((await kim.group()).outbox).toEqual([]);
+
+      const { whileGone, outboxes } = await goesAndComesBack(held, kim, goes, 'kim');
+
+      expect(whileGone).not.toContain('result');
+      expect(outboxes).toEqual([[], ['result']]);
+    },
+  );
 });
 
 /** Each signed record's event type, in order. */

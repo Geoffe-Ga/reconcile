@@ -17,6 +17,7 @@
  * names, and imports nothing from the fold.
  */
 import { can, type Roster } from './capabilities';
+import { type Closing, isOpenAt } from './open';
 import { DAY_MINUTES, type Rules } from './rules';
 import type { TallyOutcome } from './tally';
 
@@ -32,12 +33,10 @@ export interface Dissolution {
   readonly wipe: boolean;
 }
 
-/** What the dissolve rules read of a Proposal: its id, its target, and when it closes. */
-export interface DissolveProposalState {
+/** What the dissolve rules read of a Proposal: its id, its target, and when it closes ({@link isOpenAt}). */
+export interface DissolveProposalState extends Closing {
   readonly id: string;
   readonly target: { readonly kind: string };
-  readonly deadline: number;
-  readonly closedAt: number | null;
 }
 
 /** What the dissolve rules read of a group, at relay minute `at`. */
@@ -53,7 +52,7 @@ export function isDissolve(proposal: Pick<DissolveProposalState, 'target'>): boo
 
 /** True while a dissolve Proposal takes ballots at `state.at`: before its deadline and any early close. */
 export function hasOpenDissolve(state: Pick<DissolveState, 'proposals' | 'at'>): boolean {
-  return state.proposals.some((p) => isDissolve(p) && p.closedAt === null && state.at < p.deadline);
+  return state.proposals.some((p) => isDissolve(p) && isOpenAt(p, state.at));
 }
 
 /**

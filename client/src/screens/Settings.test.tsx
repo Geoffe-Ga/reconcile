@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { Settings, type SettingsProps } from './Settings';
 
 function setup(props: Partial<SettingsProps> = {}) {
@@ -25,6 +26,7 @@ function setup(props: Partial<SettingsProps> = {}) {
       onProtect: vi.fn(() => Promise.resolve('protected' as const)),
     },
     relayBackup: { kind: 'off' },
+    recovery: { status: null, held: [], canChoose: true },
     ...props,
   };
   render(<Settings {...all} />);
@@ -62,6 +64,7 @@ describe('Settings', () => {
     expect(names).toEqual([
       'Notifications',
       'Back up your groups',
+      'Recovery contacts',
       'Restore a backup',
       'Link a new device',
       'Lock with a passkey',
@@ -118,11 +121,111 @@ describe('Settings', () => {
     expect(headings).toEqual([
       'Notifications',
       'Back up your groups',
+      'Recovery contacts',
       'Restore a backup',
       'Link a new device',
       'Lock with a passkey',
       'Erase this device',
     ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers to choose recovery contacts, in trust’s words, before any are chosen (#109)', async () => {
+    setup();
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'If you lose every device, people you trust can help you get back into your groups. Each holds a share of a key, and no one share opens anything on its own.',
+    );
+    expect(section).toHaveTextContent('You haven’t chosen anyone yet.');
+    expect(within(section).getByRole('link', { name: 'Choose recovery contacts' })).toHaveAttribute(
+      'href',
+      '#/recovery',
+    );
+    expect(within(section).queryByRole('list')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no picker while no one in the person’s groups can hold a share (#109)', () => {
+    setup({ recovery: { status: null, held: [], canChoose: false } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).queryByRole('link')).toBeNull();
+  });
+
+  const STATUS = {
+    t: 2,
+    n: 3,
+    chooseAgain: false,
+    contacts: [
+      { groupId: 'g1', member: 'ben', name: 'Ben', groupName: 'Riverside Tenants', shared: true },
+      { groupId: 'g1', member: 'cal', name: 'Cal', groupName: 'Riverside Tenants', shared: false },
+      { groupId: 'g2', member: 'fay', name: 'Fay', groupName: 'Allotment', shared: true },
+    ],
+  };
+
+  it('shows "<n> recovery contacts · <t> needed", each contact with their group, and Choose again (#109)', async () => {
+    setup({ recovery: { status: STATUS, held: [], canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent('3 recovery contacts · 2 needed');
+    const contacts = within(section)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    expect(contacts).toEqual([
+      'Ben in Riverside Tenants',
+      'Cal in Riverside Tenants No longer in a shared group',
+      'Fay in Allotment',
+    ]);
+    expect(within(section).getByText('Cal').tagName).toBe('BDI');
+    expect(section).not.toHaveTextContent('Fewer than');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toHaveAttribute(
+      'href',
+      '#/recovery',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('asks the person to choose again once fewer than t contacts share a group (#109)', () => {
+    setup({ recovery: { status: { ...STATUS, chooseAgain: true }, held: [], canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'Fewer than 2 of your recovery contacts still share a group with you. Choose again so they can help you back in.',
+    );
+  });
+
+  it('lists the shares this device holds for others, and nothing more about them (#109)', async () => {
+    const held = [
+      { id: 's1', groupId: 'g1', groupName: 'Riverside Tenants', author: 'ana', name: 'Ana' },
+    ];
+    setup({ recovery: { status: null, held, canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(
+      within(section).getByRole('heading', { level: 3, name: 'Shares you hold' }),
+    ).toBeVisible();
+    expect(within(section).getByRole('listitem')).toHaveTextContent(
+      'You’re holding a recovery share for Ana (Riverside Tenants)',
+    );
+    // A contact can help the person back in from here (#118).
+    expect(within(section).getByRole('link', { name: 'Help someone recover' })).toHaveAttribute(
+      'href',
+      '#/help-recover',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Help someone recover only to a device that holds a share (#118)', () => {
+    setup({ recovery: { status: null, held: [], canChoose: true } });
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).queryByRole('link', { name: 'Help someone recover' })).toBeNull();
+  });
+
+  it('asks a device recovered with contacts to choose again, as a notice (#118)', async () => {
+    setup({ recovery: { status: null, held: [], canChoose: true, recovered: true } });
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).getByText(/You’re back in/)).toHaveClass('notice');
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -253,5 +356,24 @@ describe('Settings › Notifications (#99)', () => {
     await waitFor(() => {
       expect(toggle).toBeEnabled();
     });
+  });
+
+  it('turns off once when the switch is tapped again while it turns off (#193)', async () => {
+    const turning = held<undefined>();
+    const pending = notify({ onTurnOff: vi.fn(() => turning.promise) });
+    const { user } = setup({ notify: pending });
+    const toggle = screen.getByRole('switch', { name: 'Notify me about Riverside Tenants' });
+
+    await user.click(toggle);
+    expect(toggle).toBeDisabled();
+    await user.click(toggle);
+    turning.resolve(undefined);
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
+    await pastPressFallback();
+
+    expect(pending.onTurnOff).toHaveBeenCalledTimes(1);
+    expect(pending.onTurnOn).not.toHaveBeenCalled();
   });
 });

@@ -17,6 +17,7 @@ import {
   backupIdFor,
   MAX_RELAY_BACKUP_PLAINTEXT,
   newBackupKey,
+  newScrubBlob,
   openRelayBackup,
   RELAY_BACKUP_SIZES,
   RelayBackupTooLarge,
@@ -145,6 +146,20 @@ describe('newBackupKey', () => {
     expect(key).toHaveLength(32);
     expect(bytesToHex(random.mock.results[0]?.value as Uint8Array)).toBe(bytesToHex(key));
     expect(new Set([bytesToHex(key), ...more]).size).toBe(11);
+  });
+});
+
+describe('newScrubBlob', () => {
+  it('is 64 KiB from the platform’s CSPRNG, the smallest size, new each time, opening under no key (#109)', () => {
+    const random = vi.spyOn(crypto, 'getRandomValues');
+
+    const blob = newScrubBlob();
+
+    expect(blob).toHaveLength(65536);
+    expect(blob).toHaveLength(RELAY_BACKUP_SIZES[0]);
+    expect(random).toHaveBeenCalled();
+    expect(bytesToHex(newScrubBlob())).not.toBe(bytesToHex(blob));
+    expect(openRelayBackup(newBackupKey(), blob)).toBeNull();
   });
 });
 

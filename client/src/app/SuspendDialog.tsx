@@ -11,6 +11,7 @@ import {
 
 import { REASON_MAX } from '../engine/stewards';
 import { nfcLength } from '../engine/text';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { Named } from './stewards';
 import { Field } from './ui';
@@ -67,7 +68,7 @@ function SuspendForm({ name, days, onSuspend, close }: SuspendFormProps) {
           {stewards.suspendFailed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {stewards.confirm}
         </Button>

@@ -100,6 +100,8 @@ describe('fold', () => {
       at: 0,
       stewards: EMPTY_SEATS,
       suspensions: [],
+      removals: [],
+      responses: [],
       narrowings: [],
       vouches: [],
       chatPosts: [],
@@ -110,6 +112,9 @@ describe('fold', () => {
       rotations: [],
       rotationDue: false,
       dissolved: null,
+      recoveryShares: [],
+      recoveryAlerts: [],
+      recoveryCancels: [],
       coalitions: [],
       coalition: null,
       focus: null,
@@ -236,6 +241,7 @@ describe('fold', () => {
         member: authorOf('kim'),
         reason: '  <b>Threats</b> in chat  ',
         until: R + 10 + 10_080,
+        removal: null,
       },
     ]);
   });

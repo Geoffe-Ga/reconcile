@@ -21,9 +21,11 @@ import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
 import { VersionList } from '../app/Versions';
 import { rulesView } from '../app/optInLines';
+import { RemovalResponse } from '../app/RemovalResponse';
 import { Named, SuspendedNote } from '../app/stewards';
 import {
   dissolveView,
+  removalView,
   stewardView,
   versionDoes,
   type VersionView,
@@ -40,6 +42,7 @@ import {
   isNewDocumentProposal,
   isPriorityProposal,
   isReconcileProposal,
+  isRemovalProposal,
   isRulesProposal,
   isStewardProposal,
   type ParsedEvent,
@@ -55,6 +58,7 @@ import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
 import { isPriority, optionId } from '../engine/priority';
+import { removalTarget, removedFrom } from '../engine/removal';
 import { isSeatNumber, seatAt, stewardChangeOf } from '../engine/stewards';
 import type { TallyDetail } from '../engine/tally';
 import {
@@ -94,6 +98,11 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /**
+   * Queues this member's one response on the removal of them (#115); rejects
+   * when it couldn't be saved. Without it, no response form shows.
+   */
+  readonly onRespond?: (text: string) => Promise<void>;
   /**
    * Once a dissolved group's ballots are cleared on this device (#108): when,
    * and each decided Proposal's tally as the device kept it, by id.
@@ -300,8 +309,9 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 
 /**
  * Why `me` gets no ballot on `proposal`, or null when they get one (#166).
- * Outside its eligible set, they joined after it opened, hadn't earned a vote
- * yet when it opened (#101), weren't at a voting level then, or are the
+ * Outside its eligible set, they are the member it would remove (#115), a
+ * vote has removed them since, they joined after it opened, hadn't earned a
+ * vote yet when it opened (#101), weren't at a voting level then, or are the
  * steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
  * one gives them the ballot back.
@@ -310,6 +320,13 @@ function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null 
   const { state, me } = props;
   if (props.leaving === true) return messages.leave.noVoting;
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
+  if (removalTarget(proposal) === me) return messages.removal.ownRemoval;
+  if (removedFrom(state, me) !== undefined) return messages.removal.readOnly;
+  return whyOutside(state, me, proposal);
+}
+
+/** Why `me`, a member outside `proposal`'s eligible set, wasn't in it when it opened. */
+function whyOutside(state: GroupState, me: string, proposal: Proposal): string {
   const change = stewardChangeOf(proposal);
   if (change?.member === null && change.holder === me) return messages.stewards.ownRecall;
   const member = state.members.find((candidate) => candidate.author === me);
@@ -526,6 +543,13 @@ function Byline({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   );
 }
 
+/** How a cut-off Proposal reads: closed or still open, for its eyebrow, and the line saying why it shows no outcome. */
+interface CutOffWords {
+  /** True when it reads as closed, as a dissolve leaves it; false when it reads as still open. */
+  readonly closed: boolean;
+  readonly line: string;
+}
+
 /**
  * Where Join discussion goes: the Proposal's own Discord thread once the log
  * holds it (#123), else its own link, else the group's latest (#66).
@@ -550,18 +574,35 @@ function eyebrowOf(proposal: Proposal, closed: boolean): ReactNode {
 }
 
 /**
- * A Proposal still open when its group dissolved (#108): closed, with no
- * outcome and no ballot, its versions, or a priority vote's options (#107),
- * as they stood.
+ * How this device shows a Proposal it has cut off, or null when it hasn't:
+ * closed, when it was still open as the group dissolved (#108), or open,
+ * when a vote removed this member while it was (#115), so this device never
+ * learns how it ends.
  */
-function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  const { state } = props;
+function cutOffOf(props: ProposalViewProps, proposal: Proposal): CutOffWords | null {
+  const { state, me } = props;
+  if (closedByDissolve(state, proposal)) {
+    return { closed: true, line: messages.archive.closed };
+  }
+  const removed = removedFrom(state, me) !== undefined && !proposal.final;
+  return removed ? { closed: false, line: messages.removal.stillOpenLine } : null;
+}
+
+/**
+ * A Proposal still open when its group dissolved (#108), or when a vote
+ * removed this member (#115): with no outcome and no ballot, its versions, or
+ * a priority vote's options (#107), as they stood, and `line` saying why.
+ */
+function CutOff(props: { props: ProposalViewProps; proposal: Proposal; words: CutOffWords }) {
+  const { proposal } = props;
+  const { closed, line } = props.words;
+  const { state } = props.props;
   const versions = versionViews(state, proposal);
   const comparison = comparisonOf(state, proposal, false);
   return (
     <Screen state={state} wide={versions.length > 1}>
       <PageHeader
-        eyebrow={eyebrowOf(proposal, true)}
+        eyebrow={eyebrowOf(proposal, closed)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
       >
@@ -572,11 +613,9 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
           <p className="meta">
             {messages.proposal.proposedBy} <bdi>{displayName(state, proposal.author) ?? ''}</bdi>
           </p>
-          <p className="meta">{messages.archive.closed}</p>
+          <p className="meta">{line}</p>
         </div>
-        <p className="lede" dir="auto">
-          {proposal.why}
-        </p>
+        <Why why={proposal.why} />
       </div>
       <Block title={comparison.title} className="vote">
         <Legend comparison={comparison} open={false} />
@@ -588,6 +627,11 @@ function ClosedByDissolve({ props, proposal }: { props: ProposalViewProps; propo
       </Block>
     </Screen>
   );
+}
+
+/** True once this group only reads here: it dissolved (#108), or a vote removed `me` (#115). */
+function isArchived(state: GroupState, me: string): boolean {
+  return state.dissolved !== null || removedFrom(state, me) !== undefined;
 }
 
 /** The tally a cleared archive kept for `proposal`, if its ballots are cleared (#108). */
@@ -691,16 +735,36 @@ function MotionProgress({ motion }: { readonly motion: MotionView | null }) {
   return <CoalitionProgress progress={motion.progress} />;
 }
 
+/** A removal's response block on its ballot (#115): the response, or the one-time form to its target. */
+function Response(props: { props: ProposalViewProps; proposal: Proposal; readOnly: boolean }) {
+  const { props: view, proposal, readOnly } = props;
+  return (
+    <RemovalResponse
+      state={view.state}
+      me={view.me}
+      proposal={proposal}
+      pending={view.pending}
+      reachable={view.reachable}
+      now={view.now}
+      readOnly={readOnly}
+      {...(view.onRespond === undefined ? {} : { onRespond: view.onRespond })}
+    />
+  );
+}
+
 /**
  * A Proposal the relay has ordered: open with its ballot, or closed with its
- * outcome first. A coalition motion (#120) is tagged with its coalition, its
- * version is a word diff against the coalition's text, and it shows the
- * coalition's progress while it decides, then the coalition's result first.
+ * outcome first. A removal's response follows its justification (#115), and a
+ * reconcile Proposal's coalition, as its card set it, follows that (#114). A
+ * coalition motion (#120) is tagged with its coalition, its version is a word
+ * diff against the coalition's text, and it shows the coalition's progress
+ * while it decides, then the coalition's result first.
  */
 function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   const { state } = props;
-  if (closedByDissolve(state, proposal))
-    return <ClosedByDissolve props={props} proposal={proposal} />;
+  const cutOff = cutOffOf(props, proposal);
+  if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
+  const readOnly = props.leaving === true || isArchived(state, props.me);
   const motion = motionView(proposal, state, props.coalitions ?? []);
   const names = motion?.state ?? state;
   const versions = versionViews(state, proposal, names);
@@ -728,7 +792,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           own={props.own}
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
-          leaving={props.leaving === true || state.dissolved !== null}
+          leaving={readOnly}
           names={names}
           {...clearedOf(props, proposal)}
         />
@@ -737,6 +801,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         <Byline props={props} proposal={proposal} />
         <Why why={proposal.why} />
       </div>
+      <Response props={props} proposal={proposal} readOnly={readOnly} />
       <MotionProgress motion={motion} />
       <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
       <CarriedDispatch proposal={proposal} />
@@ -784,8 +849,8 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
 
 /**
  * What a waiting ballot decides other than a section's text: a steward,
- * rules, dissolve or coalition card (#102, #117, #108, #114), or a priority
- * vote's options (#107); null for one that changes text.
+ * rules, dissolve, member removal or coalition card (#102, #117, #108, #115,
+ * #114), or a priority vote's options (#107); null for one that changes text.
  */
 function waitingDecision(state: GroupState, author: string, body: ProposalEventBody) {
   if (isStewardProposal(body)) {
@@ -811,6 +876,11 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
+  if (isRemovalProposal(body)) {
+    const removal = removalView(state, body.target.member);
+    const versions = [{ id: '', number: 1, author, text: '', removal }];
+    return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
   // A reconcile Proposal (#100) changes no section: its ballot decides the coalition (#114).
   if (isReconcileProposal(body)) {
     const target = { ...body.target, key: '' };
@@ -822,8 +892,8 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
 }
 
 /**
- * True for a Proposal whose versions hold text: an edit, a removal, an add
- * (#75) or a new Document (#92).
+ * True for a Proposal whose versions hold text: an edit, a section's removal,
+ * an add (#75) or a new Document (#92).
  */
 function changesText(
   body: ProposalEventBody,
@@ -839,7 +909,7 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   // An admit target is only ever a coalition's (#114), so it waits in no group's outbox.
   if (!changesText(body)) return { comparison: STEWARD_BALLOT, versions: [], optIn: null };
   // An add's or a new Document's whole text shows as added, and an add says where it goes
-  // (#75, #92); a removal says so too.
+  // (#75, #92); a section's removal says so too.
   const target = 'target' in body ? body.target : ({ kind: 'edit' } as const);
   const atom = 'atom' in body ? body.atom : null;
   const comparison = comparisonFor(state, atom, false, addingTitle({ target }));

@@ -1,0 +1,203 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "dissolve-cleared: a dissolve Proposal that fails early is folded the same whether its ballots are held or cleared: a second dissolve Proposal while it is open is ignored, and one after it has closed opens",
+      "alsoCleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve our group",
+              "why": "We have all moved out."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 0
+              },
+              "note": "We still need the group.",
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": true
+              },
+              "title": "Dissolve and wipe",
+              "why": "We have all moved out."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 0
+              },
+              "note": "We still need the group.",
+              "salt": "salt-of-bens-ballot"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375030,
+              "closedSeq": 6,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [2, 0, 0, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "fail"
+              },
+              "commit": {
+                "$base64url": [
+                  193, 191, 106, 211, 167, 203, 22, 65, 157, 62, 52, 228, 65, 95, 210, 108, 81, 62,
+                  205, 111, 76, 191, 203, 46, 255, 84, 85, 8, 216, 185, 190, 154
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502400000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": true
+              },
+              "title": "Dissolve and wipe",
+              "why": "We have all moved out."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375030,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@8",
+            "target": {
+              "kind": "dissolve",
+              "wipe": true
+            },
+            "final": false
+          }
+        ],
+        "dissolved": null,
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      }
+    }
+  ]
+}

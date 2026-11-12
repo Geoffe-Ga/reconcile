@@ -1,0 +1,192 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "room-ignored-group: a message in a group's own log is ignored: it belongs in a coalition's room",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "message",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "text": "Not here."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          }
+        ]
+      },
+      "unchangedWithout": [3]
+    },
+    {
+      "name": "room-ignored-coalition: a participant's message in the coalition's own log is ignored: it belongs in the room",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%zed",
+            "ts": 1762500000000,
+            "body": {
+              "kind": "coalition",
+              "name": "Eastside Housing",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["Everyone on the east side has a safe home."]
+                }
+              ],
+              "seats": [
+                {
+                  "name": "Riverside Tenants",
+                  "key": "^A"
+                },
+                {
+                  "name": "Oak St Co-op",
+                  "key": "^B"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Mara",
+              "seat": "^A",
+              "proof": {
+                "$seatProof": ["A", "@1", "%kim"]
+              }
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Jo",
+              "seat": "^B",
+              "proof": {
+                "$seatProof": ["B", "@1", "%ben"]
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "group-result",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500180000,
+            "body": {
+              "motion": "@1",
+              "seat": "^A",
+              "result": "pass"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "group-result",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500240000,
+            "body": {
+              "motion": "@1",
+              "seat": "^B",
+              "result": "pass"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "message",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500360000,
+            "body": {
+              "text": "Nor here."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375100,
+      "expect": {
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [6]
+    }
+  ]
+}

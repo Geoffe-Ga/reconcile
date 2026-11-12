@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
 import { personalSharing } from '../app/personalSharing';
+import { vaultKeyFromPrf } from '../crypto/keyVault';
 import { xchachaSeal } from '../crypto/seal';
 import { shareChannelOf } from '../crypto/share';
 import { MAX_RECORD_BYTES } from '../crypto/record';
@@ -72,8 +73,11 @@ afterEach(() => {
   fetchSpy.mockClear();
 });
 
-/** Renders the editor for `id` on the test's store, as `#/me/{id}` does. */
-function open(id = ID, onDeleted = vi.fn()) {
+/**
+ * Renders the editor for `id` on the test's store, as `#/me/{id}` does, on a
+ * device that keeps a relay backup key (#97) when `relayBackup` says so.
+ */
+function open(id = ID, onDeleted = vi.fn(), relayBackup: boolean | null = false) {
   const view = render(
     <PersonalDocument
       id={id}
@@ -81,6 +85,7 @@ function open(id = ID, onDeleted = vi.fn()) {
       now={() => clock}
       onDeleted={onDeleted}
       sharing={sharing()}
+      relayBackup={relayBackup}
     />,
   );
   return { ...view, onDeleted, user: userEvent.setup() };
@@ -345,6 +350,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={onDeleted}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
     await user.type(await screen.findByRole('textbox', { name: 'Text' }), ' Kept.');
@@ -379,6 +385,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
     const box = await screen.findByRole('textbox', { name: 'Text' });
@@ -401,7 +408,7 @@ describe('PersonalDocument', () => {
 
   it('says so, with no editor, when the device’s Documents can’t be read, so nothing typed replaces one', async () => {
     const unreadable = Object.assign(Object.create(store) as Store, {
-      listPersonal: () => Promise.reject(new Error('IndexedDB refused.')),
+      listPersonalEntries: () => Promise.reject(new Error('IndexedDB refused.')),
     });
     render(
       <PersonalDocument
@@ -410,6 +417,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
 
@@ -432,6 +440,29 @@ describe('PersonalDocument', () => {
         'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
       ),
     ).toBeVisible();
+  });
+
+  it('says the sealed relay backup has it too, once the device keeps one (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    open(ID, vi.fn(), true);
+
+    expect(
+      await screen.findByText(
+        'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(messages.personal.documentPrivacy)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of where it’s kept until the device has said whether it keeps a relay backup (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    open(ID, vi.fn(), null);
+
+    await screen.findByRole('textbox', { name: 'Text' });
+    const { documentPrivacy, documentPrivacyRelayBackup } = messages.personal;
+    expect(screen.queryByText(documentPrivacy)).not.toBeInTheDocument();
+    expect(screen.queryByText(documentPrivacyRelayBackup)).not.toBeInTheDocument();
   });
 
   it('sends no request while a Document is created, edited, previewed or deleted', async () => {
@@ -621,6 +652,24 @@ describe('PersonalDocument, shared by link (#105)', () => {
     expect(await screen.findByText(share.tooLargeShared)).toBeVisible();
   });
 
+  it('says the sealed relay backup has a shared Document too, once the device keeps one (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open(ID, vi.fn(), true);
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+
+    expect(
+      screen.getByText(
+        'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it, and so does your sealed relay backup.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(messages.personal.sharedPrivacy)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(messages.personal.documentPrivacyRelayBackup),
+    ).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('Stop sharing posts a tombstone, says what it can’t recall, and Share link then makes a new link', async () => {
     await store.savePersonal(STATEMENT);
     const { user } = open();
@@ -729,9 +778,127 @@ describe('PersonalDocument, shared by link (#105)', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={unsure}
+        relayBackup={false}
       />,
     );
 
     expect(within(await shareSection()).getByRole('button', { name: share.start })).toBeVisible();
+  });
+});
+
+describe('PersonalDocument, shared, while this device’s keys are locked (#255)', () => {
+  const { share } = messages.personal;
+  const SALT = new Uint8Array(32).fill(0x33);
+  const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+  const LOCK = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+  /** Locks the device's keys from another tab, as Settings there would, leaving this one locked. */
+  async function lockFromAnotherTab(): Promise<void> {
+    const other = await openStore();
+    await other.sealKeys(LOCK, KEY);
+    other.close();
+  }
+
+  it('says the Document is shared and how to unlock, with no link, button or Delete', async () => {
+    await store.savePersonal(STATEMENT);
+    const services = {
+      store,
+      relay: createRelay({ fetch: relay.fetch }),
+      seal: xchachaSeal,
+      now: () => clock,
+    };
+    await startSharing(services, ID);
+    await store.savePersonal({ ...STATEMENT, text: 'Edited, not posted.\n' });
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+    store = await openStore();
+    const requests = relay.requests.length;
+
+    open();
+
+    const section = await shareSection();
+    expect(within(section).getByText(share.locked)).toBeVisible();
+    expect(within(section).getByText(share.pending)).toBeVisible();
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.sharedPrivacy)).toBeVisible();
+    expect(relay.requests).toHaveLength(requests);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('still saves what’s typed while locked, and posts nothing as the editor closes', async () => {
+    await store.savePersonal(STATEMENT);
+    const services = {
+      store,
+      relay: createRelay({ fetch: relay.fetch }),
+      seal: xchachaSeal,
+      now: () => clock,
+    };
+    await startSharing(services, ID);
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+    store = await openStore();
+    const requests = relay.requests.length;
+    const { user, unmount } = open();
+    await shareSection();
+
+    await user.type(text(), ' Kept.');
+    await saved();
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const [entry] = await store.listPersonalEntries();
+    expect([entry?.text, entry?.share?.pending]).toEqual([`${STATEMENT.text} Kept.`, true]);
+    expect(relay.requests).toHaveLength(requests);
+  });
+
+  it('says nothing changed when another tab locked the keys before Stop sharing, and sends nothing', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    const link = linkField().value;
+    await lockFromAnotherTab();
+    const requests = relay.requests.length;
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.lockedNow)).toBeVisible();
+    expect(linkField()).toHaveValue(link);
+    expect(screen.getByRole('button', { name: share.stop })).toBeEnabled();
+    expect(relay.requests).toHaveLength(requests);
+    expect((await linkShows(link)).kind).toBe('shown');
+  });
+
+  it('says nothing changed when another tab locked the keys before Share link, and sends nothing', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open();
+    const start = within(await shareSection()).getByRole('button', { name: share.start });
+    await lockFromAnotherTab();
+
+    await user.click(start);
+
+    expect(await screen.findByText(share.lockedNow)).toBeVisible();
+    expect(start).toBeEnabled();
+    expect(relay.requests).toEqual([]);
+    expect(copied).toEqual([]);
+    expect((await store.listPersonalEntries())[0]?.share).toBeUndefined();
+  });
+
+  it('deletes nothing when another tab locked the keys first, and says why', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user, onDeleted } = open();
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+    await lockFromAnotherTab();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = screen.getByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(await within(dialog).findByText(messages.personal.deleteSharedFailed)).toBeVisible();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect((await store.listPersonalEntries())[0]?.share).toBeDefined();
   });
 });
