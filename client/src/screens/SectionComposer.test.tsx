@@ -17,6 +17,7 @@ import type { Draft } from '../store/drafts';
 import { axeViolations } from '../test/axe';
 import { memoryDrafts } from '../test/drafts';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { deadlineOf, groupLog, SETTLED_MINUTES, START_MINUTE } from '../test/votes';
 import { AddSection, RemoveSection } from './SectionComposer';
 
@@ -467,6 +468,23 @@ describe('RemoveSection', () => {
       'Your version couldn’t be saved on this device. Try again.',
     );
     expect(screen.getByRole('button', { name: 'Add removal to the ballot' })).toBeEnabled();
+  });
+
+  it('adds the removal once when it is tapped again while it adds and the save fails (#193)', async () => {
+    const log = groupLog();
+    log.propose('ben', { atom: 1 });
+    const adding = held<ComposeOutcome>();
+    const onAddVersion = vi.fn<OnAddVersion>(() => adding.promise);
+    const { user } = await removeSection({ state: log.state(), onAddVersion });
+    const add = screen.getByRole('button', { name: 'Add removal to the ballot' });
+    await user.click(add);
+    expect(add).toBeDisabled();
+    await user.click(add);
+    adding.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(add).toBeEnabled();
+    expect(onAddVersion).toHaveBeenCalledTimes(1);
   });
 
   it('says a removal is already on the section’s ballot, with no form', async () => {

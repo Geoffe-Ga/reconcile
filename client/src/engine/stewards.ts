@@ -21,7 +21,13 @@
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
 import type { AdmitChange, MotionTarget, ReconcileChange } from './coalition';
-import type { AddTarget, DissolveTarget, MoveTarget, NewDocumentTarget } from './event';
+import type {
+  AddTarget,
+  DissolveTarget,
+  MoveTarget,
+  NewDocumentTarget,
+  RemoveTarget,
+} from './event';
 import {
   effectiveOptIn,
   isOff,
@@ -33,6 +39,7 @@ import {
   type RulesChange,
   rulesChangeOf,
 } from './optIns';
+import { type Closing, isOpenAt } from './open';
 import { type ClassChange, DAY_MINUTES, type Rules } from './rules';
 import { codePointLength } from './text';
 
@@ -99,8 +106,8 @@ export interface StewardChange {
 /**
  * What a Proposal changes: an Atom's text, where `""` removes it (#63, #72,
  * #75), a new section after an anchor (#75), a new Document (#92), a
- * section's place (#103) or class (#116), a steward
- * seat (#102), an opt-in (#117), or whether the group goes on (#108). Or it
+ * section's place (#103) or class (#116), a steward seat (#102), an opt-in
+ * (#117), whether the group goes on (#108), or who is in it (#115). Or it
  * reconciles the group into a coalition, or is a coalition's motion, which
  * its seats decide (#100), or in a coalition admits a group (#114). A
  * priority vote changes nothing: its top option becomes the focus (#107).
@@ -114,6 +121,7 @@ export type ProposalTarget =
   | StewardChange
   | RulesChange
   | DissolveTarget
+  | RemoveTarget
   | ReconcileChange
   | MotionTarget
   | { readonly kind: 'priority' }
@@ -122,7 +130,10 @@ export type ProposalTarget =
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that
  * minute plus `suspensionDays` × 1,440. `by` is the steward who wrote it,
- * and `reason` what they wrote, or null.
+ * and `reason` what they wrote, or null. A removal vote against the member
+ * that opens while it runs keeps it until that vote closes (ADR-0059, #115):
+ * `removal` names that vote, or is null, and `until` is then the later of its
+ * own end and the vote's close.
  */
 export interface Suspension {
   readonly id: string;
@@ -132,13 +143,15 @@ export interface Suspension {
   readonly member: string;
   readonly reason: string | null;
   readonly until: number;
+  readonly removal: string | null;
 }
 
-/** What the steward rules read of a Proposal: its target, and when it closes. */
-export interface StewardProposalState {
+/**
+ * What the steward rules read of a Proposal: its target, and when it closes,
+ * which they read as every rule does ({@link isOpenAt}, #289).
+ */
+export interface StewardProposalState extends Closing {
   readonly target: ProposalTarget;
-  readonly deadline: number;
-  readonly closedAt: number | null;
 }
 
 /** What the steward rules read of a group, at relay minute `at`. */
@@ -173,16 +186,11 @@ export function stewardChangeOf(proposal: StewardProposalState): StewardChange |
   return target.kind === 'steward' ? target : null;
 }
 
-/** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
-function isOpen(proposal: StewardProposalState, at: number): boolean {
-  return proposal.closedAt === null && at < proposal.deadline;
-}
-
 /** The steward Proposals open at `state.at`, with what each would change. */
 function openChanges(state: StewardState): StewardChange[] {
   return state.proposals.flatMap((p) => {
     const change = stewardChangeOf(p);
-    return change !== null && isOpen(p, state.at) ? [change] : [];
+    return change !== null && isOpenAt(p, state.at) ? [change] : [];
   });
 }
 
@@ -319,7 +327,7 @@ export function suspensionEnd(rules: Rules, received: number): number {
 
 /**
  * The seats once `person` gives up any they hold, on a step down to Member
- * (#102), a leave (#77) or a removal (#115). Whether an election ever filled
+ * (#102), a leave (#77) or a `remove` (#115). Whether an election ever filled
  * the seat stays as it was.
  */
 export function vacate(seats: readonly Seat[], person: string): Seat[] {
@@ -441,7 +449,7 @@ export function mayNarrow(
     proposal !== undefined &&
     proposal.author === author &&
     isOffProposal(proposal, optIn) &&
-    isOpen(proposal, state.at)
+    isOpenAt(proposal, state.at)
   );
 }
 

@@ -16,6 +16,7 @@ import { type Back, documentBack, groupBack } from '../app/backLinks';
 import { documentLead, sectionPlace } from '../app/documentLines';
 import { formatAverageLine, formatZeroLine } from '../app/format';
 import { latestLink } from '../app/latestLink';
+import { holdPresses } from '../app/holdPresses';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
@@ -325,6 +326,8 @@ interface DispatchChoiceProps {
   /** Where the Dispatch's title starts once it's checked. */
   readonly start: string;
   readonly onChange: (values: Draft) => void;
+  /** Who gets the Dispatch, under the checkbox. */
+  readonly hint: string;
 }
 
 /**
@@ -333,7 +336,7 @@ interface DispatchChoiceProps {
  * 'Updated: {Document title}' ('New Document: {title}' for a new one, #92),
  * and its text, both kept in the draft.
  */
-function DispatchChoice({ values, start, onChange }: DispatchChoiceProps) {
+function DispatchChoice({ values, start, onChange, hint }: DispatchChoiceProps) {
   const { composer } = messages;
   const { dispatch } = values;
   const toggle = (on: boolean) => {
@@ -353,7 +356,7 @@ function DispatchChoice({ values, start, onChange }: DispatchChoiceProps) {
           {composer.dispatchLabel}
         </CheckboxButton>
         <Text slot="description" className="check-description">
-          {composer.dispatchHint}
+          {hint}
         </Text>
       </CheckboxField>
       {dispatch === undefined ? null : (
@@ -386,7 +389,7 @@ interface FieldsProps {
   readonly now: number;
   readonly onChange: (values: Draft) => void;
   readonly words: FormWords;
-  /** Whether it may carry a Dispatch: a coalition motion may not (#100, #120). */
+  /** Whether it may carry a Dispatch (#112): a motion may too, for the coalition's readers (#124). */
   readonly dispatch: boolean;
 }
 
@@ -502,6 +505,7 @@ function Fields({
           values={values}
           start={dispatchStart(state, values, place)}
           onChange={onChange}
+          hint={words.dispatchHint ?? messages.composer.dispatchHint}
         />
       ) : null}
     </>
@@ -560,6 +564,8 @@ export interface FormWords {
   readonly whyHint?: string;
   readonly linkHint?: string;
   readonly visibility?: string;
+  /** Who gets a carried Dispatch, under its checkbox: the group's unless given, as a coalition's is (#124). */
+  readonly dispatchHint?: string;
 }
 
 /** Props for {@link ProposalForm}. */
@@ -584,7 +590,7 @@ export interface ProposalFormProps {
   readonly again: Proposal | undefined;
   /** Where Back goes: the group's Document unless given, as a coalition's is (#120). */
   readonly back?: Back;
-  /** Whether it offers "Send a Dispatch if this passes" (#112): yes unless false, as for a coalition (#120). */
+  /** Whether it offers "Send a Dispatch if this passes" (#112): yes unless false. */
   readonly dispatch?: boolean;
   /** A field of its own in place of the text field (#103): a header's Heading, or a move's place. */
   readonly field?: OwnField;
@@ -647,7 +653,7 @@ export function ProposalForm(props: ProposalFormProps) {
             {messages.composer.failed}
           </p>
         ) : null}
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
           <Button type="submit" className="button button-primary" isDisabled={running}>
             {words.submit}
           </Button>
@@ -799,7 +805,7 @@ function VersionForm({ state, section, proposal, drafts, onAddVersion }: Version
             {messages.composer.versionFailed}
           </p>
         ) : null}
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
           <Button type="submit" className="button button-primary" isDisabled={running}>
             {messages.composer.versionSubmit}
           </Button>
@@ -978,9 +984,10 @@ function whyNoMotion(props: CoalitionComposerProps): { title: string; text: stri
  * group composer's form, with the voting time (#106), that proposes new text
  * for one section of the coalition's Document. Proposing writes the motion to
  * the coalition's outbox; every member group then votes on it inside itself.
- * A motion carries no Dispatch and takes no other version (#100), so there's
- * no "Send a Dispatch if this passes" or Add your version. Only someone bound
- * to a member group's seat who can propose there sees a form.
+ * A motion takes no other version (#100), so there's no Add your version,
+ * but it may carry a Dispatch for everyone who reads the coalition, which
+ * goes out once its pass is final (#124). Only someone bound to a member
+ * group's seat who can propose there sees a form.
  */
 export function CoalitionComposer(props: CoalitionComposerProps) {
   const { state, atomId, drafts } = props;
@@ -1021,6 +1028,7 @@ export function CoalitionComposer(props: CoalitionComposerProps) {
         whyHint: coalitions.composerWhyHint,
         linkHint: coalitions.composerLinkHint,
         visibility: coalitions.composerVisibility,
+        dispatchHint: coalitions.composerDispatchHint,
       }}
       intro={
         <>
@@ -1035,7 +1043,6 @@ export function CoalitionComposer(props: CoalitionComposerProps) {
       }}
       again={undefined}
       back={back}
-      dispatch={false}
     />
   );
 }

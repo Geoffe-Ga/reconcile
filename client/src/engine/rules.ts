@@ -18,13 +18,17 @@ import {
   isClassProposal,
   isDissolveProposal,
   isMoveProposal,
+  isRemovalProposal,
   isRulesProposal,
   type ProposalEventBody,
 } from './event';
 import { isOptIn, isWider, type OptIns } from './optIns';
 
-/** How hard a change is: the class whose bar and window a Proposal gets. #115 adds removal's. */
-export type ProposalClass = 'ordinary' | 'entrenched';
+/**
+ * How hard a change is: the class whose bar and window a Proposal gets.
+ * Removing a member has its own (ADR-0075 §3, #115).
+ */
+export type ProposalClass = 'ordinary' | 'entrenched' | 'removal';
 
 /**
  * The class a founding rule is in, which decides the bar a change to it would
@@ -35,11 +39,14 @@ export type RuleClass = 'ordinary' | 'entrenched' | 'opt-in';
 
 /**
  * What a version must reach to pass, among those who scored it: `sum ≥ avgAtLeast · n`
- * and `100 · zeros < zerosUnderPercent · n`.
+ * and `100 · zeros < zerosUnderPercent · n`, or else, for a bar that names
+ * `zerosAllowed`, at most that many zeros whatever their share. Only removal's
+ * bar names it: a single 0 never blocks a removal (ADR-0075 §3, #115).
  */
 export interface Bar {
   readonly avgAtLeast: number;
   readonly zerosUnderPercent: number;
+  readonly zerosAllowed?: number;
 }
 
 /** How long a class's votes may run, in whole days, and how long they run when no one chooses (#106). */
@@ -81,19 +88,22 @@ export interface Rules {
 
 /**
  * The founding rules every MVP group has: ADR-0067's Fellowship defaults, the
- * consent floor (ADR-0002), the entrenched bar (ADR-0015 §2), ADR-0074's windows,
- * ADR-0073's quorum, ADR-0049's steward seats, ADR-0016's 7-day suspension,
- * and both opt-ins off (ADR-0038, ADR-0039). Create group writes them into
- * genesis as they are.
+ * consent floor (ADR-0002), the entrenched bar (ADR-0015 §2), removal's bar,
+ * which forgives one 0, and its fixed 14 days, the entrenched default
+ * (ADR-0075 §3, #115), ADR-0074's windows, ADR-0073's quorum, ADR-0049's
+ * steward seats, ADR-0016's 7-day suspension, and both opt-ins off
+ * (ADR-0038, ADR-0039). Create group writes them into genesis as they are.
  */
 export const DEFAULT_RULES = {
   bars: {
     ordinary: { avgAtLeast: 2, zerosUnderPercent: 10 },
     entrenched: { avgAtLeast: 3, zerosUnderPercent: 5 },
+    removal: { avgAtLeast: 3, zerosUnderPercent: 5, zerosAllowed: 1 },
   },
   windows: {
     ordinary: { min: 3, max: 14, default: 7 },
     entrenched: { min: 14, max: 28, default: 14 },
+    removal: { min: 14, max: 14, default: 14 },
   },
   quorum: { min: 3, percent: 30 },
   vouches: 2,
@@ -245,16 +255,17 @@ function sectionChanged(proposal: ProposalEventBody): string | null {
 /**
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
- * change. The fold stores it as the Proposal's `class`. Dissolving the group
- * is entrenched (ADR-0051, #108), and so is a rules Proposal that widens an
- * opt-in from its standing value (ADR-0040, #117). A class Proposal is
- * entrenched whatever it asks, so entrenchment is itself entrenched, and so
- * is a change, a removal or a move of an entrenched section (ADR-0015, #116).
- * Every other target is ordinary, steward elections and recalls included
- * (ADR-0049), and so is an add, wherever its anchor: removal (#115) adds its
- * case here.
+ * change. The fold stores it as the Proposal's `class`. Removing a member has
+ * its own class, with its own bar and a fixed window (ADR-0075 §3, #115).
+ * Dissolving the group is entrenched (ADR-0051, #108), and so is a rules
+ * Proposal that widens an opt-in from its standing value (ADR-0040, #117). A
+ * class Proposal is entrenched whatever it asks, so entrenchment is itself
+ * entrenched, and so is a change, a removal or a move of an entrenched
+ * section (ADR-0015, #116). Every other target is ordinary, steward elections
+ * and recalls included (ADR-0049), and so is an add, wherever its anchor.
  */
 export const targetClass: TargetClassifier = (state, proposal) => {
+  if (isRemovalProposal(proposal)) return 'removal';
   if (isDissolveProposal(proposal) || isClassProposal(proposal)) return 'entrenched';
   if (isRulesProposal(proposal)) {
     const { optIn, value } = proposal.target;

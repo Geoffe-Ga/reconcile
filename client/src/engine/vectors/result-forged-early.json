@@ -1,0 +1,786 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "with the ballots held, a Member's result received a minute after the Proposal opens, closing it then with counts nobody cast, is ignored and isn't flagged, and the result the ballots give counts",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500150000,
+            "body": {
+              "name": "Cal",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500200000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29375010,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [2, 0, 0, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "fail"
+              },
+              "commit": {
+                "$base64url": [
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": {
+                "$base64url": [
+                  181, 208, 200, 97, 17, 44, 183, 6, 211, 216, 27, 255, 7, 238, 65, 253, 134, 231,
+                  124, 54, 178, 153, 79, 82, 22, 135, 111, 241, 156, 78, 76, 134
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 10pm."
+          },
+          {
+            "id": "@1.1"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@4",
+            "closedAt": 29375021,
+            "final": true,
+            "cleared": false,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@8",
+              "author": "%ana",
+              "closedAt": 29375021
+            },
+            "mismatched": [],
+            "ballots": [
+              {
+                "voter": "%ana",
+                "salt": "salt-of-anas-ballot"
+              },
+              {
+                "voter": "%ben",
+                "salt": ""
+              }
+            ]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [5]
+    },
+    {
+      "name": "with the ballots held, a Member's result received a minute after the Proposal opens, matching the ballots then, none cast, with a lapse at the deadline, is ignored and isn't flagged, and the result the ballots give counts",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500150000,
+            "body": {
+              "name": "Cal",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500200000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29385090,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "lapse"
+              },
+              "commit": {
+                "$base64url": [
+                  208, 183, 36, 44, 22, 104, 248, 224, 71, 255, 87, 192, 31, 67, 233, 74, 63, 178,
+                  222, 254, 139, 97, 114, 165, 24, 205, 138, 207, 73, 39, 76, 188
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": {
+                "$base64url": [
+                  181, 208, 200, 97, 17, 44, 183, 6, 211, 216, 27, 255, 7, 238, 65, 253, 134, 231,
+                  124, 54, 178, 153, 79, 82, 22, 135, 111, 241, 156, 78, 76, 134
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 10pm."
+          },
+          {
+            "id": "@1.1"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@4",
+            "closedAt": 29375021,
+            "final": true,
+            "cleared": false,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@8",
+              "author": "%ana",
+              "closedAt": 29375021
+            },
+            "mismatched": [],
+            "ballots": [
+              {
+                "voter": "%ana",
+                "salt": "salt-of-anas-ballot"
+              },
+              {
+                "voter": "%ben",
+                "salt": ""
+              }
+            ]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [5]
+    },
+    {
+      "name": "with the ballots held, a Member's result received after the close, with counts the ballots don't give, is ignored and flagged, and the result the ballots give counts",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500150000,
+            "body": {
+              "name": "Cal",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500240000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500400000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [2, 0, 0, 0, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "fail"
+              },
+              "commit": {
+                "$base64url": [
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": {
+                "$base64url": [
+                  181, 208, 200, 97, 17, 44, 183, 6, 211, 216, 27, 255, 7, 238, 65, 253, 134, 231,
+                  124, 54, 178, 153, 79, 82, 22, 135, 111, 241, 156, 78, 76, 134
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 10pm."
+          },
+          {
+            "id": "@1.1"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@4",
+            "closedAt": 29375021,
+            "final": true,
+            "cleared": false,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@8",
+              "author": "%ana",
+              "closedAt": 29375021
+            },
+            "mismatched": ["%cal"]
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      }
+    },
+    {
+      "name": "once the ballots are cleared, the log that clearing leaves, with the result the ballots gave as its only result, decides the Proposal as the ballots did",
+      "cleared": ["@4"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500150000,
+            "body": {
+              "name": "Cal",
+              "level": "member"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500180000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Quiet hours",
+              "why": "People sleep earlier now.",
+              "text": "Quiet after 10pm."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@4",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": {
+                "$base64url": [
+                  181, 208, 200, 97, 17, 44, 183, 6, 211, 216, 27, 255, 7, 238, 65, 253, 134, 231,
+                  124, 54, 178, 153, 79, 82, 22, 135, 111, 241, 156, 78, 76, 134
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "text": "Quiet after 10pm."
+          },
+          {
+            "id": "@1.1"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@4",
+            "closedAt": 29375021,
+            "final": true,
+            "cleared": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            },
+            "result": {
+              "id": "@8",
+              "author": "%ana",
+              "closedAt": 29375021
+            },
+            "mismatched": [],
+            "ballots": []
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

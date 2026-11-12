@@ -13,7 +13,7 @@ import { formatAverage, formatDay } from '../app/format';
 import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { messages } from '../app/messages';
 import type { ShareOutcome } from '../app/share';
-import { MotionTitle } from '../app/stewards';
+import { MotionTitle, Named } from '../app/stewards';
 import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
 import type { VersionView } from '../app/versionViews';
 import { can } from '../engine/capabilities';
@@ -93,11 +93,11 @@ const AGAIN_KINDS: readonly string[] = ['edit', 'add', 'new-document', 'move', '
 
 /**
  * Whether `props`' Proposal can be proposed again here, and if so whether it
- * waits: a change, a removal, an add (#75), a new Document (#92), a move
- * (#103) or a class Proposal (#116) while another Proposal is open on its
- * section or its own id, and a priority vote
- * (#107) while another priority vote is
- * open. A steward or rules vote isn't proposed again from here: Group home
+ * waits: a change, a section's removal, an add (#75), a new Document (#92), a
+ * move (#103) or a class Proposal (#116) while another Proposal is open on
+ * its section or its own id, and a priority vote (#107) while another
+ * priority vote is open. A member's removal (#115) isn't proposed again from
+ * here. A steward or rules vote isn't proposed again from here: Group home
  * says when an election is due (#102), and the Rules page offers each opt-in
  * (#117). Nothing is, while this member leaves or for someone who can't
  * propose.
@@ -163,8 +163,8 @@ export type Naming = 'versions' | 'options';
 
 /**
  * "Version 1 · Ana", the version's heading wherever the result names it, what a
- * steward, rules, dissolve, move or class ballot decided (#102, #117, #108,
- * #103, #116), or a priority option's text (#107).
+ * steward, rules, dissolve, member removal, move or class ballot decided
+ * (#102, #117, #108, #115, #103, #116), or a priority option's text (#107).
  */
 function VersionName({ version, naming }: { readonly version: VersionView; naming: Naming }) {
   if (naming === 'options') return <bdi>{version.text}</bdi>;
@@ -173,6 +173,9 @@ function VersionName({ version, naming }: { readonly version: VersionView; namin
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
   if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
+  if (version.removal !== undefined) {
+    return <Named parts={messages.removal.ballotTitle} name={version.removal.name} />;
+  }
   if (version.decision !== undefined) return <bdi>{version.decision.title}</bdi>;
   return (
     <>

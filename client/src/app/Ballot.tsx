@@ -23,13 +23,15 @@ import type { VersionView } from './versionViews';
 
 /**
  * Whether a version is the one card of a ballot that decides something other
- * than a section's text (a steward, an opt-in, dissolving, a coalition, or a
- * section's place or protection, #102, #117, #108, #114, #103, #116), whose
- * pills read "Your score".
+ * than a section's text (a steward, an opt-in, dissolving, a member's
+ * removal, a coalition, or a section's place or protection, #102, #117, #108,
+ * #115, #114, #103, #116), whose pills read "Your score".
  */
 function decidesOne(version: VersionView): boolean {
-  const { steward, rules, dissolve, decision, move, protect } = version;
-  return [steward, rules, dissolve, decision, move, protect].some((field) => field !== undefined);
+  const { steward, rules, dissolve, removal, decision, move, protect } = version;
+  return [steward, rules, dissolve, removal, decision, move, protect].some(
+    (field) => field !== undefined,
+  );
 }
 
 /** A score for each version, by version id. */
@@ -185,9 +187,9 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
 }
 
 /**
- * "Score for version N", a steward, rules, dissolve, coalition or move
- * ballot's own label (#102, #117, #108, #114, #103), or for a priority option, "Score for <option>" with the
- * option in `<bdi>` (#107).
+ * "Score for version N", a steward, rules, dissolve, member removal, coalition
+ * or move ballot's own label (#102, #117, #108, #115, #114, #103), or for a
+ * priority option, "Score for <option>" with the option in `<bdi>` (#107).
  */
 function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
   if (layout === 'options') {

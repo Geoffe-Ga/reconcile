@@ -3,8 +3,8 @@
  * apart from any screen: propose, add a version, ask what to focus on (#107),
  * vote, and choose a level; for stewards (#102), propose a steward or a
  * recall, and suspend; for the opt-ins (#117), propose a rules change, with a
- * steward's narrowing; propose dissolving the group (#108); and send a
- * Dispatch (#112).
+ * steward's narrowing; propose dissolving the group (#108); propose removing a
+ * member, and that member's one response (#115); and send a Dispatch (#112).
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -140,6 +140,7 @@ function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): Propo
   const { target } = place;
   if (target.kind === 'move') return { target, ...withoutText(fields) };
   if (target.kind === 'class') return { target, ...withoutText(fields) };
+  // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
   return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
 }
 
@@ -460,6 +461,64 @@ export async function proposeDissolve(
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
+}
+
+/** A removal's entries (#115): whom it would remove, and title and why, trimmed. */
+export interface RemovalValues {
+  /** The key of the member it would remove. */
+  readonly member: string;
+  readonly title: string;
+  readonly why: string;
+}
+
+/**
+ * Proposes removing a member of `groupId` (ADR-0049, #115), as this device's
+ * member. It carries no window: a removal runs a fixed 14 days (ADR-0075 §3).
+ * The title and why are NFC-normalized before signing. One too large for any
+ * blob is refused before anything is queued. The fold decides whether it
+ * opens: it ignores one while another removal of that member is open.
+ */
+export async function proposeRemoval(
+  services: ProposalServices,
+  groupId: string,
+  values: RemovalValues,
+): Promise<ProposeResult> {
+  const body = {
+    target: { kind: 'remove', member: values.member } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
+/**
+ * Posts this device's member's one response on the removal of them,
+ * `proposal` (ADR-0049, #115). The text is trimmed and NFC-normalized before
+ * signing, and the fold counts its code points: 1 to 1,000.
+ */
+export async function respondToRemoval(
+  services: ProposalServices,
+  groupId: string,
+  values: { readonly proposal: string; readonly text: string },
+): Promise<void> {
+  const body = { proposal: values.proposal, text: nfc(values.text.trim()) };
+  const event = await signFor(services, groupId, {
+    type: 'removal-response',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
 }
 
 /** A suspension's entries: the member it suspends, and the reason as typed, blank for none. */

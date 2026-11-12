@@ -20,10 +20,7 @@
  * Making `mailboxAt` (src/store/mailbox.ts) and the sync loop's channel the
  * single id again makes this spec fail at its first check (recorded in #110's PR).
  */
-import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-
-import type { APIRequestContext } from '@playwright/test';
 
 import { open, seal } from '../src/crypto/seal';
 import { signEvent } from '../src/engine/event';
@@ -37,6 +34,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { relayMinute } from './support/relayNow';
 import { describeFinding, keyCanaries, scan, textCanary } from './support/scan';
 import { derive, onlyGroup, storedLogs, WEEK_MINUTES, weekMailbox, weekOf } from './support/stored';
 
@@ -46,14 +44,6 @@ const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1280, height: 800 };
 /** The run needs the relay's week to hold still for it: a few minutes, with room to spare. */
 const ROOM_MINUTES = 15;
-
-/** The relay's minute now: the `now` a GET of a throwaway mailbox returns. */
-async function relayMinute(request: APIRequestContext): Promise<number> {
-  const response = await request.get(`/v1/mailbox/${randomBytes(32).toString('base64url')}`);
-  expect(response.status()).toBe(200);
-  const { now } = (await response.json()) as { now: number };
-  return now;
-}
 
 /** Every blob the relay holds that opens under `secret`'s seal key for its own mailbox, with that mailbox. */
 function groupRows(file: string, secret: Uint8Array): { mailbox: string; blob: Uint8Array }[] {

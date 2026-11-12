@@ -20,6 +20,7 @@ import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { Composer, type ComposeOutcome } from './Composer';
 
 freshIndexedDBPerTest();
@@ -311,6 +312,21 @@ describe('Composer', () => {
     expect(onPropose).toHaveBeenCalledTimes(1);
   });
 
+  it('proposes once when it is tapped again while it proposes and the save fails (#193)', async () => {
+    const proposing = held<ComposeOutcome>();
+    const onPropose = vi.fn<OnPropose>(() => proposing.promise);
+    const { user } = await setup({ onPropose });
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
+    await user.click(submit());
+    expect(submit()).toBeDisabled();
+    await user.click(submit());
+    proposing.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(submit()).toBeEnabled();
+    expect(onPropose).toHaveBeenCalledTimes(1);
+  });
+
   it('says when the section isn’t in the Document', async () => {
     const state = groupLog().state();
     const { drafts } = memoryDrafts();
@@ -511,6 +527,22 @@ describe('Composer, adding a version', () => {
       'Your version couldn’t be saved on this device. Try again.',
     );
     expect(addSubmit()).toBeEnabled();
+  });
+
+  it('adds the version once when it is tapped again while it adds and the save fails (#193)', async () => {
+    const adding = held<ComposeOutcome>();
+    const onAddVersion = vi.fn<OnAddVersion>(() => adding.promise);
+    const { state } = busy();
+    const { user } = await setup({ state, onAddVersion });
+    await replace(user, 'Your version', 'Quiet after midnight.');
+    await user.click(addSubmit());
+    expect(addSubmit()).toBeDisabled();
+    await user.click(addSubmit());
+    adding.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(addSubmit()).toBeEnabled();
+    expect(onAddVersion).toHaveBeenCalledTimes(1);
   });
 
   it('says the ballot is full once it holds three versions, with no form', async () => {
