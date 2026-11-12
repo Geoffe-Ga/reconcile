@@ -473,8 +473,6 @@ function groupPath(route: GroupRoute): string {
       return '';
     case 'proposal':
       return `/p/${route.proposalId}`;
-    case 'documentLog':
-      return `/doc/${route.documentId}/log`;
     case 'again':
       return `/again/${route.proposalId}`;
     case 'steward':
@@ -492,8 +490,14 @@ function groupPath(route: GroupRoute): string {
   }
 }
 
-/** The path of a group page that names at most a Document (#92): one of the group's Documents, or a fixed page. */
-function pagePath(route: Extract<GroupRoute, { readonly name: 'document' | FixedName }>): string {
+/**
+ * The path of a group page that names at most a Document (#92): one of the
+ * group's Documents, a Document's change log (#104), or a fixed page.
+ */
+function pagePath(
+  route: Extract<GroupRoute, { readonly name: 'document' | 'documentLog' | FixedName }>,
+): string {
+  if (route.name === 'documentLog') return `/doc/${route.documentId}/log`;
   return route.name === 'document'
     ? `/doc${idPath(route.documentId ?? null)}`
     : `/${FIXED_PATHS[route.name]}`;
