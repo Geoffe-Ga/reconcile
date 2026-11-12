@@ -2655,7 +2655,8 @@ function applyKeyRotate(draft: Draft, body: KeyRotateBody, author: string, at: R
   const rotation = { ...at, by: author, epoch, commit, wraps, keys };
   draft.nextEpoch = epoch + 1;
   const group = draft.group ?? '';
-  if (isRefused(draft.keyChecks, { ...at, group, from: draft.epoch, to: epoch, wraps })) {
+  const ousted = draft.removals.map((removal) => removal.member);
+  if (isRefused(draft.keyChecks, { ...at, group, from: draft.epoch, to: epoch, wraps, ousted })) {
     draft.refused.push(rotation);
     return true;
   }

@@ -2,15 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { openDB } from 'idb';
 
-import { deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import {
   deriveInviteKey,
   inviteChannelOf,
   newInviteSeed,
   verifyInviteToken,
 } from '../crypto/invite';
-import { kxPublicKeyOf } from '../crypto/box';
-import { epochCommit } from '../crypto/epoch';
+import { BOX_OVERHEAD, kxPublicKeyOf } from '../crypto/box';
+import { epochCommit, newEpochSecret, wrapEpochSecret } from '../crypto/epoch';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { xchachaSeal } from '../crypto/seal';
 import { publicKeyOf } from '../crypto/sign';
@@ -22,12 +22,12 @@ import {
   parseRecord,
   signEvent,
 } from '../engine/event';
-import { fold } from '../engine/fold';
+import { fold, keyHolders } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
 import { type Envelope, INVITE_TTL_DAYS, openEnvelope, sealEnvelope } from '../invite/envelope';
 import { createRelay } from '../net/relay';
 import { type Group, openStore, type Store } from '../store/db';
-import { keyChangeOf } from '../store/epochs';
+import { keyChangeOf, secretFits } from '../store/epochs';
 import { clearExpiredBallots } from '../store/expiry';
 import { mailboxAt } from '../store/mailbox';
 import { createSync, type Sync } from '../store/sync';
@@ -50,6 +50,9 @@ import { castBallot, propose } from './proposals';
 freshIndexedDBPerTest();
 
 const NOW = 1_762_650_000_000;
+
+/** A box's length around a 32-byte secret, so a garbage wrap has a real one's shape. */
+const BOX_BYTES = BOX_OVERHEAD + 32;
 const opened: Store[] = [];
 
 afterEach(() => {
@@ -1069,4 +1072,83 @@ describe('encryption keys and a new group key (#98)', () => {
     expect(await lookupInvite(ben, seed)).toEqual({ kind: 'missing' });
     expect(base64url((await stored(ben, groupId)).secret)).toBe(base64url(before.secret));
   });
+
+  it('refuses a newcomer an invite whose key change carries a wrap its secret doesn’t make, though its commit fits (#372)', async () => {
+    const fake = createFakeRelay();
+    const { ben, cal, groupId } = await threeInGroup(fake);
+    const leaver = (await stored(cal, groupId)).me.author;
+    await leaveGroup(cal, groupId);
+    await cal.sync.syncOnce();
+    // Before Ana's device writes the new key, Ben's client posts a key change past Cal whose
+    // wrap for Ana is garbage, and makes an invite to it: its commit fits the secret Ben chose.
+    const { record, secret } = await poisonedKeyChange(ben, groupId, leaver);
+    const held = await stored(ben, groupId);
+    const mailbox = deriveWeekMailboxId(held.secret, weekOf(fake.minute));
+    await ben.relay.putBlob(
+      mailbox,
+      xchachaSeal.seal(mailbox, deriveSealKey(held.secret), record),
+      30,
+    );
+    await ben.sync.syncOnce();
+    const log = (await stored(ben, groupId)).log;
+    const state = fold(log, null);
+    expect(state.rotations.map((r) => r.epoch)).toEqual([1]);
+    expect(secretFits(state, 1, secret)).toBe(true);
+    const seed = newInviteSeed();
+    const channel = inviteChannelOf(seed);
+    const poisoned = sealEnvelope(xchachaSeal, channel, {
+      groupSecret: secret,
+      epoch: 1,
+      preview: { groupName: 'G', inviterName: 'Ben', documentTitle: 'T', excerpt: '' },
+      token: { by: held.me.author, sig: 'A'.repeat(86) },
+      entries: log,
+      cleared: [],
+    });
+    for (const blob of poisoned) await ben.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
+
+    // A newcomer's device takes it as damaged, as every member's device refuses the key change.
+    const dee = await device(fake, 'dee');
+    expect(await lookupInvite(dee, seed)).toEqual({ kind: 'missing' });
+    expect(await dee.store.listGroups()).toEqual([]);
+  });
 });
+
+/**
+ * A key change into epoch 1 of `groupId` once `leaver` has left, by the
+ * member on `services`, with a fresh secret and its commit, whose wrap for
+ * each other key holder is garbage and whose own is the secret's (#224): what
+ * a member who wants to lock the others out posts. Returns the signed record
+ * and its secret.
+ */
+async function poisonedKeyChange(services: Services, groupId: string, leaver: string) {
+  const group = await services.store.getGroup(groupId);
+  if (group === undefined) throw new Error('Expected the group on this device.');
+  const folded = fold(group.log, group.relayNow);
+  const state = { ...folded, members: folded.members.filter((m) => m.author !== leaver) };
+  const secret = newEpochSecret();
+  const commit = epochCommit(groupId, 1, secret);
+  const garbage = base64url(new Uint8Array(BOX_BYTES).fill(7));
+  const wraps = Object.fromEntries(
+    keyHolders(state).map(({ author, kx }) => [
+      author,
+      author === group.me.author
+        ? wrapEpochSecret({
+            groupId,
+            epoch: 1,
+            member: author,
+            commit,
+            kx: fromBase64url(kx),
+            secret,
+          })
+        : garbage,
+    ]),
+  );
+  const body = { epoch: 1, commit, wraps };
+  const { record } = signEvent(group.signingKey, {
+    type: 'key-rotate',
+    group: groupId,
+    ts: NOW,
+    body,
+  });
+  return { record, secret };
+}

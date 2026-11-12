@@ -162,6 +162,8 @@ None. The founder answered both on 2026-11-09 (§3 and §6).
   - an `unwrap-failed` from one of its recipients names it, read from the old epoch's mailbox;
   - no `key-taken` from one of its recipients names it, read from its own epoch's mailbox.
 
+  Since #372 (2026-11-12), neither counts from a recipient a removal had passed against by the key change's place: once a removal passes, nothing else of theirs counts (#115), though a key change still wraps to them until a `remove` lands. Every other recipient's device checks their wrap anyway.
+
   The fold reads both ahead and decides at the key change's place, so records between them in the old mailbox fold as usual. A refused key change:
   - moves nothing, and one stays due;
   - spends its epoch number, so the next key change names the one after. No mailbox of a refused epoch ever reaches an honest device's log;
@@ -182,7 +184,7 @@ None. The founder answered both on 2026-11-09 (§3 and §6).
 ### Accepted pilot risks added
 
 - **A device with no key it can judge by stays out.** This covers a device whose stored encryption key isn't the group's for it, or a member with no encryption key, such as one who joined before #98 and hasn't posted one. That device takes the log's word and stays on the no-wrap line until an invite, as #98 left it.
-- **A merged invite is trusted for its epochs.** A device that merges an invite's entries already trusts their seqs and epoch tags (spec §7). A malicious inviter can therefore bring a `key-taken` tagged with a refused epoch, and that device then keeps a refused key change. That is the existing trust in the inviter's log, now covering one more event.
+- **A merged invite is trusted for its epochs.** A device that merges an invite's entries already trusts their seqs and epoch tags (spec §7). A malicious inviter can therefore bring a `key-taken` tagged with a refused epoch, and that device then keeps a refused key change. That is the existing trust in the inviter's log, now covering one more event. It doesn't cover the key: since #372 (2026-11-12), a newcomer, like a member's device merging an invite, takes the invite's secret only when every wrap of the key change into its epoch is that secret's (`keyFits`), so an invite to a key change the group's devices refuse reads as a damaged link. That also refuses an invite to a key change an older build made, which no pilot group has.
 - **Every device must run this build before a group's next key change.** An older build makes wraps with fresh coins. This build refuses those wraps and bars their author. Key changes already taken up stay canonical, since no `unwrap-failed` names them. There is no pilot group yet.
 - **An `unwrap-failed` says a member's device couldn't open its wrap.** Whoever reads the old epoch sees that, the person who left included. It names no one new: they already know the membership.
 

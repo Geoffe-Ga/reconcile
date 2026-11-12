@@ -52,6 +52,7 @@ import {
   wrapEpochSecret,
   wrapsHold,
 } from '../crypto/epoch';
+import { isOusted } from '../engine/capabilities';
 import { parseRecord, signEvent } from '../engine/event';
 import { type GroupState, keyHolders, type LogRecord, type Rotation } from '../engine/fold';
 import { type EpochAdvance, type Group, sameBytes } from './db';
@@ -104,13 +105,15 @@ function wasRefused(state: GroupState, author: string): boolean {
 /**
  * Whether this device should write the key change `state` has due now: not
  * while it is leaving, nor for a read-only archive, which sends nothing
- * (#108), nor once a key change its member wrote was refused (#224).
+ * (#108), nor once a key change its member wrote was refused (#224), nor once
+ * a removal of its member has passed, since the fold ignores their key change
+ * (#115; #372).
  */
 export function hasDuty(group: Group, state: GroupState): boolean {
   if (!state.rotationDue || state.group === null || state.epoch !== epochOf(group)) return false;
   if (group.leaving !== undefined || group.archived !== undefined) return false;
   const { author } = group.me;
-  return isMember(state, author) && !wasRefused(state, author);
+  return isMember(state, author) && !isOusted(state, author) && !wasRefused(state, author);
 }
 
 /**
@@ -354,22 +357,34 @@ export function secretFits(state: GroupState, epoch: number, secret: Uint8Array)
 }
 
 /**
+ * Whether an invite may hand on `secret` as epoch `epoch`'s, as `state` has
+ * it: it {@link secretFits}, and past epoch 0 every wrap of the key change
+ * into `epoch` is the one that secret makes (#224), as a switch checks before
+ * it takes a key up. A device merging the invite (#98) and a newcomer joining
+ * from it (#372) both check so, so no one takes up a key change the group's
+ * devices refuse.
+ */
+export function keyFits(state: GroupState, epoch: number, secret: Uint8Array): boolean {
+  if (!secretFits(state, epoch, secret)) return false;
+  const rotation = state.rotations.find((r) => r.epoch === epoch);
+  if (rotation === undefined || state.group === null) return epoch === 0;
+  const { commit, keys, wraps } = rotation;
+  return wrapsHold({ groupId: state.group, epoch, commit, secret, keys, wraps });
+}
+
+/**
  * The move to epoch `epoch` that an invite carrying its `secret` allows
- * (#98), or null: none unless `epoch` is past the one `group` holds and its
- * canonical key change commits to `secret`. Like a move by sync, it posts
- * again this member's records that reached the old mailbox after the key
- * change that left the device behind, and every stranded leave (#225).
+ * (#98), or null: none unless `epoch` is past the one `group` holds and the
+ * secret fits its canonical key change, every wrap included ({@link keyFits}).
+ * Like a move by sync, it posts again this member's records that reached the
+ * old mailbox after the key change that left the device behind, and every
+ * stranded leave (#225).
  */
 export function adoptionFor(group: Group, epoch: number, secret: Uint8Array): EpochAdvance | null {
   if (epoch <= epochOf(group)) return null;
   const state = foldGroup(group);
   const rotation = state.rotations.find((r) => r.epoch === epoch);
-  if (rotation === undefined || state.group === null || !secretFits(state, epoch, secret)) {
-    return null;
-  }
-  // Every wrap must be this secret's, as a switch checks (#224).
-  const { commit, keys, wraps } = rotation;
-  if (!wrapsHold({ groupId: state.group, epoch, commit, secret, keys, wraps })) return null;
+  if (rotation === undefined || !keyFits(state, epoch, secret)) return null;
   // The first canonical key change past the device's epoch is the one that left it behind.
   const left = state.rotations.find((r) => r.epoch > epochOf(group)) ?? rotation;
   const late = lateRecords(group.log, epochOf(group), left.seq, group.me.author);
