@@ -93,11 +93,11 @@ function leaveOf(founding: SignedEvent, name: string): SignedEvent {
 }
 
 /**
- * Ana founds a group and the members in `devices` join from devices of their
- * own, Cal from one only when `calHasDevice`, else from a client the test
- * plays; everyone syncs.
+ * Ana founds a group and the members in `names` join from devices of their
+ * own, then each of `clients`, in order, from a client the test plays;
+ * everyone syncs.
  */
-async function group(names: readonly string[], calHasDevice: boolean) {
+async function group(names: readonly string[], clients: readonly string[]) {
   const fake = createFakeRelay();
   const relay = createRelay({ fetch: fake.fetch });
   const founding = signedAs('ana', {
@@ -130,7 +130,7 @@ async function group(names: readonly string[], calHasDevice: boolean) {
     await device(name).store.enqueue(founding.id, joinOf(founding, name).record);
     await device(name).sync.syncOnce();
   }
-  if (!calHasDevice) await post(secret, joinOf(founding, 'cal').record);
+  for (const name of clients) await post(secret, joinOf(founding, name).record);
   for (const name of names) await device(name).sync.syncOnce();
   return { scene, secret, device };
 }
@@ -199,13 +199,13 @@ async function expectCalOutEverywhere(devices: readonly Device[]): Promise<Group
   expect(state.rotations.map((r) => r.epoch)).toEqual([1, 2]);
   const [, next] = state.rotations;
   expect(Object.keys(next?.wraps ?? {}).sort()).toEqual([authorOf('ana'), authorOf('ben')].sort());
-  expect(state.strandedLeaves).toEqual([]);
+  expect(state.stranded).toEqual([]);
   return state;
 }
 
 describe('a leave that lands in the old mailbox after a key change (#225)', () => {
   it('reaches the new mailbox from the leaver’s own device, so every device ends the membership and the next key change leaves them out', async () => {
-    const { scene, secret, device } = await group(['ana', 'ben', 'cal', 'dee'], true);
+    const { scene, secret, device } = await group(['ana', 'ben', 'cal', 'dee'], []);
     const [ana, ben, cal] = [device('ana'), device('ben'), device('cal')];
     await leavesFrom(device('dee'), scene);
     // Ana writes the key change, and she and Ben take it up before Cal's leave lands.
@@ -226,7 +226,7 @@ describe('a leave that lands in the old mailbox after a key change (#225)', () =
   });
 
   it('reaches it from a device that read it before taking the key up, when the leaver’s device didn’t post it, and that device and one that never read it fold alike', async () => {
-    const { scene, secret, device } = await group(['ana', 'ben', 'dee'], false);
+    const { scene, secret, device } = await group(['ana', 'ben', 'dee'], ['cal']);
     const [ana, ben] = [device('ana'), device('ben')];
     await leavesFrom(device('dee'), scene);
     // Ana writes and takes up the key change; Ben is away.
@@ -247,5 +247,69 @@ describe('a leave that lands in the old mailbox after a key change (#225)', () =
     // Ben read the old copy and the new; Ana only the new.
     expect(await epochsHolding(ben, leave)).toEqual([0, 1]);
     expect(await epochsHolding(ana, leave)).toEqual([1]);
+  });
+});
+
+/** `name`'s 4 on the Proposal `proposal` in `founding`'s group. */
+function passOf(founding: SignedEvent, name: string, proposal: SignedEvent): SignedEvent {
+  const body = { proposal: proposal.id, scores: { [proposal.id]: 4 as const } };
+  return signedAs(name, { type: 'vote', group: founding.id, ts: TS, body });
+}
+
+describe('a remove that lands in the old mailbox after a key change (#376)', () => {
+  it('reaches the new mailbox from a device that read it before taking the key up, when the remover’s device is gone, so every device takes the member out with it and the next key change leaves them out', async () => {
+    // Ana and Ben have devices; Dee, Cal and Eve post from clients the test plays.
+    const { scene, secret, device } = await group(['ana', 'ben'], ['dee', 'cal', 'eve']);
+    const [ana, ben] = [device('ana'), device('ben')];
+    const { founding } = scene;
+    // Ana, Ben and Dee, the first three in, hold voting rights. Ana and Ben score removing Cal 4.
+    const target = { kind: 'remove' as const, member: authorOf('cal') };
+    const body = { target, title: 'Remove Cal', why: 'He keeps breaking the house rules.' };
+    const removal = signedAs('ana', { type: 'proposal', group: founding.id, ts: TS, body });
+    await scene.post(secret, removal.record);
+    for (const name of ['ana', 'ben']) {
+      await scene.post(secret, passOf(founding, name, removal).record);
+    }
+    await passes([ana, ben], 1);
+    // Eve leaves: Ana's device writes the key change and takes it up. Ben is away.
+    await scene.post(secret, leaveOf(founding, 'eve').record);
+    await passes([ana], 1);
+    const moved = (await ana.group()).secret;
+    expect((await ana.group()).epoch).toBe(1);
+    // Dee's device, holding the new key, scores it 4 there, which closes it early with a pass;
+    // then Dee's old client, which hadn't heard of the key change, posts the remove to the old
+    // mailbox, and Dee's devices are gone. Ana's device hasn't synced since.
+    await scene.post(moved, passOf(founding, 'dee', removal).record);
+    const remove = signedAs('dee', {
+      type: 'remove',
+      group: founding.id,
+      ts: TS,
+      body: { proposal: removal.id },
+    });
+    await scene.post(secret, remove.record);
+
+    // Ben comes back, reads the remove before taking the key up, and posts it to the new mailbox.
+    await ben.sync.syncOnce();
+    expect(await epochsHolding(ben, remove)).toEqual([0, 1]);
+    await passes([ana, ben], 3);
+
+    const after = await together([ana, ben]);
+    expect(after.epochs).toEqual([2, 2]);
+    expect(after.secrets.size).toBe(1);
+    const [first] = after.states;
+    expect(after.states).toEqual(after.states.map(() => first));
+    const state = after.state;
+    if (state === undefined) throw new Error('a state');
+    // Dee's own remove, carried, is the one that takes Cal out, where it landed in the new mailbox.
+    expect(state.removals.map((r) => [r.member, r.removed?.id, r.removed?.by])).toEqual([
+      [authorOf('cal'), remove.id, authorOf('dee')],
+    ]);
+    expect(state.former.map((m) => m.author)).toEqual([authorOf('eve'), authorOf('cal')]);
+    expect(state.rotations.map((r) => r.epoch)).toEqual([1, 2]);
+    const [, next] = state.rotations;
+    expect(Object.keys(next?.wraps ?? {}).sort()).toEqual(
+      [authorOf('ana'), authorOf('ben'), authorOf('dee')].sort(),
+    );
+    expect(state.stranded).toEqual([]);
   });
 });

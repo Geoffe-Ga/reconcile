@@ -1,0 +1,1450 @@
+{
+  "kind": "fold",
+  "about": "#376: a remove read from an earlier epoch's mailbox after the key change out of it changes nothing there, as any record read from another epoch's mailbox doesn't (#98), and the fold names it in stranded, with the member it would remove, while its remover and that member are both still members. A device that holds it posts it again to the current epoch's mailbox, as it does a stranded leave (#225), where it takes the member out at its own place and makes the next key change due, which must leave them out. Wraps are placeholders.",
+  "vectors": [
+    {
+      "name": "a remove read from epoch 0's mailbox after the key change out of it takes no one out there, and the fold names it stranded, with the member it would remove",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator",
+              "kx": "&dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Eve",
+              "level": "co-creator",
+              "kx": "&eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%dee"
+              },
+              "title": "Remove Dee",
+              "why": "Dee keeps breaking the house rules."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375009,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500600000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA",
+                "%dee": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375012,
+      "expect": {
+        "epoch": 1,
+        "rotationDue": false,
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          },
+          {
+            "author": "%dee"
+          }
+        ],
+        "former": [
+          {
+            "author": "%eve"
+          }
+        ],
+        "removals": [
+          {
+            "proposal": "@6",
+            "member": "%dee",
+            "removed": null
+          }
+        ],
+        "stranded": [
+          {
+            "id": "@12",
+            "seq": 12,
+            "author": "%cal",
+            "member": "%dee"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          }
+        ]
+      }
+    },
+    {
+      "name": "its copy in epoch 1's mailbox takes the member out there and makes the next key change due, and a device that never read the old copy folds the same",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator",
+              "kx": "&dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Eve",
+              "level": "co-creator",
+              "kx": "&eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%dee"
+              },
+              "title": "Remove Dee",
+              "why": "Dee keeps breaking the house rules."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375009,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500600000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA",
+                "%dee": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375013,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375013,
+      "expect": {
+        "epoch": 1,
+        "rotationDue": true,
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          }
+        ],
+        "former": [
+          {
+            "author": "%eve"
+          },
+          {
+            "author": "%dee"
+          }
+        ],
+        "removals": [
+          {
+            "proposal": "@6",
+            "member": "%dee",
+            "removed": {
+              "id": "@12",
+              "seq": 13,
+              "by": "%cal"
+            }
+          }
+        ],
+        "stranded": [],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          }
+        ]
+      },
+      "unchangedWithout": [12]
+    },
+    {
+      "name": "a stranded remove drops out once its remover leaves in the current epoch, and a copy posted there after takes no one out",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator",
+              "kx": "&dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Eve",
+              "level": "co-creator",
+              "kx": "&eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%dee"
+              },
+              "title": "Remove Dee",
+              "why": "Dee keeps breaking the house rules."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375009,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500600000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA",
+                "%dee": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375013,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375014,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375014,
+      "expect": {
+        "epoch": 1,
+        "rotationDue": true,
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%dee"
+          }
+        ],
+        "former": [
+          {
+            "author": "%eve"
+          },
+          {
+            "author": "%cal"
+          }
+        ],
+        "removals": [
+          {
+            "proposal": "@6",
+            "member": "%dee",
+            "removed": null
+          }
+        ],
+        "stranded": [],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          },
+          {
+            "seq": 14,
+            "id": "@12"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a stranded remove drops out once the member it names leaves in the current epoch, and a copy posted there after changes nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator",
+              "kx": "&dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Eve",
+              "level": "co-creator",
+              "kx": "&eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%dee"
+              },
+              "title": "Remove Dee",
+              "why": "Dee keeps breaking the house rules."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375009,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500600000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA",
+                "%dee": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375013,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500780000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375014,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375014,
+      "expect": {
+        "epoch": 1,
+        "rotationDue": true,
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          }
+        ],
+        "former": [
+          {
+            "author": "%eve"
+          },
+          {
+            "author": "%dee"
+          }
+        ],
+        "removals": [
+          {
+            "proposal": "@6",
+            "member": "%dee",
+            "removed": null
+          }
+        ],
+        "stranded": [],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          },
+          {
+            "seq": 14,
+            "id": "@12"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a remove posted twice to each mailbox is named stranded once and folds once, and the next key change must leave the removed member out: one that still wraps to them is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator",
+              "kx": "&dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Eve",
+              "level": "co-creator",
+              "kx": "&eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%dee"
+              },
+              "title": "Remove Dee",
+              "why": "Dee keeps breaking the house rules."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375009,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500540000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500600000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "epoch": 1,
+              "commit": "rotation-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA",
+                "%dee": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375014,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375015,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "remove",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@6"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375016,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500960000,
+            "body": {
+              "epoch": 2,
+              "commit": "second-epoch-commit-of-this-vectorAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA",
+                "%dee": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375017,
+          "epoch": 1,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501020000,
+            "body": {
+              "epoch": 2,
+              "commit": "second-epoch-commit-of-this-vectorAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%cal": "AA"
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375017,
+      "expect": {
+        "epoch": 2,
+        "nextEpoch": 3,
+        "rotationDue": false,
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          }
+        ],
+        "former": [
+          {
+            "author": "%eve"
+          },
+          {
+            "author": "%dee"
+          }
+        ],
+        "removals": [
+          {
+            "proposal": "@6",
+            "member": "%dee",
+            "removed": {
+              "id": "@12",
+              "seq": 14,
+              "by": "%cal"
+            }
+          }
+        ],
+        "rotations": [
+          {
+            "id": "@11",
+            "seq": 11,
+            "by": "%ana",
+            "epoch": 1
+          },
+          {
+            "id": "@17",
+            "seq": 17,
+            "by": "%ben",
+            "epoch": 2,
+            "wraps": {
+              "%ana": "AA",
+              "%ben": "AA",
+              "%cal": "AA"
+            }
+          }
+        ],
+        "stranded": [],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          },
+          {
+            "seq": 13,
+            "id": "@12"
+          },
+          {
+            "seq": 15,
+            "id": "@12"
+          },
+          {
+            "seq": 16,
+            "id": "@16"
+          }
+        ]
+      }
+    }
+  ]
+}

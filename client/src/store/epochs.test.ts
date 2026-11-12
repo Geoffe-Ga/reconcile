@@ -479,9 +479,7 @@ describe('a leave stranded in the old mailbox (#225)', () => {
 
   it('posts it again when it moves, whoever left, once, after its own late records', () => {
     const { log, late, leave } = strandedLog();
-    expect(log.state().strandedLeaves.map((stranded) => stranded.author)).toEqual([
-      authorOf('dee'),
-    ]);
+    expect(log.state().stranded.map((stranded) => stranded.author)).toEqual([authorOf('dee')]);
     const step = keyStepFor(device('ben', log), [], R + 100, TS);
     expect(step?.kind === 'move' ? [step.advance.epoch, step.advance.repost] : step).toEqual([
       1,

@@ -291,19 +291,22 @@ export interface Rotation {
 }
 
 /**
- * A leave stranded in an earlier epoch's mailbox (#225): a `leave` read from
+ * An event that ends a membership ({@link endsMembership}), stranded in an
+ * earlier epoch's mailbox: a `leave` (#225) or a `remove` (#376) read from
  * there after the key change out of that epoch, as a device that hadn't heard
- * of the key change posts one, from someone who is still a member. It ends no
- * membership where it sits, as no record of another epoch's mailbox changes
- * anything (#98), since a device that took up the key change before it landed
- * never reads it. A device that holds it posts it again to the current
- * epoch's mailbox (`store/epochs.ts`), where every device reads it, and the
- * membership ends there.
+ * of the key change posts one, that would still take its member out here. It
+ * ends no membership where it sits, as no record of another epoch's mailbox
+ * changes anything (#98), since a device that took up the key change before
+ * it landed never reads it. A device that holds it posts it again to the
+ * current epoch's mailbox (`store/epochs.ts`), where every device reads it,
+ * and the membership ends there.
  */
-export interface StrandedLeave {
+export interface Stranded {
   readonly id: string;
   readonly seq: number;
   readonly author: string;
+  /** The member it would take out: the leaver, or the person a removal names. */
+  readonly member: string;
 }
 
 /**
@@ -544,12 +547,12 @@ export interface Focus {
  * #224): none moved the group, and none of their authors may write another.
  * `rotationDue` is true once a membership has ended since the last canonical
  * key change, or genesis, until the next, or until the group dissolves, after
- * which no key change can land. `strandedLeaves` lists, in relay order, the
- * leaves this device read stranded in an earlier epoch's mailbox whose
- * authors are still members (#225): like `ignored`, it is what this device
- * read, not something every device folds alike. `dissolved` is when the
- * group dissolved, and whether its
- * vote chose to wipe every copy, or null while it goes on (#108). Once it has
+ * which no key change can land. `stranded` lists, in relay order, the leaves
+ * (#225) and removes (#376) this device read stranded in an earlier epoch's
+ * mailbox whose author and member are both still members. Like `ignored`, it
+ * is what this device read, not something every device folds alike.
+ * `dissolved` is when the group dissolved, and whether its vote chose to wipe
+ * every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `recoveryShares` holds every `recovery-share` a current member sent, in
  * relay order, boxes unopened (#109), and `recoveryAlerts` and
@@ -597,7 +600,7 @@ export interface GroupState {
   readonly rotations: readonly Rotation[];
   readonly refused: readonly Rotation[];
   readonly rotationDue: boolean;
-  readonly strandedLeaves: readonly StrandedLeave[];
+  readonly stranded: readonly Stranded[];
   readonly dissolved: Dissolution | null;
   readonly recoveryShares: readonly SealedShare[];
   readonly recoveryAlerts: readonly SealedAlert[];
@@ -719,8 +722,12 @@ interface Draft {
   readonly rotations: Rotation[];
   readonly refused: Rotation[];
   rotationDue: boolean;
-  /** The leaves read stranded in an earlier epoch's mailbox (#225), each once, members' or not by now. */
-  readonly stranded: StrandedLeave[];
+  /**
+   * The leaves and removes read stranded in an earlier epoch's mailbox
+   * (#225, #376), each once, whether they would still take their member out
+   * by now or not.
+   */
+  readonly stranded: Stranded[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
   readonly judged: Set<string>;
@@ -3308,7 +3315,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations,
     refused,
     rotationDue,
-    strandedLeaves: draft.stranded.filter((leave) => isMember(draft, leave.author)),
+    stranded: stillStranded(draft),
     dissolved: draft.dissolved,
     recoveryShares: draft.recoveryShares,
     recoveryAlerts: draft.recoveryAlerts,
@@ -3527,10 +3534,10 @@ function advanceTo(draft: Draft, received: number, seq: number): void {
  * A record read from a mailbox of another epoch than the group's now, such as
  * a stale invite's join or a late writer's Proposal after a key change (#98),
  * changes nothing at all: not relay time, and not the event ids seen, so the
- * copy its author posts again to the new mailbox folds once. A leave among
- * them is noted as stranded (#225), so the device posts it there too. Any
- * front door a record carries is noted first, whether it folds or not
- * ({@link noteDoor}, #288). Otherwise relay time moves on, whatever the record
+ * copy its author posts again to the new mailbox folds once. A leave or a
+ * remove among them is noted as stranded (#225, #376), so the device posts it
+ * there too. Any front door a record carries is noted first, whether it folds
+ * or not ({@link noteDoor}, #288). Otherwise relay time moves on, whatever the record
  * holds, until the group dissolves (#108), and the removals, seats, opt-ins
  * and carried Dispatches catch up to it before the event is checked. A
  * repeated event id is ignored. A membership that ends in a group makes a key
@@ -3561,15 +3568,38 @@ function isMember(draft: Draft, author: string): boolean {
 }
 
 /**
- * Notes `read` as a stranded leave (#225) when it was read from an earlier
+ * Notes `read` as stranded (#225, #376) when it was read from an earlier
  * epoch's mailbox, so after the key change out of that epoch, and holds a
- * `leave` the fold would take from a current member here, the first copy of
- * its event id. It still changes nothing.
+ * `leave`, or a `remove` naming a removal Proposal, from a current member
+ * that the fold admits here, the first copy of its event id. It still changes
+ * nothing. Whether a remove's removal has passed is left to where its copy
+ * lands: the fold takes it there only once the pass is final (`mayRemove`),
+ * and ignores it otherwise.
  */
 function noteStranded(draft: Draft, { seq, epoch, parsed }: Read): void {
-  if (epoch > draft.epoch || parsed?.event.type !== 'leave') return;
+  if (epoch > draft.epoch || parsed === null || !endsMembership(parsed.event)) return;
   const { event, id } = parsed;
   if (!admits(draft, event) || !isMember(draft, event.author)) return;
-  if (draft.stranded.some((leave) => leave.id === id)) return;
-  draft.stranded.push({ id, seq, author: event.author });
+  if (draft.stranded.some((stranded) => stranded.id === id)) return;
+  const { author } = event;
+  const member = event.type === 'remove' ? removalMember(draft, event.body.proposal) : author;
+  if (member !== null) draft.stranded.push({ id, seq, author, member });
+}
+
+/** The member a removal Proposal `proposal` names, or null for any other Proposal. */
+function removalMember(draft: Draft, proposal: string): string | null {
+  const target = draft.proposals.find((p) => p.id === proposal)?.target;
+  return target?.kind === 'remove' ? target.member : null;
+}
+
+/**
+ * The stranded leaves (#225) and removes (#376) whose copy would still count
+ * where it lands, in relay order: their author and the member they take out
+ * are both still members. A leave's are the same person. Once either has
+ * gone, a copy changes nothing, so none is posted.
+ */
+function stillStranded(draft: Draft): Stranded[] {
+  return draft.stranded.filter(
+    ({ author, member }) => isMember(draft, author) && isMember(draft, member),
+  );
 }
