@@ -10,7 +10,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { epochCommit } from '../crypto/epoch';
 import { deriveSealKey } from '../crypto/groupKeys';
-import { BACKUP_SEAL_INFO, backupIdFor, openRelayBackup } from '../crypto/relayBackup';
+import {
+  BACKUP_SEAL_INFO,
+  backupIdFor,
+  newScrubBlob,
+  openRelayBackup,
+  sealRelayBackup,
+} from '../crypto/relayBackup';
 import { sha256 } from '../crypto/hash';
 import { hkdf32 } from '../crypto/hkdf';
 import { xchachaSeal } from '../crypto/seal';
@@ -55,6 +61,8 @@ const CANARY = {
 };
 const TS = 1_762_650_000_000;
 const DAY = 1440;
+/** A split id (#272): 16 bytes in unpadded base64url, as `newSplitId` makes one. */
+const SPLIT = 'c3BsaXQtb2YtYS10ZXN0LQ';
 /** Noon UTC on a day, in relay minutes. */
 const NOON = 20_400 * DAY + 720;
 const opened: Sync[] = [];
@@ -231,13 +239,13 @@ describe('what the relay holds', () => {
     ]);
   });
 
-  it('seals the device’s own snapshot without its key, so it carries whatever the snapshot does', async () => {
+  it('seals the device’s own snapshot without its key or the split it was cut into (#272), so it carries whatever the snapshot does', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
     await device.store.savePersonal(statement());
 
-    await startRelayBackup(device.services);
+    await startRelayBackup(device.services, { split: SPLIT });
 
     const key = await keyOf(device.store);
     const sealed = openRelayBackup(key, fake.backup(backupIdFor(key)) ?? new Uint8Array());
@@ -245,8 +253,9 @@ describe('what the relay holds', () => {
       string,
       unknown
     >;
-    const { backupKey, ...withoutKey } = snapshot;
+    const { backupKey, backupSplit, ...withoutKey } = snapshot;
     expect(backupKey).toBe(base64url(key));
+    expect(backupSplit).toBe(SPLIT);
     expect(JSON.parse(text(sealed ?? new Uint8Array()))).toEqual(withoutKey);
   });
 
@@ -724,9 +733,73 @@ describe('a share by link in the relay copy (#97, #105)', () => {
   });
 });
 
+describe('a key a later choice on another device retired (#272)', () => {
+  it('stops at the next refresh that finds its id overwritten: it uploads nothing and forgets the key', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+    await startRelayBackup(device.services, { split: SPLIT });
+    const key = await keyOf(device.store);
+    const id = backupIdFor(key);
+    // Another device of the person's chose contacts again, and overwrote this id.
+    await createRelay({ fetch: fake.fetch }).putBackup(id, newScrubBlob());
+    const before = uploads(fake).length;
+
+    fake.minute += DAY;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    expect(uploads(fake)).toHaveLength(before);
+    expect(await device.store.getRelayBackup()).toBeUndefined();
+    expect(await device.store.getRelayBackupRetiredAt()).toBe(TS);
+    expect(openRelayBackup(key, fake.backup(id) ?? new Uint8Array())).toBeNull();
+    // Nothing is scheduled any more: later days upload nothing under any id.
+    fake.minute += DAY;
+    expect(await device.sync.syncOnce()).toBe(true);
+    expect(uploads(fake)).toHaveLength(before);
+  });
+
+  it('stops when the start of a backup with the key it holds finds the id overwritten', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+    await startRelayBackup(device.services);
+    const id = backupIdFor(await keyOf(device.store));
+    await createRelay({ fetch: fake.fetch }).putBackup(id, newScrubBlob());
+    const before = uploads(fake).length;
+
+    await startRelayBackup(device.services);
+
+    expect(uploads(fake)).toHaveLength(before);
+    expect(await device.store.getRelayBackup()).toBeUndefined();
+  });
+
+  it('still uploads over a backup that doesn’t open, or no backup at all: only random bytes mean retired', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    await startRelayBackup(device.services);
+    const key = await keyOf(device.store);
+    // A framed blob of another key, as anyone else holding an id could write, isn't a retirement.
+    const other = sealRelayBackup(new Uint8Array(32).fill(3), utf8('{}'));
+    await createRelay({ fetch: fake.fetch }).putBackup(backupIdFor(key), other);
+    await change(device, founding, 'One');
+
+    fake.minute += DAY;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    expect(local((await device.store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(key);
+    expect(openRelayBackup(key, fake.backup(backupIdFor(key)) ?? new Uint8Array())).not.toBeNull();
+  });
+});
+
 describe('relayBackupStatus', () => {
   const key = new Uint8Array(32);
   const state = { key, digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
+
+  it('reads retired once a later choice elsewhere retired the key, until a key comes again (#272)', () => {
+    expect(relayBackupStatus(undefined, 5)).toEqual({ kind: 'retired', at: 5 });
+    expect(relayBackupStatus(state, 5)).toEqual({ kind: 'waiting' });
+  });
 
   it('reads off with no key, waiting before an upload, saved after one, and too large first', () => {
     expect(relayBackupStatus(undefined)).toEqual({ kind: 'off' });

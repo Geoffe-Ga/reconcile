@@ -83,6 +83,8 @@ const READING: PersonalDocument = {
 
 /** A relay backup key (#97), with a byte pattern nothing else in these tests holds. */
 const BACKUP_KEY = Uint8Array.from({ length: 32 }, (_, i) => (i * 37 + 11) % 256);
+/** A split id (#272): 16 bytes in unpadded base64url, as `newSplitId` makes one. */
+const SPLIT = base64url(Uint8Array.from({ length: 16 }, (_, i) => i * 13 + 1));
 
 /** The canary group, folded through the engine, as the founder's device would hold it. */
 function canaryGroup() {
@@ -1964,6 +1966,68 @@ describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
 
     expect(await keyOn(second)).toEqual(local(OTHER_KEY));
   });
+
+  it('carries the split the key was cut into, as backupSplit, and the restoring device keeps it with the key (#272)', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY, SPLIT);
+    const { file, groupIds } = await exportGroups(device, PASSPHRASE, CHEAP);
+    const second = await openStore('second');
+
+    await importGroups(second, file, PASSPHRASE);
+
+    expect(groupIds).toHaveLength(1);
+    expect(await keyOn(second)).toEqual(local(BACKUP_KEY));
+    expect((await second.getRelayBackup())?.split).toBe(SPLIT);
+    const json = JSON.parse(text(await snapshotOf(device))) as Record<string, unknown>;
+    expect(Object.keys(json)).toEqual(['format', 'groups', 'personal', 'backupKey', 'backupSplit']);
+    expect(json.backupSplit).toBe(SPLIT);
+  });
+
+  it('carries the split in a link bundle (#96) too, and never in the relay’s own copy (#272)', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    await device.setRelayBackupKey(BACKUP_KEY, SPLIT);
+
+    const link = await takeSnapshot(device, 'link');
+    const linked = await openStore('linked');
+    await importSnapshot(linked, link.plaintext, 'link');
+
+    expect((await linked.getRelayBackup())?.split).toBe(SPLIT);
+    expect(decodeSnapshot(link.plaintext)?.backupSplit).toBe(SPLIT);
+  });
+
+  it.each([
+    ['a split of 15 bytes', base64url(new Uint8Array(15))],
+    ['a split that isn’t text', 7],
+    ['a split with no key beside it', base64url(new Uint8Array(16)), false],
+  ])(
+    'refuses a file holding %s, and writes nothing (#272)',
+    async (_name, backupSplit, withKey = true) => {
+      const device = await openStore('ana');
+      await keepCanary(device);
+      const json = JSON.parse(
+        text(
+          encodeSnapshot({
+            groups: backedUpGroups(await device.listGroups()),
+            personal: [],
+            ...(withKey ? { backupKey: BACKUP_KEY } : {}),
+          }),
+        ),
+      ) as Record<string, unknown>;
+      const file = await sealBackup(
+        utf8(JSON.stringify({ ...json, backupSplit })),
+        PASSPHRASE,
+        CHEAP,
+      );
+      const second = await otherDevice('second');
+      const before = await dump(second);
+
+      await expect(importGroups(second, file, PASSPHRASE)).rejects.toThrow(new BackupUnreadable());
+
+      expect(await dump(second)).toEqual(before);
+    },
+  );
 
   it('is absent from a file saved on a device with none, which gives the restoring device none', async () => {
     const device = await openStore('ana');

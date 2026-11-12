@@ -66,6 +66,7 @@ These rules close the capture paths a steward's powers open ([ADR-0015](0015-ant
   - **Revisit** before the outside review: a relay-held release, where the backup fetch opens only 72 hours after a request that the person's devices see and can cancel.
 - **Fix: record the rule #118 builds.** Each contact's device runs the wait in relay time, from the relay's receipt of that contact's alert. The person's devices hear of it through the groups they share with each contact.
 - **Fix: restored devices keep recovery working.** The random backup key travels in the passphrase backup file and the second-device link bundle. Both already hold every group's keys. A restored or linked device can therefore keep the relay backup fresh.
+  - **Amendment (2026-11-12, #272):** the key travels with its split's id, and one person's latest choice of contacts wins on every device. See the amendment below.
 - **Fix: one library beyond `@noble/*`.** This amends ADR-0060's "audited libraries only (`@noble/*`)".
   - It allows one more library, `shamir-secret-sharing`, pinned exactly and imported only by `client/src/crypto/shares.ts`.
   - The PR that adds it links a published third-party audit of that version. If there isn't one, the work stops and asks.
@@ -222,3 +223,60 @@ A group admitted into a formed coalition gets the room's `inner` through a `room
 - **The genesis author is trusted for the commitment**, as it is already trusted to carry the card's `inner` into its own group's reconcile Proposal (#313). A wrong commitment leaves later-admitted groups without the room, since no honest wrap matches it.
 - **A coalition founded before this build has no commitment**, so a group admitted into it takes no wrap and gets no room. There is no pilot coalition yet.
 - **More wraps.** An admission now brings one small `room-wrap` per seated participant, not one per seat.
+
+## Amendment (2026-11-12): One Person's Latest Choice of Contacts Wins on Every Device (#272)
+
+**Proposed by an agent for [#272](https://github.com/Geoffe-Ga/reconcile/issues/272), as built. It changes how a person's devices learn about each other's recovery choices, so it is flagged for the founder to confirm.**
+
+### Context
+
+§4 lets a restored or linked device keep the relay backup fresh with the key it holds. [#109](https://github.com/Geoffe-Ga/reconcile/issues/109) makes a new key whenever the person chooses contacts again, and overwrites the old key's relay backup with random bytes, so the old shares open nothing. The two don't meet:
+
+- **The gap.** A second device that holds the old key keeps uploading under the old id. A linked device ([#96](https://github.com/Geoffe-Ga/reconcile/issues/96)) does this, and so does one restored from a backup file ([#78](https://github.com/Geoffe-Ga/reconcile/issues/78)). The old contacts' shares then open a live backup again. A contact the person meant to drop could, with enough other old contacts, restore every group.
+- **A related case.** On a restored device, the first choice of contacts reused the file's key, which every other copy of the file holds.
+
+The contact list never leaves the device that chose it (#109), so the other devices can't learn of a new choice from the list.
+
+### Options considered
+
+1. **Chosen: the relay backup itself says the key is retired.**
+   - The random bytes #109 already writes over a replaced key's id are the signal. A device writes nothing else there: a backup always starts with the `RCR1` magic.
+   - Every device already reads its id before each upload (#247). A device that finds anything other than a backup or nothing stops for good.
+   - The choosing device keeps the retired ids and keeps them overwritten, reading each once a relay day. That covers an upload that lands just after the overwrite, and the relay forgetting an id after 180 days.
+   - **For:** no new event, relay route or mailbox, and nothing new linking the person's devices. The relay sees reads and writes of an id it already saw the same device write.
+   - **Against:** while a device that chose is gone for good, nobody keeps its old ids overwritten. 180 days later the relay forgets them, and an old backup file restored after that uploads under a key its old contacts can rebuild.
+2. **Tell the other devices through the groups.** A device would post an event to itself in each group it shares with the others.
+   - **Against:** the group sees one more event per choice, and the event links the person's identities across groups (ADR-0009).
+   - **Against:** it misses a device that is away longer than the group's mailboxes last (30 days), and a restored file that has no groups in common.
+3. **A personal mailbox shared by the person's devices.** None exists today.
+   - **Against:** both devices would poll one mailbox. That is a new server-visible link between them, which this ADR's §2 and the threat model's compartmentalization rule against.
+4. **Conditional writes at the relay.** A device would write only over the copy it last read, closing the window between its read and its write.
+   - **Against:** it adds state and a rule to the thin relay (ADR-0007), for a window the daily upkeep in option 1 already closes within a relay day.
+   - It stays open as a later step if a pilot finds that window matters.
+5. **A sealed "moved" record under the old key, naming the new key.**
+   - **Against: rejected outright.** Old contacts who rebuild the old key would open it and learn the new one.
+
+How the split travels: the plan's split id, 16 random bytes that every contact's share already names (#109), rather than a counter. A counter would tell anyone who opens a copy how many times the person chose again.
+
+### Decision
+
+- **Every choice of contacts makes a new backup key.** That includes the first choice on a device whose key came from a backup file, a link or a recovery with contacts. The key the device held is retired.
+- **The key travels with its split's id.** The device's relay backup state keeps `split` beside the key. Backup files and link bundles carry it as `backupSplit`, and a device recovered with contacts takes it from the shares that rebuilt the key.
+  - The id never reaches the relay, even sealed: the relay's copy carries no key or split.
+  - It names no contact and no count of contacts.
+- **A device that finds its key retired stops for good.** Before any upload, it reads its id. Random bytes there, in place of a backup or a 404, mean a later choice on another device retired the key. In one transaction the device:
+  - forgets the key, the vault's copy included;
+  - notes when;
+  - marks a plan of its own superseded.
+
+  It never uploads under that id again, and its later backup files and links carry no key. Settings says why. A new key, from a link, a file or a choice made here, starts it again.
+- **The choosing device keeps every retired id overwritten.** Once a relay day after a complete sync pass, it reads each one. If the relay holds a backup there again, or nothing, it writes fresh random bytes.
+
+### Consequences
+
+- One person's latest choice of contacts wins on every device that held the key it replaced. A dropped contact's share stops opening a live backup on every device the person keeps using.
+- The relay sees a daily read of each retired id from the device that chose, and an occasional write, under ids it already saw that device write. It learns that the id was retired, as it did before.
+- **Residual risks, accepted for the pilot:**
+  - For up to a relay day, an upload that lands just after the overwrite revives the old backup, until the choosing device's next pass.
+  - Two devices that choose at nearly the same time each retire only the key they held, so both new plans stay live. The person sorts that out by choosing once more.
+  - Once a choosing device is lost for good, its old ids expire 180 days after its last write. A later restore of a backup file holding one of those keys would upload under it.

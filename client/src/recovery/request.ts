@@ -181,16 +181,21 @@ function subsetKey(subset: readonly RecoveryShare[]): string {
  * What restoring the backup `key` names brought back, or null when it
  * doesn't open or anything in it but a group entry doesn't check out;
  * nothing is written then. A group entry that doesn't check out is left out
- * and counted, as from a file (#336).
+ * and counted, as from a file (#336). The device keeps the key with `split`,
+ * the split the shares that rebuilt it came from (#272).
  *
  * @throws {RelayError | TypeError} when the relay can't be reached.
  */
-async function restoreWith(services: RecoverServices, key: Uint8Array): Promise<Restored | null> {
+async function restoreWith(
+  services: RecoverServices,
+  key: Uint8Array,
+  split: string,
+): Promise<Restored | null> {
   const plaintext = await fetchRelayBackup(services.relay, key);
   if (plaintext === null) return null;
   try {
     const restored = await importSnapshot(services.store, plaintext, 'relay');
-    await services.store.adoptRelayBackupKey(key);
+    await services.store.adoptRelayBackupKey(key, split);
     await services.store.finishRecovery(services.now());
     return restored;
   } catch (error) {
@@ -206,10 +211,12 @@ async function trySubset(
   services: RecoverServices,
   subset: readonly RecoveryShare[],
 ): Promise<Restored | null> {
+  const [first] = subset;
+  if (first === undefined) return null;
   const key = await combineShares(subset.map(({ share }) => share));
   if (key === null) return null;
   try {
-    return await restoreWith(services, key);
+    return await restoreWith(services, key, first.split);
   } finally {
     key.fill(0);
   }

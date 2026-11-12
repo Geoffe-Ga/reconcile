@@ -56,23 +56,40 @@ describe('the recovery plan', () => {
     expect(RECOVERY_CHANGED).not.toBe(RELAY_BACKUP_CHANGED);
   });
 
-  it('forgets a retired backup id once it is overwritten, keeping the rest of the plan', async () => {
+  it('keeps every retired backup id, noting the relay day it last kept them overwritten (#272)', async () => {
     const store = await openStore();
     await store.setRecoveryPlan({ ...PLAN, retired: ['old-id-1', 'old-id-2'] });
 
-    await store.forgetRetired('old-id-1');
-    expect(await store.getRecoveryPlan()).toEqual({ ...PLAN, retired: ['old-id-2'] });
-    await store.forgetRetired('not-retired');
-    expect(await store.getRecoveryPlan()).toEqual({ ...PLAN, retired: ['old-id-2'] });
+    await store.markRetiredChecked(20_400);
+    expect(await store.getRecoveryPlan()).toEqual({
+      ...PLAN,
+      retired: ['old-id-1', 'old-id-2'],
+      retiredCheckedDay: 20_400,
+    });
   });
 
-  it('forgets nothing, and writes nothing, while the device has no plan', async () => {
+  it('notes nothing, and writes nothing, while the device has no plan', async () => {
     const store = await openStore();
     const heard = vi.fn<(groupId: string) => void>();
     store.subscribe(heard);
-    await store.forgetRetired('old-id-1');
+    await store.markRetiredChecked(20_400);
     expect(await store.getRecoveryPlan()).toBeUndefined();
     expect(heard).not.toHaveBeenCalled();
+  });
+
+  it('marks the plan superseded when its key is retired by a choice on another device (#272)', async () => {
+    const store = await openStore();
+    const heard = vi.fn<(groupId: string) => void>();
+    await store.setRelayBackupKey(new Uint8Array(32).fill(5), PLAN.split);
+    await store.setRecoveryPlan(PLAN);
+    store.subscribe(heard);
+
+    await store.retireRelayBackup(new Uint8Array(32).fill(5), 1_762_660_000_000);
+
+    expect(await store.getRecoveryPlan()).toEqual({ ...PLAN, supersededAt: 1_762_660_000_000 });
+    expect(heard.mock.calls).toEqual(
+      expect.arrayContaining([[RECOVERY_CHANGED], [RELAY_BACKUP_CHANGED]]),
+    );
   });
 
   it('never travels in a snapshot: no backup file, link bundle or relay copy holds the contacts', async () => {

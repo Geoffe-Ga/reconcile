@@ -10,7 +10,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { fromBase64url } from '../crypto/base64url';
-import { backupIdFor, openRelayBackup } from '../crypto/relayBackup';
+import {
+  backupIdFor,
+  isRelayBackupBlob,
+  newScrubBlob,
+  openRelayBackup,
+  sealRelayBackup,
+} from '../crypto/relayBackup';
 import { combineShares, type RecoveryShare } from '../crypto/shares';
 import { signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
@@ -299,7 +305,8 @@ describe('choosing recovery contacts', DEVICES, () => {
     expect(scrubbed).not.toEqual(oldBlob);
     expect(openRelayBackup(oldKey, scrubbed ?? new Uint8Array())).toBeNull();
     expect(await fetchRelayBackup(ana.services.relay, oldKey)).toBeNull();
-    expect((await ana.services.store.getRecoveryPlan())?.retired).toEqual([]);
+    // Ana keeps the old id, to keep it overwritten (#272).
+    expect((await ana.services.store.getRecoveryPlan())?.retired).toEqual([backupIdFor(oldKey)]);
 
     // Cal's old share, with Ben's old one, rebuilds only the old key, and with Ben's new one, nothing.
     const bensNew = await shareHeldBy(ben, groupId, author);
@@ -342,7 +349,7 @@ describe('choosing recovery contacts', DEVICES, () => {
     // Back online, the next complete sync pass sends the shares, then overwrites the old id.
     await ana.services.sync.syncOnce();
     expect((await groupOn(ana, groupId)).outbox).toEqual([]);
-    expect((await ana.services.store.getRecoveryPlan())?.retired).toEqual([]);
+    expect((await ana.services.store.getRecoveryPlan())?.retired).toEqual([oldId]);
     expect(fake.backup(oldId)).toHaveLength(65536);
     expect(openRelayBackup(oldKey, fake.backup(oldId) ?? new Uint8Array())).toBeNull();
   });
@@ -373,7 +380,7 @@ describe('choosing recovery contacts', DEVICES, () => {
 });
 
 describe('after each complete sync pass', DEVICES, () => {
-  it('refreshes the relay backup, then overwrites every retired id the relay takes', async () => {
+  it('refreshes the relay backup, then overwrites every retired id the relay holds nothing under, keeping each', async () => {
     const { groupId, device } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
     const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
     await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
@@ -393,7 +400,73 @@ describe('after each complete sync pass', DEVICES, () => {
     await afterSyncPass({ store, relay, now: ana.services.now });
 
     expect(put).toEqual([`${'taken-id-'.padEnd(43, '1')} 65536`, 'refused 65536']);
-    expect((await store.getRecoveryPlan())?.retired).toEqual(['refused']);
+    // Every id stays, and the day stays unchecked while one wasn't taken, so the next pass tries again.
+    const kept = await store.getRecoveryPlan();
+    expect(kept?.retired).toEqual(['taken-id-'.padEnd(43, '1'), 'refused']);
+    expect(kept?.retiredCheckedDay).toBeUndefined();
+  });
+
+  it('keeps each retired id overwritten, once a relay day: a backup there again, or none, gets random bytes again (#272)', async () => {
+    const { fake, groupId, device } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
+    const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
+    await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
+    const { store } = ana.services;
+    const plan = await store.getRecoveryPlan();
+    if (plan === undefined) throw new Error('Expected a plan.');
+    const revived = 'revived-id-'.padEnd(43, '2');
+    const scrubbed = 'scrubbed-id-'.padEnd(43, '2');
+    const forgotten = 'forgotten-id-'.padEnd(43, '2');
+    await store.setRecoveryPlan({ ...plan, retired: [revived, scrubbed, forgotten] });
+    const scrub = newScrubBlob();
+    // A linked device's upload landed after the overwrite; the relay forgot another after 180 days.
+    const held = new Map<string, Uint8Array<ArrayBuffer>>([
+      [revived, sealRelayBackup(new Uint8Array(32).fill(4), new Uint8Array(8))],
+      [scrubbed, scrub],
+    ]);
+    const asked: string[] = [];
+    const relay = {
+      putBackup: (id: string, blob: Uint8Array) => {
+        asked.push(`PUT ${id}`);
+        held.set(id, Uint8Array.from(blob));
+        return Promise.resolve();
+      },
+      getBackup: (id: string) => {
+        asked.push(`GET ${id}`);
+        return Promise.resolve(held.get(id) ?? null);
+      },
+    };
+    const services = { store, relay, now: ana.services.now };
+    const retiredAsks = () => asked.filter((line) => line.includes('-id-'));
+
+    await afterSyncPass(services);
+    expect(retiredAsks()).toEqual([
+      `GET ${revived}`,
+      `PUT ${revived}`,
+      `GET ${scrubbed}`,
+      `GET ${forgotten}`,
+      `PUT ${forgotten}`,
+    ]);
+    for (const id of [revived, forgotten]) {
+      expect(held.get(id)).toHaveLength(65536);
+      expect(isRelayBackupBlob(held.get(id) ?? new Uint8Array())).toBe(false);
+    }
+    expect(held.get(scrubbed)).toBe(scrub);
+    const day = (await store.getRecoveryPlan())?.retiredCheckedDay;
+    expect(day).toBe(Math.floor(fake.minute / 1440));
+
+    // The same relay day asks nothing more; the next one checks again.
+    asked.length = 0;
+    await afterSyncPass(services);
+    expect(retiredAsks()).toEqual([]);
+    // The sync loop's own pass of the next relay day reads each retired id from the relay again.
+    fake.minute += 1440;
+    const before = fake.requests.length;
+    await ana.services.sync.syncOnce();
+    const read = fake.requests
+      .slice(before)
+      .filter((request) => request.method === 'GET' && request.url.includes('-id-'))
+      .map((request) => request.url);
+    expect(read).toEqual([revived, scrubbed, forgotten].map((id) => `/v1/backup/${id}`));
   });
 
   it('does nothing while the device keeps no plan', async () => {
@@ -452,12 +525,26 @@ describe('where the person’s contacts stand', DEVICES, () => {
       await ana.services.store.getRecoveryPlan(),
       await ana.services.store.listGroups(),
     );
-    expect(status).toMatchObject({ t: 2, n: 3, chooseAgain: false });
+    expect(status).toMatchObject({ t: 2, n: 3, chooseAgain: false, superseded: false });
     expect(status?.contacts.map(({ name, shared }) => [name, shared])).toEqual([
       ['Ben', true],
       ['Cal', true],
       ['Dee', true],
     ]);
+  });
+
+  it('says the plan was superseded once a later choice on another device retired its key (#272)', async () => {
+    const { groupId, device } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
+    const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
+    await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
+
+    await ana.services.store.retireRelayBackup(await backupKeyOf(ana), 5);
+
+    const status = recoveryStatus(
+      await ana.services.store.getRecoveryPlan(),
+      await ana.services.store.listGroups(),
+    );
+    expect(status).toMatchObject({ t: 2, n: 3, superseded: true, chooseAgain: true });
   });
 
   it('marks a contact who left as no longer shared, and asks to choose again only below t', async () => {

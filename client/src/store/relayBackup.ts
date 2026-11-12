@@ -6,12 +6,24 @@
  *
  * - **The key.** {@link startRelayBackup} makes a random 32-byte backup key
  *   when the device has none, or when asked for a new one, and keeps it
- *   device-wide, in no group (`Store.setRelayBackupKey`). It travels in the
+ *   device-wide, in no group (`Store.setRelayBackupKey`), with the split it
+ *   is about to be cut into (#272). It travels, with its split, in the
  *   passphrase backup file (`snapshot.ts`) and so in #96's link bundle,
  *   which reuses the snapshot, so a restored or linked device keeps the
  *   backup fresh. It never goes to the relay, even sealed: the relay's copy
- *   is the snapshot without it. #109 calls `startRelayBackup` when someone
- *   chooses contacts, since a backup nobody else can unlock helps no one.
+ *   is the snapshot without it or its split. #109 calls `startRelayBackup`
+ *   with a new key whenever someone chooses contacts, since a backup nobody
+ *   else can unlock helps no one.
+ * - **A retired key (#272).** A choice of contacts on any of the person's
+ *   devices replaces the key and overwrites the old key's id with random
+ *   bytes (`recovery.ts`). Every device reads its id before it uploads, so a
+ *   device that still holds the replaced key, linked or restored from a
+ *   file, finds those bytes in place of a backup the next time it would
+ *   upload, and stops for good: it forgets the key, notes when, marks a plan
+ *   of its own superseded (`Store.retireRelayBackup`), and never uploads
+ *   under that id again. Settings says so. A backup that doesn't open under
+ *   the key, or none, doesn't count: only random bytes, which no device
+ *   writes under a live id, retire it.
  * - **What the relay sees.** One blob under a 43-character id that derives
  *   from the key alone and is linked to no mailbox, in one of five sizes
  *   (`crypto/relayBackup.ts`), written at most once a relay day by each
@@ -72,6 +84,7 @@ import { sha256 } from '../crypto/hash';
 import {
   backupIdFor,
   groupTagFor,
+  isRelayBackupBlob,
   newBackupKey,
   openRelayBackup,
   RelayBackupTooLarge,
@@ -100,22 +113,27 @@ const DAY_MINUTES = 1440;
 export interface RelayBackupServices {
   /** What `deviceSnapshot` reads, and the relay backup's own record. */
   readonly store: Parameters<typeof deviceSnapshot>[0] &
-    Pick<Store, 'getRelayBackup' | 'setRelayBackupKey' | 'updateRelayBackup'>;
+    Pick<Store, 'getRelayBackup' | 'setRelayBackupKey' | 'updateRelayBackup' | 'retireRelayBackup'>;
   /** The relay's backup routes: a GET before each upload (#247), then the PUT. */
   readonly relay: Pick<Relay, 'putBackup' | 'getBackup'>;
   /** The device clock in milliseconds: when an upload succeeded, and whether a share's link may still open. */
   readonly now: () => number;
 }
 
-/** Whether to make a new backup key even when the device has one (#109's re-split). */
+/**
+ * Whether to make a new backup key even when the device has one (#109's
+ * re-split), and the split a new key is about to be cut into (#272), which
+ * it keeps beside the key.
+ */
 export interface StartOptions {
   readonly newKey?: boolean;
+  readonly split?: string;
 }
 
 /** What Settings says of the relay backup. */
 export type RelayBackupStatus =
   | { readonly kind: 'off' | 'waiting' | 'too-large' }
-  | { readonly kind: 'saved'; readonly at: number };
+  | { readonly kind: 'saved' | 'retired'; readonly at: number };
 
 /** What an upload needs of the relay backup's state: its key, and the Documents and groups it uploaded before. */
 type Uploader = Pick<RelayBackupState, 'key' | 'uploaded' | 'uploadedGroups'>;
@@ -123,13 +141,20 @@ type Uploader = Pick<RelayBackupState, 'key' | 'uploaded' | 'uploadedGroups'>;
 /**
  * What the relay held under the backup's id when the device read it before
  * an upload (#247): a copy the key opens, read for its personal Documents
- * and, of each group, its id and author (#327); nothing, its 404; or a copy
- * the device can't read, which leaves it uploading its own as before.
+ * and, of each group, its id and author (#327); nothing, its 404; a copy the
+ * device can't read, which leaves it uploading its own as before; or random
+ * bytes in place of a backup, which say a later choice of recovery contacts
+ * on another device retired the key (#272).
  */
-type OnRelay = ({ readonly kind: 'copy' } & RelayCopy) | { readonly kind: 'none' | 'unreadable' };
+type OnRelay =
+  ({ readonly kind: 'copy' } & RelayCopy) | { readonly kind: 'none' | 'unreadable' | 'retired' };
+
+/** What the relay held, once a read found the key not retired: anything but `retired`. */
+type Live = Exclude<OnRelay, { readonly kind: 'retired' }>;
 
 const NOTHING: OnRelay = { kind: 'none' };
 const UNREADABLE: OnRelay = { kind: 'unreadable' };
+const RETIRED: OnRelay = { kind: 'retired' };
 
 /**
  * What one upload holds; the ids of this device's own personal Documents in
@@ -170,7 +195,7 @@ export interface MergeContext {
  */
 export async function startRelayBackup(
   services: RelayBackupServices,
-  { newKey = false }: StartOptions = {},
+  { newKey = false, split }: StartOptions = {},
 ): Promise<string | null> {
   const held = await services.store.getRelayBackup();
   if (held !== undefined && !newKey) {
@@ -178,7 +203,7 @@ export async function startRelayBackup(
     return null;
   }
   const key = newBackupKey();
-  const replaced = await services.store.setRelayBackupKey(key);
+  const replaced = await services.store.setRelayBackupKey(key, split);
   await uploadUnlessChanging(services, { key, uploaded: [], uploadedGroups: [] }, false);
   key.fill(0);
   return replaced === undefined ? null : backupIdFor(replaced.key);
@@ -196,7 +221,21 @@ async function uploadUnlessChanging(
   if (await keyChangeDue(services.store)) return;
   const [own, held] = await Promise.all([relayCopy(services), heldGroups(services.store)]);
   const onRelay = read ? await readRelay(services.relay, state.key) : NOTHING;
+  if (onRelay.kind === 'retired') {
+    await stopRetired(services, state.key);
+    return;
+  }
   await upload(services, state, merged(own, onRelay, { state, now: services.now(), held }));
+}
+
+/**
+ * Stops for good once a read found `key` retired (#272): random bytes under
+ * its id, which only a later choice of recovery contacts, on another device
+ * that held the key, writes there. The device forgets the key and never
+ * uploads under its id again, so the backup the older shares open stays gone.
+ */
+async function stopRetired(services: RelayBackupServices, key: Uint8Array): Promise<void> {
+  await services.store.retireRelayBackup(key, services.now());
 }
 
 /** The id of every group and coalition entry the device holds, leaving or archived included (#327). */
@@ -234,6 +273,10 @@ export async function refreshRelayBackup(services: RelayBackupServices): Promise
   const day = relayDayOf(own);
   if (day === null || (state.checkedDay !== null && day <= state.checkedDay)) return;
   const onRelay = await readRelay(services.relay, state.key);
+  if (onRelay.kind === 'retired') {
+    await stopRetired(services, state.key);
+    return;
+  }
   const planned = merged(own, onRelay, { state, now: services.now(), held });
   const digest = digestOf(planned.copy);
   if (digest === state.digest && holdsAlready(onRelay, planned.copy)) {
@@ -272,6 +315,7 @@ export async function fetchRelayBackup(
 async function readRelay(relay: Pick<Relay, 'getBackup'>, key: Uint8Array): Promise<OnRelay> {
   const blob = await relay.getBackup(backupIdFor(key)).catch(() => undefined);
   if (blob === null) return NOTHING;
+  if (blob !== undefined && !isRelayBackupBlob(blob)) return RETIRED;
   const plaintext = blob === undefined ? null : openRelayBackup(key, blob);
   if (plaintext === null) return UNREADABLE;
   const copy = decodeRelayCopy(plaintext);
@@ -288,7 +332,7 @@ async function readRelay(relay: Pick<Relay, 'getBackup'>, key: Uint8Array): Prom
  * the copy's groups as its own the same way, so it carries none on its first
  * upload, as before.
  */
-function merged(own: Snapshot, onRelay: OnRelay, { state, now, held }: PlanContext): Planned {
+function merged(own: Snapshot, onRelay: Live, { state, now, held }: PlanContext): Planned {
   const mine = own.personal.map((document) => document.id);
   const tags = groupTags(own, onRelay, state);
   if (onRelay.kind !== 'copy') return { copy: own, mine, tags };
@@ -342,11 +386,7 @@ function tagOf(key: Uint8Array): (group: Pick<RelayGroup, 'groupId' | 'author'>)
  * the copy without a group lets its tag go, so the device keeps no lasting
  * mark of a group it left; one that couldn't read the copy keeps every tag.
  */
-function groupTags(
-  own: Snapshot,
-  onRelay: OnRelay,
-  { key, uploadedGroups = [] }: Uploader,
-): string[] {
+function groupTags(own: Snapshot, onRelay: Live, { key, uploadedGroups = [] }: Uploader): string[] {
   const tag = tagOf(key);
   const mine = own.groups.map((group) => tag({ groupId: group.groupId, author: group.me.author }));
   const onCopy = new Set(onRelay.kind === 'copy' ? onRelay.groups.map(tag) : []);
@@ -366,7 +406,7 @@ function groupTags(
  * read at all counts as held, as before #247, so only a change here uploads
  * over it.
  */
-function holdsAlready(onRelay: OnRelay, copy: Snapshot): boolean {
+function holdsAlready(onRelay: Live, copy: Snapshot): boolean {
   if (onRelay.kind !== 'copy') return onRelay.kind === 'unreadable';
   const planned = [...copy.groups, ...(copy.carried ?? [])];
   return (
@@ -436,23 +476,35 @@ function unionCopy(
   return share === undefined ? words : { ...words, share };
 }
 
-/** What Settings says of `state`: too large first, then the last upload, else waiting. */
-export function relayBackupStatus(state: RelayBackupState | undefined): RelayBackupStatus {
-  if (state === undefined) return { kind: 'off' };
+/**
+ * What Settings says of `state`: too large first, then the last upload, else
+ * waiting; with no key, retired when a later choice elsewhere retired the
+ * last one at `retiredAt` (#272), else off.
+ */
+export function relayBackupStatus(
+  state: RelayBackupState | undefined,
+  retiredAt?: number,
+): RelayBackupStatus {
+  if (state === undefined) {
+    return retiredAt === undefined ? { kind: 'off' } : { kind: 'retired', at: retiredAt };
+  }
   if (state.tooLarge) return { kind: 'too-large' };
   return state.uploadedAt === null ? { kind: 'waiting' } : { kind: 'saved', at: state.uploadedAt };
 }
 
 /**
  * What the relay holds: the device's snapshot (`deviceSnapshot`, the one
- * place a snapshot is gathered) without the backup key, so the relay backup
- * carries whatever a backup file does, and never its own key.
+ * place a snapshot is gathered) without the backup key or its split, so the
+ * relay backup carries whatever a backup file does, and never its own key.
+ * A device recovered from it takes the split from the shares that rebuilt
+ * the key (#272).
  */
 async function relayCopy(services: RelayBackupServices): Promise<Snapshot> {
   const copy: { -readonly [K in keyof Snapshot]: Snapshot[K] } = {
     ...(await deviceSnapshot(services.store)),
   };
   delete copy.backupKey;
+  delete copy.backupSplit;
   return copy;
 }
 

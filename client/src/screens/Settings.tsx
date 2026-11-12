@@ -47,6 +47,11 @@ export interface RecoveryProps {
   readonly canChoose: boolean;
   /** Whether this device came back through its contacts and has chosen none since (#118). */
   readonly recovered?: boolean;
+  /**
+   * Whether this device holds the backup key of a choice made on another of
+   * the person's devices, whose list stays there (#272).
+   */
+  readonly elsewhere?: boolean;
 }
 
 /**
@@ -99,6 +104,8 @@ function relayBackupWords(status: RelayBackupStatus): string | null {
       return relayBackup.tooLarge;
     case 'waiting':
       return relayBackup.waiting;
+    case 'retired':
+      return relayBackup.retired;
   }
 }
 
@@ -144,6 +151,23 @@ function ContactList({ status }: { readonly status: RecoveryStatus }) {
 }
 
 /**
+ * Where the person's contacts stand on this device: their list, or that a
+ * later choice on another device replaced it (#272); with no list here, that
+ * they were chosen on another device, whose key this one holds (#272), or
+ * that none were chosen.
+ */
+function ChosenContacts(props: {
+  readonly status: RecoveryStatus | null;
+  readonly elsewhere: boolean;
+}) {
+  const { recovery } = messages;
+  const { status, elsewhere } = props;
+  if (status === null) return <p>{elsewhere ? recovery.elsewhere : recovery.none}</p>;
+  if (status.superseded) return <p className="notice">{recovery.superseded}</p>;
+  return <ContactList status={status} />;
+}
+
+/**
  * Recovery contacts (#109; ADR-0043 §1, ADR-0008): what they are, in
  * trust's words; after a recovery with contacts, a notice to choose again
  * (#118); where the person's stand, or that they've chosen none; the way to
@@ -156,15 +180,16 @@ function RecoverySection({ recovery: props }: { readonly recovery: RecoveryProps
   const { status, held, canChoose } = props;
   const heading = useId();
   const recovered = status === null && props.recovered === true;
+  const chosen = status !== null || props.elsewhere === true;
   return (
     <div className="stack">
       <p className="lede">{recovery.lede}</p>
       {recovered ? <p className="notice recovery-again">{recovery.recovered}</p> : null}
-      {status === null ? <p>{recovery.none}</p> : <ContactList status={status} />}
+      <ChosenContacts status={status} elsewhere={props.elsewhere === true} />
       {canChoose ? (
         <div>
           <Link className="button button-secondary" href={routeHref({ name: 'recovery' })}>
-            {status === null ? recovery.choose : recovery.chooseAgain}
+            {chosen ? recovery.chooseAgain : recovery.choose}
           </Link>
         </div>
       ) : null}

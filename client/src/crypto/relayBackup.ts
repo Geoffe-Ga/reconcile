@@ -92,7 +92,9 @@ export function newBackupKey(): Uint8Array<ArrayBuffer> {
  * what a device PUTs to a relay backup id its key no longer names (#109), in
  * place of the backup there, so the shares of that old key open nothing. The
  * relay can tell it from a backup, which starts with the magic, and learns
- * only that the id was retired.
+ * only that the id was retired. So can a device of the person's that still
+ * holds the old key (`isRelayBackupBlob`): it stops refreshing the backup
+ * (#272).
  */
 export function newScrubBlob(): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(randomBytes(RELAY_BACKUP_SIZES[0]));
@@ -179,8 +181,13 @@ export function sealRelayBackup(key: Uint8Array, plaintext: Uint8Array): Uint8Ar
   }
 }
 
-/** Whether `blob` is one of the five sizes and starts with the magic. */
-function isFramed(blob: Uint8Array): boolean {
+/**
+ * Whether `blob` is a relay backup: one of the five sizes, starting with the
+ * magic. A device writes nothing else under a backup id but the random bytes
+ * of {@link newScrubBlob}, so a blob that isn't one says its id was retired
+ * (#272).
+ */
+export function isRelayBackupBlob(blob: Uint8Array): boolean {
   return (
     RELAY_BACKUP_SIZES.some((size) => size === blob.length) &&
     MAGIC.every((byte, i) => blob[i] === byte)
@@ -196,7 +203,7 @@ function isFramed(blob: Uint8Array): boolean {
  */
 export function openRelayBackup(key: Uint8Array, blob: Uint8Array): Uint8Array | null {
   const id = backupIdFor(key);
-  if (!isFramed(blob)) return null;
+  if (!isRelayBackupBlob(blob)) return null;
   const nonce = blob.subarray(MAGIC.length, HEADER_BYTES);
   const sealKey = derive(key, BACKUP_SEAL_INFO);
   let body: Uint8Array;
