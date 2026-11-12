@@ -7,6 +7,7 @@ import { newGroupSecret } from '../crypto/groupKeys';
 import { inviteChannelOf } from '../crypto/invite';
 import { BLOB_SIZES, MAX_PLAINTEXT_BYTES, xchachaSeal } from '../crypto/seal';
 import type { LogRecord } from '../engine/fold';
+import { packEntries } from '../invite/envelope';
 import { stubSeal } from '../test/stubSeal';
 import {
   type Card,
@@ -72,6 +73,16 @@ describe('a card’s envelope', () => {
 
     expect(blobs).toHaveLength(3);
     expect(openCard(xchachaSeal, cardChannelOf(seed), blobs)).toEqual(made);
+  });
+
+  it('reads as damaged when an entry is marked kept, since a coalition’s log keeps no result (#269)', () => {
+    const seed = newCardSeed();
+    const channel = cardChannelOf(seed);
+    const [header] = sealCard(stubSeal, channel, card({ entries: [entry(1, 30)] }));
+    const [chunk = new Uint8Array()] = packEntries([{ ...entry(1, 30), kept: true }]);
+    const marked = stubSeal.seal(channel.mailbox, channel.key, chunk);
+
+    expect(openCard(stubSeal, channel, [header ?? new Uint8Array(), marked])).toBeNull();
   });
 
   it('round-trips any name, statement and secrets it can carry', () => {

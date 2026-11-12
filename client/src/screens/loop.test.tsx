@@ -3,8 +3,8 @@
  * that share one fake relay. Each device's app stays mounted throughout, so
  * every change on screen comes from sync, never from a reload.
  */
-import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
@@ -12,6 +12,7 @@ import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import {
+  APP_USER,
   go,
   joinLater,
   members,
@@ -50,51 +51,65 @@ async function sync(device: TestDevice | undefined): Promise<void> {
   await act(() => device?.services.sync.syncOnce());
 }
 
+/**
+ * The heaviest loop here: two devices' apps, two ballots and both Documents,
+ * about 1.1 s once the app is compiled. As the file's first test it also
+ * compiles the whole app, which takes it to about 2 s alone and past 5 s
+ * under two concurrent runs (#260).
+ */
+const FIRST_AND_HEAVIEST = { timeout: 10_000 };
+
 describe('propose, vote, and see the Update', () => {
-  it('closes early once everyone has scored, and both devices show the new text', async () => {
-    const user = userEvent.setup();
-    const { fake, groupId, devices } = await group(['Ana', 'Ben']);
-    const [ana, ben] = devices;
-    const startMinute = fake.minute;
-    go(`#/g/${groupId}/doc`);
-    const a = mount(ana, 'a');
-    const b = mount(ben, 'b');
+  it(
+    'closes early once everyone has scored, and both devices show the new text',
+    FIRST_AND_HEAVIEST,
+    async () => {
+      const user = userEvent.setup(APP_USER);
+      const { fake, groupId, devices } = await group(['Ana', 'Ben']);
+      const [ana, ben] = devices;
+      const startMinute = fake.minute;
+      go(`#/g/${groupId}/doc`);
+      const a = mount(ana, 'a');
 
-    // A proposes new wording for the first section, and lands on its ballot.
-    await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
-    // Proposing reads the group's key from the store and signs before the route moves on.
-    await waitFor(() => {
-      expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
-    });
-    await score(within(a), user, '3 · Supportive');
-    expect(await within(a).findByText('Sent')).toBeVisible();
+      // A proposes new wording for the first section, and lands on its ballot.
+      await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+      // Proposing reads the group's key from the store and signs before the route moves on.
+      await waitFor(() => {
+        expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+      });
+      await score(within(a), user, '3 · Supportive');
+      expect(await within(a).findByText('Sent')).toBeVisible();
 
-    // B syncs, sees the Proposal appear, and scores it.
-    await sync(ben);
-    expect(await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
-    await score(within(b), user, '4 · Strongly supportive');
+      // B, open on the same route, syncs, sees the Proposal appear, and scores it.
+      const b = mount(ben, 'b');
+      await sync(ben);
+      expect(
+        await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' }),
+      ).toBeVisible();
+      await score(within(b), user, '4 · Strongly supportive');
 
-    // B's send reads back both ballots: everyone has scored, so the vote closes early.
-    const bResult = await within(b).findByRole('region', { name: 'Result' });
-    expect(bResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
-    await sync(ana);
-    const aResult = await within(a).findByRole('region', { name: 'Result' });
-    expect(aResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
-    expect(fake.minute).toBe(startMinute);
-    for (const app of [a, b]) {
-      for (const radio of within(app).getAllByRole('radio')) expect(radio).toBeDisabled();
-    }
+      // B's send reads back both ballots: everyone has scored, so the vote closes early.
+      const bResult = await within(b).findByRole('region', { name: 'Result' });
+      expect(bResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
+      await sync(ana);
+      const aResult = await within(a).findByRole('region', { name: 'Result' });
+      expect(aResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
+      expect(fake.minute).toBe(startMinute);
+      for (const app of [a, b]) {
+        for (const radio of within(app).getAllByRole('radio')) expect(radio).toBeDisabled();
+      }
 
-    // Both Documents now read the new text.
-    go(`#/g/${groupId}/doc`);
-    for (const app of [a, b]) {
-      expect(await within(app).findByText('Quiet after 10pm.')).toBeVisible();
-      expect(within(app).queryByText('Quiet hours start at ten.')).not.toBeInTheDocument();
-    }
-  });
+      // Both Documents now read the new text.
+      go(`#/g/${groupId}/doc`);
+      for (const app of [a, b]) {
+        expect(await within(app).findByText('Quiet after 10pm.')).toBeVisible();
+        expect(within(app).queryByText('Quiet hours start at ten.')).not.toBeInTheDocument();
+      }
+    },
+  );
 
   it('lapses with only the proposer’s ballot once relay time passes the deadline', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -123,7 +138,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('tells a voter whose offline ballot reached the relay after the deadline, and nobody else', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -151,7 +166,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapse again: the same wording, as a fresh Proposal with its own window', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/doc`);
@@ -188,7 +203,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapsed add again in Add a section, starting from its text (#75)', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/add/${groupId}.0`);
@@ -213,7 +228,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapsed removal again in the removal composer, with no text to write (#75)', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/remove/${groupId}.0`);
@@ -235,7 +250,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('keeps a ballot cast offline on the device, sends it on recovery, and says so', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -273,7 +288,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('makes a Proposal’s new chat link the next prefill and Group home’s Join discussion', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { groupId, devices } = await group(['Ana', 'Ben'], 'https://chat.example.org/riverside');
     const [ana] = devices;
     go(`#/g/${groupId}/doc`);
@@ -304,7 +319,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('tells someone who joined after a Proposal opened that they can’t vote on it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana] = devices;
     if (ana === undefined) throw new Error('Expected Ana.');
@@ -360,7 +375,7 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
   }
 
   it('closes early once both have scored both options, and Group home shows the focus', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}`);
@@ -392,7 +407,7 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
   });
 
   it('asks a lapsed priority vote again, from its options, as a fresh vote', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}`);

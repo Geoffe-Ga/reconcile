@@ -40,10 +40,10 @@
  * latest one to pass is the group's focus (#107). A `result` records a decided
  * Proposal's counts and a commitment to its ballots (#111): with the ballots
  * held, the fold checks it against them, and once a device has cleared them,
- * the Proposal closes, counts and decides by the result it reads ahead. The
- * fold is pure: no I/O, no clock, no randomness, so every device that folds
- * the same records builds
- * the same state.
+ * the Proposal closes, counts and decides by the result it reads ahead,
+ * closing where the result says its closing ballot came (#289). The fold is
+ * pure: no I/O, no clock, no randomness, so every device that folds the same
+ * records builds the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
@@ -145,6 +145,7 @@ import {
   type VouchBody,
 } from './event';
 import { type DoorInvite, mayRecordInvite } from './frontDoor';
+import { isOpenAt } from './open';
 import {
   effectiveOptIns,
   isOptIn,
@@ -346,8 +347,11 @@ export interface DecisionRecord {
  * it opened (ADR-0015): the members for whom `wouldVote` held then. A later
  * join or level change never changes it, nor the quorum and early close that
  * count it. `closedAt` is the receipt minute of the ballot that closed it
- * early, or null. `final` is true once it has closed, early or because relay
- * time reached `deadline`. `outcome` is the tally of the ballots so far, and
+ * early, or null. While the fold runs it stays null until the fold reaches
+ * that ballot, or for a cleared Proposal the place its result records
+ * (#289), so every rule finds it open or closed there ({@link isOpenAt}).
+ * `final` is true once it has closed, early or because relay time reached
+ * `deadline`. `outcome` is the tally of the ballots so far, and
  * is settled only when `final`. A Proposal still open when its group
  * dissolved (#108) is never final, so it has no outcome. `dispatch` is the
  * Dispatch it sends to the group if it passes (#112), or null.
@@ -511,10 +515,11 @@ interface Receipt {
 
 /**
  * A cleared Proposal's record, read ahead (#111): its first `result` after it
- * in relay order, with that result's id and receipt.
+ * in relay order, with that result's id, seq and receipt.
  */
 interface ReadAhead {
   readonly id: string;
+  readonly seq: number;
   readonly received: number;
   readonly body: ResultBody;
 }
@@ -786,18 +791,6 @@ function departs(draft: Draft, author: string): boolean {
   return true;
 }
 
-/**
- * True while a Proposal takes versions and ballots at relay minute `received`:
- * before its deadline, and before any early close. A cleared Proposal's early
- * close is its read-ahead result's (#111), so it closes at the start of that
- * minute.
- */
-function isOpenAt(proposal: OpenProposal, received: number): boolean {
-  if (received >= proposal.deadline) return false;
-  if (proposal.cleared) return proposal.closedAt === null || received < proposal.closedAt;
-  return proposal.closedAt === null;
-}
-
 /** The Proposal open on `atom` at relay minute `received`, if any. An Atom has at most one. */
 function openOn(draft: Draft, atom: string, received: number): OpenProposal | undefined {
   return draft.proposals.find((p) => p.atom === atom && isOpenAt(p, received));
@@ -941,12 +934,23 @@ function closeIsPossible(body: ResultBody, deadline: number): boolean {
 }
 
 /**
+ * True when a result's `closedSeq`, if it names one, could be the place of the
+ * ballot that closed the Proposal early (#289): the close is early, and the
+ * seq comes after the Proposal's and before the result's own.
+ */
+function placeFits(found: ReadAhead, opened: Opening): boolean {
+  const { closedSeq, closedAt } = found.body;
+  if (closedSeq === undefined) return true;
+  return closedAt < opened.deadline && closedSeq > opened.seq && closedSeq < found.seq;
+}
+
+/**
  * True when a result read ahead can be a Proposal's record (#111): it arrived
  * in a later minute than its close, closes the Proposal between its receipt
- * and its deadline as its counts allow, counts the Proposal's eligible set
- * from its first version on (version 1, under the Proposal's id, or a
- * priority vote's first option, `${id}.0`, #107), and names the outcome its
- * counts give at the Proposal's bar.
+ * and its deadline as its counts allow, at a place that fits (#289), counts
+ * the Proposal's eligible set from its first version on (version 1, under
+ * the Proposal's id, or a priority vote's first option, `${id}.0`, #107), and
+ * names the outcome its counts give at the Proposal's bar.
  */
 function recordFits(found: ReadAhead, opened: Opening, bar: Bar): boolean {
   const { body } = found;
@@ -955,6 +959,7 @@ function recordFits(found: ReadAhead, opened: Opening, bar: Bar): boolean {
     found.received > body.closedAt &&
     body.closedAt >= opened.received &&
     body.closedAt <= deadline &&
+    placeFits(found, opened) &&
     body.eligible === opened.eligible.length &&
     body.versions[0]?.id === opened.versions[0]?.id &&
     closeIsPossible(body, deadline) &&
@@ -972,22 +977,21 @@ function readAheadFor(draft: Draft, opened: Opening): ReadAhead | null {
   const found = draft.firstResults.get(id);
   if (found === undefined || found.group !== draft.group) return null;
   const fits = recordFits(found, opened, barOf(opened, draft.rules));
-  return fits ? { id: found.id, received: found.received, body: found.body } : null;
+  return fits ? { id: found.id, seq: found.seq, received: found.received, body: found.body } : null;
 }
 
 /**
- * Opens a Proposal (#111): adds whether its ballots are cleared, its
- * read-ahead record and an early close the record gives, then keeps it, in
- * relay order, and returns it.
+ * Opens a Proposal (#111): adds whether its ballots are cleared and its
+ * read-ahead record, then keeps it, in relay order, and returns it. Like any
+ * other, it has no early close yet: one its record gives comes when the fold
+ * reaches it ({@link closeReadAhead}, #289).
  */
 function openProposal(draft: Draft, opened: Opening): OpenProposal {
-  const readAhead = readAheadFor(draft, opened);
-  const early = readAhead !== null && readAhead.body.closedAt < opened.deadline;
   const proposal: OpenProposal = {
     ...opened,
     cleared: draft.cleared.has(opened.id),
-    readAhead,
-    closedAt: early ? readAhead.body.closedAt : null,
+    readAhead: readAheadFor(draft, opened),
+    closedAt: null,
     result: null,
     mismatched: [],
   };
@@ -1197,7 +1201,7 @@ function applyRemovalProposal(
     versions: [{ id: at.id, author, text: '' }],
   });
   // The suspension of them running now, if any, lasts until this vote closes:
-  // a cleared one's early close comes from its result, read ahead (#111).
+  // a cleared one's early close comes once the fold reaches it (#111, #289).
   extendSuspension(draft, proposal, (s) => s.member === member && draft.at < s.until);
   return true;
 }
@@ -1553,15 +1557,16 @@ function applyDoorInvited(
 }
 
 /**
- * True when a cleared Proposal's record puts this version on its ballot: it
- * arrived in the minute of the early close, before the closing ballot (#111).
+ * True when a cleared Proposal's record from before #289, which doesn't say
+ * where in its close's minute the closing ballot came, puts this version on
+ * its ballot: it arrived in that minute, before the closing ballot (#111). A
+ * record that says (`closedSeq`) closes the Proposal at that place instead,
+ * so a version finds it open or closed there, as with the ballots held.
  */
 function listedAtClose(proposal: OpenProposal, at: Receipt): boolean {
-  return (
-    proposal.readAhead !== null &&
-    at.received === proposal.closedAt &&
-    proposal.readAhead.body.versions.some((version) => version.id === at.id)
-  );
+  const body = proposal.readAhead?.body;
+  if (body === undefined || body.closedSeq !== undefined) return false;
+  return at.received === proposal.closedAt && body.versions.some((version) => version.id === at.id);
 }
 
 /**
@@ -1701,9 +1706,20 @@ function listsVersions(proposal: OpenProposal, body: ResultBody): boolean {
 }
 
 /**
+ * Where an early close came (#289): the seq of the ballot that closed it,
+ * which is its last ballot, since the fold keeps a voter's latest ballot last
+ * and none counts after the close. Nothing for a Proposal with no early close.
+ */
+function closingPlace(proposal: Pick<Proposal, 'closedAt' | 'ballots'>): { closedSeq?: number } {
+  const closing = proposal.closedAt === null ? undefined : proposal.ballots.at(-1);
+  return closing === undefined ? {} : { closedSeq: closing.seq };
+}
+
+/**
  * What a Proposal's own ballots give a result, apart from its outcome: the
- * close, the eligible count, each version's counts and the commitment. A
- * device posts this (with the outcome) and checks results against it.
+ * close, and for an early close the closing ballot's seq (#289), the eligible
+ * count, each version's counts and the commitment. A device posts this (with
+ * the outcome) and checks results against it.
  */
 export function heldRecord(
   proposal: Pick<Proposal, 'id' | 'closedAt' | 'deadline' | 'eligible' | 'versions' | 'ballots'>,
@@ -1712,10 +1728,21 @@ export function heldRecord(
   return {
     proposal: proposal.id,
     closedAt: closeTime(proposal),
+    ...closingPlace(proposal),
     eligible: proposal.eligible.length,
     versions: ids.map((id) => ({ id, counts: scoreCounts(proposal.ballots, id) })),
     commit: ballotCommit(commitEntries(ids, proposal.ballots)),
   };
+}
+
+/**
+ * True when a result closes the Proposal where its own ballots do: in the
+ * same minute and, when the result names one, at the same seq (#289). A
+ * result from before #289 names none and still counts.
+ */
+function closesAsHeld(body: ResultBody, own: Omit<ResultBody, 'outcome'>): boolean {
+  const place = body.closedSeq === undefined || body.closedSeq === own.closedSeq;
+  return body.closedAt === own.closedAt && place;
 }
 
 /** True when a result checks out against the ballots this device holds. */
@@ -1724,7 +1751,7 @@ function matchesBallots(draft: Draft, proposal: OpenProposal, body: ResultBody):
   return (
     body.eligible === own.eligible &&
     listsVersions(proposal, body) &&
-    body.closedAt === own.closedAt &&
+    closesAsHeld(body, own) &&
     body.commit === own.commit &&
     sameList(lines(body.versions), lines(own.versions)) &&
     outcomeFollows(body, barOf(proposal, draft.rules))
@@ -2395,8 +2422,10 @@ function focusOf(proposals: readonly Proposal[]): Focus | null {
  *
  * `cleared` lists the Proposals whose ballots this device has deleted (#111).
  * Each closes, counts and decides by its first result after it, read ahead,
- * so its early close falls where its ballots put it; a ballot still in the
- * log for one is ignored. When a read-ahead result turns out not to hold up
+ * so its early close falls where its ballots put it: right after the closing
+ * ballot's seq the result names (#289), or, for a result from before #289
+ * that names none, at the start of its minute. A ballot still in the log for
+ * one is ignored. When a read-ahead result turns out not to hold up
  * where it sits, the fold runs once more without reading it ahead. Every
  * record is verified and parsed once, before either pass.
  */
@@ -2459,7 +2488,7 @@ function markOpened(
 
 /**
  * Each cleared Proposal's first `result` after it opens, in relay order, with
- * that result's receipt, which the fold reads ahead (#111). A coalition
+ * that result's seq and receipt, which the fold reads ahead (#111). A coalition
  * motion opens where `outside` puts it (#100).
  */
 function firstResults(
@@ -2472,12 +2501,12 @@ function firstResults(
   const first = new Map<string, FirstResult>();
   for (const read of reads) {
     markOpened(read, cleared, waiting, opened);
-    const { received, parsed } = read;
+    const { seq, received, parsed } = read;
     if (parsed?.event.type !== 'result') continue;
     const { event, id } = parsed;
     const { body, group } = event;
     if (opened.has(body.proposal) && !first.has(body.proposal)) {
-      first.set(body.proposal, { id, received, body, group });
+      first.set(body.proposal, { id, seq, received, body, group });
     }
   }
   return first;
@@ -2659,7 +2688,7 @@ function opensMotions(draft: Draft): boolean {
  */
 function openMotion(draft: Draft, motion: Motion): void {
   if (!opensMotions(draft) || draft.proposals.some((p) => p.id === motion.id)) return;
-  advanceTo(draft, motion.received);
+  advanceTo(draft, motion.received, motion.seq);
   const { id, seq, received, coalition, chain, bar, window, deadline } = motion;
   openProposal(draft, {
     id,
@@ -2707,19 +2736,54 @@ function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
 }
 
 /**
- * Moves relay time on to `received`, never back, and brings the removals
- * (#115), seats, opt-ins and carried Dispatches (#112) up to it
- * ({@link advanceAll}). A coalition still forming when it reaches its
- * `formsBy` is declined there, and relay time stops at that minute (#100). A
- * coalition seats each group admitted by then (#114).
+ * True once the fold, at relay minute `at` and the record with relay seq
+ * `seq`, has passed a record's early close (#289): its minute is over, or
+ * this is that minute and the record comes after the closing ballot's seq. A
+ * record from before #289 names no seq, so its close comes at the start of
+ * its minute (#111).
  */
-function advanceTo(draft: Draft, received: number): void {
+function passedClose(body: ResultBody, at: number, seq: number): boolean {
+  if (at > body.closedAt) return true;
+  return at === body.closedAt && (body.closedSeq === undefined || seq > body.closedSeq);
+}
+
+/**
+ * Closes each cleared Proposal whose read-ahead record closed it early, once
+ * the fold has passed that close (#111, #289), so a cleared Proposal closes
+ * at the same point in relay order as one whose ballots are held: the rules
+ * that ask whether it is open ({@link isOpenAt}) find it open before the
+ * closing ballot's place and closed from there on. As the closing ballot
+ * would, a removal's close then ends the suspension it extended at the later
+ * of its own end and that close (ADR-0059, #115).
+ */
+function closeReadAhead(draft: Draft, seq: number): void {
+  for (const proposal of draft.proposals) {
+    const body = proposal.readAhead?.body;
+    const early = body !== undefined && body.closedAt < proposal.deadline;
+    if (proposal.closedAt === null && early && passedClose(body, draft.at, seq)) {
+      proposal.closedAt = body.closedAt;
+      extendSuspension(draft, proposal, (s) => s.removal === proposal.id);
+    }
+  }
+}
+
+/**
+ * Moves relay time on to `received`, never back, at the record with relay
+ * seq `seq`, closes each cleared Proposal the fold has passed the early
+ * close of (#289), and brings the removals (#115), seats, opt-ins and
+ * carried Dispatches (#112) up to it ({@link advanceAll}). A coalition still
+ * forming when it reaches its `formsBy` is declined there, and relay time
+ * stops at that minute (#100). A coalition seats each group admitted by then
+ * (#114).
+ */
+function advanceTo(draft: Draft, received: number, seq: number): void {
   draft.at = Math.max(draft.at, received);
   if (draft.coalition !== null) {
     expireFormation(draft.coalition, draft.at);
     draft.at = draft.coalition.declinedAt ?? draft.at;
     advanceAdmissions(draft, draft.coalition);
   }
+  closeReadAhead(draft, seq);
   advanceAll(draft);
 }
 
@@ -2737,7 +2801,7 @@ function advanceTo(draft: Draft, received: number): void {
 function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
   const { seq, received, epoch, parsed } = read;
   if (epoch !== draft.epoch) return false;
-  if (!hasEnded(draft)) advanceTo(draft, received);
+  if (!hasEnded(draft)) advanceTo(draft, received, seq);
   if (parsed === null) return false;
   const { event, id } = parsed;
   const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });

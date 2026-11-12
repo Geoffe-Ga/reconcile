@@ -54,6 +54,15 @@ async function formed(fake: FakeRelay) {
 }
 
 /**
+ * How long a wait gives a freshly rendered app to read the store and fold the
+ * group's log and every coalition's, checking each signature, before it shows
+ * them (#260). The file's first render also compiles the whole app: about
+ * 0.3 s unloaded, which a loaded machine stretches past Testing Library's 1 s.
+ * Every wait after a render here reads through that fold.
+ */
+const APP_FOLDS = { timeout: 3_000 };
+
+/**
  * The Coalitions section of `device`'s group home for `groupId`, read from the
  * app, once it shows `text`; fails if it never does. Group home can show
  * before the device has read its coalitions (`useCoalitions` starts empty), so
@@ -71,7 +80,7 @@ async function expectCoalitionsOnHome(
     const section = screen.getByRole('region', { name: 'Coalitions' });
     expect(section).toHaveTextContent(text);
     return section;
-  });
+  }, APP_FOLDS);
 }
 
 describe('reconciling two groups', SLOW, () => {
@@ -109,7 +118,9 @@ describe('reconciling two groups', SLOW, () => {
     cleanup();
     window.history.replaceState(null, '', `#/g/${riverside}/p/${proposal}`);
     render(<App services={ana.services} />);
-    expect(await screen.findByText(messages.coalitions.reconcilePassed)).toBeVisible();
+    expect(
+      await screen.findByText(messages.coalitions.reconcilePassed, {}, APP_FOLDS),
+    ).toBeVisible();
     const anaHome = await expectCoalitionsOnHome(ana, riverside, 'You take part as Ana E.');
     expect(within(anaHome).getByText(/You take part as/)).toHaveTextContent(
       'You take part as Ana E.',
@@ -234,7 +245,9 @@ describe('admitting a group into a formed coalition', SLOW, () => {
     cleanup();
     window.history.replaceState(null, '', `#/g/${riverside}/p/${motion}`);
     render(<App services={ana.services} />);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Admit Elm Row' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Admit Elm Row' }, APP_FOLDS),
+    ).toBeVisible();
     expect(await screen.findByText(/^From the coalition/)).toHaveTextContent(
       'From the coalition Eastside Housing',
     );

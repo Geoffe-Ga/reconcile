@@ -11,8 +11,11 @@
  *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
  *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
  *   first (#107).
- * - A fold vector is `{name, cleared?, records, relayNow, expect, unchangedWithout?}`. `cleared`
- *   lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed to `fold`.
+ * - A fold vector is `{name, cleared?, alsoCleared?, records, relayNow, expect, unchangedWithout?}`.
+ *   `cleared` lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed
+ *   to `fold`. `alsoCleared` lists Proposals whose ballots the records still hold: vectors.test.ts
+ *   also folds the log as a device that has cleared them would hold it ({@link clearedLog}), and
+ *   `expect` must hold there too, the two states agreeing on everything but the ballots (#289).
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
  *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
@@ -70,8 +73,9 @@ import { sha256 } from '../crypto/hash';
 import { seatKxOf } from '../crypto/room';
 import { signSeatProof } from '../crypto/seat';
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
-import { base64url, eventId, fromBase64url } from '../engine/event';
-import type { LogRecord } from '../engine/fold';
+import { base64url, eventId, fromBase64url, parseRecord } from '../engine/event';
+import { expiringProposal } from '../engine/expiry';
+import type { GroupState, LogRecord } from '../engine/fold';
 import type { ProposalClass } from '../engine/rules';
 import type { TallyInput, TallyOutcome } from '../engine/tally';
 import { concat, fromHex } from './bytes';
@@ -110,6 +114,7 @@ type VectorRecord = RecordOptions &
 export interface FoldVector {
   readonly name: string;
   readonly cleared?: readonly string[];
+  readonly alsoCleared?: readonly string[];
   readonly records: readonly VectorRecord[];
   readonly relayNow: number | null;
   readonly expect: object;
@@ -338,12 +343,16 @@ function relayBytes(record: VectorRecord, event: Uint8Array): Uint8Array {
   return concat(at.key, at.signature, at.event);
 }
 
-/** A fold vector's relay records, the id of each record by seq, its relay `now` and its `cleared`. */
+/**
+ * A fold vector's relay records, the id of each record by seq, its relay
+ * `now`, its `cleared`, and the Proposals it also folds cleared.
+ */
 export interface VectorLog {
   readonly records: LogRecord[];
   readonly ids: ReadonlyMap<number, string>;
   readonly relayNow: number | null;
   readonly cleared: readonly string[];
+  readonly alsoCleared: readonly string[];
 }
 
 /**
@@ -365,7 +374,35 @@ export function buildRecords(vector: FoldVector): VectorLog {
   const ids = new Map<number, string>();
   const records = vector.records.flatMap((record) => buildRecord(record, ids));
   const cleared = (vector.cleared ?? []).map((ref) => resolveRef(ref, ids));
-  return { records, ids, relayNow: vector.relayNow, cleared };
+  const alsoCleared = (vector.alsoCleared ?? []).map((ref) => resolveRef(ref, ids));
+  return { records, ids, relayNow: vector.relayNow, cleared, alsoCleared };
+}
+
+/**
+ * The log as a device holds it once it has cleared `log.alsoCleared` (#111):
+ * without the records that expire with each one's ballots, apart from the
+ * result `held`, the fold of the full log, accepted for it, and with those
+ * Proposals added to `cleared`. Every record left keeps its seq and receipt,
+ * as clearing leaves them. Throws for a Proposal with no accepted result,
+ * which no device would clear.
+ */
+export function clearedLog(
+  log: VectorLog,
+  held: GroupState,
+): { records: LogRecord[]; cleared: string[] } {
+  const kept = new Set(
+    log.alsoCleared.map((id) => {
+      const result = held.proposals.find((p) => p.id === id)?.result ?? null;
+      if (result === null) throw new Error(`a vector clears ${id}, which has no result`);
+      return result.id;
+    }),
+  );
+  const records = log.records.filter((record) => {
+    const parsed = parseRecord(record.bytes);
+    const proposal = parsed === null ? null : expiringProposal(parsed.event);
+    return proposal === null || !log.alsoCleared.includes(proposal) || kept.has(parsed?.id ?? '');
+  });
+  return { records, cleared: [...log.cleared, ...log.alsoCleared] };
 }
 
 /** A vector's logs as relay records by name, and the id of each record by its global seq (#100). */

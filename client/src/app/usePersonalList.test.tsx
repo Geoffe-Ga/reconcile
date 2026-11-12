@@ -15,18 +15,18 @@ const STATEMENT: PersonalDocument = {
 
 describe('usePersonalList', () => {
   it('is null until the store answers, then the store’s list', async () => {
-    const store = { listPersonal: vi.fn(() => Promise.resolve([STATEMENT])) };
+    const store = { listPersonalEntries: vi.fn(() => Promise.resolve([STATEMENT])) };
     const { result } = renderHook(() => usePersonalList(store));
 
     expect(result.current).toBeNull();
     await waitFor(() => {
       expect(result.current).toEqual([STATEMENT]);
     });
-    expect(store.listPersonal).toHaveBeenCalledOnce();
+    expect(store.listPersonalEntries).toHaveBeenCalledOnce();
   });
 
   it('lists none when the read fails, so Personal still offers a new Document', async () => {
-    const store = { listPersonal: () => Promise.reject(new Error('IndexedDB refused.')) };
+    const store = { listPersonalEntries: () => Promise.reject(new Error('IndexedDB refused.')) };
     const { result } = renderHook(() => usePersonalList(store));
 
     await waitFor(() => {
@@ -37,7 +37,7 @@ describe('usePersonalList', () => {
   it('ignores an answer that comes after Personal has closed', async () => {
     let answer: (list: PersonalDocument[]) => void = () => undefined;
     const store = {
-      listPersonal: () =>
+      listPersonalEntries: () =>
         new Promise<PersonalDocument[]>((resolve) => {
           answer = resolve;
         }),
