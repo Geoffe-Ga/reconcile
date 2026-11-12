@@ -22,6 +22,7 @@ import {
   TALLY_VECTORS,
   VECTOR_FILES,
 } from '../test/vectors';
+import { settlesAt } from './coalition';
 import { foldTogether, resultMismatches, resultsToReport, seatIn } from './crossing';
 import { fold, type GroupState, type LogRecord } from './fold';
 import { DEFAULT_RULES } from './rules';
@@ -874,6 +875,50 @@ describe('nested vectors (#122)', () => {
       }
     },
   );
+});
+
+describe('a Dispatch on a nested motion (#122, #124)', () => {
+  /** two-levels-pass, with D's motion carrying a Dispatch, folded together at `relayNow`. */
+  function withDispatch(relayNow: number | null) {
+    const base = NESTED_VECTORS.find((vector) => vector.name.startsWith('two-levels-pass:'));
+    if (base === undefined) throw new Error('Expected the vector two-levels-pass.');
+    const copy = JSON.parse(JSON.stringify(base)) as NestedVector;
+    const motion = copy.logs.D?.find((record) => record.seq === 25);
+    if (motion === undefined || !('event' in motion)) throw new Error('Expected D’s motion.');
+    const { body } = motion.event as { body: Record<string, unknown> };
+    body.dispatch = { title: 'Rent stays fair', text: 'Metro Renters passed it.' };
+    const { logs, ids } = buildLogs(copy);
+    return { states: foldNested(logs, relayNow ?? base.relayNow), id: ids.get(25) ?? '' };
+  }
+
+  it('goes out once, from D, once its pass is final, and never from a log it crossed down to', () => {
+    const { states, id } = withDispatch(null);
+    const d = stateOf(states, 'D');
+    const proposal = d.proposals.find((p) => p.id === id);
+    if (proposal === undefined) throw new Error('Expected D’s motion.');
+    expect(proposal).toMatchObject({ final: true, outcome: { kind: 'pass' } });
+    expect(d.dispatches).toEqual([
+      expect.objectContaining({
+        id,
+        by: { proposal: id },
+        title: 'Rent stays fair',
+        received: settlesAt(proposal),
+      }),
+    ]);
+    // C decides the motion for its seat and A, B and E vote on it, but none of them sends it.
+    for (const log of ['C', 'A', 'B', 'E']) {
+      const below = stateOf(states, log);
+      expect(below.proposals.find((p) => p.id === id)?.dispatch, log).toBeNull();
+      expect(below.dispatches, log).toEqual([]);
+    }
+  });
+
+  it('sends nothing from D while its pass can still be contested', () => {
+    const { states, id } = withDispatch(null);
+    const proposal = stateOf(states, 'D').proposals.find((p) => p.id === id);
+    const before = withDispatch(settlesAt(proposal ?? { deadline: 0 }) - 1);
+    expect(stateOf(before.states, 'D').dispatches).toEqual([]);
+  });
 });
 
 describe('tally vectors', () => {
