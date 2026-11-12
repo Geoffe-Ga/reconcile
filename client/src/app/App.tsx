@@ -56,6 +56,7 @@ import type { Persistence } from '../platform/persist';
 import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
+import { dispatchOf, notesElsewhere, skipCarry } from '../store/carry';
 import type { HeldCoalition } from '../store/coalitions';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
@@ -77,7 +78,7 @@ import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
 import { HeldShareCard } from './HeldShares';
 import { CoalitionSection } from './CoalitionSection';
-import { coalitionRows, withMotionWords } from './coalitionLines';
+import { coalitionRows, sitsInFormed, withMotionWords } from './coalitionLines';
 import {
   admitCard,
   bringCard,
@@ -100,10 +101,12 @@ import {
   type DispatchValues,
   type DissolveValues,
   propose,
+  proposeDispatch,
   proposeDissolve,
   proposeRemoval,
   proposeRules,
   proposeSteward,
+  type RisingValues,
   type RemovalValues,
   respondToRemoval,
   type RulesValues,
@@ -985,41 +988,85 @@ interface ProposalScreenProps extends GroupScreenProps {
 }
 
 function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) {
-  const deviceNow = useNow(services.now);
   return (
     <GroupGate groupId={groupId}>
-      {(group) => {
-        const author = group.me.author;
-        const onVote = (scores: Scores, note: string) =>
-          castBallot(services, groupId, { proposal: proposalId, scores, note });
-        const onProposeAgain = () => {
-          navigate({ name: 'again', groupId, proposalId });
-        };
-        const onTell = (moment: ChatMoment, details: ChatDetails) =>
-          shareOrCopy(chatPayload(moment, details, services.origin), services);
-        const onRespond = (text: string) =>
-          respondToRemoval(services, groupId, { proposal: proposalId, text });
-        return (
-          <ProposalView
-            state={group.state}
-            me={author}
-            proposalId={proposalId}
-            pending={group.pending}
-            reachable={group.reachable}
-            now={relayMinuteNow(group, deviceNow)}
-            own={ownBallot(group.state, group.log, proposalId, author)}
-            leaving={group.leaving}
-            unconfirmed={group.unconfirmed}
-            {...(group.cleared === null ? {} : { cleared: group.cleared })}
-            coalitions={group.coalitions}
-            onVote={onVote}
-            onProposeAgain={onProposeAgain}
-            onTell={onTell}
-            onRespond={onRespond}
-          />
-        );
-      }}
+      {(group) => <GroupProposal services={services} group={group} proposalId={proposalId} />}
     </GroupGate>
+  );
+}
+
+/**
+ * The notes this person wrote on the Dispatch `dispatch` in their other
+ * groups on this device (#126), which a note here may not repeat; none while
+ * they load, or for a Proposal on no rising Dispatch.
+ */
+function useNotesElsewhere(services: AppServices, groupId: string, dispatch: string | null) {
+  const [notes, setNotes] = useState<readonly string[]>([]);
+  useEffect(() => {
+    let live = true;
+    if (dispatch === null) return;
+    notesElsewhere(services.store, groupId, dispatch).then(
+      (found) => {
+        if (live) setNotes(found);
+      },
+      // Without them the ballot refuses no note, as before #126.
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [services, groupId, dispatch]);
+  return notes;
+}
+
+interface GroupProposalProps {
+  readonly services: AppServices;
+  readonly group: ReadyGroup;
+  readonly proposalId: string;
+}
+
+/**
+ * One Proposal's page: its ballot, and for a Dispatch that may rise (#126),
+ * this device's plan to cast this person's score from another group, with
+ * Don't cast, and the notes they wrote on it elsewhere.
+ */
+function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
+  const deviceNow = useNow(services.now);
+  const groupId = group.state.group ?? '';
+  const proposal = group.state.proposals.find((p) => p.id === proposalId);
+  const dispatch = proposal === undefined ? null : dispatchOf(proposal, group.coalitions);
+  const notes = useNotesElsewhere(services, groupId, dispatch?.id ?? null);
+  const author = group.me.author;
+  const onVote = (scores: Scores, note: string) =>
+    castBallot(services, groupId, { proposal: proposalId, scores, note });
+  const onProposeAgain = () => {
+    navigate({ name: 'again', groupId, proposalId });
+  };
+  const onTell = (moment: ChatMoment, details: ChatDetails) =>
+    shareOrCopy(chatPayload(moment, details, services.origin), services);
+  const onRespond = (text: string) =>
+    respondToRemoval(services, groupId, { proposal: proposalId, text });
+  return (
+    <ProposalView
+      state={group.state}
+      me={author}
+      proposalId={proposalId}
+      pending={group.pending}
+      reachable={group.reachable}
+      now={relayMinuteNow(group, deviceNow)}
+      own={ownBallot(group.state, group.log, proposalId, author)}
+      leaving={group.leaving}
+      unconfirmed={group.unconfirmed}
+      {...(group.cleared === null ? {} : { cleared: group.cleared })}
+      coalitions={group.coalitions}
+      onVote={onVote}
+      onProposeAgain={onProposeAgain}
+      onTell={onTell}
+      onRespond={onRespond}
+      carry={group.carries.find((plan) => plan.motion === proposalId) ?? null}
+      onSkipCarry={() => skipCarry(services.store, groupId, proposalId)}
+      notesElsewhere={notes}
+    />
   );
 }
 
@@ -1207,17 +1254,34 @@ function DispatchesScreen({ groupId }: { readonly groupId: string }) {
   );
 }
 
-/** Send a Dispatch (#112); sending it replaces the form with the group's Dispatches. */
+/**
+ * Send a Dispatch (#112); sending it replaces the form with the group's
+ * Dispatches. Once the group sits in a formed coalition, it may put the
+ * Dispatch to a vote with a ceiling instead (#126), which replaces the form
+ * with that Proposal's ballot.
+ */
 function SendDispatchScreen({ services, groupId }: GroupScreenProps) {
   const onSend = async (values: DispatchValues) => {
     await sendDispatch(services, groupId, values);
     // Replace the form, so Back from the Dispatches doesn't open it again.
     replaceRoute({ name: 'dispatches', groupId });
   };
+  const onPropose = async (values: RisingValues) => {
+    const result = await proposeDispatch(services, groupId, values);
+    if (result.outcome === 'proposed') {
+      replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    }
+  };
   return (
     <GroupGate groupId={groupId} writes>
-      {({ state, me, leaving }) => (
-        <SendDispatch state={state} me={me.author} leaving={leaving} onSend={onSend} />
+      {({ state, me, leaving, coalitions }) => (
+        <SendDispatch
+          state={state}
+          me={me.author}
+          leaving={leaving}
+          onSend={onSend}
+          {...(sitsInFormed(state, coalitions) ? { onPropose } : {})}
+        />
       )}
     </GroupGate>
   );

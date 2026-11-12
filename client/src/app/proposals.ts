@@ -19,6 +19,7 @@ import type { Level } from '../engine/capabilities';
 import {
   type AddTarget,
   base64url,
+  type Ceiling,
   type ClassTarget,
   type EventDraft,
   type MoveTarget,
@@ -632,6 +633,43 @@ export async function vouch(
 /** A Dispatch's entries (#112): its title and text, trimmed, and the Document it points to, or null. */
 export interface DispatchValues extends DispatchWords {
   readonly doc: string | null;
+}
+
+/** A Dispatch put to a vote so it can rise (#126): its entries, and how far it can go. */
+export interface RisingValues extends DispatchValues {
+  readonly ceiling: Ceiling;
+}
+
+/**
+ * Puts a Dispatch to the group's vote so it can rise (#126; ADR-0037), as
+ * this device's member of `groupId`: one ordinary Proposal whose target is
+ * its ceiling and any Document, carrying the Dispatch, titled as the
+ * Dispatch, with no why: the Dispatch says it. Signing NFC-normalizes every
+ * string (createEvent). Within its limits it always fits a blob. Once it
+ * passes it goes out to the group, and each coalition above it votes in
+ * turn, up to its ceiling.
+ */
+export async function proposeDispatch(
+  services: ProposalServices,
+  groupId: string,
+  values: RisingValues,
+): Promise<ProposeResult> {
+  const { title, text, doc, ceiling } = values;
+  const body = {
+    target: { kind: 'dispatch', ceiling, ...(doc === null ? {} : { doc }) } as const,
+    title,
+    why: '',
+    dispatch: { title, text },
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
 }
 
 /**

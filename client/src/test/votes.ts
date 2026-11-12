@@ -7,6 +7,7 @@
 import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
 import type {
   CarriedDispatch,
+  Ceiling,
   DispatchBody,
   EventDraft,
   FoundingDocument,
@@ -126,6 +127,8 @@ export interface LogBuilder {
   chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
   dispatch(name: string, body: DispatchBody): string;
+  /** Adds `name`'s Dispatch put to the group's vote with `ceiling` (#126), titled as the Dispatch. */
+  rising(name: string, ceiling: Ceiling, body: CarriedDispatch, doc?: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /**
@@ -379,6 +382,11 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     dispatch(name: string, body: DispatchBody) {
       return add(name, { type: 'dispatch', group, ts: 0, body });
+    },
+    rising(name: string, ceiling: Ceiling, dispatch: CarriedDispatch, doc?: string) {
+      const target = { kind: 'dispatch' as const, ceiling, ...(doc === undefined ? {} : { doc }) };
+      const body = { target, title: dispatch.title, why: '', dispatch };
+      return add(name, { type: 'proposal', group, ts: 0, body });
     },
     state(relayNow?: number, cleared: readonly string[] = []) {
       return fold(records, relayNow ?? builder.minute, [], cleared);

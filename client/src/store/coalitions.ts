@@ -20,6 +20,9 @@
  *   secret read from the group's own reconcile Proposal;
  * - a device whose key is bound to a seat queues what its group owes there
  *   (`resultsToReport`): only a pass or fail per motion and seat crosses;
+ * - it also queues the promotion records its group owes there (#126,
+ *   `promotionsOwed`): one per Dispatch the group passed whose ceiling
+ *   leaves that level, carrying the Dispatch's words and nothing else;
  * - a device that brought a formed coalition's card to a group proposes
  *   admitting it once that group's reconcile Proposal has passed, with its
  *   seat's X25519 key, and plans to join under its seat; if it didn't pass,
@@ -50,7 +53,7 @@ import { roomCommit, seatKxOf, unwrapInner, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { type Coalition, MAX_LEVEL, type Motion, type ReconcileChange } from '../engine/coalition';
-import { foldTogether, motionsFor, resultsToReport } from '../engine/crossing';
+import { foldTogether, motionsFor, promotionsOwed, resultsToReport } from '../engine/crossing';
 import {
   type GroupResultBody,
   type ParsedEvent,
@@ -479,7 +482,7 @@ export function foldWithCoalitions(
  * {@link settleCoalitions} reads it: a group's, or a coalition entry's
  * (#122), folded with the motions it decides from above.
  */
-interface FoldedLog {
+export interface FoldedLog {
   readonly group: Group;
   readonly state: GroupState;
 }
@@ -573,6 +576,33 @@ async function reportResults(settling: Settling) {
     (body) => !resultWaits(settling.pending, body),
   );
   for (const body of owed) await queue(settling, { type: 'group-result', body });
+  return owed.length > 0;
+}
+
+/** Whether a promotion record for the Dispatch `id` already waits in the outbox (#126). */
+function promotionWaits(pending: readonly ParsedEvent[], id: string): boolean {
+  return pending.some(({ event }) => {
+    if (event.type !== 'proposal' || !('target' in event.body)) return false;
+    const { target } = event.body;
+    return target.kind === 'promote' && target.dispatch.id === id;
+  });
+}
+
+/**
+ * Posts the promotion records the log whose seat this entry's participant is
+ * bound to owes the coalition (#126; ADR-0037): one for each Dispatch it
+ * passed whose ceiling leaves this level, leaving out what already waits.
+ * Each carries the Dispatch's id, title and text, its ceiling, the level and
+ * the seat, and nothing else. Returns whether it queued anything.
+ */
+async function promoteDispatches(settling: Settling): Promise<boolean> {
+  const seat = boundSeat(settling);
+  const holder = seat === null ? null : holderOf(settling.logs, seat);
+  if (seat === null || holder === null) return false;
+  const owed = promotionsOwed(holder.state, settling.coalition, seat).filter(
+    (body) => !promotionWaits(settling.pending, body.target.dispatch.id),
+  );
+  for (const body of owed) await queue(settling, { type: 'proposal', body });
   return owed.length > 0;
 }
 
@@ -716,21 +746,53 @@ function foldedLogs(groups: readonly Group[], coalitions: readonly HeldCoalition
 }
 
 /**
- * After a pass (#114): for each coalition entry whose genesis has arrived,
- * and that hasn't been declined, joins as planned, queues its group's or its
- * coalition's results (#122), proposes a planned admission, and wraps the
- * room's `inner` for each seat admitted since (#313). Returns the ids of the
- * entries that queued anything, for the loop to send at once. `clock` is the
- * device clock in ms, for each event's display-only `ts`.
+ * Every log on the device that may hold a seat, folded once for a pass's
+ * settling: the coalition entries, each folded with the motions it decides
+ * above, the groups that go on, and each of those, a group's or a
+ * coalition's, folded with what it decides from above (#114, #122). The
+ * coalitions' settling and the carried scores (#126, `carry.ts`) both read it.
  */
-export async function settleCoalitions(store: Store, clock: () => number): Promise<string[]> {
+export interface Holdings {
+  readonly entries: readonly Group[];
+  readonly coalitions: readonly HeldCoalition[];
+  readonly groups: readonly Group[];
+  readonly logs: readonly FoldedLog[];
+}
+
+/**
+ * This device's {@link Holdings}, as the store holds them now. With no
+ * coalition on the device there is nothing to settle or carry, so it reads
+ * and folds no group, as a pass did before #126.
+ */
+export async function holdings(
+  store: Pick<Store, 'listCoalitions' | 'listGroups'>,
+): Promise<Holdings> {
   const entries = await store.listCoalitions();
-  if (entries.length === 0) return [];
+  if (entries.length === 0) return { entries, coalitions: [], groups: [], logs: [] };
   const coalitions = foldCoalitions(entries);
   const groups = (await store.listGroups()).filter(
     (group) => group.archived === undefined && group.leaving === undefined,
   );
-  const logs = foldedLogs(groups, coalitions);
+  return { entries, coalitions, groups, logs: foldedLogs(groups, coalitions) };
+}
+
+/**
+ * After a pass (#114): for each coalition entry whose genesis has arrived,
+ * and that hasn't been declined, joins as planned, queues its group's or its
+ * coalition's results (#122) and promotion records (#126), proposes a
+ * planned admission, and wraps the room's `inner` for each seat admitted
+ * since (#313). Returns the ids of the entries that queued anything,
+ * for the loop to send at once. `clock` is the device clock in ms, for each
+ * event's display-only `ts`. `held` is what {@link holdings} read, when the
+ * loop has read it already.
+ */
+export async function settleCoalitions(
+  store: Store,
+  clock: () => number,
+  held?: Holdings,
+): Promise<string[]> {
+  const { entries, coalitions, groups, logs } = held ?? (await holdings(store));
+  if (entries.length === 0) return [];
   const keys = coalitionKeys(groups, entries);
   const queued: string[] = [];
   for (const { entry, state: coalition } of coalitions) {
@@ -738,11 +800,16 @@ export async function settleCoalitions(store: Store, clock: () => number): Promi
     if (id === null || coalition.coalition?.status === 'declined') continue;
     const pending = parsedOf(entry.outbox);
     const settling = { store, entry, coalition, id, logs, keys, pending, ts: clock() };
-    const joined = await joinIfPlanned(settling);
-    const reported = await reportResults(settling);
-    const admitted = await proposeAdmission(settling);
-    const wrapped = await wrapForAdmitted(settling);
-    if (joined || reported || admitted || wrapped) queued.push(entry.groupId);
+    const steps = [
+      joinIfPlanned,
+      reportResults,
+      promoteDispatches,
+      proposeAdmission,
+      wrapForAdmitted,
+    ];
+    let any = false;
+    for (const step of steps) any = (await step(settling)) || any;
+    if (any) queued.push(entry.groupId);
   }
   return queued;
 }

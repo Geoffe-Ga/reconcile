@@ -25,7 +25,7 @@ import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { ReceivedApplication } from '../store/applications';
 import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
-import type { ClearedArchive, Group, Me, Store } from '../store/db';
+import type { CarryPlan, ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
 import { type HeldShare, heldSharesIn } from '../store/recovery';
 
@@ -108,6 +108,8 @@ export interface GroupView {
   applications: readonly ReceivedApplication[];
   /** Every coalition on this device, each with its log folded (#114). */
   coalitions: readonly HeldCoalition[];
+  /** The carried scores this device means to cast in this group (#126): none until the first. */
+  carries: readonly CarryPlan[];
 }
 
 /** No shares: one shared empty list, so it never looks changed. */
@@ -156,8 +158,11 @@ export function useGroup(groupId: string): GroupView {
     newShares,
     applications: group?.door?.applications ?? NO_APPLICATIONS,
     coalitions,
+    carries: group?.carries ?? NO_CARRIES,
   };
 }
+
+const NO_CARRIES: readonly CarryPlan[] = [];
 
 /** No coalitions: one shared empty list, so it never looks changed. */
 const NO_COALITIONS: readonly HeldCoalition[] = [];

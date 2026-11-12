@@ -1159,6 +1159,49 @@ describe('a share by link through each upgrade (#105, beside #97’s version 5)'
   });
 });
 
+describe('updateCarried (#126)', () => {
+  const score = { dispatch: 'd', score: 3, ceiling: 'coalitions', at: 5, until: 100 } as const;
+  const plan = { motion: 'm', dispatch: 'd', score: 3, castAt: 9, deadline: 20 } as const;
+
+  it('replaces the group’s carried scores with an edit of them, and tells subscribers', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const heard = vi.fn();
+    store.subscribe(heard);
+    const seen: unknown[] = [];
+
+    await store.updateCarried('group-1', (held) => {
+      seen.push(held);
+      return { scores: [score], carries: [plan] };
+    });
+    await store.updateCarried('group-1', (held) => {
+      seen.push(held);
+      return { scores: held.scores, carries: [] };
+    });
+
+    expect(seen).toEqual([
+      { scores: [], carries: [] },
+      { scores: [score], carries: [plan] },
+    ]);
+    const kept = await store.getGroup('group-1');
+    expect([kept?.scores, kept?.carries]).toEqual([[score], undefined]);
+    expect(heard).toHaveBeenCalledWith('group-1');
+  });
+
+  it('changes nothing in a group this device is leaving or keeps read-only', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.addGroup({ ...group, groupId: 'group-2' });
+    await store.markLeaving('group-1', utf8('{"leave":1}'));
+    await store.markArchived('group-2', 'dissolved');
+
+    for (const id of ['group-1', 'group-2']) {
+      await store.updateCarried(id, () => ({ scores: [score], carries: [plan] }));
+      expect((await store.getGroup(id))?.scores, id).toBeUndefined();
+    }
+  });
+});
+
 describe('markArchived', () => {
   it('drops the outbox, drafts and any leave, marks the group archived and tells subscribers (#108)', async () => {
     const store = await openStore();
@@ -1205,6 +1248,19 @@ describe('markArchived', () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it('forgets the scores this member gave and the casts it planned, which a read-only group neither carries nor casts (#126)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    const score = { dispatch: 'd', score: 3, ceiling: 1, at: 5, until: null } as const;
+    const plan = { motion: 'm', dispatch: 'd', score: 3, castAt: 9, deadline: 20 } as const;
+    await store.updateCarried('group-1', () => ({ scores: [score], carries: [plan] }));
+
+    await store.markArchived('group-1', 'dissolved');
+
+    const kept = await store.getGroup('group-1');
+    expect([kept?.scores, kept?.carries]).toEqual([undefined, undefined]);
   });
 
   it('keeps an archive it already holds, cleared state included', async () => {

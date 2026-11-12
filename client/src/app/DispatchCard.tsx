@@ -38,12 +38,13 @@ interface PartProps {
 /**
  * "From Ana", or "From the Proposal ‘<title>’", the title linking to the
  * Proposal in a group, and plain in a coalition, whose motions are voted on
- * inside each member group (#124).
+ * inside each member group (#124). A Dispatch a coalition passed as it rose
+ * reads "From <seat>", the seat that passed it below (#126).
  */
 function SenderLine({ state, dispatch, place }: PartProps) {
   const sender = senderOf(state, dispatch.by);
   const { from, fromProposal } = messages.dispatches;
-  if (sender.kind === 'person') {
+  if (sender.kind !== 'proposal') {
     return (
       <span>
         <Named parts={from} name={sender.name} />

@@ -5,20 +5,34 @@
  * group's opted-in phones with the usual content-free push. It shows a form
  * only to someone who holds `dispatch` (`can()`, as the fold asks) and isn't
  * leaving, and says why otherwise.
+ *
+ * Once the group sits in a formed coalition, the form asks how far it can go
+ * (#126; ADR-0037, ADR-0071): this group only sends it at once, as before,
+ * and any other choice puts it to the group's vote with that ceiling, so each
+ * coalition above can vote on it in turn.
  */
 import { type SyntheticEvent, useState } from 'react';
-import { Button, Form, Label, RadioButton, RadioField, RadioGroup } from 'react-aria-components';
+import {
+  Button,
+  Form,
+  Label,
+  RadioButton,
+  RadioField,
+  RadioGroup,
+  Text,
+} from 'react-aria-components';
 
 import { documentTitle } from '../app/dispatchLines';
 import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
-import type { DispatchValues } from '../app/proposals';
+import type { DispatchValues, RisingValues } from '../app/proposals';
 import { SuspendedNote } from '../app/stewards';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
 import { can, isSuspended } from '../engine/capabilities';
 import { documentIds } from '../engine/dispatches';
+import { type Ceiling, CEILINGS } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 
 /** Props for {@link SendDispatch}. */
@@ -31,7 +45,19 @@ export interface SendDispatchProps {
   readonly leaving?: boolean;
   /** Queues the Dispatch from valid entries; rejects when it couldn't be saved. */
   readonly onSend: (values: DispatchValues) => Promise<void>;
+  /**
+   * Puts the Dispatch to the group's vote with the ceiling chosen (#126);
+   * rejects when it couldn't be saved. Given only once the group sits in a
+   * formed coalition, which is when the form asks how far it can go.
+   */
+  readonly onPropose?: (values: RisingValues) => Promise<void>;
 }
+
+/** How far a Dispatch can go: this group only, or a ceiling above it (#126). */
+type Reach = 0 | Ceiling;
+
+/** Every choice, this group only first. */
+const REACHES: readonly Reach[] = [0, ...CEILINGS];
 
 /** The picker's value for pointing to no Document: never a Document id, which is 43 characters. */
 const NO_DOCUMENT = 'none';
@@ -85,18 +111,66 @@ function DocumentPicker({ state, value, onChange }: DocumentPickerProps) {
   );
 }
 
-/** The form: title, text and Document. Submitting queues one `dispatch`. */
-function DispatchForm({ state, onSend }: Pick<SendDispatchProps, 'state' | 'onSend'>) {
+interface CeilingPickerProps {
+  readonly value: Reach;
+  readonly onChange: (value: Reach) => void;
+}
+
+/**
+ * "How far can it go?" (#126): this group only, one level up, two levels up,
+ * or as far as the coalitions go, each a card with the line that says what
+ * happens.
+ */
+function CeilingPicker({ value, onChange }: CeilingPickerProps) {
+  const { ceilingLabel, ceilings, ceilingHints } = messages.sendDispatch;
+  const pick = (picked: string) => {
+    const reach = REACHES.find((candidate) => String(candidate) === picked);
+    if (reach !== undefined) onChange(reach);
+  };
+  return (
+    <RadioGroup className="level-group" name="ceiling" value={String(value)} onChange={pick}>
+      <Label className="field-label">{ceilingLabel}</Label>
+      <div className="level-options">
+        {REACHES.map((reach) => (
+          <RadioField key={reach} value={String(reach)} className="level-option">
+            <RadioButton className="level-button">{ceilings[reach]}</RadioButton>
+            <Text slot="description" className="level-description">
+              {ceilingHints[reach]}
+            </Text>
+          </RadioField>
+        ))}
+      </div>
+    </RadioGroup>
+  );
+}
+
+/** Sends the Dispatch at once for this group only, else puts it to a vote with its ceiling (#126). */
+function sender(props: Pick<SendDispatchProps, 'onSend' | 'onPropose'>) {
+  return async ({ reach, ...values }: DispatchValues & { readonly reach: Reach }) => {
+    if (reach === 0 || props.onPropose === undefined) await props.onSend(values);
+    else await props.onPropose({ ...values, ceiling: reach });
+  };
+}
+
+/**
+ * The form: title, text, Document and, once the group sits in a formed
+ * coalition, how far it can go (#126). Submitting queues one `dispatch`, or
+ * one Proposal that puts it to a vote.
+ */
+function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPropose'>) {
+  const { state, onPropose } = props;
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [doc, setDoc] = useState(NO_DOCUMENT);
-  const { run, running, outcome } = useSaving(onSend);
+  const [reach, setReach] = useState<Reach>(0);
+  const { run, running, outcome } = useSaving(sender(props));
   const { sendDispatch } = messages;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const chosen = doc === NO_DOCUMENT ? null : doc;
-    void run({ title: title.trim(), text: text.trim(), doc: chosen });
+    void run({ title: title.trim(), text: text.trim(), doc: chosen, reach });
   };
+  const voted = reach !== 0;
   return (
     <Form className="form" onSubmit={submit}>
       <Field
@@ -119,7 +193,8 @@ function DispatchForm({ state, onSend }: Pick<SendDispatchProps, 'state' | 'onSe
         onChange={setText}
       />
       <DocumentPicker state={state} value={doc} onChange={setDoc} />
-      <p className="caption">{sendDispatch.visibility}</p>
+      {onPropose === undefined ? null : <CeilingPicker value={reach} onChange={setReach} />}
+      <p className="caption">{voted ? sendDispatch.visibilityVote : sendDispatch.visibility}</p>
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {sendDispatch.failed}
@@ -127,7 +202,7 @@ function DispatchForm({ state, onSend }: Pick<SendDispatchProps, 'state' | 'onSe
       ) : null}
       <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
-          {sendDispatch.submit}
+          {voted ? sendDispatch.submitVote : sendDispatch.submit}
         </Button>
       </div>
     </Form>
@@ -135,7 +210,8 @@ function DispatchForm({ state, onSend }: Pick<SendDispatchProps, 'state' | 'onSe
 }
 
 /** Send a Dispatch to everyone in the group, for someone who may send one. */
-export function SendDispatch({ state, me, leaving = false, onSend }: SendDispatchProps) {
+export function SendDispatch(props: SendDispatchProps) {
+  const { state, me, leaving = false, onSend, onPropose } = props;
   if (leaving || !can(state, me, 'dispatch')) {
     return <Unavailable state={state} me={me} leaving={leaving} />;
   }
@@ -152,7 +228,11 @@ export function SendDispatch({ state, me, leaving = false, onSend }: SendDispatc
         pageTitle={sendDispatch.pageTitle}
       />
       <p className="lede">{sendDispatch.lede}</p>
-      <DispatchForm state={state} onSend={onSend} />
+      <DispatchForm
+        state={state}
+        onSend={onSend}
+        {...(onPropose === undefined ? {} : { onPropose })}
+      />
     </main>
   );
 }
