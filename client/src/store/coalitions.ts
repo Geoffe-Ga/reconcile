@@ -189,20 +189,56 @@ function fromGroup(group: Group): Found[] {
 }
 
 /**
+ * A seat a coalition holds in a coalition above it (#122), opened from its
+ * sealed reconcile motion: the coalition above's secret, its `inner` where
+ * the motion carried one, as a founding seat's does, the seat secret and its
+ * public key, and the motion's id.
+ */
+export interface SeatAbove {
+  readonly secret: Uint8Array;
+  readonly inner: Uint8Array | null;
+  readonly seat: Uint8Array;
+  readonly key: string;
+  readonly proposal: string;
+}
+
+/**
+ * The seats above the coalition `id` that `held`, its sealed reconcile
+ * targets, hold, each opened under its `inner` (#122). A field whose seat
+ * secret doesn't make the public key the motion states is no seat to act
+ * for, so it is left out.
+ */
+function openedAbove(
+  id: string,
+  inner: Uint8Array,
+  held: readonly Held<SealedReconcileTarget>[],
+): SeatAbove[] {
+  return held.flatMap(({ proposal, target }) => {
+    const opened = openSeatSecrets(id, inner, target.sealed);
+    if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
+    return [{ ...opened, inner: opened.inner ?? null, key: target.key, proposal }];
+  });
+}
+
+/**
+ * The seats above the coalition folded as `state` that its log's sealed
+ * reconcile motions hold, opened under its `inner` (#122): what lets a
+ * device in its groups read a room above it once seated (#344).
+ */
+export function seatsAbove(state: GroupState, inner: Uint8Array): SeatAbove[] {
+  return state.group === null ? [] : openedAbove(state.group, inner, sealedOf(targetsOf(state)));
+}
+
+/**
  * The coalitions above `entry`, folded as `state`, its sealed reconcile
  * targets carry, in its log and its outbox, that open under its `inner`
- * (#122). A field whose seat secret doesn't make the public key the motion
- * states is no seat to act for, so it is left out.
+ * (#122), as {@link openedAbove} opens them.
  */
 function fromCoalition(entry: Group, state: GroupState, inner: Uint8Array): Found[] {
   const id = state.group;
   if (id === null) return [];
   const held = sealedOf([...targetsOf(state), ...targetsIn(entry.outbox)]);
-  return held.flatMap(({ proposal, target }) => {
-    const opened = openSeatSecrets(id, inner, target.sealed);
-    if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
-    return [{ ...opened, inner: opened.inner ?? null, holder: entry.groupId, proposal }];
-  });
+  return openedAbove(id, inner, held).map((above) => ({ ...above, holder: entry.groupId }));
 }
 
 /**
@@ -582,18 +618,32 @@ async function proposeAdmission(settling: Settling): Promise<boolean> {
 }
 
 /**
- * The room `inner` a reconcile target that holds one of a coalition's seats
- * gives this device (#313): its own, for a founding group's, or else the
- * first wrap for its seat in the coalition's log that its seat secret opens
- * to the `inner` the genesis commits to (#371), or null.
+ * The room `inner` one of a coalition's seats gives this device (#313): the
+ * one its reconcile target or motion carried, for a founding seat's, or else
+ * the first wrap for it in the coalition's log that its seat secret `seat`
+ * opens to the `inner` the genesis commits to (#371), or null. A group's
+ * seat and a coalition's seat above (#344) take it alike.
  */
+export function seatInner(
+  held: { readonly key: string; readonly seat: Uint8Array; readonly inner: Uint8Array | null },
+  coalition: Pick<Coalition, 'wraps' | 'commit'>,
+  coalitionId: string,
+): Uint8Array | null {
+  return held.inner ?? unwrapFor(coalition, coalitionId, held.key, held.seat);
+}
+
+/** {@link seatInner} for a group's reconcile target that holds one of a coalition's seats (#313). */
 export function innerOf(
   target: ReconcileChange,
   coalition: Pick<Coalition, 'wraps' | 'commit'>,
   coalitionId: string,
 ): Uint8Array | null {
-  if (target.inner !== undefined) return fromBase64url(target.inner);
-  return unwrapFor(coalition, coalitionId, target.key, fromBase64url(target.seat));
+  const inner = target.inner === undefined ? null : fromBase64url(target.inner);
+  return seatInner(
+    { key: target.key, seat: fromBase64url(target.seat), inner },
+    coalition,
+    coalitionId,
+  );
 }
 
 /** Whether a wrap for `seat` already waits in the outbox. */

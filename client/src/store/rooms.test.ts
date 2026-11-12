@@ -14,7 +14,16 @@ import { deriveRoomEntryId } from '../crypto/room';
 import { LEVELS } from '../engine/capabilities';
 import { fold, type LogRecord } from '../engine/fold';
 import { foldRoom, ROOM_KEEP_MINUTES } from '../engine/room';
-import { Logs, testSecret } from '../test/coalitions';
+import {
+  COALITION_STATEMENT,
+  Logs,
+  NestedLogs,
+  seatKey,
+  seatSecret,
+  testSecret,
+  threeLevels,
+} from '../test/coalitions';
+import { sealSeatSecrets } from '../crypto/innerSeal';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import { openStore, type Store } from './db';
@@ -448,6 +457,141 @@ describe('a group admitted into the coalition (#313)', () => {
     expect(coalition?.seats.map((seat) => seat.name)).toContain('Elm Row');
     expect(coalition?.wraps).toEqual([]);
     expect(await store.listRooms()).toEqual([]);
+  });
+});
+
+/**
+ * Keeps group A as ana's and, as ana's, an entry for each coalition in
+ * `coalitions`, by log name, its secret `testSecret(name)`, on `store`, all
+ * pulled at `relayNow`. With `withGroup` false it keeps the entries alone.
+ */
+async function nestedDevice(
+  store: Store,
+  logs: NestedLogs,
+  coalitions: readonly string[],
+  relayNow: number,
+  withGroup = true,
+) {
+  if (withGroup) {
+    await store.addGroup({
+      groupId: logs.ids.A ?? '',
+      secret: new Uint8Array(32).fill(5),
+      signingKey: testKeys('ana').secretKey,
+      me: { author: authorOf('ana'), name: 'Ana' },
+    });
+    await store.applyPull(logs.ids.A ?? '', pullOf(logs.logs.A ?? [], relayNow), eventIdOf);
+  }
+  for (const name of coalitions) {
+    const secret = fromBase64url(testSecret(name));
+    const groupId = deriveCoalitionEntryId(secret);
+    await store.addGroup({
+      kind: 'coalition',
+      groupId,
+      secret,
+      signingKey: testKeys('ana').secretKey,
+      me: { author: authorOf('ana'), name: 'Ana' },
+    });
+    await store.applyPull(groupId, pullOf(logs.logs[name] ?? [], relayNow), eventIdOf);
+  }
+}
+
+/** The room entry ids `store` keeps, sorted. */
+async function roomIds(store: Store): Promise<string[]> {
+  return (await store.listRooms()).map((room) => room.groupId).sort();
+}
+
+/** The entry id of the room whose `inner` is `testSecret(name)`. */
+const roomOf = (name: string) => deriveRoomEntryId(fromBase64url(testSecret(name)));
+
+/**
+ * Group A (ana) in Eastside (C, of A and B), then Eastside asking into the
+ * formed coalition of X and Y by a sealed motion with no inner, as a card
+ * from a formed coalition carries none (#313), its seats pass, and it is
+ * admitted. Returns the logs and the minute it takes its seat.
+ */
+function eastsideAsksIn(): { logs: NestedLogs; seated: number } {
+  const logs = new NestedLogs();
+  logs.group('A', R, ['ana']);
+  const intoC = logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', COALITION_STATEMENT);
+  logs.vote('A', R + 2, 'ana', intoC, 4);
+  const c = logs.formedIn('C', R + 3, [['A'], ['B']], ['cal', 'dee']);
+  const sealed = sealSeatSecrets(logs.ids.C ?? '', fromBase64url(testSecret('innerC')), {
+    secret: fromBase64url(testSecret('coalition')),
+    seat: seatSecret('C'),
+  });
+  const target = { kind: 'reconcile', sealed, key: seatKey('C'), ...COALITION_STATEMENT } as const;
+  const motion = logs.add('C', c, 'cal', {
+    type: 'proposal',
+    body: { target, title: 'Into the coalition', why: 'Neighbours.' },
+  });
+  logs.resultIn('C', c + 1, 'cal', motion, 'A', 'pass');
+  logs.resultIn('C', c + 1, 'dee', motion, 'B', 'pass');
+  const formed = logs.formed(c + 2, ['X', 'Y'], ['kim', 'zed']);
+  const seated = logs.admitted(formed, 'cal', 'C', 'Eastside', [
+    ['kim', 'X'],
+    ['zed', 'Y'],
+  ]);
+  return { logs, seated };
+}
+
+describe('a room above, through a coalition this device is in (#344)', () => {
+  it('keeps a room at each level up to three for a device in a group at the bottom, each through the coalition below it', async () => {
+    const store = await device();
+    const logs = new NestedLogs();
+    threeLevels(logs);
+    await nestedDevice(store, logs, ['C', 'D', 'F'], R + 100);
+
+    await keepRooms(store);
+
+    expect(await roomIds(store)).toEqual(
+      [roomOf('innerC'), roomOf('innerD'), roomOf('innerF')].sort(),
+    );
+  });
+
+  it('keeps no room at any level on a device that holds the coalitions but no group in them, as a follower’s', async () => {
+    const store = await device();
+    const logs = new NestedLogs();
+    threeLevels(logs);
+    await nestedDevice(store, logs, ['C', 'D', 'F'], R + 100, false);
+
+    await keepRooms(store);
+
+    expect(await roomIds(store)).toEqual([]);
+  });
+
+  it('keeps none above while its admission is decided, then the room above once a committed wrap reaches its seat, past a wrong one (#371)', async () => {
+    const store = await device();
+    const { logs, seated } = eastsideAsksIn();
+    await nestedDevice(store, logs, ['C', 'coalition'], seated - 1);
+    await keepRooms(store);
+    expect(await roomIds(store)).toEqual([roomOf('innerC')]);
+
+    const id = logs.ids.coalition ?? '';
+    // Zed, seated through Y, wraps a room of his own to Eastside's seat first.
+    logs.wrap(seated + 1, 'zed', 'C', logs.wrapFor('C', id, testSecret('zed-room')));
+    const entry = deriveCoalitionEntryId(fromBase64url(testSecret('coalition')));
+    await store.applyPull(entry, pullOf(logs.logs.coalition ?? [], seated + 2), eventIdOf);
+    await keepRooms(store);
+    expect(await roomIds(store)).toEqual([roomOf('innerC')]);
+
+    logs.wrap(seated + 3, 'kim', 'C');
+    await store.applyPull(entry, pullOf(logs.logs.coalition ?? [], seated + 4), eventIdOf);
+    await keepRooms(store);
+    expect(await roomIds(store)).toEqual([roomOf('innerC'), ROOM].sort());
+  });
+
+  it('purges the room above with the room below once the group under them is read-only here', async () => {
+    const store = await device();
+    const { logs, seated } = eastsideAsksIn();
+    logs.wrap(seated + 1, 'kim', 'C');
+    await nestedDevice(store, logs, ['C', 'coalition'], seated + 2);
+    await keepRooms(store);
+    expect(await roomIds(store)).toEqual([roomOf('innerC'), ROOM].sort());
+
+    await store.markArchived(logs.ids.A ?? '', 'dissolved');
+    await keepRooms(store);
+
+    expect(await roomIds(store)).toEqual([]);
   });
 });
 

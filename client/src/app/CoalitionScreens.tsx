@@ -102,10 +102,15 @@ interface GateProps {
   readonly children: (ready: Ready) => ReactNode;
 }
 
-/** A coalition on this device as its screens read one above it (#122): it may hold a seat there. */
+/**
+ * A coalition on this device as its screens read one above it (#122): it may
+ * hold a seat there, through which its groups read the room above (#344),
+ * unless its copy only reads here, as a removed member's does (#115).
+ */
 function deviceCoalitionOf({ entry, state }: HeldCoalition): DeviceGroup {
   const { groupId, me } = entry;
-  return { groupId, me: me.author, state, leaving: false, archived: false, kind: 'coalition' };
+  const archived = entry.archived !== undefined;
+  return { groupId, me: me.author, state, leaving: false, archived, kind: 'coalition' };
 }
 
 /**

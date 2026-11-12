@@ -289,7 +289,10 @@ export function coalitionHome(
   };
 }
 
-/** A group on this device as the room reads it (#125): its fold, and whether it goes on here. */
+/**
+ * A group on this device as the room reads it (#125), or a coalition, which
+ * may hold a seat in one above it (#344): its fold, and whether it goes on here.
+ */
 export function holderOf({ state, leaving, archived }: DeviceGroup) {
   return { state, live: !leaving && !archived };
 }
