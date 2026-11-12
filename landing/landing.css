@@ -305,7 +305,7 @@ a {
 }
 .understory {
   --piece: url('img/tall/trunks.webp');
-  aspect-ratio: 100 / 310;
+  aspect-ratio: 100 / 370;
   background-color: var(--mist);
 }
 .soil {
@@ -317,7 +317,7 @@ a {
 .deep {
   --tint: var(--tint-earth);
   --piece: url('img/tall/deep.webp');
-  aspect-ratio: 100 / 430;
+  aspect-ratio: 100 / 410;
   background-color: var(--deep);
 }
 
@@ -396,7 +396,7 @@ a {
 }
 
 /* Room to see the boughs cross between the two groups of cards. */
-#dispatches {
+#reconcile {
   padding-top: 34vw;
 }
 
@@ -562,7 +562,7 @@ a {
   .canopy {
     padding-block: 6vw 10vw;
   }
-  #dispatches {
+  #reconcile {
     padding-top: 22vw;
   }
   .understory {
