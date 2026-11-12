@@ -1347,6 +1347,8 @@ export const messages = {
     coalitionLink: 'Open your coalition',
     coalitionCant:
       'Only someone who takes part in this coalition and can propose there makes its card, and a coalition already three levels up can’t join another.',
+    coalitionKeyWaits:
+      'This coalition’s key hasn’t reached this device yet. You can make its card once it arrives.',
   },
   /** Opening a card and bringing it to one of your groups (#114). */
   bring: {

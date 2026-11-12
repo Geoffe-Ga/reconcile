@@ -239,6 +239,33 @@ describe('coalitionRows for a group asking in', () => {
     const [row] = coalitionRows(groupState(logs, 'C', at + 4, failed), authorOf('cal'), [failed]);
     expect(row).toMatchObject({ status: 'declined', lines: [{ kind: 'didnt-pass', group: 'B' }] });
   });
+
+  it('offers a card for another coalition only once a wrap gives this device inner through its seat (#122, #313)', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    logs.group('C', at, ['cal'], 'Elm Row');
+    const proposal = logs.reconcile('C', at + 1, 'cal', 'C', { inner: false });
+    logs.vote('C', at + 2, 'cal', proposal, 4);
+    const seated = logs.admitted(at + 3, 'dee', 'C', 'Elm Row', [
+      ['kim', 'A'],
+      ['zed', 'B'],
+    ]);
+    logs.join(seated + 1, 'cal', 'C');
+    const rowAt = (now: number) => {
+      const held = heldCoalition(logs, now, 'cal');
+      return coalitionRows(groupState(logs, 'C', now, held), authorOf('cal'), [held])[0];
+    };
+
+    // Seated and taking part, but no seated group has wrapped inner to Elm Row's seat yet.
+    expect(rowAt(seated + 2)).toMatchObject({
+      status: 'formed',
+      makesCards: true,
+      reconciles: false,
+    });
+    logs.wrap(seated + 3, 'kim', 'C');
+    expect(rowAt(seated + 4)).toMatchObject({ makesCards: true, reconciles: true });
+  });
 });
 
 describe('reconcileView', () => {

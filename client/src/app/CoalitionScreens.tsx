@@ -9,7 +9,14 @@
  * this device's key there (ADR-0009) and to the relay at once, and writing
  * in the room, which goes to the room's outbox under that same key.
  */
-import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { MAX_LEVEL } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
@@ -35,7 +42,7 @@ import {
 } from './coalitionHome';
 import { messages } from './messages';
 import { propose, type ProposalValues } from './proposals';
-import { type CardValues, makeCard, postCard, takePart } from './reconcile';
+import { type CardValues, holdsCoalitionKey, makeCard, postCard, takePart } from './reconcile';
 import { roomView, sendMessage } from './room';
 import { type CoalitionRoute, navigate, replaceRoute } from './router';
 import type { AppServices } from './services';
@@ -225,47 +232,103 @@ function reconcilesFrom(ready: Ready): boolean {
 }
 
 /**
+ * Whether this device holds the `inner` of the coalition entry `entryId`
+ * (#313), read again whenever the store says anything changed; null until
+ * first read.
+ */
+function useHoldsKey(services: AppServices, entryId: string): boolean | null {
+  const [holds, setHolds] = useState<{ entryId: string; held: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    const read = (): void => {
+      holdsCoalitionKey(services, entryId).then(
+        (held) => {
+          if (live) setHolds({ entryId, held });
+        },
+        // A failed read keeps the last answer; the next change reads again.
+        () => undefined,
+      );
+    };
+    read();
+    const unsubscribe = services.store.subscribe(read);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [services, entryId]);
+  return holds?.entryId === entryId ? holds.held : null;
+}
+
+interface ReconcileReadyProps {
+  readonly services: AppServices;
+  readonly ready: Ready;
+  readonly coalitionId: string;
+}
+
+/**
+ * The card's form once the coalition is read, or why there's none: this
+ * person can't make the card, or this device doesn't hold the coalition's
+ * `inner` yet, as a group admitted later doesn't until a seated group's wrap
+ * for its seat arrives (#313).
+ */
+function ReconcileReady({ services, ready, coalitionId }: ReconcileReadyProps) {
+  const entryId = ready.held.entry.groupId;
+  const holds = useHoldsKey(services, entryId);
+  if (!reconcilesFrom(ready)) return <CantReconcile coalitionId={coalitionId} />;
+  if (holds === null) return null;
+  if (!holds) {
+    return <CantReconcile coalitionId={coalitionId} line={messages.card.coalitionKeyWaits} />;
+  }
+  const onMake = async (values: CardValues): Promise<CardStep> => {
+    const made = await makeCard(services, entryId, values);
+    if (made.outcome === 'too-large') return { kind: 'too-large' };
+    const { card, proposalId } = made;
+    return {
+      kind: 'queued',
+      proposalId,
+      post: () => postCard(services, card, services.origin),
+    };
+  };
+  return (
+    <ReconcileCard
+      groupId={entryId}
+      groupName={ready.held.state.name}
+      coalitionId={coalitionId}
+      onMake={onMake}
+      copyText={services.copyText}
+    />
+  );
+}
+
+/**
  * Reconcile with another coalition (#122): the card's form, from the
  * coalition's entry, for someone who proposes in it while one more level
- * stays within 3.
+ * stays within 3, once this device holds its `inner` (#313).
  */
 function ReconcileScreen({ services, coalitionId }: Omit<GateProps, 'children'>) {
   return (
     <CoalitionGate services={services} coalitionId={coalitionId}>
-      {(ready) => {
-        const entryId = ready.held.entry.groupId;
-        if (!reconcilesFrom(ready)) return <CantReconcile coalitionId={coalitionId} />;
-        const onMake = async (values: CardValues): Promise<CardStep> => {
-          const made = await makeCard(services, entryId, values);
-          if (made.outcome === 'too-large') return { kind: 'too-large' };
-          const { card, proposalId } = made;
-          return {
-            kind: 'queued',
-            proposalId,
-            post: () => postCard(services, card, services.origin),
-          };
-        };
-        return (
-          <ReconcileCard
-            groupId={entryId}
-            groupName={ready.held.state.name}
-            coalitionId={coalitionId}
-            onMake={onMake}
-            copyText={services.copyText}
-          />
-        );
-      }}
+      {(ready) => <ReconcileReady services={services} ready={ready} coalitionId={coalitionId} />}
     </CoalitionGate>
   );
 }
 
-/** Why there's no card form here: this person can't make the coalition's card (#122). */
-function CantReconcile({ coalitionId }: { readonly coalitionId: string }) {
+/**
+ * Why there's no card form here (#122): this person can't make the
+ * coalition's card, or `line`, another reason.
+ */
+function CantReconcile({
+  coalitionId,
+  line = messages.card.coalitionCant,
+}: {
+  readonly coalitionId: string;
+  readonly line?: string;
+}) {
   return (
     <main className="shell">
       <BackLink to={{ name: 'coalition', coalitionId }} label={messages.coalitions.homeEyebrow} />
       <PageHeader title={messages.card.coalitionTitle} pageTitle={messages.card.coalitionTitle} />
-      <p className="lede">{messages.card.coalitionCant}</p>
+      <p className="lede">{line}</p>
     </main>
   );
 }

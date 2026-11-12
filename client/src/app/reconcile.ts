@@ -164,6 +164,16 @@ async function deviceKeys(services: Services): Promise<ReadonlyMap<string, Coali
 }
 
 /**
+ * Whether this device holds the `inner` of the coalition whose entry is
+ * `entryId` (#122, #313), which its card for another coalition seals its seat
+ * under: a group admitted into it holds none until a seated group's wrap for
+ * its seat arrives.
+ */
+export async function holdsCoalitionKey(services: Services, entryId: string): Promise<boolean> {
+  return ((await deviceKeys(services)).get(entryId)?.inner ?? null) !== null;
+}
+
+/**
  * The log `groupId` names on this device, as a reconcile Proposal's home:
  * a group, or a formed coalition this person takes part in (#122).
  *

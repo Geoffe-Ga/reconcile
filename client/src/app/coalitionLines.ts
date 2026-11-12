@@ -15,7 +15,7 @@ import { resultMismatches, seatIn } from '../engine/crossing';
 import type { ReconcileTarget, SeatEntry } from '../engine/event';
 import type { GroupState, HeldSeat, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
-import type { HeldCoalition } from '../store/coalitions';
+import { type HeldCoalition, innerOf } from '../store/coalitions';
 
 /** One line under a coalition's name: whom it waits for, or who didn't pass it. */
 export type CoalitionLine =
@@ -50,7 +50,10 @@ export interface CoalitionRow {
   readonly makesCards: boolean;
   /**
    * Whether this person may make a card from it for another coalition (#122):
-   * they take part in it, it has formed, and one more level stays within 3.
+   * they take part in it, it has formed, one more level stays within 3, and
+   * the group's seat gives this device the coalition's `inner`, which seals
+   * its seat above: a group admitted later holds none until a seated group's
+   * wrap for its seat arrives (#313).
    */
   readonly reconciles: boolean;
   /** How many results the coalition recorded for this group that its own vote doesn't match. */
@@ -217,19 +220,20 @@ function rowOf(
 ): CoalitionRow | null {
   const target = targetOf(state, held.proposal);
   const entry = target === null ? undefined : coalitionFor(coalitions, target.secret);
-  if (entry === undefined) return null;
+  if (target === null || entry === undefined) return null;
   const coalition = entry.state;
   const seat = coalition.coalition?.seats.find((s) => s.key === held.key);
   const standing = standingOf(state, held, coalition, seat);
   const me = meIn(state, author, entry, seat !== undefined && standing.status !== 'declined');
   const name = coalition.group === null ? held.name : coalition.name;
+  const formed = standing.status === 'formed';
   return {
     entryId: entry.entry.groupId,
     proposal: held.proposal,
     coalitionId: coalition.group,
     name,
     ...standing,
-    ...membership(state, coalition, standing.status === 'formed', me),
+    ...membership(state, coalition, { formed, keyed: holdsInner(target, held, coalition) }, me),
     me,
     mismatches: seat === undefined ? 0 : resultMismatches(state, coalition, held.key).length,
     above: seat === undefined ? [] : aboveRows(coalition, [state.name, name], coalitions),
@@ -237,21 +241,33 @@ function rowOf(
 }
 
 /**
+ * Whether the group's reconcile target `target`, for the seat `held`, gives
+ * this device `coalition`'s `inner` (#313): its own, for a founding group's,
+ * or a wrap for its seat in the coalition's log, as `innerOf` opens one.
+ */
+function holdsInner(target: ReconcileTarget, held: HeldSeat, coalition: GroupState): boolean {
+  const { coalition: info, group } = coalition;
+  if (info === null || group === null) return false;
+  return innerOf({ ...target, key: held.key }, info, group) !== null;
+}
+
+/**
  * A formed coalition's member groups, and whether this person, taking part,
- * may make cards: for another group, and while one more level stays within 3,
- * for another coalition (#122).
+ * may make cards: for another group, and while one more level stays within 3
+ * and this device holds its `inner` (`keyed`, #313), for another coalition
+ * (#122).
  */
 function membership(
   state: GroupState,
   coalition: GroupState,
-  formed: boolean,
+  { formed, keyed }: { readonly formed: boolean; readonly keyed: boolean },
   me: CoalitionMe,
 ): Pick<CoalitionRow, 'members' | 'makesCards' | 'reconciles'> {
   if (!formed) return { members: [], makesCards: false, reconciles: false };
   const members = (coalition.coalition?.seats ?? []).map((s) => s.name);
   const makesCards = me.kind === 'in' && state.dissolved === null;
   const level = coalition.coalition?.level ?? MAX_LEVEL;
-  return { members, makesCards, reconciles: makesCards && level < MAX_LEVEL };
+  return { members, makesCards, reconciles: makesCards && keyed && level < MAX_LEVEL };
 }
 
 /**

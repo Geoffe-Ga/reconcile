@@ -450,6 +450,52 @@ describe('a group asking into a coalition, and its room (#313)', SLOW, () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers Reconcile with another coalition only once a wrap gives the device inner (#122)', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cy, dee, elm, riverside, oak, id, motion } = await elmRowAsks(fake);
+    await vote(riverside, motion, [ana, cy]);
+    await vote(oak, motion, [ben, cy]);
+    await syncAll(3);
+    act(() => {
+      fake.minute += PAST_FINAL;
+    });
+    // Only Dee's device syncs: Elm Row takes its seat and Dee joins, but no one has wrapped yet.
+    for (let pass = 0; pass < 3; pass += 1) await dee.services.sync.syncOnce();
+    const seated = (await coalitionOn(dee)).coalition;
+    expect(seated?.seats).toHaveLength(3);
+    expect(seated?.bindings).toHaveLength(3);
+    expect(seated?.wraps).toEqual([]);
+    const link = { name: /Reconcile with another coalition/ };
+
+    cleanup();
+    window.history.replaceState(null, '', `#/g/${elm}`);
+    render(<App services={dee.services} />);
+    const rows = await screen.findByRole('region', { name: 'Coalitions' });
+    expect(within(rows).getByRole('link', { name: /Open the coalition/ })).toBeVisible();
+    expect(within(rows).queryByRole('link', link)).toBeNull();
+    cleanup();
+    window.history.replaceState(null, '', `#/c/${id}/reconcile`);
+    render(<App services={dee.services} />);
+    expect(await screen.findByText(messages.card.coalitionKeyWaits)).toBeVisible();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+
+    // Once a seated group's device wraps inner to Elm Row's seat, both open.
+    await syncAll(3);
+    expect((await coalitionOn(dee)).coalition?.wraps).toHaveLength(2);
+    window.history.replaceState(null, '', `#/g/${elm}`);
+    render(<App services={dee.services} />);
+    const after = await screen.findByRole('region', { name: 'Coalitions' });
+    expect(await within(after).findByRole('link', link)).toBeVisible();
+    cleanup();
+    window.history.replaceState(null, '', `#/c/${id}/reconcile`);
+    render(<App services={dee.services} />);
+    const name = await screen.findByRole('textbox', { name: messages.card.nameLabel });
+    expect(name).toBeVisible();
+    expect(screen.queryByText(messages.card.coalitionKeyWaits)).toBeNull();
+  });
+
   it('never opens the room to a group the coalition didn’t admit: no wrap is made for it', async () => {
     const fake = createFakeRelay();
     const { ana, ben, cy, dee, riverside, oak, id, motion } = await elmRowAsks(fake);
