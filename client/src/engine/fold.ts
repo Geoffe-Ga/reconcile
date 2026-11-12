@@ -125,7 +125,6 @@ import {
   type ProposalBody,
   type ProposalEventBody,
   type AdmitProposalBody,
-  type RecoveryShareBody,
   type SealedReconcileProposalBody,
   type SealedReconcileTarget,
   type ReconcileProposalBody,
@@ -267,6 +266,29 @@ export interface SealedShare {
   readonly received: number;
   readonly by: string;
   readonly box: string;
+}
+
+/**
+ * A recovery alert as the log carries it (#118): the same shape as a share,
+ * its box sealed to the person it warns. Only that person's devices can open
+ * it (`recovery/alert.ts`); the contact who posted it holds the share for
+ * 72 hours of relay time from `received`.
+ */
+export type SealedAlert = SealedShare;
+
+/**
+ * A recovery cancel as the log carries it (#118): the event's id, where it
+ * sits in relay order, who sent it, and the 16-byte tag of the alert it
+ * answers. Only the contact who posted that alert knows the tag is theirs,
+ * and their device counts the cancel only from the person whose share it
+ * holds.
+ */
+export interface RecoveryCancel {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly by: string;
+  readonly alert: string;
 }
 
 /**
@@ -442,8 +464,9 @@ export interface Focus {
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `recoveryShares` holds every `recovery-share` a current member sent, in
- * relay order, boxes unopened (#109): they govern nothing, so no other field
- * reads them.
+ * relay order, boxes unopened (#109), and `recoveryAlerts` and
+ * `recoveryCancels` every `recovery-alert` and `recovery-cancel` (#118): they
+ * govern nothing, so no other field reads them.
  * `removals` holds each removal whose pass is final by `at`, in order of
  * close, with the `remove` that took its member out once one folds, and
  * `responses` each response the person a removal names posted on its ballot,
@@ -482,6 +505,8 @@ export interface GroupState {
   readonly rotationDue: boolean;
   readonly dissolved: Dissolution | null;
   readonly recoveryShares: readonly SealedShare[];
+  readonly recoveryAlerts: readonly SealedAlert[];
+  readonly recoveryCancels: readonly RecoveryCancel[];
   readonly coalitions: readonly HeldSeat[];
   readonly coalition: Coalition | null;
   readonly focus: Focus | null;
@@ -589,6 +614,8 @@ interface Draft {
   readonly dispatched: Set<string>;
   dissolved: Dissolution | null;
   readonly recoveryShares: SealedShare[];
+  readonly recoveryAlerts: SealedAlert[];
+  readonly recoveryCancels: RecoveryCancel[];
   coalition: CoalitionDraft | null;
   /** The Proposals whose ballots this device has cleared (#111). */
   readonly cleared: ReadonlySet<string>;
@@ -1812,18 +1839,27 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
     : event.group === draft.group;
 }
 
-/** The events a suspended member may still post: a removal's response (#115) and a recovery share (#109). */
+/**
+ * The events a suspended member may still post: a removal's response (#115),
+ * and the recovery events, which govern nothing: a recovery share (#109), and
+ * a recovery alert or cancel (#118).
+ */
 const UNSUSPENDED: ReadonlySet<GroupEvent['type']> = new Set([
   'removal-response',
   'recovery-share',
+  'recovery-alert',
+  'recovery-cancel',
 ]);
 
 /**
  * Whether the author of `event` may act now: anyone may leave, since exit is
  * always possible (ADR-0010, #77); once a removal of them has passed, nothing
  * else counts (#115); and while a suspension runs (ADR-0016), only their
- * response to a removal of them (ADR-0049) and their `recovery-share`, which
- * governs nothing (#109), do.
+ * response to a removal of them (ADR-0049) and their recovery events, which
+ * govern nothing, do: a `recovery-share` (#109), and a `recovery-alert` or
+ * `recovery-cancel` (#118), since a suspended person must still hear of a
+ * recovery and be able to stop it, and a suspended contact's alert must still
+ * reach them.
  */
 function mayAct(draft: Draft, event: GroupEvent): boolean {
   if (event.type === 'leave') return true;
@@ -1865,9 +1901,9 @@ function hasEnded(draft: Draft): boolean {
  * or a coalition that wasn't declined, of a type its log takes, from someone
  * who may act now ({@link mayAct}). After a `dissolve` the fold ignores every
  * event, a second `dissolve` included (#108), and after a coalition is
- * declined every event (#100). A coalition's log takes no `recovery-share`
- * (`fitsLog`): a share travels only in a group the person shares with their
- * contact (#109).
+ * declined every event (#100). A coalition's log takes none of the recovery
+ * events (`fitsLog`): a share (#109), and so its alert and cancel (#118),
+ * travels only in a group the person shares with their contact.
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
   const current = !hasEnded(draft) && event.v === EVENT_VERSION;
@@ -1923,7 +1959,9 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
     case 'leave':
       return departs(draft, event.author);
     case 'recovery-share':
-      return applyRecoveryShare(draft, event.body, event.author, at);
+    case 'recovery-alert':
+    case 'recovery-cancel':
+      return applyRecovery(draft, event, at);
     case 'message':
       // A room's message belongs to the room's own log (room.ts, #125), never a group's.
       return false;
@@ -2036,18 +2074,31 @@ function applyKx(draft: Draft, body: KxBody, author: string): boolean {
   return true;
 }
 
+/** The recovery events (#109, #118): a share, an alert and a cancel. */
+type RecoveryEvent = Extract<
+  GroupEvent,
+  { readonly type: 'recovery-share' | 'recovery-alert' | 'recovery-cancel' }
+>;
+
 /**
- * Keeps a recovery share (#109) from any current member, its box unopened.
- * It changes nothing else: no Atom, Proposal, member or seat reads it.
+ * Keeps a recovery share (#109), alert or cancel (#118) from any current
+ * member, a box unopened and a cancel's tag as it came. It changes nothing
+ * else: no Atom, Proposal, member or seat reads them.
  */
-function applyRecoveryShare(
-  draft: Draft,
-  body: RecoveryShareBody,
-  author: string,
-  at: Receipt,
-): boolean {
-  if (!draft.members.some((m) => m.author === author)) return false;
-  draft.recoveryShares.push({ ...at, by: author, box: body.box });
+function applyRecovery(draft: Draft, event: RecoveryEvent, at: Receipt): boolean {
+  const by = event.author;
+  if (!draft.members.some((m) => m.author === by)) return false;
+  switch (event.type) {
+    case 'recovery-share':
+      draft.recoveryShares.push({ ...at, by, box: event.body.box });
+      break;
+    case 'recovery-alert':
+      draft.recoveryAlerts.push({ ...at, by, box: event.body.box });
+      break;
+    case 'recovery-cancel':
+      draft.recoveryCancels.push({ ...at, by, alert: event.body.alert });
+      break;
+  }
   return true;
 }
 
@@ -2598,6 +2649,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     dispatched: new Set(),
     dissolved: null,
     recoveryShares: [],
+    recoveryAlerts: [],
+    recoveryCancels: [],
     coalition: null,
     cleared: pass.cleared,
     firstResults: pass.firstResults,
@@ -2651,6 +2704,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotationDue,
     dissolved: draft.dissolved,
     recoveryShares: draft.recoveryShares,
+    recoveryAlerts: draft.recoveryAlerts,
+    recoveryCancels: draft.recoveryCancels,
     coalitions: heldSeats(proposals, draft.coalition !== null),
     coalition: draft.coalition,
     focus: focusOf(proposals),

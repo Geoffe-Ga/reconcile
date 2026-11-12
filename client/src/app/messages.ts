@@ -49,6 +49,8 @@ export const messages = {
     settings: 'Settings',
     personal: 'Personal',
     personalHint: 'Your mission statement and other Documents of your own, on this device only.',
+    recoverHeading: 'Lost every device?',
+    recover: 'Recover with my contacts',
     /** The coalitions this device follows (#124), each with its member groups. */
     followingHeading: 'Following',
   },
@@ -995,10 +997,18 @@ export const messages = {
     pageTitle: 'Personal',
     title: 'Personal',
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
+    /** Personal's line on where Documents go, while the device keeps no relay backup key. */
     privacy:
       'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+    /** In place of privacy once the device keeps a relay backup key (#97, #248): its sealed copy carries them. */
+    privacyRelayBackup:
+      'They stay on this device. Nothing here goes to your groups. A backup file you save includes them, and so does your sealed relay backup.',
+    /** The editor's line on where its Document goes, while the device keeps no relay backup key. */
     documentPrivacy:
       'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+    /** In place of documentPrivacy once the device keeps a relay backup key (#97, #248). */
+    documentPrivacyRelayBackup:
+      'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
     missionTitle: 'My mission statement',
     missionPrompt: 'What do you stand for, and what are you working toward?',
     newDocument: 'New document',
@@ -1031,6 +1041,9 @@ export const messages = {
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
+    /** In place of sharedPrivacy once the device keeps a relay backup key (#97, #248). */
+    sharedPrivacyRelayBackup:
+      'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it, and so does your sealed relay backup.',
     /**
      * Share link (#105; ADR-0074's personal page at level 2): one Document,
      * read-only, by a link whose key only its holders have.
@@ -1400,6 +1413,80 @@ export const messages = {
     groupClose: ')',
     holdingHeading: 'Shares you hold',
     dismiss: 'OK',
+    help: 'Help someone recover',
+    /** After a recovery (#118): the contacts who helped know the key, so the person chooses again. */
+    recovered:
+      'You’re back in. Choose your recovery contacts again: it makes a new key, and the shares that brought you back stop working.',
+  },
+  /**
+   * Recovering with contacts, on the new device (#118; ADR-0043 §2): the
+   * code to send, the number to read out, and the wait. `check` is the
+   * issue's words.
+   */
+  recover: {
+    pageTitle: 'Recover with your contacts',
+    title: 'Recover with your contacts',
+    lede: 'If you’ve lost every device, the people you chose as recovery contacts can bring your groups back to this one.',
+    codeLabel: 'Your recovery code',
+    codeHint: 'Send it to your recovery contacts by message or email.',
+    share: 'Share the code',
+    shared: 'Shared.',
+    copied: 'Copied. Send it to your recovery contacts.',
+    blocked: 'The code couldn’t be shared or copied. Select it and copy it instead.',
+    /** What Share sends beside the code; the app's address goes with it. */
+    message: 'My Reconcile recovery code:',
+    check: 'Send this code to your recovery contacts, then call them and read them this number.',
+    wait: 'Once a contact approves, their device waits 72 hours, then sends their share here. If you still have a device, it can cancel. Come back to this page: your code stays the same.',
+    waiting: 'Waiting for your contacts.',
+    arrived: (shares: number, needed: number) =>
+      `${count(shares)} of ${count(needed)} shares have arrived.`,
+    unreachable: 'Can’t reach the relay right now. Still trying.',
+    stop: 'Stop recovering',
+    stopNote: 'Stopping forgets this code, so no share sent to it can be read.',
+  },
+  /** A recovery contact's side (#118): the code, whose share, the call and the number. */
+  helpRecover: {
+    pageTitle: 'Help someone recover',
+    title: 'Help someone recover',
+    lede: 'Someone who chose you as a recovery contact has lost their devices. Their new device shows a code for them to send you.',
+    none: 'You don’t hold anyone’s recovery share on this device.',
+    codeLabel: 'Their recovery code',
+    codeHint: 'It starts with RR1.',
+    notACode: 'That isn’t a recovery code. Ask them to send it again.',
+    next: 'Continue',
+    who: 'Which person?',
+    /** One option: "<name> (<group>)". */
+    person: (name: string, group: string) => `${name} (${group})`,
+    /** "Call <name> or meet them. Make sure it's really them." around the name. */
+    callBefore: 'Call',
+    callAfter: 'or meet them. Make sure it’s really them.',
+    numberLabel: 'The number they read out',
+    numberHint: 'Six digits, from their new device.',
+    wrongNumber:
+      'That number doesn’t match this code. Check it’s the code they sent, and ask them to read the number again.',
+    approve: 'Approve',
+    approving: 'Approving…',
+    failed: 'This couldn’t be approved. Try again.',
+    back: 'Back',
+    heldHeading: 'Recoveries you’re helping with',
+    /** "Holding <name>'s share until <date>. Open Reconcile after then to send it." */
+    holdingBefore: 'Holding',
+    holdingUntil: (date: string) => `’s share until ${date}. Open Reconcile after then to send it.`,
+    holdingSoon: '’s share. The 72 hours start once the relay has your approval.',
+    readyAfter: '’s share goes to their new device the next time Reconcile syncs.',
+    sentAfter: '’s share went to their new device.',
+    stoppedAfter: '’s share stays with you: this recovery was cancelled.',
+    another: 'Help someone else',
+    settings: 'Settings',
+  },
+  /** The person's devices (#118): the alert on Start and every group home, and Cancel. The issue's words. */
+  recoveryAlert: {
+    body: (date: string) =>
+      `Someone asked your recovery contacts to restore your Reconcile on a new device. If this wasn’t you, cancel now. It completes ${date}.`,
+    cancel: 'Cancel this recovery',
+    cancelling: 'Cancelling…',
+    failed: 'The recovery couldn’t be cancelled. Try again.',
+    cancelled: 'You cancelled this recovery. Your contacts keep their shares.',
   },
   /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
   backupCard: {

@@ -169,6 +169,9 @@ const LATE_ROTATE = { epoch: 1, commit: 'rotation-commit-of-this-propertyAAAAAAA
 /** An opaque recovery share's box (#109): the fold never opens one, so any base64url will do. */
 const SHARE_BOX = 'c2hhcmUtYm94';
 
+/** A 16-byte alert tag, as a recovery-cancel names one (#118). */
+const ALERT_TAG = 'YWxlcnQtdGFnLTE2Ynl0ZQ';
+
 /** Each kind of event the dissolve property sends late, by member `who` (mod the group's size). */
 const LATE = {
   vote: (log, at, who, value, { count, edit }) => log.vote(at, who % count, edit, value),
@@ -187,6 +190,10 @@ const LATE = {
     log.add(at, member(who % count), { type: 'key-rotate', body: LATE_ROTATE }),
   'recovery-share': (log, at, who, _value, { count }) =>
     log.add(at, member(who % count), { type: 'recovery-share', body: { box: SHARE_BOX } }),
+  'recovery-alert': (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'recovery-alert', body: { box: SHARE_BOX } }),
+  'recovery-cancel': (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'recovery-cancel', body: { alert: ALERT_TAG } }),
 } satisfies Record<
   string,
   (log: Log, at: number, who: number, value: Score, context: LateContext) => string
@@ -396,35 +403,44 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
-  it('keeps a recovery-share from anyone, wherever it lands, out of everything but recoveryShares (#109)', () => {
-    const scenario = arbitraryLog.chain((log) =>
-      fc.record({
-        log: fc.constant(log),
-        who: fc.integer({ min: 0, max: 5 }),
-        at: fc.nat({ max: log.records.length }),
-      }),
-    );
-    fc.assert(
-      fc.property(scenario, ({ log: { records, relayNow }, who, at }) => {
-        const { record, id } = signedAs(member(who), {
-          type: 'recovery-share',
-          group: fold(records, null).group ?? '',
-          ts: 0,
-          body: { box: SHARE_BOX },
-        });
-        // It lands at its neighbour's receipt, so relay time moves no further than without it.
-        const received = records[at]?.received ?? records.at(-1)?.received ?? R;
-        const share = { seq: 0, received, bytes: record };
-        const state = fold([...records.slice(0, at), share, ...records.slice(at)], relayNow);
-        const without = fold(records, relayNow);
-        const apart = { ignored: [], recoveryShares: [] };
-        expect({ ...state, ...apart }).toEqual({ ...without, ...apart });
-        const kept = state.recoveryShares.map((posted) => posted.id);
-        const ignored = state.ignored.some((entry) => entry.seq === 0);
-        expect(kept).toEqual(ignored ? [] : [id]);
-      }),
-    );
-  });
+  /** Each recovery event (#109, #118), its body, and the one field of the state it may change. */
+  const RECOVERY = [
+    { type: 'recovery-share', body: { box: SHARE_BOX }, field: 'recoveryShares' },
+    { type: 'recovery-alert', body: { box: SHARE_BOX }, field: 'recoveryAlerts' },
+    { type: 'recovery-cancel', body: { alert: ALERT_TAG }, field: 'recoveryCancels' },
+  ] as const;
+
+  it.each(RECOVERY)(
+    'keeps a $type from anyone, wherever it lands, out of everything but $field (#109, #118)',
+    ({ type, body, field }) => {
+      const scenario = arbitraryLog.chain((log) =>
+        fc.record({
+          log: fc.constant(log),
+          who: fc.integer({ min: 0, max: 5 }),
+          at: fc.nat({ max: log.records.length }),
+        }),
+      );
+      fc.assert(
+        fc.property(scenario, ({ log: { records, relayNow }, who, at }) => {
+          const group = fold(records, null).group ?? '';
+          const draft = { type, group, ts: 0, body } as EventDraft;
+          const { record, id } = signedAs(member(who), draft);
+          // A well-shaped event, so it is kept unless its author isn't a member there.
+          expect(parseRecord(record)).not.toBeNull();
+          // It lands at its neighbour's receipt, so relay time moves no further than without it.
+          const received = records[at]?.received ?? records.at(-1)?.received ?? R;
+          const posted = { seq: 0, received, bytes: record };
+          const state = fold([...records.slice(0, at), posted, ...records.slice(at)], relayNow);
+          const without = fold(records, relayNow);
+          const apart = { ignored: [], [field]: [] };
+          expect({ ...state, ...apart }).toEqual({ ...without, ...apart });
+          const kept = state[field].map((entry) => entry.id);
+          const ignored = state.ignored.some((entry) => entry.seq === 0);
+          expect(kept).toEqual(ignored ? [] : [id]);
+        }),
+      );
+    },
+  );
 
   it('keeps an open Proposal’s eligible set and deadline whatever levels its members move to', () => {
     const change = fc.record({

@@ -659,6 +659,29 @@ export interface RecoveryShareBody {
   readonly box: string;
 }
 
+/**
+ * Tells the person that a contact approved a recovery of their share (#118;
+ * ADR-0043 §2, ADR-0075 §4): `box` is sealed to the person's encryption key
+ * (`crypto/recovery.ts`), in unpadded base64url, and names no one, so the rest
+ * of the group sees only that the author sent one. The fold keeps it from any
+ * current member and changes nothing else; the contact's device holds the
+ * share for 72 hours of relay time from its receipt.
+ */
+export interface RecoveryAlertBody {
+  readonly box: string;
+}
+
+/**
+ * Cancels a recovery (#118): `alert` is the 16-byte tag sealed inside the
+ * alert it answers, in unpadded base64url, never the alert's event id, so
+ * only the person and the contact who posted it can tell which alert that
+ * is. The fold keeps it from any current member and changes nothing else;
+ * only the contact's device decides whether it counts, by its author.
+ */
+export interface RecoveryCancelBody {
+  readonly alert: string;
+}
+
 /** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
 export type GroupResultValue = 'pass' | 'fail';
 
@@ -716,6 +739,8 @@ export interface EventBodies {
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
   readonly 'recovery-share': RecoveryShareBody;
+  readonly 'recovery-alert': RecoveryAlertBody;
+  readonly 'recovery-cancel': RecoveryCancelBody;
   readonly 'removal-response': RemovalResponseBody;
   readonly remove: RemoveBody;
   readonly 'door-invited': DoorInvitedBody;
@@ -775,6 +800,8 @@ const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
 
 /** Unpadded base64url of at least one byte: a wrap's text. */
 const BASE64URL = /^[A-Za-z0-9_-]{2,}$/;
+/** 16 bytes in canonical unpadded base64url: an alert's tag (#118). */
+const TAG16 = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
 /** A room wrap (#313): a box of 32 bytes, 104 in all, in 139 unpadded base64url characters. */
 const ROOM_WRAP = /^[A-Za-z0-9_-]{139}$/;
@@ -1227,8 +1254,14 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
-function parseRecoveryShare(body: Json): RecoveryShareBody | null {
+/** A body that is one opaque box: a share (#109) or an alert (#118). Any other field is dropped. */
+function parseBox(body: Json): RecoveryShareBody | null {
   return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
+}
+
+/** A cancel naming a 16-byte alert tag (#118). Any other field is dropped. */
+function parseRecoveryCancel(body: Json): RecoveryCancelBody | null {
+  return isString(body.alert) && TAG16.test(body.alert) ? { alert: body.alert } : null;
 }
 
 function parseRemovalResponse(body: Json): RemovalResponseBody | null {
@@ -1395,7 +1428,7 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 /**
  * {@link withBody} for the types the restored features added: `suspend`
  * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
- * (#119), `chat-thread` (#123), `dispatch` (#112) and `recovery-share` (#109).
+ * (#119), `chat-thread` (#123) and `dispatch` (#112).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1413,8 +1446,22 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dispatch':
       return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withRecoveryBody(head, type, body);
+  }
+}
+
+/**
+ * {@link withBody} for the recovery types: #109's `recovery-share`, and
+ * #118's `recovery-alert` and `recovery-cancel`.
+ */
+function withRecoveryBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
     case 'recovery-share':
-      return attach(parseRecoveryShare(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-alert':
+      return attach(parseBox(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-cancel':
+      return attach(parseRecoveryCancel(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return withKeyBody(head, type, body);
   }

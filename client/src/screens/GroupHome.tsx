@@ -85,6 +85,11 @@ export interface GroupHomeProps {
    */
   readonly recoveryCard?: ReactNode;
   /**
+   * The recovery alert (#118), while a recovery of this person waits, first
+   * among the quiet cards; none when absent, or once the group has dissolved.
+   */
+  readonly alertCard?: ReactNode;
+  /**
    * The front door's applications (#121), under their own heading before
    * Invite people: given only while the door is open and this member may
    * invite.
@@ -1046,16 +1051,18 @@ function HomeTop({ props, removed, readOnly }: HomeTopProps) {
 }
 
 /**
- * The quiet cards a group that goes on may show: a backup (#78), then the
- * recovery shares this device holds there (#109). No backup card once the
- * group's key changed past this device (#226). None once it has dissolved: no
- * backup file carries its read-only copy, and no share held there can go back
- * to anyone (#108).
+ * The quiet cards a group that goes on may show, after the last list of open
+ * Proposals: the recovery alert while a recovery of this person waits (#118),
+ * a backup (#78), then the recovery shares this device holds there (#109). No
+ * backup card once the group's key changed past this device (#226). None once
+ * it has dissolved: no backup file carries its read-only copy, and no share
+ * held there can go back to anyone (#108).
  */
 function QuietCards({ props }: { readonly props: GroupHomeProps }) {
   if (props.state.dissolved !== null) return null;
   return (
     <>
+      {props.alertCard}
       {backupCardOf(props)}
       {props.recoveryCard}
     </>
