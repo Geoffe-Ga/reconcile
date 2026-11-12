@@ -28,7 +28,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { manualTimers } from '../test/timers';
 import type { ChatBot } from './chatBot';
-import { openStore } from './db';
+import { openStore, sameBytes } from './db';
 import type { Group, Pull, Store } from './db';
 import { eventIdOf } from './eventId';
 import { keyChangeOf } from './epochs';
@@ -358,6 +358,79 @@ describe('a sync pass', () => {
     expect(kept).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
     expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'join:Ben']);
     expect((await ana.group()).outbox).toEqual([]);
+  });
+
+  it('holds what it posts in the outbox or the log before every request, never in neither (#349)', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const founding = genesis();
+    let store: Store | null = null;
+    /** How many copies of the genesis the group holds now: queued, or in its log. */
+    const copies = async (): Promise<number> => {
+      const group = await store?.getGroup(GROUP);
+      const held = [...(group?.outbox ?? []), ...(group?.log ?? []).map(({ bytes }) => bytes)];
+      return held.filter((bytes) => sameBytes(bytes, founding.record)).length;
+    };
+    // Before each request goes out, the group is read as the store holds it then.
+    const seen: { method: string; url: string; copies: number }[] = [];
+    const watched: Fetch = async (input, init) => {
+      const listed = store === null ? null : await copies();
+      const response = await fake.fetch(input, init);
+      const request = fake.requests.at(-1);
+      if (listed !== null && request !== undefined) {
+        seen.push({ method: request.method, url: request.url, copies: listed });
+      }
+      return response;
+    };
+    const ana = await device('ana', createRelay({ fetch: watched }), keys);
+    store = ana.store;
+    await ana.store.enqueue(GROUP, founding.record);
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+
+    // The relay took it, and the pull that reads it back went out after: the gap a screen once showed.
+    const put = seen.findIndex((r) => r.method === 'PUT' && r.url.includes(keys.mailbox));
+    expect(put).toBeGreaterThanOrEqual(0);
+    const after = seen.slice(put + 1);
+    expect(after.some((r) => r.method === 'GET' && r.url.includes(keys.mailbox))).toBe(true);
+    expect([...seen.map((r) => r.copies), await copies()]).toEqual([...seen.map(() => 1), 1]);
+    const group = await ana.group();
+    expect(group.outbox).toEqual([]);
+    expect(labels(group.log)).toEqual(['genesis:Riverside Tenants']);
+  });
+
+  it('keeps an event the relay took queued while the pull that reads it back fails, then holds it once (#349)', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    // The relay takes the event, then the next request fails, once, as when the network drops.
+    let armed = true;
+    let dropNext = false;
+    const flaky: Fetch = async (input, init) => {
+      if (dropNext) {
+        dropNext = false;
+        throw new TypeError('Failed to fetch');
+      }
+      const response = await fake.fetch(input, init);
+      dropNext = armed && fake.requests.at(-1)?.method === 'PUT';
+      armed = !dropNext && armed;
+      return response;
+    };
+    const ana = await device('ana', createRelay({ fetch: flaky }), keys);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+
+    expect(await ana.sync.syncOnce()).toBe(false);
+    expect(fake.blobs(keys.mailbox)).toHaveLength(1);
+    // Still pending, from the outbox, though the relay has it: no screen sees it vanish.
+    expect((await ana.group()).outbox.map(local)).toEqual([founding.record]);
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+    // Posted again, as after a reply that never came: the log keeps one, by its event id.
+    expect(fake.blobs(keys.mailbox)).toHaveLength(2);
+    const group = await ana.group();
+    expect(group.outbox).toEqual([]);
+    expect(group.log.map(({ bytes }) => local(bytes))).toEqual([founding.record]);
+    expect((await ana.state()).ignored).toEqual([]);
   });
 
   it('skips a blob that will not open, and reads past it', async () => {

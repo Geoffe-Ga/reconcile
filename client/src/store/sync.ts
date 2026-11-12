@@ -12,11 +12,13 @@
  *    gives the relay's week, so a device back from a long absence never
  *    writes to a stale week. The week comes from the relay only;
  * 2. posts the outbox in order to this week's mailbox, each record sealed for
- *    it, removing an entry only once the relay accepts it (a room's, only in
- *    the change that saves the pull reading it back, #343). A Proposal, or a
- *    ballot after which this device's fold closes one early, goes with
- *    `wake=1` (#99, `engine/wake.ts`), whether or not this device's own push
- *    is on: the wake is for the others' phones;
+ *    it. An entry the relay accepts leaves the outbox only in the store change
+ *    that saves the pull reading it back (step 4; #343, #349), so a screen
+ *    shows it pending, then folded, and never neither; a pass that fails
+ *    between the two posts it again, and the log's dedupe by event id keeps
+ *    one. A Proposal, or a ballot after which this device's fold closes one
+ *    early, goes with `wake=1` (#99, `engine/wake.ts`), whether or not this
+ *    device's own push is on: the wake is for the others' phones;
  * 3. reads every record after its cursor in each mailbox `pollWeeks` names:
  *    last week's and this week's, and each week since the last sync, once,
  *    back to the last 5. It opens each blob (skipping one that won't open),
@@ -24,7 +26,8 @@
  *    by seq and each put in relay order (./logOrder.ts);
  * 4. saves each mailbox's cursor, dropping those older than 5 weeks, the
  *    relay's time (the earliest of the GETs' `now`s) and instance, and when
- *    it synced;
+ *    it synced, dropping from the outbox, in the same change, each entry the
+ *    relay took in step 2;
  * 5. runs the chat bot for it (#119, ./chatBot.ts), which claims and posts
  *    only while the group has its bot on and hasn't dissolved, and never once
  *    the loop is halted (#78). Nothing the bot does, or fails to do, changes
@@ -106,7 +109,9 @@
  * week. A pull that brings a key change this member's wrap opens, every other
  * wrap of which is the one its secret makes (#224), moves the group to the
  * new epoch's mailboxes, in the same store change, and they are read at once,
- * from the key change's seq. The old epoch's are read no more, so whatever
+ * from the key change's seq. That change drops what the pass posted from the
+ * outbox before it queues this member's records to post again to the new
+ * epoch, so each goes once. The old epoch's are read no more, so whatever
  * reaches any week of them after the key change stays ignored. A pull that
  * brings a key change that doesn't check out queues an `unwrap-failed` naming
  * it, which the next pass posts to the old epoch's mailbox; once it folds, the
@@ -121,10 +126,9 @@
  * keys from the coalition's `inner`: no key change, no `kx`, chat bot, door
  * or nudges, and no wake. A room never read before reads its last 5 weeks,
  * and each pull deletes what is more than 30 days of relay time old. A
- * message the relay took leaves the room's outbox in the change that adds
- * the relay's copy to its log (#343), so the room lists it once throughout;
- * a pass that fails between the two posts it again, and the log's dedupe by
- * event id keeps one. Every pass first keeps the device's rooms from the
+ * message the relay took leaves the room's outbox as any entry does, in the
+ * change that adds the relay's copy to its log (#343), so the room lists it
+ * once throughout. Every pass first keeps the device's rooms from the
  * store alone, so a room whose last member group here is leaving, read-only
  * or gone is purged at once, even while the relay can't be reached.
  *
@@ -361,14 +365,14 @@ export function createSync(options: SyncOptions): Sync {
   const roomReads: RoomReads = new Map();
 
   /**
-   * Post the group's current outbox in order; an entry leaves only once the
-   * relay accepts it. While `frozen` (#98), every entry but a `key-rotate`, a
-   * `leave`, an `unwrap-failed` or a `key-taken` (#224) stays queued, in its
-   * place. Once the relay has returned a seq for the group's leave, the group
-   * is purged: `left`. Else the records the relay took, in order. A room's
-   * stay queued (#343): the pull that reads them back drops them in the
-   * change that saves it (`Pull.sent`), so the room lists each message from
-   * its outbox or its log at every moment.
+   * Post the group's current outbox in order. While `frozen` (#98), every
+   * entry but a `key-rotate`, a `leave`, an `unwrap-failed` or a `key-taken`
+   * (#224) is held back. Once the relay has returned a seq for the group's
+   * leave, the group is purged: `left`. Else the records the relay took, in
+   * order, which stay queued (#343, #349): the pull that reads them back drops
+   * them in the change that saves it (`Pull.sent`), so every screen shows each
+   * from the outbox or the log at every moment, a ballot as cast and a message
+   * as listed.
    */
   async function postOutbox(
     groupId: string,
@@ -387,7 +391,6 @@ export function createSync(options: SyncOptions): Sync {
         current.kind === undefined && wakeForRecord((before ??= foldGroup(current)), bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
       if (await leftWith(current, bytes)) return 'left';
-      if (!isRoomEntry(current)) await store.markSent(groupId, bytes);
       taken.push(bytes);
     }
     return taken;
@@ -483,7 +486,9 @@ export function createSync(options: SyncOptions): Sync {
       relayNow,
       instance: first.instance,
       lastSyncAt: clock(),
-      ...pullExtras(group, step, taken),
+      ...advanceOf(step),
+      // What the relay took leaves the outbox as its relay copy joins the log (#343, #349).
+      sent: taken,
     };
     await store.applyPull(group.groupId, pull, idOf);
     if (step?.kind === 'refuse') await store.enqueue(group.groupId, step.record);
@@ -751,16 +756,11 @@ export function createSync(options: SyncOptions): Sync {
 }
 
 /**
- * What a pull adds for its entry's kind: a room's messages the relay took,
- * which leave its outbox as their copies join its log (#343); otherwise the
- * move to a new epoch, when the key step is one (#98, #224).
+ * The move to a new epoch a pull carries, when its key step is one (#98,
+ * #224). The store drops what the pass posted from the outbox before the move
+ * queues anything to post again (`Pull.sent`, #349), so each record goes once.
  */
-function pullExtras(
-  group: Pick<Group, 'kind'>,
-  step: KeyStep | null,
-  taken: readonly Uint8Array[],
-): Pick<Pull, 'advance' | 'sent'> {
-  if (isRoomEntry(group)) return { sent: taken };
+function advanceOf(step: KeyStep | null): Pick<Pull, 'advance'> {
   return step?.kind === 'move' ? { advance: step.advance } : {};
 }
 
