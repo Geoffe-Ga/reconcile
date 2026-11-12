@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -46,12 +46,30 @@ async function fill(user: UserEvent, entry: Entry): Promise<void> {
     ['Document title', entry.title],
     ['Document text', entry.text],
   ];
+  // The first Document's title starts as Mission statement (#92), so a test's title replaces it.
+  if (entry.title !== undefined) await user.clear(box('Document title'));
   for (const [label, value] of fields) {
     if (value === undefined || value === '') continue;
     await user.click(box(label));
     await user.paste(value);
   }
   await user.click(screen.getByRole('button', { name: 'Create group' }));
+}
+
+/** The block of Document `number` (#92): a group named "Document N". */
+const block = (number: number) => screen.getByRole('group', { name: `Document ${String(number)}` });
+
+/** Fills the title and text of Document `number`'s block. */
+async function fillBlock(user: UserEvent, number: number, title: string, text: string) {
+  const inBlock = within(block(number));
+  await user.clear(inBlock.getByRole('textbox', { name: 'Document title' }));
+  if (title !== '') {
+    await user.click(inBlock.getByRole('textbox', { name: 'Document title' }));
+    await user.paste(title);
+  }
+  if (text === '') return;
+  await user.click(inBlock.getByRole('textbox', { name: 'Document text' }));
+  await user.paste(text);
 }
 
 describe('CreateGroup', () => {
@@ -81,8 +99,7 @@ describe('CreateGroup', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: 'https://chat.example.org/riverside',
-      title: 'House rules',
-      text: FULL.text,
+      documents: [{ title: 'House rules', text: FULL.text }],
     });
   });
 
@@ -108,7 +125,7 @@ describe('CreateGroup', () => {
 
   it('names every missing entry, and sends nothing', async () => {
     const { user, onCreate } = setup();
-    await fill(user, { text: '   \n\n  ' });
+    await fill(user, { title: '', text: '   \n\n  ' });
 
     expect(onCreate).not.toHaveBeenCalled();
     expect(box('Group name')).toHaveAccessibleDescription('Give your group a name.');
@@ -157,7 +174,7 @@ describe('CreateGroup', () => {
       'Your group couldn’t be saved on this device. Try again.',
     );
     expect(onCreate).toHaveBeenCalledTimes(2);
-    expect(onCreate.mock.calls[1]?.[0].text).toBe('Quiet hours start at ten.');
+    expect(onCreate.mock.calls[1]?.[0].documents[0]?.text).toBe('Quiet hours start at ten.');
     expect(text).not.toHaveAttribute('aria-invalid');
     expect(text).toHaveAccessibleDescription(`${TEXT_HINT} ${HINT}`);
   });
@@ -226,6 +243,97 @@ describe('CreateGroup', () => {
     expect(screen.getByRole('tabpanel', { name: 'Preview' })).toHaveTextContent(
       'Nothing to preview yet.',
     );
+  });
+
+  it('starts with one Document block, titled Mission statement, which has no Remove (#92)', async () => {
+    setup();
+    expect(block(1)).toBeVisible();
+    expect(screen.getAllByRole('group', { name: /^Document \d$/ })).toHaveLength(1);
+    expect(within(block(1)).getByRole('textbox', { name: 'Document title' })).toHaveValue(
+      'Mission statement',
+    );
+    expect(screen.queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add another Document' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('adds a Document block with Remove, and hands over every Document in order (#92)', async () => {
+    const { user, onCreate } = setup();
+    await user.click(screen.getByRole('button', { name: 'Add another Document' }));
+    const second = within(block(2));
+    await waitFor(() => {
+      expect(second.getByRole('textbox', { name: 'Document title' })).toHaveFocus();
+    });
+    expect(second.getByRole('textbox', { name: 'Document title' })).toHaveValue('');
+    expect(second.getByRole('button', { name: 'Remove Document 2' })).toHaveTextContent('Remove');
+    expect(
+      screen.getByText(
+        'Everyone you invite sees the group name, your name, the chat link and these Documents.',
+      ),
+    ).toBeVisible();
+    await fillBlock(user, 1, 'Mission statement', 'We share.\n\nWe meet weekly.');
+    await fillBlock(user, 2, ' Budget ', 'We share costs.');
+    await fill(user, { groupName: 'Riverside Tenants', yourName: 'Ana' });
+    expect(onCreate).toHaveBeenCalledWith({
+      groupName: 'Riverside Tenants',
+      yourName: 'Ana',
+      chat: null,
+      documents: [
+        { title: 'Mission statement', text: 'We share.\n\nWe meet weekly.' },
+        { title: 'Budget', text: 'We share costs.' },
+      ],
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('removes one block and keeps the others’ words, numbered afresh (#92)', async () => {
+    const { user, onCreate } = setup();
+    const add = screen.getByRole('button', { name: 'Add another Document' });
+    await user.click(add);
+    await user.click(add);
+    await fillBlock(user, 1, 'Mission statement', 'We share.');
+    await fillBlock(user, 2, 'Chores', 'Ana cooks.');
+    await fillBlock(user, 3, 'Budget', 'We share costs.');
+    await user.click(within(block(2)).getByRole('button', { name: 'Remove Document 2' }));
+    expect(screen.getAllByRole('group', { name: /^Document \d$/ })).toHaveLength(2);
+    expect(within(block(2)).getByRole('textbox', { name: 'Document title' })).toHaveValue('Budget');
+    expect(screen.getByRole('button', { name: 'Add another Document' })).toHaveFocus();
+    await fill(user, { groupName: 'Riverside Tenants', yourName: 'Ana' });
+    expect(onCreate.mock.calls[0]?.[0].documents).toEqual([
+      { title: 'Mission statement', text: 'We share.' },
+      { title: 'Budget', text: 'We share costs.' },
+    ]);
+  });
+
+  it('names a missing title or text in any block, in that block, and sends nothing (#92)', async () => {
+    const { user, onCreate } = setup();
+    await user.click(screen.getByRole('button', { name: 'Add another Document' }));
+    await fillBlock(user, 1, 'Mission statement', 'We share.');
+    await fill(user, { groupName: 'Riverside Tenants', yourName: 'Ana' });
+    expect(onCreate).not.toHaveBeenCalled();
+    const second = within(block(2));
+    expect(second.getByRole('textbox', { name: 'Document title' })).toHaveAccessibleDescription(
+      'For example, House rules or Our mission. Give the Document a title.',
+    );
+    expect(second.getByRole('textbox', { name: 'Document text' })).toHaveAccessibleDescription(
+      `${TEXT_HINT} Write at least one section. ${HINT}`,
+    );
+  });
+
+  it('ties Documents too long to send together to the longest one’s text (#92)', async () => {
+    const { user } = setup('too-large');
+    await user.click(screen.getByRole('button', { name: 'Add another Document' }));
+    await fillBlock(user, 1, 'Mission statement', 'We share.');
+    await fillBlock(user, 2, 'Budget', 'We share costs, and we keep every receipt we get.');
+    await fill(user, { groupName: 'Riverside Tenants', yourName: 'Ana' });
+    const first = within(block(1)).getByRole('textbox', { name: 'Document text' });
+    const longest = within(block(2)).getByRole('textbox', { name: 'Document text' });
+    expect(first).not.toHaveAttribute('aria-invalid');
+    expect(longest).toHaveAttribute('aria-invalid', 'true');
+    expect(longest).toHaveAccessibleDescription(
+      `${TEXT_HINT} Together, your Documents are too long to send. Shorten one, then try again. ${HINT}`,
+    );
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('links back to your groups', () => {

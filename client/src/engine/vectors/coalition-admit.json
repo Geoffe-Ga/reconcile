@@ -17,8 +17,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -94,8 +93,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -171,8 +169,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -361,8 +358,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -614,8 +610,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -674,8 +669,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -734,8 +728,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -907,8 +900,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1011,8 +1003,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1088,8 +1079,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1166,8 +1156,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1339,8 +1328,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1453,8 +1441,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1900,8 +1887,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1960,8 +1946,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2020,8 +2005,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2143,8 +2127,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2223,8 +2206,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2283,8 +2265,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2343,8 +2324,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2466,8 +2446,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2546,8 +2525,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2606,8 +2584,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2666,8 +2643,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2789,8 +2765,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2869,8 +2844,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2929,8 +2903,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2989,8 +2962,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3112,8 +3084,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3192,8 +3163,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3252,8 +3222,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3312,8 +3281,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3461,8 +3429,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3545,8 +3512,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3605,8 +3571,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3665,8 +3630,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3792,8 +3756,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3872,8 +3835,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3958,8 +3920,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4018,8 +3979,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4115,8 +4075,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4199,8 +4158,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4259,8 +4217,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4319,8 +4276,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4508,8 +4464,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4595,8 +4550,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4655,8 +4609,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4715,8 +4668,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4822,8 +4774,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4905,8 +4856,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4965,8 +4915,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -5025,8 +4974,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -5146,6 +5094,7 @@
               "body": {
                 "target": {
                   "kind": "add",
+                  "document": "@7",
                   "after": null
                 },
                 "title": "More",
@@ -5185,8 +5134,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },

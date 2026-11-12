@@ -103,8 +103,7 @@ async function group(): Promise<{ scene: Scene; secret: Uint8Array; honest: Devi
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.'] }],
       kx: testKx('ana').kx,
     },
   });

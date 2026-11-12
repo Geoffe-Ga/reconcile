@@ -16,8 +16,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
               "rules": {
                 "bars": {
                   "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },
@@ -113,8 +117,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
               "rules": { "bars": { "entrenched": { "avgAtLeast": 3 } }, "vouches": 2 }
             }
           }
@@ -179,8 +187,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
               "rules": {
                 "bars": {
                   "ordinary": { "avgAtLeast": 2, "zerosUnderPercent": 10 },

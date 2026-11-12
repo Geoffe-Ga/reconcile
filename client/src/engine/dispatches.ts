@@ -55,14 +55,14 @@ export function dispatchFits({ title, text }: CarriedDispatch): boolean {
   );
 }
 
-/** What the Document checks read of a group: each Atom's Document. */
+/** What the Document checks read of a group: its Documents (#92). */
 export interface DocumentState {
-  readonly atoms: readonly { readonly documentId: string }[];
+  readonly documents: readonly { readonly id: string }[];
 }
 
-/** The ids of the group's Documents, in the order their first Atoms come. */
+/** The ids of the group's Documents, in order, one whose sections were all removed included (#92). */
 export function documentIds(state: DocumentState): string[] {
-  return [...new Set(state.atoms.map((atom) => atom.documentId))];
+  return state.documents.map((document) => document.id);
 }
 
 /** What {@link maySendDispatch} reads: who may do what at `at`, and the group's Documents. */

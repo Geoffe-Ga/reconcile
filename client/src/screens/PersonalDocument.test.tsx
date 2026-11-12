@@ -15,7 +15,14 @@ import { xchachaSeal } from '../crypto/seal';
 import { shareChannelOf } from '../crypto/share';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { createRelay } from '../net/relay';
-import { parseShareLink, readShare, startSharing } from '../share/shareLink';
+import {
+  parseShareLink,
+  readShare,
+  shareLinkOf,
+  startSharing,
+  stopSharing,
+} from '../share/shareLink';
+import { exportGroups, importGroups } from '../store/snapshot';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -73,8 +80,11 @@ afterEach(() => {
   fetchSpy.mockClear();
 });
 
-/** Renders the editor for `id` on the test's store, as `#/me/{id}` does. */
-function open(id = ID, onDeleted = vi.fn()) {
+/**
+ * Renders the editor for `id` on the test's store, as `#/me/{id}` does, on a
+ * device that keeps a relay backup key (#97) when `relayBackup` says so.
+ */
+function open(id = ID, onDeleted = vi.fn(), relayBackup: boolean | null = false) {
   const view = render(
     <PersonalDocument
       id={id}
@@ -82,6 +92,7 @@ function open(id = ID, onDeleted = vi.fn()) {
       now={() => clock}
       onDeleted={onDeleted}
       sharing={sharing()}
+      relayBackup={relayBackup}
     />,
   );
   return { ...view, onDeleted, user: userEvent.setup() };
@@ -346,6 +357,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={onDeleted}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
     await user.type(await screen.findByRole('textbox', { name: 'Text' }), ' Kept.');
@@ -380,6 +392,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
     const box = await screen.findByRole('textbox', { name: 'Text' });
@@ -411,6 +424,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
 
@@ -433,6 +447,29 @@ describe('PersonalDocument', () => {
         'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
       ),
     ).toBeVisible();
+  });
+
+  it('says the sealed relay backup has it too, once the device keeps one (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    open(ID, vi.fn(), true);
+
+    expect(
+      await screen.findByText(
+        'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(messages.personal.documentPrivacy)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of where it’s kept until the device has said whether it keeps a relay backup (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    open(ID, vi.fn(), null);
+
+    await screen.findByRole('textbox', { name: 'Text' });
+    const { documentPrivacy, documentPrivacyRelayBackup } = messages.personal;
+    expect(screen.queryByText(documentPrivacy)).not.toBeInTheDocument();
+    expect(screen.queryByText(documentPrivacyRelayBackup)).not.toBeInTheDocument();
   });
 
   it('sends no request while a Document is created, edited, previewed or deleted', async () => {
@@ -622,6 +659,24 @@ describe('PersonalDocument, shared by link (#105)', () => {
     expect(await screen.findByText(share.tooLargeShared)).toBeVisible();
   });
 
+  it('says the sealed relay backup has a shared Document too, once the device keeps one (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open(ID, vi.fn(), true);
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+
+    expect(
+      screen.getByText(
+        'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it, and so does your sealed relay backup.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(messages.personal.sharedPrivacy)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(messages.personal.documentPrivacyRelayBackup),
+    ).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('Stop sharing posts a tombstone, says what it can’t recall, and Share link then makes a new link', async () => {
     await store.savePersonal(STATEMENT);
     const { user } = open();
@@ -730,10 +785,286 @@ describe('PersonalDocument, shared by link (#105)', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={unsure}
+        relayBackup={false}
       />,
     );
 
     expect(within(await shareSection()).getByRole('button', { name: share.start })).toBeVisible();
+  });
+});
+
+describe('PersonalDocument, a share a restore paused (#328)', () => {
+  const { share } = messages.personal;
+  const PASSPHRASE = 'a long walk to the river';
+
+  /**
+   * Ana's statement, shared by link on her old phone, which saved a backup
+   * file; then, when `stop` says so, she stopped sharing there. This device
+   * restores that file, so its share comes back paused. Hands back the link.
+   */
+  async function restored({ stop = false } = {}): Promise<string> {
+    const phone = await openStore('ana-phone');
+    const services = {
+      store: phone,
+      relay: createRelay({ fetch: relay.fetch }),
+      seal: xchachaSeal,
+      now: () => clock,
+    };
+    await phone.savePersonal(STATEMENT);
+    const started = await startSharing(services, ID);
+    if (started.kind !== 'shared') throw new Error(`Expected a share, not ${started.kind}.`);
+    const { file } = await exportGroups(phone, PASSPHRASE, 4);
+    if (stop) await stopSharing(services, ID);
+    phone.close();
+    await importGroups(store, file, PASSPHRASE);
+    return shareLinkOf(ORIGIN, started.link);
+  }
+
+  /** The PUTs the fake relay took. */
+  const puts = () => relay.requests.filter(({ method }) => method === 'PUT');
+
+  it('asks before anything goes to the link, with Keep sharing and Stop sharing, and no link to copy', async () => {
+    await restored();
+    const before = relay.requests.length;
+    open();
+
+    const section = await shareSection();
+    expect(within(section).getByText(share.paused)).toBeVisible();
+    expect(within(section).getByText(share.pausedNote)).toBeVisible();
+    const keep = within(section).getByRole('button', { name: share.keep });
+    const stop = within(section).getByRole('button', { name: share.stop });
+    expect(keep).toHaveAccessibleDescription(`${share.paused} ${share.pausedNote}`);
+    expect(stop).toHaveAccessibleDescription(share.paused);
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(section).queryByRole('button', { name: share.start })).not.toBeInTheDocument();
+    expect(
+      within(section).queryByRole('button', { name: share.shareAgain }),
+    ).not.toBeInTheDocument();
+    // Nothing goes to the link while it waits, so the line says nothing is sent.
+    expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+    expect(screen.queryByText(messages.personal.sharedPrivacy)).not.toBeInTheDocument();
+    expect(relay.requests).toHaveLength(before);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('Keep sharing sends the latest version, then shows the link as shared', async () => {
+    const link = await restored();
+    await store.savePersonal({ ...STATEMENT, text: 'Kept after the restore.\n', updatedAt: NOW });
+    const { user } = open();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.kept)).toBeVisible();
+    expect(linkField()).toHaveValue(link);
+    expect(screen.queryByText(share.pending)).not.toBeInTheDocument();
+    expect(screen.queryByText(share.paused)).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.sharedPrivacy)).toBeVisible();
+    expect(await linkShows(link)).toEqual({
+      kind: 'shown',
+      title: STATEMENT.title,
+      text: 'Kept after the restore.\n',
+    });
+    expect((await store.getPersonal(ID))?.share?.paused).toBeUndefined();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps the choice, and says the link hasn’t caught up, when Keep sharing can’t reach the relay', async () => {
+    const link = await restored();
+    const { user } = open();
+    await shareSection();
+    relay.offline = true;
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.keptPending)).toBeVisible();
+    expect(linkField()).toHaveValue(link);
+    expect(screen.getByText(share.pending)).toBeVisible();
+    expect((await store.getPersonal(ID))?.share).toMatchObject({ pending: true });
+    expect((await store.getPersonal(ID))?.share?.paused).toBeUndefined();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says the link had been stopped, and offers Share link, when Keep sharing finds its tombstone', async () => {
+    const link = await restored({ stop: true });
+    const posted = puts().length;
+    const { user } = open();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.keepStopped)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.start })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: share.field })).not.toBeInTheDocument();
+    expect(puts()).toHaveLength(posted);
+    expect(await linkShows(link)).toEqual({ kind: 'gone' });
+    expect((await store.getPersonal(ID))?.share).toBeUndefined();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('Stop sharing posts only a tombstone, says what it can’t recall, and offers Share link', async () => {
+    const link = await restored();
+    const posted = puts().length;
+    const { user } = open();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.stopped)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.start })).toBeVisible();
+    expect(puts()).toHaveLength(posted + 1);
+    expect(await linkShows(link)).toEqual({ kind: 'gone' });
+    expect((await store.getPersonal(ID))?.share).toBeUndefined();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('holds both buttons while Keep sharing runs, and says so', async () => {
+    await restored();
+    const finishes: ((kept: 'posted') => void)[] = [];
+    const slow = {
+      ...sharing(),
+      keep: () =>
+        new Promise<'posted'>((resolve) => {
+          finishes.push(resolve);
+        }),
+    };
+    render(
+      <PersonalDocument
+        id={ID}
+        documents={store}
+        now={() => clock}
+        onDeleted={vi.fn()}
+        sharing={slow}
+        relayBackup={false}
+      />,
+    );
+    const user = userEvent.setup();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.keeping)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.keep })).toBeDisabled();
+    expect(screen.getByRole('button', { name: share.stop })).toBeDisabled();
+    act(() => {
+      finishes[0]?.('posted');
+    });
+    expect(await screen.findByText(share.kept)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.stop })).toBeEnabled();
+  });
+
+  it('keeps the share paused when Stop sharing can’t reach the relay, and says so', async () => {
+    await restored();
+    const { user } = open();
+    await shareSection();
+    relay.offline = true;
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.pausedStopFailed)).toBeVisible();
+    expect(screen.getByText(share.paused)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.keep })).toBeEnabled();
+    expect((await store.getPersonal(ID))?.share?.paused).toBe(true);
+  });
+
+  it('posts nothing to the link when the editor closes after an edit', async () => {
+    await restored();
+    const posted = puts().length;
+    const { user, unmount } = open();
+    await shareSection();
+    await user.clear(text());
+    await user.type(text(), 'Edited while paused.');
+    await saved();
+
+    unmount();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(puts()).toHaveLength(posted);
+    expect((await store.getPersonal(ID))?.share).toMatchObject({ paused: true, pending: true });
+  });
+
+  it('stops sharing before it deletes a Document whose share is paused', async () => {
+    const link = await restored();
+    const { user, onDeleted } = open();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText(messages.personal.deleteShared)).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await vi.waitFor(() => {
+      expect(onDeleted).toHaveBeenCalledOnce();
+    });
+    expect(await linkShows(link)).toEqual({ kind: 'gone' });
+    expect(await store.listPersonal()).toEqual([]);
+  });
+
+  describe('while this device’s keys are locked (#255)', () => {
+    const SALT = new Uint8Array(32).fill(0x33);
+    const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+    const LOCK = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+    /** Locks the device's keys from another tab, as Settings there would, leaving this one locked. */
+    async function lockFromAnotherTab(): Promise<void> {
+      const other = await openStore();
+      await other.sealKeys(LOCK, KEY);
+      other.close();
+    }
+
+    it('says the link waits for a choice and how to unlock, with no link, Keep sharing, Stop sharing or Delete', async () => {
+      await store.sealKeys(LOCK, KEY);
+      await restored();
+      // An edit while paused marks the share pending, but nothing goes until the person chooses.
+      await store.savePersonal({ ...STATEMENT, text: 'Edited while paused.\n', updatedAt: NOW });
+      store.close();
+      store = await openStore();
+      const requests = relay.requests.length;
+
+      open();
+
+      const section = await shareSection();
+      expect(within(section).getByText(share.lockedPaused)).toBeVisible();
+      expect(within(section).queryByText(share.locked)).not.toBeInTheDocument();
+      expect(within(section).queryByText(share.pending)).not.toBeInTheDocument();
+      expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+      expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+      // Nothing goes to a paused link, so the line says nothing is sent.
+      expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+      expect(relay.requests).toHaveLength(requests);
+      expect((await store.listPersonalEntries())[0]?.share).toMatchObject({
+        pending: true,
+        paused: true,
+      });
+      expect(await axeViolations()).toEqual([]);
+    });
+
+    it('says nothing changed when another tab locked the keys before Keep sharing or Stop sharing, sends nothing, and still asks', async () => {
+      const link = await restored();
+      const { user } = open();
+      const section = await shareSection();
+      await lockFromAnotherTab();
+      const requests = relay.requests.length;
+
+      await user.click(within(section).getByRole('button', { name: share.keep }));
+
+      expect(await within(section).findByText(share.lockedNow)).toBeVisible();
+      expect(within(section).getByText(share.paused)).toBeVisible();
+      expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+      expect(within(section).getByRole('button', { name: share.keep })).toBeEnabled();
+
+      await user.click(within(section).getByRole('button', { name: share.stop }));
+
+      await vi.waitFor(() => {
+        expect(within(section).getByRole('button', { name: share.stop })).toBeEnabled();
+      });
+      expect(within(section).getByText(share.lockedNow)).toBeVisible();
+      expect(within(section).getByText(share.paused)).toBeVisible();
+      expect(relay.requests).toHaveLength(requests);
+      expect(await linkShows(link)).toMatchObject({ kind: 'shown' });
+      expect((await store.listPersonalEntries())[0]?.share?.paused).toBe(true);
+    });
   });
 });
 

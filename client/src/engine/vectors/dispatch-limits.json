@@ -16,8 +16,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -172,8 +176,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -290,8 +298,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -389,8 +401,7 @@
             "body": {
               "name": "Northside Garden",
               "founder": "Zed",
-              "title": "Plot rules",
-              "atoms": ["Water before nine.\n"]
+              "documents": [{ "title": "Plot rules", "atoms": ["Water before nine.\n"] }]
             }
           }
         },

@@ -103,7 +103,11 @@ function genesisOf(name: string): SignedEvent {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name, founder: CANARY.founder, title: 'House rules', atoms: [CANARY.atom] },
+    body: {
+      name,
+      founder: CANARY.founder,
+      documents: [{ title: 'House rules', atoms: [CANARY.atom] }],
+    },
   });
 }
 
@@ -658,7 +662,7 @@ function plain(value: unknown): unknown {
 }
 
 describe('a share by link in the relay copy (#97, #105)', () => {
-  it('carries a shared Document’s share as the snapshot does, sealed, and a restore keeps the same link', async () => {
+  it('carries a shared Document’s share as the snapshot does, sealed, and a restore keeps the same link, paused (#328)', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
@@ -690,7 +694,9 @@ describe('a share by link in the relay copy (#97, #105)', () => {
     const plaintext = await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key);
     const fresh = await openStore('fresh');
     await importSnapshot(fresh, plaintext ?? new Uint8Array());
-    expect(plain(await fresh.getPersonal(shared.id))).toEqual(plain({ ...shared, share }));
+    expect(plain(await fresh.getPersonal(shared.id))).toEqual(
+      plain({ ...shared, share: { ...share, paused: true } }),
+    );
   });
 
   it('keeps the restoring device’s live share when the relay copy’s later copy holds none (`restoredCopy`)', async () => {

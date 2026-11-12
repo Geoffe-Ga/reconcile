@@ -67,6 +67,13 @@ describe('vector files', () => {
       'dissolve-terminal.json',
       'dissolve-unfinished.json',
       'dissolve-window.json',
+      'documents-add.json',
+      'documents-chat-thread.json',
+      'documents-cleared.json',
+      'documents-coalition.json',
+      'documents-dispatch.json',
+      'documents-genesis.json',
+      'documents-new.json',
       'door-class.json',
       'door-invited.json',
       'epoch-honest.json',
@@ -102,6 +109,9 @@ describe('vector files', () => {
       'priority-rank.json',
       'priority-suspend.json',
       'proposal-number.json',
+      'recovery-alert-coalition.json',
+      'recovery-alert.json',
+      'recovery-cancel.json',
       'recovery-share-coalition.json',
       'recovery-share.json',
       'removal-bar.json',
@@ -196,6 +206,13 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -226,6 +243,9 @@ describe('vector files', () => {
       'fold',
       'fold',
       'tally',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'coalition',
@@ -518,6 +538,12 @@ describe('vector files', () => {
     'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
     'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
     "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
+    'a recovery-alert from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-alert from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order with its receipt, drops any other field, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-alert still counts: it governs nothing, and the person it warns must hear of it, so the suspension that ignores their proposal leaves it in",
+    'a recovery-cancel from someone who never joined, naming an event id or a tag of 15 bytes instead of 16, naming nothing, or from someone who has left is ignored and changes nothing',
+    'a recovery-cancel from a member changes no Atom, Proposal or member: the fold keeps each one, with the tag it names, in relay order with its receipt, drops any other field, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-cancel still counts: cancelling a recovery is always possible, as leaving is, so the suspension that ignores their proposal leaves it in",
     'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
     'priority-options: a priority vote with 7 options opens',
     'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
@@ -674,6 +700,41 @@ describe('vector files', () => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 
+  it.each([
+    'documents-genesis-two',
+    'documents-genesis-none',
+    'documents-genesis-blank-title',
+    'documents-genesis-title-length',
+    'documents-genesis-no-atoms',
+    'documents-genesis-edit-second',
+    'documents-new-passes',
+    'documents-new-close-order',
+    'documents-new-versions',
+    'documents-new-ignored',
+    'documents-new-sections',
+    'documents-new-dissolve',
+    'documents-add-other-document',
+    'documents-add-start',
+    'documents-add-anchor-removed',
+    'documents-add-unknown-document',
+    'documents-add-emptied',
+    'documents-dispatch-new',
+    'documents-dispatch-second',
+    'documents-dispatch-sent',
+    'documents-chat-thread',
+    'documents-cleared-new',
+    'documents-cleared-add',
+  ])('include the Documents vector "%s" (#92)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each(['documents-coalition-genesis', 'documents-coalition-motion'])(
+    'include the coalition Documents vector "%s" (#92, #100)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
   it('include the sections vector "sections-coalition" (#75, #100)', () => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
       'sections-coalition',
@@ -744,6 +805,7 @@ describe('coalition vector files (#100)', () => {
     'group-motion-number',
     'group-motion-chat',
     'group-motion-dispatch',
+    'recovery-alert-coalition',
     'admit-pass',
     'admit-open',
     'admit-fail',

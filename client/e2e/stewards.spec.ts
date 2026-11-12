@@ -80,7 +80,7 @@ test('a steward suspends Kim, everyone sees it, and Ben proposes himself for sea
 
   await test.step('Ana proposes, and Kim scores it', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill('Later quiet hours');
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekday evenings run later now.');
