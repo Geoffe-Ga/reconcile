@@ -10,10 +10,24 @@
  * shows a group what the coalition recorded for its seat that disagrees with
  * its own vote, so it can talk it out. Nothing here reads a person's key in
  * one log to find them in the other.
+ *
+ * Coalitions nest (#122; ADR-0036, ADR-0074). A coalition's member may be a
+ * coalition, which decides each motion from above as it decides its own,
+ * from its own seats' results, and reports its one result up. Motions travel
+ * down every line, each with the chain it came through, and results travel
+ * up one line at a time: a higher coalition sees only its own seats' pass or
+ * fail. {@link foldTogether} folds a device's logs in that order.
  */
-import { foundingSeats, type GroupResult, type Motion, resultsCount } from './coalition';
+import {
+  foundingSeats,
+  type GroupResult,
+  MAX_LEVEL,
+  type Motion,
+  resultsCount,
+  seatLevel,
+} from './coalition';
 import type { GroupResultBody, GroupResultValue } from './event';
-import type { GroupState, HeldSeat } from './fold';
+import { fold, type GroupState, type HeldSeat, type LogRecord, type Proposal } from './fold';
 
 /** The seat key `group` holds in `coalition`: one of its reconcile Proposals' keys that the genesis names, or null. */
 export function seatIn(
@@ -25,11 +39,20 @@ export function seatIn(
   return held?.key ?? null;
 }
 
+/** The coalitions a motion came through above `proposal`'s log: none for the log's own (#122). */
+function chainOf(proposal: Pick<Proposal, 'target'>): readonly string[] {
+  const { target } = proposal;
+  return target.kind === 'motion' ? [target.coalition, ...target.chain] : [];
+}
+
 /**
- * The motions `seatKey`'s group decides: each motion in `coalition` whose
+ * The motions `seatKey`'s member decides: each motion in `coalition` whose
  * snapshot holds the seat, with where the relay put it and the class, window,
- * deadline and bar the coalition set. `fold`'s `outside` opens each as a group
- * Proposal.
+ * deadline and bar the coalition set. `fold`'s `outside` opens each as a
+ * Proposal. A coalition passes on the motions it decides for its own seats
+ * above as well (#122), each with the chain of coalitions it came through, so
+ * a motion opens in every group beneath the coalition whose motion it is,
+ * with that coalition's deadline and bar.
  */
 export function motionsFor(coalition: GroupState, seatKey: string): Motion[] {
   const { group, coalition: info } = coalition;
@@ -40,6 +63,7 @@ export function motionsFor(coalition: GroupState, seatKey: string): Motion[] {
     .map((p) => ({
       id: p.id,
       coalition: group,
+      chain: chainOf(p),
       seq: p.seq,
       received: p.received,
       class: p.class,
@@ -47,6 +71,45 @@ export function motionsFor(coalition: GroupState, seatKey: string): Motion[] {
       deadline: p.deadline,
       bar: p.outcome.bar,
     }));
+}
+
+/** One log a device folds beside its others: its records, the relay's `now` for it, and what it cleared (#111). */
+export interface LogToFold {
+  readonly records: readonly LogRecord[];
+  readonly relayNow: number | null;
+  readonly cleared?: readonly string[];
+}
+
+/**
+ * Folds every log a device holds as it must (#122): each one with the motions
+ * its seats decide in the coalitions above it, each of those folded the same
+ * way first, so a motion opens down every line and each log decides it from
+ * its own ballots or its own seats' results. A coalition follows the lines up
+ * at most {@link MAX_LEVEL} deep, and a log met again on its own way up, as a
+ * cycle of false seats would make, is taken as it folds alone. Returns the
+ * states in the order the logs were given.
+ */
+export function foldTogether(logs: readonly LogToFold[]): GroupState[] {
+  const alone = logs.map((log) => fold(log.records, log.relayNow, [], log.cleared ?? []));
+  const done = new Map<number, GroupState>();
+  const visit = (index: number, path: readonly number[]): GroupState => {
+    const found = done.get(index);
+    if (found !== undefined) return found;
+    const own = alone[index] ?? fold([], null);
+    if (path.includes(index) || path.length > MAX_LEVEL) return own;
+    const outside = alone.flatMap((above, i) => {
+      const seat = i === index || above.coalition === null ? null : seatIn(own, above);
+      return seat === null ? [] : motionsFor(visit(i, [...path, index]), seat);
+    });
+    const log = logs[index];
+    const state =
+      outside.length === 0 || log === undefined
+        ? own
+        : fold(log.records, log.relayNow, outside, log.cleared ?? []);
+    done.set(index, state);
+    return state;
+  };
+  return logs.map((_, index) => visit(index, []));
 }
 
 /** Whether a genesis says what the group passed: the same name, title and Atoms, in order. */
@@ -57,10 +120,22 @@ function sameStatement(held: HeldSeat, founding: Pick<HeldSeat, 'name' | 'title'
   return held.name === founding.name && held.title === founding.title && sameAtoms;
 }
 
+/** The level a log holds its seats at: 0 for a group, a coalition's own (#122). */
+function ownLevel(log: Pick<GroupState, 'coalition'>): number {
+  return log.coalition?.level ?? 0;
+}
+
+/** Whether the genesis states `seatKey` at the lower log's own level, which it can check (#122). */
+function sameLevel(lower: GroupState, coalition: GroupState, seatKey: string): boolean {
+  const seat = coalition.coalition?.seats.find((s) => s.key === seatKey);
+  return seat !== undefined && seatLevel(seat) === ownLevel(lower);
+}
+
 /**
- * The group's own result on the genesis: its reconcile vote's outcome once
+ * The member's own result on the genesis: its reconcile vote's outcome once
  * final, a lapse as `fail`, and `fail` too when the genesis's name, title or
- * Atoms differ from the target it voted on; null while it's still voting.
+ * Atoms differ from the target it voted on, or when it states the member's
+ * seat at another level than its own (#122); null while it's still voting.
  */
 function genesisResult(
   group: GroupState,
@@ -70,19 +145,27 @@ function genesisResult(
   const held = group.coalitions.find((c) => c.key === seatKey);
   const founding = coalition.coalition?.founding;
   if (held === undefined || founding === undefined || held.outcome === 'open') return null;
-  return held.outcome === 'pass' && sameStatement(held, founding) ? 'pass' : 'fail';
+  const same = sameStatement(held, founding) && sameLevel(group, coalition, seatKey);
+  return held.outcome === 'pass' && same ? 'pass' : 'fail';
 }
 
 /**
- * The group's own result on `motion`: its Proposal's outcome once final, a
- * lapse or fail as `fail`, or null while it's still voting or never opened it.
+ * The member's own result on `motion`. A group's is its Proposal's outcome
+ * once final, a lapse or fail as `fail`. A coalition's (#122) is its seats'
+ * pass as soon as it is certain, before results on it stop counting, since a
+ * pass that waited for that would reach the coalition above too late, or a
+ * fail once final; a contest that later turns its pass into a fail crosses
+ * as that fail too. Null while it's still deciding, or never opened it.
  */
 function motionResult(group: GroupState, coalitionId: string, motion: string) {
   const own = group.proposals.find(
     (p) => p.id === motion && p.target.kind === 'motion' && p.target.coalition === coalitionId,
   );
-  if (own?.final !== true) return null;
-  return own.outcome.kind === 'pass' ? 'pass' : 'fail';
+  if (own === undefined) return null;
+  const pass = own.outcome.kind === 'pass';
+  if (group.coalition !== null && pass) return 'pass';
+  if (!own.final) return null;
+  return pass ? 'pass' : 'fail';
 }
 
 /** The group's own result on the genesis or a motion, or null while it doesn't have one. */

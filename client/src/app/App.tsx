@@ -80,6 +80,7 @@ import { coalitionRows, withMotionWords } from './coalitionLines';
 import {
   admitCard,
   bringCard,
+  broughtTo,
   type CardValues,
   type FoundCard,
   lookupCard,
@@ -774,14 +775,18 @@ interface BringScreenProps {
   readonly releaseSeed: () => void;
 }
 
-/** Bring a card (#114): the card, then the group it goes to, whose new Proposal opens after. */
+/**
+ * Bring a card (#114): the card, then the group it goes to, whose new
+ * Proposal opens after, or the coalition, whose home opens (#122).
+ */
 function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenProps) {
   const lookup = useCallback((seed: Uint8Array) => lookupCard(services, seed), [services]);
   const onBring = useCallback(
     async (found: FoundCard, groupId: string, name: string) => {
       const proposalId = await bringCard(services, found, groupId, name);
+      const next = await broughtTo(services, found, groupId, proposalId);
       releaseSeed();
-      replaceRoute({ name: 'proposal', groupId, proposalId });
+      replaceRoute(next);
       return true;
     },
     [services, releaseSeed],

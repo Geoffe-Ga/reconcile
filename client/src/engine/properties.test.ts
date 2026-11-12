@@ -29,12 +29,20 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { folded, foldLogs, Logs, seatOf } from '../test/coalitions';
+import {
+  folded,
+  foldLogs,
+  Logs,
+  NestedLogs,
+  type NestedSeat,
+  seatKey,
+  seatOf,
+} from '../test/coalitions';
 import { doorOf } from '../test/door';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
-import { resultsToReport } from './crossing';
+import { resultsToReport, seatIn } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
@@ -1863,6 +1871,193 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
         }
       }),
       { numRuns: 25 },
+    );
+  });
+});
+
+/** A result a seat may report, or none. */
+const maybeResult = fc.option(fc.constantFrom<'pass' | 'fail'>('pass', 'fail'), { nil: null });
+
+/** The outcome kind `results` reach over `seats` seats, as `coalitionOutcome` decides it. */
+function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: boolean) {
+  const passes = results.filter((r) => r === 'pass').length;
+  const fails = results.filter((r) => r === 'fail').length;
+  return coalitionOutcome({ seats: results.length, passes, fails, expired }).kind;
+}
+
+const STATEMENT_D = { name: 'Metro Renters', title: 'Shared ground', atoms: ['Rent stays fair.'] };
+
+/** The groups of the nested canary property: each log, its three voters, first the founder. */
+const CANARY_GROUPS = [
+  ['A', ['ana', 'ben', 'cal']],
+  ['B', ['dee', 'eve', 'fay']],
+] as const;
+
+/**
+ * Groups A and B, every name, title, Atom and note carrying `mark`, form C;
+ * C and E form D; a motion opens in D, and A and B score it with
+ * `scores[0]` and `scores[1]` (#122).
+ */
+function canaryLines(mark: string, scores: readonly (readonly Score[])[]) {
+  const logs = new NestedLogs();
+  const statementC = { name: `C ${mark}`, title: `T ${mark}`, atoms: [mark] };
+  for (const [log, voters] of CANARY_GROUPS) {
+    const documents = [{ title: mark, atoms: [mark] }];
+    const body = { name: `Group ${mark}`, founder: `F ${mark}`, documents };
+    logs.add(log, R, voters[0], { type: 'genesis', body });
+    for (const voter of voters.slice(1)) {
+      const join = { name: `${voter} ${mark}`, level: CREATING };
+      logs.add(log, R + 1, voter, { type: 'join', body: join });
+    }
+    const held = logs.reconcileInto(log, R + 2, voters[0], 'C', log, statementC);
+    voters.forEach((voter) => logs.vote(log, R + 3, voter, held, 4));
+  }
+  logs.formedIn('C', R + 5, [['A'], ['B']], ['ca', 'cb'], statementC);
+  const into = logs.sealedInto('C', R + 9, 'ca', 'D', STATEMENT_D);
+  logs.resultIn('C', R + 10, 'ca', into, 'A', 'pass');
+  logs.resultIn('C', R + 10, 'cb', into, 'B', 'pass');
+  logs.formedIn('D', R + 11, [['C', 1], ['E']], ['q', 'e'], STATEMENT_D);
+  const motion = logs.motionIn('D', R + 20, 'e', 'Rent stays fair for everyone.');
+  CANARY_GROUPS.forEach(([log, voters], g) => {
+    voters.forEach((voter, i) => {
+      logs.vote(log, R + 21, voter, motion, scores[g]?.[i] ?? 4, `Note ${mark}`);
+    });
+  });
+  return { logs, motion };
+}
+
+/** What `lower` owes `upper` for the seat it holds there, folded in `states`, or nothing. */
+function owedUp(states: Readonly<Record<string, GroupState>>, lower: string, upper: string) {
+  const [below, above] = [states[lower], states[upper]];
+  const seat = below === undefined || above === undefined ? null : seatIn(below, above);
+  return seat === null || below === undefined || above === undefined
+    ? []
+    : resultsToReport(below, above, seat);
+}
+
+describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
+  it('decides a motion in D the same whatever order the lower results arrive in, C’s and its groups’ alike', () => {
+    const scenario = fc.record({
+      lower: fc.array(maybeResult, { minLength: 6, maxLength: 6 }),
+      lowerSeats: fc.integer({ min: 2, max: 6 }),
+      others: fc.array(maybeResult, { minLength: 4, maxLength: 4 }),
+      otherSeats: fc.integer({ min: 1, max: 4 }),
+      orderLower: fc.array(fc.nat(), { minLength: 6, maxLength: 6 }),
+      orderUpper: fc.array(fc.nat(), { minLength: 5, maxLength: 5 }),
+      expired: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(scenario, (s) => {
+        const lower = s.lower.slice(0, s.lowerSeats);
+        const others = s.others.slice(0, s.otherSeats);
+        const byOrder = (order: readonly number[]) => (a: number, b: number) =>
+          (order[a] ?? 0) - (order[b] ?? 0) || a - b;
+        const lowerIn = (sorted: boolean) => {
+          const seats = lower.map((_, i) => i);
+          return sorted ? seats : [...seats].sort(byOrder(s.orderLower));
+        };
+        // Index 0 stands for C's own result, the rest for D's other seats.
+        const upperIn = (sorted: boolean) => {
+          const seats = [0, ...others.map((_, i) => i + 1)];
+          return sorted ? seats : [...seats].sort(byOrder(s.orderUpper));
+        };
+        const decide = (sorted: boolean) => {
+          const logs = new NestedLogs();
+          const cSeats = lower.map((_, i) => [`L${String(i)}`] as const);
+          logs.formedIn(
+            'C',
+            R,
+            cSeats,
+            lower.map((_, i) => `l${String(i)}`),
+          );
+          const into = logs.sealedInto('C', R + 5, 'l0', 'D', STATEMENT_D);
+          cSeats.forEach(([seat], i) =>
+            logs.resultIn('C', R + 6, `l${String(i)}`, into, seat, 'pass'),
+          );
+          const dSeats: NestedSeat[] = [
+            ['C', 1],
+            ...others.map((_, i) => [`E${String(i)}`] as const),
+          ];
+          const dWho = ['q', ...others.map((_, i) => `e${String(i)}`)];
+          logs.formedIn('D', R + 7, dSeats, dWho, STATEMENT_D);
+          const motion = logs.motionIn('D', R + 20, 'e0', 'Rent stays fair for everyone.');
+          lowerIn(sorted).forEach((i, n) => {
+            const result = lower[i];
+            if (result !== undefined && result !== null) {
+              logs.resultIn('C', R + 21 + n, `l${String(i)}`, motion, `L${String(i)}`, result);
+            }
+          });
+          const at = R + 40;
+          const upper = upperIn(sorted);
+          upper.forEach((i, n) => {
+            const when = at + n;
+            if (i === 0) {
+              const states = logs.foldAll(when);
+              const [c, d] = [states.C, states.D];
+              if (c === undefined || d === undefined) throw new Error('Expected C and D.');
+              const seat = seatIn(c, d);
+              if (seat === null) throw new Error('Expected C’s seat in D.');
+              for (const body of resultsToReport(c, d, seat)) {
+                logs.add('D', when, 'q', { type: 'group-result', body });
+              }
+              return;
+            }
+            const result = others[i - 1];
+            if (result !== undefined && result !== null) {
+              logs.resultIn('D', when, `e${String(i - 1)}`, motion, `E${String(i - 1)}`, result);
+            }
+          });
+          const deadline = R + 20 + WINDOW;
+          const now = s.expired ? deadline + RESULT_GRACE_MINUTES : deadline;
+          const d = logs.foldAll(now).D;
+          const p = d?.proposals.find((proposal) => proposal.id === motion);
+          return { outcome: p?.outcome.kind, final: p?.final, atoms: d?.atoms };
+        };
+        const first = decide(true);
+        expect(decide(false)).toEqual(first);
+        const fromC = outcomeOver(lower, false);
+        const crossed = fromC === 'open' ? null : fromC;
+        const kind = outcomeOver([crossed, ...others], s.expired);
+        expect(first.outcome).toBe(kind === 'open' ? 'lapse' : kind);
+        expect(first.final).toBe(kind === 'fail' || s.expired);
+      }),
+      { numRuns: 30 },
+    );
+  });
+
+  it('carries only a pass or fail for one motion and seat up each line, never a ballot, note, name or count', () => {
+    const scenario = fc.record({
+      canary: fc.stringMatching(/^[a-z0-9]{8}$/),
+      scoresA: fc.array(score, { minLength: 3, maxLength: 3 }),
+      scoresB: fc.array(score, { minLength: 3, maxLength: 3 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ canary, scoresA, scoresB }) => {
+        const mark = `canary${canary}`;
+        const { logs, motion } = canaryLines(mark, [scoresA, scoresB]);
+        const states = logs.foldAll(R + 20 + WINDOW);
+        const owed = (['A', 'B'] as const).flatMap((log) => owedUp(states, log, 'C'));
+        expect(owed.filter((body) => body.motion === motion)).toHaveLength(2);
+        owed.forEach((body, i) => {
+          const who = body.seat === seatKey('A') ? 'ca' : 'cb';
+          logs.add('C', R + 30 + i, who, { type: 'group-result', body });
+        });
+        const after = logs.foldAll(R + 40 + WINDOW);
+        const upward = owedUp(after, 'C', 'D');
+        expect(upward.map((body) => body.motion)).toContain(motion);
+        const voters = CANARY_GROUPS.flatMap(([, names]) => names);
+        const forbidden = [mark, ...voters.map(authorOf), 'scores', 'note'];
+        for (const body of [...owed, ...upward]) {
+          expect(Object.keys(body).sort()).toEqual(['motion', 'result', 'seat']);
+          expect(['pass', 'fail']).toContain(body.result);
+          const text = JSON.stringify(body);
+          for (const secret of forbidden) expect(text).not.toContain(secret);
+        }
+        // D's log never names a lower group's seat: only C's and E's results reach it.
+        const seatsInD = new Set(after.D?.coalition?.results.map((r) => r.seat));
+        expect([...seatsInD].sort()).toEqual([seatKey('C'), seatKey('E')].sort());
+      }),
+      { numRuns: 15 },
     );
   });
 });

@@ -27,6 +27,7 @@ import type {
   MoveTarget,
   NewDocumentTarget,
   RemoveTarget,
+  SealedReconcileTarget,
 } from './event';
 import {
   effectiveOptIn,
@@ -109,8 +110,9 @@ export interface StewardChange {
  * section's place (#103), a steward seat (#102), an opt-in (#117), whether
  * the group goes on (#108), or who is in it (#115). Or it reconciles the
  * group into a coalition, or is a coalition's motion, which its seats decide
- * (#100), or in a coalition admits a group (#114). A priority vote changes
- * nothing: its top option becomes the focus (#107).
+ * (#100), or in a coalition admits a group (#114) or takes a seat above, its
+ * secrets sealed (#122). A priority vote changes nothing: its top option
+ * becomes the focus (#107).
  */
 export type ProposalTarget =
   | { readonly kind: 'edit' }
@@ -122,6 +124,7 @@ export type ProposalTarget =
   | DissolveTarget
   | RemoveTarget
   | ReconcileChange
+  | SealedReconcileTarget
   | MotionTarget
   | { readonly kind: 'priority' }
   | AdmitChange;

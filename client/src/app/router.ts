@@ -105,6 +105,8 @@ export type Route =
     }
   /** Propose a change to one of a coalition's sections (#120). */
   | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
+  /** Reconcile with another coalition (#122): the card's form, one level up. */
+  | { readonly name: 'coalitionReconcile'; readonly coalitionId: string }
   /** A coalition Document's change log (#104). */
   | { readonly name: 'coalitionLog'; readonly coalitionId: string; readonly documentId: string }
   /** A coalition's room (#125). */
@@ -296,10 +298,17 @@ const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) =>
   ],
 ]);
 
+/** The pages inside a coalition that take no argument: its card's form (#122), and its room (#125). */
+const COALITION_PLAIN_PAGES: ReadonlyMap<string, 'coalitionReconcile' | 'coalitionRoom'> = new Map([
+  ['reconcile', 'coalitionReconcile'],
+  ['room', 'coalitionRoom'],
+]);
+
 /**
  * `#/c/{coalitionId}`, a coalition's home, or one of its pages:
  * `doc/{documentId}` or `propose/{atomId}` (#120), `doc/{documentId}/log`,
- * a Document's change log (#104), or `room` (#125).
+ * a Document's change log (#104), `reconcile`, its card's form (#122), or
+ * `room` (#125).
  */
 function coalitionRoute(rest: readonly string[]): Route {
   const [coalitionId, page, arg, ...extra] = rest;
@@ -309,7 +318,8 @@ function coalitionRoute(rest: readonly string[]): Route {
     return documentId === null ? START : { name: 'coalitionLog', coalitionId, documentId };
   }
   if (page === undefined) return { name: 'coalition', coalitionId };
-  if (page === 'room') return arg === undefined ? { name: 'coalitionRoom', coalitionId } : START;
+  const plain = COALITION_PLAIN_PAGES.get(page);
+  if (plain !== undefined) return arg === undefined ? { name: plain, coalitionId } : START;
   const open = COALITION_PAGES.get(page);
   return open === undefined || arg === undefined ? START : open(coalitionId, arg);
 }
@@ -560,6 +570,8 @@ function coalitionHref(route: CoalitionRoute): string {
       return `${home}/doc/${route.documentId}`;
     case 'coalitionPropose':
       return `${home}/propose/${route.atomId}`;
+    case 'coalitionReconcile':
+      return `${home}/reconcile`;
     case 'coalitionLog':
       return `${home}/doc/${route.documentId}/log`;
     case 'coalitionRoom':

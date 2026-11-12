@@ -12,7 +12,17 @@ import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { newEntry } from '../store/coalitions';
 import { parseCardLink } from '../coalition/card';
-import { admitCard, bringCard, type FoundCard, lookupCard, makeCard, postCard } from './reconcile';
+import { NestedLogs, threeLevels } from '../test/coalitions';
+import { authorOf } from '../test/keys';
+import {
+  admitCard,
+  bringCard,
+  bringsInto,
+  type FoundCard,
+  lookupCard,
+  makeCard,
+  postCard,
+} from './reconcile';
 
 freshIndexedDBPerTest();
 
@@ -108,5 +118,24 @@ describe('admitCard', SLOW, () => {
     await expect(admitCard(ana.services, entry.groupId, riverside)).rejects.toThrow(
       'holds no seat',
     );
+  });
+});
+
+describe('bringsInto (#122)', () => {
+  it('lets a participant bring a card into a formed coalition below level 3, and no one else', () => {
+    const logs = new NestedLogs();
+    threeLevels(logs);
+    const at = 29_375_100;
+    const d = fold(logs.logs.D ?? [], at);
+    const f = fold(logs.logs.F ?? [], at);
+    expect(d.coalition?.level).toBe(2);
+    expect(bringsInto(d, authorOf('fay'))).toBe(true);
+    expect(bringsInto(d, authorOf('ana'))).toBe(false);
+    expect(f.coalition?.level).toBe(3);
+    expect(bringsInto(f, authorOf('ivy'))).toBe(false);
+    const forming = new NestedLogs();
+    forming.coalitionIn('X', at, [['A'], ['B']]);
+    forming.joinIn('X', at + 1, 'cal', 'A');
+    expect(bringsInto(fold(forming.logs.X ?? [], at + 2), authorOf('cal'))).toBe(false);
   });
 });
