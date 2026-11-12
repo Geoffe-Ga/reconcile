@@ -143,6 +143,11 @@
   font: var(--type-ui);
 }
 
+/* What a restore says: two sentences once it left a group out (#336), kept to a field hint's measure. */
+.restore-status {
+  max-width: 34em;
+}
+
 /* The chosen backup file's name, which may be anything the person's device called it. */
 .restore-file {
   color: var(--body);

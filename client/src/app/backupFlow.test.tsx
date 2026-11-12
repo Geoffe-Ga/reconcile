@@ -3,20 +3,25 @@
  * share one fake relay: group home suggests a backup until one holds the
  * group, Settings saves the file, a second and third device restore it from
  * Start and vote as the same person, so the tally counts one voter with the
- * later ballot, and Erase runs from Settings behind its hold.
+ * later ballot, and Erase runs from Settings behind its hold. A file with a
+ * group entry that doesn't check out brings back the rest, and says so (#336).
  */
 import { act, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { base64url } from '../crypto/base64url';
+import { openBackup, sealBackup } from '../crypto/backup';
 import { backupIdFor } from '../crypto/relayBackup';
 import { fold } from '../engine/fold';
 import { startRelayBackup } from '../store/relayBackup';
 import type { TestDevice } from '../test/appServices';
 import { testDevice } from '../test/appServices';
+import { text, utf8 } from '../test/bytes';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { go, members, type MountedApp, mountApp } from '../test/members';
+import { createGroup } from './actions';
 import { castBallot, propose } from './proposals';
 
 freshIndexedDBPerTest();
@@ -71,8 +76,13 @@ async function saveFrom(device: TestDevice, prefix: string): Promise<File> {
   return file;
 }
 
-/** Restores `file` on `device` from Start, through the file input. */
-async function restoreOn(device: TestDevice, prefix: string, file: File) {
+/** Restores `file` on `device` from Start, through the file input, and waits for `line`. */
+async function restoreOn(
+  device: TestDevice,
+  prefix: string,
+  file: File,
+  line = '1 group is back on this device.',
+) {
   const user = userEvent.setup();
   go('#/');
   const app = mount(device, prefix);
@@ -82,7 +92,7 @@ async function restoreOn(device: TestDevice, prefix: string, file: File) {
   await user.upload(input, file);
   await user.type(within(section).getByLabelText('Its passphrase'), PASSPHRASE);
   await user.click(within(section).getByRole('button', { name: 'Restore' }));
-  await within(section).findByText('1 group is back on this device.');
+  await within(section).findByText(line);
   return app;
 }
 
@@ -246,5 +256,60 @@ describe('the relay backup key in the file (#97, ADR-0075 §4)', () => {
 
     // Scoped to the backup: Notifications' disclosure speaks of the relay too (#99).
     expect(within(section).queryByText(/relay/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * `file` with `entry` put into its groups after the first, sealed again
+ * under the same passphrase: a group entry that doesn't check out (#336).
+ */
+async function withEntry(file: File, entry: unknown): Promise<File> {
+  const plaintext = await openBackup(new Uint8Array(await file.arrayBuffer()), PASSPHRASE);
+  const snapshot = JSON.parse(text(plaintext)) as { groups: unknown[] };
+  const [first, ...rest] = snapshot.groups;
+  const groups = [first, entry, ...rest];
+  const sealed = await sealBackup(utf8(JSON.stringify({ ...snapshot, groups })), PASSPHRASE);
+  return new File([sealed], file.name);
+}
+
+describe('a backup file with a group entry that doesn’t check out (#336)', () => {
+  it('brings back every other group and Document from Start, and says one was left out', async () => {
+    const { fake, ana } = await anaAndBen();
+    const second = await createGroup(ana.services, {
+      groupName: 'Allotment Society',
+      yourName: 'Ana',
+      documents: [{ title: 'Plot rules', text: 'Water before nine.' }],
+      chat: null,
+    });
+    if (second.outcome !== 'created') throw new Error('Expected Ana’s second group.');
+    await ana.services.sync.syncOnce();
+    const statement = {
+      id: 'U3RhdGVtZW50IGlkIDMzNg',
+      title: 'What I stand for',
+      text: 'I show up for my neighbors.\n',
+      createdAt: 1_762_000_400_000,
+      updatedAt: 1_762_000_500_000,
+    };
+    await ana.services.store.savePersonal(statement);
+    const saved = await saveFrom(ana, 'a');
+    for (const done of mounted.splice(0)) done.unmount();
+    const file = await withEntry(saved, {
+      groupId: base64url(new Uint8Array(32).fill(0x50)),
+      me: { author: base64url(new Uint8Array(32).fill(0x51)), name: 'Planted' },
+      log: 'not a log',
+    });
+    const phone = await testDevice(fake, 'ana-phone');
+    opened.push(phone);
+
+    const start = await restoreOn(
+      phone,
+      'p',
+      file,
+      '2 groups are back on this device. One group in this backup couldn’t be read and was left out.',
+    );
+
+    expect(await start.findByRole('link', { name: /Riverside Tenants/ })).toBeVisible();
+    expect(await start.findByRole('link', { name: /Allotment Society/ })).toBeVisible();
+    expect(await phone.services.store.listPersonal()).toEqual([statement]);
   });
 });

@@ -13,6 +13,17 @@ const LOCALE = 'en-GB';
 /** A whole number as this language writes it, such as "2,000". */
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
+/**
+ * What a restore or a link says of the group entries it left out because
+ * they didn't check out (#336), `where` they were, or null for none.
+ */
+function leftOut(skipped: number, where: string): string | null {
+  if (skipped === 0) return null;
+  return skipped === 1
+    ? `One group ${where} couldn’t be read and was left out.`
+    : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+}
+
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
 const CLEARED_ON = 'Individual scores and notes were cleared on';
 
@@ -1499,11 +1510,18 @@ export const messages = {
     passphraseMissing: 'Enter the passphrase this backup was saved with.',
     submit: 'Restore',
     restoring: 'Opening your backup…',
-    restored: (groups: number) => {
-      if (groups === 0) return 'This backup holds no groups.';
-      return groups === 1
-        ? '1 group is back on this device.'
-        : `${count(groups)} groups are back on this device.`;
+    /**
+     * How many groups came back, then how many group entries didn't check out
+     * and were left out (#336), when any were: only that, when none came back.
+     */
+    restored: (groups: number, skipped: number) => {
+      const left = leftOut(skipped, 'in this backup');
+      if (groups === 0) return left ?? 'This backup holds no groups.';
+      const back =
+        groups === 1
+          ? '1 group is back on this device.'
+          : `${count(groups)} groups are back on this device.`;
+      return left === null ? back : `${back} ${left}`;
     },
     failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
   },
@@ -1573,10 +1591,15 @@ export const messages = {
     waitingOther: 'Waiting for your other device…',
     check: 'Check that your other device shows the same number, then confirm there.',
     cancel: 'Cancel',
-    linked: (groups: number) =>
-      groups === 1
-        ? 'Linked. This device now has 1 group.'
-        : `Linked. This device now has ${count(groups)} groups.`,
+    /** How many groups the device now has, then how many from the bundle were left out (#336). */
+    linked: (groups: number, skipped: number) => {
+      const now =
+        groups === 1
+          ? 'Linked. This device now has 1 group.'
+          : `Linked. This device now has ${count(groups)} groups.`;
+      const left = leftOut(skipped, 'from your other device');
+      return left === null ? now : `${now} ${left}`;
+    },
     mismatch: 'That code didn’t match. Start again on your other device.',
     damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
     joinExpired: 'That code has expired. Start again on your other device.',
