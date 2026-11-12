@@ -28,7 +28,7 @@ import { clearExpiredBallots, foldGroup } from './expiry';
 import type { PersonalDocument, ShareState } from './personal';
 import {
   backedUpGroups,
-  decodePersonal,
+  decodeRelayCopy,
   decodeSnapshot,
   deviceSnapshot,
   encodeSnapshot,
@@ -648,32 +648,99 @@ describe('personal Documents in a backup (#93)', () => {
   });
 });
 
-describe('decodePersonal: only the personal Documents of a relay copy (#247)', () => {
-  it('reads each Document as a restore checks it, and none of the groups', () => {
+describe('decodeRelayCopy: what the relay backup reads of the relay copy (#247, #327)', () => {
+  /** A group entry as a linked device's upload holds it: only its id and author are ever read. */
+  const ENTRY = {
+    groupId: base64url(new Uint8Array(32).fill(0x47)),
+    signingKey: 'not a key: this device never reads it',
+    me: { author: base64url(new Uint8Array(32).fill(0x41)), name: 'Ana' },
+    log: 'not a log either: this device never checks, folds or syncs it',
+    futureField: { kept: true },
+  };
+  const plaintext = (json: unknown) => utf8(JSON.stringify(json));
+
+  it('reads each Document as a restore checks it, and of each group only its id and author', () => {
     const shared = { ...canaryStatement(), share: SHARE };
-    const groups = [{ groupId: 'not a group id' }];
-    const plaintext = (json: object) => utf8(JSON.stringify(json));
     const encoded = encodeSnapshot({ groups: [], personal: [shared, READING] });
     const { personal } = JSON.parse(text(encoded)) as { personal: unknown };
 
-    // A group that wouldn't restore doesn't matter here: the merge keeps this device's groups.
-    expect(plain(decodePersonal(plaintext({ format: 2, groups, personal })))).toEqual(
-      plain([shared, READING]),
-    );
-    expect(decodePersonal(plaintext({ format: 1, groups: [] }))).toEqual([]);
+    const copy = decodeRelayCopy(plaintext({ format: 2, groups: [ENTRY], personal }));
+
+    expect(plain(copy?.personal)).toEqual(plain([shared, READING]));
+    expect(copy?.groups).toEqual([
+      { groupId: ENTRY.groupId, author: ENTRY.me.author, entry: ENTRY },
+    ]);
+    // A copy from before #93 holds no personal Documents.
+    expect(decodeRelayCopy(plaintext({ format: 2, groups: [] }))).toEqual({
+      personal: [],
+      groups: [],
+    });
   });
 
   it('reads nothing from a plaintext a restore wouldn’t, or a Document that doesn’t check out', () => {
-    const plaintext = (json: unknown) => utf8(JSON.stringify(json));
     const untitled = { ...READING, title: '' };
 
-    expect(decodePersonal(plaintext({ format: 3, personal: [READING] }))).toBeNull();
-    expect(decodePersonal(plaintext([READING]))).toBeNull();
-    expect(decodePersonal(utf8('not JSON'))).toBeNull();
-    expect(decodePersonal(plaintext({ format: 2, groups: [], personal: [untitled] }))).toBeNull();
+    expect(decodeRelayCopy(plaintext({ format: 3, groups: [], personal: [READING] }))).toBeNull();
+    expect(decodeRelayCopy(plaintext([READING]))).toBeNull();
+    expect(decodeRelayCopy(utf8('not JSON'))).toBeNull();
+    expect(decodeRelayCopy(plaintext({ format: 2, groups: [], personal: [untitled] }))).toBeNull();
     expect(
-      decodePersonal(plaintext({ format: 2, groups: [], personal: [READING, READING] })),
+      decodeRelayCopy(plaintext({ format: 2, groups: [], personal: [READING, READING] })),
     ).toBeNull();
+  });
+
+  it('reads nothing from a format 1 copy: every relay copy is format 2, and a format 1 group in one wouldn’t restore', () => {
+    expect(decodeRelayCopy(plaintext({ format: 1, groups: [], personal: [] }))).toBeNull();
+  });
+
+  it.each([
+    ['groups that aren’t a list', { [ENTRY.groupId]: ENTRY }],
+    ['an entry that isn’t an object', [ENTRY, 'a group']],
+    ['an entry without a group id', [{ ...ENTRY, groupId: undefined }]],
+    ['a group id that isn’t one', [{ ...ENTRY, groupId: 'not a group id' }]],
+    ['an entry without its member', [{ ...ENTRY, me: undefined }]],
+    ['an author that isn’t one', [{ ...ENTRY, me: { ...ENTRY.me, author: 7 } }]],
+    ['a short author', [{ ...ENTRY, me: { ...ENTRY.me, author: 'QW5h' } }]],
+    ['two entries for one group', [ENTRY, { ...ENTRY, me: { ...ENTRY.me, name: 'Ana again' } }]],
+  ])('reads nothing from a copy with %s', (_, groups) => {
+    expect(decodeRelayCopy(plaintext({ format: 2, groups, personal: [] }))).toBeNull();
+  });
+});
+
+describe('encodeSnapshot with group entries carried from the relay copy (#327)', () => {
+  it('writes each after the device’s own groups, as the copy held it, so a restore reads the group the other device kept', async () => {
+    const other = await openStore('laptop');
+    await keepCanary(other);
+    const theirs = await snapshotOf(other);
+    const copy = decodeRelayCopy(theirs);
+    if (copy === null) throw new Error('Expected the copy to read.');
+    const device = await openStore('phone');
+    await keepSections(device);
+    const own = await deviceSnapshot(device);
+    expect(own.groups).toHaveLength(1);
+
+    const encoded = encodeSnapshot({ ...own, carried: copy.groups });
+
+    const written = JSON.parse(text(encoded)) as { groups: { groupId: string }[] };
+    const held = JSON.parse(text(theirs)) as { groups: unknown[] };
+    expect(written.groups.map((group) => group.groupId)).toEqual([
+      ...own.groups.map((group) => group.groupId),
+      ...copy.groups.map((group) => group.groupId),
+    ]);
+    expect(written.groups.slice(1)).toEqual(held.groups);
+    const restored = decodeSnapshot(encoded);
+    expect(plain(restored?.groups.slice(1))).toEqual(plain(decodeSnapshot(theirs)?.groups));
+    other.close();
+    device.close();
+  });
+
+  it('writes nothing more when nothing is carried', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const own = await deviceSnapshot(device);
+
+    expect(text(encodeSnapshot({ ...own, carried: [] }))).toBe(text(encodeSnapshot(own)));
+    device.close();
   });
 });
 
@@ -1294,6 +1361,7 @@ describe('replaceWithBackup: Restore when the passkey no longer unlocks the vaul
       uploadedAt: null,
       tooLarge: false,
       uploaded: [],
+      uploadedGroups: [],
     });
   });
 
@@ -1651,6 +1719,7 @@ describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
       uploadedAt: null,
       tooLarge: false,
       uploaded: [],
+      uploadedGroups: [],
     });
   });
 

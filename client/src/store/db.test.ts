@@ -833,6 +833,35 @@ describe('purgeGroup', () => {
     expect(await store.listGroups()).toHaveLength(1);
     expect(heard).toEqual([]);
   });
+
+  it('sets the relay backup’s day back, so the next complete pass checks the copy, and keeps the rest (#327)', async () => {
+    const store = await openStore();
+    const key = new Uint8Array(32).fill(0xb7);
+    await store.addGroup(group);
+    await store.setRelayBackupKey(key);
+    const kept = { digest: 'd1', checkedDay: 7, uploadedAt: 9, uploadedGroups: ['t1'] };
+    await store.updateRelayBackup(key, kept);
+    const before = await store.getRelayBackup();
+    const heard: string[] = [];
+    store.subscribe((groupId) => heard.push(groupId));
+
+    await store.purgeGroup('nope');
+    expect(await store.getRelayBackup()).toEqual(before);
+    await store.purgeGroup(group.groupId);
+
+    expect(await store.getRelayBackup()).toEqual({ ...before, checkedDay: null });
+    // Only the purge's own notice: Settings shows nothing of the day.
+    expect(heard).toEqual([group.groupId]);
+  });
+
+  it('keeps no relay backup state where the device keeps none', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+
+    await store.purgeGroup(group.groupId);
+
+    expect(await store.getRelayBackup()).toBeUndefined();
+  });
 });
 
 describe('the schema, from each version a device may hold (v1 → v2 → v3 → v4 → v5 → v6 → v7)', () => {

@@ -34,9 +34,17 @@ const KEPT = {
   lastSyncAt: null,
 };
 
-/** A fresh state for `key`: nothing uploaded, nothing checked, and no Document uploaded yet (#247). */
+/** A fresh state for `key`: nothing uploaded or checked yet, no Document (#247) and no group (#327). */
 function fresh(key: Uint8Array): RelayBackupState {
-  return { key, digest: null, checkedDay: null, uploadedAt: null, tooLarge: false, uploaded: [] };
+  return {
+    key,
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+    uploaded: [],
+    uploadedGroups: [],
+  };
 }
 
 describe('the relay backup’s state', () => {
