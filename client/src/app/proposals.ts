@@ -112,6 +112,7 @@ function draftOf(values: ProposalValues, text: string): string {
 function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): ProposalEventBody {
   if (!('target' in place)) return { atom: place.atom, ...fields };
   const { target } = place;
+  // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
   return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
 }
 
