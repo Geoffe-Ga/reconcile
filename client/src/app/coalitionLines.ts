@@ -12,10 +12,15 @@ import { can, isOusted } from '../engine/capabilities';
 import { MAX_LEVEL, seatLevel, seatResult } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { resultMismatches, seatIn } from '../engine/crossing';
-import type { Ceiling, ReconcileTarget, SeatEntry } from '../engine/event';
+import type { Ceiling, ReconcileTarget, SealedReconcileTarget, SeatEntry } from '../engine/event';
 import type { GroupState, HeldSeat, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
-import { type HeldCoalition, innerOf } from '../store/coalitions';
+import {
+  type CoalitionKeys,
+  type HeldCoalition,
+  innerOf,
+  misstatesSeat,
+} from '../store/coalitions';
 
 /** One line under a coalition's name: whom it waits for, or who didn't pass it. */
 export type CoalitionLine =
@@ -435,6 +440,48 @@ function motionIn(
     return null;
   }
   return { coalition, motion, through };
+}
+
+/**
+ * A coalition's motion to take a seat above it (#122), as a group votes on
+ * it: the coalition's id, its entry on this device, and its sealed target.
+ */
+export interface SealedSeatMotion {
+  readonly coalitionId: string;
+  readonly entryId: string;
+  readonly target: SealedReconcileTarget;
+}
+
+/**
+ * The coalition motion `proposal` opens, when it is a coalition's motion to
+ * take a seat above (#122) held on this device, or null for any other
+ * Proposal.
+ */
+export function sealedSeatMotion(
+  proposal: Pick<Proposal, 'id' | 'target'>,
+  coalitions: readonly HeldCoalition[],
+): SealedSeatMotion | null {
+  const found = motionIn(proposal.id, proposal.target, coalitions);
+  const target = found?.motion.target;
+  if (target?.kind !== 'reconcile' || !('sealed' in target)) return null;
+  const coalitionId = found?.coalition.group ?? null;
+  const entry = coalitions.find(({ state }) => state.group === coalitionId)?.entry;
+  if (coalitionId === null || entry === undefined) return null;
+  return { coalitionId, entryId: entry.groupId, target };
+}
+
+/**
+ * Whether this device offers no ballot on the coalition's motion `motion`
+ * (#375): the seat secret its sealed target holds, opened under the `inner`
+ * `keys` hold for the coalition, doesn't make the seat key it states. False
+ * where this device holds no `inner` to open it with, as a follower doesn't.
+ */
+export function misstatedSeat(
+  motion: SealedSeatMotion,
+  keys: ReadonlyMap<string, Pick<CoalitionKeys, 'inner'>>,
+): boolean {
+  const inner = keys.get(motion.entryId)?.inner ?? null;
+  return inner !== null && misstatesSeat(motion.coalitionId, inner, motion.target);
 }
 
 /** The level and member groups an admit motion states for a coalition (#122), or none. */

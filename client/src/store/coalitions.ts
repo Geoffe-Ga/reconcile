@@ -205,11 +205,16 @@ export interface SeatAbove {
   readonly proposal: string;
 }
 
+/** Whether the seat secret `seat` makes the public seat key `key` a sealed target states (#122, #375). */
+function makesKey(seat: Uint8Array, key: string): boolean {
+  return base64url(seatKeyOf(seat)) === key;
+}
+
 /**
  * The seats above the coalition `id` that `held`, its sealed reconcile
  * targets, hold, each opened under its `inner` (#122). A field whose seat
  * secret doesn't make the public key the motion states is no seat to act
- * for, so it is left out.
+ * for, so it is left out (#375): no device joins, reports or asks in for it.
  */
 function openedAbove(
   id: string,
@@ -218,9 +223,26 @@ function openedAbove(
 ): SeatAbove[] {
   return held.flatMap(({ proposal, target }) => {
     const opened = openSeatSecrets(id, inner, target.sealed);
-    if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
+    if (opened === null || !makesKey(opened.seat, target.key)) return [];
     return [{ ...opened, inner: opened.inner ?? null, key: target.key, proposal }];
   });
+}
+
+/**
+ * Whether the sealed reconcile target `target` of the coalition `coalitionId`
+ * misstates its seat (#375): its `sealed` opens under `inner`, and the seat
+ * secret inside doesn't make the `key` it states. The fold can't open
+ * `sealed`, so it takes `key` as stated, and a hand-made motion could give
+ * the seat above to a key nobody holds. False when `sealed` doesn't open,
+ * since this device can't judge it then.
+ */
+export function misstatesSeat(
+  coalitionId: string,
+  inner: Uint8Array,
+  target: SealedReconcileTarget,
+): boolean {
+  const opened = openSeatSecrets(coalitionId, inner, target.sealed);
+  return opened !== null && !makesKey(opened.seat, target.key);
 }
 
 /**

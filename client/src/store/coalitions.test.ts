@@ -30,6 +30,7 @@ import {
   foldWithCoalitions,
   heldCoalitions,
   holdings,
+  misstatesSeat,
   newEntry,
   outsideFor,
   retireCoalitionsOf,
@@ -679,6 +680,20 @@ describe('coalitionKeys (#122)', () => {
     const keys = coalitionKeys([group], [entry]);
     expect(keys.has(deriveCoalitionEntryId(fromBase64url(testSecret('D'))))).toBe(false);
     expect(keys.has(entry.groupId)).toBe(true);
+  });
+
+  it('says a sealed seat misstates its key only when it opens and its secret makes another (#375)', () => {
+    const id = 'coalition-c';
+    const inner = fromBase64url(testSecret('innerC'));
+    const held = { secret: fromBase64url(testSecret('D')), seat: seatSecret('X') };
+    const sealed = sealSeatSecrets(id, inner, held);
+    const target = (key: string) => ({ kind: 'reconcile', sealed, key, ...STATEMENT_D }) as const;
+    expect(misstatesSeat(id, inner, target(seatKey('X')))).toBe(false);
+    expect(misstatesSeat(id, inner, target(seatKey('C')))).toBe(true);
+    // Under another coalition's inner it doesn't open, so the device can't judge it.
+    expect(misstatesSeat(id, fromBase64url(testSecret('innerD')), target(seatKey('C')))).toBe(
+      false,
+    );
   });
 
   /** A log as a device keeps it: a group's, or a coalition's entry under the id its secret makes. */

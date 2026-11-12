@@ -18,6 +18,14 @@
  * up one line at a time: a higher coalition sees only its own seats' pass or
  * fail. {@link foldTogether} folds a device's logs in that order.
  *
+ * A coalition's pass crosses as soon as its seats' pass is certain, since
+ * results on a motion stop counting at the same minute at every level, so a
+ * pass that waited for its own to stop would arrive too late. A contest can
+ * still turn it: into a fail, which crosses as one, or, where two-thirds
+ * decide, into neither (#375). A coalition whose pass is recorded above and
+ * no longer holds, or never did, owes a fail for it then, so the level above
+ * never counts a pass its seat didn't make ({@link resultsToReport}).
+ *
  * Dispatches rise the same way (#126; ADR-0037). A level that passes a
  * Dispatch whose ceiling leaves levels above it owes the coalition directly
  * above one promotion record ({@link promotionsOwed}), which opens there as a
@@ -28,6 +36,7 @@
  * (`store/carry.ts`).
  */
 import {
+  type Coalition,
   foundingSeats,
   type GroupResult,
   MAX_LEVEL,
@@ -185,7 +194,9 @@ function genesisResult(
  * pass as soon as it is certain, before results on it stop counting, since a
  * pass that waited for that would reach the coalition above too late, or a
  * fail once final; a contest that later turns its pass into a fail crosses
- * as that fail too. Null while it's still deciding, or never opened it.
+ * as that fail too, and one that leaves it undecided crosses as a fail by
+ * {@link withdrawnPass} (#375). Null while it's still deciding, or never
+ * opened it.
  */
 function motionResult(group: GroupState, coalitionId: string, motion: string) {
   const own = group.proposals.find(
@@ -322,14 +333,40 @@ export function promotionsOwed(
 }
 
 /**
+ * A coalition's `fail` for a pass the coalition above holds from its seat on
+ * `motion` that it doesn't make now (#375), or null. Its seats' pass crossed
+ * as soon as it was certain (#122), and a contest has since left it
+ * undecided, as one can where two-thirds decide; or a holder of its seat
+ * secret posted a pass it never made. Either way its own lapse would come
+ * only as results stop counting above too, too late to cross, so it answers
+ * the pass with a fail now: the seat then counts as a fail above, as a
+ * contested seat does, even if it passes after all. A group's result is
+ * final when it crosses, and a pass for its seat that it hasn't decided is
+ * answered by its own result once it has, so a group withdraws nothing.
+ */
+function withdrawnPass(
+  lower: Pick<GroupState, 'coalition'>,
+  above: Pick<Coalition, 'results'>,
+  motion: string,
+  seatKey: string,
+): GroupResultValue | null {
+  if (lower.coalition === null) return null;
+  const crossed = above.results.some(
+    (r) => r.motion === motion && r.seat === seatKey && r.result === 'pass',
+  );
+  return crossed ? 'fail' : null;
+}
+
+/**
  * What `group` owes `coalition` for its seat `seatKey`, as `group-result`
  * bodies to post from a participant bound to that seat: its result on the
  * genesis (its reconcile outcome, or `fail` for a genesis that says something
  * else) when it is a founding seat, never for a group admitted since (#114),
- * then on each motion its seat decides, a lapse as `fail`. Only those the
- * group has decided, while results still count, and that the coalition
- * hasn't recorded yet. Each carries the motion, the seat and the result, and
- * nothing else.
+ * then on each motion its seat decides, a lapse as `fail`. A coalition below
+ * also owes a fail for a pass recorded from its seat that it doesn't make now
+ * ({@link withdrawnPass}, #375). Only those the group has decided, while
+ * results still count, and that the coalition hasn't recorded yet. Each
+ * carries the motion, the seat and the result, and nothing else.
  */
 export function resultsToReport(
   group: GroupState,
@@ -342,7 +379,8 @@ export function resultsToReport(
   const genesis = foundingSeats(info).includes(seatKey) ? [id] : [];
   const motions = info.motions.filter((m) => m.seats.includes(seatKey)).map((m) => m.id);
   return [...genesis, ...motions].flatMap((motion) => {
-    const result = ownResult(group, coalition, seatKey, motion);
+    const own = ownResult(group, coalition, seatKey, motion);
+    const result = own ?? withdrawnPass(group, info, motion, seatKey);
     if (result === null || !resultsCount(info, id, motion, at)) return [];
     const recorded = info.results.some(
       (r) => r.motion === motion && r.seat === seatKey && r.result === result,

@@ -17,17 +17,29 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../app/App';
 import { messages } from '../app/messages';
 import { propose } from '../app/proposals';
-import { admitCard, bringCard, broughtTo, lookupCard, makeCard, postCard } from '../app/reconcile';
+import {
+  admitCard,
+  bringCard,
+  broughtTo,
+  type FoundCard,
+  lookupCard,
+  makeCard,
+  postCard,
+} from '../app/reconcile';
 import { base64url } from '../crypto/base64url';
 import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
-import { openSeatSecrets } from '../crypto/innerSeal';
+import { openSeatSecrets, sealSeatSecrets } from '../crypto/innerSeal';
 import { deriveRoomEntryId } from '../crypto/room';
+import { seatKeyOf } from '../crypto/seat';
+import { newSigningKeys } from '../crypto/sign';
 import { parseCardLink } from '../coalition/card';
 import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
+import { signEvent } from '../engine/event';
 import { fold, type GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
 import { coalitionKeys, type CoalitionKeys, foldCoalitions, newEntry } from '../store/coalitions';
+import { eventIdOf } from '../store/eventId';
 import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import {
@@ -274,6 +286,40 @@ async function sealedOpened(device: TestDevice, entryId: string, motion: string)
   return openSeatSecrets(state.group ?? '', inner, sealedIn(state, motion));
 }
 
+/**
+ * Brings `found`, a formed coalition's card, into the coalition entry
+ * `entryId` on `device` as a hand-made client might (#375): its sealed
+ * reconcile motion holds a fresh seat secret but states another secret's
+ * public key, and the device plans the admission as Bring a card does.
+ * Returns the motion's id.
+ */
+async function bringMisstated(device: TestDevice, found: FoundCard, entryId: string) {
+  const { store } = device.services;
+  const entry = await store.getGroup(entryId);
+  const inner = await innerOn(device, entryId);
+  const id = entry === undefined ? null : fold(entry.log, entry.relayNow).group;
+  if (entry === undefined || inner === null || id === null) {
+    throw new Error('Expected the coalition’s inner.');
+  }
+  const { card, log } = found;
+  const sealed = sealSeatSecrets(id, inner, {
+    secret: card.secret,
+    seat: newSigningKeys().secretKey,
+  });
+  const key = base64url(seatKeyOf(newSigningKeys().secretKey));
+  const { name, title, atoms } = card;
+  const target = { kind: 'reconcile', sealed, key, name, title, atoms } as const;
+  const body = { target, title: `Reconcile into ${name}`, why: '' };
+  const ts = device.services.now();
+  const signed = signEvent(entry.signingKey, { type: 'proposal', group: id, ts, body });
+  await store.enqueue(entryId, signed.record);
+  const admitting = { group: entryId, proposal: signed.id, title: 'Admit us', why: '' };
+  const above = await store.addGroup(newEntry(card.secret, { name: 'Ana M.', admitting }));
+  const pull = { ...log, records: [...log.records], lastSyncAt: ts };
+  await store.applyPull(above.groupId, pull, eventIdOf);
+  return signed.id;
+}
+
 /** The sealed field of the reconcile motion `id` in `state`, failing when there is none. */
 function sealedIn(state: GroupState, id: string): string {
   const target = state.proposals.find((p) => p.id === id)?.target;
@@ -487,6 +533,10 @@ describe('nested coalitions', SLOW, () => {
       proposalId: 'p',
     });
     await syncAll(1);
+    // Ben's device opens the motion's sealed seat, finds it makes the key it states, and offers the ballot (#375).
+    showAt(ben, `#/g/${oak}/p/${motion}`);
+    expect(await screen.findByRole('button', { name: messages.ballot.submit })).toBeVisible();
+    cleanup();
     await vote(riverside, motion, [ana, cy]);
     await vote(oak, motion, [ben, cy]);
     await vote(pineGroup, card.proposal, [pine]);
@@ -574,6 +624,48 @@ describe('nested coalitions', SLOW, () => {
     for (const device of [ana, ben, cy]) {
       expect(await innerOn(device, metroEntry)).toEqual(metroInner);
     }
+  });
+
+  it('refuses a hand-made motion to take a seat above whose sealed seat secret doesn’t make the key it states: no ballot, and no admission (#375)', async () => {
+    const fake = createFakeRelay();
+    const { ana, ben, cy, riverside, oak } = await eastsideFormed(fake);
+    const eve = await open(fake, 'eve');
+    const elm = await found(eve, 'Elm Row', 'Eve');
+    const pine = await open(fake, 'pine');
+    const pineGroup = await found(pine, 'Pine Row', 'Pat');
+    const founding = await cardFor(eve, elm, pine, { ...METRO, yourName: 'Eve M.' });
+    const pineProposal = await bringCard(pine.services, founding.found, pineGroup, 'Pat M.');
+    await syncAll(1);
+    await vote(elm, founding.proposal, [eve]);
+    await vote(pineGroup, pineProposal, [pine]);
+    await syncAll(SETTLE);
+    const metroEntry = await entryNamed(eve, 'Metro Renters');
+    const card = await admitCardFor(eve, metroEntry, elm, ana);
+    const into = await bringMisstated(ana, card, await entryNamed(ana, 'Eastside Housing'));
+    expect((await ana.services.store.getGroup(metroEntry))?.admitting?.proposal).toBe(into);
+    await syncAll(SETTLE);
+
+    // Each device in Eastside Housing's groups opens the motion's seat, and offers no ballot.
+    for (const [device, groupId] of [
+      [ben, oak],
+      [cy, riverside],
+    ] as const) {
+      showAt(device, `#/g/${groupId}/p/${into}`);
+      expect(await screen.findByText(messages.coalitions.misstatedSeat)).toBeVisible();
+      expect(screen.queryByRole('button', { name: messages.ballot.submit })).toBeNull();
+    }
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+
+    // A hand-made client votes anyway, and both groups pass it; still no device asks in for it.
+    await vote(riverside, into, [ana, cy]);
+    await vote(oak, into, [ben, cy]);
+    await syncAll(SETTLE);
+    const eastside = await coalitionNamed(ana, 'Eastside Housing');
+    expect(eastside.coalitions.find((held) => held.proposal === into)?.outcome).toBe('pass');
+    const metro = await coalitionNamed(eve, 'Metro Renters');
+    expect(metro.proposals.filter((p) => p.target.kind === 'admit')).toEqual([]);
+    expect((await ana.services.store.getGroup(metroEntry))?.admitting).toBeUndefined();
   });
 
   it('opens a motion in Metro Renters in every group beneath it, carries one result up each line, and resolves once final', async () => {

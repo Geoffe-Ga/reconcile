@@ -110,6 +110,13 @@ export interface ProposalViewProps {
   /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
   readonly unconfirmed?: boolean;
   /**
+   * For a coalition's motion to take a seat above (#375): `misstated` when
+   * its sealed seat secret doesn't make the seat key it states, so this
+   * device offers no ballot on it, and `checking` until the device knows;
+   * left out for any other Proposal, or one whose seat holds.
+   */
+  readonly seatCheck?: 'checking' | 'misstated';
+  /**
    * Queues this member's one response on the removal of them (#115); rejects
    * when it couldn't be saved. Without it, no response form shows.
    */
@@ -376,16 +383,25 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
  * vote yet when it opened (#101), weren't at a voting level then, or are the
  * steward it would recall (#102). Inside it, they get the ballot, unchangeable once voting
  * has closed; while it's open, they need a level that votes now, and choosing
- * one gives them the ballot back.
+ * one gives them the ballot back. No one gets one on a coalition's motion to
+ * take a seat above that misstates its seat, or before the device knows (#375).
  */
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
   const { state, me } = props;
   if (props.leaving === true) return messages.leave.noVoting;
   if (props.unconfirmed === true) return messages.unconfirmed.noVoting;
+  if (props.seatCheck !== undefined) return seatCheckReason(props.seatCheck);
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
   if (removalTarget(proposal) === me) return messages.removal.ownRemoval;
   if (removedFrom(state, me) !== undefined) return messages.removal.readOnly;
   return whyOutside(state, me, proposal);
+}
+
+/** Why a coalition's motion to take a seat above shows no ballot yet, or at all (#375). */
+function seatCheckReason(check: NonNullable<ProposalViewProps['seatCheck']>): string {
+  return check === 'misstated'
+    ? messages.coalitions.misstatedSeat
+    : messages.coalitions.checkingSeat;
 }
 
 /** Why `me`, a member outside `proposal`'s eligible set, wasn't in it when it opened. */
