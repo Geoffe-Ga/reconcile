@@ -80,6 +80,20 @@ describe('shareSealing (#255)', () => {
     },
   );
 
+  it('keeps a paused share’s pause on its mark, so a share a restore brought back stays paused (#328)', () => {
+    const pausedMark = { ...MARK, paused: true as const };
+    const paused: PersonalDocument = {
+      ...WORDS,
+      share: { ...pausedMark, seed: SEED, secretKey: SECRET_KEY, publicKey: PUBLIC_KEY },
+    };
+
+    const { kept, secrets } = shareSealing.split(paused);
+
+    expect(kept).toEqual({ ...WORDS, share: pausedMark });
+    expect(shareSealing.join(kept, secrets ?? undefined)).toEqual(paused);
+    expect(wholeRecord(shareSealing, kept, secrets ?? undefined)).toEqual(paused);
+  });
+
   it('makes a Document with no share whole with no secrets, and a marked one only with them', () => {
     expect(shareSealing.join(WORDS, undefined)).toEqual(WORDS);
     expect(shareSealing.join({ ...WORDS, share: MARK }, undefined)).toBeNull();

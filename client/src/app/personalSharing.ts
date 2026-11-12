@@ -1,7 +1,8 @@
 /**
  * What a personal Document's editor asks of sharing by link (#105), on the
  * app's services: read whether it's shared, Share link, send the link on,
- * Stop sharing, and post an edit once the editor closes.
+ * Stop sharing, post an edit once the editor closes, and Keep sharing a
+ * share a restore paused (#328).
  *
  * The link goes out through `shareOrCopy` with fixed words beside it, never
  * the Document's title or text, and only once the relay holds the first copy.
@@ -9,6 +10,7 @@
  * the vault (#255), so its editor reads it as on with no link.
  */
 import {
+  keepSharing,
   postEdits,
   type ShareServices,
   shareLinkOf,
@@ -17,7 +19,7 @@ import {
   type StopOutcome,
 } from '../share/shareLink';
 import { VaultLocked } from '../store/db';
-import type { PersonalStore } from '../store/personal';
+import type { PersonalStore, ShareMark } from '../store/personal';
 import { messages } from './messages';
 import { type ShareOutcome, shareOrCopy, type ShareTargets } from './share';
 
@@ -30,6 +32,8 @@ export interface ShareView {
   readonly link: string | null;
   /** Whether an edit, or a failed post, hasn't reached the link yet. */
   readonly pending: boolean;
+  /** Whether a restore brought the share back and nothing goes to the link until the person chooses (#328). */
+  readonly paused: boolean;
 }
 
 /** How Share link went: shared, with the link, or why not. */
@@ -38,6 +42,14 @@ export type SharingStart =
   | { readonly kind: 'too-large' }
   | { readonly kind: 'failed' }
   | { readonly kind: 'locked' };
+
+/**
+ * How Keep sharing went (#328): posted; kept, but the link hasn't caught up,
+ * as when the relay can't be reached, so the next launch sends it; stopped,
+ * when the mailbox held a tombstone and the share is gone; or locked, when
+ * the device's keys are locked with a passkey (#255), so it's still paused.
+ */
+export type SharingKeep = 'posted' | 'pending' | 'stopped' | 'locked';
 
 /** Sharing by link, for one device's personal Documents. */
 export interface PersonalSharing {
@@ -49,6 +61,8 @@ export interface PersonalSharing {
   send(link: string): Promise<ShareOutcome>;
   /** Stop sharing: posts a tombstone and drops the share, or changes nothing, as when locked (#255). */
   stop(id: string): Promise<StopOutcome>;
+  /** Keep sharing a share a restore paused (#328): records the choice, then posts the latest copy. */
+  keep(id: string): Promise<SharingKeep>;
   /** Posts Document `id`'s latest copy in the background if an edit waits for its link. */
   leave(id: string): void;
 }
@@ -62,6 +76,15 @@ export type SharingServices = ShareServices &
     readonly store: Pick<PersonalStore, 'listPersonalEntries'>;
   };
 
+/**
+ * A share as its editor shows it: `link`, or null while the device's keys
+ * are locked (#255), and its mark's flags, so a paused share reads paused
+ * either way (#328).
+ */
+function viewOf(mark: ShareMark, link: string | null): ShareView {
+  return { link, pending: mark.pending, paused: mark.paused === true };
+}
+
 /** Sharing by link on `services`. */
 export function personalSharing(services: SharingServices): PersonalSharing {
   const linkOf = (share: { readonly seed: Uint8Array; readonly publicKey: Uint8Array }) =>
@@ -70,13 +93,13 @@ export function personalSharing(services: SharingServices): PersonalSharing {
     async read(id) {
       try {
         const share = (await services.store.getPersonal(id))?.share;
-        return share === undefined ? null : { link: linkOf(share), pending: share.pending };
+        return share === undefined ? null : viewOf(share, linkOf(share));
       } catch (error) {
         if (!(error instanceof VaultLocked)) throw error;
         // Only a shared Document's read needs the vault: its mark says it's on (#255).
         const entries = await services.store.listPersonalEntries();
         const mark = entries.find((entry) => entry.id === id)?.share;
-        return mark === undefined ? null : { link: null, pending: mark.pending };
+        return mark === undefined ? null : viewOf(mark, null);
       }
     },
     async start(id) {
@@ -87,6 +110,11 @@ export function personalSharing(services: SharingServices): PersonalSharing {
     },
     send: (link) => shareOrCopy({ text: messages.personal.share.message, url: link }, services),
     stop: (id) => stopSharing(services, id),
+    async keep(id) {
+      const outcome = await keepSharing(services, id);
+      if (outcome === 'posted' || outcome === 'locked') return outcome;
+      return outcome === 'stopped' || outcome === 'unshared' ? 'stopped' : 'pending';
+    },
     leave(id) {
       // A post that fails leaves the share pending, and the next launch sends it.
       void postEdits(services, id).catch(() => undefined);
