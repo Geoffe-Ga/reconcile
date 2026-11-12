@@ -48,30 +48,45 @@ const scenario = fc.integer({ min: 2, max: 4 }).chain((size) =>
   }),
 );
 
+/**
+ * The property's budget. Each of fast-check's 100 runs signs and then folds
+ * a whole coalition, 6 to 18 events by its seats and their reports: about
+ * 15 ms a run on average, and 22 ms at four seats that all pass (13 ms to
+ * sign, 9 ms to fold). That's 1.4–1.6 s alone, 3.2 s in two concurrent
+ * runs, and 7.3–8.2 s in four at load 11; the gate at load 15 cut it off at
+ * Vitest's default 5 s. 30 s leaves room for that without hiding a hang, and
+ * every one of the 100 runs still counts.
+ */
+const PROPERTY_BUDGET = { timeout: 30_000 };
+
 describe('a coalition’s Dispatch (#124)', () => {
-  it('goes out once every seat’s pass is final, in that minute, and never otherwise', () => {
-    fc.assert(
-      fc.property(scenario, ({ size, reports, order, offset }) => {
-        const { logs, motion, settles } = coalitionWith(size, reports, order);
-        const { state } = folded(foldLogs(logs.logs, settles + offset), 'coalition');
-        const everySeatPassed = reports.every((value) => value === 'pass');
-        const out = everySeatPassed && offset >= 0;
-        expect(state.dispatches).toEqual(
-          out
-            ? [
-                {
-                  id: motion,
-                  by: { proposal: motion },
-                  ...DISPATCH,
-                  doc: state.group,
-                  received: settles,
-                },
-              ]
-            : [],
-        );
-      }),
-    );
-  });
+  it(
+    'goes out once every seat’s pass is final, in that minute, and never otherwise',
+    PROPERTY_BUDGET,
+    () => {
+      fc.assert(
+        fc.property(scenario, ({ size, reports, order, offset }) => {
+          const { logs, motion, settles } = coalitionWith(size, reports, order);
+          const { state } = folded(foldLogs(logs.logs, settles + offset), 'coalition');
+          const everySeatPassed = reports.every((value) => value === 'pass');
+          const out = everySeatPassed && offset >= 0;
+          expect(state.dispatches).toEqual(
+            out
+              ? [
+                  {
+                    id: motion,
+                    by: { proposal: motion },
+                    ...DISPATCH,
+                    doc: state.group,
+                    received: settles,
+                  },
+                ]
+              : [],
+          );
+        }),
+      );
+    },
+  );
 
   it('never reaches a member group, whose own Proposal for the motion carries none', () => {
     const logs = new Logs();
