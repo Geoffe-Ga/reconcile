@@ -114,6 +114,13 @@ def test_all_flag_checks_every_area(repo: Path) -> None:
         ("pyproject.toml", {"python"}),
         ("scripts/check-all.sh", set(AREAS)),
         (".github/workflows/ci.yml", set(AREAS)),
+        # tests/ checks every workflow: test_workflows.py, test_code_review_workflow.py.
+        (".github/workflows/code-review.yml", {"python"}),
+        (".github/workflows/graph-docs.yml", {"python"}),
+        # The merge recap is Python with its own tests, and no other area runs it.
+        ("scripts/ralph/recap.py", {"python"}),
+        # The graph scripts feed graph-build.yml and graph-docs.yml, never a gate.
+        ("scripts/graph/build.sh", set()),
         ("an-unrecognized-file", set(AREAS)),
         ("README.md", set()),
         (".gitignore", set()),
