@@ -268,6 +268,13 @@ describe('coalitions (#120)', () => {
     });
   });
 
+  it('reads Reconcile with another coalition (#122)', () => {
+    expect(parseRoute(`#/c/${COALITION}/reconcile`)).toEqual({
+      name: 'coalitionReconcile',
+      coalitionId: COALITION,
+    });
+  });
+
   it('reads a coalition Document’s change log (#104)', () => {
     expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}/log`)).toEqual({
       name: 'coalitionLog',
@@ -303,6 +310,7 @@ describe('coalitions (#120)', () => {
     `#/c/${COALITION}/propose`,
     `#/c/${COALITION}/propose/a.b`,
     `#/c/${COALITION}/p/${COALITION}`,
+    `#/c/${COALITION}/reconcile/more`,
     `#/c/${COALITION}/room/${COALITION}`,
     `#/c/${COALITION}/rooms`,
     '#/c/a+b',
@@ -375,6 +383,7 @@ describe('routeHref', () => {
       { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
       `#/c/${GROUP}/propose/${ATOM}`,
     ],
+    [{ name: 'coalitionReconcile', coalitionId: GROUP }, `#/c/${GROUP}/reconcile`],
     [
       { name: 'coalitionLog', coalitionId: GROUP, documentId: GROUP },
       `#/c/${GROUP}/doc/${GROUP}/log`,

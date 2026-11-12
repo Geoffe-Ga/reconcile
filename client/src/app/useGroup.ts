@@ -24,8 +24,7 @@ import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { ReceivedApplication } from '../store/applications';
-import { foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
-import { foldGroup } from '../store/expiry';
+import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
 import { type HeldShare, heldSharesIn } from '../store/recovery';
@@ -164,8 +163,9 @@ export function useGroup(groupId: string): GroupView {
 const NO_COALITIONS: readonly HeldCoalition[] = [];
 
 /**
- * Every coalition entry on this device, each with its log folded (#114),
- * read again whenever the store says anything changed.
+ * Every coalition entry on this device, each with its log folded with the
+ * motions it decides from the coalitions above it (#114, #122), read again
+ * whenever the store says anything changed.
  */
 export function useCoalitions(
   store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
@@ -190,11 +190,7 @@ export function useCoalitionList(
       store.listCoalitions().then(
         (entries) => {
           if (!live || ticket !== latest) return;
-          setCoalitions(
-            entries.length === 0
-              ? NO_COALITIONS
-              : entries.map((entry) => ({ entry, state: foldGroup(entry) })),
-          );
+          setCoalitions(entries.length === 0 ? NO_COALITIONS : foldCoalitions(entries));
         },
         // A failed read keeps the last list; the next change reads again.
         () => undefined,

@@ -270,7 +270,9 @@ async function seatSecrets(devices: readonly TestDevice[], groups: readonly stri
     const group = await device.services.store.getGroup(groups[index] ?? '');
     const state = fold(group?.log ?? [], null);
     for (const p of state.proposals) {
-      if (p.target.kind === 'reconcile') secrets.push(fromBase64url(p.target.seat));
+      if (p.target.kind === 'reconcile' && 'seat' in p.target) {
+        secrets.push(fromBase64url(p.target.seat));
+      }
     }
   }
   await waitFor(() => {

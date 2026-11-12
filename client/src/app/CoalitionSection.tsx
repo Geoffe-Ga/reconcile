@@ -1,7 +1,7 @@
 import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
-import type { CoalitionLine, CoalitionRow } from './coalitionLines';
+import type { AboveRow, CoalitionLine, CoalitionRow } from './coalitionLines';
 import { CopyLink } from './CopyLink';
 import { messages } from './messages';
 import { ResultMismatch } from './ResultMismatch';
@@ -198,7 +198,7 @@ function Me({ row, props }: RowProps) {
 }
 
 /** "Open the coalition →", to its home (#120), once it has formed. */
-function OpenCoalition({ row }: { readonly row: CoalitionRow }) {
+function OpenCoalition({ row }: { readonly row: Pick<CoalitionRow, 'status' | 'coalitionId'> }) {
   if (row.status !== 'formed' || row.coalitionId === null) return null;
   return (
     <p>
@@ -213,12 +213,67 @@ function OpenCoalition({ row }: { readonly row: CoalitionRow }) {
   );
 }
 
+/** A chain of names, as in "Riverside Tenants · in Eastside Housing · in Metro Renters" (#122). */
+function Chain({ names }: { readonly names: readonly string[] }) {
+  const parts: ReactNode[] = [];
+  names.forEach((name, index) => {
+    if (index > 0) parts.push(` ${coalitions.tagSeparator} ${coalitions.chainIn} `);
+    parts.push(<bdi key={index}>{name}</bdi>);
+  });
+  return <p className="coalition-chain">{parts}</p>;
+}
+
+/**
+ * The coalitions above this one (#122): each with where it stands for the
+ * seat below it, the chain from the group up to it, and its home once formed.
+ */
+function Above({ rows }: { readonly rows: readonly AboveRow[] }) {
+  const heading = useId();
+  if (rows.length === 0) return null;
+  return (
+    <div className="coalition-above">
+      <p id={heading} className="eyebrow">
+        {coalitions.above}
+      </p>
+      <ul className="coalition-above-list" aria-labelledby={heading}>
+        {rows.map((row) => (
+          <li key={row.key} className="coalition-above-item">
+            <p className="caption">{STATUS[row.status]}</p>
+            <Chain names={row.chain} />
+            {row.lines.map((line, index) => (
+              <Line key={index} line={line} />
+            ))}
+            <OpenCoalition row={row} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** "Reconcile with another coalition →" (#122), for whoever may make the coalition's card. */
+function ReconcileCoalition({ row }: { readonly row: CoalitionRow }) {
+  if (!row.reconciles || row.coalitionId === null) return null;
+  return (
+    <p>
+      <Link
+        className="forward-link"
+        href={routeHref({ name: 'coalitionReconcile', coalitionId: row.coalitionId })}
+      >
+        {coalitions.reconcileCoalition}
+        <span aria-hidden="true">{messages.app.forward}</span>
+      </Link>
+    </p>
+  );
+}
+
 /**
  * One coalition: whether it's forming, formed or didn't form, its name, its
  * member groups and a link to its home once formed (#120), whom it waits
  * for or who didn't pass it, any
  * result that doesn't match the group's own vote, and how this person takes
- * part.
+ * part; then the way to reconcile it with another coalition, and the
+ * coalitions above it (#122).
  */
 function Row({ row, props }: RowProps) {
   return (
@@ -244,6 +299,8 @@ function Row({ row, props }: RowProps) {
           copyText={props.copyText}
         />
       ) : null}
+      <ReconcileCoalition row={row} />
+      <Above rows={row.above} />
     </li>
   );
 }

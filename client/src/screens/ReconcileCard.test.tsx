@@ -36,6 +36,38 @@ async function fillIn(user: ReturnType<typeof userEvent.setup>, name = 'Eastside
   await user.type(screen.getByRole('textbox', { name: 'Your name in the coalition' }), 'Ana E.');
 }
 
+describe('ReconcileCard, for a coalition (#122)', () => {
+  it('goes back to the coalition, asks why of its groups, and leads on to its home with the coalition warning', async () => {
+    const user = userEvent.setup();
+    render(
+      <ReconcileCard {...props({ groupName: 'Eastside Housing', coalitionId: 'eastside' })} />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 1, name: messages.card.coalitionTitle }),
+    ).toBeVisible();
+    expect(screen.getByText(messages.card.coalitionLede)).toBeVisible();
+    expect(screen.getByText(messages.card.coalitionWhyHint)).toBeVisible();
+    expect(screen.getByText(messages.card.coalitionNameHint)).toBeVisible();
+    expect(screen.getByText(messages.card.coalitionStatementHint)).toBeVisible();
+    expect(screen.queryByText(messages.card.statementHint)).toBeNull();
+    expect(screen.getByRole('link', { name: /Eastside Housing/ })).toHaveAttribute(
+      'href',
+      '#/c/eastside',
+    );
+    await fillIn(user, 'Metro Renters');
+    await user.click(screen.getByRole('button', { name: 'Make the card' }));
+    expect(await screen.findByRole('textbox', { name: 'Card link' })).toHaveValue(LINK);
+    expect(screen.getByText(messages.card.coalitionWarning)).toBeVisible();
+    expect(screen.queryByText(messages.card.warning)).toBeNull();
+    expect(screen.getByRole('link', { name: /Open your coalition/ })).toHaveAttribute(
+      'href',
+      '#/c/eastside',
+    );
+    expect(screen.queryByRole('link', { name: /Open your group’s Proposal/ })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+});
+
 describe('ReconcileCard', () => {
   it('sends the entries trimmed, then shows the link, Copy and the way to the Proposal', async () => {
     const user = userEvent.setup();

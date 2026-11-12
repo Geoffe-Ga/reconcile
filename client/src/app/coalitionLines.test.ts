@@ -9,9 +9,16 @@ import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { fold, type GroupState } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
-import { foldWithCoalitions } from '../store/coalitions';
+import { foldCoalitions, foldWithCoalitions } from '../store/coalitions';
 import type { Group } from '../store/db';
-import { COALITION_STATEMENT, Logs, testSecret } from '../test/coalitions';
+import {
+  COALITION_STATEMENT,
+  Logs,
+  NESTED_STATEMENTS,
+  NestedLogs,
+  testSecret,
+  threeLevels,
+} from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import {
   coalitionRows,
@@ -254,6 +261,33 @@ describe('coalitionRows for a group asking in', () => {
     const [row] = coalitionRows(groupState(logs, 'C', at + 4, failed), authorOf('cal'), [failed]);
     expect(row).toMatchObject({ status: 'declined', lines: [{ kind: 'didnt-pass', group: 'B' }] });
   });
+
+  it('offers a card for another coalition only once a wrap gives this device inner through its seat (#122, #313)', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    logs.group('C', at, ['cal'], 'Elm Row');
+    const proposal = logs.reconcile('C', at + 1, 'cal', 'C', { inner: false });
+    logs.vote('C', at + 2, 'cal', proposal, 4);
+    const seated = logs.admitted(at + 3, 'dee', 'C', 'Elm Row', [
+      ['kim', 'A'],
+      ['zed', 'B'],
+    ]);
+    logs.join(seated + 1, 'cal', 'C');
+    const rowAt = (now: number) => {
+      const held = heldCoalition(logs, now, 'cal');
+      return coalitionRows(groupState(logs, 'C', now, held), authorOf('cal'), [held])[0];
+    };
+
+    // Seated and taking part, but no seated group has wrapped inner to Elm Row's seat yet.
+    expect(rowAt(seated + 2)).toMatchObject({
+      status: 'formed',
+      makesCards: true,
+      reconciles: false,
+    });
+    logs.wrap(seated + 3, 'kim', 'C');
+    expect(rowAt(seated + 4)).toMatchObject({ makesCards: true, reconciles: true });
+  });
 });
 
 describe('reconcileView', () => {
@@ -271,7 +305,7 @@ describe('reconcileView', () => {
   });
 
   it('is null for any other Proposal', () => {
-    expect(reconcileView({ target: { kind: 'edit' } }, [])).toBeNull();
+    expect(reconcileView({ id: 'p', target: { kind: 'edit' } }, [])).toBeNull();
   });
 });
 
@@ -289,7 +323,10 @@ describe('motion words', () => {
       why: 'They share the river.',
       coalition: COALITION_STATEMENT.name,
       coalitionId: logs.ids.coalition,
+      through: [],
       admits: 'Elm Row',
+      admitsLevel: 0,
+      admitsGroups: [],
       text: '',
       link: null,
       author: authorOf('dee'),
@@ -393,5 +430,69 @@ describe('motionView (#120)', () => {
     if (opened === undefined) throw new Error('Expected the admit motion in group A.');
     expect(motionView(opened, state, [held])?.section).toBeNull();
     expect(motionView(opened, state, [held])?.author).toBe('');
+  });
+});
+
+describe('nested coalitions on group home and a ballot (#122)', () => {
+  const NOW = R + 100;
+
+  /** Every coalition of {@link threeLevels} as a device holding them keeps them, by log, as `who[log]`. */
+  function heldAll(logs: NestedLogs, who: Readonly<Record<string, string>>) {
+    const names = ['C', 'D', 'F'] as const;
+    const entries = names.map(
+      (log) =>
+        ({
+          kind: 'coalition',
+          groupId: deriveCoalitionEntryId(fromBase64url(testSecret(log))),
+          me: { author: authorOf(who[log] ?? 'nobody'), name: '' },
+          outbox: [],
+          log: logs.logs[log] ?? [],
+          relayNow: NOW,
+        }) as unknown as Group,
+    );
+    return foldCoalitions(entries);
+  }
+
+  it('lists every coalition above the group’s, two levels up, each with its chain', () => {
+    const logs = new NestedLogs();
+    threeLevels(logs);
+    const held = heldAll(logs, { C: 'cal' });
+    const state = foldWithCoalitions({ log: logs.logs.A ?? [], relayNow: NOW }, held);
+    const [row] = coalitionRows(state, authorOf('ana'), held);
+    expect(row?.name).toBe(NESTED_STATEMENTS.C.name);
+    expect(row?.above.map((above) => [above.status, above.chain.join(' / ')])).toEqual([
+      ['formed', 'Riverside / Eastside Housing / Metro Renters'],
+      ['formed', 'Riverside / Eastside Housing / Metro Renters / State Renters'],
+    ]);
+    expect(row?.above.map((above) => above.coalitionId)).toEqual([logs.ids.D, logs.ids.F]);
+    // Cal takes part in Eastside Housing, at level 1, so may make its card for another coalition.
+    expect(row?.reconciles).toBe(true);
+  });
+
+  it('offers no card for another coalition from a level-3 coalition’s row', () => {
+    const logs = new NestedLogs();
+    threeLevels(logs);
+    const held = heldAll(logs, { F: 'jon' });
+    const state = foldWithCoalitions({ log: logs.logs.G ?? [], relayNow: NOW }, held);
+    const [row] = coalitionRows(state, authorOf('gus'), held);
+    expect(row?.name).toBe(NESTED_STATEMENTS.F.name);
+    expect(row?.makesCards).toBe(true);
+    expect(row?.reconciles).toBe(false);
+  });
+
+  it('shows a coalition’s motion to join one above as the statement its group votes on', () => {
+    const logs = new NestedLogs();
+    threeLevels(logs);
+    const held = heldAll(logs, { C: 'cal' });
+    const state = foldWithCoalitions({ log: logs.logs.A ?? [], relayNow: NOW }, held);
+    const intoD = state.proposals.find(
+      (p) => p.target.kind === 'motion' && reconcileView(p, held)?.name === 'Metro Renters',
+    );
+    if (intoD === undefined) throw new Error('Expected Eastside Housing’s motion in group A.');
+    expect(intoD.target).toMatchObject({ kind: 'motion', coalition: logs.ids.C, chain: [] });
+    expect(reconcileView(intoD, held)).toEqual({
+      ...NESTED_STATEMENTS.D,
+      others: ['E'],
+    });
   });
 });
