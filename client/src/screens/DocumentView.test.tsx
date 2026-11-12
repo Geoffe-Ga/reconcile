@@ -303,7 +303,8 @@ describe('DocumentView', () => {
     log.propose('ana');
     view(log.state());
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(10);
+    // Each section's Move (#103) and History (#104) among them.
+    expect(buttons).toHaveLength(12);
     for (const button of buttons) {
       const name = button.getAttribute('aria-label') ?? button.textContent;
       expect(name.startsWith(button.textContent)).toBe(true);
@@ -472,7 +473,11 @@ describe('DocumentView: moving sections and headers (#103)', () => {
       screen
         .getAllByRole('button', { name: /section 1$/ })
         .map((button) => button.getAttribute('aria-label')),
-    ).toEqual(['Move this section, section 1', 'Add a section here, after section 1']);
+    ).toEqual([
+      'Move this section, section 1',
+      'History of section 1',
+      'Add a section here, after section 1',
+    ]);
     expect(screen.getByRole('button', { name: 'Propose a change to section 2' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
