@@ -59,6 +59,12 @@ export interface LogBuilder {
   level(name: string, level: string): void;
   /** Adds `name`'s leave. */
   leave(name: string): void;
+  /**
+   * Adds `name`'s key change into the next epoch (#98), wrapped to nobody, as
+   * no test member holds an encryption key; later records are read from that
+   * epoch's mailboxes.
+   */
+  rotate(name: string): void;
   /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
   /**
@@ -157,10 +163,12 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     group: '',
     minute: START_MINUTE - SETTLED_MINUTES,
     records,
+    epoch: 0,
   };
   const add = (name: string, draft: EventDraft): string => {
     const { record, id } = signedAs(name.toLowerCase(), draft);
-    records.push({ seq: records.length + 1, received: builder.minute, bytes: record });
+    const epoch = builder.epoch === 0 ? {} : { epoch: builder.epoch };
+    records.push({ seq: records.length + 1, received: builder.minute, bytes: record, ...epoch });
     return id;
   };
   const body = {
@@ -180,6 +188,12 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     leave(name: string) {
       add(name, { type: 'leave', group, ts: 0, body: {} });
+    },
+    rotate(name: string) {
+      const epoch = builder.epoch + 1;
+      const commit = 'rotation-commit-of-this-test-logAAAAAAAAAAA';
+      add(name, { type: 'key-rotate', group, ts: 0, body: { epoch, commit, wraps: {} } });
+      builder.epoch = epoch;
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {

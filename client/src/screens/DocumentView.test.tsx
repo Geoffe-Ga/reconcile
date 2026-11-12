@@ -231,7 +231,7 @@ describe('DocumentView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('says a section’s ballot is full once it holds three versions, with no button', async () => {
+  it('says a section’s ballot is full once it holds three versions, with no button but Move, Protect and History', async () => {
     const log = groupLog();
     const proposal = log.propose('ana');
     log.version('ben', proposal, 'Quiet after midnight.');
@@ -245,11 +245,13 @@ describe('DocumentView', () => {
     ).toEqual([
       'Move this section, section 1',
       'Protect this section, section 1',
+      'History of section 1',
       'Add a section here, after section 1',
       'Propose a change to section 2',
       'Propose removing this section, section 2',
       'Move this section, section 2',
       'Protect this section, section 2',
+      'History of section 2',
       'Add a section here, after section 2',
     ]);
     expect(await axeViolations()).toEqual([]);
@@ -306,7 +308,8 @@ describe('DocumentView', () => {
     log.propose('ana');
     view(log.state());
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(12);
+    // Each section's Move (#103), Protect (#116) and History (#104) among them.
+    expect(buttons).toHaveLength(14);
     for (const button of buttons) {
       const name = button.getAttribute('aria-label') ?? button.textContent;
       expect(name.startsWith(button.textContent)).toBe(true);
@@ -402,8 +405,11 @@ describe('DocumentView', () => {
     log.propose('ana', { atom: 1 });
     view(log.state(), authorOf('ana'), vi.fn(), { leaving: true });
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
-    // Copying is reading, and how someone who leaves carries the Document into a fresh group (#75).
+    // Copying is reading, and how someone who leaves carries the Document into a fresh group
+    // (#75); so is each section's History (#104).
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'History',
+      'History',
       'Copy as Markdown',
     ]);
     expect(screen.queryByText(/Choose Co-Creator|Choose Collaborator/)).not.toBeInTheDocument();
@@ -477,6 +483,7 @@ describe('DocumentView: moving sections and headers (#103)', () => {
     ).toEqual([
       'Move this section, section 1',
       'Protect this section, section 1',
+      'History of section 1',
       'Add a section here, after section 1',
     ]);
     expect(screen.getByRole('button', { name: 'Propose a change to section 2' })).toBeVisible();
@@ -567,6 +574,15 @@ describe('DocumentView: several Documents (#92)', () => {
     { title: 'Mission statement', atoms: ['We share.\n', 'We meet weekly.\n'] },
     { title: 'House rules', atoms: ['# Quiet\n', 'Quiet after 11pm.\n'] },
   ];
+
+  it('links to the Document’s own change log, under its title (#104)', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const second = `${log.group}:1`;
+    view(log.state(), authorOf('ana'), vi.fn(), { documentId: second });
+    const link = screen.getByRole('link', { name: messages.changeLog.link });
+    expect(link).toHaveAttribute('href', `#/g/${log.group}/doc/${second}/log`);
+    expect(link.closest('header')).not.toBeNull();
+  });
 
   it('opens the Document its id names, its title and its sections alone, numbered from 1', async () => {
     const log = groupLog({ documents: DOCUMENTS });
@@ -810,6 +826,7 @@ describe('CoalitionDocumentView (#120)', () => {
       <CoalitionDocumentView
         coalitionId="c"
         name="Eastside Housing"
+        documentId="c"
         title="Mission statement"
         atoms={atoms}
         standing={standing}
@@ -817,10 +834,31 @@ describe('CoalitionDocumentView (#120)', () => {
         onPropose={onPropose}
         onTakePart={onTakePart}
         copyText={vi.fn(() => Promise.resolve())}
+        history={{
+          historyOf: () => ({ passed: [], notPassed: [] }),
+          names: { members: [], former: [] },
+          resultHref: () => null,
+        }}
       />,
     );
     return { onPropose, onTakePart };
   }
+
+  it('offers each section’s History and the change log to everyone who reads it (#104)', () => {
+    for (const standing of [
+      { kind: 'proposes', groupId: 'g' },
+      { kind: 'reads' },
+    ] as const satisfies readonly CoalitionStanding[]) {
+      coalitionView(standing, new Set(['c.0']));
+      expect(screen.getByRole('button', { name: messages.history.openLabel(1) })).toBeVisible();
+      expect(screen.getByRole('button', { name: messages.history.openLabel(2) })).toBeVisible();
+      expect(screen.getByRole('link', { name: messages.changeLog.link })).toHaveAttribute(
+        'href',
+        '#/c/c/doc/c/log',
+      );
+      cleanup();
+    }
+  });
 
   it('offers Propose a change on each section to whoever proposes, and only that', async () => {
     const user = userEvent.setup();

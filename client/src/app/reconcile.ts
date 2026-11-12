@@ -17,28 +17,46 @@
  * through its seat once admitted, so it can't read the room while it's
  * decided on (#313). Nothing here sends anything readable: every event goes
  * sealed, through the store's outbox or the card's envelope.
+ *
+ * A coalition takes a seat above it the same way (#122), one level up: a card
+ * from its row, or a card brought to it, queues its reconcile motion in its
+ * own log, signed by this person's coalition key, with the secrets above
+ * sealed under its `inner` (`crypto/innerSeal.ts`), so its followers can't
+ * open them, and its seat on the card and the genesis states its level. A
+ * coalition asking into a formed one seals no `inner` above, as a group's
+ * Proposal holds none: it gets it through its seat once admitted (#313).
  */
-import { base64url } from '../crypto/base64url';
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { cardChannelOf, deriveCoalitionEntryId, newCardSeed } from '../crypto/card';
 import { newGroupSecret } from '../crypto/groupKeys';
+import { sealSeatSecrets } from '../crypto/innerSeal';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import { can } from '../engine/capabilities';
+import { MAX_LEVEL } from '../engine/coalition';
+import { seatIn } from '../engine/crossing';
 import { atomsOf } from '../engine/documents';
-import { signEvent } from '../engine/event';
+import { type SeatEntry, signEvent } from '../engine/event';
 import { fold, type GroupState, TITLE_MAX } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
 import { type Card, CARD_TTL_DAYS, cardLink, openCard, sealCard } from '../coalition/card';
 import { clip, NAME_MAX } from '../invite/envelope';
-import { heldSecrets, newEntry, queuedSecrets } from '../store/coalitions';
-import type { Group } from '../store/db';
+import {
+  coalitionKeys,
+  type CoalitionKeys,
+  heldSecrets,
+  newEntry,
+  queuedSecrets,
+} from '../store/coalitions';
+import { type Group, isCoalitionEntry } from '../store/db';
 import { eventIdOf } from '../store/eventId';
 import { foldGroup } from '../store/expiry';
 import { readRecentLog, type RecentLog } from '../store/sync';
 import type { Services } from './actions';
 import { messages } from './messages';
+import type { Route } from './router';
 
 /** What Reconcile with another group asks for, each trimmed. */
 export interface CardValues {
@@ -62,14 +80,14 @@ function proposalTitle(name: string): string {
   return clip(messages.card.proposalTitle(name), TITLE_MAX);
 }
 
+/** A reconcile target's coalition: its secret, name and statement. */
+type CardCoalition = Pick<Card, 'secret' | 'name' | 'title' | 'atoms'>;
+
 /**
  * A reconcile target and the public seat key its fresh seat secret makes,
  * carrying `inner` only when given: a founding group's (#313).
  */
-function reconcileTarget(
-  card: Pick<Card, 'secret' | 'name' | 'title' | 'atoms'>,
-  inner: Uint8Array | undefined,
-) {
+function reconcileTarget(card: CardCoalition, inner: Uint8Array | undefined) {
   const seatSecret = newSigningKeys().secretKey;
   const fields = {
     kind: 'reconcile',
@@ -83,20 +101,94 @@ function reconcileTarget(
   return { target, seatSecret, seatKey: base64url(seatKeyOf(seatSecret)) };
 }
 
-/** The group's signed reconcile Proposal for `target`, or null when it's too large to send. */
+/** The log a reconcile Proposal goes in: a group's, or a coalition's (#122), with what it seals under. */
+interface Lower {
+  readonly group: Group;
+  /** The log's genesis id, which its events name. */
+  readonly id: string;
+  readonly state: GroupState;
+  /** A coalition's `inner`, which seals its seats above; null for a group. */
+  readonly inner: Uint8Array | null;
+}
+
+/**
+ * A reconcile target for `lower`: a group's carries its secrets readable in
+ * its own sealed log; a coalition's (#122) seals them under its `inner`, so
+ * its followers, who read its log, can't open them. Either carries the
+ * coalition's `inner` only when given: a founding one's (#313).
+ */
+function targetFor(lower: Lower, card: CardCoalition, inner: Uint8Array | undefined) {
+  const made = reconcileTarget(card, inner);
+  if (lower.inner === null) return made;
+  const held = { secret: card.secret, seat: made.seatSecret };
+  const sealed = sealSeatSecrets(
+    lower.id,
+    lower.inner,
+    inner === undefined ? held : { ...held, inner },
+  );
+  const { name, title, atoms } = card;
+  const target = { kind: 'reconcile', sealed, key: made.seatKey, name, title, atoms } as const;
+  return { ...made, target };
+}
+
+/** The reconcile Proposal's target, as {@link targetFor} makes it. */
+type Target = ReturnType<typeof targetFor>['target'];
+
+/** `lower`'s seat in a coalition: its name there, cut as an invite's preview is, its key, and a coalition's level. */
+function seatOf(lower: Lower, key: string): SeatEntry {
+  const name = clip(lower.state.name, NAME_MAX);
+  const level = lower.state.coalition?.level ?? 0;
+  return level === 0 ? { name, key } : { name, key, level };
+}
+
+/** The signed reconcile Proposal for `target` in `lower`, or null when it's too large to send. */
 function reconcileRecord(
-  group: Group,
+  lower: Pick<Lower, 'group' | 'id'>,
   ts: number,
-  body: { readonly target: ReturnType<typeof reconcileTarget>['target']; readonly why: string },
+  body: { readonly target: Target; readonly why: string },
 ) {
   const title = proposalTitle(body.target.name);
-  const signed = signEvent(group.signingKey, {
+  const draft = {
     type: 'proposal',
-    group: group.groupId,
+    group: lower.id,
     ts,
     body: { target: body.target, title, why: body.why },
-  });
+  } as Parameters<typeof signEvent>[1];
+  const signed = signEvent(lower.group.signingKey, draft);
   return signed.record.length > MAX_RECORD_BYTES ? null : signed;
+}
+
+/** This device's keys to every coalition it holds (#122). */
+async function deviceKeys(services: Services): Promise<ReadonlyMap<string, CoalitionKeys>> {
+  const { store } = services;
+  return coalitionKeys(await store.listGroups(), await store.listCoalitions());
+}
+
+/**
+ * Whether this device holds the `inner` of the coalition whose entry is
+ * `entryId` (#122, #313), which its card for another coalition seals its seat
+ * under: a group admitted into it holds none until a seated group's wrap for
+ * its seat arrives.
+ */
+export async function holdsCoalitionKey(services: Services, entryId: string): Promise<boolean> {
+  return ((await deviceKeys(services)).get(entryId)?.inner ?? null) !== null;
+}
+
+/**
+ * The log `groupId` names on this device, as a reconcile Proposal's home:
+ * a group, or a formed coalition this person takes part in (#122).
+ *
+ * @throws {Error} when the device holds neither, or a coalition's `inner`.
+ */
+async function lowerOf(services: Services, groupId: string): Promise<Lower> {
+  const group = await services.store.getGroup(groupId);
+  if (group === undefined) throw new Error('No such group on this device.');
+  const state = foldGroup(group);
+  if (!isCoalitionEntry(group)) return { group, id: groupId, state, inner: null };
+  // An admitted coalition holds its inner only once a seated participant wraps it (#313).
+  const inner = (await deviceKeys(services)).get(groupId)?.inner ?? null;
+  if (state.group === null || inner === null) throw new Error('No such coalition here.');
+  return { group, id: state.group, state, inner };
 }
 
 /** The coalition's entry on this device, kept now with `plan` when it has none. */
@@ -123,11 +215,14 @@ async function entryFor(
  * Reconcile with another group's Submit: makes the coalition secret, `inner`
  * and the group's seat, queues the group's reconcile Proposal, and keeps the
  * coalition's entry with the maker's name, planning to join under the
- * group's seat once a genesis names it. The card it returns is posted by
- * {@link postCard}. A Proposal too large to send is refused before
- * anything is kept.
+ * group's seat once a genesis names it. From a coalition's row (#122),
+ * Reconcile with another coalition does the same one level up: `groupId` is
+ * the coalition's entry, its reconcile motion seals the secrets above, and
+ * its seat on the card states its level. The card it returns is posted by
+ * {@link postCard}. A Proposal too large to send is refused before anything
+ * is kept.
  *
- * @throws {Error} when the device isn't in the group.
+ * @throws {Error} when the device isn't in the group or coalition.
  */
 export async function makeCard(
   services: Services,
@@ -135,9 +230,7 @@ export async function makeCard(
   values: CardValues,
 ): Promise<CardResult> {
   const { store } = services;
-  const group = await store.getGroup(groupId);
-  if (group === undefined) throw new Error('No such group on this device.');
-  const state = foldGroup(group);
+  const lower = await lowerOf(services, groupId);
   const coalition = {
     secret: newGroupSecret(),
     inner: newGroupSecret(),
@@ -145,10 +238,9 @@ export async function makeCard(
     title: messages.card.documentTitle,
     atoms: genesisAtoms(values.statement),
   };
-  const { target, seatKey } = reconcileTarget(coalition, coalition.inner);
-  const seat = { name: clip(state.name, NAME_MAX), key: seatKey };
-  const card: Card = { ...coalition, seat, entries: [] };
-  const proposal = reconcileRecord(group, services.now(), { target, why: values.why });
+  const { target, seatKey } = targetFor(lower, coalition, coalition.inner);
+  const card: Card = { ...coalition, seat: seatOf(lower, seatKey), entries: [] };
+  const proposal = reconcileRecord(lower, services.now(), { target, why: values.why });
   // The card holds less than the Proposal, so a Proposal that fits makes a card that fits.
   if (proposal === null) return { outcome: 'too-large' };
   await store.enqueue(groupId, proposal.record);
@@ -172,10 +264,15 @@ export async function postCard(services: Services, card: Card, origin: string): 
   return cardLink(origin, seed);
 }
 
-/** A group on this device that may take a card: it can propose there and doesn't hold the coalition. */
+/**
+ * A group on this device that may take a card: it can propose there and
+ * doesn't hold the coalition; or a coalition this person takes part in that
+ * may take a seat above it (#122), by its entry id.
+ */
 export interface CardGroup {
   readonly groupId: string;
   readonly name: string;
+  readonly kind: 'group' | 'coalition';
 }
 
 /**
@@ -209,7 +306,34 @@ async function groupsFor(services: Services, secret: string): Promise<CardGroup[
     const state = foldGroup(group);
     if (state.group === null || !can(state, group.me.author, 'propose')) return [];
     if ([...heldSecrets(state), ...queuedSecrets(group)].includes(secret)) return [];
-    return [{ groupId: group.groupId, name: state.name }];
+    return [{ groupId: group.groupId, name: state.name, kind: 'group' as const }];
+  });
+}
+
+/** Whether this person may bring a card into the coalition `state` as it folds now (#122). */
+export function bringsInto(state: GroupState, me: string): boolean {
+  const info = state.coalition;
+  if (info?.status !== 'formed' || info.level >= MAX_LEVEL) return false;
+  return info.bindings.some((b) => b.author === me) && can(state, me, 'propose');
+}
+
+/**
+ * The coalitions this person takes part in that may take a card for `secret`
+ * (#122): formed, below level 3, holding its `inner`, holding no reconcile
+ * motion with this secret, in their log or waiting to send, and not the
+ * coalition the card names.
+ */
+async function coalitionsFor(services: Services, secret: string): Promise<CardGroup[]> {
+  const keys = await deviceKeys(services);
+  const named = deriveCoalitionEntryId(fromBase64url(secret));
+  const held = keys.get(named)?.from ?? [];
+  const entries = await services.store.listCoalitions();
+  return entries.flatMap((entry) => {
+    const state = foldGroup(entry);
+    if (entry.groupId === named || (keys.get(entry.groupId)?.inner ?? null) === null) return [];
+    if (!bringsInto(state, entry.me.author)) return [];
+    if (held.some((from) => from.holder === entry.groupId)) return [];
+    return [{ groupId: entry.groupId, name: state.name, kind: 'coalition' as const }];
   });
 }
 
@@ -257,7 +381,11 @@ export async function lookupCard(services: Services, seed: Uint8Array): Promise<
     const log = await coalitionLog(services, card, page.now, page.instance);
     const mode = modeOf(fold(log.records, log.relayNow), card);
     if (mode === 'used' || mode === 'missing') return { kind: mode };
-    const groups = await groupsFor(services, base64url(card.secret));
+    const secret = base64url(card.secret);
+    const groups = [
+      ...(await groupsFor(services, secret)),
+      ...(await coalitionsFor(services, secret)),
+    ];
     return { kind: 'found', found: { card, mode, log, groups } };
   } catch {
     return { kind: 'offline' };
@@ -265,7 +393,7 @@ export async function lookupCard(services: Services, seed: Uint8Array): Promise<
 }
 
 /** The coalition's genesis, by the bringer's coalition key, naming the card's seat and the group's. */
-function genesisRecord(entry: Group, card: Card, seat: { name: string; key: string }, ts: number) {
+function genesisRecord(entry: Group, card: Card, seat: SeatEntry, ts: number) {
   const body = {
     kind: 'coalition',
     name: card.name,
@@ -296,7 +424,9 @@ function joinRecord(
  * writes the genesis, naming the card's seat and this group's, and joins
  * under this group's seat; for a formed one it keeps the coalition's log and
  * plans the admission, which the sync loop proposes once the group passes.
- * Returns the reconcile Proposal's id.
+ * Brought into a coalition this person takes part in (#122), `groupId` is
+ * its entry: its reconcile motion seals the secrets above, and its seat
+ * states its level. Returns the reconcile Proposal's id.
  *
  * @throws {Error} when the device isn't in the group, or a record is too large.
  */
@@ -307,26 +437,25 @@ export async function bringCard(
   yourName: string,
 ): Promise<string> {
   const { store } = services;
-  const group = await store.getGroup(groupId);
-  if (group === undefined) throw new Error('No such group on this device.');
-  const state = foldGroup(group);
+  const lower = await lowerOf(services, groupId);
   const { card } = found;
-  // A group asking into a formed coalition holds no inner until it's admitted (#313).
+  // A group or coalition asking into a formed coalition holds no inner until it's admitted (#313).
   const inner = found.mode === 'admit' ? undefined : card.inner;
-  const { target, seatSecret, seatKey } = reconcileTarget(card, inner);
-  const proposal = reconcileRecord(group, services.now(), { target, why: '' });
+  const { target, seatSecret, seatKey } = targetFor(lower, card, inner);
+  const proposal = reconcileRecord(lower, services.now(), { target, why: '' });
   if (proposal === null) throw new Error('This card is too large to bring.');
   await store.enqueue(groupId, proposal.record);
   if (found.mode === 'admit') {
     await admitPlan(services, found, {
       groupId,
-      name: state.name,
+      name: lower.state.name,
       proposal: proposal.id,
       yourName,
     });
   } else {
     const entry = await entryFor(services, card.secret, { name: yourName });
-    const genesis = genesisRecord(entry, card, { name: state.name, key: seatKey }, services.now());
+    const seat = { ...seatOf(lower, seatKey), name: lower.state.name };
+    const genesis = genesisRecord(entry, card, seat, services.now());
     const join = joinRecord(
       entry,
       genesis.id,
@@ -337,6 +466,24 @@ export async function bringCard(
   }
   void services.sync.syncOnce();
   return proposal.id;
+}
+
+/**
+ * Where Bring a card goes once it has brought `found` to `groupId`: the
+ * group's new reconcile Proposal, or for a coalition (#122), its home, where
+ * its motion shows, since its members vote on it in their own groups.
+ */
+export async function broughtTo(
+  services: Services,
+  found: FoundCard,
+  groupId: string,
+  proposalId: string,
+): Promise<Route> {
+  const picked = found.groups.find((group) => group.groupId === groupId);
+  if (picked?.kind !== 'coalition') return { name: 'proposal', groupId, proposalId };
+  const entry = await services.store.getGroup(groupId);
+  const coalitionId = entry === undefined ? null : foldGroup(entry).group;
+  return coalitionId === null ? { name: 'start' } : { name: 'coalition', coalitionId };
 }
 
 /** What {@link admitPlan} needs of the group a formed coalition's card was brought to. */
@@ -376,11 +523,13 @@ export async function takePart(
 
 /**
  * A card from a formed coalition's row (#114): its secret, the participant's
- * group's seat, the coalition's name and statement as they read now, and its
- * whole log, so the group it's brought to reads all of it. It carries no
- * `inner`: the group gets that through its seat once admitted (#313).
+ * seat, the coalition's name and statement as they read now, and its whole
+ * log, so the group it's brought to reads all of it. The seat is the one
+ * `groupId`'s log holds there: a group's, or a coalition entry's (#122), with
+ * its level. It carries no `inner`: whoever it's brought to gets that through
+ * its seat once admitted (#313).
  *
- * @throws {Error} when the device holds no such coalition or group seat.
+ * @throws {Error} when the device holds no such coalition or seat.
  */
 export async function admitCard(
   services: Services,
@@ -391,19 +540,14 @@ export async function admitCard(
   const group = await services.store.getGroup(groupId);
   if (entry === undefined || group === undefined) throw new Error('No such coalition here.');
   const coalition = foldGroup(entry);
-  const state = foldGroup(group);
-  const seats = new Set((coalition.coalition?.seats ?? []).map((seat) => seat.key));
-  const target = state.proposals
-    .map((p) => p.target)
-    .find((t) => t.kind === 'reconcile' && seats.has(t.key));
+  const holder = { group, id: groupId, state: foldGroup(group), inner: null };
+  const key = seatIn(holder.state, coalition);
   // A coalition's statement is its one Document (#92).
   const [statement] = coalition.documents;
-  if (target?.kind !== 'reconcile' || statement === undefined) {
-    throw new Error('This group holds no seat here.');
-  }
+  if (key === null || statement === undefined) throw new Error('This group holds no seat here.');
   return {
     secret: entry.secret,
-    seat: { name: clip(state.name, NAME_MAX), key: target.key },
+    seat: seatOf(holder, key),
     name: coalition.name,
     title: statement.title,
     atoms: atomsOf(coalition, statement.id).map((atom) => atom.text),

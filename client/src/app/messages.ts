@@ -13,6 +13,17 @@ const LOCALE = 'en-GB';
 /** A whole number as this language writes it, such as "2,000". */
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
+/**
+ * What a restore or a link says of the group entries it left out because
+ * they didn't check out (#336), `where` they were, or null for none.
+ */
+function leftOut(skipped: number, where: string): string | null {
+  if (skipped === 0) return null;
+  return skipped === 1
+    ? `One group ${where} couldn’t be read and was left out.`
+    : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+}
+
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
 const CLEARED_ON = 'Individual scores and notes were cleared on';
 
@@ -805,6 +816,56 @@ export const messages = {
     eternal: 'Eternal',
   },
   /**
+   * A section's history, in its side sheet, and a Document's change log
+   * (#104). Where a person's name or a date sits inside a line, the words
+   * around it are kept apart, so the screen sets the name in `<bdi>` and the
+   * date in `<time>`.
+   */
+  history: {
+    open: 'History',
+    /** Each section's History button: its visible word, then the section (WCAG 2.5.3). */
+    openLabel: (section: number) => `History of section ${String(section)}`,
+    title: (section: number) => `History of section ${String(section)}`,
+    /** The sheet's heading for a section a pass has since removed, opened from the change log. */
+    removedTitle: 'History of a removed section',
+    close: 'Close',
+    /** Under the heading while nothing has changed the section since it began. */
+    unchanged: 'No Proposal has changed this section since it began.',
+    founding: 'Founding text',
+    writtenBy: 'Written by',
+    founded: 'Founded',
+    proposedBy: 'Proposed by',
+    decided: 'Decided',
+    /** In place of the text, for the pass that removed the section (#75). */
+    removed: 'This removed the section.',
+    /**
+     * Where a passed move put the section (#103), over its text in its history
+     * and in the change log: after the first words of the section it follows,
+     * to the top, or to the end once that section had gone.
+     */
+    movedAfter: (words: string) => `Moved after ‘${words}’`,
+    movedToTop: 'Moved to the top',
+    movedToEnd: 'Moved to the end',
+    /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
+    noResult: 'No result',
+    seeResult: 'See the full result',
+    notPassed: (proposals: number) => `Proposals that didn’t pass (${count(proposals)})`,
+  },
+  changeLog: {
+    pageTitle: 'Change log',
+    eyebrow: 'Change log',
+    /** The Document view's link to its change log. */
+    link: 'Change log',
+    lede: 'Every change that passed, newest first. Open one to see its section’s history.',
+    /** In place of the lede while the log holds only the Document's beginning. */
+    unchanged: 'Nothing has changed this Document since it began.',
+    founded: 'Founding text',
+    created: 'Started this Document',
+    added: 'Added a section',
+    changed: (words: string) => `Changed ‘${words}’`,
+    removed: (words: string) => `Removed ‘${words}’`,
+  },
+  /**
    * Stewards and suspensions (#102). Where a person's name sits inside a
    * sentence, the words before and after it are kept apart, so the screen
    * sets the name in `<bdi>` (see `Named` in src/app/stewards.tsx).
@@ -983,6 +1044,23 @@ export const messages = {
     cleared: (date: string) => `${CLEARED_ON} ${date}.`,
   },
   /**
+   * A group a restore brought back that hasn't heard from the group since its
+   * copy was made (#231; ADR-0051's 2026-11-11 amendment). It may have
+   * dissolved meanwhile, so it reads only until this device hears something
+   * new, or the person opens a new invite link from someone in it.
+   */
+  unconfirmed: {
+    eyebrow: 'Read-only for now',
+    note: 'This copy came from a backup, and nothing new from your group has reached this device since. If your group dissolved after the backup was made, this copy stays read-only.',
+    opens:
+      'It opens as usual as soon as this device sees anything new from your group. To open it sooner, ask someone in your group for a new invite link and open it here.',
+    noVoting:
+      'This copy came from a backup and hasn’t heard from your group since, so you can’t vote here yet.',
+    readOnlyTitle: 'This group is read-only for now',
+    readOnly:
+      'This copy came from a backup and hasn’t heard from your group since. Nothing new can be proposed or sent until it does.',
+  },
+  /**
    * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat
    * bot and the front door. Each changes only by a Proposal, so nothing here
    * reads as a switch. Each warning says what the outside platform would hold.
@@ -1018,6 +1096,8 @@ export const messages = {
     homeHeading: 'Rules',
     homeLink: 'Chat bot and front door',
     homeSummary: (bot: string, door: string) => `Chat bot: ${bot} · Front door: ${door}`,
+    /** Group home's word for the front door once a membership's end closed it (#288). */
+    closedByLeave: 'Closed when a member left',
     /** What each change does, as its ballot is headed and its title starts. */
     motions: {
       chatBot: {
@@ -1067,6 +1147,18 @@ export const messages = {
     narrowedBallot: {
       before: 'Steward',
       after: 'turned this off at once. It stays off while your group votes.',
+    },
+    /** Group rules' front door, once a membership's end closed it (#288). */
+    doorClosedByLeave:
+      'The front door closed because a member left, and they still have its keys. A new Proposal to open it reopens it, with new keys and a new link.',
+    /**
+     * A front door Proposal that was open when a member left (#288): what
+     * passing it does, after its line, and its pass, which opens no door.
+     */
+    exposed: {
+      line: 'A member left while this vote was open, and they have the keys it carries, so if it passes the front door stays closed. A new Proposal to open it reopens it.',
+      passed:
+        'This passed, but the front door stays closed: a member left while the vote was open, and they have its keys. A new Proposal to open it reopens it.',
     },
     composerPageTitle: 'Propose a rules change',
     nowTitle: (motion: string) => `${motion} now`,
@@ -1218,6 +1310,8 @@ export const messages = {
     sharedLine: 'Shared by link',
     /** In place of sharedLine while a restore has paused the Document's share (#328). */
     pausedLine: 'Link paused after a restore',
+    /** In place of sharedLine once this device hasn't posted to the share for 30 days (#339). */
+    idleLine: 'Link paused after 30 days without an update',
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
@@ -1268,6 +1362,12 @@ export const messages = {
        * backup may predate Stop sharing, so nothing is sent until the person chooses.
        */
       paused: 'This link was live when the backup was made. Keep sharing?',
+      /**
+       * In place of paused once this device hasn't posted to the share for 30
+       * days (#339): another device may have stopped it, and its tombstone lapsed.
+       */
+      pausedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device. Keep sharing?',
       pausedNote:
         'Nothing goes to the link until you choose. Keep sharing sends it this Document’s latest version.',
       keep: 'Keep sharing',
@@ -1286,6 +1386,12 @@ export const messages = {
        */
       lockedPaused:
         'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /**
+       * In place of pausedIdle while the device's keys are locked (#255, #339): this device
+       * hasn't posted to the share for 30 days, and nothing goes to the link meanwhile.
+       */
+      lockedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
       /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
       lockedNow:
         'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
@@ -1481,11 +1587,18 @@ export const messages = {
     passphraseMissing: 'Enter the passphrase this backup was saved with.',
     submit: 'Restore',
     restoring: 'Opening your backup…',
-    restored: (groups: number) => {
-      if (groups === 0) return 'This backup holds no groups.';
-      return groups === 1
-        ? '1 group is back on this device.'
-        : `${count(groups)} groups are back on this device.`;
+    /**
+     * How many groups came back, then how many group entries didn't check out
+     * and were left out (#336), when any were: only that, when none came back.
+     */
+    restored: (groups: number, skipped: number) => {
+      const left = leftOut(skipped, 'in this backup');
+      if (groups === 0) return left ?? 'This backup holds no groups.';
+      const back =
+        groups === 1
+          ? '1 group is back on this device.'
+          : `${count(groups)} groups are back on this device.`;
+      return left === null ? back : `${back} ${left}`;
     },
     failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
   },
@@ -1555,10 +1668,15 @@ export const messages = {
     waitingOther: 'Waiting for your other device…',
     check: 'Check that your other device shows the same number, then confirm there.',
     cancel: 'Cancel',
-    linked: (groups: number) =>
-      groups === 1
-        ? 'Linked. This device now has 1 group.'
-        : `Linked. This device now has ${count(groups)} groups.`,
+    /** How many groups the device now has, then how many from the bundle were left out (#336). */
+    linked: (groups: number, skipped: number) => {
+      const now =
+        groups === 1
+          ? 'Linked. This device now has 1 group.'
+          : `Linked. This device now has ${count(groups)} groups.`;
+      const left = leftOut(skipped, 'from your other device');
+      return left === null ? now : `${now} ${left}`;
+    },
     mismatch: 'That code didn’t match. Start again on your other device.',
     damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
     joinExpired: 'That code has expired. Start again on your other device.',
@@ -1735,6 +1853,21 @@ export const messages = {
     another: 'Make a card for another group',
     failedAnother: 'Can’t reach the relay right now, so there’s no card yet. Try again.',
     anotherLede: 'Bring in another group: they vote, then every group in the coalition does.',
+    /** Reconcile with another coalition (#122): the same card, from a coalition's row. */
+    coalitionTitle: 'Reconcile with another coalition',
+    coalitionLede:
+      'Propose a coalition of coalitions. Every group in your coalition votes on it, then the other side votes. It forms only if both pass.',
+    coalitionWhyHint: 'Tell every group in your coalition why you’d reconcile.',
+    coalitionNameHint: 'A name of its own, apart from either side’s.',
+    coalitionStatementHint:
+      'What both sides would stand for together. Leave a blank line between sections.',
+    coalitionWarning:
+      'Anyone who opens this link in the next 2 days can read the new coalition from then on. Send it only to someone in the group or coalition you want to reconcile with.',
+    coalitionLink: 'Open your coalition',
+    coalitionCant:
+      'Only someone who takes part in this coalition and can propose there makes its card, and a coalition already three levels up can’t join another.',
+    coalitionKeyWaits:
+      'This coalition’s key hasn’t reached this device yet. You can make its card once it arrives.',
   },
   /** Opening a card and bringing it to one of your groups (#114). */
   bring: {
@@ -1747,14 +1880,23 @@ export const messages = {
     admitLede:
       'This coalition has already formed. Your group votes first, then every group in it votes on letting yours in.',
     question: 'Bring this to one of your groups?',
+    /** When a coalition this person takes part in may take it too (#122). */
+    questionBoth: 'Bring this to one of your groups or coalitions?',
     groupLabel: 'Your group',
     groupHint: 'It votes on this card. Only groups where you can propose are listed.',
+    /** When a coalition this person takes part in can take the card too (#122). */
+    groupOrCoalitionLabel: 'Your group or coalition',
+    groupOrCoalitionHint:
+      'It votes on this card. A coalition votes group by group. Only those where you can propose are listed.',
+    /** Under a coalition's name in the picker (#122). */
+    coalitionOption: 'Coalition',
     noGroups:
       'None of your groups on this device can take this card. You need to be able to propose there, and it can’t hold this card already.',
     yourNameLabel: 'Your name in the coalition',
     yourNameHint: 'This name is only shown in this coalition.',
     yourNameMissing: 'Add the name the coalition will see.',
     submit: 'Bring to my group',
+    submitCoalition: 'Bring to my coalition',
     notNow: 'Not now',
     failed: 'Bringing the card didn’t finish. Try again.',
     badLinkTitle: 'This card doesn’t work',
@@ -1835,9 +1977,30 @@ export const messages = {
       'Not enough people in your group weighed in, so the coalition counts your group as not passing it.',
     /** Opens the coalition's home from group home's row (#120). */
     open: 'Open the coalition',
+    /** From a coalition's row (#122): the card flow one level up. */
+    reconcileCoalition: 'Reconcile with another coalition',
+    /** Between the names of a chain, as in "Riverside Tenants · in Eastside Housing" (#122). */
+    chainIn: 'in',
+    /** Above the coalitions a coalition is in or asks into (#122). */
+    above: 'Coalitions it’s in',
+    /** A coalition still waiting for its own groups' vote on joining one above (#122). */
+    waitingOwn: 'Waiting for its groups’ vote.',
     /** Over a coalition motion in a group's lists and on its page, before the coalition's name (#120). */
     voteTag: 'Coalition vote',
     tagSeparator: '·',
+    /** After the tag's coalition, around the coalitions a motion came through (#122). */
+    through: '(through',
+    throughEnd: ')',
+    then: 'then',
+    /** Before a coalition's name on a nested motion's progress lines (#122). */
+    progressIn: 'In',
+    /** Under a nested motion's progress (#122): what crosses each line. */
+    nestedLine:
+      'Your group’s pass or fail goes to the coalition it’s in. Only that coalition’s pass or fail goes on up.',
+    /** On an admit ballot for a coalition (#122), before its member groups. */
+    admitsCoalition: 'A coalition of',
+    admitsTitle: 'Asking to join',
+    admitsLevel: (level: number) => `Level ${count(level)}`,
     /** The coalition's home (#120). */
     missingTitle: 'This coalition isn’t on this device',
     missing: 'Go back to your groups, and open it from a group that’s in it.',
@@ -1846,6 +2009,9 @@ export const messages = {
     groups: 'Member groups',
     /** Beside a member group this person is in. */
     yourGroup: 'Your group',
+    /** Beside a member that is a coalition (#122), and one this person takes part in. */
+    coalitionSeat: 'Coalition',
+    yourCoalition: 'Your coalition',
     documents: 'Documents',
     openMotions: 'Open Proposals',
     noOpen: 'Nothing is open in the coalition right now.',

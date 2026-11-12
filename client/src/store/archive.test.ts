@@ -26,6 +26,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { relayTook } from '../test/outbox';
 import { containsBytes, scanDb } from '../test/scanDb';
+import { LEVELS } from '../engine/capabilities';
 import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import type { PersonalDocument } from './personal';
@@ -565,7 +566,7 @@ describe('a dissolved group and backup files (#78)', () => {
     const later = (held.lastSyncAt ?? 0) + DAY_MINUTES * MINUTE_MS;
     const file = await fileOf([copyOf(held, { log: live, lastSyncAt: later })]);
 
-    expect(await importGroups(store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
 
     const kept = (await store.getGroup(groupId)) ?? never();
     expect(kept).toEqual({ ...held, backup: 'saved' });
@@ -589,7 +590,7 @@ describe('a dissolved group and backup files (#78)', () => {
     });
     opened.push(sync);
 
-    expect(await importGroups(other, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(other, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
 
     const restored = (await other.getGroup(groupId)) ?? never();
     expect(restored.archived).toEqual({ reason: 'dissolved' });
@@ -600,6 +601,182 @@ describe('a dissolved group and backup files (#78)', () => {
     expect(await sync.syncOnce()).toBe(true);
     expect(mailboxRequests(fake, group)).toBe(requests);
     await expect(other.enqueue(groupId, group.genesis.record)).rejects.toThrow('read-only');
+  });
+});
+
+const [, , CREATING] = LEVELS;
+
+/** A store and sync loop for a device that never had the group, on `fake`. */
+async function freshDevice(fake: FakeRelay, name: string) {
+  const store = await openStore(name);
+  stores.push(store);
+  const sync = createSync({
+    store,
+    relay: createRelay({ fetch: fake.fetch }),
+    seal: xchachaSeal,
+    clock: () => TS,
+  });
+  opened.push(sync);
+  return { store, sync };
+}
+
+/** The methods of every request after the first `from`. */
+const methodsAfter = (fake: FakeRelay, from: number) =>
+  fake.requests.slice(from).map((request) => request.method);
+
+/** Relay minutes past the dissolve by which the relay has let it go: blobs live 30 days, rounded up a day. */
+const EXPIRED = 32 * DAY_MINUTES;
+
+describe('a backup made before the dissolve (#231)', () => {
+  /** Ana's file of the group, made before the dissolve, and her device once it has folded the dissolve. */
+  async function fileBeforeDissolve() {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events, last } = history(group, false);
+    const { store, sync } = await openDevice(fake.fetch);
+    await keep(store, sync, group, [...events, last]);
+    const file = await fileOf([copyOf((await store.getGroup(group.genesis.id)) ?? never())]);
+    fake.minute = DISSOLVED;
+    expect(await sync.syncOnce()).toBe(true);
+    expect((await store.getGroup(group.genesis.id))?.archived).toEqual({ reason: 'dissolved' });
+    return { fake, group, file, groupId: group.genesis.id };
+  }
+
+  it('comes back read-only for now, never live, once the relay has let the dissolve go', async () => {
+    const { fake, group, file, groupId } = await fileBeforeDissolve();
+    fake.minute = DISSOLVED + EXPIRED;
+    const phone = await freshDevice(fake, 'restored-after');
+
+    expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    const before = fake.requests.length;
+    expect(await phone.sync.syncOnce()).toBe(true);
+    fake.minute += 60;
+    expect(await phone.sync.syncOnce()).toBe(true);
+
+    const restored = (await phone.store.getGroup(groupId)) ?? never();
+    expect(restored.archived).toEqual({ reason: 'unconfirmed', since: START });
+    expect(shownState(restored).dissolved).toBeNull();
+    // It reads the group's mailboxes, and sends nothing: not even the dissolve its fold has due.
+    expect(new Set(methodsAfter(fake, before))).toEqual(new Set(['GET']));
+    expect(restored.outbox).toEqual([]);
+    await expect(phone.store.enqueue(groupId, group.genesis.record)).rejects.toThrow('read-only');
+  });
+
+  it('comes back read-only as a dissolved copy while the relay still has the dissolve', async () => {
+    const { fake, group, file, groupId } = await fileBeforeDissolve();
+    fake.minute = DISSOLVED + 10 * DAY_MINUTES;
+    const phone = await freshDevice(fake, 'restored-before');
+
+    expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await phone.sync.syncOnce()).toBe(true);
+
+    const restored = (await phone.store.getGroup(groupId)) ?? never();
+    expect(restored.archived).toEqual({ reason: 'dissolved' });
+    expect(shownState(restored).dissolved).toEqual({ received: DISSOLVED, wipe: false });
+    const requests = mailboxRequests(fake, group);
+    fake.minute += 5;
+    expect(await phone.sync.syncOnce()).toBe(true);
+    expect(mailboxRequests(fake, group)).toBe(requests);
+  });
+
+  it('runs no chat bot, front door or nudges for it until it hears from the group', async () => {
+    const { fake, file, groupId } = await fileBeforeDissolve();
+    fake.minute = DISSOLVED + EXPIRED;
+    const store = await openStore('restored-quiet');
+    stores.push(store);
+    const chatBot = { run: vi.fn(() => Promise.resolve()) };
+    const door = { run: vi.fn(() => Promise.resolve()), replies: vi.fn(() => Promise.resolve()) };
+    const push = { nudge: vi.fn(() => Promise.resolve()), upkeep: vi.fn(), forget: vi.fn() };
+    const relay = createRelay({ fetch: fake.fetch });
+    const sync = createSync({
+      store,
+      relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+      chatBot,
+      door,
+      push,
+    });
+    opened.push(sync);
+    await importGroups(store, file, PASSPHRASE);
+
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect((await store.getGroup(groupId))?.archived?.reason).toBe('unconfirmed');
+    expect([chatBot.run, door.run, push.nudge].map((spy) => spy.mock.calls)).toEqual([[], [], []]);
+  });
+
+  it('still clears expired ballots on the device, and posts no result, while it hasn’t heard from the group (#111)', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events, edit, motion } = history(group, false);
+    const groupId = group.genesis.id;
+    const { store, sync } = await openDevice(fake.fetch);
+    // The edit passes with three ballots, Ben's carrying the canary note, and Ana's device
+    // posts its result two passes later; the dissolve Proposal closes with no result.
+    await keep(store, sync, group, events);
+    for (let pass = 0; pass < 3; pass += 1) {
+      fake.minute += 1;
+      expect(await sync.syncOnce()).toBe(true);
+    }
+    const held = (await store.getGroup(groupId)) ?? never();
+    expect(typesIn(held).filter((type) => type === 'result')).toHaveLength(1);
+    const file = await fileOf([copyOf(held)]);
+    fake.minute = START + 40 * DAY_MINUTES;
+    const phone = await freshDevice(fake, 'restored-clears');
+    await importGroups(phone.store, file, PASSPHRASE);
+    const before = fake.requests.length;
+
+    expect(await phone.sync.syncOnce()).toBe(true);
+    fake.minute += 1;
+    expect(await phone.sync.syncOnce()).toBe(true);
+
+    const restored = (await phone.store.getGroup(groupId)) ?? never();
+    expect(restored.archived?.reason).toBe('unconfirmed');
+    expect(restored.cleared).toEqual([edit.id]);
+    expect((await scanDb('restored-clears')).text).not.toContain(CANARY_NOTE);
+    expect(shownState(restored).proposals.find((p) => p.id === motion.id)?.result).toBeNull();
+    expect(methodsAfter(fake, before)).not.toContain('PUT');
+    expect(restored.outbox).toEqual([]);
+  });
+
+  it('comes back live, from an old file of a group that goes on, once anyone in it posts', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const { events } = history(group, false);
+    const groupId = group.genesis.id;
+    const { store, sync } = await openDevice(fake.fetch);
+    // Ben and Cal join; nothing more is posted for 40 days.
+    await keep(store, sync, group, events.slice(0, 2));
+    const file = await fileOf([copyOf((await store.getGroup(groupId)) ?? never())]);
+    fake.minute = START + 40 * DAY_MINUTES;
+    const phone = await freshDevice(fake, 'restored-live');
+    await importGroups(phone.store, file, PASSPHRASE);
+    expect(await phone.sync.syncOnce()).toBe(true);
+    expect((await phone.store.getGroup(groupId))?.archived).toEqual({
+      reason: 'unconfirmed',
+      since: START,
+    });
+
+    // Ben's device, which never stopped, posts his move to proposing, to this week's mailbox.
+    const ben = signedAs('ben', {
+      type: 'level',
+      group: groupId,
+      ts: TS,
+      body: { level: CREATING },
+    });
+    const mailbox = deriveWeekMailboxId(group.secret, weekOf(fake.minute));
+    const relay = createRelay({ fetch: fake.fetch });
+    await relay.putBlob(mailbox, xchachaSeal.seal(mailbox, group.key, ben.record), 30);
+    fake.minute += 1;
+    expect(await phone.sync.syncOnce()).toBe(true);
+
+    const restored = (await phone.store.getGroup(groupId)) ?? never();
+    expect(restored.archived).toBeUndefined();
+    const benNow = shownState(restored).members.find((m) => m.author === authorOf('ben'));
+    expect(benNow?.level).toBe(CREATING);
+    await phone.store.enqueue(groupId, ben.record);
+    expect((await phone.store.getGroup(groupId))?.outbox).toHaveLength(1);
   });
 });
 

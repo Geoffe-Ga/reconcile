@@ -13,6 +13,7 @@ import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
 import { levelName } from '../app/levels';
 import { messages } from '../app/messages';
+import { MotionTagText } from '../app/MotionTag';
 import { NewcomerProgress, WaitingNote } from '../app/Newcomer';
 import { routeHref } from '../app/router';
 import { RulesLink } from '../app/RulesLink';
@@ -70,8 +71,14 @@ export interface GroupHomeProps {
   /** Whether this device's leave waits for the relay (#77): the group reads, but takes no votes. */
   readonly leaving?: boolean;
   /**
-   * Removes a read-only copy from this device: a dissolved group's (#108), or
-   * one a vote removed this member from (#115). Rejects when it couldn't.
+   * Whether this copy came back from a backup and hasn't heard from the group
+   * since (#231): it reads, takes nothing new, and says how it opens.
+   */
+  readonly unconfirmed?: boolean;
+  /**
+   * Removes a read-only copy from this device: a dissolved group's (#108),
+   * one a vote removed this member from (#115), or one back from a backup
+   * that hasn't heard from the group (#231). Rejects when it couldn't.
    */
   readonly onRemove?: () => Promise<void>;
   /**
@@ -151,15 +158,17 @@ interface ProposalCardsProps {
 
 /**
  * "Coalition vote · <coalition>" over a coalition motion's title (#120), the
- * name in its own `<bdi>`; nothing for the group's own Proposals.
+ * name in its own `<bdi>`, with the route of one from further up (#122);
+ * nothing for the group's own Proposals.
  */
 function MotionTag({ proposal, names }: { proposal: Proposal; names: CoalitionNames | undefined }) {
   const { target } = proposal;
   if (target.kind !== 'motion') return null;
-  const { voteTag, tagSeparator } = messages.coalitions;
+  // A motion from further up names the coalitions it came through, nearest first (#122).
+  const route = [target.coalition, ...target.chain].map((id) => names?.[id] ?? '');
   return (
     <span className="eyebrow card-link-tag">
-      {voteTag} {tagSeparator} <bdi>{names?.[target.coalition] ?? ''}</bdi>
+      <MotionTagText coalition={route.at(-1) ?? ''} through={route.slice(0, -1)} />
     </span>
   );
 }
@@ -809,19 +818,46 @@ function ArchiveNote({ dissolved, onRemove }: ArchiveNoteProps) {
       <p className="eyebrow">{archive.eyebrow}</p>
       <p>{archive.dissolvedOn(formatDate(dissolved.received))}</p>
       {dissolved.wipe ? <p>{archive.erasedOn(formatDate(wipeMinute(dissolved)))}</p> : null}
-      {onRemove === undefined ? null : (
-        <div>
-          <ConfirmDialog
-            open={archive.remove}
-            title={archive.removeTitle}
-            body={archive.removeBody}
-            confirm={archive.removeConfirm}
-            cancel={archive.cancel}
-            failed={archive.removeFailed}
-            onConfirm={onRemove}
-          />
-        </div>
-      )}
+      <RemoveCopy onRemove={onRemove} />
+    </div>
+  );
+}
+
+/**
+ * A copy back from a backup that hasn't heard from its group (#231): why it
+ * only reads, how it opens, and Remove from this device.
+ */
+function UnconfirmedNote({ onRemove }: RemoveProps) {
+  const { unconfirmed } = messages;
+  return (
+    <div className="archive-note">
+      <p className="eyebrow">{unconfirmed.eyebrow}</p>
+      <p>{unconfirmed.note}</p>
+      <p>{unconfirmed.opens}</p>
+      <RemoveCopy onRemove={onRemove} />
+    </div>
+  );
+}
+
+interface RemoveProps {
+  readonly onRemove: GroupHomeProps['onRemove'];
+}
+
+/** Remove from this device, behind an alert dialog, for a read-only copy (#108, #115, #231). */
+function RemoveCopy({ onRemove }: RemoveProps) {
+  const { archive } = messages;
+  if (onRemove === undefined) return null;
+  return (
+    <div>
+      <ConfirmDialog
+        open={archive.remove}
+        title={archive.removeTitle}
+        body={archive.removeBody}
+        confirm={archive.removeConfirm}
+        cancel={archive.cancel}
+        failed={archive.removeFailed}
+        onConfirm={onRemove}
+      />
     </div>
   );
 }
@@ -837,24 +873,11 @@ interface RemovedNoteProps {
  * new, and Remove from this device, behind an alert dialog.
  */
 function RemovedNote({ removal, onRemove }: RemovedNoteProps) {
-  const { archive } = messages;
   return (
     <div className="archive-note">
       <p className="eyebrow">{messages.removal.eyebrowRemoved}</p>
       <p>{messages.removal.removedOn(formatDate(removal.passedAt))}</p>
-      {onRemove === undefined ? null : (
-        <div>
-          <ConfirmDialog
-            open={archive.remove}
-            title={archive.removeTitle}
-            body={archive.removeBody}
-            confirm={archive.removeConfirm}
-            cancel={archive.cancel}
-            failed={archive.removeFailed}
-            onConfirm={onRemove}
-          />
-        </div>
-      )}
+      <RemoveCopy onRemove={onRemove} />
     </div>
   );
 }
@@ -968,14 +991,24 @@ function MemberSections(props: GroupHomeProps) {
  * in a dissolved group, the archive's note alone, and on the device of a
  * member a vote removed, the removed note alone: a read-only copy never
  * syncs, so the relay's reach and missing history mean nothing to it (#108,
- * #115).
+ * #115). A copy back from a backup that hasn't heard from its group (#231)
+ * still syncs, so the relay's reach shows, and its own note takes the place
+ * of the line on missing history, which it answers.
  */
 function TopNotes(props: GroupHomeProps) {
-  const { state, me, sync, leaving = false, onRemove } = props;
+  const { state, me, sync, leaving = false, unconfirmed = false, onRemove } = props;
   const { dissolved } = state;
   if (dissolved !== null) return <ArchiveNote dissolved={dissolved} onRemove={onRemove} />;
   const removal = removedFrom(state, me);
   if (removal !== undefined) return <RemovedNote removal={removal} onRemove={onRemove} />;
+  if (unconfirmed) {
+    return (
+      <>
+        <SyncNotices sync={{ ...sync, missingHistory: false }} />
+        <UnconfirmedNote onRemove={onRemove} />
+      </>
+    );
+  }
   return (
     <>
       <SyncNotices sync={sync} />
@@ -989,6 +1022,7 @@ interface OpenSectionsProps {
   readonly state: GroupState;
   readonly lists: ReturnType<typeof homeLists>;
   readonly now: number;
+  /** True while the group takes nothing new on this device: leaving (#77), or read-only (#231). */
   readonly leaving: boolean;
   /** Whether a vote removed this member (#115): then the open ones are cut off here. */
   readonly removed: boolean;
@@ -1052,7 +1086,7 @@ interface HomeTopProps {
   readonly props: GroupHomeProps;
   /** Whether a vote removed this member (#115). */
   readonly removed: boolean;
-  /** Whether the group takes nothing new on this device: leaving, dissolved or removed. */
+  /** Whether the group takes nothing new on this device (`takesNothing`). */
   readonly readOnly: boolean;
 }
 
@@ -1132,11 +1166,12 @@ function HomeTop({ props, removed, readOnly }: HomeTopProps) {
  * Proposals: the recovery alert while a recovery of this person waits (#118),
  * a backup (#78), then the recovery shares this device holds there (#109). No
  * backup card once the group's key changed past this device (#226). None once
- * it has dissolved: no backup file carries its read-only copy, and no share
- * held there can go back to anyone (#108).
+ * it has dissolved, nor in a copy back from a backup that hasn't heard from
+ * its group: no backup file carries a read-only copy, and no share held there
+ * can go back to anyone (#108, #231).
  */
 function QuietCards({ props }: { readonly props: GroupHomeProps }) {
-  if (props.state.dissolved !== null) return null;
+  if (props.state.dissolved !== null || props.unconfirmed === true) return null;
   return (
     <>
       {props.alertCard}
@@ -1144,6 +1179,16 @@ function QuietCards({ props }: { readonly props: GroupHomeProps }) {
       {props.recoveryCard}
     </>
   );
+}
+
+/**
+ * Whether the group takes nothing new on this device: this member is leaving
+ * (#77), it has dissolved (#108), a vote `removed` this member (#115), or
+ * it's a copy back from a backup that hasn't heard from the group (#231).
+ */
+function takesNothing(props: GroupHomeProps, removed: boolean): boolean {
+  const { state, leaving = false, unconfirmed = false } = props;
+  return leaving || unconfirmed || removed || state.dissolved !== null;
 }
 
 /**
@@ -1160,17 +1205,17 @@ function QuietCards({ props }: { readonly props: GroupHomeProps }) {
  * and offers no level choice, invite or Leave. A dissolved group reads the
  * same way, as a read-only copy with no controls, saying when it dissolved
  * and offering Remove from this device (#108), and so does the copy on the
- * device of a member a vote removed, saying when (#115).
+ * device of a member a vote removed, saying when (#115), and a copy back
+ * from a backup that hasn't heard from its group, saying why and how it
+ * opens (#231).
  */
 export function GroupHome(props: GroupHomeProps) {
-  const { state, me, now, leaving = false } = props;
+  const { state, me, now } = props;
   const groupId = state.group ?? '';
   const discussion = latestLink(state);
   const lists = homeLists(state, me, now);
-  const { dissolved } = state;
   const removed = removedFrom(state, me) !== undefined;
-  // A dissolved group takes nothing new, as a group being left doesn't (#108), nor one a vote removed this member from (#115).
-  const readOnly = leaving || dissolved !== null || removed;
+  const readOnly = takesNothing(props, removed);
   // Every level follows the group (ADR-0003): for someone who doesn't vote, Dispatches lead (#112).
   // A removed member's copy leads with what the vote cut off instead (#115): no Dispatch comes now.
   const news = <HomeDispatches state={state} me={me} readOnly={readOnly} />;
@@ -1186,10 +1231,10 @@ export function GroupHome(props: GroupHomeProps) {
           state={state}
           lists={lists}
           now={now}
-          leaving={leaving}
+          leaving={readOnly}
           removed={removed}
-          // No backup file carries a dissolved group's read-only copy, nor a removed one's, so
-          // none is suggested, and no share held there goes back to anyone (#108, #109, #115).
+          // No backup file carries a read-only copy, so none is suggested, and no share held
+          // there goes back to anyone (#108, #109, #115, #231).
           after={<QuietCards props={props} />}
           names={props.coalitionNames}
         >

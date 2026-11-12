@@ -23,7 +23,8 @@
  *    counts only once `fetchRelayBackup` opens the backup its key names.
  * 5. **Restore.** Only then is anything written: the backup's groups and
  *    personal Documents (`importSnapshot`, from the relay, so no group is
- *    marked as in a backup file), the backup key (`adoptRelayBackupKey`),
+ *    marked as in a backup file), less any group entry that doesn't check
+ *    out, which it counts (#336), the backup key (`adoptRelayBackupKey`),
  *    and the mark that this device was recovered, which takes the request's
  *    place. The app then asks the person to choose contacts again, which
  *    makes a new key and retires this one.
@@ -50,7 +51,7 @@ import { combineShares, type RecoveryShare } from '../crypto/shares';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { RecoverRequest, Store } from '../store/db';
 import { fetchRelayBackup } from '../store/relayBackup';
-import { importSnapshot } from '../store/snapshot';
+import { importSnapshot, type Restored } from '../store/snapshot';
 
 /** The most subsets a device tries to rebuild the key from: every 3-of-7 or 4-of-7 choice. */
 export const MAX_SUBSETS = 35;
@@ -82,8 +83,12 @@ export interface ShownRequest {
 export type RecoverStep =
   /** Waiting: the most shares of one split that have come, and how many that split needs. */
   | { readonly kind: 'waiting'; readonly shares: number; readonly needed: number | null }
-  /** A backup opened and its groups are on this device. */
-  | { readonly kind: 'restored'; readonly groups: number }
+  /**
+   * A backup opened and its groups are on this device: how many came back,
+   * and how many group entries were left out because they didn't check out
+   * (#336).
+   */
+  | ({ readonly kind: 'restored' } & Restored)
   /** There is no request on this device: it stopped, or another tab finished it. */
   | { readonly kind: 'stopped' };
 
@@ -173,19 +178,21 @@ function subsetKey(subset: readonly RecoveryShare[]): string {
 }
 
 /**
- * The groups restored from the backup `key` names, or null when it doesn't
- * open or its contents don't check out; nothing is written then.
+ * What restoring the backup `key` names brought back, or null when it
+ * doesn't open or anything in it but a group entry doesn't check out;
+ * nothing is written then. A group entry that doesn't check out is left out
+ * and counted, as from a file (#336).
  *
  * @throws {RelayError | TypeError} when the relay can't be reached.
  */
-async function restoreWith(services: RecoverServices, key: Uint8Array): Promise<number | null> {
+async function restoreWith(services: RecoverServices, key: Uint8Array): Promise<Restored | null> {
   const plaintext = await fetchRelayBackup(services.relay, key);
   if (plaintext === null) return null;
   try {
-    const groups = await importSnapshot(services.store, plaintext, 'relay');
+    const restored = await importSnapshot(services.store, plaintext, 'relay');
     await services.store.adoptRelayBackupKey(key);
     await services.store.finishRecovery(services.now());
-    return groups;
+    return restored;
   } catch (error) {
     if (error instanceof BackupUnreadable) return null;
     throw error;
@@ -194,11 +201,11 @@ async function restoreWith(services: RecoverServices, key: Uint8Array): Promise<
   }
 }
 
-/** The key `subset` rebuilds and the groups it restores, or null when it rebuilds no backup. */
+/** What the backup the key `subset` rebuilds restored, or null when it rebuilds no backup. */
 async function trySubset(
   services: RecoverServices,
   subset: readonly RecoveryShare[],
-): Promise<number | null> {
+): Promise<Restored | null> {
   const key = await combineShares(subset.map(({ share }) => share));
   if (key === null) return null;
   try {
@@ -226,8 +233,8 @@ function waiting(sets: readonly RecoveryShare[][]): RecoverStep {
 export function recoverSession(services: RecoverServices): RecoverSession {
   const tried = new Set<string>();
 
-  /** The groups the first untried subset to open a backup restored, or null. */
-  const combine = async (sets: readonly RecoveryShare[][]): Promise<number | null> => {
+  /** What the first untried subset to open a backup restored, or null. */
+  const combine = async (sets: readonly RecoveryShare[][]): Promise<Restored | null> => {
     for (const set of sets) {
       const t = set[0]?.t ?? 0;
       if (set.length < t) continue;
@@ -235,9 +242,9 @@ export function recoverSession(services: RecoverServices): RecoverSession {
         const key = subsetKey(subset);
         if (tried.size >= MAX_SUBSETS) return null;
         if (tried.has(key)) continue;
-        const groups = await trySubset(services, subset);
+        const restored = await trySubset(services, subset);
         tried.add(key);
-        if (groups !== null) return groups;
+        if (restored !== null) return restored;
       }
     }
     return null;
@@ -251,8 +258,8 @@ export function recoverSession(services: RecoverServices): RecoverSession {
     const shares = sharesIn(services, request, page.records);
     const sets = bySplit(shares);
     try {
-      const groups = await combine(sets);
-      return groups === null ? waiting(sets) : { kind: 'restored', groups };
+      const restored = await combine(sets);
+      return restored === null ? waiting(sets) : { kind: 'restored', ...restored };
     } finally {
       for (const { share } of shares) share.fill(0);
     }

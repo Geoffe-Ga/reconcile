@@ -14,7 +14,7 @@ import { parseRecord } from '../engine/event';
 import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { go, members, type MountedApp, mountApp } from '../test/members';
+import { APP_USER, go, members, type MountedApp, mountApp } from '../test/members';
 
 freshIndexedDBPerTest();
 
@@ -67,79 +67,92 @@ function sectionsIn(app: HTMLElement): string[] {
   );
 }
 
+// Two devices' apps take two Proposals through the composer and both ballots, about ten sync
+// passes that sign, seal and open every record for real, and this file's one test also pays for
+// compiling the app: about 2 s alone, 2.5-3.6 s at load 3-6.5, and past the default 5 s at load
+// 11 (#260). Each step is awaited, so nothing races; the time is that work. The global
+// timeouts stay as they are.
+const TWO_PROPOSALS = { timeout: 10_000 };
+
 describe('An outline in the app (#103)', () => {
-  it('queues a Section header’s add as “# Values\\n”, then moves a section first, and both devices read one order', async () => {
-    const user = userEvent.setup();
-    const fake = createFakeRelay();
-    const { groupId, devices } = await members(fake, ['Ana', 'Ben']);
-    opened.push(...devices);
-    const [ana, ben] = devices;
-    go(`#/g/${groupId}/doc/${groupId}`);
-    const a = mount(ana, 'a');
+  it(
+    'queues a Section header’s add as “# Values\\n”, then moves a section first, and both devices read one order',
+    TWO_PROPOSALS,
+    async () => {
+      const user = userEvent.setup(APP_USER);
+      const fake = createFakeRelay();
+      const { groupId, devices } = await members(fake, ['Ana', 'Ben']);
+      opened.push(...devices);
+      const [ana, ben] = devices;
+      go(`#/g/${groupId}/doc/${groupId}`);
+      const a = mount(ana, 'a');
 
-    await user.click(
-      await within(a).findByRole('button', { name: 'Add a section here, after section 1' }),
-    );
-    await user.click(
-      await within(document.body).findByRole('menuitem', { name: 'Section header' }),
-    );
-    await waitFor(() => {
-      expect(window.location.hash).toBe(`#/g/${groupId}/add-header/${groupId}.0`);
-    });
-    await user.click(await within(a).findByRole('textbox', { name: 'Heading' }));
-    await user.paste('Values');
-    expect(within(a).getByRole('textbox', { name: 'Title' })).toHaveValue(
-      'Add section header: Values',
-    );
-    await user.click(within(a).getByRole('textbox', { name: 'Why' }));
-    await user.paste('An outline first.');
-    await user.click(within(a).getByRole('button', { name: 'Propose this header' }));
-    await waitFor(async () => {
-      expect(await queued(ana, groupId)).toEqual([
-        {
-          target: { kind: 'add', document: groupId, after: `${groupId}.0` },
-          title: 'Add section header: Values',
-          why: 'An outline first.',
-          text: '# Values\n',
-          window: 7,
-        },
+      await user.click(
+        await within(a).findByRole('button', { name: 'Add a section here, after section 1' }),
+      );
+      await user.click(
+        await within(document.body).findByRole('menuitem', { name: 'Section header' }),
+      );
+      await waitFor(() => {
+        expect(window.location.hash).toBe(`#/g/${groupId}/add-header/${groupId}.0`);
+      });
+      await user.click(await within(a).findByRole('textbox', { name: 'Heading' }));
+      await user.paste('Values');
+      expect(within(a).getByRole('textbox', { name: 'Title' })).toHaveValue(
+        'Add section header: Values',
+      );
+      await user.click(within(a).getByRole('textbox', { name: 'Why' }));
+      await user.paste('An outline first.');
+      await user.click(within(a).getByRole('button', { name: 'Propose this header' }));
+      await waitFor(async () => {
+        expect(await queued(ana, groupId)).toEqual([
+          {
+            target: { kind: 'add', document: groupId, after: `${groupId}.0` },
+            title: 'Add section header: Values',
+            why: 'An outline first.',
+            text: '# Values\n',
+            window: 7,
+          },
+        ]);
+      });
+      const header = window.location.hash.split('/').at(-1) ?? '';
+      await sync(ana);
+      await passBoth(devices, groupId, header);
+
+      go(`#/g/${groupId}/doc/${groupId}`);
+      await within(a).findByRole('heading', { level: 2, name: 'Values' });
+      expect(sectionsIn(a)).toEqual([
+        'Quiet hours start at ten.',
+        'Values',
+        'Bins go out on Tuesday.',
       ]);
-    });
-    const header = window.location.hash.split('/').at(-1) ?? '';
-    await sync(ana);
-    await passBoth(devices, groupId, header);
+      await user.click(within(a).getByRole('button', { name: 'Move this section, section 2' }));
+      await user.click(await within(a).findByRole('textbox', { name: 'Title' }));
+      await user.paste('Values first');
+      await user.click(within(a).getByRole('textbox', { name: 'Why' }));
+      await user.paste('Lead with what we share.');
+      await user.click(within(a).getByRole('radio', { name: 'Put it first' }));
+      await user.click(within(a).getByRole('button', { name: 'Propose this move' }));
+      await waitFor(async () => {
+        expect((await queued(ana, groupId)).map((body) => 'target' in body && body.target)).toEqual(
+          [
+            { kind: 'add', document: groupId, after: `${groupId}.0` },
+            { kind: 'move', atom: header, after: null },
+          ],
+        );
+      });
+      const move = window.location.hash.split('/').at(-1) ?? '';
+      await sync(ana);
+      await passBoth(devices, groupId, move);
 
-    go(`#/g/${groupId}/doc/${groupId}`);
-    await within(a).findByRole('heading', { level: 2, name: 'Values' });
-    expect(sectionsIn(a)).toEqual([
-      'Quiet hours start at ten.',
-      'Values',
-      'Bins go out on Tuesday.',
-    ]);
-    await user.click(within(a).getByRole('button', { name: 'Move this section, section 2' }));
-    await user.click(await within(a).findByRole('textbox', { name: 'Title' }));
-    await user.paste('Values first');
-    await user.click(within(a).getByRole('textbox', { name: 'Why' }));
-    await user.paste('Lead with what we share.');
-    await user.click(within(a).getByRole('radio', { name: 'Put it first' }));
-    await user.click(within(a).getByRole('button', { name: 'Propose this move' }));
-    await waitFor(async () => {
-      expect((await queued(ana, groupId)).map((body) => 'target' in body && body.target)).toEqual([
-        { kind: 'add', document: groupId, after: `${groupId}.0` },
-        { kind: 'move', atom: header, after: null },
-      ]);
-    });
-    const move = window.location.hash.split('/').at(-1) ?? '';
-    await sync(ana);
-    await passBoth(devices, groupId, move);
-
-    go(`#/g/${groupId}/doc/${groupId}`);
-    const b = mount(ben, 'b');
-    const order = ['Values', 'Quiet hours start at ten.', 'Bins go out on Tuesday.'];
-    await waitFor(() => {
-      expect(sectionsIn(a)).toEqual(order);
-      expect(sectionsIn(b)).toEqual(order);
-    });
-    expect(b.querySelector('.document > .atom')).toHaveClass('atom-heading');
-  });
+      go(`#/g/${groupId}/doc/${groupId}`);
+      const b = mount(ben, 'b');
+      const order = ['Values', 'Quiet hours start at ten.', 'Bins go out on Tuesday.'];
+      await waitFor(() => {
+        expect(sectionsIn(a)).toEqual(order);
+        expect(sectionsIn(b)).toEqual(order);
+      });
+      expect(b.querySelector('.document > .atom')).toHaveClass('atom-heading');
+    },
+  );
 });

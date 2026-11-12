@@ -16,22 +16,35 @@
  * options that pass, best first, its first is always the tally's winner, and the order ballots
  * arrive in never changes it. And of ballot expiry (#111): a device that has cleared a closed
  * Proposal's ballots, keeping its result, folds the same Document and outcomes as one that still
- * holds them, even for an event in the closing minute before the closing ballot (#289). And of
- * moves (#103): passed moves only ever reorder a Document, keeping its Atom ids and their bytes,
- * and every device that folds the same records builds the same order, which follows close time,
- * then the moves' relay order, whatever order their ballots arrive in. And of section classes
- * (#116): every Proposal on a section opens at the class its section's last passed class
- * Proposal gave it, a section's class is that Proposal's, and once a section is eternal no
- * Proposal on it ever opens again.
+ * holds them, even for an event in the closing minute before the closing ballot (#289), and reads
+ * the same section history. And of section history (#104): replaying a section's passed texts,
+ * oldest first, ends at its current text or its removal, and a Document's change log holds each
+ * final pass once. And of the front door (#288): no door ever stands whose secrets a record
+ * sealed under a key someone who has left held carried, whatever order Proposals, ballots, leaves
+ * and key changes come in. And of moves (#103): passed moves only ever reorder a Document,
+ * keeping its Atom ids and their bytes, and every device that folds the same records builds the
+ * same order, which follows close time, then the moves' relay order, whatever order their ballots
+ * arrive in. And of section classes (#116): every Proposal on a section opens at the class its
+ * section's last passed class Proposal gave it, a section's class is that Proposal's, and once a
+ * section is eternal no Proposal on it ever opens again.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { folded, foldLogs, Logs, seatOf } from '../test/coalitions';
+import {
+  folded,
+  foldLogs,
+  Logs,
+  NestedLogs,
+  type NestedSeat,
+  seatKey,
+  seatOf,
+} from '../test/coalitions';
+import { doorOf } from '../test/door';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
-import { resultsToReport } from './crossing';
+import { resultsToReport, seatIn } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
@@ -43,6 +56,8 @@ import {
   type LogRecord,
   type Proposal,
 } from './fold';
+import { changeLog, sectionHistory } from './history';
+import { type FrontDoor, isFrontDoor } from './optIns';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { rank, tally, tallyDetail, type TallyInput } from './tally';
@@ -70,12 +85,15 @@ const score = fc.constantFrom<Score>(0, 1, 2, 3, 4);
 class Log {
   readonly records: LogRecord[] = [];
   group = '';
+  /** The epoch whose mailboxes the next record is read from (#98). */
+  epoch = 0;
 
   /** Appends `input`, signed by `author`'s test key. */
   add(received: number, author: string, input: Unstamped): string {
     const draft = { ...input, group: this.group, ts: received * 60_000 };
     const { record, id } = signedAs(author, draft);
-    this.records.push({ seq: this.records.length + 1, received, bytes: record });
+    const epoch = this.epoch === 0 ? {} : { epoch: this.epoch };
+    this.records.push({ seq: this.records.length + 1, received, bytes: record, ...epoch });
     return id;
   }
 
@@ -231,6 +249,85 @@ const LATE = {
 
 /** The kinds of late event, for fast-check to pick from. */
 const LATE_KINDS = Object.keys(LATE) as (keyof typeof LATE)[];
+
+/** A step of the front door property (#288). */
+type DoorStep =
+  | { readonly kind: 'propose'; readonly door: number }
+  | { readonly kind: 'vote' }
+  | { readonly kind: 'leave'; readonly who: number }
+  | { readonly kind: 'rotate' }
+  | { readonly kind: 'wait' };
+
+/** What the front door property plays on: a log, its size, the relay minute, and the latest Proposal. */
+interface DoorPlay {
+  readonly log: Log;
+  readonly count: number;
+  at: number;
+  latest: string;
+}
+
+/**
+ * Plays one step a minute after the last: member 0 proposes one of three
+ * doors, everyone scores the latest Proposal 4, a member other than the
+ * founder leaves, member 0 changes the key into the next epoch (#98), from
+ * which later records are read when it lands, or an entrenched window passes.
+ */
+function playDoorStep(play: DoorPlay, step: DoorStep): void {
+  const { log, count } = play;
+  play.at += 1;
+  switch (step.kind) {
+    case 'propose': {
+      const value = doorOf(0x10 + step.door, 0x20 + step.door);
+      const body = { target: { kind: 'rules', optIn: 'frontDoor', value }, title: 'T', why: 'W' };
+      play.latest = log.add(play.at, member(0), { type: 'proposal', body } as Unstamped);
+      return;
+    }
+    case 'vote':
+      for (let voter = 0; voter < count; voter += 1) log.vote(play.at, voter, play.latest, 4);
+      return;
+    case 'leave':
+      log.leave(play.at, 1 + (step.who % (count - 1)));
+      return;
+    case 'rotate':
+      log.add(play.at, member(0), {
+        type: 'key-rotate',
+        body: { ...LATE_ROTATE, epoch: log.epoch + 1 },
+      });
+      log.epoch = fold(log.records, play.at).epoch;
+      return;
+    case 'wait':
+      play.at += defaultWindowMinutes(DEFAULT_RULES, 'entrenched');
+  }
+}
+
+/** The front door a record's rules Proposal carries, whether the fold applied it or not, or null. */
+function doorCarriedBy(record: LogRecord): FrontDoor | null {
+  const event = parseRecord(record.bytes)?.event;
+  if (event?.type !== 'proposal' || !('target' in event.body)) return null;
+  const { target } = event.body;
+  return target.kind === 'rules' && isFrontDoor(target.value) ? target.value : null;
+}
+
+/**
+ * Expects that no record carrying either secret of the door standing in
+ * `state` was sealed under a key anyone who left held: each was read from a
+ * later epoch than every leave the fold applied.
+ */
+function expectNoExposedDoor(log: Log, state: GroupState): void {
+  const standing = state.rules.optIns.frontDoor;
+  if (standing === false) return;
+  const ignored = new Set(state.ignored.map((record) => record.seq));
+  const leaves = log.records.filter(
+    (record) => !ignored.has(record.seq) && parseRecord(record.bytes)?.event.type === 'leave',
+  );
+  const carriers = log.records.filter((record) => {
+    const carried = doorCarriedBy(record);
+    return carried?.sign === standing.sign || carried?.box === standing.box;
+  });
+  for (const leave of leaves) {
+    for (const carrier of carriers) expect(carrier.epoch ?? 0).toBeGreaterThan(leave.epoch ?? 0);
+  }
+}
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
@@ -749,6 +846,27 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('never lets a front door stand whose secrets someone who has left could read (#288)', () => {
+    const step = fc.oneof(
+      fc.record({ kind: fc.constant('propose' as const), door: fc.nat({ max: 2 }) }),
+      fc.record({ kind: fc.constant('vote' as const) }),
+      fc.record({ kind: fc.constant('leave' as const), who: fc.nat({ max: 2 }) }),
+      fc.record({ kind: fc.constant('rotate' as const) }),
+      fc.record({ kind: fc.constant('wait' as const) }),
+    );
+    const scenario = fc.record({
+      count: fc.integer({ min: 3, max: 4 }),
+      steps: fc.array(step, { maxLength: 10 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, steps }) => {
+        const play: DoorPlay = { log: Log.founded(count), count, at: R + 20, latest: '' };
+        for (const next of steps) playDoorStep(play, next);
+        expectNoExposedDoor(play.log, fold(play.log.records, play.at + 1));
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
@@ -958,6 +1076,87 @@ describe('properties of moves (#103)', { timeout: 60_000 }, () => {
   });
 });
 
+/** One Proposal of a section-history scenario (#104): its kind, what it picks, its text, three ballots and a wait. */
+const historyStep = fc.record({
+  kind: fc.constantFrom<InDocument['kind']>('edit', 'remove', 'add', 'new-document'),
+  pick: fc.nat(),
+  first: fc.boolean(),
+  text: fc.constantFrom('X', 'Y\n', '# Z\n\nW', 'V\n\nU\n\nT'),
+  scores: fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }),
+  wait: fc.oneof(fc.integer({ min: 1, max: 60 }), fc.constant(WINDOW + 10)),
+});
+
+/**
+ * A log of three members and two founded Documents, then one Proposal per
+ * step in a Document's section, or a new Document, each scored by up to three
+ * ballots, folded once every Proposal has closed.
+ */
+const historyLog = fc.array(historyStep, { maxLength: 12 }).map((steps) => {
+  const log = Log.founded(3, FIRST_SECTIONS, [{ title: 'Second', atoms: SECOND_SECTIONS }]);
+  let received = R + 10;
+  for (const s of steps) {
+    const now = fold(log.records, received);
+    const target = now.documents[s.pick % now.documents.length]?.id ?? log.group;
+    const sections = now.atoms.filter((atom) => atom.documentId === target);
+    const section = sections[s.pick % Math.max(1, sections.length)]?.id ?? `${target}.0`;
+    const proposal = proposeIn(log, { ...s, target, section }, received);
+    s.scores.forEach((value, voter) => {
+      if (value !== null) log.vote(received + 1 + voter, voter, proposal, value);
+    });
+    received += 4 + s.wait;
+  }
+  return fold(log.records, received + WINDOW + 10);
+});
+
+/** Every section id a history scenario could have made: founded, added, or a new Document's. */
+function everySection(state: GroupState): string[] {
+  const founded = state.founding?.atoms.map((atom) => atom.id) ?? [];
+  const made = state.proposals.flatMap((p) => {
+    if (p.target.kind === 'add') return [p.id];
+    if (p.target.kind !== 'new-document') return [];
+    return [0, 1, 2, 3].map((i) => `${p.id}.${String(i)}`);
+  });
+  return [...founded, ...made];
+}
+
+describe('properties of section history (#104)', { timeout: 60_000 }, () => {
+  it('replays a section’s passed texts, oldest first, to its current text or its removal', () => {
+    fc.assert(
+      fc.property(historyLog, (state) => {
+        for (const id of everySection(state)) {
+          const oldestFirst = [...sectionHistory(state, id).passed].reverse();
+          const now = state.atoms.find((atom) => atom.id === id);
+          if (oldestFirst.length === 0) {
+            expect(now, id).toBeUndefined();
+            continue;
+          }
+          expect(['founded', 'added', 'created']).toContain(oldestFirst[0]?.change.kind);
+          expect(oldestFirst.slice(1).map((entry) => entry.change.kind)).not.toContain('founded');
+          expect(oldestFirst.at(-1)?.text, id).toBe(now?.text ?? '');
+          const dates = oldestFirst.map((entry) => entry.decidedAt);
+          expect(dates).toEqual([...dates].sort((a, b) => a - b));
+        }
+      }),
+    );
+  });
+
+  it('logs each final pass once, in the Document it changed, opening a history that holds it', () => {
+    fc.assert(
+      fc.property(historyLog, (state) => {
+        const rows = state.documents.flatMap((document) => changeLog(state, document.id));
+        const logged = rows.flatMap((row) => (row.proposalId === null ? [] : [row.proposalId]));
+        const passed = state.proposals.filter((p) => p.final && p.outcome.kind === 'pass');
+        expect([...logged].sort()).toEqual(passed.map((p) => p.id).sort());
+        for (const row of rows) {
+          if (row.section === null) continue;
+          const history = sectionHistory(state, row.section).passed;
+          expect(history.map((entry) => entry.proposalId)).toContain(row.proposalId);
+        }
+      }),
+    );
+  });
+});
+
 /** What {@link proposeIn} proposes: its kind, its Document, a section of it, and its text. */
 interface InDocument {
   readonly kind: 'edit' | 'remove' | 'add' | 'new-document';
@@ -967,12 +1166,16 @@ interface InDocument {
   readonly text: string;
 }
 
-/** One Proposal at R + 20 in the Document `target` (#92), or a new Document beside it. */
-function proposeIn(log: Log, { kind, target, section, first, text }: InDocument): string {
-  if (kind === 'edit') return log.propose(R + 20, section, text);
-  if (kind === 'remove') return log.propose(R + 20, section, '');
-  if (kind === 'add') return log.addSection(R + 20, first ? null : section, text, target);
-  return log.newDocument(R + 20, 'New', text);
+/** One Proposal at `at` (R + 20 by default) in the Document `target` (#92), or a new Document beside it. */
+function proposeIn(
+  log: Log,
+  { kind, target, section, first, text }: InDocument,
+  at = R + 20,
+): string {
+  if (kind === 'edit') return log.propose(at, section, text);
+  if (kind === 'remove') return log.propose(at, section, '');
+  if (kind === 'add') return log.addSection(at, first ? null : section, text, target);
+  return log.newDocument(at, 'New', text);
 }
 
 /**
@@ -1486,7 +1689,10 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         const now = Math.max(resultAt, ...full.map((record) => record.received)) + scenario.later;
         const held = fold(full, now);
         expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
-        expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));
+        const after = fold(cleared, now, [], [pId]);
+        expect(decided(after)).toEqual(decided(held));
+        // A section's history shows totals and never a ballot, so it reads the same (#104).
+        expect(sectionHistory(after, `${group}.0`)).toEqual(sectionHistory(held, `${group}.0`));
       }),
     );
   });
@@ -1810,6 +2016,193 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
         }
       }),
       { numRuns: 25 },
+    );
+  });
+});
+
+/** A result a seat may report, or none. */
+const maybeResult = fc.option(fc.constantFrom<'pass' | 'fail'>('pass', 'fail'), { nil: null });
+
+/** The outcome kind `results` reach over `seats` seats, as `coalitionOutcome` decides it. */
+function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: boolean) {
+  const passes = results.filter((r) => r === 'pass').length;
+  const fails = results.filter((r) => r === 'fail').length;
+  return coalitionOutcome({ seats: results.length, passes, fails, expired }).kind;
+}
+
+const STATEMENT_D = { name: 'Metro Renters', title: 'Shared ground', atoms: ['Rent stays fair.'] };
+
+/** The groups of the nested canary property: each log, its three voters, first the founder. */
+const CANARY_GROUPS = [
+  ['A', ['ana', 'ben', 'cal']],
+  ['B', ['dee', 'eve', 'fay']],
+] as const;
+
+/**
+ * Groups A and B, every name, title, Atom and note carrying `mark`, form C;
+ * C and E form D; a motion opens in D, and A and B score it with
+ * `scores[0]` and `scores[1]` (#122).
+ */
+function canaryLines(mark: string, scores: readonly (readonly Score[])[]) {
+  const logs = new NestedLogs();
+  const statementC = { name: `C ${mark}`, title: `T ${mark}`, atoms: [mark] };
+  for (const [log, voters] of CANARY_GROUPS) {
+    const documents = [{ title: mark, atoms: [mark] }];
+    const body = { name: `Group ${mark}`, founder: `F ${mark}`, documents };
+    logs.add(log, R, voters[0], { type: 'genesis', body });
+    for (const voter of voters.slice(1)) {
+      const join = { name: `${voter} ${mark}`, level: CREATING };
+      logs.add(log, R + 1, voter, { type: 'join', body: join });
+    }
+    const held = logs.reconcileInto(log, R + 2, voters[0], 'C', log, statementC);
+    voters.forEach((voter) => logs.vote(log, R + 3, voter, held, 4));
+  }
+  logs.formedIn('C', R + 5, [['A'], ['B']], ['ca', 'cb'], statementC);
+  const into = logs.sealedInto('C', R + 9, 'ca', 'D', STATEMENT_D);
+  logs.resultIn('C', R + 10, 'ca', into, 'A', 'pass');
+  logs.resultIn('C', R + 10, 'cb', into, 'B', 'pass');
+  logs.formedIn('D', R + 11, [['C', 1], ['E']], ['q', 'e'], STATEMENT_D);
+  const motion = logs.motionIn('D', R + 20, 'e', 'Rent stays fair for everyone.');
+  CANARY_GROUPS.forEach(([log, voters], g) => {
+    voters.forEach((voter, i) => {
+      logs.vote(log, R + 21, voter, motion, scores[g]?.[i] ?? 4, `Note ${mark}`);
+    });
+  });
+  return { logs, motion };
+}
+
+/** What `lower` owes `upper` for the seat it holds there, folded in `states`, or nothing. */
+function owedUp(states: Readonly<Record<string, GroupState>>, lower: string, upper: string) {
+  const [below, above] = [states[lower], states[upper]];
+  const seat = below === undefined || above === undefined ? null : seatIn(below, above);
+  return seat === null || below === undefined || above === undefined
+    ? []
+    : resultsToReport(below, above, seat);
+}
+
+describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
+  it('decides a motion in D the same whatever order the lower results arrive in, C’s and its groups’ alike', () => {
+    const scenario = fc.record({
+      lower: fc.array(maybeResult, { minLength: 6, maxLength: 6 }),
+      lowerSeats: fc.integer({ min: 2, max: 6 }),
+      others: fc.array(maybeResult, { minLength: 4, maxLength: 4 }),
+      otherSeats: fc.integer({ min: 1, max: 4 }),
+      orderLower: fc.array(fc.nat(), { minLength: 6, maxLength: 6 }),
+      orderUpper: fc.array(fc.nat(), { minLength: 5, maxLength: 5 }),
+      expired: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(scenario, (s) => {
+        const lower = s.lower.slice(0, s.lowerSeats);
+        const others = s.others.slice(0, s.otherSeats);
+        const byOrder = (order: readonly number[]) => (a: number, b: number) =>
+          (order[a] ?? 0) - (order[b] ?? 0) || a - b;
+        const lowerIn = (sorted: boolean) => {
+          const seats = lower.map((_, i) => i);
+          return sorted ? seats : [...seats].sort(byOrder(s.orderLower));
+        };
+        // Index 0 stands for C's own result, the rest for D's other seats.
+        const upperIn = (sorted: boolean) => {
+          const seats = [0, ...others.map((_, i) => i + 1)];
+          return sorted ? seats : [...seats].sort(byOrder(s.orderUpper));
+        };
+        const decide = (sorted: boolean) => {
+          const logs = new NestedLogs();
+          const cSeats = lower.map((_, i) => [`L${String(i)}`] as const);
+          logs.formedIn(
+            'C',
+            R,
+            cSeats,
+            lower.map((_, i) => `l${String(i)}`),
+          );
+          const into = logs.sealedInto('C', R + 5, 'l0', 'D', STATEMENT_D);
+          cSeats.forEach(([seat], i) =>
+            logs.resultIn('C', R + 6, `l${String(i)}`, into, seat, 'pass'),
+          );
+          const dSeats: NestedSeat[] = [
+            ['C', 1],
+            ...others.map((_, i) => [`E${String(i)}`] as const),
+          ];
+          const dWho = ['q', ...others.map((_, i) => `e${String(i)}`)];
+          logs.formedIn('D', R + 7, dSeats, dWho, STATEMENT_D);
+          const motion = logs.motionIn('D', R + 20, 'e0', 'Rent stays fair for everyone.');
+          lowerIn(sorted).forEach((i, n) => {
+            const result = lower[i];
+            if (result !== undefined && result !== null) {
+              logs.resultIn('C', R + 21 + n, `l${String(i)}`, motion, `L${String(i)}`, result);
+            }
+          });
+          const at = R + 40;
+          const upper = upperIn(sorted);
+          upper.forEach((i, n) => {
+            const when = at + n;
+            if (i === 0) {
+              const states = logs.foldAll(when);
+              const [c, d] = [states.C, states.D];
+              if (c === undefined || d === undefined) throw new Error('Expected C and D.');
+              const seat = seatIn(c, d);
+              if (seat === null) throw new Error('Expected C’s seat in D.');
+              for (const body of resultsToReport(c, d, seat)) {
+                logs.add('D', when, 'q', { type: 'group-result', body });
+              }
+              return;
+            }
+            const result = others[i - 1];
+            if (result !== undefined && result !== null) {
+              logs.resultIn('D', when, `e${String(i - 1)}`, motion, `E${String(i - 1)}`, result);
+            }
+          });
+          const deadline = R + 20 + WINDOW;
+          const now = s.expired ? deadline + RESULT_GRACE_MINUTES : deadline;
+          const d = logs.foldAll(now).D;
+          const p = d?.proposals.find((proposal) => proposal.id === motion);
+          return { outcome: p?.outcome.kind, final: p?.final, atoms: d?.atoms };
+        };
+        const first = decide(true);
+        expect(decide(false)).toEqual(first);
+        const fromC = outcomeOver(lower, false);
+        const crossed = fromC === 'open' ? null : fromC;
+        const kind = outcomeOver([crossed, ...others], s.expired);
+        expect(first.outcome).toBe(kind === 'open' ? 'lapse' : kind);
+        expect(first.final).toBe(kind === 'fail' || s.expired);
+      }),
+      { numRuns: 30 },
+    );
+  });
+
+  it('carries only a pass or fail for one motion and seat up each line, never a ballot, note, name or count', () => {
+    const scenario = fc.record({
+      canary: fc.stringMatching(/^[a-z0-9]{8}$/),
+      scoresA: fc.array(score, { minLength: 3, maxLength: 3 }),
+      scoresB: fc.array(score, { minLength: 3, maxLength: 3 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ canary, scoresA, scoresB }) => {
+        const mark = `canary${canary}`;
+        const { logs, motion } = canaryLines(mark, [scoresA, scoresB]);
+        const states = logs.foldAll(R + 20 + WINDOW);
+        const owed = (['A', 'B'] as const).flatMap((log) => owedUp(states, log, 'C'));
+        expect(owed.filter((body) => body.motion === motion)).toHaveLength(2);
+        owed.forEach((body, i) => {
+          const who = body.seat === seatKey('A') ? 'ca' : 'cb';
+          logs.add('C', R + 30 + i, who, { type: 'group-result', body });
+        });
+        const after = logs.foldAll(R + 40 + WINDOW);
+        const upward = owedUp(after, 'C', 'D');
+        expect(upward.map((body) => body.motion)).toContain(motion);
+        const voters = CANARY_GROUPS.flatMap(([, names]) => names);
+        const forbidden = [mark, ...voters.map(authorOf), 'scores', 'note'];
+        for (const body of [...owed, ...upward]) {
+          expect(Object.keys(body).sort()).toEqual(['motion', 'result', 'seat']);
+          expect(['pass', 'fail']).toContain(body.result);
+          const text = JSON.stringify(body);
+          for (const secret of forbidden) expect(text).not.toContain(secret);
+        }
+        // D's log never names a lower group's seat: only C's and E's results reach it.
+        const seatsInD = new Set(after.D?.coalition?.results.map((r) => r.seat));
+        expect([...seatsInD].sort()).toEqual([seatKey('C'), seatKey('E')].sort());
+      }),
+      { numRuns: 15 },
     );
   });
 });

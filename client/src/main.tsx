@@ -12,6 +12,7 @@ import './styles/door.css';
 import './styles/passkey.css';
 import './styles/recovery.css';
 import './styles/coalitions.css';
+import './styles/history.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -70,7 +71,8 @@ if (root === null) {
  * applications this device sent at one (#121). Each launch also posts
  * again any shared personal Document whose
  * link is due a fresh copy or has an edit waiting (#105), but none whose
- * share a restore paused (#328). That runs beside the
+ * share a restore paused (#328), or that this device last posted to 30 or
+ * more days ago (#339). That runs beside the
  * sync loop, not in its pass: a share has its own mailbox and keys, so no
  * group's key change or freeze touches it. A device whose keys are locked
  * with a passkey (#95) sweeps, syncs, and so refreshes the relay backup, and

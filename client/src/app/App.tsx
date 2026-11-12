@@ -15,6 +15,7 @@ import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
 import { Applications } from '../screens/Applications';
+import { GroupChangeLog } from '../screens/ChangeLog';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
@@ -24,7 +25,12 @@ import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
 import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
-import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import {
+  GroupArchived,
+  GroupMissing,
+  GroupSettingUp,
+  GroupUnconfirmed,
+} from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
 import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
@@ -75,6 +81,7 @@ import { coalitionRows, withMotionWords } from './coalitionLines';
 import {
   admitCard,
   bringCard,
+  broughtTo,
   type CardValues,
   type FoundCard,
   lookupCard,
@@ -403,14 +410,18 @@ function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
   );
 }
 
-/** Personal (#93): this device's personal Documents, and the id a new one opens at. */
+/**
+ * Personal (#93): this device's personal Documents, and the id a new one
+ * opens at, at the device time that says which shares wait for the person (#339).
+ */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
   const relayBackup = useKeepsRelayBackup(services.store);
+  const now = useNow(services.now);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
   return documents === null ? null : (
-    <Personal documents={documents} newId={newId} relayBackup={relayBackup} />
+    <Personal documents={documents} newId={newId} now={now} relayBackup={relayBackup} />
   );
 }
 
@@ -576,10 +587,30 @@ interface GroupGateProps {
   readonly groupId: string;
   /**
    * True for a screen that writes something new: a dissolved group (#108),
-   * or one a vote removed this member from (#115), shows it only reads.
+   * a group a vote removed this member from (#115), and a copy back from a
+   * backup that hasn't heard from the group (#231), show they only read.
    */
   readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
+}
+
+/**
+ * What a screen that writes shows in its place for a group that only reads:
+ * a dissolved group's page (#108), a removed member's (#115), or a copy back
+ * from a backup that hasn't heard from the group (#231); null for one that
+ * takes new things. `me` is this member's key.
+ */
+function readOnlyPage(
+  groupId: string,
+  state: GroupState,
+  me: string,
+  unconfirmed: boolean,
+): ReactNode {
+  const removed = removedFrom(state, me) !== undefined;
+  if (state.dissolved !== null || removed) {
+    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
+  }
+  return unconfirmed ? <GroupUnconfirmed groupId={groupId} name={state.name} /> : null;
 }
 
 /** Renders `children` once the group is ready, or says why it isn't. */
@@ -589,10 +620,8 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  const removed = removedFrom(state, me.author) !== undefined;
-  if (writes && (state.dissolved !== null || removed)) {
-    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
-  }
+  const page = writes ? readOnlyPage(groupId, state, me.author, group.unconfirmed) : null;
+  if (page !== null) return page;
   // A coalition motion takes its title and why from its coalition (#114).
   return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
@@ -654,6 +683,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           pending={group.pending}
           leaving={group.leaving}
+          unconfirmed={group.unconfirmed}
           backupCard={
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
@@ -699,9 +729,9 @@ function coalitionNames(coalitions: GroupView['coalitions']): Record<string, str
  * the group takes new things and this device reads its current key.
  */
 function Coalitions({ services, group }: { services: AppServices; group: ReadyGroup }) {
-  const { state, me, coalitions, leaving, keyChange } = group;
+  const { state, me, coalitions, leaving, unconfirmed, keyChange } = group;
   const groupId = state.group ?? '';
-  const open = !leaving && state.dissolved === null && keyChange === null;
+  const open = !leaving && !unconfirmed && state.dissolved === null && keyChange === null;
   return (
     <CoalitionSection
       groupId={groupId}
@@ -746,14 +776,18 @@ interface BringScreenProps {
   readonly releaseSeed: () => void;
 }
 
-/** Bring a card (#114): the card, then the group it goes to, whose new Proposal opens after. */
+/**
+ * Bring a card (#114): the card, then the group it goes to, whose new
+ * Proposal opens after, or the coalition, whose home opens (#122).
+ */
 function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenProps) {
   const lookup = useCallback((seed: Uint8Array) => lookupCard(services, seed), [services]);
   const onBring = useCallback(
     async (found: FoundCard, groupId: string, name: string) => {
       const proposalId = await bringCard(services, found, groupId, name);
+      const next = await broughtTo(services, found, groupId, proposalId);
       releaseSeed();
-      replaceRoute({ name: 'proposal', groupId, proposalId });
+      replaceRoute(next);
       return true;
     },
     [services, releaseSeed],
@@ -804,7 +838,7 @@ function DocumentScreen({
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, leaving }) => (
+      {({ state, me, leaving, cleared, unconfirmed }) => (
         <DocumentView
           state={state}
           me={me.author}
@@ -816,6 +850,23 @@ function DocumentScreen({
           onProtect={openProtect}
           copyText={services.copyText}
           leaving={leaving}
+          unconfirmed={unconfirmed}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** One of the group's Documents' change log (#104), with a cleared archive's kept tallies (#108). */
+function ChangeLogScreen({ groupId, documentId }: { groupId: string; documentId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, cleared }) => (
+        <GroupChangeLog
+          state={state}
+          documentId={documentId}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
         />
       )}
     </GroupGate>
@@ -958,6 +1009,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
+            unconfirmed={group.unconfirmed}
             {...(group.cleared === null ? {} : { cleared: group.cleared })}
             coalitions={group.coalitions}
             onVote={onVote}
@@ -1141,13 +1193,14 @@ function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
 function DispatchesScreen({ groupId }: { readonly groupId: string }) {
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, pending, reachable, leaving }) => (
+      {({ state, me, pending, reachable, leaving, unconfirmed }) => (
         <Dispatches
           state={state}
           me={me.author}
           pending={pending}
           reachable={reachable}
           leaving={leaving}
+          unconfirmed={unconfirmed}
         />
       )}
     </GroupGate>
@@ -1187,6 +1240,10 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
       );
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'documentLog':
+      return (
+        <ChangeLogScreen key={route.documentId} groupId={groupId} documentId={route.documentId} />
+      );
     case 'rules':
       return <RulesScreen services={services} groupId={groupId} />;
     case 'dispatches':

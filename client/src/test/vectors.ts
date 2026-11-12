@@ -54,10 +54,21 @@
  *   then `foldRoom` the room's, and matches `expect`, a list of messages, against what it gives.
  * - room-keys.json (#125), `{kind: "room-keys", ...}`, pins a room's derivations and one sealed
  *   message, computed outside @noble; crypto/room.test.ts runs it.
+ * - A nested file (#122), `{kind: "nested", vectors}`, holds vectors with several coalitions and
+ *   groups: `{name, logs: {D: [...], C: [...], A: [...]}, relayNow, expect, report?,
+ *   unchangedWithout?}`. vectors.test.ts folds every log together as a device that holds them all
+ *   does (`foldTogether`): each coalition with the motions its seats decide in the coalitions above
+ *   it, then each group. `report` maps a lower log to the logs above it: `{C: {D: [...]}}` must
+ *   equal `resultsToReport` for the seat C holds in D, and `null` says C holds no seat there.
+ *   `{"$sealed": [coalition, inner, secret, innerAbove, seat]}` is a coalition's sealed seat above
+ *   (`crypto/innerSeal.ts`): the secrets `secret` and `innerAbove` and seat `seat`'s secret,
+ *   sealed in the coalition `coalition` under `inner`, each a reference as above. A seal's nonce is
+ *   random, so a record that holds one is new bytes, and a new id, on every run.
  * - invite.json (#73) is a fold file: joins carrying invite tokens, each signed outside @noble.
  * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
 import { kxPublicKeyOf } from '../crypto/box';
+import { sealSeatSecrets } from '../crypto/innerSeal';
 import { sha256 } from '../crypto/hash';
 import { seatKxOf } from '../crypto/room';
 import { signSeatProof } from '../crypto/seat';
@@ -122,6 +133,11 @@ export interface LogsVector {
   readonly unchangedWithout?: Readonly<Record<string, readonly number[]>>;
 }
 
+/** One vector with coalitions nested in coalitions (#122): what each lower log owes each above it. */
+export interface NestedVector extends Omit<LogsVector, 'report' | 'mismatches'> {
+  readonly report?: Readonly<Record<string, Readonly<Record<string, readonly unknown[] | null>>>>;
+}
+
 /** One room vector (#125): a coalition's log and its room's, and the messages they must show. */
 export interface RoomVector {
   readonly name: string;
@@ -135,6 +151,7 @@ export type VectorFile =
   | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
   | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
   | { readonly kind: 'coalition'; readonly vectors: readonly LogsVector[] }
+  | { readonly kind: 'nested'; readonly vectors: readonly NestedVector[] }
   | { readonly kind: 'room'; readonly vectors: readonly RoomVector[] }
   | { readonly kind: 'room-keys'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
@@ -249,10 +266,24 @@ function seatProof(value: object, ids: ReadonlyMap<number, string>): string | nu
   return base64url(proof);
 }
 
+/** The sealed field `{"$sealed": [coalition, inner, secret, innerAbove, seat]}` stands for, or null (#122). */
+function sealedField(value: object, ids: ReadonlyMap<number, string>): string | null {
+  const args: unknown = Object.entries(value).length === 1 ? Reflect.get(value, '$sealed') : null;
+  if (!Array.isArray(args) || args.length !== 5) return null;
+  const [coalition = '', inner = '', secret = '', innerAbove = '', seat = ''] = args.map(
+    (arg: unknown) => String(resolve(arg, ids)),
+  );
+  return sealSeatSecrets(coalition, fromBase64url(inner), {
+    secret: fromBase64url(secret),
+    inner: fromBase64url(innerAbove),
+    seat: seatSecretNamed(seat),
+  });
+}
+
 /**
  * Resolves every `@n` and `%name` reference inside a JSON value, in keys as
- * well as values, and writes each `{"$base64url": [bytes]}` and
- * `{"$seatProof": [...]}` as its text.
+ * well as values, and writes each `{"$base64url": [bytes]}`,
+ * `{"$seatProof": [...]}` and `{"$sealed": [...]}` as its text.
  */
 export function resolve(value: unknown, ids: ReadonlyMap<number, string>): unknown {
   if (typeof value === 'string') return resolveRef(value, ids);
@@ -262,6 +293,8 @@ export function resolve(value: unknown, ids: ReadonlyMap<number, string>): unkno
     if (bytes !== null) return base64url(Uint8Array.from(bytes));
     const proof = seatProof(value, ids);
     if (proof !== null) return proof;
+    const sealed = sealedField(value, ids);
+    if (sealed !== null) return sealed;
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [resolveRef(key, ids), resolve(item, ids)]),
     );
@@ -408,6 +441,11 @@ export const FOLD_VECTORS: readonly FoldVector[] = Object.values(VECTOR_FILES).f
 /** Every vector with several logs, file by file (#100). */
 export const COALITION_VECTORS: readonly LogsVector[] = Object.values(VECTOR_FILES).flatMap(
   (file) => (file.kind === 'coalition' ? file.vectors : []),
+);
+
+/** Every vector with nested coalitions, file by file (#122). */
+export const NESTED_VECTORS: readonly NestedVector[] = Object.values(VECTOR_FILES).flatMap(
+  (file) => (file.kind === 'nested' ? file.vectors : []),
 );
 
 /** Every room vector, file by file (#125). */

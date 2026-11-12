@@ -22,6 +22,7 @@ import {
   isNewDocumentProposal,
   isReconcileProposal,
   isRemovalProposal,
+  isSealedReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -1647,6 +1648,32 @@ describe('encryption keys and key changes (#98)', () => {
   });
 });
 
+describe('a key change that doesn’t open, and one taken up (#224)', () => {
+  it.each(['unwrap-failed', 'key-taken'] as const)(
+    'reads a %s as the key change it names, dropping unknown keys',
+    (type) => {
+      const parsed = parseEvent(json(envelope(type, { rotation: 'r1', why: 'no' })));
+      expect(parsed?.event).toEqual({
+        v: 1,
+        type,
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body: { rotation: 'r1' },
+      });
+    },
+  );
+
+  it.each([
+    ['an unwrap-failed without its key change', 'unwrap-failed', {}],
+    ['an unwrap-failed naming a number', 'unwrap-failed', { rotation: 7 }],
+    ['a key-taken without its key change', 'key-taken', {}],
+    ['a key-taken naming a list', 'key-taken', { rotation: ['r1'] }],
+  ])('returns null for %s', (_label, type, body) => {
+    expect(parseEvent(json(envelope(type, body)))).toBeNull();
+  });
+});
+
 describe('coalitions (#100)', () => {
   /** 32-byte values in base64url, as seat keys, secrets and inner are spelled. */
   const KEY = base64url(new Uint8Array(32).fill(9));
@@ -1824,6 +1851,86 @@ describe('coalitions (#100)', () => {
     ['a numeric kx (#313)', { ...ADMIT, kx: 7 }],
   ])('refuses an admit Proposal with %s (#114)', (_label, target) => {
     const body = { target, title: 'Admit Oak St', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  it('reads a seat’s stated level, a whole number from 0, on a genesis and an admit (#122)', () => {
+    for (const level of [0, 1, 2, 3]) {
+      const seats = [{ name: 'Riverside', key: KEY, level }, SEATS[1]];
+      const parsed = parseEvent(json(envelope('genesis', { ...COALITION, seats })));
+      expect(parsed?.event.body).toEqual({ ...COALITION, seats });
+      const admit = { ...ADMIT, seat: { ...ADMIT.seat, level } };
+      const body = { target: admit, title: 'Admit', why: 'W' };
+      expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual(body);
+    }
+  });
+
+  it.each([
+    ['a negative level', -1],
+    ['a fractional level', 1.5],
+    ['a level as text', '1'],
+    ['a null level', null],
+  ])('refuses a genesis and an admit whose seat states %s (#122)', (_label, level) => {
+    const seats = [{ name: 'Riverside', key: KEY, level }, SEATS[1]];
+    expect(parseEvent(json(envelope('genesis', { ...COALITION, seats })))).toBeNull();
+    const admit = { ...ADMIT, seat: { ...ADMIT.seat, level } };
+    const body = { target: admit, title: 'Admit', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  it('keeps an admit’s member groups’ names, and refuses any that aren’t a list of names (#122)', () => {
+    const groups = ['Hill Co-op', 'Elm Row'];
+    const body = { target: { ...ADMIT, groups }, title: 'Admit', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual(body);
+    for (const bad of [[1], 'Hill Co-op', { a: 'b' }]) {
+      const refused = { target: { ...ADMIT, groups: bad }, title: 'Admit', why: 'W' };
+      expect(parseEvent(json(envelope('proposal', refused)))).toBeNull();
+    }
+  });
+
+  const SEALED = {
+    kind: 'reconcile',
+    sealed: base64url(new Uint8Array(1024).fill(7)),
+    key: KEY,
+    name: 'D',
+    title: 'T',
+    atoms: ['One.'],
+  };
+
+  it('reads a coalition’s sealed reconcile target (#122): its field, key, name and statement', () => {
+    const body = { target: { ...SEALED, extra: 1 }, title: 'Join D', why: 'W', window: 5 };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({ target: SEALED, title: 'Join D', why: 'W', window: 5 });
+    const proposal = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+    expect(proposal !== null && isSealedReconcileProposal(proposal)).toBe(true);
+    expect(proposal !== null && isReconcileProposal(proposal)).toBe(false);
+    const plain = parseEvent(
+      json(envelope('proposal', { target: RECONCILE, title: 'T', why: 'W' })),
+    );
+    const other = plain?.event.type === 'proposal' ? plain.event.body : null;
+    expect(other !== null && isSealedReconcileProposal(other)).toBe(false);
+    expect(other !== null && isReconcileProposal(other)).toBe(true);
+  });
+
+  it.each([
+    ['a secret beside it', { ...SEALED, secret: SECRET }],
+    ['an inner beside it', { ...SEALED, inner: INNER }],
+    ['a seat secret beside it', { ...SEALED, seat: SEAT }],
+    ['a field one byte short', { ...SEALED, sealed: base64url(new Uint8Array(1023)) }],
+    ['a field one byte long', { ...SEALED, sealed: base64url(new Uint8Array(1025)) }],
+    ['a field of 4 KiB', { ...SEALED, sealed: base64url(new Uint8Array(4096)) }],
+    ['a field that isn’t canonical', { ...SEALED, sealed: `${SEALED.sealed.slice(0, -1)}B` }],
+    [
+      'a field with a character base64url lacks',
+      { ...SEALED, sealed: `+${SEALED.sealed.slice(1)}` },
+    ],
+    ['a numeric field', { ...SEALED, sealed: 7 }],
+    ['no key', { ...SEALED, key: undefined }],
+    ['a short key', { ...SEALED, key: KEY.slice(1) }],
+    ['no name', { ...SEALED, name: undefined }],
+    ['atoms that aren’t strings', { ...SEALED, atoms: [1] }],
+  ])('refuses a sealed reconcile target with %s (#122)', (_label, target) => {
+    const body = { target, title: 'Join D', why: 'W' };
     expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
   });
 

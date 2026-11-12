@@ -8,7 +8,7 @@ import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { Protection } from '../app/passkey';
 import { PasskeySetup } from '../app/PasskeySetup';
-import { RestoreBackup } from '../app/RestoreBackup';
+import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { SaveBackup } from '../app/SaveBackup';
 import type { SaveOutcome } from '../app/share';
@@ -71,8 +71,11 @@ export interface SettingsProps {
   readonly onMake: (passphrase: string) => Promise<BackupToSave>;
   /** Saves the file through the share sheet or a download. */
   readonly onSave: (backup: BackupToSave) => Promise<SaveOutcome>;
-  /** Restores a backup file's bytes under its passphrase; resolves to how many groups came back. */
-  readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<number>;
+  /**
+   * Restores a backup file's bytes under its passphrase; resolves to how many
+   * groups came back, and how many group entries were left out (#336).
+   */
+  readonly onRestore: RestoreBackupProps['onRestore'];
   /** Erases all of Reconcile's data on this device and reloads; rejects when it couldn't. */
   readonly onErase: () => Promise<void>;
   /** The passkey section (#95). */

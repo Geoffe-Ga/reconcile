@@ -68,15 +68,21 @@ export interface RulesView {
   readonly tail: string | null;
 }
 
-/** The words for a rules change: its heading, what passing does, its pass, and the webhook's last 4. */
-export function rulesView(change: RulesChange): RulesView {
+/**
+ * The words for a rules change: its heading, what passing does, its pass, and
+ * the webhook's last 4. A front door Proposal `exposed` when a member left
+ * while it was open (#288) says that passing it opens no door, and its pass
+ * that the door stays closed.
+ */
+export function rulesView(change: RulesChange, exposed = false): RulesView {
   const { motions, lines, passed } = messages.optIns;
   const webhook = change.optIn === 'chatBot' ? (change.value?.webhook ?? null) : null;
+  const left = exposed ? [messages.optIns.exposed.line] : [];
   return {
     optIn: change.optIn,
     title: wordsFor(motions, change),
-    line: [wordsFor(lines, change), ...doorChanges(change)].join(' '),
-    passed: wordsFor(passed, change),
+    line: [wordsFor(lines, change), ...doorChanges(change), ...left].join(' '),
+    passed: exposed ? messages.optIns.exposed.passed : wordsFor(passed, change),
     tail: webhook === null ? null : webhookTail(webhook),
   };
 }

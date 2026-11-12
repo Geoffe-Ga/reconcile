@@ -86,19 +86,53 @@ export function ProgressLine({
   return <Line className="coalition-progress-line">{lineOf(progress)}</Line>;
 }
 
+/** One coalition's line on a nested motion (#122): "In Eastside Housing", then its progress. */
+function StepLine({ name, progress }: { readonly name: string; readonly progress: Progress }) {
+  return (
+    <div className="coalition-progress-step">
+      <p className="caption">
+        {coalitions.progressIn} <bdi>{name}</bdi>
+      </p>
+      <ProgressLine progress={progress} />
+    </div>
+  );
+}
+
+/** Props for {@link CoalitionProgress}. */
+export interface CoalitionProgressProps {
+  readonly progress: Progress;
+  /** For a motion from further up (#122): each coalition it came through, nearest first. */
+  readonly steps?: readonly { readonly name: string; readonly progress: Progress }[];
+  /** The name of the coalition whose motion it is, over its own line when there are steps. */
+  readonly top?: string;
+}
+
 /**
  * `<CoalitionProgress>`: a coalition motion's progress on its Proposal
- * view, under "Across the coalition", with what crosses group lines.
+ * view, under "Across the coalition", with what crosses group lines. A motion
+ * from further up (#122) shows each coalition on its way, nearest first, then
+ * the one whose motion it is, each line reading only its own seats' results.
  */
-export function CoalitionProgress({ progress }: { readonly progress: Progress }) {
+export function CoalitionProgress({ progress, steps = [], top = '' }: CoalitionProgressProps) {
   const heading = useId();
   return (
     <section className="card coalition-progress" aria-labelledby={heading}>
       <h2 id={heading} className="eyebrow">
         {coalitions.progressTitle}
       </h2>
-      <ProgressLine progress={progress} />
-      <p className="caption">{coalitions.motionLine}</p>
+      {steps.length === 0 ? (
+        <ProgressLine progress={progress} />
+      ) : (
+        <>
+          {steps.map((step, index) => (
+            <StepLine key={index} name={step.name} progress={step.progress} />
+          ))}
+          <StepLine name={top} progress={progress} />
+        </>
+      )}
+      <p className="caption">
+        {steps.length === 0 ? coalitions.motionLine : coalitions.nestedLine}
+      </p>
     </section>
   );
 }

@@ -46,9 +46,11 @@
  * Proposal's counts and a commitment to its ballots (#111): with the ballots
  * held, the fold checks it against them, and once a device has cleared them,
  * the Proposal closes, counts and decides by the result it reads ahead,
- * closing where the result says its closing ballot came (#289). The fold is
- * pure: no I/O, no clock, no randomness, so every device that folds the same
- * records builds the same state.
+ * closing where the result says its closing ballot came (#289). A membership
+ * that ends in a group closes its front door at that record, and no door
+ * whose secrets someone who has left could read opens again (#288). The fold
+ * is pure: no I/O, no clock, no randomness, so every device that folds the
+ * same records builds the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
@@ -79,8 +81,10 @@ import {
   expireFormation,
   type Motion,
   motionOutcome,
+  type ReconcileChange,
   admitSeat,
   mayAdmit,
+  mayReconcile,
   newCoalition,
   settlesAt,
   recordResult,
@@ -117,11 +121,13 @@ import {
   isMoveProposal,
   isDissolveProposal,
   isAdmitProposal,
+  isSealedReconcileProposal,
   isNewDocumentProposal,
   isPriorityProposal,
   isReconcileProposal,
   isRemovalProposal,
   isRulesProposal,
+  type KeyCheckBody,
   type KeyRotateBody,
   type KxBody,
   isStewardProposal,
@@ -135,6 +141,8 @@ import {
   type ProposalBody,
   type ProposalEventBody,
   type AdmitProposalBody,
+  type SealedReconcileProposalBody,
+  type SealedReconcileTarget,
   type ReconcileProposalBody,
   type RecordedOutcome,
   type RemovalProposalBody,
@@ -152,9 +160,14 @@ import {
   type VouchBody,
 } from './event';
 import { type DoorInvite, mayRecordInvite } from './frontDoor';
+import { isRefused, type KeyChecks, keyChecksOf } from './keyChecks';
 import { isOpenAt } from './open';
 import {
+  type DoorClosure,
+  doorIn,
   effectiveOptIns,
+  type FrontDoor,
+  isFrontDoor,
   isOptIn,
   mayProposeRules,
   type Narrowing,
@@ -250,10 +263,13 @@ export interface Member {
 }
 
 /**
- * A canonical key change (#98): the first valid `key-rotate` of its epoch,
- * where it sits in relay order, who wrote it, its commit, and its wraps by
- * member key. Records read from the epoch before it, from its seq on, are
- * ignored.
+ * A key change (#98): a valid `key-rotate`, where it sits in relay order, who
+ * wrote it, its epoch, its commit, its wraps by member key, and `keys`, the
+ * encryption key the group held for each recipient then, which a device checks
+ * every wrap against (#224). A canonical one, the first valid `key-rotate` of
+ * its epoch that isn't refused, moves the group: records read from the epoch
+ * before it, from its seq on, are ignored. A refused one (`keyChecks.ts`)
+ * moves nothing.
  */
 export interface Rotation {
   readonly id: string;
@@ -263,6 +279,7 @@ export interface Rotation {
   readonly epoch: number;
   readonly commit: string;
   readonly wraps: Readonly<Record<string, string>>;
+  readonly keys: Readonly<Record<string, string>>;
 }
 
 /**
@@ -444,6 +461,18 @@ export interface IgnoredRecord {
 }
 
 /**
+ * Where a group's Documents began (#104): the genesis's receipt, in relay
+ * minutes, its author, and every Atom it founded, Document by Document, with
+ * its founding text, whatever passes have changed since. `author` is null for
+ * a coalition, whose genesis author isn't one of its participants (#100).
+ */
+export interface Founding {
+  readonly received: number;
+  readonly author: string | null;
+  readonly atoms: readonly Atom[];
+}
+
+/**
  * The group's current focus (#107): the top option of the latest priority
  * vote whose pass is final, with the vote's id, the option's id and its text.
  */
@@ -479,12 +508,19 @@ export interface Focus {
  * (#112): each valid `dispatch` at its receipt, and each passed Proposal's at
  * its close, in close order, ahead of any record received from that minute
  * on. `doorInvites` holds each invite a member sent from the front door, the
- * first valid `door-invited` per application, in relay order (#121). `epoch`
- * is the group key's epoch: 0 at genesis, then one more for each canonical
- * key change, which `rotations` keeps in order (#98). `rotationDue` is true
- * once a membership has ended since the last canonical key change, or
- * genesis, until the next, or until the group dissolves, after which no key
- * change can land. `dissolved` is when the group dissolved, and whether its
+ * first valid `door-invited` per application, in relay order (#121).
+ * `doorClosure` is the `leave` or `remove` that closed the front door, while
+ * it stays closed, and `exposedDoors` the front door Proposals that were open
+ * when a membership ended, whose pass opens no door (#288). `epoch` is the
+ * group key's epoch: 0 at genesis, then the epoch of each canonical key
+ * change, which `rotations` keeps in order (#98). `nextEpoch` is the epoch
+ * the next key change must name: one past the last key change's, canonical or
+ * refused, so a refused key change spends its epoch (#224). `refused` keeps
+ * the key changes a recipient said don't open, in relay order (`keyChecks.ts`,
+ * #224): none moved the group, and none of their authors may write another.
+ * `rotationDue` is true once a membership has ended since the last canonical
+ * key change, or genesis, until the next, or until the group dissolves, after
+ * which no key change can land. `dissolved` is when the group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `recoveryShares` holds every `recovery-share` a current member sent, in
@@ -500,7 +536,9 @@ export interface Focus {
  * coalition's log it holds the seats, the participants' bindings, the results
  * the groups posted, each motion's seats and the status (coalition.ts), and
  * once it is declined `at` stays at that minute. `focus` is the current
- * focus, or null before any priority vote passes (#107).
+ * focus, or null before any priority vote passes (#107). `founding` is where
+ * the Documents began, the founding text a section's history starts from, or
+ * null before a genesis (#104).
  */
 export interface GroupState {
   readonly group: string | null;
@@ -524,8 +562,12 @@ export interface GroupState {
   readonly chatThreads: readonly ChatThread[];
   readonly dispatches: readonly Dispatch[];
   readonly doorInvites: readonly DoorInvite[];
+  readonly doorClosure: DoorClosure | null;
+  readonly exposedDoors: readonly string[];
   readonly epoch: number;
+  readonly nextEpoch: number;
   readonly rotations: readonly Rotation[];
+  readonly refused: readonly Rotation[];
   readonly rotationDue: boolean;
   readonly dissolved: Dissolution | null;
   readonly recoveryShares: readonly SealedShare[];
@@ -534,6 +576,7 @@ export interface GroupState {
   readonly coalitions: readonly HeldSeat[];
   readonly coalition: Coalition | null;
   readonly focus: Focus | null;
+  readonly founding: Founding | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -609,8 +652,12 @@ interface DocumentAt {
  * `judged` those of the closed removals `removals` already shows (#115), and
  * `dispatched` those of the closed Proposals carrying a Dispatch that
  * `dispatches` already reflects (#112). `founded` holds the Documents
- * genesis founded, before any pass (#92), and `document` the Documents as the
- * latest Proposal found them, kept until another closes.
+ * genesis founded, before any pass (#92), `founding` where they began
+ * (#104), and `document` the Documents as the latest Proposal found them,
+ * kept until another closes. `exposed` holds every front door secret, `sign`
+ * and `box`, that someone who has left could read, and `carried` those the
+ * records of this epoch carried since the last membership end, which the
+ * next one exposes (#288).
  */
 interface Draft {
   group: string | null;
@@ -620,6 +667,7 @@ interface Draft {
   readonly members: Member[];
   readonly former: Member[];
   founded: readonly DocumentDraft[];
+  founding: Founding | null;
   document: DocumentAt;
   readonly proposals: OpenProposal[];
   at: number;
@@ -633,8 +681,14 @@ interface Draft {
   readonly chatThreads: ChatThread[];
   readonly dispatches: Dispatch[];
   readonly doorInvites: DoorInvite[];
+  doorClosure: DoorClosure | null;
+  readonly exposedDoors: string[];
+  readonly exposed: Set<string>;
+  readonly carried: Set<string>;
   epoch: number;
+  nextEpoch: number;
   readonly rotations: Rotation[];
+  readonly refused: Rotation[];
   rotationDue: boolean;
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
@@ -651,6 +705,8 @@ interface Draft {
   readonly firstResults: ReadonlyMap<string, FirstResult>;
   /** Cleared Proposals whose read-ahead result didn't hold up where it sits: read nothing ahead. */
   readonly distrusted: ReadonlySet<string>;
+  /** Every `unwrap-failed` and `key-taken` in the log, read before the fold starts (#224). */
+  readonly keyChecks: KeyChecks;
 }
 
 /** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
@@ -673,10 +729,25 @@ function applyCoalitionGenesis(draft: Draft, body: CoalitionGenesisBody, at: Rec
   draft.rules = rules;
   draft.name = body.name;
   draft.chat = body.chat ?? null;
-  draft.founded = documents;
-  draft.document = { closed: '', documents };
+  found(draft, documents, at.received, null);
   draft.coalition = coalition;
   return true;
+}
+
+/**
+ * Keeps the Documents a genesis founds, received at `received` and written by
+ * `author`, or null for a coalition's (#104), as the founding text and as the
+ * Documents every later event first finds.
+ */
+function found(
+  draft: Draft,
+  documents: readonly DocumentDraft[],
+  received: number,
+  author: string | null,
+): void {
+  draft.founded = documents;
+  draft.founding = { received, author, atoms: documents.flatMap((d) => d.atoms) };
+  draft.document = { closed: '', documents };
 }
 
 /** A Document's Atoms from their texts, `${documentId}.${i}`, in order, each ordinary (#116). */
@@ -744,8 +815,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
-  draft.founded = documents;
-  draft.document = { closed: '', documents };
+  found(draft, documents, at.received, author);
   return true;
 }
 
@@ -1324,12 +1394,13 @@ function applySteward(
  * standing value it would replace, which the fold records as `from`, and it
  * runs the window its proposer chose within that class's bounds, or the
  * class default (#106): 14 to 28 days to turn one on. Like a steward
- * Proposal, its one version has no text.
+ * Proposal, its one version has no text. A front door it carries must be
+ * fresh ({@link doorIsFresh}, #288).
  */
 function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: Receipt): boolean {
   if (!fieldsAreValid(body) || !mayProposeRules(draft, author, body.target)) return false;
   const target = rulesChange(draft.rules.optIns, body.target.optIn, body.target.value);
-  if (target === null) return false;
+  if (target === null || !doorIsFresh(draft, doorIn(target))) return false;
   const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
@@ -1342,6 +1413,66 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
     versions: [{ id: at.id, author, text: '' }],
   });
   return true;
+}
+
+/**
+ * Whether a front door a rules Proposal carries may stand (#288): nobody who
+ * has left could read either of its secrets ({@link noteDoor}). A change that
+ * carries no door passes.
+ */
+function doorIsFresh(draft: Draft, door: FrontDoor | null): boolean {
+  return door === null || (!draft.exposed.has(door.sign) && !draft.exposed.has(door.box));
+}
+
+/** The front door a record's rules Proposal carries, whether the fold applies it or not, or null. */
+function doorCarried(parsed: ParsedEvent | null): FrontDoor | null {
+  const event = parsed?.event;
+  if (event?.type !== 'proposal' || !isRulesProposal(event.body)) return null;
+  const { optIn, value } = event.body.target;
+  return optIn === 'frontDoor' && isFrontDoor(value) ? value : null;
+}
+
+/**
+ * Notes the secrets of a front door a record carries before it folds (#288),
+ * whether the fold then applies it or not: anyone who holds the key it was
+ * sealed under can read them. A record read from an earlier epoch's mailbox
+ * after the key changed (#98), such as a late writer's, or one read while a
+ * key change is due, was sealed under a key someone who has left still
+ * holds, so its secrets are exposed at once, and neither it nor the copy its
+ * author's device posts again to the new mailbox opens a door. Any other
+ * record's are carried until the next membership end exposes them. One from
+ * a later epoch, read before that epoch began, was sealed under a key no one
+ * who has left holds.
+ */
+function noteDoor(draft: Draft, { epoch, parsed }: Read): void {
+  const door = doorCarried(parsed);
+  if (door === null || epoch > draft.epoch) return;
+  const into = epoch < draft.epoch || draft.rotationDue ? draft.exposed : draft.carried;
+  into.add(door.sign).add(door.box);
+}
+
+/**
+ * A membership has ended in a group (#98, #288): the key change becomes due,
+ * and whoever left keeps every front door secret the log has carried. So each
+ * is exposed, each front door Proposal still open is listed in
+ * `exposedDoors`, whose pass then opens nothing, and a door that stands
+ * closes here, on every device, at this record. Only a new opening Proposal,
+ * made once the key has changed and carrying fresh secrets, opens it again.
+ */
+function endMembership(draft: Draft, at: Receipt): void {
+  draft.rotationDue = true;
+  for (const secret of draft.carried) draft.exposed.add(secret);
+  draft.carried.clear();
+  for (const proposal of draft.proposals) {
+    const listed = draft.exposedDoors.includes(proposal.id);
+    const door = doorIn(rulesChangeOf(proposal));
+    if (door !== null && !listed && isOpenAt(proposal, at.received)) {
+      draft.exposedDoors.push(proposal.id);
+    }
+  }
+  if (draft.rules.optIns.frontDoor === false) return;
+  draft.rules = { ...draft.rules, optIns: { ...draft.rules.optIns, frontDoor: false } };
+  draft.doorClosure = { id: at.id, seq: at.seq, received: at.received };
 }
 
 /** True while a priority vote is open at relay minute `received`. A group has at most one. */
@@ -1408,6 +1539,16 @@ function applyDissolveProposal(
   return true;
 }
 
+/** Whether a reconcile Proposal here already holds the seat key `key`: each seat is one Proposal's. */
+function holdsSeatKey(draft: Pick<Draft, 'proposals'>, key: string): boolean {
+  return draft.proposals.some((p) => p.target.kind === 'reconcile' && p.target.key === key);
+}
+
+/** This coalition's own seat keys in coalitions above it: each of its reconcile motions' (#122). */
+function seatKeysAbove(draft: Pick<Draft, 'proposals'>): string[] {
+  return draft.proposals.flatMap((p) => (p.target.kind === 'reconcile' ? [p.target.key] : []));
+}
+
 /**
  * Opens a removal (ADR-0049, ADR-0075 §3, #115) when its author may propose
  * one against its member now (removal.ts). It runs the removal class's fixed
@@ -1440,12 +1581,38 @@ function applyRemovalProposal(
 }
 
 /**
- * Opens a reconcile Proposal (#100; ADR-0036) when its author may propose:
- * ordinary, for the window its proposer chose or the default, with one
- * version that has no text. The fold keeps its target as written, secrets
- * included, with the public seat key its seat secret makes. A seat key another
- * reconcile Proposal here already holds is ignored, so each seat is one
- * Proposal's.
+ * Opens a reconcile Proposal, a group's (#100) or a coalition's (#122), when
+ * its author may propose: ordinary, for the window its proposer chose or the
+ * default, with one version that has no text, keeping `target`. A seat key
+ * another reconcile Proposal here already holds is ignored, so each seat is
+ * one Proposal's.
+ */
+function openReconcile(
+  draft: Draft,
+  body: ReconcileProposalBody | SealedReconcileProposalBody,
+  author: string,
+  at: Receipt,
+  target: ReconcileChange | SealedReconcileTarget,
+): OpenProposal | null {
+  if (!fieldsAreValid(body) || !can(draft, author, 'propose')) return null;
+  if (holdsSeatKey(draft, target.key)) return null;
+  const cls = classAt(draft, body, at.received);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return null;
+  return openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: '',
+    target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+}
+
+/**
+ * Opens a group's reconcile Proposal (#100; ADR-0036). The fold keeps its
+ * target as written, secrets included, with the public seat key its seat
+ * secret makes.
  */
 function applyReconcile(
   draft: Draft,
@@ -1453,22 +1620,32 @@ function applyReconcile(
   author: string,
   at: Receipt,
 ): boolean {
-  if (!fieldsAreValid(body) || !can(draft, author, 'propose')) return false;
   const key = seatKeyFor(body.target);
-  if (draft.proposals.some((p) => p.target.kind === 'reconcile' && p.target.key === key)) {
-    return false;
-  }
-  const cls = classAt(draft, body, at.received);
-  const window = chosenWindow(draft.rules, cls, body.window);
-  if (window === null) return false;
-  openProposal(draft, {
-    ...opening(draft, body, author, at, { cls, window }),
-    atom: '',
-    target: { ...body.target, key },
-    text: '',
-    eligible: eligibleNow(draft, null),
-    versions: [{ id: at.id, author, text: '' }],
-  });
+  return openReconcile(draft, body, author, at, { ...body.target, key }) !== null;
+}
+
+/**
+ * Opens a coalition's motion to take a seat in a coalition above it (#122):
+ * its sealed reconcile target, as written, which holds no readable secret.
+ * Its seats decide it as any motion, from a snapshot at receipt. It is
+ * ignored when it carries a Dispatch, as an admit is (#124), when one more
+ * level would put the coalition above it past level 3, or when its key is one
+ * of this coalition's own seats, whose secret a member group holds and could
+ * act on above without the coalition.
+ */
+function applySealedReconcile(
+  draft: Draft,
+  coalition: CoalitionDraft,
+  body: SealedReconcileProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  // Taking a seat above sends no Dispatch, as admitting a group sends none (#124).
+  if (body.dispatch !== undefined || !mayReconcile(coalition, body.target.key)) return false;
+  const motion = openReconcile(draft, body, author, at, body.target);
+  if (motion === null) return false;
+  const seats = coalition.seats.map((s) => s.key);
+  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
   return true;
 }
 
@@ -1493,12 +1670,14 @@ function extendSuspension(
 /**
  * Opens a coalition motion (#100): once the coalition has formed, an edit of
  * one of its Atoms, by the group fold's own rules, deadline and bar included,
- * or admitting a group (#114, {@link applyAdmit}), with the seats it holds
- * now as the snapshot that decides it. Every other target waits: a steward,
- * rules or dissolve change would take effect in the fold while a pass can
- * still be contested, and reconciling a coalition is #122's. An edit may
- * carry a Dispatch for the coalition's readers (#124), which goes out only
- * once its pass is final ({@link advanceMotionDispatches}); an admit carries
+ * admitting a group (#114, {@link applyAdmit}), or taking a seat above (#122,
+ * {@link applySealedReconcile}), with the seats it holds now as the snapshot
+ * that decides it. Every other target waits: a steward, rules or dissolve
+ * change would take effect in the fold while a pass can still be contested,
+ * and a reconcile target carrying its secrets readable, as a group's does,
+ * would show them to the coalition's followers. An edit may carry a Dispatch
+ * for the coalition's readers (#124), which goes out only once its pass is
+ * final ({@link advanceMotionDispatches}); an admit or a seat above carries
  * none. An add (#75) has a target, so it waits too, and so does a removal,
  * an edit whose text is `""`: for now a motion only rewords one of the
  * coalition's Atoms. A priority vote (#107) has a target too, so a coalition
@@ -1513,6 +1692,9 @@ function applyMotion(
   at: Receipt,
 ): boolean {
   if (coalition.status !== 'formed') return false;
+  if (isSealedReconcileProposal(body)) {
+    return applySealedReconcile(draft, coalition, body, author, at);
+  }
   if ('target' in body)
     return isAdmitProposal(body) && applyAdmit(draft, coalition, body, author, at);
   // Nor does a removal (#75), whose `""` would take out one of the coalition's Atoms.
@@ -1529,10 +1711,12 @@ function applyMotion(
  * the one motion the fold takes from someone who isn't a participant, when
  * its seat's proof for their key verifies, no seat or earlier admit motion
  * holds that seat (coalition.ts), and its seat's `kx` can take a box, for the
- * room's `inner` to reach the group once it's admitted (#313). It is
- * ordinary, for the window its proposer chose or the default, with one
- * version that has no text, and every seat in its snapshot must pass it,
- * whatever their number. Once its pass is final, the group takes its seat
+ * room's `inner` to reach the group once it's admitted (#313). A coalition
+ * asking in states its level and member groups (#122); a level that would put
+ * this coalition past level 3, or this coalition's own seat key above, is
+ * ignored. It is ordinary, for the window its proposer chose or the default,
+ * with one version that has no text, and every seat in its snapshot must pass
+ * it, whatever their number. Once its pass is final, the group takes its seat
  * ({@link advanceAdmissions}).
  */
 function applyAdmit(
@@ -1547,13 +1731,13 @@ function applyAdmit(
   if (body.dispatch !== undefined) return false;
   // The room's inner is wrapped to its seat's kx once it's admitted (#313): it must take a box.
   if (usableKx(body.target.kx) === null) return false;
-  if (!mayAdmit(coalition, draft.group, author, body.target)) return false;
+  if (!mayAdmit(coalition, draft.group, author, body.target, seatKeysAbove(draft))) return false;
   const window = chosenWindow(draft.rules, 'ordinary', body.window);
   if (window === null) return false;
   const proposal = openProposal(draft, {
     ...opening(draft, body, author, at, { cls: 'ordinary', window }),
     atom: '',
-    target: { kind: 'admit', seat: body.target.seat },
+    target: { kind: 'admit', seat: body.target.seat, groups: body.target.groups ?? [] },
     text: '',
     eligible: [],
     versions: [{ id: at.id, author, text: '' }],
@@ -1566,6 +1750,17 @@ function applyAdmit(
     admit: { ...body.target.seat, kx: body.target.kx },
   });
   return true;
+}
+
+/**
+ * Whether a Proposal's body is only ever a coalition's motion: admitting a
+ * group (#114), or a sealed reconcile target (#122), since a group has no
+ * inner to seal under. A group's own log takes neither.
+ */
+function isCoalitionOnly(
+  body: ProposalEventBody,
+): body is AdmitProposalBody | SealedReconcileProposalBody {
+  return isAdmitProposal(body) || isSealedReconcileProposal(body);
 }
 
 function applyProposal(
@@ -1581,8 +1776,7 @@ function applyProposal(
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  // Admitting a group is a coalition's motion (#114): a group's own log takes none.
-  if (isAdmitProposal(body)) return false;
+  if (isCoalitionOnly(body)) return false;
   return applyDocumentChange(draft, body, author, at);
 }
 
@@ -2016,25 +2210,29 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
 
 /**
  * The events a suspended member may still post: a removal's response (#115),
- * and the recovery events, which govern nothing: a recovery share (#109), and
- * a recovery alert or cancel (#118).
+ * the recovery events, which govern nothing: a recovery share (#109), and a
+ * recovery alert or cancel (#118); and an `unwrap-failed` or `key-taken`
+ * (#224).
  */
 const UNSUSPENDED: ReadonlySet<GroupEvent['type']> = new Set([
   'removal-response',
   'recovery-share',
   'recovery-alert',
   'recovery-cancel',
+  'unwrap-failed',
+  'key-taken',
 ]);
 
 /**
  * Whether the author of `event` may act now: anyone may leave, since exit is
  * always possible (ADR-0010, #77); once a removal of them has passed, nothing
  * else counts (#115); and while a suspension runs (ADR-0016), only their
- * response to a removal of them (ADR-0049) and their recovery events, which
- * govern nothing, do: a `recovery-share` (#109), and a `recovery-alert` or
+ * response to a removal of them (ADR-0049), their recovery events, which
+ * govern nothing: a `recovery-share` (#109), and a `recovery-alert` or
  * `recovery-cancel` (#118), since a suspended person must still hear of a
  * recovery and be able to stop it, and a suspended contact's alert must still
- * reach them.
+ * reach them; and their `unwrap-failed` and `key-taken`, since a suspended
+ * member keeps their wrap and a suspension takes no one's key (#224), do.
  */
 function mayAct(draft: Draft, event: GroupEvent): boolean {
   if (event.type === 'leave') return true;
@@ -2163,6 +2361,8 @@ type LaterEvent = Extract<
       | 'dispatch'
       | 'kx'
       | 'key-rotate'
+      | 'unwrap-failed'
+      | 'key-taken'
       | 'group-result'
       | 'door-invited'
       | 'room-wrap';
@@ -2193,9 +2393,9 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
 }
 
 /**
- * {@link applyLater} for `kx` and `key-rotate` (#98), `group-result` (#100)
- * and `door-invited` (#121), and the events that act on a Proposal
- * ({@link applyProposalEvent}).
+ * {@link applyLater} for `kx` and `key-rotate` (#98), `unwrap-failed` and
+ * `key-taken` (#224), `group-result` (#100) and `door-invited` (#121), and the
+ * events that act on a Proposal ({@link applyProposalEvent}).
  */
 function applyKeyed(
   draft: Draft,
@@ -2215,6 +2415,10 @@ function applyKeyed(
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
       return applyKeyRotate(draft, event.body, event.author, at);
+    case 'unwrap-failed':
+      return names(draft.refused, event.body, event.author);
+    case 'key-taken':
+      return names(draft.rotations.slice(-1), event.body, event.author);
     case 'group-result':
       return applyGroupResult(draft, event.body, event.author, at);
     case 'door-invited':
@@ -2292,28 +2496,55 @@ function wrapsExactly(wraps: Readonly<Record<string, string>>, recipients: reado
 }
 
 /**
- * Changes the group key (#98; ADR-0072 item 11), when a current member wrote
- * it, a membership has ended since the last canonical change, it names the
- * next epoch, and its wraps name exactly the current members with an
- * encryption key. The first valid one per epoch is canonical (relay order
- * decides, ADR-0073); from it on, records read from the old epoch's mailbox
- * change nothing.
+ * Whether `author` may write a key change now: one is due, they are a current
+ * member, and no key change of theirs was refused (#224), so whoever posts
+ * one that doesn't open does it once.
+ */
+function mayRotate(draft: Draft, author: string): boolean {
+  if (!draft.rotationDue || draft.refused.some((rotation) => rotation.by === author)) return false;
+  return draft.members.some((m) => m.author === author);
+}
+
+/**
+ * Changes the group key (#98; ADR-0072 item 11), when {@link mayRotate}
+ * allows its author, it names the next epoch, and its wraps name exactly the
+ * current members with an encryption key. The first valid one per epoch is
+ * canonical (relay order decides, ADR-0073); from it on, records read from the
+ * old epoch's mailbox change nothing. Unless it is refused (#224,
+ * `keyChecks.ts`): then it moves nothing, its epoch is spent, so the next
+ * names the one after, and the key change stays due.
  */
 function applyKeyRotate(draft: Draft, body: KeyRotateBody, author: string, at: Receipt): boolean {
-  const valid =
-    draft.rotationDue &&
-    draft.members.some((m) => m.author === author) &&
-    body.epoch === draft.epoch + 1 &&
-    wrapsExactly(
-      body.wraps,
-      keyHolders(draft).map((m) => m.author),
-    );
-  if (!valid) return false;
+  const recipients = keyHolders(draft);
   const { epoch, commit, wraps } = body;
-  draft.rotations.push({ ...at, by: author, epoch, commit, wraps });
+  const named = recipients.map((m) => m.author);
+  if (!mayRotate(draft, author) || epoch !== draft.nextEpoch || !wrapsExactly(wraps, named)) {
+    return false;
+  }
+  const keys = Object.fromEntries(recipients.map((m) => [m.author, m.kx]));
+  const rotation = { ...at, by: author, epoch, commit, wraps, keys };
+  draft.nextEpoch = epoch + 1;
+  const group = draft.group ?? '';
+  if (isRefused(draft.keyChecks, { ...at, group, from: draft.epoch, to: epoch, wraps })) {
+    draft.refused.push(rotation);
+    return true;
+  }
+  draft.rotations.push(rotation);
   draft.epoch = epoch;
   draft.rotationDue = false;
   return true;
+}
+
+/**
+ * Whether an `unwrap-failed` or a `key-taken` counts where it sits (#224): it
+ * names one of `rotations`, and its author is among that key change's
+ * recipients. An `unwrap-failed` counts against a refused key change, read
+ * from the old epoch's mailbox; a `key-taken` for the canonical one, read from
+ * its own. The fold reads both ahead (`keyChecks.ts`), so this decides only
+ * whether one shows in `ignored`.
+ */
+function names(rotations: readonly Rotation[], body: KeyCheckBody, author: string): boolean {
+  return rotations.some((r) => r.id === body.rotation && Object.hasOwn(r.wraps, author));
 }
 
 /** Every score the ballots gave version `id`, one per ballot that scored it. */
@@ -2472,16 +2703,18 @@ function advanceSeats(draft: Draft): void {
 /**
  * Brings the standing opt-ins up to `draft.at` (#117): each rules Proposal
  * that has passed and closed by then sets its value, once, in order of close
- * time and then relay order. A narrowing needs nothing here: it ends when its
+ * time and then relay order, except one a membership end exposed while it was
+ * open, which opens no door (#288). A door that opens ends any closure by a
+ * membership end. A narrowing needs nothing here: it ends when its
  * off-Proposal closes. Runs before each event, beside {@link advanceSeats}.
  */
 function advanceOptIns(draft: Draft): void {
   const rules = (proposal: OpenProposal) => proposal.target.kind === 'rules';
   for (const { proposal, passed } of newlyClosed(draft, draft.ruled, rules)) {
     const change = rulesChangeOf(proposal);
-    if (change !== null && passed) {
-      draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
-    }
+    if (change === null || !passed || draft.exposedDoors.includes(proposal.id)) continue;
+    draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
+    if (doorIn(change) !== null) draft.doorClosure = null;
   }
 }
 
@@ -2730,7 +2963,9 @@ function focusOf(proposals: readonly Proposal[]): Focus | null {
  * from crossing.ts's `motionsFor`: each opens as a Proposal of the group's
  * right after its records with a lower relay seq, with the coalition's class,
  * window, deadline and bar, and the group's ballots decide it as any other.
- * A coalition's own log takes none. `relayNow` should be the relay's latest
+ * A formed coalition's log takes the motions its seats above decide (#122),
+ * which its own seats then decide from their results, as they do its own
+ * motions (crossing.ts's `foldTogether`). `relayNow` should be the relay's latest
  * `now` from any mailbox: it is one clock.
  *
  * `cleared` lists the Proposals whose ballots this device has deleted (#111).
@@ -2762,6 +2997,7 @@ export function fold(
     cleared: clearedSet,
     firstResults: firstResults(reads, clearedSet, outside),
     distrusted: new Set<string>(),
+    keyChecks: keyChecksOf(reads),
   };
   const first = foldPass(pass);
   if (first.distrusted.length === 0) return first.state;
@@ -2833,6 +3069,7 @@ interface Pass {
   readonly cleared: ReadonlySet<string>;
   readonly firstResults: Draft['firstResults'];
   readonly distrusted: ReadonlySet<string>;
+  readonly keyChecks: KeyChecks;
 }
 
 /**
@@ -2849,6 +3086,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     members: [],
     former: [],
     founded: [],
+    founding: null,
     document: { closed: '', documents: [] },
     proposals: [],
     at: 0,
@@ -2862,8 +3100,14 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatThreads: [],
     dispatches: [],
     doorInvites: [],
+    doorClosure: null,
+    exposedDoors: [],
+    exposed: new Set(),
+    carried: new Set(),
     epoch: 0,
+    nextEpoch: 1,
     rotations: [],
+    refused: [],
     rotationDue: false,
     seated: new Set(),
     ruled: new Set(),
@@ -2877,6 +3121,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     cleared: pass.cleared,
     firstResults: pass.firstResults,
     distrusted: pass.distrusted,
+    keyChecks: pass.keyChecks,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
@@ -2898,7 +3143,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const documents = applyPasses(draft.founded, proposals);
   const { group, rules, name, chat, members, former, at, stewards, suspensions } = draft;
   const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
-  const { dispatches, doorInvites, epoch, rotations, rotationDue } = draft;
+  const { dispatches, doorInvites, doorClosure, exposedDoors } = draft;
+  const { epoch, nextEpoch, rotations, refused, rotationDue } = draft;
   const state = {
     group,
     rules,
@@ -2921,16 +3167,21 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatThreads,
     dispatches,
     doorInvites,
+    doorClosure,
+    exposedDoors,
     epoch,
+    nextEpoch,
     rotations,
+    refused,
     rotationDue,
     dissolved: draft.dissolved,
     recoveryShares: draft.recoveryShares,
     recoveryAlerts: draft.recoveryAlerts,
     recoveryCancels: draft.recoveryCancels,
-    coalitions: heldSeats(proposals),
+    coalitions: heldSeats(proposals, draft.coalition !== null),
     coalition: draft.coalition,
     focus: focusOf(proposals),
+    founding: draft.founding,
     ignored,
   };
   return { state, distrusted };
@@ -2947,24 +3198,39 @@ function endTime(draft: Draft, relayNow: number | null): number | null {
   return draft.dissolved?.received ?? draft.coalition?.declinedAt ?? relayNow;
 }
 
-/** The group's reconcile Proposals as seats (#100): each one's key, statement and outcome. */
-function heldSeats(proposals: readonly Proposal[]): HeldSeat[] {
+/**
+ * A reconcile Proposal's outcome as its seat crosses: a group's once its vote
+ * is final, a lapse as `fail`. A coalition's (#122) passes as soon as its
+ * seats' pass is certain, before results on it stop counting, since a pass
+ * that waited for that would reach the coalition above too late; a contest
+ * that later turns it into a fail crosses as a fail.
+ */
+function heldOutcome(proposal: Proposal, certain: boolean): HeldSeat['outcome'] {
+  const pass = proposal.outcome.kind === 'pass';
+  if (certain && pass) return 'pass';
+  if (!proposal.final) return 'open';
+  return pass ? 'pass' : 'fail';
+}
+
+/**
+ * The reconcile Proposals as seats (#100): each one's key, statement and
+ * outcome, a coalition's (#122) as soon as it is certain.
+ */
+function heldSeats(proposals: readonly Proposal[], certain: boolean): HeldSeat[] {
   return proposals.flatMap((p) => {
     if (p.target.kind !== 'reconcile') return [];
     const { key, name, title, atoms } = p.target;
-    const pass = p.outcome.kind === 'pass';
-    const outcome = p.final ? (pass ? 'pass' : 'fail') : 'open';
-    return [{ proposal: p.id, key, name, title, atoms, outcome }];
+    return [{ proposal: p.id, key, name, title, atoms, outcome: heldOutcome(p, certain) }];
   });
 }
 
 /**
- * Opens, in a group, each coalition motion whose relay seq is below `seq`
- * that hasn't opened yet (#100), taking it from the front of `motions`, which
- * is in seq order. Relay time moves on to its receipt first, as for a record,
- * so its eligible set is everyone `wouldVote` lets in there. A group that
- * hasn't been founded or has dissolved opens none, and a coalition's own log
- * takes none (#122 nests them).
+ * Opens each coalition motion whose relay seq is below `seq` that hasn't
+ * opened yet (#100), taking it from the front of `motions`, which is in seq
+ * order. Relay time moves on to its receipt first, as for a record, so in a
+ * group its eligible set is everyone `wouldVote` lets in there. A group that
+ * hasn't been founded or has dissolved opens none; nor does a coalition
+ * before it forms or once declined (#122).
  */
 function openMotionsBefore(draft: Draft, motions: Motion[], seq: number): void {
   while (motions.length > 0 && (motions[0]?.seq ?? seq) < seq) {
@@ -2973,24 +3239,31 @@ function openMotionsBefore(draft: Draft, motions: Motion[], seq: number): void {
   }
 }
 
+/** Whether this log opens motions from above now: a founded group that goes on, or a formed coalition (#122). */
+function opensMotions(draft: Draft): boolean {
+  if (draft.group === null || hasEnded(draft)) return false;
+  return draft.coalition === null || draft.coalition.status === 'formed';
+}
+
 /**
- * Opens one coalition motion as a group Proposal, with the coalition's class,
- * window, deadline and bar. It isn't the group's own: it has no number (0,
+ * Opens one coalition motion as a Proposal, with the coalition's class,
+ * window, deadline and bar. It isn't the log's own: it has no number (0,
  * #123), no title, text or author, and carries no Dispatch (#112), since its
- * words are the coalition's.
+ * words are the coalition's. In a coalition (#122), its seats decide it, as
+ * they do its own motions, from a snapshot of them now, and it has no
+ * ballots, so no eligible set.
  */
 function openMotion(draft: Draft, motion: Motion): void {
-  if (draft.group === null || draft.coalition !== null || draft.dissolved !== null) return;
-  if (draft.proposals.some((p) => p.id === motion.id)) return;
+  if (!opensMotions(draft) || draft.proposals.some((p) => p.id === motion.id)) return;
   advanceTo(draft, motion.received, motion.seq);
-  const { id, seq, received, coalition, bar, window, deadline } = motion;
+  const { id, seq, received, coalition, chain, bar, window, deadline } = motion;
   openProposal(draft, {
     id,
     seq,
     received,
     author: '',
     atom: '',
-    target: { kind: 'motion', coalition, bar },
+    target: { kind: 'motion', coalition, chain, bar },
     title: '',
     why: '',
     text: '',
@@ -3005,6 +3278,8 @@ function openMotion(draft: Draft, motion: Motion): void {
     number: 0,
     dispatch: null,
   });
+  const seats = draft.coalition?.seats.map((s) => s.key);
+  if (seats !== undefined) draft.coalition?.motions.push({ id, deadline, seats, admit: null });
 }
 
 /**
@@ -3085,20 +3360,26 @@ function advanceTo(draft: Draft, received: number, seq: number): void {
  * A record read from a mailbox of another epoch than the group's now, such as
  * a stale invite's join or a late writer's Proposal after a key change (#98),
  * changes nothing at all: not relay time, and not the event ids seen, so the
- * copy its author posts again to the new mailbox folds once. Otherwise relay
- * time moves on, whatever the record holds, until the group dissolves (#108),
- * and the removals, seats, opt-ins and carried Dispatches catch up to it
- * before the event is checked. A repeated event id is ignored.
+ * copy its author posts again to the new mailbox folds once. Any front door
+ * a record carries is noted first, whether it folds or not ({@link noteDoor},
+ * #288). Otherwise relay time moves on, whatever the record holds, until the
+ * group dissolves (#108), and the removals, seats, opt-ins and carried
+ * Dispatches catch up to it before the event is checked. A repeated event id
+ * is ignored. A membership that ends in a group makes a key change due and
+ * closes the front door ({@link endMembership}).
  */
 function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
   const { seq, received, epoch, parsed } = read;
+  noteDoor(draft, read);
   if (epoch !== draft.epoch) return false;
   if (!hasEnded(draft)) advanceTo(draft, received, seq);
   if (parsed === null) return false;
   const { event, id } = parsed;
   const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
   seen.add(id);
-  // A coalition has no group key, so a leave there ends only that participant (#100).
-  if (applied && endsMembership(event) && draft.coalition === null) draft.rotationDue = true;
+  // A coalition has no group key or front door, so a leave there ends only that participant (#100).
+  if (applied && endsMembership(event) && draft.coalition === null) {
+    endMembership(draft, { id, seq, received });
+  }
   return applied;
 }

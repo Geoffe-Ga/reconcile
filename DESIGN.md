@@ -159,8 +159,11 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
 
 - **Atom block:** Newsreader text with a left gutter for its badge.
   - Badges (#116) open the block, as an eyebrow, so the word says the class and color is never the only signal. *Entrenched* has a `clay` outline, a lock glyph and the eyebrow "ENTRENCHED", in `clay`. *Eternal* has a double `ink` rule above and below and the eyebrow "ETERNAL", in `ink`. An ordinary section has none.
-  - An eternal section offers no action. In their place, one caption line says it can't be changed.
-  - History opens in a side sheet. #104 builds it.
+  - An eternal section offers no change, removal, move or protection. In their place, one caption line says it can't be changed; its History stays, as on every section.
+  - **History** (#104): each section's quiet History opens its history in a side sheet: a React Aria Modal on `surface` over the `scrim`, standing at the inline end with `lg` corners on its open edge and the one soft shadow, and the whole screen below 40rem. Its heading and Close stay at the top as it scrolls.
+    - Each pass, newest first: its Proposal's title (heading-3), the text it left in Newsreader (or "This removed the section." in body), "Proposed by <name> · Decided <date>" (caption, `muted`), its why (body), one totals line (caption), then "See the full result →". A coalition motion lists each group with "Passed" or "Didn't pass" in place of totals, never a count from inside a group.
+    - It ends with the founding text, "Written by <name> · Founded <date>", or the Proposal that created the section. "Proposals that didn't pass (N)" is a disclosure under them: each title with its outcome and day.
+  - **Change log** (#104): a Document's passed changes, newest first, as `surface` cards under the eyebrow "Change log" and the Document's title: the Proposal's title (heading-3), what it did in body ("Changed ‘Quiet hours start…’", "Added a section", "Removed ‘…’"), and its day (ui, `muted`). Each change opens its section's history; the Document's beginning, its founding text or the Proposal that started it, is a plain card at the end. The Document view links to it under its title, as a forward link.
 - **Protection choice** (#116): a radio group of cards, as the Level picker's, each class's name over its one line. While Eternal is chosen, the line "This is permanent…" follows in `body`, set off by a `clay` rule at its start, never an alert color.
 - **Proposal card:** title (heading-3), justification (body), a countdown (ui, `muted`), and a "Join discussion" link to the group's linked chat.
 - **Ballot:**

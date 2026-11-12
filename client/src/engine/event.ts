@@ -11,6 +11,7 @@
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
+import { SEALED_FIELD_CHARS } from '../crypto/innerSeal';
 import { signRecord, verifyRecord } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 
@@ -53,10 +54,15 @@ export interface GenesisBody {
   readonly kx?: string;
 }
 
-/** One member group's seat in a coalition (#100): its name there, and its public seat key in base64url. */
+/**
+ * One member's seat in a coalition (#100): its name there, its public seat
+ * key in base64url, and its `level` as stated (#122): 0 for a group, else the
+ * level of the coalition that holds it. A seat with no `level` is a group's.
+ */
 export interface SeatEntry {
   readonly name: string;
   readonly key: string;
+  readonly level?: number;
 }
 
 /**
@@ -396,6 +402,25 @@ export interface ReconcileTarget {
 }
 
 /**
+ * A coalition's reconcile target (#122): coalition C reconciling into, or
+ * asking into, a coalition above it. The coalition above's secret and
+ * `inner`, and C's seat secret there, travel in one `sealed` field, sealed
+ * under a key derived from C's `inner` (`crypto/innerSeal.ts`), so C's
+ * followers, who read C's log, can't open them. Asking into a formed
+ * coalition, C seals no `inner`, as a group's target holds none, and receives
+ * it through its seat once admitted (#313). `key` is the public seat key,
+ * which the seat secret makes, and the name and statement stay readable.
+ */
+export interface SealedReconcileTarget {
+  readonly kind: 'reconcile';
+  readonly sealed: string;
+  readonly key: string;
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/**
  * Proposes reconciling into a coalition (#100): an ordinary Proposal with a
  * title, a justification, an optional discussion link and an optional voting
  * window in whole days, whose target carries the coalition's secrets and
@@ -414,18 +439,30 @@ export interface ReconcileProposalBody {
 }
 
 /**
+ * A coalition's motion to take a seat above it (#122): its sealed reconcile
+ * target, as a coalition motion, with a title, a justification and the
+ * fields every motion may carry.
+ */
+export interface SealedReconcileProposalBody extends Omit<ReconcileProposalBody, 'target'> {
+  readonly target: SealedReconcileTarget;
+}
+
+/**
  * Admitting a further group into a formed coalition (#114; ADR-0036): the
  * group's seat, its name there and public seat key, and that seat's proof for
  * the author's key (`crypto/seat.ts`), which shows that the author holds the
  * group's seat secret. `kx` is the seat's X25519 public key, from its seat
  * secret (`crypto/room.ts`), to which a seated group's participant seals
- * the room's `inner` once the group is admitted (#313).
+ * the room's `inner` once the group is admitted (#313). A coalition asking in
+ * (#122) states its level on its seat, and its member groups' names in
+ * `groups`, which the ballot shows.
  */
 export interface AdmitTarget {
   readonly kind: 'admit';
   readonly seat: SeatEntry;
   readonly proof: string;
   readonly kx: string;
+  readonly groups?: readonly string[];
 }
 
 /**
@@ -463,6 +500,7 @@ export type ProposalEventBody =
   | DissolveProposalBody
   | RemovalProposalBody
   | ReconcileProposalBody
+  | SealedReconcileProposalBody
   | PriorityProposalBody
   | AdmitProposalBody;
 
@@ -513,7 +551,14 @@ export function isRemovalProposal(body: ProposalEventBody): body is RemovalPropo
 
 /** True when a Proposal's body proposes reconciling into a coalition (#100). */
 export function isReconcileProposal(body: ProposalEventBody): body is ReconcileProposalBody {
-  return 'target' in body && body.target.kind === 'reconcile';
+  return 'target' in body && body.target.kind === 'reconcile' && !('sealed' in body.target);
+}
+
+/** True when a Proposal's body is a coalition's sealed reconcile target (#122). */
+export function isSealedReconcileProposal(
+  body: ProposalEventBody,
+): body is SealedReconcileProposalBody {
+  return 'target' in body && body.target.kind === 'reconcile' && 'sealed' in body.target;
 }
 
 /** True when a Proposal's body proposes admitting a group into a coalition (#114). */
@@ -709,6 +754,17 @@ export interface KeyRotateBody {
 }
 
 /**
+ * Names a key change by its event id (#224): a member's `unwrap-failed` says
+ * their wrap in it doesn't open, or opens to a secret that doesn't make every
+ * other wrap (`crypto/epoch.ts`), and goes to the old epoch's mailbox; a
+ * `key-taken` says a device took it up all the same, and goes to the new
+ * epoch's. An id, unlike a commit, can't be copied into another key change.
+ */
+export interface KeyCheckBody {
+  readonly rotation: string;
+}
+
+/**
  * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
  * `box` is the share sealed to the contact's encryption key
  * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
@@ -798,6 +854,8 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'unwrap-failed': KeyCheckBody;
+  readonly 'key-taken': KeyCheckBody;
   readonly 'recovery-share': RecoveryShareBody;
   readonly 'recovery-alert': RecoveryAlertBody;
   readonly 'recovery-cancel': RecoveryCancelBody;
@@ -951,11 +1009,13 @@ function kxField(value: unknown): { readonly kx?: string } {
   return isKey32(value) ? { kx: value } : {};
 }
 
-/** A seat's name and key, or null for any other shape (#100). */
+/** A seat's name, key and any stated level, a whole number from 0, or null for any other shape (#100, #122). */
 function parseSeat(value: unknown): SeatEntry | null {
   if (!isObject(value)) return null;
-  const { name, key } = value;
-  return isString(name) && isKey32(key) ? { name, key } : null;
+  const { name, key, level } = value;
+  if (!isString(name) || !isKey32(key)) return null;
+  if (level === undefined) return { name, key };
+  return isWholeNumber(level) && level >= 0 ? { name, key, level } : null;
 }
 
 /** A list of well-shaped seats, or null when it isn't a list or any seat is badly shaped (#100). */
@@ -1138,13 +1198,33 @@ function withWindow<T>(target: T | null, body: Json, fields: Omit<StewardProposa
   return { ...fields, target, ...(window === undefined ? {} : { window }) };
 }
 
+/** A sealed field's text: unpadded base64url of exactly one smallest blob (#122). */
+const SEALED_FIELD = new RegExp(`^[A-Za-z0-9_-]{${String(SEALED_FIELD_CHARS)}}$`);
+
+/** Exactly one smallest sealed blob in canonical base64url: a sealed field's text (#122). */
+function isSealedField(value: unknown): value is string {
+  return isString(value) && SEALED_FIELD.test(value) && base64url(fromBase64url(value)) === value;
+}
+
 /**
- * A reconcile target's kind, secrets, name, title and Atoms, or null for any
- * other shape (#100). `inner` may be missing, as a group asking into a formed
- * coalition writes it (#313), but a present one must be a key.
+ * A coalition's sealed reconcile target (#122): its sealed field, public
+ * seat key, name, title and Atoms, and none of the secrets a group's carries
+ * readable; or null for any other shape.
  */
-function parseReconcileTarget(value: unknown): ReconcileTarget | null {
-  if (!isObject(value) || value.kind !== 'reconcile') return null;
+function parseSealedTarget(value: Json): SealedReconcileTarget | null {
+  const { sealed, key, name, title, atoms, secret, inner, seat } = value;
+  if (secret !== undefined || inner !== undefined || seat !== undefined) return null;
+  if (!isSealedField(sealed) || !isKey32(key)) return null;
+  if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
+  return { kind: 'reconcile', sealed, key, name, title, atoms };
+}
+
+/**
+ * A group's reconcile target (#100): its secrets, name, title and Atoms, or
+ * null for any other shape. `inner` may be missing, as a group asking into a
+ * formed coalition writes it (#313), but a present one must be a key.
+ */
+function parsePlainTarget(value: Json): ReconcileTarget | null {
   const { secret, inner, seat, name, title, atoms } = value;
   if (!isKey32(secret) || !isKey32(seat) || !isOptionalKey32(inner)) return null;
   if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
@@ -1166,19 +1246,33 @@ function parseClassTarget(value: unknown): ClassTarget | null {
   return isString(atom) && isString(to) ? { kind: 'class', atom, to } : null;
 }
 
-/** An admit target's kind, seat, proof and seat `kx` (#313), or null for any other shape (#114). */
+/**
+ * A reconcile target: a group's, with its secrets readable (#100), or a
+ * coalition's sealed one (#122); or null for any other shape.
+ */
+function parseReconcileTarget(value: unknown): ReconcileTarget | SealedReconcileTarget | null {
+  if (!isObject(value) || value.kind !== 'reconcile') return null;
+  return value.sealed === undefined ? parsePlainTarget(value) : parseSealedTarget(value);
+}
+
+/**
+ * An admit target's kind, seat, proof, seat `kx` (#313) and any member
+ * groups' names (#122), or null for any other shape (#114).
+ */
 function parseAdmitTarget(value: unknown): AdmitTarget | null {
   if (!isObject(value) || value.kind !== 'admit') return null;
   const seat = parseSeat(value.seat);
-  const { proof, kx } = value;
+  const { proof, kx, groups } = value;
   if (seat === null || !isString(proof) || !SIGNATURE.test(proof) || !isKey32(kx)) return null;
-  return { kind: 'admit', seat, proof, kx };
+  if (groups === undefined) return { kind: 'admit', seat, proof, kx };
+  return isStringList(groups) ? { kind: 'admit', seat, proof, kx, groups } : null;
 }
 
 /**
  * The target a Proposal names other than a steward seat: an opt-in (#117),
- * dissolving (#108), reconciling (#100), admitting a group (#114), moving
- * a section (#103), or a section's class (#116).
+ * dissolving (#108), reconciling (#100), a coalition's sealed reconcile
+ * target (#122), admitting a group (#114), moving a section (#103), or a
+ * section's class (#116).
  */
 function parseWindowedProposal(
   body: Json,
@@ -1191,6 +1285,7 @@ function parseWindowedProposal(
   const dissolve = parseDissolveTarget(body.target);
   if (dissolve !== null) return withWindow(dissolve, body, fields);
   const reconcile = parseReconcileTarget(body.target);
+  if (reconcile !== null && 'sealed' in reconcile) return withWindow(reconcile, body, fields);
   if (reconcile !== null) return withWindow(reconcile, body, fields);
   const admit = parseAdmitTarget(body.target);
   if (admit !== null) return withWindow(admit, body, fields);
@@ -1321,6 +1416,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   const wraps = parseWraps(body.wraps);
   if (!isWholeNumber(epoch) || epoch < 1 || epoch > MAX_EPOCH) return null;
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
+}
+
+function parseKeyCheck(body: Json): KeyCheckBody | null {
+  return isString(body.rotation) ? { rotation: body.rotation } : null;
 }
 
 /** A body that is one opaque box: a share (#109) or an alert (#118). Any other field is dropped. */
@@ -1537,9 +1636,8 @@ function withRecoveryBody(head: Head, type: unknown, body: Json): GroupEvent | n
 }
 
 /**
- * {@link withBody} for #98's types, `kx` and `key-rotate`, #115's,
- * `removal-response` and `remove`, #100's `group-result`, #111's `result`,
- * #121's `door-invited`, #125's `message` and #313's `room-wrap`.
+ * {@link withBody} for the key types: #98's `kx` and `key-rotate`, and
+ * #224's `unwrap-failed` and `key-taken`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1547,6 +1645,21 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'unwrap-failed':
+    case 'key-taken':
+      return attach(parseKeyCheck(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withNewerBody(head, type, body);
+  }
+}
+
+/**
+ * {@link withBody} for #115's `removal-response` and `remove`, #100's
+ * `group-result`, #111's `result`, #121's `door-invited`, #125's `message`
+ * and #313's `room-wrap`.
+ */
+function withNewerBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
     case 'removal-response':
       return attach(parseRemovalResponse(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'remove':

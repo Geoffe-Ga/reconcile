@@ -8,7 +8,11 @@ import { Start } from './Start';
 describe('Start', () => {
   it('offers Restore a backup under “Have a backup file?”, for a new device, and passes axe', async () => {
     render(
-      <Start groups={[]} onOpenInvite={vi.fn()} onRestore={vi.fn(() => Promise.resolve(1))} />,
+      <Start
+        groups={[]}
+        onOpenInvite={vi.fn()}
+        onRestore={vi.fn(() => Promise.resolve({ groups: 1, skipped: 0 }))}
+      />,
     );
 
     const section = screen.getByRole('region', { name: 'Have a backup file?' });

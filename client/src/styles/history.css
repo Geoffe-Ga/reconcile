@@ -1,0 +1,180 @@
+/*
+ * A section's history and a Document's change log (#104; DESIGN.md, Atom
+ * block), styled only from tokens.css. The history opens in a side sheet:
+ * from the inline end on a wide screen, the whole screen below 40rem. Each
+ * pass reads like the Document itself, its text in Newsreader, with who and
+ * when in captions, and nothing louder than a forward link.
+ */
+
+/* The side sheet ------------------------------------------------------------ */
+
+/* The scrim covers the page, as a dialog's does; the sheet stands at its inline end. */
+.sheet-overlay {
+  place-items: stretch end;
+  padding: 0;
+}
+
+.sheet {
+  width: min(100%, 34rem);
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-inline-start: 1px solid var(--hairline);
+  border-start-start-radius: var(--radius-lg);
+  border-end-start-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--scrim);
+}
+
+/* Below about 40rem the sheet is the whole screen, with no edge or corner. */
+@media (max-width: 40rem) {
+  .sheet {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+.sheet-dialog {
+  display: grid;
+  gap: var(--space-5);
+  padding: 0 var(--space-5) max(var(--space-6), env(safe-area-inset-bottom, 0px));
+  outline: none;
+}
+
+/* The heading and Close stay in reach while a long history scrolls under them. */
+.sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  align-items: center;
+  padding-block: var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+/* Close sits on the sheet's edge, so its own quiet inset comes off the end, not the start. */
+.sheet-close {
+  flex: none;
+  margin-inline: 0 calc(-1 * var(--space-3));
+}
+
+/* A section's passes ---------------------------------------------------------- */
+
+.history-list {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+.history-entry {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding-block: var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+
+.history-entry:first-child {
+  padding-block-start: 0;
+  border-top: 0;
+}
+
+.history-entry .heading-3 {
+  overflow-wrap: anywhere;
+}
+
+/* "Proposed by Ana · Decided Mon 9 Nov": the dot is drawn here and hidden from screen readers. */
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.history-meta > span + span::before {
+  content: '·' / '';
+  margin-inline: var(--space-2);
+}
+
+.history-meta time {
+  white-space: nowrap;
+}
+
+.history-why,
+.history-removed,
+.history-moved {
+  max-width: 30em;
+  color: var(--body);
+  font: var(--type-body);
+  overflow-wrap: anywhere;
+}
+
+/* A coalition motion's groups, each with its pass or fail in words (ADR-0036). */
+.history-groups {
+  display: grid;
+  width: 100%;
+  max-width: 24rem;
+  padding: 0;
+  list-style: none;
+}
+
+.history-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+  padding-block: var(--space-1);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+/* The Proposals that didn't pass, under their disclosure. */
+.history-failed {
+  display: grid;
+  margin-block-start: var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.history-failed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  font: var(--type-body);
+  overflow-wrap: anywhere;
+}
+
+/* The change log --------------------------------------------------------------- */
+
+/* Each change is a card that opens its section's history; it reads as the cards around it. */
+.log-row {
+  width: 100%;
+  border-color: var(--hairline);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.log-row[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.log-row .heading-3,
+.log-change {
+  overflow-wrap: anywhere;
+}
+
+.log-change {
+  color: var(--body);
+  font: var(--type-body);
+}

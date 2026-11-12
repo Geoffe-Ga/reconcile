@@ -99,13 +99,18 @@ interface PickerProps {
   readonly onChange: (groupId: string) => void;
 }
 
-/** One card per group that may take this one, as a radio group, the first chosen to start. */
+/**
+ * One card per group that may take this one, as a radio group, the first
+ * chosen to start, and each coalition this person takes part in that may take
+ * it (#122), marked as one.
+ */
 function GroupPicker({ groups, value, onChange }: PickerProps) {
+  const both = groups.some((group) => group.kind === 'coalition');
   return (
     <RadioGroup className="level-group" value={value} onChange={onChange} isRequired>
-      <Label className="field-label">{bring.groupLabel}</Label>
+      <Label className="field-label">{both ? bring.groupOrCoalitionLabel : bring.groupLabel}</Label>
       <Text slot="description" className="field-hint">
-        {bring.groupHint}
+        {both ? bring.groupOrCoalitionHint : bring.groupHint}
       </Text>
       <div className="level-options">
         {groups.map((group) => (
@@ -113,6 +118,11 @@ function GroupPicker({ groups, value, onChange }: PickerProps) {
             <RadioButton className="level-button">
               <bdi>{group.name}</bdi>
             </RadioButton>
+            {group.kind === 'coalition' ? (
+              <Text slot="description" className="level-description">
+                {bring.coalitionOption}
+              </Text>
+            ) : null}
           </RadioField>
         ))}
       </div>
@@ -159,10 +169,13 @@ function BringFields({ found, onBring, onNotNow }: BringFormProps) {
     </Button>
   );
 
+  // A coalition this person takes part in may take the card too (#122).
+  const offersCoalitions = found.groups.some((group) => group.kind === 'coalition');
+  const picked = found.groups.find((group) => group.groupId === groupId);
   return (
     <section className="join-decide stack" aria-labelledby={question}>
       <h2 id={question} className="heading-2">
-        {bring.question}
+        {offersCoalitions ? bring.questionBoth : bring.question}
       </h2>
       {found.groups.length === 0 ? (
         <>
@@ -187,7 +200,7 @@ function BringFields({ found, onBring, onNotNow }: BringFormProps) {
           ) : null}
           <div className="row form-actions">
             <Button type="submit" className="button button-primary">
-              {bring.submit}
+              {picked?.kind === 'coalition' ? bring.submitCoalition : bring.submit}
             </Button>
             {notNow}
           </div>

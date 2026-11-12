@@ -18,6 +18,7 @@ import { createRelay } from '../net/relay';
 import {
   parseShareLink,
   readShare,
+  SHARE_TTL_DAYS,
   shareLinkOf,
   startSharing,
   stopSharing,
@@ -1187,5 +1188,107 @@ describe('PersonalDocument, shared, while this device’s keys are locked (#255)
     expect(await within(dialog).findByText(messages.personal.deleteSharedFailed)).toBeVisible();
     expect(onDeleted).not.toHaveBeenCalled();
     expect((await store.listPersonalEntries())[0]?.share).toBeDefined();
+  });
+});
+
+describe('PersonalDocument, a share this device hasn’t posted to for 30 days (#339)', () => {
+  const { share } = messages.personal;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const SALT = new Uint8Array(32).fill(0x33);
+  const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+  const LOCK = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+  /**
+   * Ana's statement, shared by link from this device, which then isn't
+   * opened for 30 days: another device may have stopped the share meanwhile,
+   * and its tombstone lapsed. Hands back the link.
+   */
+  async function idle(): Promise<string> {
+    await store.savePersonal(STATEMENT);
+    const services = {
+      store,
+      relay: createRelay({ fetch: relay.fetch }),
+      seal: xchachaSeal,
+      now: () => clock,
+    };
+    const started = await startSharing(services, ID);
+    if (started.kind !== 'shared') throw new Error(`Expected a share, not ${started.kind}.`);
+    clock += SHARE_TTL_DAYS * DAY_MS;
+    return shareLinkOf(ORIGIN, started.link);
+  }
+
+  it('asks before anything goes to the link, saying why, with no link to copy', async () => {
+    await idle();
+    const before = relay.requests.length;
+    open();
+
+    const section = await shareSection();
+    expect(within(section).getByText(share.pausedIdle)).toBeVisible();
+    expect(within(section).queryByText(share.paused)).not.toBeInTheDocument();
+    expect(within(section).getByText(share.pausedNote)).toBeVisible();
+    const keep = within(section).getByRole('button', { name: share.keep });
+    const stop = within(section).getByRole('button', { name: share.stop });
+    expect(keep).toHaveAccessibleDescription(`${share.pausedIdle} ${share.pausedNote}`);
+    expect(stop).toHaveAccessibleDescription(share.pausedIdle);
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+    expect(screen.queryByText(messages.personal.sharedPrivacy)).not.toBeInTheDocument();
+    expect(relay.requests).toHaveLength(before);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('Keep sharing sends the latest version, then shows the link as shared', async () => {
+    const link = await idle();
+    const { user } = open();
+    await shareSection();
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    expect(await screen.findByText(share.kept)).toBeVisible();
+    expect(linkField()).toHaveValue(link);
+    expect(screen.queryByText(share.pausedIdle)).not.toBeInTheDocument();
+    expect(screen.getByText(messages.personal.sharedPrivacy)).toBeVisible();
+    expect(await linkShows(link)).toEqual({
+      kind: 'shown',
+      title: STATEMENT.title,
+      text: STATEMENT.text,
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps the share paused, and asks again, when Stop sharing can’t reach the relay', async () => {
+    await idle();
+    const { user } = open();
+    await shareSection();
+    relay.offline = true;
+
+    await user.click(screen.getByRole('button', { name: share.stop }));
+
+    expect(await screen.findByText(share.pausedStopFailed)).toBeVisible();
+    expect(screen.getByText(share.pausedIdle)).toBeVisible();
+    expect(screen.getByRole('button', { name: share.keep })).toBeEnabled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says why the link waits and how to unlock, with no link, button or Delete, while the keys are locked (#255)', async () => {
+    await idle();
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+    store = await openStore();
+    const requests = relay.requests.length;
+
+    open();
+
+    const section = await shareSection();
+    expect(within(section).getByText(share.lockedIdle)).toBeVisible();
+    expect(within(section).queryByText(share.lockedPaused)).not.toBeInTheDocument();
+    expect(within(section).queryByText(share.locked)).not.toBeInTheDocument();
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    // Nothing goes to an idle link, so the line says nothing is sent.
+    expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+    expect(relay.requests).toHaveLength(requests);
+    expect(await axeViolations()).toEqual([]);
   });
 });

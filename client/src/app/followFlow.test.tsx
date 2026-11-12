@@ -84,7 +84,9 @@ async function seatSecretIn(device: TestDevice, groupId: string): Promise<Uint8A
   const target = fold(group?.log ?? [], null).proposals.find(
     (p) => p.target.kind === 'reconcile',
   )?.target;
-  if (target?.kind !== 'reconcile') throw new Error('Expected a reconcile Proposal.');
+  if (target?.kind !== 'reconcile' || !('seat' in target)) {
+    throw new Error('Expected a group’s reconcile Proposal.');
+  }
   return fromBase64url(target.seat);
 }
 

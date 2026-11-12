@@ -69,11 +69,13 @@ import type { TallyDetail } from '../engine/tally';
 import {
   motionView,
   type MotionView,
+  type MotionWords,
   motionWords,
   reconcileView,
   type ReconcileView,
 } from '../app/coalitionLines';
 import { CoalitionProgress } from '../app/CoalitionProgress';
+import { MotionTagText } from '../app/MotionTag';
 import { decisionOf } from '../app/versionViews';
 import type { HeldCoalition } from '../store/coalitions';
 import { ConsentMeter } from './ConsentMeter';
@@ -103,6 +105,8 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
   /**
    * Queues this member's one response on the removal of them (#115); rejects
    * when it couldn't be saved. Without it, no response form shows.
@@ -366,6 +370,7 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
   const { state, me } = props;
   if (props.leaving === true) return messages.leave.noVoting;
+  if (props.unconfirmed === true) return messages.unconfirmed.noVoting;
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
   if (removalTarget(proposal) === me) return messages.removal.ownRemoval;
   if (removedFrom(state, me) !== undefined) return messages.removal.readOnly;
@@ -412,6 +417,14 @@ function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   );
 }
 
+/**
+ * True while this device takes nothing new for the group: its leave waits
+ * (#77), or its copy back from a backup hasn't heard from the group (#231).
+ */
+function readsOnly(props: ProposalViewProps): boolean {
+  return props.leaving === true || props.unconfirmed === true;
+}
+
 /** True while the vote takes ballots and versions, as far as this device can tell. */
 function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
   return !proposal.final && props.now < proposal.deadline;
@@ -419,7 +432,7 @@ function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
 
 /** Whether this member can still add wording: the vote is open, they may propose, and they're staying. */
 function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
-  return isOpen(props, proposal) && props.leaving !== true && can(props.state, props.me, 'propose');
+  return isOpen(props, proposal) && !readsOnly(props) && can(props.state, props.me, 'propose');
 }
 
 /**
@@ -430,7 +443,7 @@ function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean
  * unticked Include the title.
  */
 function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  if (!isOpen(props, proposal) || props.leaving === true) return null;
+  if (!isOpen(props, proposal) || readsOnly(props)) return null;
   const moment = openMoment(proposal, props.me, props.now);
   return <TellYourGroup key={moment} moment={moment} proposal={proposal} onTell={props.onTell} />;
 }
@@ -529,7 +542,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
             {meters}
           </ChoiceList>
           {reason === null ? null : (
-            <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
+            <NoVote state={state} me={me} reason={reason} leaving={readsOnly(props)} />
           )}
         </>
       )}
@@ -725,6 +738,29 @@ function Why({ why }: { readonly why: string }) {
 }
 
 /**
+ * A coalition asking into the coalition this motion is from (#122): its
+ * name, its level and its member groups, as its admit motion states them,
+ * which each group's vote checks.
+ */
+function AdmitsCoalition({ words }: { readonly words: MotionWords | null }) {
+  if (words === null || words.admits === null || words.admitsLevel === 0) return null;
+  const { coalitions } = messages;
+  return (
+    <Block title={coalitions.admitsTitle} className="card admits-coalition">
+      <p className="heading-3">
+        <bdi>{words.admits}</bdi>
+      </p>
+      <p className="caption">{coalitions.admitsLevel(words.admitsLevel)}</p>
+      {words.admitsGroups.length === 0 ? null : (
+        <p>
+          {coalitions.admitsCoalition} <bdi>{words.admitsGroups.join(', ')}</bdi>
+        </p>
+      )}
+    </Block>
+  );
+}
+
+/**
  * A reconcile Proposal's coalition (#114): its name and statement as the
  * card set them, then, once its genesis names them, the other groups it
  * reconciles with.
@@ -756,16 +792,6 @@ function ReconcileStatement({ view }: { readonly view: ReconcileView | null }) {
   );
 }
 
-/** "Coalition vote · <coalition>", the coalition's name in its own `<bdi>` (#120). */
-function MotionTag({ coalition }: { readonly coalition: string }) {
-  const { voteTag, tagSeparator } = messages.coalitions;
-  return (
-    <>
-      {voteTag} {tagSeparator} <bdi>{coalition}</bdi>
-    </>
-  );
-}
-
 /**
  * The coalition's own result once it has decided a motion (#120), above the
  * group's: what changed, and each group's pass or fail.
@@ -777,10 +803,15 @@ function MotionResult({ motion }: { readonly motion: MotionView | null }) {
   );
 }
 
-/** A coalition motion's progress while the coalition is still deciding it (#120). */
+/**
+ * A coalition motion's progress while the coalition is still deciding it
+ * (#120), and for one from further up, each coalition it came through (#122).
+ */
 function MotionProgress({ motion }: { readonly motion: MotionView | null }) {
   if (motion === null || motion.progress.outcome !== undefined) return null;
-  return <CoalitionProgress progress={motion.progress} />;
+  return (
+    <CoalitionProgress progress={motion.progress} steps={motion.steps} top={motion.coalition} />
+  );
 }
 
 /** A removal's response block on its ballot (#115): the response, or the one-time form to its target. */
@@ -812,8 +843,9 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   const { state } = props;
   const cutOff = cutOffOf(props, proposal);
   if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
-  const readOnly = props.leaving === true || isArchived(state, props.me);
-  const motion = motionView(proposal, state, props.coalitions ?? []);
+  const readOnly = readsOnly(props) || isArchived(state, props.me);
+  const coalitions = props.coalitions ?? [];
+  const motion = motionView(proposal, state, coalitions);
   const names = motion?.state ?? state;
   const versions = versionViews(state, proposal, names);
   return (
@@ -823,7 +855,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           motion === null ? (
             eyebrowOf(proposal, proposal.final)
           ) : (
-            <MotionTag coalition={motion.coalition} />
+            <MotionTagText coalition={motion.coalition} through={motion.through} />
           )
         }
         title={proposal.title}
@@ -851,7 +883,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
       </div>
       <Response props={props} proposal={proposal} readOnly={readOnly} />
       <MotionProgress motion={motion} />
-      <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
+      <ReconcileStatement view={reconcileView(proposal, coalitions)} />
+      <AdmitsCoalition words={motionWords(proposal, coalitions)} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />

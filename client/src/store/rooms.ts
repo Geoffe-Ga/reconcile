@@ -27,7 +27,9 @@
  * reads its rooms again from the relay.
  */
 import { deriveRoomEntryId } from '../crypto/room';
+import type { ReconcileChange } from '../engine/coalition';
 import type { GroupState } from '../engine/fold';
+import type { ProposalTarget } from '../engine/stewards';
 import { heldCoalitions, type HeldCoalition, innerOf } from './coalitions';
 import { type Group, type NewGroup, type Store } from './db';
 import { foldGroup } from './expiry';
@@ -56,12 +58,21 @@ export function innerFor(coalition: GroupState, groups: readonly RoomHolder[]): 
   for (const { state, live } of groups) {
     if (!live) continue;
     for (const { target } of state.proposals) {
-      if (target.kind !== 'reconcile' || !seats.has(target.key)) continue;
+      if (!holdsSeat(target, seats)) continue;
       const inner = innerOf(target, info, id);
       if (inner !== null) return inner;
     }
   }
   return null;
+}
+
+/**
+ * Whether `target` is a group's reconcile Proposal holding one of `seats`. A
+ * coalition's seat above is sealed in its own log (#122), so no room opens
+ * through it (#344).
+ */
+function holdsSeat(target: ProposalTarget, seats: ReadonlySet<string>): target is ReconcileChange {
+  return target.kind === 'reconcile' && !('sealed' in target) && seats.has(target.key);
 }
 
 /** The entry id of `coalition`'s room on this device, or null when it may read none. */

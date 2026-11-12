@@ -6,7 +6,8 @@
  * groups; each group votes inside itself; and only once the coalition's pass
  * is final, a week after its deadline (#100), does its Document change for
  * everyone. A fail leaves it byte for byte as it was. Neither group's
- * ballots, notes, counts or voters' names reach the other.
+ * ballots, notes, counts or voters' names reach the other, nor the
+ * coalition's section history (#104).
  */
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -36,6 +37,7 @@ import {
 } from '../test/coalitionDevices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { APP_USER } from '../test/members';
 
 freshIndexedDBPerTest();
 
@@ -111,7 +113,7 @@ async function motionIn(device: TestDevice, groupId: string, motion: string): Pr
 
 describe('a coalition’s mission statement through the normal loop', SLOW, () => {
   it('opens Ana’s change in both groups, and changes the Document for everyone once its pass is final', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const fake = createFakeRelay();
     const { ana, ben, cy, riverside, oak, coalition } = await formed(fake);
     const before = await firstSection(ben);
@@ -127,11 +129,13 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
     const documents = screen.getByRole('region', { name: 'Documents' });
     await user.click(within(documents).getByRole('link', { name: /Mission statement/ }));
     await user.click(await screen.findByRole('button', { name: 'Propose a change to section 1' }));
-    await user.type(await screen.findByRole('textbox', { name: 'Title' }), CHANGE.title);
-    await user.type(screen.getByRole('textbox', { name: 'Why' }), CHANGE.why);
-    const text = screen.getByRole('textbox', { name: 'New text' });
-    await user.clear(text);
-    await user.type(text, CHANGE.text);
+    // Pasted, not typed key by key: the composer's typing isn't under test here (#260).
+    await user.click(await screen.findByRole('textbox', { name: 'Title' }));
+    await user.paste(CHANGE.title);
+    await user.click(screen.getByRole('textbox', { name: 'Why' }));
+    await user.paste(CHANGE.why);
+    await user.clear(screen.getByRole('textbox', { name: 'New text' }));
+    await user.paste(CHANGE.text);
     await user.click(screen.getByRole('button', { name: 'Propose this change' }));
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Eastside Housing' }),
@@ -204,6 +208,19 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
       ).toHaveTextContent('Passed');
       showAt(device, `#/c/${coalition}/doc/${coalition}`);
       expect(await screen.findByText(CHANGE.text)).toBeVisible();
+      // Its history (#104): the pass, by each group's result alone, and its result in this group.
+      await user.click(screen.getByRole('button', { name: 'History of section 1' }));
+      const sheet = screen.getByRole('dialog', { name: 'History of section 1' });
+      expect(sheet).toHaveTextContent(`${CHANGE.title}${CHANGE.text}Proposed by Ana E.`);
+      expect(within(sheet).getByRole('list', { name: 'Each group' })).toHaveTextContent(
+        'Riverside TenantsPassedOak St Co-opPassed',
+      );
+      expect(sheet.textContent).not.toMatch(/Scored by|average|zero/);
+      expect(within(sheet).getByRole('link', { name: /See the full result/ })).toHaveAttribute(
+        'href',
+        `#/g/${groupId}/p/${motion.id}`,
+      );
+      expect(await axeViolations()).toEqual([]);
     }
     expect(await firstSection(ben)).toBe(`${CHANGE.text}\n`);
   });
@@ -245,6 +262,7 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
   });
 
   it('never shows one group another group’s ballots, notes, counts or voters', async () => {
+    const user = userEvent.setup(APP_USER);
     const fake = createFakeRelay();
     const { ana, ben, cy, riverside, oak, coalition } = await formed(fake);
     const motion = await anaProposes(ana, coalition);
@@ -264,6 +282,13 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
     for (const pattern of theirs) expect(document.body.textContent).not.toMatch(pattern);
     showAt(ana, `#/c/${coalition}`);
     await screen.findByRole('region', { name: 'Decided' });
+    for (const pattern of theirs) expect(document.body.textContent).not.toMatch(pattern);
+    expect(document.body.textContent).not.toMatch(/Scored by|average/);
+    // Nor does the section's history (#104), where the motion that didn't pass is listed.
+    showAt(ana, `#/c/${coalition}/doc/${coalition}`);
+    await user.click(await screen.findByRole('button', { name: 'History of section 1' }));
+    await user.click(screen.getByRole('button', { name: 'Proposals that didn’t pass (1)' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(`${CHANGE.title}Didn’t pass`);
     for (const pattern of theirs) expect(document.body.textContent).not.toMatch(pattern);
     expect(document.body.textContent).not.toMatch(/Scored by|average/);
 
