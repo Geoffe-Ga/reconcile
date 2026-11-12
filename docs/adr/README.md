@@ -41,7 +41,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0035](0035-reconcile-group-minimal-eternal-core.md) | Reconcile-the-group starts from a short eternal core, its wording settled before genesis; the rest is ratified by the first groups | Accepted; amended 2026-11-08 |
 | [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines | Accepted |
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling, at most the coalitions (0071); votes travel with the Dispatch on the voter's own device | Accepted; amended by 0065, 0070, 0071 |
-| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people | Accepted |
+| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288) |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 | [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off. The MVP runs it as a systemd service, not a container, until it needs another host | Accepted; amended 2026-11-09 |

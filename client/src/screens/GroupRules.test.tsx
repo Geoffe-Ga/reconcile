@@ -12,7 +12,7 @@ import { addressOf } from '../door/page';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
-import { DOOR } from '../test/door';
+import { DOOR, doorOf } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { GroupRules } from './GroupRules';
@@ -220,5 +220,54 @@ describe('GroupRules: an open front door (#121)', () => {
       />,
     );
     expect(within(door()).queryByRole('textbox', { name: 'Front door link' })).toBeNull();
+  });
+});
+
+describe('GroupRules: a door closed because a member left (#288)', () => {
+  /** Ana, Ben and Cal's group with its front door open, then Cal's leave. */
+  function closedByLeave() {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.leave('Cal');
+    return log;
+  }
+
+  it('says why it closed and how to reopen it, with no link, and a Proposal to open it', async () => {
+    const log = closedByLeave();
+    render(
+      <GroupRules
+        state={log.state()}
+        me={authorOf('ben')}
+        origin="https://reconcile.test"
+        copyText={() => Promise.resolve()}
+      />,
+    );
+    expect(within(door()).getByText('Closed')).toBeVisible();
+    expect(within(door()).getByText(messages.optIns.doorClosedByLeave)).toBeVisible();
+    expect(messages.optIns.doorClosedByLeave).toBe(
+      'The front door closed because a member left, and they still have its keys. A new Proposal to open it reopens it, with new keys and a new link.',
+    );
+    expect(within(door()).queryByRole('textbox', { name: 'Front door link' })).toBeNull();
+    expect(
+      within(door()).getByRole('link', { name: 'Propose turning this on for the front door' }),
+    ).toHaveAttribute('href', `#/g/${log.group}/rules/frontDoor`);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of a leave when the door was closed already, or once it opens again', () => {
+    const quiet = groupLog({ members: ['Ben', 'Cal'] });
+    quiet.leave('Cal');
+    const { unmount } = renderRules(quiet.state(), 'ben');
+    expect(within(door()).queryByText(messages.optIns.doorClosedByLeave)).toBeNull();
+    unmount();
+
+    const log = closedByLeave();
+    log.rotate('Ana');
+    const reopen = log.rules('Ana', 'frontDoor', doorOf(0x77, 0x78));
+    for (const name of ['Ana', 'Ben']) log.vote(name, reopen, 4);
+    renderRules(log.state(), 'ben');
+    expect(within(door()).getByText('Open')).toBeVisible();
+    expect(within(door()).queryByText(messages.optIns.doorClosedByLeave)).toBeNull();
   });
 });

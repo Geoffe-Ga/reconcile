@@ -16,12 +16,15 @@
  * options that pass, best first, its first is always the tally's winner, and the order ballots
  * arrive in never changes it. And of ballot expiry (#111): a device that has cleared a closed
  * Proposal's ballots, keeping its result, folds the same Document and outcomes as one that still
- * holds them, even for an event in the closing minute before the closing ballot (#289).
+ * holds them, even for an event in the closing minute before the closing ballot (#289). And of
+ * the front door (#288): no door ever stands whose secrets a record sealed under a key someone
+ * who has left held carried, whatever order Proposals, ballots, leaves and key changes come in.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { folded, foldLogs, Logs, seatOf } from '../test/coalitions';
+import { doorOf } from '../test/door';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
@@ -30,6 +33,7 @@ import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
 import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
+import { type FrontDoor, isFrontDoor } from './optIns';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { rank, tally, tallyDetail, type TallyInput } from './tally';
@@ -57,12 +61,15 @@ const score = fc.constantFrom<Score>(0, 1, 2, 3, 4);
 class Log {
   readonly records: LogRecord[] = [];
   group = '';
+  /** The epoch whose mailboxes the next record is read from (#98). */
+  epoch = 0;
 
   /** Appends `input`, signed by `author`'s test key. */
   add(received: number, author: string, input: Unstamped): string {
     const draft = { ...input, group: this.group, ts: received * 60_000 };
     const { record, id } = signedAs(author, draft);
-    this.records.push({ seq: this.records.length + 1, received, bytes: record });
+    const epoch = this.epoch === 0 ? {} : { epoch: this.epoch };
+    this.records.push({ seq: this.records.length + 1, received, bytes: record, ...epoch });
     return id;
   }
 
@@ -206,6 +213,85 @@ const LATE = {
 
 /** The kinds of late event, for fast-check to pick from. */
 const LATE_KINDS = Object.keys(LATE) as (keyof typeof LATE)[];
+
+/** A step of the front door property (#288). */
+type DoorStep =
+  | { readonly kind: 'propose'; readonly door: number }
+  | { readonly kind: 'vote' }
+  | { readonly kind: 'leave'; readonly who: number }
+  | { readonly kind: 'rotate' }
+  | { readonly kind: 'wait' };
+
+/** What the front door property plays on: a log, its size, the relay minute, and the latest Proposal. */
+interface DoorPlay {
+  readonly log: Log;
+  readonly count: number;
+  at: number;
+  latest: string;
+}
+
+/**
+ * Plays one step a minute after the last: member 0 proposes one of three
+ * doors, everyone scores the latest Proposal 4, a member other than the
+ * founder leaves, member 0 changes the key into the next epoch (#98), from
+ * which later records are read when it lands, or an entrenched window passes.
+ */
+function playDoorStep(play: DoorPlay, step: DoorStep): void {
+  const { log, count } = play;
+  play.at += 1;
+  switch (step.kind) {
+    case 'propose': {
+      const value = doorOf(0x10 + step.door, 0x20 + step.door);
+      const body = { target: { kind: 'rules', optIn: 'frontDoor', value }, title: 'T', why: 'W' };
+      play.latest = log.add(play.at, member(0), { type: 'proposal', body } as Unstamped);
+      return;
+    }
+    case 'vote':
+      for (let voter = 0; voter < count; voter += 1) log.vote(play.at, voter, play.latest, 4);
+      return;
+    case 'leave':
+      log.leave(play.at, 1 + (step.who % (count - 1)));
+      return;
+    case 'rotate':
+      log.add(play.at, member(0), {
+        type: 'key-rotate',
+        body: { ...LATE_ROTATE, epoch: log.epoch + 1 },
+      });
+      log.epoch = fold(log.records, play.at).epoch;
+      return;
+    case 'wait':
+      play.at += defaultWindowMinutes(DEFAULT_RULES, 'entrenched');
+  }
+}
+
+/** The front door a record's rules Proposal carries, whether the fold applied it or not, or null. */
+function doorCarriedBy(record: LogRecord): FrontDoor | null {
+  const event = parseRecord(record.bytes)?.event;
+  if (event?.type !== 'proposal' || !('target' in event.body)) return null;
+  const { target } = event.body;
+  return target.kind === 'rules' && isFrontDoor(target.value) ? target.value : null;
+}
+
+/**
+ * Expects that no record carrying either secret of the door standing in
+ * `state` was sealed under a key anyone who left held: each was read from a
+ * later epoch than every leave the fold applied.
+ */
+function expectNoExposedDoor(log: Log, state: GroupState): void {
+  const standing = state.rules.optIns.frontDoor;
+  if (standing === false) return;
+  const ignored = new Set(state.ignored.map((record) => record.seq));
+  const leaves = log.records.filter(
+    (record) => !ignored.has(record.seq) && parseRecord(record.bytes)?.event.type === 'leave',
+  );
+  const carriers = log.records.filter((record) => {
+    const carried = doorCarriedBy(record);
+    return carried?.sign === standing.sign || carried?.box === standing.box;
+  });
+  for (const leave of leaves) {
+    for (const carrier of carriers) expect(carrier.epoch ?? 0).toBeGreaterThan(leave.epoch ?? 0);
+  }
+}
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
@@ -718,6 +804,27 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         const left = fold(log.records, R + 100);
         expect(left.former.map((m) => m.author)).toEqual([authorOf(member(target))]);
         expect(left.rotationDue).toBe(true);
+      }),
+    );
+  });
+
+  it('never lets a front door stand whose secrets someone who has left could read (#288)', () => {
+    const step = fc.oneof(
+      fc.record({ kind: fc.constant('propose' as const), door: fc.nat({ max: 2 }) }),
+      fc.record({ kind: fc.constant('vote' as const) }),
+      fc.record({ kind: fc.constant('leave' as const), who: fc.nat({ max: 2 }) }),
+      fc.record({ kind: fc.constant('rotate' as const) }),
+      fc.record({ kind: fc.constant('wait' as const) }),
+    );
+    const scenario = fc.record({
+      count: fc.integer({ min: 3, max: 4 }),
+      steps: fc.array(step, { maxLength: 10 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, steps }) => {
+        const play: DoorPlay = { log: Log.founded(count), count, at: R + 20, latest: '' };
+        for (const next of steps) playDoorStep(play, next);
+        expectNoExposedDoor(play.log, fold(play.log.records, play.at + 1));
       }),
     );
   });

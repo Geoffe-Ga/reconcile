@@ -47,7 +47,7 @@ describe('personalSharing.read', () => {
   it('reads a share as on, pending as its mark says, with no link, while the keys are locked', async () => {
     const sharing = sharingWith(new VaultLocked(), [ENTRY]);
 
-    expect(await sharing.read(ID)).toEqual({ link: null, pending: true, paused: false });
+    expect(await sharing.read(ID)).toEqual({ link: null, pending: true, paused: null });
   });
 
   it('reads a share a restore paused as paused while the keys are locked, so no choice is offered (#328)', async () => {
@@ -59,7 +59,7 @@ describe('personalSharing.read', () => {
     expect(await sharingWith(new VaultLocked(), [paused]).read(ID)).toEqual({
       link: null,
       pending: false,
-      paused: true,
+      paused: 'restored',
     });
   });
 

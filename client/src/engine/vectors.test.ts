@@ -75,6 +75,7 @@ describe('vector files', () => {
       'documents-genesis.json',
       'documents-new.json',
       'door-class.json',
+      'door-close.json',
       'door-invited.json',
       'fold.json',
       'follow-dispatch.json',
@@ -203,6 +204,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'coalition',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -577,7 +579,15 @@ describe('vector files', () => {
     'door-count',
     'door-rotate',
     'door-shape',
-  ])('include the front door vector "%s" (#121)', (name) => {
+    'door-close-leave',
+    'door-close-removal-pass',
+    'door-close-remove',
+    'door-close-reopen',
+    'door-close-pending',
+    'door-close-late',
+    'door-close-carried',
+    'door-close-narrowed',
+  ])('include the front door vector "%s" (#121, #288)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 

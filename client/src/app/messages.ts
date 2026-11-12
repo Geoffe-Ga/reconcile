@@ -896,6 +896,8 @@ export const messages = {
     homeHeading: 'Rules',
     homeLink: 'Chat bot and front door',
     homeSummary: (bot: string, door: string) => `Chat bot: ${bot} · Front door: ${door}`,
+    /** Group home's word for the front door once a membership's end closed it (#288). */
+    closedByLeave: 'Closed when a member left',
     /** What each change does, as its ballot is headed and its title starts. */
     motions: {
       chatBot: {
@@ -945,6 +947,18 @@ export const messages = {
     narrowedBallot: {
       before: 'Steward',
       after: 'turned this off at once. It stays off while your group votes.',
+    },
+    /** Group rules' front door, once a membership's end closed it (#288). */
+    doorClosedByLeave:
+      'The front door closed because a member left, and they still have its keys. A new Proposal to open it reopens it, with new keys and a new link.',
+    /**
+     * A front door Proposal that was open when a member left (#288): what
+     * passing it does, after its line, and its pass, which opens no door.
+     */
+    exposed: {
+      line: 'A member left while this vote was open, and they have the keys it carries, so if it passes the front door stays closed. A new Proposal to open it reopens it.',
+      passed:
+        'This passed, but the front door stays closed: a member left while the vote was open, and they have its keys. A new Proposal to open it reopens it.',
     },
     composerPageTitle: 'Propose a rules change',
     nowTitle: (motion: string) => `${motion} now`,
@@ -1096,6 +1110,8 @@ export const messages = {
     sharedLine: 'Shared by link',
     /** In place of sharedLine while a restore has paused the Document's share (#328). */
     pausedLine: 'Link paused after a restore',
+    /** In place of sharedLine once this device hasn't posted to the share for 30 days (#339). */
+    idleLine: 'Link paused after 30 days without an update',
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
@@ -1146,6 +1162,12 @@ export const messages = {
        * backup may predate Stop sharing, so nothing is sent until the person chooses.
        */
       paused: 'This link was live when the backup was made. Keep sharing?',
+      /**
+       * In place of paused once this device hasn't posted to the share for 30
+       * days (#339): another device may have stopped it, and its tombstone lapsed.
+       */
+      pausedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device. Keep sharing?',
       pausedNote:
         'Nothing goes to the link until you choose. Keep sharing sends it this Document’s latest version.',
       keep: 'Keep sharing',
@@ -1164,6 +1186,12 @@ export const messages = {
        */
       lockedPaused:
         'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /**
+       * In place of pausedIdle while the device's keys are locked (#255, #339): this device
+       * hasn't posted to the share for 30 days, and nothing goes to the link meanwhile.
+       */
+      lockedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
       /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
       lockedNow:
         'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
