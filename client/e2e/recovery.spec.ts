@@ -29,7 +29,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Page, Request } from '@playwright/test';
 
 import { backupIdFor, openRelayBackup } from '../src/crypto/relayBackup';
-import { combineShares, openShare, type RecoveryShare } from '../src/crypto/shares';
+import { combineShares, type RecoveryShare } from '../src/crypto/shares';
 import {
   acceptNotice,
   expect,
@@ -47,7 +47,8 @@ import {
   scan,
   textCanary,
 } from './support/scan';
-import { storedGroups, storedLogs } from './support/stored';
+import { backupKeyOn, shareOf } from './support/recovery';
+import { storedGroups } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 /** Names only these people use, so a scan can find any trace of the contact list. */
@@ -81,65 +82,6 @@ async function openSettings(page: Page): Promise<void> {
   await page.goto('/#/');
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(heading(page, 'Settings')).toBeVisible();
-}
-
-/** The relay backup key `page`'s device keeps, read straight from its IndexedDB. */
-function backupKeyOn(page: Page): Promise<number[]> {
-  return page.evaluate(async () => {
-    const request = <T>(asking: IDBRequest<T>): Promise<T> =>
-      new Promise((resolve, reject) => {
-        asking.onsuccess = () => {
-          resolve(asking.result);
-        };
-        asking.onerror = () => {
-          reject(asking.error ?? new Error('IndexedDB refused the request.'));
-        };
-      });
-    const db = await request(indexedDB.open('reconcile'));
-    try {
-      const state = (await request(
-        db.transaction('device').objectStore('device').get('relay-backup'),
-      )) as { key: Uint8Array } | undefined;
-      if (state === undefined) throw new Error('No relay backup key on this device.');
-      return Array.from(state.key);
-    } finally {
-      db.close();
-    }
-  });
-}
-
-/** The recovery-share events in a stored log, as their author and box. */
-function postedShares(log: readonly (readonly [number, number, string])[]) {
-  return log.flatMap(([, , hex]) => {
-    const event = JSON.parse(Buffer.from(hex, 'hex').subarray(96).toString('utf8')) as {
-      type: string;
-      author: string;
-      body: { box?: string };
-    };
-    return event.type === 'recovery-share' && event.body.box !== undefined
-      ? [{ author: event.author, box: event.body.box }]
-      : [];
-  });
-}
-
-/**
- * The latest share sealed to `person` from `author` in their one group,
- * opened outside the app with their own key from their own device.
- */
-async function shareOf(person: Person, author: string): Promise<RecoveryShare> {
-  const [group] = await storedGroups(person.page);
-  const [stored] = await storedLogs(person.page);
-  if (group?.kxKey == null || stored === undefined) throw new Error('Expected one group.');
-  const kxKey = Uint8Array.from(group.kxKey);
-  const opened = postedShares(stored.log)
-    .filter((posted) => posted.author === author)
-    .map(({ box }) =>
-      openShare({ groupId: group.groupId, contact: group.author, author, kxKey, box }),
-    )
-    .filter((share): share is RecoveryShare => share !== null);
-  const latest = opened.at(-1);
-  if (latest === undefined) throw new Error(`${person.name} holds no share from ${author}.`);
-  return latest;
 }
 
 /** The split of the latest share `person` holds from `author`, or null before one has synced. */
