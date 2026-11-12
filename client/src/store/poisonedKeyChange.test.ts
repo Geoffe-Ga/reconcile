@@ -3,9 +3,10 @@
  * (#224). A member posts a `key-rotate` that passes every check the fold can
  * make, right after someone leaves, with wraps that don't open. The remaining
  * devices each find that out, say so, refuse it, write a fresh key change and
- * move on together; the member can't do it twice. A key change only some
- * wraps of which open is refused the same way, by everyone, and a false word
- * against an honest one changes nothing.
+ * move on together; the member can't do it twice. The key change a removal
+ * by vote calls for (#115) is checked and refused the same way. A key change
+ * only some wraps of which open is refused the same way, by everyone, and a
+ * false word against an honest one changes nothing.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -135,6 +136,38 @@ async function calLeaves(scene: Scene, secret: Uint8Array): Promise<void> {
   await scene.post(secret, leave.record);
 }
 
+/**
+ * Ana proposes removing Cal, and the three who hold votes, Ana, Ben and Dee,
+ * each score it 4, which closes it early with a pass (#115). A minute later
+ * its pass is final, and anyone may post the `remove`. Returns the removal.
+ */
+async function removeCal(scene: Scene, secret: Uint8Array): Promise<SignedEvent> {
+  const group = scene.founding.id;
+  const removal = signedAs('ana', {
+    type: 'proposal',
+    group,
+    ts: TS,
+    body: {
+      target: { kind: 'remove', member: authorOf('cal') },
+      title: 'Remove Cal',
+      why: 'He keeps breaking the house rules.',
+    },
+  });
+  await scene.post(secret, removal.record);
+  for (const name of ['ana', 'ben', 'dee']) {
+    const scores = { [removal.id]: 4 as const };
+    const vote = signedAs(name, {
+      type: 'vote',
+      group,
+      ts: TS,
+      body: { proposal: removal.id, scores },
+    });
+    await scene.post(secret, vote.record);
+  }
+  scene.fake.minute += 1;
+  return removal;
+}
+
 /** Bytes no X25519 secret opens as a wrap: a box's length, all sevens. */
 const GARBAGE = base64url(new Uint8Array(BOX_OVERHEAD + 32).fill(7));
 
@@ -259,8 +292,13 @@ async function expectRecovered(
   return secret;
 }
 
-/** Ana proposes under the new key, and Ben and Dee fold it. */
-async function expectReadsNext(scene: Scene, honest: readonly Device[], secret: Uint8Array) {
+/** Ana proposes under the new key, and Ben and Dee fold it after the Proposals `before` names. */
+async function expectReadsNext(
+  scene: Scene,
+  honest: readonly Device[],
+  secret: Uint8Array,
+  before: readonly string[] = [],
+) {
   const [ana, ben, dee] = trio(honest);
   const groupId = scene.founding.id;
   const body = { atom: `${groupId}.0`, title: 'Later', why: 'Shift work.', text: 'Quiet at 11.' };
@@ -269,7 +307,7 @@ async function expectReadsNext(scene: Scene, honest: readonly Device[], secret: 
   await passes(honest, 1);
   for (const device of [ben, dee]) {
     const ids = (await device.state()).proposals.map((p) => p.id);
-    expect(ids, device.name).toEqual([proposal.id]);
+    expect(ids, device.name).toEqual([...before, proposal.id]);
   }
   expect(typesUnder(scene, secret)).toContain('proposal');
 }
@@ -340,6 +378,41 @@ describe('a key change whose wraps don’t open (#224)', () => {
     expect(after.epochs).toEqual([2, 2, 2]);
     expectOne(after);
     expect(after.state?.refused.map((r) => r.id)).toEqual([poison.id]);
+  });
+
+  it('after a removal by vote (#115), is refused the same way, and the fresh key change leaves out only the person removed', async () => {
+    const { scene, secret, honest } = await group();
+    const [ana] = trio(honest);
+    const removal = await removeCal(scene, secret);
+    // Zed is quick: the remove, then at once two key changes past Cal, none of whose wraps opens.
+    const now = await ana.state();
+    const members = now.members.filter((m) => m.author !== authorOf('cal'));
+    const remove = signedAs('zed', {
+      type: 'remove',
+      group: scene.founding.id,
+      ts: TS,
+      body: { proposal: removal.id },
+    });
+    await scene.post(secret, remove.record);
+    const poison = zedRotate({ ...now, members }, 1, EVERYONE);
+    await scene.post(secret, poison.record);
+    const again = zedRotate({ ...now, members }, 2, EVERYONE);
+    await scene.post(secret, again.record);
+
+    // Ana's first pass folds the remove, finds the key change past Cal doesn't open, and says so.
+    await ana.sync.syncOnce();
+    const removed = await ana.state();
+    expect(removed.removals.map((r) => [r.member, r.removed?.id])).toEqual([
+      [authorOf('cal'), remove.id],
+    ]);
+    await expectSaidOnce(ana, poison);
+
+    await passes(honest, 3);
+    const fresh = await expectRecovered(honest, scene, { poison, again, old: secret });
+    const state = await ana.state();
+    expect(state.former.map((m) => m.author)).toEqual([authorOf('cal')]);
+    expect(Object.keys(state.rotations[0]?.wraps ?? {}).sort()).toEqual([...EVERYONE].sort());
+    await expectReadsNext(scene, honest, fresh, [removal.id]);
   });
 
   it('stays canonical when a member falsely says their wrap doesn’t open: a device that checks it takes it up and says so', async () => {
