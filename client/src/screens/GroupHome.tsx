@@ -809,7 +809,7 @@ interface RemoveProps {
   readonly onRemove: GroupHomeProps['onRemove'];
 }
 
-/** Remove from this device, behind an alert dialog, for a read-only copy (#108, #231). */
+/** Remove from this device, behind an alert dialog, for a read-only copy (#108, #115, #231). */
 function RemoveCopy({ onRemove }: RemoveProps) {
   const { archive } = messages;
   if (onRemove === undefined) return null;
@@ -839,24 +839,11 @@ interface RemovedNoteProps {
  * new, and Remove from this device, behind an alert dialog.
  */
 function RemovedNote({ removal, onRemove }: RemovedNoteProps) {
-  const { archive } = messages;
   return (
     <div className="archive-note">
       <p className="eyebrow">{messages.removal.eyebrowRemoved}</p>
       <p>{messages.removal.removedOn(formatDate(removal.passedAt))}</p>
-      {onRemove === undefined ? null : (
-        <div>
-          <ConfirmDialog
-            open={archive.remove}
-            title={archive.removeTitle}
-            body={archive.removeBody}
-            confirm={archive.removeConfirm}
-            cancel={archive.cancel}
-            failed={archive.removeFailed}
-            onConfirm={onRemove}
-          />
-        </div>
-      )}
+      <RemoveCopy onRemove={onRemove} />
     </div>
   );
 }

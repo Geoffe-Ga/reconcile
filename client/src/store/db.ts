@@ -775,10 +775,11 @@ export interface Store
    * seq order among the records already there, and clear `missingHistory`
    * (#73). The cursor and sync state stay as they are. A group archived for
    * good takes nothing, a dissolved one (#108) or a removed member's copy
-   * (#115), so a cleared one never gets its ballots back. A restored copy that hasn't heard from its group (#231) takes the
-   * records and goes live: someone in the group made the link from a copy
-   * that takes new things. Like `applyPull`, it drops what expired with a
-   * Proposal in `cleared` (#111).
+   * (#115), so a cleared one never gets its ballots back. A restored copy
+   * that hasn't heard from its group (#231) takes the records and goes live:
+   * someone in the group made the link from a copy that takes new things.
+   * Like `applyPull`, it drops what expired with a Proposal in `cleared`
+   * (#111).
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
@@ -792,7 +793,8 @@ export interface Store
    * (#96), in one transaction (#78, #93). A group new to the device is kept
    * as the file has it, with an empty outbox, no drafts and no chat claims
    * (#119), and every group the restore takes reads only until it hears
-   * from the group (#231), unless it comes back dissolved. For a group
+   * from the group (#231), unless it comes back archived for good, dissolved
+   * (#108) or removed (#115). For a group
    * already here, whichever whole copy synced later stays: the file's
    * replaces the device's only when its last sync is later, and a group this
    * device is leaving or keeps read-only (#108, #231) stays as it is. From a

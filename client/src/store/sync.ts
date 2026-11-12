@@ -42,12 +42,13 @@
  *
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
- * 2. results and expiry (#111, ./expiry.ts): for each group that isn't a
- *    dissolved archive, a result for each closed Proposal that still has
- *    none after the pass before found none too, so the device has synced
- *    once more to be sure, is queued for the next pass to post, unless the
- *    group is a restored copy that hasn't heard from it (#231); then every
- *    ballot that has expired is cleared. Folding the log for this costs a
+ * 2. results and expiry (#111, ./expiry.ts): for each group that isn't
+ *    archived for good, dissolved (#108) or a removed member's copy (#115),
+ *    a result for each closed Proposal that still has none after the pass
+ *    before found none too, so the device has synced once more to be sure,
+ *    is queued for the next pass to post, unless the group is a restored
+ *    copy that hasn't heard from it (#231); then every ballot that has
+ *    expired is cleared. Folding the log for this costs a
  *    signature check per record, so a group is settled once per relay minute
  *    unless a result is owed: the duty waits for the minute after a close,
  *    and expiry for a minute, anyway;
@@ -646,8 +647,9 @@ export function createSync(options: SyncOptions): Sync {
    * once more since it first saw none, is queued, and the next pass posts it
    * and reads it back; then every ballot that has expired is cleared. A
    * group archived for good, dissolved (#108) or a removed member's copy
-   * (#115), posts nothing, and its own sweep clears it; a restored copy that hasn't heard from its group (#231) queues no result
-   * (`resultsDue`), and clears its expired ballots on the device all the same.
+   * (#115), posts nothing, and its own sweep clears it; a restored copy that
+   * hasn't heard from its group (#231) queues no result (`resultsDue`), and
+   * clears its expired ballots on the device all the same.
    * Folding costs a signature check per record, so a group already settled in
    * this relay minute, with nothing owed, is skipped, and one that just
    * queued results is settled again on the next pass, which clears by them.
