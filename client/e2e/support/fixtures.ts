@@ -1,6 +1,7 @@
 /**
  * What the end-to-end specs share: a fresh run of the real relay for each
- * test (`relay.ts`), a fixture that opens one browser profile per person
+ * test (`relay.ts`), on its worker's own port and files, a `baseURL` at its
+ * worker's own `vite preview`, a fixture that opens one browser profile per person
  * under the deploy CSP and fails the test on any CSP violation in any of
  * them, axe on the screen a person is looking at, a few locators, and
  * first run's steps (#76). Every profile's requests to Discord are answered
@@ -23,7 +24,13 @@ import {
   test as base,
 } from '@playwright/test';
 
-import { type RunningRelay, startRelay } from './relay';
+import {
+  type RunningRelay,
+  serversOf,
+  startRelay,
+  type WorkerServers,
+  workerServers,
+} from './relay';
 
 export { expect };
 
@@ -198,14 +205,25 @@ function recordCspViolations(report: string): void {
 /**
  * Playwright's `test`, with the relay started before each test and stopped after
  * it, and `openProfile`: each profile it opens is checked for CSP violations
- * and for requests to Discord that the fixture didn't answer.
+ * and for requests to Discord that the fixture didn't answer. Each worker has
+ * servers of its own (playwright.config.ts starts them): its pages, requests
+ * and relay never reach another worker's.
  */
-export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile }>({
-  // Every test gets the relay, started before it and stopped after it. It waits for
-  // the relay's health check through `request`.
+export const test = base.extend<
+  { relay: RunningRelay; openProfile: OpenProfile },
+  { servers: readonly WorkerServers[] }
+>({
+  // Every worker's servers, as scripts/e2e.sh chose them; a test uses its own worker's.
+  servers: [workerServers(), { scope: 'worker' }],
+  // Pages and `request` go to the worker's `vite preview`, which proxies /v1 to its relay.
+  baseURL: async ({ servers }, provide, testInfo) => {
+    await provide(`http://127.0.0.1:${serversOf(servers, testInfo.parallelIndex).web}`);
+  },
+  // Every test gets its worker's relay, started before it and stopped after it. It
+  // waits for the relay's health check through `request`.
   relay: [
-    async ({ request }, provide) => {
-      const relay = await startRelay(request);
+    async ({ request, servers }, provide, testInfo) => {
+      const relay = await startRelay(request, serversOf(servers, testInfo.parallelIndex).relay);
       try {
         await provide(relay);
       } finally {
