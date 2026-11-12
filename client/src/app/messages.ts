@@ -846,6 +846,16 @@ export const messages = {
     movedAfter: (words: string) => `Moved after ‘${words}’`,
     movedToTop: 'Moved to the top',
     movedToEnd: 'Moved to the end',
+    /**
+     * What a passed class change gave the section (#116), over its text in its
+     * history and in the change log, by the class it gave: the names #116's
+     * badges use, and lifting its protection for ordinary.
+     */
+    classChanged: {
+      entrenched: 'Entrenched',
+      eternal: 'Made eternal',
+      ordinary: 'Protection lifted',
+    },
     /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
     noResult: 'No result',
     seeResult: 'See the full result',

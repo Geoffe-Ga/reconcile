@@ -104,7 +104,7 @@
 
 .history-why,
 .history-removed,
-.history-moved {
+.history-kept {
   max-width: 30em;
   color: var(--body);
   font: var(--type-body);
