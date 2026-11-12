@@ -19,6 +19,9 @@ export default defineConfig(({ mode }) => {
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
       include: ['src/**/*.test.{ts,tsx}'],
+      // A worker for every core. Vitest's default leaves one free, which on
+      // CI's two-core runner ran every file one at a time.
+      maxWorkers: '100%',
       // Vitest blanks stylesheets unless told otherwise. A `?raw` import of one
       // returns its text, as in a build, so a test can check what ships.
       css: { include: [/\.css\?raw$/] },
