@@ -27,10 +27,16 @@ import type { RulesView } from '../app/optInLines';
 import { Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
-import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
+import {
+  type RemovalView,
+  type StewardView,
+  type VersionView,
+  versionViews,
+} from '../app/versionViews';
 import type { CoalitionProgress } from '../engine/coalitionProgress';
 import { proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
+import { removalTarget } from '../engine/removal';
 import type { Bar } from '../engine/rules';
 import type { TallyDetail, VersionTally } from '../engine/tally';
 import { PriorityResult } from './PriorityResult';
@@ -170,6 +176,21 @@ function DissolvePassed() {
 }
 
 /**
+ * A removal's pass (#115): the person it named is no longer in the group, or,
+ * on their own device, they aren't.
+ */
+function RemovalPassed({ removal, you }: { readonly removal: RemovalView; readonly you: boolean }) {
+  const { removal: words } = messages;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">
+        {you ? words.passedYou : <Named parts={words.passed} name={removal.name} />}
+      </p>
+    </div>
+  );
+}
+
+/**
  * A reconcile Proposal's or a coalition motion's pass (#114): only the
  * group's pass goes to the coalition, which decides with every group's.
  */
@@ -190,8 +211,11 @@ function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']
  * coalition (#120), whose own result says what changed.
  */
 function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
-  const { steward, rules, dissolve, decision } = props.versions[0] ?? {};
-  const { proposal } = props.props;
+  const { steward, rules, dissolve, removal, decision } = props.versions[0] ?? {};
+  const { proposal, me } = props.props;
+  if (removal !== undefined) {
+    return <RemovalPassed removal={removal} you={removalTarget(proposal) === me} />;
+  }
   if (decision !== undefined || proposal.target.kind === 'motion') {
     return <DecisionPassed proposal={proposal} />;
   }

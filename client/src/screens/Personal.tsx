@@ -3,12 +3,12 @@ import { Link } from 'react-aria-components';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { BackLink, PageHeader } from '../app/ui';
-import type { PersonalDocument } from '../store/personal';
+import type { PersonalEntry } from '../store/personal';
 
 /** Props for {@link Personal}. */
 export interface PersonalProps {
   /** This device's personal Documents, oldest first. */
-  readonly documents: readonly PersonalDocument[];
+  readonly documents: readonly PersonalEntry[];
   /** The id a new Document opens at; nothing is stored under it until its first save. */
   readonly newId: string;
   /**
@@ -52,7 +52,7 @@ function DocumentCard({
 }
 
 /** The line under a Document's title on Personal: shared by link (#105), or paused after a restore (#328). */
-function shareLine({ share }: PersonalDocument): { readonly line?: string } {
+function shareLine({ share }: PersonalEntry): { readonly line?: string } {
   if (share === undefined) return {};
   return {
     line: share.paused === true ? messages.personal.pausedLine : messages.personal.sharedLine,

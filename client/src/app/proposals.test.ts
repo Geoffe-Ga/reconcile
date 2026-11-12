@@ -20,9 +20,11 @@ import {
   propose,
   type ProposalValues,
   proposeDissolve,
+  proposeRemoval,
   proposeRules,
   proposeSteward,
   removalDraft,
+  respondToRemoval,
   sendDispatch,
   suspend,
   vouch,
@@ -875,6 +877,68 @@ describe('proposeDissolve', () => {
       outcome: 'too-large',
     });
     expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
+describe('proposeRemoval and respondToRemoval (#115)', () => {
+  const KIM = 'S2ltS2ltS2ltS2ltS2ltS2ltS2ltS2ltS2ltS2ltS2k';
+
+  it('queues one removal with no window, NFC-normalized, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeRemoval(device.services, groupId, {
+      member: KIM,
+      title: 'Remove Kim from the cafe\u0301',
+      why: 'Threats in the chat.',
+    });
+    expect(await outbox(device, groupId)).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: {
+          target: { kind: 'remove', member: KIM },
+          title: 'Remove Kim from the caf\u00e9',
+          why: 'Threats in the chat.',
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    const id = parseRecord(group?.outbox[0] ?? new Uint8Array())?.id;
+    expect(result).toEqual({ outcome: 'proposed', proposalId: id });
+  });
+
+  it('refuses a removal too large for any blob, and queues nothing', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const values = { member: KIM, title: 'Remove Kim', why: 'x'.repeat(70_000) };
+    expect(await proposeRemoval(device.services, groupId, values)).toEqual({
+      outcome: 'too-large',
+    });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+
+  it('queues one response, trimmed and NFC-normalized', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    await respondToRemoval(device.services, groupId, {
+      proposal: 'p1',
+      text: '  I wasn’t at the cafe\u0301.\n ',
+    });
+    expect(await outbox(device, groupId)).toEqual([
+      {
+        v: 1,
+        type: 'removal-response',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: { proposal: 'p1', text: 'I wasn’t at the caf\u00e9.' },
+      },
+    ]);
   });
 });
 

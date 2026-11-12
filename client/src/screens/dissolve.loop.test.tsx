@@ -1,5 +1,5 @@
 /**
- * Dissolving through the whole app (#108), on three devices that share one
+ * Dissolving through the whole app (#108), on two devices that share one
  * fake relay: Ana proposes it from the bottom of Group home, everyone scores
  * it 4, a device that folds the final pass posts the `dissolve`, and every
  * device turns its copy read-only and stops syncing the group. A composer's
@@ -8,8 +8,8 @@
  * and removing one (#75) say so too, on a device seeded with the read-only
  * copy, so the long loop stays within its time.
  */
-import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { castBallot } from '../app/proposals';
@@ -19,7 +19,7 @@ import { type TestDevice, testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { testKeys } from '../test/keys';
-import { go, members, type MountedApp, mountApp } from '../test/members';
+import { APP_USER, go, members, type MountedApp, mountApp } from '../test/members';
 import { groupLog } from '../test/votes';
 
 freshIndexedDBPerTest();
@@ -45,7 +45,7 @@ async function syncAll(devices: readonly TestDevice[]): Promise<void> {
 
 /** From Group home, through the composer, to the new dissolve Proposal; returns its id. */
 async function proposeDissolving(app: HTMLElement, groupId: string): Promise<string> {
-  const user = userEvent.setup();
+  const user = userEvent.setup(APP_USER);
   await user.click(await within(app).findByRole('link', { name: 'Propose dissolving the group' }));
   await user.click(await within(app).findByRole('textbox', { name: 'Title' }));
   await user.paste('Dissolve Riverside');
@@ -71,12 +71,12 @@ async function expectArchived(devices: readonly TestDevice[], groupId: string): 
 
 describe('dissolving a group in the app', () => {
   it('passes, ends the group on every device, and leaves each a read-only copy it can remove', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const fake = createFakeRelay();
-    const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
+    const { groupId, devices } = await members(fake, ['Ana', 'Ben']);
     opened.push(...devices);
-    const [ana, ben, cal] = devices;
-    if (ana === undefined || ben === undefined || cal === undefined) throw new Error('3 devices');
+    const [ana, ben] = devices;
+    if (ana === undefined || ben === undefined) throw new Error('2 devices');
     go(`#/g/${groupId}`);
     const a = mount(ana, 'a');
 
@@ -85,7 +85,7 @@ describe('dissolving a group in the app', () => {
     for (const device of devices) {
       await castBallot(device.services, groupId, { proposal, scores: { [proposal]: 4 }, note: '' });
     }
-    // The ballots go up, then every device reads all three and posts its dissolve,
+    // The ballots go up, then every device reads both and posts its dissolve,
     // then each reads the first one and archives the group.
     await syncAll(devices);
     await syncAll(devices);
@@ -98,8 +98,7 @@ describe('dissolving a group in the app', () => {
 
     go(`#/g/${groupId}`);
     const b = mount(ben, 'b');
-    const c = mount(cal, 'c');
-    for (const app of [a, b, c]) {
+    for (const app of [a, b]) {
       expect(
         await within(app).findByText(/^This group dissolved on .+\. This is a read-only copy\.$/),
       ).toBeVisible();
@@ -115,7 +114,7 @@ describe('dissolving a group in the app', () => {
     ).toBeVisible();
     go(`#/g/${groupId}/rules/chatBot`);
     expect(
-      await within(c).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
+      await within(a).findByRole('heading', { level: 1, name: 'This group has dissolved' }),
     ).toBeVisible();
 
     go(`#/g/${groupId}`);

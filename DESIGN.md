@@ -191,6 +191,13 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - "Ask to join" (heading-3), then two fields, the name to use and why, one line in `body` (ui) saying not to include anything the group shouldn't read, and Send, the page's one primary action. No contact field.
   - A closed door reads "This front door is closed." under the heading "Front door", with one quiet line and no form.
   - **Applications** on group home: one `surface` card each, the name (heading-3) and the day it arrived (meta) on one line, the message as plain body text, "Invited by <name>" in caption, then Send an invite (secondary) and Dismiss (quiet).
+- **Coalition room** (#125): a list and a box, never a chat product.
+  - The eyebrow "Room", the coalition's name as the heading, then one line in `body` saying who can read it (only the coalition's member groups: not the relay, not its followers) and that each device deletes a message 30 days after the relay received it.
+  - Messages run oldest at the top to newest at the bottom, as hairline rows on the paper: the author's coalition name (ui, 650, `ink`) and the relay's time (caption, `muted`; the time alone today, the day and time before) on one line, then the text in body as plain pre-wrapped text inside `<bdi>`: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links. No avatars, reactions, counts or read receipts.
+  - A message the relay doesn't have yet sits last, under the writer's name, with its send status (caption, `muted`) under its text.
+  - At the bottom, the box ("Message", a few lines tall, taller on drag) and Send, the view's one primary action. Someone who hasn't taken part gets Take part (secondary) there instead, and anyone else one line in `body` saying who writes here.
+  - New messages are announced politely, only while the person is at the bottom.
+  - On the coalition's home, a card link "Open the room" in its own section, shown only on a device in a member group.
 - **Notification switches** (Settings, #99): the disclosure first, as plain body text, then one React Aria switch per group, "Notify me about <group>", all off to start.
   - Each switch is a card on `surface` with a `hairline` border, and a tap anywhere on it toggles it. The track sits at the row's end, at least a 44px target with the card.
   - Off: a `muted` ring with a `muted` thumb at the start. On: the track fills `primary` and the thumb, in `surface`, moves to the end, so the state never rests on color alone.
@@ -204,6 +211,10 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Beside it on wide screens, under it on phones, the same code as selectable `mono` text on `sunken`, which selects as a whole, and Copy the code (secondary).
   - The six-digit number both devices show sits in a `surface` card with a `hairline` border: the prompt (heading-3), then the digits in two groups of three, in JetBrains Mono at `display` size.
   - Match is the one primary action on the existing device. The new device shows the number with only Cancel.
+- **Recovery contacts** (#109; ADR-0008, ADR-0043): trust, never growth. Nothing counts, ranks or invites anyone.
+  - Settings shows what contacts are, then "<n> recovery contacts · <t> needed" (heading-3) over one line per contact: the name (ui, `ink`), then "in <group>" (caption, `muted`). A contact who has gone carries "No longer in a shared group" as caption words on a `sunken` chip, never a color alone. Below t, a notice with a `warning` rule asks the person to choose again. Choose (secondary) opens the picker.
+  - The picker (`#/recovery`) puts the issue's words on whom to pick in body text, then two counts as number fields with a step either side, "People to pick" (3–7, 5 to start) and "Needed to help you back in" (2–5, 3 to start), and one line saying what they mean. Each group is a card on `surface` with a `hairline` border: "People in <group>" (heading-3), then a checkbox per person. A live line counts the picks, and Save recovery contacts (primary) is ready once they match.
+  - A held share is one line, "You're holding a recovery share for <name> (<group>)": listed under "Shares you hold" in Settings, and once on that group's home on the backup card's `sunken` ground, with OK (quiet) to put it away. Never a modal.
 - **Gift prompt** (ADR-0025):
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line

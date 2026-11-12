@@ -8,7 +8,10 @@
  * beside its warning, with 'Stop sharing', which says plainly what it can't
  * call back. A share a restore brought back is paused (#328): it asks first,
  * with 'Keep sharing' and 'Stop sharing', and shows no link until the person
- * keeps it. Every outcome is read out in a polite live region.
+ * keeps it. Every outcome is read out in a polite live region. While the
+ * device's keys are locked with a passkey, a share's seed waits in the vault
+ * (#255): the section says it's on and how to unlock, with no link and no
+ * button.
  */
 import { useId } from 'react';
 import { Button } from 'react-aria-components';
@@ -36,6 +39,7 @@ const STATUS_LINE: Readonly<Record<ShareStatus, string>> = {
   'kept-pending': messages.personal.share.keptPending,
   'keep-stopped': messages.personal.share.keepStopped,
   'paused-stop-failed': messages.personal.share.pausedStopFailed,
+  locked: messages.personal.share.lockedNow,
 };
 
 /** Props for {@link ShareByLink}. */
@@ -79,8 +83,23 @@ function ShareOff({ share }: Pick<ShareByLinkProps, 'share'>) {
   );
 }
 
+/** On, while the device's keys are locked (#255): that it's shared, how to unlock, and whether an edit waits. */
+function ShareLocked({ view }: { readonly view: ShareView }) {
+  const { personal } = messages;
+  return (
+    <div className="stack">
+      <p className="lede">{personal.share.locked}</p>
+      {view.pending ? <p className="caption">{personal.share.pending}</p> : null}
+    </div>
+  );
+}
+
 /** On: the link beside its warning, how edits reach it, then Share link again and Stop sharing. */
-function ShareOn({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView }) {
+function ShareOn({
+  share,
+  view,
+  fits,
+}: ShareByLinkProps & { readonly view: ShareView & { readonly link: string } }) {
   const { personal } = messages;
   return (
     <div className="stack">
@@ -172,11 +191,17 @@ function SharePaused({ share }: Pick<ShareByLinkProps, 'share'>) {
   );
 }
 
-/** The section's body for `view`: off, paused after a restore (#328), or on. */
+/**
+ * The section's body for `view`: off; on with the device's keys locked
+ * (#255), paused or not, since neither choice can run without the keys;
+ * paused after a restore (#328); or on.
+ */
 function ShareBody({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView | null }) {
   if (view === null) return <ShareOff share={share} />;
+  const { link } = view;
+  if (link === null) return <ShareLocked view={view} />;
   if (view.paused) return <SharePaused share={share} />;
-  return <ShareOn share={share} view={view} fits={fits} />;
+  return <ShareOn share={share} view={{ ...view, link }} fits={fits} />;
 }
 
 /**

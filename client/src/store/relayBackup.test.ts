@@ -123,21 +123,17 @@ function secretFor(name: string): Uint8Array {
 }
 
 /**
- * Ana founds `name` on `device`, known there as `myName`, and syncs, so the
- * relay has returned its genesis.
+ * Ana founds `name` on `device`, known there by the canary founder's name, and
+ * syncs, so the relay has returned its genesis.
  */
-async function found(
-  device: Device,
-  name = CANARY.group,
-  myName = CANARY.founder,
-): Promise<SignedEvent> {
+async function found(device: Device, name = CANARY.group): Promise<SignedEvent> {
   const genesis = genesisOf(name);
   const { secretKey, author } = testKeys('ana');
   await device.store.addGroup({
     groupId: genesis.id,
     secret: secretFor(name),
     signingKey: secretKey,
-    me: { author, name: myName },
+    me: { author, name: CANARY.founder },
   });
   await device.store.enqueue(genesis.id, genesis.record);
   expect(await device.sync.syncOnce()).toBe(true);
@@ -414,17 +410,17 @@ describe('the schedule', () => {
     ).not.toBeNull();
   });
 
-  it('keeps the last good backup when the groups grow past 16 MiB, and says so', async () => {
+  it('keeps the last good backup when what it keeps grows past 16 MiB, and says so', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
     await startRelayBackup(device.services);
     const key = await keyOf(device.store);
     const good = fake.backup(backupIdFor(key));
-    // A second group whose device-only name is 17 MB takes the snapshot past 16 MiB. Only
-    // the size matters here, and a name gets there without folding megabytes of log;
-    // crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte.
-    await found(device, 'Second Street Garden', 'n'.repeat(17_000_000));
+    // A 17 MB personal Document takes the snapshot past 16 MiB. Only the size matters here,
+    // and crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte. Kept in a group,
+    // the 17 MB would be copied out of IndexedDB on every read a sync pass makes of it (#260).
+    await device.store.savePersonal({ ...statement(), text: 'n'.repeat(17_000_000) });
     fake.minute += DAY;
 
     expect(await device.sync.syncOnce()).toBe(true);

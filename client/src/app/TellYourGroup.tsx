@@ -9,7 +9,7 @@
  * share is done, and is never stored. A steward Proposal offers no title,
  * since its title names a member.
  */
-import { type PointerEvent, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField } from 'react-aria-components';
 
 import {
@@ -20,6 +20,7 @@ import {
   chatMessage,
   shareableTitle,
 } from './chatMessages';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import type { ShareOutcome } from './share';
 
@@ -39,18 +40,6 @@ const STATUS: Readonly<Record<ShareOutcome | 'idle', string>> = {
   copied: messages.tell.copied,
   blocked: messages.tell.blocked,
 };
-
-/**
- * Keeps a press from starting while a share runs. React Aria's usePress
- * starts one on pointerdown even on a disabled control, and clicks it itself
- * 80 ms after a pointerup with no click, so a second tap on the busy button
- * could share again, or tick the box, once it's enabled (#190, #192).
- */
-function holdPresses(busy: boolean) {
-  return (event: PointerEvent) => {
-    if (busy) event.stopPropagation();
-  };
-}
 
 /**
  * What Tell your group shares, as it will read, then "Include the title",

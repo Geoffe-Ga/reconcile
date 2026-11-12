@@ -14,6 +14,7 @@ import { testDevice, type TestDevice, TEST_NOW } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { APP_USER } from '../test/members';
 import { App } from './App';
 import { messages } from './messages';
 
@@ -37,7 +38,7 @@ const CANARY = 'Canary statement: I show up for my neighbors.';
 
 describe('Personal in the app', () => {
   it('goes from Start to a mission statement kept on this device, then lists it, telling the relay nothing', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const ana = await device('ana');
     render(<App services={ana.services} />);
 
@@ -48,8 +49,9 @@ describe('Personal in the app', () => {
 
     expect(window.location.hash).toMatch(/^#\/me\/[A-Za-z0-9_-]{21}[AQgw]$/);
     const id = window.location.hash.slice('#/me/'.length);
-    const text = await screen.findByRole('textbox', { name: 'Text' });
-    await user.type(text, CANARY);
+    // Pasted, not typed key by key: each keystroke re-renders the whole app (#260).
+    await user.click(await screen.findByRole('textbox', { name: 'Text' }));
+    await user.paste(CANARY);
     expect(await screen.findByText('Saved on this device.', {}, { timeout: 2_000 })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
 
