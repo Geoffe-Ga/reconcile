@@ -413,10 +413,10 @@ export interface Clearing {
 export type ArchiveReason = 'dissolved' | 'removed';
 
 /**
- * A dissolved archive once this device has cleared its ballots and notes
- * (#108; ADR-0075 §5): the group as the device last folded it, every ballot
- * and note taken out, with each decided Proposal's totals and outcome from
- * the device's own tally. The log that held the ballots is gone.
+ * A dissolved archive once this device has cleared its ballots, notes and
+ * vouches (#108, #222; ADR-0075 §5): the group as the device last folded it,
+ * every ballot, note and vouch taken out, with each decided Proposal's totals
+ * and outcome from the device's own tally. The log that held them is gone.
  */
 export interface ClearedArchive {
   /** When this device cleared them, in device milliseconds. */
@@ -934,7 +934,7 @@ export interface Store
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
-   * Clear an archived group's ballots and notes, in one change (#108): keep
+   * Clear an archived group's ballots, notes and vouches, in one change (#108, #222): keep
    * `cleared`, the state to show from now on, and drop the log that held
    * them. Refuses a group that isn't archived for good (`isArchive`): a
    * dissolved group's, or a removed member's copy (#115).

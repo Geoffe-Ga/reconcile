@@ -407,6 +407,193 @@
         ],
         "ignored": [{ "seq": 8, "id": "@8" }]
       }
+    },
+    {
+      "name": "a recovery-cancel from a member suspended while a removal of them is open still counts, and one after that removal passes is ignored: suspension blocks neither an alert nor a cancel (#303, the founder's decision of 2026-11-12), and a passed removal blocks both (#115)",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": { "name": "Ben", "level": "co-creator", "kx": "&ben" }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": { "name": "Cal", "level": "co-creator", "kx": "&cal" }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": { "name": "Kim", "level": "co-creator", "kx": "&kim" }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": { "member": "%kim" }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500360000,
+            "body": { "member": "%kim" }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": { "member": "%kim", "reason": "Posting other people's addresses." }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "target": { "kind": "remove", "member": "%kim" },
+              "title": "Remove Kim",
+              "why": "Kim keeps posting addresses."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "recovery-cancel",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500540000,
+            "body": { "alert": { "$base64url": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5] } }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": { "proposal": "@8", "scores": { "@8": 4 } }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": { "proposal": "@8", "scores": { "@8": 4 } }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500720000,
+            "body": { "proposal": "@8", "scores": { "@8": 4 } }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "recovery-cancel",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500780000,
+            "body": { "alert": { "$base64url": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6] } }
+          }
+        }
+      ],
+      "relayNow": 29375016,
+      "expect": {
+        "suspensions": [{ "id": "@7", "by": "%ana", "member": "%kim", "removal": "@8" }],
+        "removals": [{ "proposal": "@8", "member": "%kim", "passedAt": 29375015, "removed": null }],
+        "recoveryCancels": [
+          {
+            "id": "@9",
+            "seq": 9,
+            "received": 29375012,
+            "by": "%kim",
+            "alert": { "$base64url": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5] }
+          }
+        ],
+        "ignored": [{ "seq": 13, "id": "@13" }]
+      }
     }
   ]
 }
