@@ -14,7 +14,8 @@
  * cleared archive's from the tallies it kept (#108). A coalition's motions
  * are decided by its groups, so a passed motion carries each group's pass or
  * fail and no totals, as its result does (ADR-0036). A passed move (#103)
- * leaves its section's text as it was, and appears as where it put it.
+ * leaves its section's text as it was, and appears as where it put it, and
+ * a passed class change (#116) as the class it gave the section.
  * Priority, steward, rules, dissolve, reconcile, admit and member removal
  * Proposals change no section, so none of them appears. `describeChange` says what a pass did as data; the
  * screens put it into words, since src/engine imports no app code.
@@ -23,6 +24,7 @@ import { RESULT_GRACE_MINUTES } from './coalition';
 import { coalitionProgress, type GroupStanding } from './coalitionProgress';
 import { documentOf, documentSections } from './documents';
 import { closeTime, type GroupState, type Proposal, proposalTally, type Version } from './fold';
+import type { AtomClass } from './rules';
 import type { ProposalTarget } from './stewards';
 import type { TallyDetail, VersionTotals } from './tally';
 
@@ -42,7 +44,7 @@ export type MovedTo =
  * `created` it (#92). A pass `added` a section (#75), `changed` one's text,
  * or `removed` it, and `quote` is that section's text as it read before, for
  * the screens to quote its first words; or it `moved` one, `to` a new place
- * (#103).
+ * (#103), or `class-changed` it, `to` the class its pass gave it (#116).
  */
 export type Change =
   | { readonly kind: 'founded' }
@@ -50,7 +52,8 @@ export type Change =
   | { readonly kind: 'added' }
   | { readonly kind: 'changed'; readonly quote: string }
   | { readonly kind: 'removed'; readonly quote: string }
-  | { readonly kind: 'moved'; readonly to: MovedTo };
+  | { readonly kind: 'moved'; readonly to: MovedTo }
+  | { readonly kind: 'class-changed'; readonly to: AtomClass };
 
 /** What a Proposal's pass did: any {@link Change} but a founding. */
 export type PassChange = Exclude<Change, { readonly kind: 'founded' }>;
@@ -148,12 +151,14 @@ interface Passing {
   readonly before: string | null;
   /** Where a move put its section (#103), or null for any other target. */
   readonly to: MovedTo | null;
+  /** The class a class Proposal gives its section (#116), or null for any other target. */
+  readonly gives: AtomClass | null;
 }
 
 /**
  * What a pass of each target kind did. Keyed by every kind in the target
  * union, so a kind added later fails `tsc` here until it has an entry of its
- * own: the exhaustive check, without a `switch` whose twelve cases would
+ * own: the exhaustive check, without a `switch` whose thirteen cases would
  * pass the complexity limit.
  */
 const DESCRIBED: {
@@ -164,6 +169,9 @@ const DESCRIBED: {
   'new-document': () => ({ kind: 'created' }),
   // A move of a section that had gone by its pass moves nothing, as the fold leaves it (#103).
   move: ({ before, to }) => (before === null || to === null ? null : { kind: 'moved', to }),
+  // So does a class change of a section that had gone, though it holds the section's slot (#116).
+  class: ({ before, gives }) =>
+    before === null || gives === null ? null : { kind: 'class-changed', to: gives },
   steward: NO_CHANGE,
   rules: NO_CHANGE,
   dissolve: NO_CHANGE,
@@ -191,8 +199,8 @@ function movedTo(target: ProposalTarget, held: ReadonlyMap<string, string>): Mov
 /**
  * What a final pass did to its Document (#104), from its target: an edit
  * `changed` its section, or `removed` it when its winning text is `""`; an add
- * `added` one (#75); a new Document `created` its Document (#92); and a move
- * `moved` its section (#103). `held` is each section's text before the pass,
+ * `added` one (#75); a new Document `created` its Document (#92); a move
+ * `moved` its section (#103); and a class Proposal `class-changed` it (#116). `held` is each section's text before the pass,
  * by id: a change or a removal quotes its own section's, and a move names
  * the section it follows by its. Null for a Proposal that changes no
  * Document.
@@ -205,7 +213,8 @@ export function describeChange(
   const winner = outcome.kind === 'pass' ? outcome.version : null;
   const removes = proposal.versions.some((v) => v.id === winner && v.text === '');
   const before = held.get(proposal.atom) ?? null;
-  return DESCRIBED[target.kind]({ removes, before, to: movedTo(target, held) });
+  const gives = target.kind === 'class' ? target.to : null;
+  return DESCRIBED[target.kind]({ removes, before, to: movedTo(target, held), gives });
 }
 
 /** The sections a pass `change`d, given each section's text before it and its winning `text`. */
@@ -222,7 +231,8 @@ function sectionsOf(
     case 'removed':
       return [{ id: proposal.atom, before, after: null }];
     case 'moved':
-      // A move leaves its section's text as it was (#103).
+    case 'class-changed':
+      // A move (#103) or a class change (#116) leaves its section's text as it was.
       return before === null ? [] : [{ id: proposal.atom, before, after: before }];
     case 'added':
       return [{ id: proposal.id, before: null, after: text }];

@@ -18,8 +18,9 @@
  * when they were cleared. A priority vote's result is PriorityResult.tsx's
  * (#107); the two share ResultParts.tsx.
  */
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 
+import { AtomBadge } from '../app/AtomBadge';
 import { OutcomeSentence } from '../app/CoalitionProgress';
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
@@ -101,14 +102,29 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
 }
 
 /**
- * A move's pass (#103): that the section has moved, the section as it reads,
- * and thanks to whoever proposed it.
+ * What a section's pass says first (#103, #116): that it has moved, or the
+ * class a class Proposal gave it, by the line its card led with.
  */
-function MovePassed({ version }: { readonly version: VersionView }) {
-  const text = version.move?.text ?? null;
+function sectionPassed(version: VersionView): string {
+  const { result } = messages;
+  const to = version.protect?.to;
+  if (to === undefined) return result.passedMove;
+  if (to === 'eternal') return result.passedEternal;
+  return to === 'ordinary' ? result.passedUnprotected : result.passedEntrenched;
+}
+
+/**
+ * A move's pass (#103) or a class Proposal's (#116): that the section has
+ * moved, or what it is now, with its new badge, the section as it reads, and
+ * thanks to whoever proposed it.
+ */
+function SectionPassed({ version }: { readonly version: VersionView }) {
+  const text = (version.move ?? version.protect)?.text ?? null;
+  const to = version.protect?.to;
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{messages.result.passedMove}</p>
+      <p className="outcome-sentence">{sectionPassed(version)}</p>
+      {to === 'entrenched' || to === 'eternal' ? <AtomBadge cls={to} /> : null}
       {text === null ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={[version.author]} />
     </div>
@@ -253,19 +269,28 @@ function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']
  */
 function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
   const first = props.versions[0];
-  const { steward, rules, dissolve, removal, decision } = first ?? {};
   const { proposal, me } = props.props;
-  if (removal !== undefined) {
-    return <RemovalPassed removal={removal} you={removalTarget(proposal) === me} />;
+  if (first?.removal !== undefined) {
+    return <RemovalPassed removal={first.removal} you={removalTarget(proposal) === me} />;
   }
-  if (decision !== undefined || proposal.target.kind === 'motion') {
+  if (first?.decision !== undefined || proposal.target.kind === 'motion') {
     return <DecisionPassed proposal={proposal} />;
   }
-  if (first?.move !== undefined) return <MovePassed version={first} />;
+  const decided = first === undefined ? null : oneCardPassed(first);
+  return decided ?? <Passed {...props} winner={winner} />;
+}
+
+/**
+ * What a one-card ballot's pass says: a section's move (#103) or protection
+ * (#116), dissolving (#108), a steward (#102) or an opt-in (#117); null for
+ * a ballot of text.
+ */
+function oneCardPassed(first: VersionView): ReactNode {
+  const { steward, rules, dissolve, move, protect } = first;
+  if (move !== undefined || protect !== undefined) return <SectionPassed version={first} />;
   if (dissolve !== undefined) return <DissolvePassed />;
   if (steward !== undefined) return <StewardPassed steward={steward} />;
-  if (rules !== undefined) return <RulesPassed rules={rules} />;
-  return <Passed {...props} winner={winner} />;
+  return rules === undefined ? null : <RulesPassed rules={rules} />;
 }
 
 /** The outcome block the result leads with. */

@@ -9,8 +9,9 @@
  *
  * Top to bottom: each pass that shaped the section, newest first, ending
  * where it began. A pass shows its Proposal's title, the text it left
- * through `<AtomText>` (or that it removed the section, or, for a move,
- * where it put the section over the text it still reads, #103), "Proposed by
+ * through `<AtomText>` (or that it removed the section, or, for a move or a
+ * class change, where it put the section or the class it gave it over the
+ * text it still reads, #103, #116), "Proposed by
  * <name>" and "Decided <date>", its why, the winning version's one totals
  * line, and See the full result, the Proposal's page, where `<ResultView>`
  * shows its ballots. A coalition motion shows each group's pass or fail in
@@ -32,7 +33,7 @@ import {
 } from 'react-aria-components';
 
 import { formatAverage, formatDay } from '../app/format';
-import { movedLine } from '../app/historyLines';
+import { keptTextLine } from '../app/historyLines';
 import type { HistorySource } from '../app/historySource';
 import { messages } from '../app/messages';
 import { AtomText } from '../app/text/AtomText';
@@ -59,13 +60,17 @@ export function Day({ minute }: { readonly minute: number }) {
   return <time dateTime={minuteIso(minute)}>{formatDay(minute)}</time>;
 }
 
-/** What a pass left: its text, that it removed the section, or where a move put it over its text (#103). */
+/**
+ * What a pass left: its text, that it removed the section, or, over its
+ * text, where a move put it (#103) or the class a class change gave it (#116).
+ */
 function EntryText({ entry }: { readonly entry: PassedChange }) {
   const { change } = entry;
   if (change.kind === 'removed') return <p className="history-removed">{history.removed}</p>;
+  const line = keptTextLine(change);
   return (
     <>
-      {change.kind === 'moved' ? <p className="history-moved">{movedLine(change.to)}</p> : null}
+      {line === null ? null : <p className="history-kept">{line}</p>}
       <AtomText text={entry.text} />
     </>
   );

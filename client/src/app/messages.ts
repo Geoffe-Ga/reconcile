@@ -372,6 +372,47 @@ export const messages = {
     moveBusy: 'You can propose moving it once that vote closes.',
     moveAloneTitle: 'There’s nowhere to move this section',
     moveAlone: 'It’s the only section in its Document.',
+    /** Protect this section, or change its protection (#116). */
+    protectPageTitle: 'Protect a section',
+    protectTitle: 'Protect this section',
+    protectChangeTitle: 'Change this section’s protection',
+    protectLede:
+      'A protected section is harder to change. If your group passes this, its words stay as they are, and what it takes to change it is what you choose here.',
+    /** The bar a class Proposal needs, from the rules: "an average of 3.0 or more, with zeros under 5%". */
+    protectBar: (average: string, zeros: string) =>
+      `Protecting a section, or removing its protection, needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
+    protectLabel: 'Protection',
+    /** Each choice's name, then its one line, by the class it gives the section. */
+    protectChoices: {
+      entrenched: {
+        name: 'Entrenched',
+        line: 'Later changes need a higher bar and a longer vote.',
+      },
+      eternal: { name: 'Eternal', line: 'No vote can ever change, move or remove it.' },
+    },
+    /** An entrenched section's choices: eternal, or back to ordinary. */
+    protectChangeChoices: {
+      eternal: { name: 'Make it eternal', line: 'No vote can ever change, move or remove it.' },
+      ordinary: {
+        name: 'Remove the protection',
+        line: 'Later changes go back to the usual bar and vote.',
+      },
+    },
+    protectMissing: 'Choose how to protect this section.',
+    protectChangeMissing: 'Choose what happens to this section’s protection.',
+    /** Under the choice while Eternal is chosen (ADR-0015 §3). */
+    permanent: 'This is permanent. Once it passes, the only way out is to leave the group.',
+    protectSubmit: 'Propose this protection',
+    protectChangeSubmit: 'Propose this change',
+    eternalTitle: 'This section is eternal',
+    eternal: 'No vote can change, move or remove it, or its protection.',
+    protectBusyTitle: 'This section has an open Proposal',
+    protectBusy: 'You can propose protecting it once that vote closes.',
+    protectingTitle: 'This section’s protection is being decided',
+    protecting: 'Score it on the open Proposal. You can propose a change once that vote closes.',
+    /** Over a composer for a change, move or removal of an entrenched section (#116). */
+    entrenchedNote: (average: string, zeros: string) =>
+      `This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}, and a longer vote.`,
     /** The checkbox that adds a Dispatch to a Proposal (#112). */
     dispatchLabel: 'Send a Dispatch if this passes',
     dispatchHint:
@@ -457,6 +498,18 @@ export const messages = {
     movesToEnd: 'Moves this section to the end',
     /** Over an open move's card: the section it moves, by its number now. */
     moving: (section: number) => `Moving section ${String(section)}`,
+    /** Over an open class Proposal's card (#116): the section it protects, by its number now. */
+    protecting: (section: number) => `Protection for section ${String(section)}`,
+    /** What a class Proposal does (#116), heading its one card, by the class it gives. */
+    marksEntrenched: 'Marks this section entrenched',
+    marksEternal: 'Marks this section eternal. This can’t be undone.',
+    removesProtection: 'Removes this section’s protection',
+    /** The higher bar, in words, over a class Proposal's ballot (#116). */
+    protectionBar: (average: string, zeros: string) =>
+      `A section’s protection changes only at your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
+    /** The higher bar, in words, over a change, move or removal of an entrenched section (#116). */
+    entrenchedBar: (average: string, zeros: string) =>
+      `This section is entrenched, so this needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
     readsAs: 'How it will read',
     proposed: 'Proposed text',
     onBallot: 'On the ballot',
@@ -535,6 +588,10 @@ export const messages = {
       `Version ${String(version)} passed. The Document no longer has this section.`,
     /** A move's pass (#103), before the section it moved. */
     passedMove: 'This passed. The section has moved.',
+    /** A class Proposal's pass (#116), by the class it gave, before the section. */
+    passedEntrenched: 'This passed. The section is now entrenched.',
+    passedEternal: 'This passed. The section is now eternal.',
+    passedUnprotected: 'This passed. The section is no longer protected.',
     /** A new Document's pass (#92), before its first sections. */
     passedDocument: 'This passed. The new Document reads:',
     passedVersionDocument: (version: number) =>
@@ -727,8 +784,23 @@ export const messages = {
     /** Move this section (#103), disabled with its reason while the section is busy. */
     move: 'Move this section',
     moveLabel: (section: number) => `Move this section, section ${String(section)}`,
-    moveBusy: 'You can move this section once its open Proposal closes.',
     moving: 'This section has an open move.',
+    /**
+     * Protect this section (#116), or Change its protection on an entrenched
+     * one; disabled, with Move, while the section is busy.
+     */
+    protect: 'Protect this section',
+    protectLabel: (section: number) => `Protect this section, section ${String(section)}`,
+    changeProtection: 'Change its protection',
+    changeProtectionLabel: (section: number) => `Change its protection, section ${String(section)}`,
+    /** Why Move and Protect wait, one line for both (#103, #116). */
+    busy: (movable: boolean) =>
+      movable
+        ? 'You can move or protect this section once its open Proposal closes.'
+        : 'You can protect this section once its open Proposal closes.',
+    protecting: 'This section has an open vote on its protection.',
+    /** In place of every action on an eternal section (#116). */
+    eternal: 'This section is eternal. It can’t be changed.',
     /** Add a section here's choices (#103), in a menu its button names. */
     addSection: 'Section',
     addHeader: 'Section header',
@@ -740,6 +812,11 @@ export const messages = {
     copyFailed:
       'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
     markdownLabel: 'The Document as Markdown',
+  },
+  /** A protected section's badge (#116; DESIGN.md Atom block), set as an eyebrow. */
+  atomBadge: {
+    entrenched: 'Entrenched',
+    eternal: 'Eternal',
   },
   /**
    * A section's history, in its side sheet, and a Document's change log
@@ -772,6 +849,16 @@ export const messages = {
     movedAfter: (words: string) => `Moved after ‘${words}’`,
     movedToTop: 'Moved to the top',
     movedToEnd: 'Moved to the end',
+    /**
+     * What a passed class change gave the section (#116), over its text in its
+     * history and in the change log, by the class it gave: the names #116's
+     * badges use, and lifting its protection for ordinary.
+     */
+    classChanged: {
+      entrenched: 'Entrenched',
+      eternal: 'Made eternal',
+      ordinary: 'Protection lifted',
+    },
     /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
     noResult: 'No result',
     seeResult: 'See the full result',

@@ -1,0 +1,1697 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "classes-same-class: a class Proposal to the class a section already has is ignored: ordinary to ordinary, and once A is entrenched, entrenched to entrenched",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.1",
+                "to": "ordinary"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375012,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "entrenched"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [6, 7]
+    },
+    {
+      "name": "classes-unknown-class: a class Proposal to a class the fold doesn't know is ignored, a misspelt one included",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "sacred"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "Eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": ""
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375020,
+      "expect": {
+        "proposals": [],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 4, 5]
+    },
+    {
+      "name": "classes-unknown-section: a class Proposal on an Atom no Document holds is ignored: an add still open, a removed section, or an id that names nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.3",
+              "title": "Remove D",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "X\n"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501260000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@6",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.3",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501380000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.9",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3"
+          },
+          {
+            "id": "@6"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          },
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      },
+      "unchangedWithout": [7, 8, 9]
+    },
+    {
+      "name": "classes-busy-edit: a class Proposal on a section with an open edit is ignored, one open Proposal per Atom, and one on another section opens",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500780000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.1",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375020,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "number": 1
+          },
+          {
+            "id": "@6",
+            "number": 2,
+            "atom": "@1.1"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [4, 5]
+    },
+    {
+      "name": "classes-busy-class: while a class Proposal is open on a section, an edit, a removal, a move, another class Proposal and a version of it are each ignored; once it closes early, an edit of the section opens in the same minute, after the closing ballot, as entrenched",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500780000,
+            "body": {
+              "target": {
+                "kind": "move",
+                "atom": "@1.0",
+                "after": null
+              },
+              "title": "Move a section",
+              "why": "It reads better there."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500840000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@3",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4,
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375021,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            },
+            "number": 1,
+            "versions": [
+              {
+                "id": "@3",
+                "author": "%ana",
+                "text": ""
+              }
+            ]
+          },
+          {
+            "id": "@12",
+            "number": 2,
+            "atom": "@1.0",
+            "target": {
+              "kind": "edit"
+            },
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395181,
+            "final": false
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "entrenched"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          },
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      },
+      "unchangedWithout": [4, 5, 6, 7, 8, 9]
+    },
+    {
+      "name": "classes-collaborator: a Collaborator's class Proposal is ignored, since it needs propose",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375020,
+      "expect": {
+        "proposals": [],
+        "ignored": [
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      },
+      "unchangedWithout": [4]
+    },
+    {
+      "name": "classes-window: a class Proposal is entrenched, so it runs 14 to 28 days: 13 and 29 days are ignored, and so is 7, the ordinary default; 14 days opens it with a deadline of received + 20,160, and 28 days with received + 40,320",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together.",
+              "window": 13
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together.",
+              "window": 29
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together.",
+              "window": 7
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500780000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together.",
+              "window": 14
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500840000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.1",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together.",
+              "window": 28
+            }
+          }
+        }
+      ],
+      "relayNow": 29375020,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@6",
+            "number": 1,
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395173
+          },
+          {
+            "id": "@7",
+            "number": 2,
+            "class": "entrenched",
+            "window": 28,
+            "deadline": 29415334
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 4, 5]
+    },
+    {
+      "name": "classes-entrenched-window: a change of an entrenched section runs 14 to 28 days: a window of 7, 13 or 29 is ignored, and 28 opens it with a deadline of received + 40,320; a change of an ordinary section still runs 3 to 14",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A2\n",
+              "window": 7
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501260000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A2\n",
+              "window": 13
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A2\n",
+              "window": 29
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501380000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A2\n",
+              "window": 28
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375024,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501440000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "B2\n",
+              "window": 3
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3"
+          },
+          {
+            "id": "@9",
+            "class": "entrenched",
+            "window": 28,
+            "deadline": 29415343
+          },
+          {
+            "id": "@10",
+            "class": "ordinary",
+            "window": 3,
+            "deadline": 29379344
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 6,
+            "id": "@6"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          }
+        ]
+      },
+      "unchangedWithout": [6, 7, 8]
+    },
+    {
+      "name": "classes-add-anchor: an add anchored on an entrenched section is ordinary: 7 days and the ordinary bar, and its new section starts ordinary",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "X\n"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 2
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3"
+          },
+          {
+            "id": "@6",
+            "class": "ordinary",
+            "window": 7,
+            "deadline": 29385100,
+            "closedAt": 29375022,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@6",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "entrenched"
+          },
+          {
+            "id": "@6",
+            "documentId": "@1",
+            "text": "X\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ]
+      }
+    }
+  ]
+}

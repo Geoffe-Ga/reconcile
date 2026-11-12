@@ -550,6 +550,47 @@ describe('RemoveSection', () => {
   });
 });
 
+/** Ana and Ben's group with its first section made `to` by a passed class Proposal (#116). */
+function protectedGroup(to: 'entrenched' | 'eternal'): GroupState {
+  const log = groupLog({ chat: CHAT });
+  const proposal = log.protect('Ana', `${log.group}.0`, to);
+  log.vote('Ana', proposal, 4);
+  log.vote('Ben', proposal, 4);
+  return log.state();
+}
+
+const ENTRENCHED_NOTE =
+  'This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of 3.0 or more, with zeros under 5%, and a longer vote.';
+
+describe('RemoveSection on a protected section (#116)', () => {
+  it('says removing an entrenched section needs the higher bar, and runs 14 days to start', async () => {
+    await removeSection({ state: protectedGroup('entrenched'), atom: 0 });
+    expect(screen.getByText(ENTRENCHED_NOTE)).toBeVisible();
+    expect(box('Voting time (days)')).toHaveValue('14');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows no form for an eternal section', async () => {
+    await removeSection({ state: protectedGroup('eternal'), atom: 0 });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is eternal' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Propose removing it|Add removal/ })).toBeNull();
+  });
+
+  it('shows no form while a vote on the section’s protection is open', async () => {
+    const log = groupLog({ chat: CHAT });
+    log.protect('Ana', `${log.group}.1`, 'eternal');
+    await removeSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'This section’s protection is being decided',
+      }),
+    ).toBeVisible();
+  });
+});
+
 describe('Adding or removing while a leave waits for the relay (#77)', () => {
   it('shows no add or removal form, and says why', async () => {
     const state = groupLog().state();

@@ -25,12 +25,14 @@ import type { VersionView } from './versionViews';
 /**
  * Whether a version is the one card of a ballot that decides something other
  * than a section's text (a steward, an opt-in, dissolving, a member's
- * removal, a coalition, or a section's place, #102, #117, #108, #115, #114,
- * #103), whose pills read "Your score".
+ * removal, a coalition, or a section's place or protection, #102, #117, #108,
+ * #115, #114, #103, #116), whose pills read "Your score".
  */
 function decidesOne(version: VersionView): boolean {
-  const { steward, rules, dissolve, removal, decision, move } = version;
-  return [steward, rules, dissolve, removal, decision, move].some((field) => field !== undefined);
+  const { steward, rules, dissolve, removal, decision, move, protect } = version;
+  return [steward, rules, dissolve, removal, decision, move, protect].some(
+    (field) => field !== undefined,
+  );
 }
 
 /** A score for each version, by version id. */

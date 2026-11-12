@@ -229,6 +229,32 @@ export interface MoveProposalBody {
 }
 
 /**
+ * The class a Proposal would give one section (#116; ADR-0015 §2–3):
+ * `"ordinary"`, `"entrenched"` or `"eternal"`. `to` is kept as written: the
+ * fold checks it against the section's class when the Proposal opens.
+ */
+export interface ClassTarget {
+  readonly kind: 'class';
+  readonly atom: string;
+  readonly to: string;
+}
+
+/**
+ * Proposes a new class for one section (#116): it carries `target` in place
+ * of an Atom, and no text, so its ballot has one version, under the
+ * Proposal's id. Like a move, it may name a voting window in whole days
+ * (#106) and carry a Dispatch to send if it passes (#112).
+ */
+export interface ClassProposalBody {
+  readonly target: ClassTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
  * A steward seat a Proposal fills or empties (ADR-0049, #102): its member is the
  * nominee, or null for a recall of whoever holds `seat`. The fold checks the
  * seat and the member.
@@ -534,17 +560,18 @@ export interface PromoteProposalBody {
 
 /**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
- * a new Document (#92), a section's new place (#103), a steward seat (#102),
- * an opt-in (#117), dissolving the group (#108), removing a member (#115),
- * reconciling into a coalition (#100), a priority vote's question and options
- * (#107), a Dispatch that may rise (#126), or, in a coalition, admitting a
- * group (#114) or a promotion record (#126).
+ * a new Document (#92), a section's new place (#103) or class (#116), a
+ * steward seat (#102), an opt-in (#117), dissolving the group (#108),
+ * removing a member (#115), reconciling into a coalition (#100), a priority
+ * vote's question and options (#107), a Dispatch that may rise (#126), or, in
+ * a coalition, admitting a group (#114) or a promotion record (#126).
  */
 export type ProposalEventBody =
   | ProposalBody
   | AddProposalBody
   | NewDocumentProposalBody
   | MoveProposalBody
+  | ClassProposalBody
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
@@ -574,6 +601,11 @@ export function isNewDocumentProposal(body: ProposalEventBody): body is NewDocum
 /** True when a Proposal's body moves a section (#103). */
 export function isMoveProposal(body: ProposalEventBody): body is MoveProposalBody {
   return 'target' in body && body.target.kind === 'move';
+}
+
+/** True when a Proposal's body gives a section a new class (#116). */
+export function isClassProposal(body: ProposalEventBody): body is ClassProposalBody {
+  return 'target' in body && body.target.kind === 'class';
 }
 
 /** True when a Proposal's body is a priority vote (#107). */
@@ -1296,6 +1328,13 @@ function parseMoveTarget(value: unknown): MoveTarget | null {
   return after === null || isString(after) ? { kind: 'move', atom, after } : null;
 }
 
+/** A class change's target, keeping only its kind, Atom and class, or null for any other shape (#116). */
+function parseClassTarget(value: unknown): ClassTarget | null {
+  if (!isObject(value) || value.kind !== 'class') return null;
+  const { atom, to } = value;
+  return isString(atom) && isString(to) ? { kind: 'class', atom, to } : null;
+}
+
 /**
  * A reconcile target: a group's, with its secrets readable (#100), or a
  * coalition's sealed one (#122); or null for any other shape.
@@ -1321,7 +1360,8 @@ function parseAdmitTarget(value: unknown): AdmitTarget | null {
 /**
  * The target a Proposal names other than a steward seat: an opt-in (#117),
  * dissolving (#108), reconciling (#100), a coalition's sealed reconcile
- * target (#122), admitting a group (#114), or moving a section (#103).
+ * target (#122), admitting a group (#114), moving a section (#103), or a
+ * section's class (#116).
  */
 function parseWindowedProposal(
   body: Json,
@@ -1329,6 +1369,8 @@ function parseWindowedProposal(
 ): Exclude<ProposalEventBody, ProposalBody | StewardProposalBody> | null {
   const move = parseMoveTarget(body.target);
   if (move !== null) return withWindow(move, body, fields);
+  const cls = parseClassTarget(body.target);
+  if (cls !== null) return withWindow(cls, body, fields);
   const dissolve = parseDissolveTarget(body.target);
   if (dissolve !== null) return withWindow(dissolve, body, fields);
   const reconcile = parseReconcileTarget(body.target);
@@ -1341,9 +1383,9 @@ function parseWindowedProposal(
 
 /**
  * A steward (#102), rules (#117), dissolve (#108), reconcile (#100), admit
- * (#114), removal (#115) or move (#103) Proposal carries `target` and no
- * `atom`; any `text` is dropped, and so is a steward or removal Proposal's
- * `window` (#106).
+ * (#114), removal (#115), move (#103) or class (#116) Proposal carries
+ * `target` and no `atom`; any `text` is dropped, and so is a steward or
+ * removal Proposal's `window` (#106).
  */
 function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
   const fields = parseTargetedFields(body);
