@@ -10,9 +10,12 @@
  * proposer chose. A Document changes only when a Proposal's pass is final: an
  * edit sets an Atom's text or, with `""`, removes it, an add puts a new Atom
  * after its anchor in the Document it names (#75), a move takes an Atom out
- * and puts it after another in its Document (#103), and a new Document joins
- * after every other (#92). Final passes apply in order of close time, then
- * the Proposals' relay order. Steward seats
+ * and puts it after another in its Document (#103), a class Proposal sets an
+ * Atom's class (#116), and a new Document joins after every other (#92).
+ * Every Atom starts ordinary. An entrenched one needs the entrenched bar and
+ * window to change, move or remove, and the fold ignores any Proposal that
+ * would change, move, remove or reclass an eternal one. Final passes apply
+ * in order of close time, then the Proposals' relay order. Steward seats
  * change when a steward Proposal's pass is final, and a suspension narrows
  * `can()` until it ends (#102): the fold keeps `at`, the relay minute it has
  * reached, and brings the seats up to it before each event. An opt-in's
@@ -111,7 +114,9 @@ import {
   type GroupResultValue,
   type InviteToken,
   type AddProposalBody,
+  type ClassProposalBody,
   isAddProposal,
+  isClassProposal,
   isCoalitionGenesis,
   isMoveProposal,
   isDissolveProposal,
@@ -182,7 +187,10 @@ import {
   responseFits,
 } from './removal';
 import {
+  type AtomClass,
   type Bar,
+  type ClassChange,
+  classChangeIsValid,
   chosenWindow,
   DAY_MINUTES,
   DEFAULT_RULES,
@@ -332,11 +340,14 @@ export interface RecoveryCancel {
  * `${genesisId}.${i}` for the first Document and `${genesisId}:${k}.${i}` for
  * the others, and a new Document's Atom `i` is `${proposalId}.${i}`. An added
  * Atom has its add Proposal's id (#75). `documentId` is its Document's id.
+ * `class` is ordinary when it's founded, added or created with a new
+ * Document, and only a class Proposal's pass changes it (#116).
  */
 export interface Atom {
   readonly id: string;
   readonly documentId: string;
   readonly text: string;
+  readonly class: AtomClass;
 }
 
 /** One wording on a Proposal's ballot. A Proposal's own text is its first version. */
@@ -385,6 +396,7 @@ export interface DecisionRecord {
  * Document it would create, so its versions gather under it as an add's do;
  * a move of `atom` (#103), whose `text` is `""` and whose one version, under
  * its own id, has no text, so it holds its section's slot as an edit does;
+ * a class Proposal on `atom` (#116), which holds its slot the same way;
  * a steward change (#102); a rules change to an opt-in (#117); or dissolving
  * the group (#108). A steward, rules or dissolve
  * Proposal's `atom` and `text` are `""`, and its one version, under its own
@@ -761,9 +773,14 @@ function found(
   draft.document = { closed: '', documents };
 }
 
-/** A Document's Atoms from their texts, `${documentId}.${i}`, in order. */
+/** A Document's Atoms from their texts, `${documentId}.${i}`, in order, each ordinary (#116). */
 function sectionsOf(texts: readonly string[], documentId: string): Atom[] {
-  return texts.map((text, i) => ({ id: `${documentId}.${String(i)}`, documentId, text }));
+  return texts.map((text, i) => ({
+    id: `${documentId}.${String(i)}`,
+    documentId,
+    text,
+    class: 'ordinary',
+  }));
 }
 
 /**
@@ -990,15 +1007,26 @@ function atomsAt(draft: Draft, received: number): readonly Atom[] {
   return documentsAt(draft, received).flatMap((document) => document.atoms);
 }
 
-/** True when the Atom `id` is in a Document an event received at `received` finds. */
-function inDocument(draft: Draft, id: string, received: number): boolean {
-  return atomsAt(draft, received).some((a) => a.id === id);
+/**
+ * True when the Atom `id` is in a Document an event received at `received`
+ * finds, and isn't eternal: no vote changes or removes an eternal Atom (#116).
+ */
+function mayChange(draft: Draft, id: string, received: number): boolean {
+  return atomsAt(draft, received).some((a) => a.id === id && a.class !== 'eternal');
+}
+
+/**
+ * The class a Proposal received at `received` opens at (`targetClass`), from
+ * the group's rules and the Atoms it finds, with their classes (#116).
+ */
+function classAt(draft: Draft, body: ProposalEventBody, received: number): ProposalClass {
+  return targetClass({ rules: draft.rules, atoms: atomsAt(draft, received) }, body);
 }
 
 function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
   return (
     can(draft, author, 'propose') &&
-    inDocument(draft, body.atom, at.received) &&
+    mayChange(draft, body.atom, at.received) &&
     optionFor(openOn(draft, body.atom, at.received)) === 'propose' &&
     fieldsAreValid(body)
   );
@@ -1031,12 +1059,15 @@ function addIsValid(draft: Draft, body: AddProposalBody, author: string, at: Rec
 
 /**
  * Whether a move's spot is in a Document the move finds (#103): its Atom is
- * in one, and its anchor, unless null for the start, is another Atom of that
- * same Document, never the Atom itself.
+ * in one, and isn't eternal (#116), and its anchor, unless null for the
+ * start, is another Atom of that same Document, never the Atom itself. An
+ * eternal anchor is fine: the eternal section stays where it is.
  */
 function moveSpotIsValid(draft: Draft, body: MoveProposalBody, received: number): boolean {
   const { atom, after } = body.target;
-  const document = documentsAt(draft, received).find((d) => d.atoms.some((a) => a.id === atom));
+  const document = documentsAt(draft, received).find((d) =>
+    d.atoms.some((a) => a.id === atom && a.class !== 'eternal'),
+  );
   if (document === undefined) return false;
   return after === null || (after !== atom && document.atoms.some((a) => a.id === after));
 }
@@ -1053,6 +1084,30 @@ function moveIsValid(draft: Draft, body: MoveProposalBody, author: string, at: R
     optionFor(openOn(draft, body.target.atom, at.received)) === 'propose' &&
     fieldsAreValid(body)
   );
+}
+
+/**
+ * The class change a class Proposal makes (#116), or null when the fold
+ * ignores it: its author may propose, its Atom is in a Document it finds,
+ * `classChangeIsValid` allows the Atom's class now to go to `to`, so never
+ * the class it has and never from eternal, the Atom has no open Proposal,
+ * since a class Proposal holds its slot as an edit does (ADR-0073), and its
+ * fields are valid.
+ */
+function classChangeFor(
+  draft: Draft,
+  body: ClassProposalBody,
+  author: string,
+  at: Receipt,
+): ClassChange | null {
+  const { atom, to } = body.target;
+  const section = atomsAt(draft, at.received).find((a) => a.id === atom);
+  if (section === undefined || !classChangeIsValid(section.class, to)) return null;
+  const valid =
+    can(draft, author, 'propose') &&
+    optionFor(openOn(draft, atom, at.received)) === 'propose' &&
+    fieldsAreValid(body);
+  return valid ? { kind: 'class', atom, to } : null;
 }
 
 /**
@@ -1226,7 +1281,7 @@ function openEdit(
   at: Receipt,
 ): OpenProposal | null {
   if (!proposalIsValid(draft, body, author, at)) return null;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return null;
   return openProposal(draft, {
@@ -1251,7 +1306,7 @@ function openWithText(
   author: string,
   at: Receipt,
 ): boolean {
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   openProposal(draft, {
@@ -1278,13 +1333,38 @@ function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Recei
  */
 function applyMove(draft: Draft, body: MoveProposalBody, author: string, at: Receipt): boolean {
   if (!moveIsValid(draft, body, author, at)) return false;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: body.target.atom,
     target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
+}
+
+/**
+ * Opens a class Proposal (#116) on its section, so no other Proposal opens
+ * there while it runs. It is entrenched, whatever class it asks for, so
+ * entrenchment is itself entrenched (ADR-0015 §2), and it runs the window its
+ * proposer chose within the entrenched bounds, or their default (#106). It
+ * has no text: its one version, under its own id, is the change itself, and
+ * it takes no others.
+ */
+function applyClass(draft: Draft, body: ClassProposalBody, author: string, at: Receipt): boolean {
+  const target = classChangeFor(draft, body, author, at);
+  if (target === null) return false;
+  const cls = classAt(draft, body, at.received);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: target.atom,
+    target,
     text: '',
     eligible: eligibleNow(draft, null),
     versions: [{ id: at.id, author, text: '' }],
@@ -1319,7 +1399,7 @@ function applySteward(
   if (!isSeatNumber(seat) || !fieldsAreValid(body)) return false;
   if (!mayProposeSteward(draft, author, body.target)) return false;
   const { holder } = seatAt(draft, seat);
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window: draft.rules.windows[cls].default }),
     atom: '',
@@ -1344,7 +1424,7 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
   if (!fieldsAreValid(body) || !mayProposeRules(draft, author, body.target)) return false;
   const target = rulesChange(draft.rules.optIns, body.target.optIn, body.target.value);
   if (target === null || !doorIsFresh(draft, doorIn(target))) return false;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   openProposal(draft, {
@@ -1439,7 +1519,7 @@ function applyPriority(
 ): boolean {
   if (!can(draft, author, 'propose') || !fieldsAreValid(body)) return false;
   if (!optionsAreValid(body.options) || priorityOpenAt(draft, at.received)) return false;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   // Like every Proposal, it opens through openProposal, so its ballots and notes expire (#111).
@@ -1468,7 +1548,7 @@ function applyDissolveProposal(
   at: Receipt,
 ): boolean {
   if (!fieldsAreValid(body) || !mayProposeDissolve(draft, author)) return false;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
   openProposal(draft, {
@@ -1508,7 +1588,7 @@ function applyRemovalProposal(
 ): boolean {
   const { member } = body.target;
   if (!fieldsAreValid(body) || !mayProposeRemoval(draft, author, member)) return false;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const proposal = openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window: draft.rules.windows[cls].default }),
     atom: '',
@@ -1539,7 +1619,7 @@ function openReconcile(
 ): OpenProposal | null {
   if (!fieldsAreValid(body) || !can(draft, author, 'propose')) return null;
   if (holdsSeatKey(draft, target.key)) return null;
-  const cls = targetClass(draft, body);
+  const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return null;
   return openProposal(draft, {
@@ -1624,7 +1704,8 @@ function extendSuspension(
  * none. An add (#75) has a target, so it waits too, and so does a removal,
  * an edit whose text is `""`: for now a motion only rewords one of the
  * coalition's Atoms. A priority vote (#107) has a target too, so a coalition
- * asks none.
+ * asks none, and so does a class Proposal (#116): a coalition's sections stay
+ * ordinary.
  */
 function applyMotion(
   draft: Draft,
@@ -1724,16 +1805,19 @@ function applyProposal(
 
 /**
  * Opens a group's Proposal that changes its Documents: a new Document (#92),
- * a move (#103), an add (#75) or an edit of one Atom, its removal included.
+ * a move (#103), a class change (#116), an add (#75) or an edit of one Atom,
+ * its removal included.
  */
 function applyDocumentChange(
   draft: Draft,
-  body: ProposalBody | AddProposalBody | NewDocumentProposalBody | MoveProposalBody,
+  body:
+    ProposalBody | AddProposalBody | NewDocumentProposalBody | MoveProposalBody | ClassProposalBody,
   author: string,
   at: Receipt,
 ): boolean {
   if (isNewDocumentProposal(body)) return applyNewDocument(draft, body, author, at);
   if (isMoveProposal(body)) return applyMove(draft, body, author, at);
+  if (isClassProposal(body)) return applyClass(draft, body, author, at);
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
@@ -2711,6 +2795,11 @@ function edited(atoms: readonly Atom[], atom: string, text: string): readonly At
   return atoms.map((a) => (a.id === atom ? { ...a, text } : a));
 }
 
+/** A class Proposal's Atoms after its pass (#116): its Atom's class set to `to`. */
+function classed(atoms: readonly Atom[], atom: string, to: AtomClass): readonly Atom[] {
+  return atoms.map((a) => (a.id === atom ? { ...a, class: to } : a));
+}
+
 /** A new Document as its pass makes it (#92): its Proposal's id, title and winning text's sections. */
 function newDocument(id: string, title: string, text: string): DocumentDraft {
   return { id, title, atoms: sectionsOf(documentSections(text), id) };
@@ -2722,10 +2811,11 @@ function newDocument(id: string, title: string, text: string): DocumentDraft {
  * #117, #107): an
  * edit sets its Atom's text or, with `""`, removes it; an add puts its Atom
  * after its anchor in the Document it names, or last there once the anchor
- * is gone (#75); a move puts its Atom after its anchor the same way, in its
- * own Document (#103); and a new Document joins after every other (#92).
- * Atom ids are unique across Documents, so an edit or a move touches only its
- * own Atom's Document.
+ * is gone (#75), as an ordinary Atom; a move puts its Atom after its anchor
+ * the same way, in its own Document (#103); a class Proposal sets its Atom's
+ * class (#116); and a new Document joins after every other (#92). An edit
+ * keeps its Atom's class. Atom ids are unique across Documents, so an edit, a
+ * move or a class change touches only its own Atom's Document.
  */
 function applyPass(
   documents: readonly DocumentDraft[],
@@ -2742,13 +2832,21 @@ function applyPass(
       d.id === target.document
         ? {
             ...d,
-            atoms: insertAfter(d.atoms, target.after, { id: proposal.id, documentId: d.id, text }),
+            atoms: insertAfter(d.atoms, target.after, {
+              id: proposal.id,
+              documentId: d.id,
+              text,
+              class: 'ordinary',
+            }),
           }
         : d,
     );
   }
   if (target.kind === 'move') {
     return documents.map((d) => ({ ...d, atoms: moved(d.atoms, target.atom, target.after) }));
+  }
+  if (target.kind === 'class') {
+    return documents.map((d) => ({ ...d, atoms: classed(d.atoms, target.atom, target.to) }));
   }
   if (target.kind !== 'edit') return documents;
   return documents.map((d) => ({ ...d, atoms: edited(d.atoms, proposal.atom, text) }));

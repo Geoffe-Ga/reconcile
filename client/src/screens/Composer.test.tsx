@@ -378,6 +378,62 @@ function busy(...versions: readonly string[]) {
 
 const addSubmit = () => screen.getByRole('button', { name: 'Add your version' });
 
+/** Ana and Ben's group with its first section made `to` by a passed class Proposal (#116). */
+function protectedGroup(to: 'entrenched' | 'eternal'): GroupState {
+  const log = groupLog({ chat: 'https://chat.example.org/riverside' });
+  const proposal = log.protect('Ana', `${log.group}.0`, to);
+  log.vote('Ana', proposal, 4);
+  log.vote('Ben', proposal, 4);
+  return log.state();
+}
+
+const ENTRENCHED_NOTE =
+  'This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of 3.0 or more, with zeros under 5%, and a longer vote.';
+
+describe('Composer on a protected section (#116)', () => {
+  it('says an entrenched section needs the higher bar, badges it, and runs 14 days to start', async () => {
+    const { user, onPropose, atomId } = await setup({ state: protectedGroup('entrenched') });
+    expect(screen.getByText(ENTRENCHED_NOTE)).toBeVisible();
+    expect(
+      within(screen.getByRole('region', { name: 'Section 1 now reads' })).getByText('Entrenched'),
+    ).toHaveClass('atom-badge-entrenched');
+    expect(box('Voting time (days)')).toHaveValue('14');
+    await fill(user, { Title: 'Later quiet hours', Why: 'Weekends run late.' });
+    await replace(user, 'New text', 'Quiet after 11pm.');
+    await user.click(submit());
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({ atom: atomId, window: 14 });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of the higher bar on an ordinary section, which runs 7 days', async () => {
+    await setup();
+    expect(screen.queryByText(ENTRENCHED_NOTE)).not.toBeInTheDocument();
+    expect(box('Voting time (days)')).toHaveValue('7');
+  });
+
+  it('shows no form on an eternal section, only that no vote can change it', async () => {
+    await setup({ state: protectedGroup('eternal') });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is eternal' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no version while a vote on the section’s protection is open', async () => {
+    const log = groupLog();
+    log.protect('Ana', `${log.group}.0`, 'entrenched');
+    await setup({ state: log.state() });
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'This section’s protection is being decided',
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
 describe('Composer, adding a version', () => {
   it('becomes “Add your version” on a busy section: the text alone, prefilled with the section', async () => {
     const { state, proposal } = busy();

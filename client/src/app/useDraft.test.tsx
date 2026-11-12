@@ -131,6 +131,25 @@ describe('useDraft', () => {
     expect(result.current.changed).toBe(false);
   });
 
+  it('counts a class chosen as a change, and saves it (#116)', async () => {
+    const { drafts, shelf } = memoryDrafts();
+    const { result } = await mount(drafts);
+    act(() => {
+      result.current.update({ ...START, classTo: 'eternal' });
+      vi.advanceTimersByTime(DRAFT_SAVE_DELAY_MS);
+    });
+    expect(result.current.changed).toBe(true);
+    expect(shelf.get('atom-1')).toEqual({ ...START, classTo: 'eternal' });
+    act(() => {
+      result.current.update({ ...START, classTo: 'entrenched' });
+    });
+    expect(result.current.changed).toBe(true);
+    act(() => {
+      result.current.update(START);
+    });
+    expect(result.current.changed).toBe(false);
+  });
+
   it('counts a new Document’s title typed as a change, and saves it (#92)', async () => {
     const { drafts, shelf } = memoryDrafts();
     const { result } = await mount(drafts, { ...START, documentTitle: '' });

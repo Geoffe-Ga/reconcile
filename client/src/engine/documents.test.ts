@@ -105,6 +105,15 @@ describe('documentOf (#92)', () => {
     );
   });
 
+  it('names the Document of the section a class Proposal protects, even once a removal has taken it out (#116)', () => {
+    expect(
+      documentOf(STATE, change('P', 'G:1.0', { kind: 'class', atom: 'G:1.0', to: 'eternal' })),
+    ).toBe('G:1');
+    expect(
+      documentOf(STATE, change('P', 'G.3', { kind: 'class', atom: 'G.3', to: 'ordinary' })),
+    ).toBe('G');
+  });
+
   it('names nothing for a section it has no trace of', () => {
     expect(documentOf(STATE, change('P', 'nowhere', { kind: 'edit' }))).toBeNull();
   });

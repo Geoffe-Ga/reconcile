@@ -52,6 +52,17 @@ describe('vector files', () => {
       'chat-posted-ignored.json',
       'chat-thread-first.json',
       'chat-thread-ignored.json',
+      'classes-bar.json',
+      'classes-chat-thread.json',
+      'classes-cleared.json',
+      'classes-coalition.json',
+      'classes-dispatch.json',
+      'classes-entrenched-edit.json',
+      'classes-eternal.json',
+      'classes-ignored.json',
+      'classes-moves.json',
+      'classes-start.json',
+      'classes-unchanged.json',
       'coalition-admit.json',
       'coalition-contest.json',
       'coalition-forgery.json',
@@ -197,6 +208,17 @@ describe('vector files', () => {
       'tally',
       'tally',
       'tally',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -812,6 +834,56 @@ describe('vector files', () => {
     'move-cleared-fail',
   ])('include the move vector "%s" (#103)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'classes-entrenched-fail',
+    'classes-entrenched-pass',
+    'classes-eternal-fail',
+    'classes-eternal-pass',
+    'classes-unprotect-fail',
+    'classes-unprotect-pass',
+    'classes-entrenched-to-eternal',
+    'classes-chat-thread',
+    'classes-cleared',
+    'classes-cleared-fail',
+    'classes-cleared-understated',
+    'classes-dispatch',
+    'classes-dispatch-fail',
+    'classes-entrenched-edit',
+    'classes-entrenched-edit-control',
+    'classes-entrenched-edit-passes',
+    'classes-entrenched-edit-open',
+    'classes-eternal-ignored',
+    'classes-eternal-at-deadline',
+    'classes-eternal-anchor',
+    'classes-eternal-from-entrenched',
+    'classes-same-class',
+    'classes-unknown-class',
+    'classes-unknown-section',
+    'classes-busy-edit',
+    'classes-busy-class',
+    'classes-collaborator',
+    'classes-window',
+    'classes-entrenched-window',
+    'classes-add-anchor',
+    'classes-entrenched-move',
+    'classes-entrenched-move-window',
+    'classes-entrenched-removal',
+    'classes-entrenched-version',
+    'classes-start-ordinary',
+    'classes-second-document',
+    'classes-lapse',
+    'classes-open',
+    'classes-dissolve',
+  ])('include the class vector "%s" (#116)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('include the class vector "classes-coalition" (#116, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'classes-coalition',
+    );
   });
 
   it('include the move vector "move-coalition" (#103, #100)', () => {

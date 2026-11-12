@@ -13,6 +13,7 @@ import {
   TextField,
 } from 'react-aria-components';
 
+import { AtomBadge } from '../app/AtomBadge';
 import type { CoalitionStanding } from '../app/coalitionHome';
 import { TakePart } from '../app/CoalitionSection';
 import { documentNamed } from '../app/documentLines';
@@ -28,7 +29,7 @@ import { BackLink, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
 import { type HeadingLevel, isHeadingOnly } from '../engine/atomText';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
-import { type ComposeOption, composeOption, openProposalOn } from '../engine/composeOption';
+import { composeOption, openProposalOn } from '../engine/composeOption';
 import { documentToMarkdown } from '../engine/documentMarkdown';
 import { atomsOf, type GroupDocument } from '../engine/documents';
 import type { Atom, GroupState } from '../engine/fold';
@@ -51,6 +52,8 @@ export interface DocumentViewProps {
   readonly onRemove: (atomId: string) => void;
   /** Opens the composer that proposes moving one section (#103). */
   readonly onMove: (atomId: string) => void;
+  /** Opens the composer that proposes protecting one section, or changing its protection (#116). */
+  readonly onProtect: (atomId: string) => void;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): then nobody proposes from here. */
@@ -120,21 +123,25 @@ interface SectionActionProps {
   readonly onPropose: DocumentViewProps['onPropose'];
   readonly onRemove: DocumentViewProps['onRemove'];
   readonly onMove: DocumentViewProps['onMove'];
+  readonly onProtect: DocumentViewProps['onProtect'];
   readonly source: HistorySource;
 }
 
 /**
  * Propose a change, or Add your version while the section's Proposal is open
  * (`composeOption`), and Propose removing this section until its ballot holds
- * a removal; or why its ballot takes no more, or that a move of it is open
- * (#103). Each opens a composer.
+ * a removal; or why its ballot takes no more, or that a move of it (#103) or
+ * a vote on its protection (#116) is open. Each opens a composer.
  */
-function ChangeActions(props: Omit<SectionActionProps, 'movable' | 'onMove' | 'source'>) {
+function ChangeActions(
+  props: Omit<SectionActionProps, 'movable' | 'onMove' | 'onProtect' | 'source'>,
+) {
   const { state, atom, section, onPropose, onRemove } = props;
   const option = composeOption(state, atom.id);
   const { document } = messages;
   if (option === 'ballot-full') return <p className="caption atom-note">{document.ballotFull}</p>;
   if (option === 'moving') return <p className="caption atom-note">{document.moving}</p>;
+  if (option === 'protecting') return <p className="caption atom-note">{document.protecting}</p>;
   const adding = option === 'add-version';
   const open = openProposalOn(state, atom.id);
   return (
@@ -163,61 +170,90 @@ function ChangeActions(props: Omit<SectionActionProps, 'movable' | 'onMove' | 's
   );
 }
 
-interface MoveActionProps {
-  readonly atom: Atom;
-  readonly section: number;
-  /** What `composeOption` reports: anything but `'propose'` means the section is busy. */
-  readonly option: ComposeOption;
-  readonly onMove: DocumentViewProps['onMove'];
+interface WaitingActionProps {
+  /** Its accessible name, which starts with its visible words (WCAG 2.5.3). */
+  readonly label: string;
+  readonly text: string;
+  /** True while the section has an open Proposal: then it's disabled, with `reason` tied to it. */
+  readonly busy: boolean;
+  /** The id of the line that says why it waits. */
+  readonly reason: string;
+  readonly onPress: () => void;
 }
 
 /**
- * Move this section (#103), which opens its composer, or, while the section
- * has an open Proposal, the same button disabled with why beside it.
+ * An action that waits while its section is busy: Move this section (#103)
+ * or Protect this section (#116), which opens its composer, or, while the
+ * section has an open Proposal, the same button disabled, described by the
+ * line that says why.
  */
-function MoveAction({ atom, section, option, onMove }: MoveActionProps) {
-  const reason = useId();
-  const { document } = messages;
-  const busy = option !== 'propose';
+function WaitingAction({ label, text, busy, reason, onPress }: WaitingActionProps) {
   return (
-    <>
-      <Button
-        className="button button-quiet"
-        aria-label={document.moveLabel(section)}
-        isDisabled={busy}
-        {...(busy ? { 'aria-describedby': reason } : {})}
-        onPress={() => {
-          onMove(atom.id);
-        }}
-      >
-        {document.move}
-      </Button>
-      {busy ? (
-        <p id={reason} className="caption atom-note move-reason">
-          {document.moveBusy}
-        </p>
-      ) : null}
-    </>
+    <Button
+      className="button button-quiet"
+      aria-label={label}
+      isDisabled={busy}
+      {...(busy ? { 'aria-describedby': reason } : {})}
+      onPress={onPress}
+    >
+      {text}
+    </Button>
   );
 }
 
 /**
- * One section's actions: changing, removing or versioning it, then moving it
- * (#103), then its History (#104).
+ * One section's actions: changing, removing or versioning it, then, on a row
+ * of their own, moving it (#103) and protecting it (#116), with one line for
+ * why those two wait, and its History (#104). An entrenched section offers
+ * Change its protection; an eternal one offers only its History, and says it
+ * can't be changed.
  */
-function SectionAction({ movable, onMove, source, ...props }: SectionActionProps) {
+function SectionAction({ movable, onMove, onProtect, source, ...props }: SectionActionProps) {
+  const reason = useId();
+  const { state, atom, section } = props;
+  const { document } = messages;
+  if (atom.class === 'eternal') {
+    return (
+      <div className="row atom-actions">
+        <p className="caption atom-note">{document.eternal}</p>
+        <HistoryButton source={source} atom={atom} section={section} />
+      </div>
+    );
+  }
+  const busy = composeOption(state, atom.id) !== 'propose';
+  const entrenched = atom.class === 'entrenched';
   return (
     <div className="row atom-actions">
       <ChangeActions {...props} />
+      <span className="atom-actions-break" aria-hidden="true" />
       {movable ? (
-        <MoveAction
-          atom={props.atom}
-          section={props.section}
-          option={composeOption(props.state, props.atom.id)}
-          onMove={onMove}
+        <WaitingAction
+          label={document.moveLabel(section)}
+          text={document.move}
+          busy={busy}
+          reason={reason}
+          onPress={() => {
+            onMove(atom.id);
+          }}
         />
       ) : null}
-      <HistoryButton source={source} atom={props.atom} section={props.section} />
+      <WaitingAction
+        label={
+          entrenched ? document.changeProtectionLabel(section) : document.protectLabel(section)
+        }
+        text={entrenched ? document.changeProtection : document.protect}
+        busy={busy}
+        reason={reason}
+        onPress={() => {
+          onProtect(atom.id);
+        }}
+      />
+      <HistoryButton source={source} atom={atom} section={section} />
+      {busy ? (
+        <p id={reason} className="caption atom-note wait-reason">
+          {document.busy(movable)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -355,7 +391,10 @@ interface SectionsProps {
   /** Its sections, in order. */
   readonly atoms: readonly Atom[];
   readonly proposes: boolean;
-  readonly handlers: Pick<DocumentViewProps, 'onPropose' | 'onAdd' | 'onRemove' | 'onMove'>;
+  readonly handlers: Pick<
+    DocumentViewProps,
+    'onPropose' | 'onAdd' | 'onRemove' | 'onMove' | 'onProtect'
+  >;
   readonly source: HistorySource;
 }
 
@@ -367,7 +406,7 @@ interface SectionsProps {
  * History, to everyone who reads it (#104).
  */
 function Sections({ state, document, atoms, proposes, handlers, source }: SectionsProps) {
-  const { onPropose, onAdd, onRemove, onMove } = handlers;
+  const { onPropose, onAdd, onRemove, onMove, onProtect } = handlers;
   const at = (after: string | null) => ({ document: document.id, after });
   const first = proposes ? <AddHere place={at(null)} section={0} onAdd={onAdd} /> : null;
   const before = headingsBefore(atoms);
@@ -385,6 +424,7 @@ function Sections({ state, document, atoms, proposes, handlers, source }: Sectio
       {atoms.map((atom, index) => (
         <Fragment key={atom.id}>
           <div className={isHeadingOnly(atom.text) ? 'atom atom-heading' : 'atom'}>
+            <AtomBadge cls={atom.class} />
             <AtomText text={atom.text} after={before[index] ?? 1} />
             {proposes ? (
               <SectionAction
@@ -395,6 +435,7 @@ function Sections({ state, document, atoms, proposes, handlers, source }: Sectio
                 onPropose={onPropose}
                 onRemove={onRemove}
                 onMove={onMove}
+                onProtect={onProtect}
                 source={source}
               />
             ) : (
@@ -446,8 +487,10 @@ function readsOnly({ state, leaving = false, unconfirmed = false }: DocumentView
  * group's first Document, #92): one canonical Document, each section (Atom)
  * formatted through `<AtomText>` in the document style, with Propose a change
  * (or Add your version while the section's Proposal is open), Propose
- * removing this section, Move this section (#103), and Add a section here in
- * each gap (#75), which offers a section or a header (#103). Nothing
+ * removing this section, Move this section (#103), Protect this section
+ * (#116), and Add a section here in each gap (#75), which offers a section or
+ * a header (#103). A protected section carries its badge, and an eternal one
+ * offers nothing but the Add a section here after it (#116). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
  * this member is leaving, once the group has dissolved (#108), or while a

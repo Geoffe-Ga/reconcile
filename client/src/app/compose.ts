@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 
 import { normalizeAtomText } from '../engine/atomText';
 import { can } from '../engine/capabilities';
+import { composeOption } from '../engine/composeOption';
 import type { GroupState, Proposal } from '../engine/fold';
 import type { Draft } from '../store/drafts';
 import { latestLink } from './latestLink';
@@ -36,6 +37,25 @@ export function whyNoForm(
   if (props.leaving === true) return { title: leave.noProposingTitle, text: leave.noProposing };
   if (can(state, me, 'propose')) return null;
   return { title: composer.notAllowedTitle, text: suspendedLine(state, me) ?? composer.notAllowed };
+}
+
+/**
+ * Why no change, removal, version or move can be written for a section now,
+ * or null when one can: it's eternal (#116), or a move of it (#103) or a vote
+ * on its protection (#116) is open, which takes nothing more.
+ */
+export function whySectionWaits(
+  state: GroupState,
+  atomId: string,
+): { readonly title: string; readonly text: string } | null {
+  const { composer } = messages;
+  const eternal = state.atoms.some((atom) => atom.id === atomId && atom.class === 'eternal');
+  if (eternal) return { title: composer.eternalTitle, text: composer.eternal };
+  const option = composeOption(state, atomId);
+  if (option === 'moving') return { title: composer.movingTitle, text: composer.moving };
+  return option === 'protecting'
+    ? { title: composer.protectingTitle, text: composer.protecting }
+    : null;
 }
 
 /** `again` when its vote lapsed, which Propose again repeats (ADR-0069), else undefined. */
