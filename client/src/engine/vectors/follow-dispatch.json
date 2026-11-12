@@ -1190,7 +1190,8 @@
                 "target": {
                   "kind": "admit",
                   "seat": { "name": "Lakeside", "key": "^C" },
-                  "proof": { "$seatProof": ["C", "@1", "%eve"] }
+                  "proof": { "$seatProof": ["C", "@1", "%eve"] },
+                  "kx": "&^C"
                 },
                 "title": "Admit Lakeside",
                 "why": "They share the river.",

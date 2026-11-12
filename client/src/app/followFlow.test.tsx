@@ -191,6 +191,8 @@ describe('following a coalition (#124)', SLOW, () => {
     const { ana, cy, riverside, oak, card, seed } = await fayFollows(fake);
     await syncAll();
 
+    // A founding card carries `inner` (#313): the scan must find none of it on Fay's device.
+    if (card.inner === undefined) throw new Error('Expected the founding card’s inner.');
     const held = await scanDb('fay');
     const seats = [await seatSecretIn(ana, riverside), await seatSecretIn(cy, oak)];
     for (const secret of [card.inner, ...seats]) {

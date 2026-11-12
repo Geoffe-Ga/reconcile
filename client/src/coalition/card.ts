@@ -10,11 +10,14 @@
  * each is padded to one of four sizes, and the relay keeps it 1 day, which it
  * rounds up to 24–48 hours.
  *
- * - The header is JSON `{secret, inner, seat, name, title, atoms,
+ * - The header is JSON `{secret, inner?, seat, name, title, atoms,
  *   chunkCount}`: the coalition secret and `inner`, each 32 bytes in
  *   base64url, the maker's seat (their group's name there and its public
  *   seat key, never its seat secret, which stays in the group's own sealed
- *   log), and the coalition's name and statement.
+ *   log), and the coalition's name and statement. Only a card that founds a
+ *   coalition carries `inner`: a card from a formed one asks a group in, and
+ *   the group receives `inner` through its seat once admitted, so it can't
+ *   read the coalition's room while it's being decided on (#313).
  * - A card for a coalition still to form carries no log. A card from a
  *   formed coalition (admitting a group) carries the coalition's log, packed
  *   as an invite packs a group's (`invite/envelope.ts`), so the device that
@@ -37,8 +40,11 @@ import { NAME_MAX, openChunked, packEntries, sealChunked } from '../invite/envel
 export interface Card {
   /** The 32-byte coalition secret, from which the coalition's mailboxes and seal key derive. */
   readonly secret: Uint8Array;
-  /** The coalition's 32 `inner` bytes, which followers never get (#100). */
-  readonly inner: Uint8Array;
+  /**
+   * The coalition's 32 `inner` bytes, which followers never get (#100), on a
+   * card that founds the coalition; none on a card from a formed one (#313).
+   */
+  readonly inner?: Uint8Array;
   /** The maker's seat: their group's name in the coalition and its public seat key. */
   readonly seat: SeatEntry;
   /** The coalition's name, 1–120 code points. */
@@ -104,7 +110,7 @@ function encodeHeader(header: CardHeader): Uint8Array {
   return encoder.encode(
     JSON.stringify({
       secret: base64url(secret),
-      inner: base64url(inner),
+      ...(inner === undefined ? {} : { inner: base64url(inner) }),
       seat: { name: seat.name, key: seat.key },
       name,
       title,
@@ -141,12 +147,13 @@ function parseAtoms(value: unknown): string[] | null {
   return atoms.every((atom) => typeof atom === 'string') ? atoms : null;
 }
 
-/** The secrets in a header, as bytes, or null. */
+/** The secrets in a header, as bytes, or null: a missing `inner` is none, a malformed one damage. */
 function parseSecrets(raw: Json): Pick<Card, 'secret' | 'inner'> | null {
   const secret = key32(raw.secret);
-  const inner = key32(raw.inner);
+  const inner = raw.inner === undefined ? undefined : key32(raw.inner);
   if (secret === null || inner === null) return null;
-  return { secret: fromBase64url(secret), inner: fromBase64url(inner) };
+  const secrets = { secret: fromBase64url(secret) };
+  return inner === undefined ? secrets : { ...secrets, inner: fromBase64url(inner) };
 }
 
 /** A title of at most {@link NAME_MAX} code points, or null. */
@@ -204,7 +211,8 @@ export function openCard(
   const opened = openChunked(seal, channel, blobs, decodeHeader);
   if (opened === null) return null;
   const { secret, inner, seat, name, title, atoms } = opened.header;
-  return { secret, inner, seat, name, title, atoms, entries: opened.entries };
+  const card = { secret, seat, name, title, atoms, entries: opened.entries };
+  return inner === undefined ? card : { ...card, inner };
 }
 
 /** The link to send: the app's origin, then the seed after `#reconcile/`. */

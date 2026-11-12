@@ -9,9 +9,10 @@
  * coalition vote in a member group on this device whose seat decides it,
  * where that group's own ballot lives. Someone in a member group who may
  * propose and hasn't joined is offered Take part first, and a participant
- * bound to a seat may share a follow link (#124). No count of people, ballot
- * or voter's name from any group appears here: the coalition's log holds
- * none (ADR-0036).
+ * bound to a seat may share a follow link (#124). A device in a member group
+ * also finds the coalition's room here (#125), and one in none, as a
+ * follower's, never does. No count of people, ballot or voter's name from
+ * any group appears here: the coalition's log holds none (ADR-0036).
  *
  * Someone who only follows the coalition (#124) reads it at the Member
  * level: its member groups under its name, then its Dispatches, Documents
@@ -134,6 +135,22 @@ function Decided({ decided }: { readonly decided: readonly MotionItem[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** The room's entry (#125): a card that opens it, and who can read it. */
+function RoomEntry({ coalitionId }: { readonly coalitionId: string }) {
+  const { room } = messages;
+  return (
+    <Link className="card-link" href={routeHref({ name: 'coalitionRoom', coalitionId })}>
+      <span className="card-link-title">
+        <span className="heading-3">{room.open}</span>
+        <span className="card-link-arrow" aria-hidden="true">
+          {messages.app.forward}
+        </span>
+      </span>
+      <span className="meta">{room.homeLine}</span>
+    </Link>
   );
 }
 
@@ -305,6 +322,11 @@ export function CoalitionHome(props: CoalitionHomeProps) {
         <Section title={messages.dispatches.title}>
           <Dispatches view={view} state={state} />
         </Section>
+        {view.room ? (
+          <Section title={messages.room.homeTitle}>
+            <RoomEntry coalitionId={view.coalitionId} />
+          </Section>
+        ) : null}
         <Section title={coalitions.documents}>
           <Documents view={view} />
         </Section>

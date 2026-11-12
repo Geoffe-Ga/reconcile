@@ -62,6 +62,8 @@ export type Route =
       readonly narrow: boolean;
     }
   | { readonly name: 'dissolve'; readonly groupId: string }
+  /** Propose removing a member (#115), by their key in the group. */
+  | { readonly name: 'removal'; readonly groupId: string; readonly member: string }
   /** The group's Dispatches, newest first (#112). */
   | { readonly name: 'dispatches'; readonly groupId: string }
   /** Send a Dispatch (#112). */
@@ -77,7 +79,9 @@ export type Route =
       readonly documentId: string;
     }
   /** Propose a change to one of a coalition's sections (#120). */
-  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string };
+  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
+  /** A coalition's room (#125). */
+  | { readonly name: 'coalitionRoom'; readonly coalitionId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -170,6 +174,7 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
   ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
+  ['remove-member', idPage(ID, (groupId, member) => ({ name: 'removal', groupId, member }))],
 ]);
 
 /**
@@ -177,7 +182,9 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
  * (#107) or `dispatch/new`, `add` (a new first section, #75), or
  * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
  * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
- * `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
+ * `recall/{seat}`, `rules/{optIn}`, `narrow/{optIn}` or
+ * `remove-member/{member}` (#115), which a section's own `remove` can't share:
+ * an added Atom's id is a Proposal's.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
@@ -206,11 +213,15 @@ const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) =>
   ],
 ]);
 
-/** `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or `propose/{atomId}` (#120). */
+/**
+ * `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or
+ * `propose/{atomId}` (#120), or `room` (#125).
+ */
 function coalitionRoute(rest: readonly string[]): Route {
   const [coalitionId, page, arg, ...extra] = rest;
   if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
   if (page === undefined) return { name: 'coalition', coalitionId };
+  if (page === 'room') return arg === undefined ? { name: 'coalitionRoom', coalitionId } : START;
   const open = COALITION_PAGES.get(page);
   return open === undefined || arg === undefined ? START : open(coalitionId, arg);
 }
@@ -365,6 +376,8 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'removal':
+      return `/remove-member/${route.member}`;
     case 'propose':
     case 'add':
     case 'remove':
@@ -384,6 +397,8 @@ function coalitionHref(route: CoalitionRoute): string {
       return `${home}/doc/${route.documentId}`;
     case 'coalitionPropose':
       return `${home}/propose/${route.atomId}`;
+    case 'coalitionRoom':
+      return `${home}/room`;
   }
 }
 
