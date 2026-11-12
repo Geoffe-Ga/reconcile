@@ -11,6 +11,7 @@ import { sendInvite } from '../door/inbox';
 import type { OpenPage } from '../door/page';
 import { can, type Level } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
+import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
 import { Applications } from '../screens/Applications';
@@ -21,6 +22,7 @@ import { DissolveComposer } from '../screens/DissolveComposer';
 import { DocumentView } from '../screens/DocumentView';
 import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
+import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
 import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
@@ -34,6 +36,7 @@ import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
 import { ProposalView } from '../screens/ProposalView';
+import { RemovalComposer } from '../screens/RemovalComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings, type SettingsPasskey } from '../screens/Settings';
@@ -41,9 +44,10 @@ import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
-import { Start, type StartRequest } from '../screens/Start';
+import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
+import type { HeldCoalition } from '../store/coalitions';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import { foldGroup } from '../store/expiry';
@@ -62,6 +66,7 @@ import {
 import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
+import { HeldShareCard } from './HeldShares';
 import { CoalitionSection } from './CoalitionSection';
 import { coalitionRows, withMotionWords } from './coalitionLines';
 import {
@@ -86,8 +91,11 @@ import {
   type DissolveValues,
   propose,
   proposeDissolve,
+  proposeRemoval,
   proposeRules,
   proposeSteward,
+  type RemovalValues,
+  respondToRemoval,
   type RulesValues,
   sendDispatch,
   type StewardValues,
@@ -97,10 +105,12 @@ import {
   type VersionValues,
   vouch,
 } from './proposals';
-import { CoalitionRouteScreen } from './CoalitionScreens';
+import { CoalitionRouteScreen, FollowScreen } from './CoalitionScreens';
 import {
+  type BareRoute,
   type CoalitionRoute,
   type GroupRoute,
+  isBare,
   navigate,
   replaceRoute,
   type Route,
@@ -110,10 +120,19 @@ import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
-import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
+import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { chooseContacts } from '../store/recovery';
+import { approveRecovery, holdViews } from '../recovery/holder';
+import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
+import { HelpRecover } from '../screens/HelpRecover';
+import { RecoverStart } from '../screens/RecoverStart';
+import { messages } from './messages';
+import { RecoveryAlert } from './RecoveryAlert';
+import { useRecovery } from './useRecovery';
+import { useRecoveryAlert } from './useRecoveryAlert';
 import { useSentApplications } from './useSent';
 import { useRelayBackupStatus } from './useRelayBackup';
 
@@ -131,7 +150,27 @@ interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (seed: Uint8Array) => void;
   readonly onOpenCard: (seed: Uint8Array) => void;
+  readonly onOpenFollow: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
+}
+
+/**
+ * The recovery alert (#118) while a recovery of this person waits, with
+ * Cancel this recovery; null when there is none. Start shows it first, and
+ * every group home first among its quiet cards.
+ */
+function useAlertCard(services: AppServices): ReactNode {
+  const { summary, cancel } = useRecoveryAlert(services);
+  return summary === null ? null : <RecoveryAlert summary={summary} onCancel={cancel} />;
+}
+
+/** The coalitions this device follows (#124), once each has its genesis, as Start lists them. */
+function followingOf(coalitions: readonly HeldCoalition[]): StartFollowing[] {
+  return coalitions.flatMap(({ entry, state }) => {
+    if (entry.following !== true || state.group === null || state.coalition === null) return [];
+    const groups = state.coalition.seats.map((seat) => seat.name);
+    return [{ coalitionId: state.group, name: state.name, groups }];
+  });
 }
 
 /** Opens a front door link pasted into Start (#121). */
@@ -140,8 +179,11 @@ function openDoor(payload: string): void {
 }
 
 function StartScreen(props: StartScreenProps) {
-  const { services, onOpenInvite, onOpenCard, persistence } = props;
+  const { services, onOpenInvite, onOpenCard, onOpenFollow, persistence } = props;
   const groups = useGroupList(services.store);
+  const alert = useAlertCard(services);
+  const coalitions = useCoalitionList(services.store);
+  const following = useMemo(() => followingOf(coalitions ?? []), [coalitions]);
   const sent = useSentApplications(services.store);
   const requests = useMemo(
     () =>
@@ -164,8 +206,11 @@ function StartScreen(props: StartScreenProps) {
       onOpenInvite={onOpenInvite}
       onOpenDoor={openDoor}
       onOpenCard={onOpenCard}
+      onOpenFollow={onOpenFollow}
+      following={following}
       persistence={persistence}
       onRestore={onRestore}
+      alert={alert}
     />
   );
 }
@@ -224,17 +269,18 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
 }
 
 /**
- * Settings (#78, #95, #96, #99): Notifications, Save a backup with the relay
- * backup's line (#97), Restore a backup, Link a new device, Lock with a
- * passkey, and Erase.
+ * Settings (#78, #95, #96, #99, #109): Notifications, Save a backup with the
+ * relay backup's line (#97), Recovery contacts (#109), Restore a backup, Link
+ * a new device, Lock with a passkey, and Erase.
  */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
   const relayBackup = useRelayBackupStatus(services.store);
+  const recovery = useRecovery(services.store);
   const { push, passkey } = services;
   const passkeyState = usePasskeyState(passkey);
-  const loaded = groups !== null && switches !== null && relayBackup !== null;
+  const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
   return !loaded || passkeyState === null ? null : (
     <Settings
       notify={{
@@ -245,6 +291,12 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       }}
       hasGroups={groups.length > 0}
       relayBackup={relayBackup}
+      recovery={{
+        status: recovery.status,
+        held: recovery.held,
+        canChoose: recovery.groups.length > 0,
+        recovered: recovery.recovered,
+      }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
@@ -266,6 +318,86 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
 function useKeepsRelayBackup(store: AppServices['store']): boolean | null {
   const status = useRelayBackupStatus(store);
   return status === null ? null : status.kind !== 'off';
+}
+
+/**
+ * Choose recovery contacts (#109): the picker, from the people in this
+ * device's groups. Saving chooses them, then goes back to Settings, where
+ * their status shows.
+ */
+function RecoveryScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  return recovery === null ? null : (
+    <RecoveryContacts
+      groups={recovery.groups}
+      current={recovery.status}
+      recovered={recovery.recovered && recovery.status === null}
+      onSave={async (choice) => {
+        await chooseContacts(services, choice);
+        replaceRoute({ name: 'settings' });
+      }}
+    />
+  );
+}
+
+/** A stored group as it is, for `useGroups`. */
+const wholeGroup = (group: Group): Group => group;
+
+/**
+ * Recover with my contacts (#118), on a new device: keeps a request and
+ * shows its code, shares it with fixed words and the app's address beside
+ * it (the code's whole point is to reach the person's contacts), and polls
+ * until a backup opens. Then it syncs and opens the picker, which asks the
+ * person to choose their contacts again. Stop recovering forgets the code.
+ */
+function RecoverScreen({ services }: { readonly services: AppServices }) {
+  const start = useCallback(() => startRecovery(services), [services]);
+  const session = useMemo(() => recoverSession(services), [services]);
+  const onShare = useCallback(
+    (code: string) =>
+      shareOrCopy(
+        { text: `${messages.recover.message} ${code}`, url: `${services.origin}/` },
+        services,
+      ),
+    [services],
+  );
+  const onRestored = useCallback(() => {
+    void services.sync.syncOnce();
+    replaceRoute({ name: 'recovery' });
+  }, [services]);
+  const onStop = useCallback(async () => {
+    await stopRecovery(services);
+    replaceRoute({ name: 'start' });
+  }, [services]);
+  return (
+    <RecoverStart
+      start={start}
+      poll={session.poll}
+      onShare={onShare}
+      onRestored={onRestored}
+      onStop={onStop}
+    />
+  );
+}
+
+/**
+ * Help someone recover (#118), on a recovery contact's device: the shares it
+ * holds, each recovery it's helping with read at the relay's minute as this
+ * device estimates it, and Approve.
+ */
+function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  const groups = useGroups(services.store, wholeGroup);
+  const deviceNow = useNow(services.now);
+  if (recovery === null || groups === null) return null;
+  const holds = holdViews(groups, (group) => relayMinuteNow(group, deviceNow));
+  return (
+    <HelpRecover
+      held={recovery.held}
+      holds={holds}
+      onApprove={(approval) => approveRecovery(services, approval)}
+    />
+  );
 }
 
 /**
@@ -443,7 +575,10 @@ interface ReadyGroup extends GroupView {
 
 interface GroupGateProps {
   readonly groupId: string;
-  /** True for a screen that writes something new: a dissolved group shows it only reads (#108). */
+  /**
+   * True for a screen that writes something new: a dissolved group (#108),
+   * or one a vote removed this member from (#115), shows it only reads.
+   */
   readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
 }
@@ -455,8 +590,10 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  if (writes && state.dissolved !== null)
-    return <GroupArchived groupId={groupId} name={state.name} />;
+  const removed = removedFrom(state, me.author) !== undefined;
+  if (writes && (state.dissolved !== null || removed)) {
+    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
+  }
   // A coalition motion takes its title and why from its coalition (#114).
   return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
@@ -498,6 +635,7 @@ function applicationsFor(services: AppServices, group: GroupView & { state: Grou
 
 function GroupScreen({ services, groupId }: GroupScreenProps) {
   const deviceNow = useNow(services.now);
+  const alert = useAlertCard(services);
   return (
     <GroupGate groupId={groupId}>
       {(group) => (
@@ -521,6 +659,13 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
             ) : null
+          }
+          alertCard={alert === null ? null : <div className="backup-slot">{alert}</div>}
+          recoveryCard={
+            <HeldShareCard
+              held={group.newShares}
+              onDismiss={(ids) => services.store.markRecoverySeen(groupId, ids)}
+            />
           }
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
           onLeave={async () => {
@@ -771,6 +916,8 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
         };
         const onTell = (moment: ChatMoment, details: ChatDetails) =>
           shareOrCopy(chatPayload(moment, details, services.origin), services);
+        const onRespond = (text: string) =>
+          respondToRemoval(services, groupId, { proposal: proposalId, text });
         return (
           <ProposalView
             state={group.state}
@@ -786,6 +933,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             onVote={onVote}
             onProposeAgain={onProposeAgain}
             onTell={onTell}
+            onRespond={onRespond}
           />
         );
       }}
@@ -915,6 +1063,34 @@ function DissolveScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
+interface RemovalScreenProps extends GroupScreenProps {
+  readonly member: string;
+}
+
+/** The removal composer (#115); sending the Proposal replaces it with the Proposal's ballot. */
+function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
+  const onPropose = async (values: RemovalValues) => {
+    const result = await proposeRemoval(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <RemovalComposer
+          state={state}
+          me={me.author}
+          member={member}
+          leaving={leaving}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
 /** The group's Dispatches (#112), newest first, with this device's own while they wait. */
 function DispatchesScreen({ groupId }: { readonly groupId: string }) {
   return (
@@ -969,15 +1145,19 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
 
 /** A route inside one group whose screen is a form of its own. */
 type FormRoute =
-  | Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'reconcile' }>
+  | Extract<
+      GroupRoute,
+      { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'removal' | 'reconcile' }
+    >
   | ComposeRoute;
 
 /**
  * The screen for a route inside one group that opens a form of its own: the
- * steward (#102), opt-in (#117) and dissolve (#108) composers, Send a
- * Dispatch (#112), and the composers that propose a change, add or remove a
- * section (#75), ask what to focus on (#107), or propose a lapsed Proposal
- * again (#74).
+ * steward (#102), opt-in (#117), dissolve (#108) and removal (#115)
+ * composers, Reconcile with another group (#114), Send a Dispatch (#112), and
+ * the composers that propose a change,
+ * add or remove a section (#75), ask what to focus on (#107), or propose a
+ * lapsed Proposal again (#74).
  */
 function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;
@@ -1004,6 +1184,8 @@ function FormRouteScreen({ route, services }: { route: FormRoute; services: AppS
       return <DissolveScreen services={services} groupId={groupId} />;
     case 'sendDispatch':
       return <SendDispatchScreen services={services} groupId={groupId} />;
+    case 'removal':
+      return <RemovalScreen services={services} groupId={groupId} member={route.member} />;
     case 'reconcile':
       return <ReconcileScreen services={services} groupId={groupId} />;
     default:
@@ -1024,6 +1206,35 @@ interface ScreenProps {
   readonly guide: GuideOffer;
 }
 
+interface BareScreenProps {
+  readonly route: BareRoute;
+  readonly services: AppServices;
+  readonly guide: GuideOffer;
+}
+
+/**
+ * A page that takes no argument: Create group, Settings, either side of
+ * linking, the recovery picker, or either side of recovering with contacts.
+ */
+function BareScreen({ route, services, guide }: BareScreenProps) {
+  switch (route.name) {
+    case 'create':
+      return <CreateScreen services={services} offerGuide={guide.offer} />;
+    case 'settings':
+      return <SettingsScreen services={services} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
+    case 'recovery':
+      return <RecoveryScreen services={services} />;
+    case 'recover':
+      return <RecoverScreen services={services} />;
+    case 'helpRecover':
+      return <HelpRecoverScreen services={services} />;
+  }
+}
+
 /** A route that names no group or coalition and carries no link: the device's own pages. */
 type PlainRoute = Exclude<Route, GroupRoute | CoalitionRoute | { readonly payload: unknown }>;
 
@@ -1038,11 +1249,14 @@ interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'hol
   readonly openInvite: (seed: Uint8Array) => void;
   /** Opens a reconcile card pasted into Start (#114), its seed held in memory. */
   readonly openCard: (seed: Uint8Array) => void;
+  /** Opens a follow link pasted into Start (#124), its seed held in memory. */
+  readonly openFollow: (seed: Uint8Array) => void;
 }
 
-/** Start, Create group, Settings, Personal and the two sides of linking a device. */
+/** Start, Personal, and the pages that take no argument (`BareScreen`). */
 function PlainScreen(props: PlainScreenProps) {
-  const { route, services, persistence, guide, openInvite, openCard } = props;
+  const { route, services, persistence, guide, openInvite, openCard, openFollow } = props;
+  if (isBare(route)) return <BareScreen route={route} services={services} guide={guide} />;
   switch (route.name) {
     case 'start':
       return (
@@ -1050,22 +1264,15 @@ function PlainScreen(props: PlainScreenProps) {
           services={services}
           onOpenInvite={openInvite}
           onOpenCard={openCard}
+          onOpenFollow={openFollow}
           persistence={persistence}
         />
       );
-    case 'create':
-      return <CreateScreen services={services} offerGuide={guide.offer} />;
-    case 'settings':
-      return <SettingsScreen services={services} />;
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
-    case 'linkNew':
-      return <LinkNewScreen services={services} />;
-    case 'linkThis':
-      return <LinkThisScreen services={services} />;
   }
 }
 
@@ -1074,9 +1281,18 @@ interface LinkScreenProps extends Omit<ScreenProps, 'route' | 'holdSeed' | 'pers
   readonly releaseSeed: () => void;
 }
 
-/** Join, a shared page, a front door and a card: each reads what follows its link's `#`. */
+/** Join, a shared page, a front door, a card and a follow link: each reads what follows its link's `#`. */
 function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScreenProps) {
   switch (route.name) {
+    case 'follow':
+      return (
+        <FollowScreen
+          services={services}
+          payload={route.payload}
+          heldSeed={heldSeed}
+          releaseSeed={releaseSeed}
+        />
+      );
     case 'card':
       return (
         <BringScreen
@@ -1122,6 +1338,13 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
+  const openFollow = useCallback(
+    (seed: Uint8Array) => {
+      holdSeed(seed);
+      navigate({ name: 'follow', payload: null });
+    },
+    [holdSeed],
+  );
   if ('groupId' in route) {
     return (
       <>
@@ -1151,6 +1374,7 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       guide={guide}
       openInvite={openInvite}
       openCard={openCard}
+      openFollow={openFollow}
     />
   );
 }

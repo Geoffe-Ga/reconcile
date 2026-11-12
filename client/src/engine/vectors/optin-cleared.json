@@ -1,0 +1,317 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "optin-cleared: the chat bot's on-Proposal and the steward's off-Proposal each close early, and the group's devices fold them the same whether they hold their ballots or have cleared them: Ana's narrow beside her open off-Proposal holds, Ben's rules Proposal on the chat bot while it is open is ignored, and the off pass turns the bot off for good",
+      "alsoCleared": ["@3", "@7"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              },
+              "salt": "salt-of-bens-ballot"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375012,
+              "closedSeq": 5,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 0, 2]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": {
+                "$base64url": [
+                  181, 9, 10, 93, 126, 143, 55, 65, 24, 204, 159, 128, 91, 5, 140, 189, 130, 155,
+                  225, 153, 98, 75, 241, 170, 229, 177, 204, 243, 229, 108, 219, 231
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": null
+              },
+              "title": "Turn the chat bot off",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "narrow",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501260000,
+            "body": {
+              "optIn": "chatBot",
+              "proposal": "@7"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501320000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000002/rV7-second_token"
+                }
+              },
+              "title": "Use the new channel",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              },
+              "salt": "salt-of-anas-ballot"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              },
+              "salt": "salt-of-bens-ballot"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501920000,
+            "body": {
+              "proposal": "@7",
+              "closedAt": 29375031,
+              "closedSeq": 11,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@7",
+                  "counts": [0, 0, 0, 0, 2]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@7"
+              },
+              "commit": {
+                "$base64url": [
+                  181, 9, 10, 93, 126, 143, 55, 65, 24, 204, 159, 128, 91, 5, 140, 189, 130, 155,
+                  225, 153, 98, 75, 241, 170, 229, 177, 204, 243, 229, 108, 219, 231
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375040,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375012,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@7",
+            "closedAt": 29375031,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@7",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          }
+        ],
+        "narrowings": [
+          {
+            "id": "@8",
+            "seq": 8,
+            "received": 29375021,
+            "by": "%ana",
+            "optIn": "chatBot",
+            "proposal": "@7"
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": false
+          }
+        },
+        "optIns": {
+          "chatBot": null,
+          "frontDoor": false
+        },
+        "ignored": [
+          {
+            "seq": 9,
+            "id": "@9"
+          }
+        ]
+      }
+    }
+  ]
+}

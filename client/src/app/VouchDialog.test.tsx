@@ -1,16 +1,14 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { axeViolations } from '../test/axe';
+import { pastPressFallback } from '../test/press';
 import { VouchDialog } from './VouchDialog';
 
 type OnVouch = () => Promise<void>;
 
 const CHAT = 'https://chat.example.org/riverside';
-
-/** How long React Aria's usePress waits for a click before clicking a pressed button itself. */
-const PRESS_FALLBACK_MS = 80;
 
 function setup(onVouch = vi.fn<OnVouch>(() => Promise.resolve()), chat: string | null = CHAT) {
   document.title = 'Your group · Reconcile';
@@ -97,7 +95,7 @@ describe('VouchDialog', () => {
     expect(await screen.findByRole('alert')).toBeVisible();
     // usePress clicks a button itself when a press on it gets no click within 80 ms, so a
     // press on the disabled button would send once it re-enables (#190, #192).
-    await act(() => new Promise((resolve) => setTimeout(resolve, PRESS_FALLBACK_MS + 20)));
+    await pastPressFallback();
     expect(vouch).toBeEnabled();
     expect(onVouch).toHaveBeenCalledTimes(1);
   });

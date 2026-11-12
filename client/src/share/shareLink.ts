@@ -35,6 +35,11 @@
  * {@link SHARE_TTL_DAYS} days, is paused the same way (#339, `pauseOf`):
  * another device holding the same share may have stopped it, and the
  * tombstone that said so may have lapsed. Keep sharing starts its days again.
+ *
+ * On a device whose keys are locked with a passkey, a share's seed and keys
+ * wait in the vault (#255), so nothing here posts, starts or stops a share
+ * until it's unlocked: Share link and Stop sharing say `locked` and send
+ * nothing, and a post's read of the share refuses.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import type { Seal } from '../crypto/seal';
@@ -42,10 +47,11 @@ import { newShareSeed, openShareRecord, shareChannelOf, signShareRecord } from '
 import { newSigningKeys } from '../crypto/sign';
 import { normalizeAtomText } from '../engine/atomText';
 import type { Relay, RelayRecord } from '../net/relay';
+import { type Store, VaultLocked } from '../store/db';
 import {
   type PersonalDocument,
-  type PersonalStore,
   resumedShare,
+  type ShareMark,
   type ShareState,
 } from '../store/personal';
 import {
@@ -75,7 +81,7 @@ export interface ShareLink {
 
 /** What sharing reaches: the device's personal Documents, the relay, the seal and the device clock. */
 export interface ShareServices {
-  readonly store: Pick<PersonalStore, 'getPersonal' | 'listPersonal' | 'updateShare'>;
+  readonly store: Pick<Store, 'getPersonal' | 'listPersonal' | 'updateShare' | 'requireUnlocked'>;
   readonly relay: Pick<Relay, 'putBlob' | 'getBlobs'>;
   readonly seal: Seal;
   /** The device clock in milliseconds: when a copy was last posted. */
@@ -98,7 +104,8 @@ export type StartOutcome =
   | { readonly kind: 'shared'; readonly link: ShareLink }
   | { readonly kind: 'too-large' }
   | { readonly kind: 'failed' }
-  | { readonly kind: 'missing' };
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'locked' };
 
 /**
  * How one post went: posted; too large to share, or failed to reach the
@@ -109,14 +116,24 @@ export type StartOutcome =
 export type PostOutcome = 'posted' | 'too-large' | 'failed' | 'stopped' | 'unshared' | 'paused';
 
 /**
+/**
  * Why nothing goes to a share's link until the person chooses: a restore
  * brought it back (#328), or this device hasn't posted to it for
  * {@link SHARE_TTL_DAYS} days (#339).
  */
 export type SharePause = 'restored' | 'idle';
 
-/** How Stop sharing went: stopped, or failed and changed nothing. */
-export type StopOutcome = 'stopped' | 'failed';
+/**
+ * How Keep sharing went (#328): as its post went, or locked, when the
+ * device's keys are locked with a passkey (#255), so nothing was kept or sent.
+ */
+export type KeepOutcome = PostOutcome | 'locked';
+
+/**
+ * How Stop sharing went: stopped, or failed and changed nothing, or found the
+ * device's keys locked (#255) and sent nothing.
+ */
+export type StopOutcome = 'stopped' | 'failed' | 'locked';
 
 /** A link's own form: `#share/`, with no slash after `#`, as an invite's `#join/` (spec §3). */
 export const SHARE_PREFIX = '#share/';
@@ -291,6 +308,20 @@ function inTurn<T>(id: string, task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Whether this device's keys are locked with a passkey this session hasn't
+ * used (#255): then a share's keys can't be read or kept, so nothing posts.
+ */
+async function isLocked(services: ShareServices): Promise<boolean> {
+  try {
+    await services.store.requireUnlocked();
+    return false;
+  } catch (error) {
+    if (error instanceof VaultLocked) return true;
+    throw error;
+  }
+}
+
 /** Marks `share` pending on Document `id`, unless it has been stopped or replaced meanwhile. */
 async function markPending(services: ShareServices, id: string, share: ShareState): Promise<void> {
   await services.store.updateShare(id, (held) =>
@@ -372,10 +403,12 @@ export async function postEdits(
  * 'Share link' for Document `id`: makes a fresh seed and keypair, posts the
  * first copy, and only once the relay has it keeps the share on the
  * Document and hands back its link. Offline, or for a Document too large to
- * share, nothing is kept. A Document already shared keeps its link.
+ * share, nothing is kept. A Document already shared keeps its link. While
+ * the device's keys are locked (#255), nothing is posted or kept.
  */
 export function startSharing(services: ShareServices, id: string): Promise<StartOutcome> {
   return inTurn(id, async (): Promise<StartOutcome> => {
+    if (await isLocked(services)) return { kind: 'locked' };
     const document = await services.store.getPersonal(id);
     if (document === undefined) return { kind: 'missing' };
     if (document.share !== undefined) return { kind: 'shared', link: linkOf(document.share) };
@@ -411,9 +444,12 @@ export function startSharing(services: ShareServices, id: string): Promise<Start
  * The choice counts as a post towards the share's {@link SHARE_TTL_DAYS}
  * days (#339), so a post that fails leaves the share pending and the next
  * launch sends it, unless that launch is so late that the share is idle
- * again. A Document that isn't shared is left alone.
+ * again. A Document that isn't shared is left alone. While the device's
+ * keys are locked (#255), nothing is kept or sent, and the share stays
+ * paused.
  */
-export async function keepSharing(services: ShareServices, id: string): Promise<PostOutcome> {
+export async function keepSharing(services: ShareServices, id: string): Promise<KeepOutcome> {
+  if (await isLocked(services)) return 'locked';
   const at = services.now();
   const kept = await services.store.updateShare(id, (held) =>
     held.share === undefined ? undefined : { ...resumedShare(held.share), lastPostedAt: at },
@@ -424,10 +460,12 @@ export async function keepSharing(services: ShareServices, id: string): Promise<
 /**
  * Stop sharing for Document `id`: posts a tombstone, then drops the share.
  * Offline, or while the relay refuses it, nothing changes. A mailbox that
- * already holds a tombstone needs no second one.
+ * already holds a tombstone needs no second one. While the device's keys are
+ * locked (#255), nothing is sent and nothing changes.
  */
 export function stopSharing(services: ShareServices, id: string): Promise<StopOutcome> {
   return inTurn(id, async (): Promise<StopOutcome> => {
+    if (await isLocked(services)) return 'locked';
     const share = (await services.store.getPersonal(id))?.share;
     if (share === undefined) return 'stopped';
     const posted = await postNext(services, share, { stopped: true }).then(
@@ -448,7 +486,7 @@ export function stopSharing(services: ShareServices, id: string): Promise<StopOu
  * merge asks it of a share it can't tell from one this device stopped
  * (#247).
  */
-export function mayStillOpen(share: ShareState, now: number): boolean {
+export function mayStillOpen(share: Pick<ShareState, 'lastPostedAt'>, now: number): boolean {
   return share.lastPostedAt !== null && now - share.lastPostedAt < SHARE_TTL_DAYS * DAY_MS;
 }
 
@@ -462,7 +500,7 @@ export function mayStillOpen(share: ShareState, now: number): boolean {
  * `now` is the device clock, which stamped the post. A share never posted
  * has no link anyone could open.
  */
-export function pauseOf(share: ShareState, now: number): SharePause | null {
+export function pauseOf(share: ShareMark, now: number): SharePause | null {
   if (share.paused === true) return 'restored';
   return share.lastPostedAt !== null && !mayStillOpen(share, now) ? 'idle' : null;
 }

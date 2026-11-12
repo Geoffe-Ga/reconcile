@@ -10,6 +10,7 @@ import './styles/backup.css';
 import './styles/link.css';
 import './styles/door.css';
 import './styles/passkey.css';
+import './styles/recovery.css';
 import './styles/coalitions.css';
 
 import { StrictMode } from 'react';
@@ -19,6 +20,7 @@ import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorke
 import { botNotice, botThreadName } from './app/chatMessages';
 import { openDeviceLock, passkeyOn, whenOpen } from './app/passkey';
 import { Root } from './app/Root';
+import { afterEveryPass } from './recovery/holder';
 import { parseRoute } from './app/router';
 import { copyToClipboard } from './app/services';
 import { browserFileTargets, browserShare } from './app/share';
@@ -40,7 +42,6 @@ import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
 import { eraseDevice } from './store/erase';
 import { createPush } from './store/push';
-import { refreshRelayBackup } from './store/relayBackup';
 import { sweepArchives } from './store/archive';
 import { createSync } from './store/sync';
 import { keepSharesAlive } from './share/shareLink';
@@ -62,8 +63,11 @@ if (root === null) {
  * closes its notifications whenever it comes to the front. After each
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
- * key (#97). Each sync keeps a group's front door, and looks for replies to
- * the applications this device sent at one (#121). Each launch also posts
+ * key (#97), and any backup id an earlier choice of recovery contacts
+ * retired is overwritten (#109); before both, any recovery share this device
+ * holds for someone else goes, or stops, once its 72 hours are up (#118).
+ * Each sync keeps a group's front door, and looks for replies to the
+ * applications this device sent at one (#121). Each launch also posts
  * again any shared personal Document whose
  * link is due a fresh copy or has an edit waiting (#105), but none whose
  * share a restore paused (#328), or that this device last posted to 30 or
@@ -88,7 +92,7 @@ async function start(container: HTMLElement): Promise<void> {
   const port = browserPushPort();
   const push = createPush({ store, relay: createPushRelay(), port });
   const now = (): number => Date.now();
-  const afterPass = (): Promise<void> => refreshRelayBackup({ store, relay, now });
+  const afterPass = (): Promise<void> => afterEveryPass({ store, relay, seal: xchachaSeal, now });
   const door = createDoorKeeper({ store, relay, seal: xchachaSeal, plainText, clock: now });
   const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, door, afterPass });
   closeWhenVisible(port, document);

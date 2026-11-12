@@ -19,6 +19,7 @@ export type ShareStatus =
   | 'stopping'
   | 'stop-failed'
   | 'stopped'
+  | 'locked'
   | 'keeping'
   | 'kept'
   | 'kept-pending'
@@ -30,6 +31,7 @@ const KEPT: Readonly<Record<SharingKeep, ShareStatus>> = {
   posted: 'kept',
   pending: 'kept-pending',
   stopped: 'keep-stopped',
+  locked: 'locked',
 };
 
 /** One Document's share, as its editor holds it. */
@@ -95,16 +97,19 @@ export function useShareByLink(
       await save();
       const started = await sharing.start(id);
       if (started.kind === 'too-large') return 'too-large';
+      if (started.kind === 'locked') return 'locked';
       if (started.kind === 'failed') return 'start-failed';
       if (live.current) setView({ link: started.link, pending: false, paused: null });
       return sharing.send(started.link);
     });
 
-  const send = () => once('idle', async () => (view ? sharing.send(view.link) : 'idle'));
+  const send = () => once('idle', async () => (view?.link ? sharing.send(view.link) : 'idle'));
 
   const stop = () =>
     once('stopping', async () => {
-      if ((await sharing.stop(id)) === 'failed') {
+      const stopped = await sharing.stop(id);
+      if (stopped === 'locked') return 'locked';
+      if (stopped === 'failed') {
         return (view?.paused ?? null) === null ? 'stop-failed' : 'paused-stop-failed';
       }
       if (live.current) setView(null);
@@ -114,16 +119,18 @@ export function useShareByLink(
   const keep = () =>
     once('keeping', async () => {
       const link = view?.link;
-      if (link === undefined) return 'idle';
+      if (!link) return 'idle';
       const kept = await sharing.keep(id);
-      const shared = { link, pending: kept === 'pending', paused: null };
-      if (live.current) setView(kept === 'stopped' ? null : shared);
+      // Locked (#255), nothing changed: the share still waits, paused.
+      if (live.current && kept !== 'locked') {
+        setView(kept === 'stopped' ? null : { link, pending: kept === 'pending', paused: null });
+      }
       return KEPT[kept];
     });
 
   const stopFirst = async () => {
     if (view === null || view === undefined) return;
-    if ((await sharing.stop(id)) === 'failed') throw new Error('Sharing couldn’t be stopped.');
+    if ((await sharing.stop(id)) !== 'stopped') throw new Error('Sharing couldn’t be stopped.');
     setView(null);
   };
 

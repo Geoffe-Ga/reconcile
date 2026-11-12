@@ -9,7 +9,8 @@
  *
  * One test per restore path that can carry a share: a backup file, the relay
  * copy as recovery (#118) restores it, and a backup file restored on the
- * unlock screen (#95). A linked device's copy (#96) carries no share
+ * unlock screen (#95), onto a new device and onto one whose keys were sealed
+ * in a passkey's vault (#255). A linked device's copy (#96) carries no share
  * (`withoutShares`), and the relay copy linked devices keep (#247) is
  * covered in `app/linkedBackup.test.ts`.
  *
@@ -20,6 +21,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { vaultKeyFromPrf } from '../crypto/keyVault';
 import { xchachaSeal } from '../crypto/seal';
 import { shareChannelOf } from '../crypto/share';
 import { createRelay, type Relay } from '../net/relay';
@@ -139,7 +141,7 @@ const backupFile: RestorePath = async (owner) => {
   return (onto) => importGroups(onto.store, file, PASSPHRASE);
 };
 
-/** The relay copy (#97), as recovery (#118) restores it: `fetchRelayBackup`, then `importSnapshot`. */
+/** The relay copy (#97), as recovery (#118) restores it: `fetchRelayBackup`, then `importSnapshot` from `'relay'`. */
 const relayCopy: RestorePath = async (owner) => {
   const { store, services } = owner;
   await startRelayBackup({ store, relay: services.relay, now: services.now });
@@ -149,7 +151,7 @@ const relayCopy: RestorePath = async (owner) => {
   return async (onto) => {
     const plaintext = await fetchRelayBackup(onto.services.relay, key);
     if (plaintext === null) throw new Error('Expected the relay copy.');
-    await importSnapshot(onto.store, plaintext);
+    await importSnapshot(onto.store, plaintext, 'relay');
   };
 };
 
@@ -446,5 +448,57 @@ describe('a share another device stopped (#339)', () => {
     clock.now += REFRESH_AFTER_DAYS * DAY_MS;
     expect(await keepSharesAlive(services)).toEqual([]);
     expect(postsTo(fake, link)).toHaveLength(posts + 1);
+  });
+});
+
+describe('a share a restore brings back onto a device whose keys were sealed (#328, #255)', () => {
+  const SALT = new Uint8Array(32).fill(0x33);
+  const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+  const LOCK = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+  it('on the unlock screen (#95), posts nothing to a link stopped since, though the vault held a newer share of the Document', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const old = await shared(ana);
+    const restore = await unlockScreen(ana);
+    expect(await stopSharing(ana.services, STATEMENT.id)).toBe('stopped');
+    expect((await startSharing(ana.services, STATEMENT.id)).kind).toBe('shared');
+    await ana.store.sealKeys(LOCK, KEY);
+    ana.store.close();
+    // Her passkey no longer opens the vault, and the old link's tombstone has lapsed.
+    const locked = await device(fake, 'ana', laterBy(fake, LAPSED_DAYS));
+    expect(fake.blobs(shareChannelOf(old.seed).mailbox)).toEqual([]);
+    const posts = postsTo(fake, old).length;
+
+    await restore(locked);
+
+    expect(await keepSharesAlive(locked.services)).toEqual([]);
+    expect(await postCopy(locked.services, STATEMENT.id)).toBe('paused');
+    expect(postsTo(fake, old)).toHaveLength(posts);
+    expect(await shows(fake, old)).toEqual({ kind: 'gone' });
+    expect((await locked.store.getPersonal(STATEMENT.id))?.share?.paused).toBe(true);
+  });
+
+  it('while the keys are locked, Keep sharing and Stop sharing send nothing and say so, and the share stays paused', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const link = await shared(ana);
+    const restore = await backupFile(ana);
+    const laptop = await device(fake, 'laptop');
+    await laptop.store.sealKeys(LOCK, KEY);
+    await restore(laptop);
+    laptop.store.close();
+    const locked = await device(fake, 'laptop');
+    const requests = fake.requests.length;
+
+    expect(await keepSharing(locked.services, STATEMENT.id)).toBe('locked');
+    expect(await stopSharing(locked.services, STATEMENT.id)).toBe('locked');
+
+    expect(fake.requests).toHaveLength(requests);
+    expect((await locked.store.listPersonalEntries())[0]?.share?.paused).toBe(true);
+    expect(await locked.store.unlock(KEY)).toBe(true);
+    expect(await keepSharesAlive(locked.services)).toEqual([]);
+    expect(await keepSharing(locked.services, STATEMENT.id)).toBe('posted');
+    expect(postsTo(fake, link)).toHaveLength(2);
   });
 });

@@ -4,12 +4,12 @@ import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { BackLink, PageHeader } from '../app/ui';
 import { pauseOf, type SharePause } from '../share/shareLink';
-import type { PersonalDocument } from '../store/personal';
+import type { PersonalEntry } from '../store/personal';
 
 /** Props for {@link Personal}. */
 export interface PersonalProps {
   /** This device's personal Documents, oldest first. */
-  readonly documents: readonly PersonalDocument[];
+  readonly documents: readonly PersonalEntry[];
   /** The id a new Document opens at; nothing is stored under it until its first save. */
   readonly newId: string;
   /** The device clock in ms: a share it hasn't posted to for 30 days is paused (#339). */
@@ -64,7 +64,7 @@ const PAUSED_LINE: Readonly<Record<SharePause, string>> = {
  * The line under a Document's title on Personal at `now`: shared by link
  * (#105), or paused after a restore (#328) or 30 days with no post (#339).
  */
-function shareLine({ share }: PersonalDocument, now: number): { readonly line?: string } {
+function shareLine({ share }: PersonalEntry, now: number): { readonly line?: string } {
   if (share === undefined) return {};
   const pause = pauseOf(share, now);
   return { line: pause === null ? messages.personal.sharedLine : PAUSED_LINE[pause] };

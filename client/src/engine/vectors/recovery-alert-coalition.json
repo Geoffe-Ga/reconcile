@@ -1,0 +1,90 @@
+{
+  "kind": "coalition",
+  "vectors": [
+    {
+      "name": "recovery-alert-coalition: a coalition's log takes no recovery-alert or recovery-cancel, even from a participant, since a share, and so its alert and cancel, travels only in a group the person shares with their contact (#118)",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "level": "member",
+                "kx": "&kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "recovery-alert",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": { "box": { "$base64url": [6, 6, 6, 6, 6, 6, 6, 6, 6] } }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "recovery-cancel",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": {
+                "alert": { "$base64url": [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7] }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "coalition": {
+          "members": [{ "author": "%kim", "seq": 2 }],
+          "recoveryAlerts": [],
+          "recoveryCancels": [],
+          "ignored": [
+            { "seq": 3, "id": "@3" },
+            { "seq": 4, "id": "@4" }
+          ]
+        }
+      },
+      "unchangedWithout": { "coalition": [3, 4] }
+    }
+  ]
+}

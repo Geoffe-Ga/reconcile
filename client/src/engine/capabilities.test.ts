@@ -4,6 +4,8 @@ import {
   type Capability,
   can,
   DEFAULT_JOIN_LEVEL,
+  FOLLOWER_LEVEL,
+  followerCan,
   FOUNDER_LEVEL,
   isLevel,
   isSuspended,
@@ -12,6 +14,7 @@ import {
   LEVELS,
   holdsRights,
   NEWCOMER_CAPABILITIES,
+  REMOVED_CAPABILITIES,
   type Roster,
   SUSPENDED_CAPABILITIES,
   votingRightsCount,
@@ -24,12 +27,13 @@ const ALL: readonly Capability[] = [
   'vote',
   'vouch',
   'invite',
+  'propose-removal',
   'propose',
   'dispatch',
 ];
 
-/** No seats held, no suspensions, at relay minute 0. */
-const QUIET = { stewards: [], suspensions: [], at: 0 } as const;
+/** No seats held, no suspensions, no removal passed, at relay minute 0. */
+const QUIET = { stewards: [], suspensions: [], removals: [], at: 0 } as const;
 
 /** Every TypeScript and JSON file under src/, as text, keyed by its path from this file. */
 const SOURCES = import.meta.glob<string>('../**/*.{ts,tsx,json}', {
@@ -75,6 +79,7 @@ function steward(level: Level, until?: number): Roster {
     members: [{ author: 'ana', level, rightsAt: 0 }],
     stewards: [{ holder: 'ana' }, { holder: null }],
     suspensions,
+    removals: [],
     at: 100,
   };
 }
@@ -105,8 +110,17 @@ describe('LEVEL_CAPABILITIES', () => {
   it('gives each level what the one before it has, and more (ADR-0003, ADR-0021)', () => {
     expect(LEVEL_CAPABILITIES).toEqual({
       member: ['read', 'see-roster'],
-      collaborator: ['read', 'see-roster', 'vote', 'vouch', 'invite'],
-      'co-creator': ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose', 'dispatch'],
+      collaborator: ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose-removal'],
+      'co-creator': [
+        'read',
+        'see-roster',
+        'vote',
+        'vouch',
+        'invite',
+        'propose-removal',
+        'propose',
+        'dispatch',
+      ],
     });
     expect(Object.keys(LEVEL_CAPABILITIES)).toEqual(LEVELS);
   });
@@ -123,10 +137,24 @@ describe('LEVEL_CAPABILITIES', () => {
   });
 });
 
+describe('a coalition’s followers (#124; ADR-0003, ADR-0021)', () => {
+  it('follow at the Member level: they read and see the participants, and nothing more', () => {
+    expect(FOLLOWER_LEVEL).toBe('member');
+    expect(ALL.filter(followerCan)).toEqual(['read', 'see-roster']);
+  });
+
+  it.each(['vote', 'vouch', 'invite', 'propose', 'dispatch', 'suspend', 'narrow'] as const)(
+    'never %s',
+    (capability) => {
+      expect(followerCan(capability)).toBe(false);
+    },
+  );
+});
+
 describe('can', () => {
   it.each([
     ['member', ['read', 'see-roster']],
-    ['collaborator', ['read', 'see-roster', 'vote', 'vouch', 'invite']],
+    ['collaborator', ['read', 'see-roster', 'vote', 'vouch', 'invite', 'propose-removal']],
     ['co-creator', ALL],
   ] as const)('lets a %s do exactly %j', (level, allowed) => {
     const granted = ALL.filter((capability) => can(at(level), 'ana', capability));
@@ -197,6 +225,45 @@ describe('can: stewards and suspensions (#102)', () => {
   it('still refuses a non-member who is named in a suspension', () => {
     const state = { ...at('co-creator'), suspensions: [{ member: 'zed', until: 200 }] };
     expect(can(state, 'zed', 'read')).toBe(false);
+  });
+});
+
+describe('can: a removal that has passed (#115; ADR-0049)', () => {
+  /** Ana at `level`, holding a seat, with a removal of her passed, maybe also suspended. */
+  function ousted(level: Level, until?: number): Roster {
+    return { ...steward(level, until), removals: [{ member: 'ana' }] };
+  }
+
+  it('lets any voting member propose a removal, but not a Member or a newcomer', () => {
+    const [following, voting, creating] = LEVELS;
+    expect(can(at(following), 'ana', 'propose-removal')).toBe(false);
+    expect(can(at(voting), 'ana', 'propose-removal')).toBe(true);
+    expect(can(at(creating), 'ana', 'propose-removal')).toBe(true);
+    expect(can(earning(creating, 101), 'ana', 'propose-removal')).toBe(false);
+  });
+
+  it('leaves only read to the person a passed removal names, seat, level or suspension aside', () => {
+    expect(REMOVED_CAPABILITIES).toEqual(['read']);
+    for (const level of LEVELS) {
+      for (const state of [ousted(level), ousted(level, 200)]) {
+        const granted = [...ALL, ...SEATED].filter((c) => can(state, 'ana', c));
+        expect(granted).toEqual(['read']);
+      }
+    }
+  });
+
+  it('keeps them out of any eligible set that opens after the pass', () => {
+    expect(wouldVote(ousted('co-creator'), 'ana')).toBe(false);
+  });
+
+  it('reads only removals of that member', () => {
+    const state = { ...steward('co-creator'), removals: [{ member: 'ben' }] };
+    expect(can(state, 'ana', 'propose')).toBe(true);
+    expect(wouldVote(state, 'ana')).toBe(true);
+  });
+
+  it('still refuses a non-member a removal names', () => {
+    expect(can({ ...at('co-creator'), removals: [{ member: 'zed' }] }, 'zed', 'read')).toBe(false);
   });
 });
 
