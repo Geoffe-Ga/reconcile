@@ -3,18 +3,20 @@
  * records builds the same state, the Document changes only on a final pass, a level change
  * or a leave never reaches back into a Proposal that's already open, a member who has left
  * acts no more, an Atom never has two open Proposals or a ballot more than three versions,
- * and adds and removals (#75) only ever add or take out whole Atoms. And of the bars (#94):
+ * and adds and section removals (#75) only ever add or take out whole Atoms. And of the bars (#94):
  * the entrenched bar is never easier than the ordinary one, and neither depends on the order
  * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
  * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
- * mailbox changes nothing, not even relay time. And of coalitions (#100): a motion's outcome
- * doesn't depend on the order distinct seats' results arrive in, and nothing a group reports
- * carries a name, note, score or key from inside it. And of a priority vote's ranking (#107):
- * it holds exactly the options that pass, best first, its first is always the tally's winner,
- * and the order ballots arrive in never changes it. And of ballot expiry (#111): a device that
- * has cleared a closed Proposal's ballots, keeping its result, folds the same Document and
- * outcomes as one that still holds them, even for an event in the closing minute before the
- * closing ballot (#289).
+ * mailbox changes nothing, not even relay time. And of removal (#115): nothing the member a
+ * removal names sends on it counts, they are taken out once whoever posts the remove, and after
+ * the pass only their leave counts; removal's bar is never harder than the entrenched one and
+ * never depends on ballot order. And of coalitions (#100): a motion's outcome doesn't depend on
+ * the order distinct seats' results arrive in, and nothing a group reports carries a name, note,
+ * score or key from inside it. And of a priority vote's ranking (#107): it holds exactly the
+ * options that pass, best first, its first is always the tally's winner, and the order ballots
+ * arrive in never changes it. And of ballot expiry (#111): a device that has cleared a closed
+ * Proposal's ballots, keeping its result, folds the same Document and outcomes as one that still
+ * holds them, even for an event in the closing minute before the closing ballot (#289).
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -30,7 +32,7 @@ import { expiringProposal, resultFor } from './expiry';
 import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
-import { rank, tally, type TallyInput } from './tally';
+import { rank, tally, tallyDetail, type TallyInput } from './tally';
 
 const R = 29_375_000;
 const [FOLLOWING, , CREATING] = LEVELS;
@@ -124,6 +126,23 @@ class Log {
   version(received: number, author: number, proposal: string, text: string): string {
     return this.add(received, member(author), { type: 'version', body: { proposal, text } });
   }
+
+  /** A removal of member `who` by member `by` (#115). */
+  removal(received: number, by: number, who: number): string {
+    const target = { kind: 'remove', member: authorOf(member(who)) } as const;
+    const body = { target, title: 'Remove them', why: 'They broke the house rules.' };
+    return this.add(received, member(by), { type: 'proposal', body });
+  }
+
+  /** Member `who`'s response on removal `proposal` (#115). */
+  respond(received: number, who: number, proposal: string, text: string): string {
+    return this.add(received, member(who), { type: 'removal-response', body: { proposal, text } });
+  }
+
+  /** Member `who`'s `remove`, naming removal `proposal` (#115). */
+  remove(received: number, who: number, proposal: string): string {
+    return this.add(received, member(who), { type: 'remove', body: { proposal } });
+  }
 }
 
 /** What a late event in the dissolve property acts on: the group's size, an open edit and the dissolve Proposal. */
@@ -138,6 +157,9 @@ interface LateContext {
  * no kx, so after a leave it would be valid in a group that goes on (#98).
  */
 const LATE_ROTATE = { epoch: 1, commit: 'rotation-commit-of-this-propertyAAAAAAAAAAA', wraps: {} };
+
+/** An opaque recovery share's box (#109): the fold never opens one, so any base64url will do. */
+const SHARE_BOX = 'c2hhcmUtYm94';
 
 /** Each kind of event the dissolve property sends late, by member `who` (mod the group's size). */
 const LATE = {
@@ -155,6 +177,8 @@ const LATE = {
     log.add(at, member(who % count), { type: 'kx', body: { kx: testKx(member(who % count)).kx } }),
   'key-rotate': (log, at, who, _value, { count }) =>
     log.add(at, member(who % count), { type: 'key-rotate', body: LATE_ROTATE }),
+  'recovery-share': (log, at, who, _value, { count }) =>
+    log.add(at, member(who % count), { type: 'recovery-share', body: { box: SHARE_BOX } }),
 } satisfies Record<
   string,
   (log: Log, at: number, who: number, value: Score, context: LateContext) => string
@@ -364,6 +388,36 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('keeps a recovery-share from anyone, wherever it lands, out of everything but recoveryShares (#109)', () => {
+    const scenario = arbitraryLog.chain((log) =>
+      fc.record({
+        log: fc.constant(log),
+        who: fc.integer({ min: 0, max: 5 }),
+        at: fc.nat({ max: log.records.length }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ log: { records, relayNow }, who, at }) => {
+        const { record, id } = signedAs(member(who), {
+          type: 'recovery-share',
+          group: fold(records, null).group ?? '',
+          ts: 0,
+          body: { box: SHARE_BOX },
+        });
+        // It lands at its neighbour's receipt, so relay time moves no further than without it.
+        const received = records[at]?.received ?? records.at(-1)?.received ?? R;
+        const share = { seq: 0, received, bytes: record };
+        const state = fold([...records.slice(0, at), share, ...records.slice(at)], relayNow);
+        const without = fold(records, relayNow);
+        const apart = { ignored: [], recoveryShares: [] };
+        expect({ ...state, ...apart }).toEqual({ ...without, ...apart });
+        const kept = state.recoveryShares.map((posted) => posted.id);
+        const ignored = state.ignored.some((entry) => entry.seq === 0);
+        expect(kept).toEqual(ignored ? [] : [id]);
+      }),
+    );
+  });
+
   it('keeps an open Proposal’s eligible set and deadline whatever levels its members move to', () => {
     const change = fc.record({
       who: fc.nat({ max: 11 }),
@@ -502,6 +556,129 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         expect(after.ignored.map((record) => record.seq)).toEqual(
           log.records.slice(-events.length).map((record) => record.seq),
         );
+      }),
+    );
+  });
+
+  it('counts nothing the member a removal names sends on it: their ballots and later responses change nothing (#115)', () => {
+    const scenario = electorate
+      .filter(({ count }) => count >= 2)
+      .chain(({ count, ballots: cast }) =>
+        fc.record({
+          count: fc.constant(count),
+          ballots: fc.constant(cast),
+          target: fc.integer({ min: 1, max: count - 1 }),
+          theirs: fc.array(score, { maxLength: 3 }),
+          responses: fc.integer({ min: 1, max: 3 }),
+          relayNow: fc.integer({
+            min: 100,
+            max: 2 * DEFAULT_RULES.windows.removal.default * DAY_MINUTES,
+          }),
+        }),
+      );
+    fc.assert(
+      fc.property(scenario, ({ count, ballots: cast, target, theirs, responses, relayNow }) => {
+        const folded = (withTheirs: boolean) => {
+          const log = Log.founded(count);
+          const id = log.removal(R + 20, 0, target);
+          if (withTheirs) {
+            for (let i = 0; i < responses; i += 1)
+              log.respond(R + 21, target, id, `Mine ${String(i)}`);
+            for (const value of theirs) log.vote(R + 21, target, id, value);
+          }
+          cast.forEach(({ voter, value }, i) => {
+            if (voter !== target) log.vote(R + 30 + i, voter, id, value);
+          });
+          return fold(log.records, R + 20 + relayNow);
+        };
+        const pick = (state: ReturnType<typeof fold>) => {
+          const {
+            eligible,
+            ballots: counted = [],
+            closedAt,
+            final,
+            outcome,
+          } = state.proposals[0] ?? {};
+          const unsequenced = counted.map(({ id, voter, scores, received }) => ({
+            id,
+            voter,
+            scores,
+            received,
+          }));
+          const removals = state.removals.map(({ member: out, passedAt }) => ({ out, passedAt }));
+          return { eligible, unsequenced, closedAt, final, outcome, removals };
+        };
+        const sent = folded(true);
+        expect(pick(sent)).toEqual(pick(folded(false)));
+        expect(sent.proposals[0]?.eligible).not.toContain(authorOf(member(target)));
+        expect(sent.responses.map((response) => response.text)).toEqual(['Mine 0']);
+      }),
+    );
+  });
+
+  it('takes the member a passed removal names out once, whoever posts the remove and in whatever order (#115)', () => {
+    const scenario = fc.integer({ min: 3, max: 6 }).chain((count) =>
+      fc.record({
+        count: fc.constant(count),
+        target: fc.integer({ min: 1, max: count - 1 }),
+        posters: fc.array(fc.nat({ max: count + 1 }), { minLength: 1, maxLength: 6 }),
+      }),
+    );
+    fc.assert(
+      fc.property(scenario, ({ count, target, posters }) => {
+        const log = Log.founded(count);
+        const id = log.removal(R + 20, target === 1 ? 2 : 1, target);
+        for (let voter = 0; voter < count; voter += 1) {
+          if (voter !== target) log.vote(R + 21 + voter, voter, id, 4);
+        }
+        posters.forEach((who, i) => log.remove(R + 40 + i, who, id));
+        const state = fold(log.records, R + 100);
+        // The first remove from a member other than the one it names; members are 0 to count - 1.
+        const poster = posters.find((who) => who < count && who !== target);
+        const took = poster === undefined ? 0 : 1;
+        const out = authorOf(member(target));
+        expect(state.members.filter((m) => m.author === out)).toHaveLength(1 - took);
+        expect(state.members).toHaveLength(count - took);
+        expect(state.former.filter((m) => m.author === out)).toHaveLength(took);
+        expect(state.rotationDue).toBe(took === 1);
+        const by = state.removals[0]?.removed?.by;
+        expect(by).toBe(poster === undefined ? undefined : authorOf(member(poster)));
+        expect(state.ignored).toHaveLength(posters.length - took);
+      }),
+    );
+  });
+
+  it('ignores everything the member a passed removal names sends but their leave (#115)', () => {
+    const late = fc.array(
+      fc.record({
+        kind: fc.constantFrom(
+          ...LATE_KINDS.filter((kind) => !['leave', 'join', 'proposal'].includes(kind)),
+        ),
+        value: score,
+      }),
+      { minLength: 1, maxLength: 6 },
+    );
+    fc.assert(
+      fc.property(fc.integer({ min: 3, max: 5 }), late, (count, events) => {
+        const target = count - 1;
+        const log = Log.founded(count);
+        const edit = log.propose(R + 10, `${log.group}.0`, 'New text');
+        const id = log.removal(R + 11, 0, target);
+        for (let voter = 0; voter < target; voter += 1) log.vote(R + 12 + voter, voter, id, 4);
+        const before = fold(log.records, R + 100);
+        let at = R + 20;
+        for (const { kind, value } of events) {
+          at += 1;
+          LATE[kind](log, at, target, value, { count, edit, motion: id });
+        }
+        log.remove(at + 1, target, id);
+        const after = fold(log.records, R + 100);
+        expect(before.removals).toHaveLength(1);
+        expect({ ...after, ignored: [] }).toEqual({ ...before, ignored: [] });
+        log.leave(at + 2, target);
+        const left = fold(log.records, R + 100);
+        expect(left.former.map((m) => m.author)).toEqual([authorOf(member(target))]);
+        expect(left.rotationDue).toBe(true);
       }),
     );
   });
@@ -709,7 +886,7 @@ function ballots(eligible: number, versions: number, rows: Rows): Omit<TallyInpu
   };
 }
 
-const { ordinary: ORDINARY, entrenched: ENTRENCHED } = DEFAULT_RULES.bars;
+const { ordinary: ORDINARY, entrenched: ENTRENCHED, removal: REMOVAL } = DEFAULT_RULES.bars;
 
 describe('properties of the bars', () => {
   it('passes a ballot set at the ordinary bar whenever it passes at the entrenched bar', () => {
@@ -739,11 +916,36 @@ describe('properties of the bars', () => {
     );
     fc.assert(
       fc.property(scenario, ({ set: { eligible, versions, rows }, shuffled }) => {
-        for (const bar of [ORDINARY, ENTRENCHED] satisfies Bar[]) {
+        for (const bar of [ORDINARY, ENTRENCHED, REMOVAL] satisfies Bar[]) {
           const first = tally({ ...ballots(eligible, versions, rows), bar });
           const second = tally({ ...ballots(eligible, versions, shuffled), bar });
           expect(second).toEqual(first);
         }
+      }),
+    );
+  });
+
+  it('passes a ballot set at removal’s bar whenever it passes at the entrenched bar (#115)', () => {
+    fc.assert(
+      fc.property(ballotSet, ({ eligible, versions, rows }) => {
+        const input = ballots(eligible, versions, rows);
+        if (tally({ ...input, bar: ENTRENCHED }).kind === 'pass') {
+          expect(tally({ ...input, bar: REMOVAL }).kind).toBe('pass');
+        }
+      }),
+    );
+  });
+
+  it('never lets a single 0 block a removal: one 0 fails it only through the average (#115)', () => {
+    fc.assert(
+      fc.property(fc.array(score, { minLength: 1, maxLength: 40 }), (scores) => {
+        const withZero = [0, ...scores.filter((value) => value !== 0)] as Score[];
+        const detail = tallyDetail({
+          eligible: withZero.length,
+          versions: [{ id: 'v', scores: withZero }],
+          bar: REMOVAL,
+        });
+        expect(detail.versions[0]?.zerosMet).toBe(true);
       }),
     );
   });

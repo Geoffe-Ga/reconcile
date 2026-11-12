@@ -218,8 +218,8 @@ describe('expiringProposal and expiryKeyOf', () => {
     expect(event === undefined ? undefined : expiringProposal(event)).toBe('p');
   });
 
-  it('register no other event type until #115’s removal response, and never a version', () => {
-    expect(EXPIRES_WITH_BALLOTS).toEqual([]);
+  it('register #115’s removal response alone, and never a version or a remove', () => {
+    expect(EXPIRES_WITH_BALLOTS).toEqual(['removal-response']);
   });
 });
 

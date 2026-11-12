@@ -264,17 +264,45 @@ export interface DissolveProposalBody {
 }
 
 /**
+ * Removing a member by vote (ADR-0049, ADR-0075 §3, #115): it names the key
+ * of the person it would remove, kept as written; the fold checks it.
+ */
+export interface RemoveTarget {
+  readonly kind: 'remove';
+  readonly member: string;
+}
+
+/**
+ * Proposes removing a member (#115): a Proposal with a title, a
+ * justification, an optional discussion link and, like every targeted
+ * Proposal, an optional Dispatch to send if it passes (#112), whose target
+ * names them. It always runs a fixed 14 days, so it carries no window, and no
+ * text, so its ballot has one version, under the Proposal's id.
+ */
+export interface RemovalProposalBody {
+  readonly target: RemoveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
  * Reconciling with other groups into a coalition (#100; ADR-0036): the
  * coalition secret its mailbox derives from; `inner`, 32 random bytes that
- * followers never get, which #125's room and #122's higher seats derive from;
- * this group's 32-byte Ed25519 seat secret; and the coalition's proposed name
- * and founding statement. Each secret is 32 bytes in canonical base64url, and
- * lives only in this group's sealed log.
+ * only seated groups hold, which #125's room and #122's higher seats derive
+ * from; this group's 32-byte Ed25519 seat secret; and the coalition's
+ * proposed name and founding statement. Each secret is 32 bytes in canonical
+ * base64url, and lives only in this group's sealed log. A founding group's
+ * target carries `inner`, from the card that founded the coalition; a group
+ * asking into a formed coalition writes none, since its card carries none,
+ * and receives it through its seat once admitted (#313, `crypto/room.ts`).
  */
 export interface ReconcileTarget {
   readonly kind: 'reconcile';
   readonly secret: string;
-  readonly inner: string;
+  readonly inner?: string;
   readonly seat: string;
   readonly name: string;
   readonly title: string;
@@ -303,12 +331,15 @@ export interface ReconcileProposalBody {
  * Admitting a further group into a formed coalition (#114; ADR-0036): the
  * group's seat, its name there and public seat key, and that seat's proof for
  * the author's key (`crypto/seat.ts`), which shows that the author holds the
- * group's seat secret.
+ * group's seat secret. `kx` is the seat's X25519 public key, from its seat
+ * secret (`crypto/room.ts`), to which a seated group's participant seals
+ * the room's `inner` once the group is admitted (#313).
  */
 export interface AdmitTarget {
   readonly kind: 'admit';
   readonly seat: SeatEntry;
   readonly proof: string;
+  readonly kx: string;
 }
 
 /**
@@ -330,8 +361,9 @@ export interface AdmitProposalBody {
 /**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
  * a steward seat (#102), an opt-in (#117), dissolving the group (#108),
- * reconciling into a coalition (#100), a priority vote's question and
- * options (#107), or, in a coalition, admitting a group (#114).
+ * removing a member (#115), reconciling into a coalition (#100), a priority
+ * vote's question and options (#107), or, in a coalition, admitting a group
+ * (#114).
  */
 export type ProposalEventBody =
   | ProposalBody
@@ -339,6 +371,7 @@ export type ProposalEventBody =
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
+  | RemovalProposalBody
   | ReconcileProposalBody
   | PriorityProposalBody
   | AdmitProposalBody;
@@ -366,6 +399,11 @@ export function isRulesProposal(body: ProposalEventBody): body is RulesProposalB
 /** True when a Proposal's body proposes dissolving the group (#108). */
 export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
   return 'target' in body && body.target.kind === 'dissolve';
+}
+
+/** True when a Proposal's body proposes removing a member (#115). */
+export function isRemovalProposal(body: ProposalEventBody): body is RemovalProposalBody {
+  return 'target' in body && body.target.kind === 'remove';
 }
 
 /** True when a Proposal's body proposes reconciling into a coalition (#100). */
@@ -510,6 +548,25 @@ export interface DissolveBody {
 }
 
 /**
+ * The one response the person a removal names may post on its ballot
+ * (ADR-0049, #115): `text` is kept as written, and the fold counts its code
+ * points. The author trims it and normalizes it to NFC before signing.
+ */
+export interface RemovalResponseBody {
+  readonly proposal: string;
+  readonly text: string;
+}
+
+/**
+ * Removes a member once a removal Proposal's pass is final (#115): any
+ * member's device that folds that pass posts one. The fold takes the first
+ * valid one, and the group's key changes after it, as after a leave (#98).
+ */
+export interface RemoveBody {
+  readonly proposal: string;
+}
+
+/**
  * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
  * the author is the one who leaves, and the fold reads any object as `{}`.
  */
@@ -546,6 +603,17 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
+ * `box` is the share sealed to the contact's encryption key
+ * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
+ * the rest of the group sees only that the author sent one. The fold keeps
+ * it from any current member and changes nothing else.
+ */
+export interface RecoveryShareBody {
+  readonly box: string;
+}
+
 /** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
 export type GroupResultValue = 'pass' | 'fail';
 
@@ -559,6 +627,28 @@ export interface GroupResultBody {
   readonly motion: string;
   readonly seat: string;
   readonly result: GroupResultValue;
+}
+
+/**
+ * A message in a coalition's room (#125; ADR-0011): plain text, kept as
+ * written. A body with any other key is a bad shape. It belongs to the room's
+ * own log, sealed under keys from the coalition's `inner`, and `room.ts`
+ * reads it there: the fold of a group's or a coalition's own log ignores it.
+ */
+export interface MessageBody {
+  readonly text: string;
+}
+
+/**
+ * The room's `inner` for a group admitted into a coalition (#313): exactly
+ * the admitted seat's public key and `wrap`, a box of `inner` sealed to the
+ * seat's `kx` (`crypto/room.ts`), in unpadded base64url. A body with any
+ * other key is a bad shape. It belongs to the coalition's own log, from a
+ * participant whose group already holds `inner`.
+ */
+export interface RoomWrapBody {
+  readonly seat: string;
+  readonly wrap: string;
 }
 
 /** The body each event type carries. */
@@ -580,8 +670,13 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'recovery-share': RecoveryShareBody;
+  readonly 'removal-response': RemovalResponseBody;
+  readonly remove: RemoveBody;
   readonly 'door-invited': DoorInvitedBody;
   readonly 'group-result': GroupResultBody;
+  readonly message: MessageBody;
+  readonly 'room-wrap': RoomWrapBody;
 }
 
 /** The event types this engine understands. */
@@ -635,6 +730,9 @@ const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
 
 /** Unpadded base64url of at least one byte: a wrap's text. */
 const BASE64URL = /^[A-Za-z0-9_-]{2,}$/;
+
+/** A room wrap (#313): a box of 32 bytes, 104 in all, in 139 unpadded base64url characters. */
+const ROOM_WRAP = /^[A-Za-z0-9_-]{139}$/;
 
 /** The largest epoch a key change names: a big-endian u32 carries it (#98). */
 const MAX_EPOCH = 0xffff_ffff;
@@ -701,6 +799,11 @@ function isAuthor(value: unknown): value is string {
  */
 function isKey32(value: unknown): value is string {
   return isAuthor(value) && base64url(fromBase64url(value)) === value;
+}
+
+/** A key, as {@link isKey32} reads one, or nothing (#313). */
+function isOptionalKey32(value: unknown): value is string | undefined {
+  return value === undefined || isKey32(value);
 }
 
 function isTimestamp(value: unknown): value is number {
@@ -865,6 +968,12 @@ function parseDissolveTarget(value: unknown): DissolveTarget | null {
   return typeof value.wipe === 'boolean' ? { kind: 'dissolve', wipe: value.wipe } : null;
 }
 
+/** A removal target's kind and member, or null for any other shape (#115). */
+function parseRemoveTarget(value: unknown): RemoveTarget | null {
+  if (!isObject(value) || value.kind !== 'remove' || !isString(value.member)) return null;
+  return { kind: 'remove', member: value.member };
+}
+
 /**
  * A rules (#117) or dissolve (#108) Proposal: its target and fields, and the
  * window its proposer chose, if any (#106).
@@ -875,22 +984,27 @@ function withWindow<T>(target: T | null, body: Json, fields: Omit<StewardProposa
   return { ...fields, target, ...(window === undefined ? {} : { window }) };
 }
 
-/** A reconcile target's kind, secrets, name, title and Atoms, or null for any other shape (#100). */
+/**
+ * A reconcile target's kind, secrets, name, title and Atoms, or null for any
+ * other shape (#100). `inner` may be missing, as a group asking into a formed
+ * coalition writes it (#313), but a present one must be a key.
+ */
 function parseReconcileTarget(value: unknown): ReconcileTarget | null {
   if (!isObject(value) || value.kind !== 'reconcile') return null;
   const { secret, inner, seat, name, title, atoms } = value;
-  if (!isKey32(secret) || !isKey32(inner) || !isKey32(seat)) return null;
+  if (!isKey32(secret) || !isKey32(seat) || !isOptionalKey32(inner)) return null;
   if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
-  return { kind: 'reconcile', secret, inner, seat, name, title, atoms };
+  const target = { kind: 'reconcile', secret, seat, name, title, atoms } as const;
+  return inner === undefined ? target : { ...target, inner };
 }
 
-/** An admit target's kind, seat and proof, or null for any other shape (#114). */
+/** An admit target's kind, seat, proof and seat `kx` (#313), or null for any other shape (#114). */
 function parseAdmitTarget(value: unknown): AdmitTarget | null {
   if (!isObject(value) || value.kind !== 'admit') return null;
   const seat = parseSeat(value.seat);
-  const { proof } = value;
-  if (seat === null || !isString(proof) || !SIGNATURE.test(proof)) return null;
-  return { kind: 'admit', seat, proof };
+  const { proof, kx } = value;
+  if (seat === null || !isString(proof) || !SIGNATURE.test(proof) || !isKey32(kx)) return null;
+  return { kind: 'admit', seat, proof, kx };
 }
 
 /**
@@ -911,15 +1025,17 @@ function parseWindowedProposal(
 }
 
 /**
- * A steward (#102), rules (#117), dissolve (#108), reconcile (#100) or admit
- * (#114) Proposal carries `target` and no `atom`; any `text` is dropped, and so is a
- * steward Proposal's `window` (#106).
+ * A steward (#102), rules (#117), dissolve (#108), reconcile (#100), admit
+ * (#114) or removal (#115) Proposal carries `target` and no `atom`; any `text`
+ * is dropped, and so is a steward or removal Proposal's `window` (#106).
  */
 function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
   const fields = parseTargetedFields(body);
   if (fields === null) return null;
   const steward = parseStewardTarget(body.target);
-  return steward === null ? parseWindowedProposal(body, fields) : { ...fields, target: steward };
+  if (steward !== null) return { ...fields, target: steward };
+  const removal = parseRemoveTarget(body.target);
+  return removal === null ? parseWindowedProposal(body, fields) : { ...fields, target: removal };
 }
 
 /**
@@ -1029,6 +1145,19 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseRecoveryShare(body: Json): RecoveryShareBody | null {
+  return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
+}
+
+function parseRemovalResponse(body: Json): RemovalResponseBody | null {
+  const { proposal, text } = body;
+  return isString(proposal) && isString(text) ? { proposal, text } : null;
+}
+
+function parseRemove(body: Json): RemoveBody | null {
+  return isString(body.proposal) ? { proposal: body.proposal } : null;
+}
+
 function parseDoorInvited(body: Json): DoorInvitedBody | null {
   return isString(body.application) ? { application: body.application } : null;
 }
@@ -1042,6 +1171,28 @@ function parseGroupResult(body: Json): GroupResultBody | null {
   const exact = Object.keys(body).sort().join() === RESULT_KEYS.join();
   if (!exact || !isString(motion) || !isKey32(seat)) return null;
   return result === 'pass' || result === 'fail' ? { motion, seat, result } : null;
+}
+
+/** The keys a room wrap carries, sorted (#313). */
+const ROOM_WRAP_KEYS = ['seat', 'wrap'];
+
+/** A wrap: 104 bytes in canonical unpadded base64url (#313). */
+function isRoomWrap(value: unknown): value is string {
+  return isString(value) && ROOM_WRAP.test(value) && base64url(fromBase64url(value)) === value;
+}
+
+/** A room wrap's body: exactly its seat and wrap (#313). */
+function parseRoomWrap(body: Json): RoomWrapBody | null {
+  const { seat, wrap } = body;
+  const exact = Object.keys(body).sort().join() === ROOM_WRAP_KEYS.join();
+  return exact && isKey32(seat) && isRoomWrap(wrap) ? { seat, wrap } : null;
+}
+
+/** A room message's body: exactly its text (#125). */
+function parseMessage(body: Json): MessageBody | null {
+  const { text } = body;
+  const exact = Object.keys(body).join() === 'text';
+  return exact && isString(text) ? { text } : null;
 }
 
 function parseVersion(body: Json): VersionBody | null {
@@ -1162,7 +1313,7 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 /**
  * {@link withBody} for the types the restored features added: `suspend`
  * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
- * (#119), `chat-thread` (#123) and `dispatch` (#112).
+ * (#119), `chat-thread` (#123), `dispatch` (#112) and `recovery-share` (#109).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1180,14 +1331,17 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dispatch':
       return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-share':
+      return attach(parseRecoveryShare(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return withKeyBody(head, type, body);
   }
 }
 
 /**
- * {@link withBody} for #98's types, `kx` and `key-rotate`, #100's
- * `group-result`, #111's `result`, and #121's `door-invited`.
+ * {@link withBody} for #98's types, `kx` and `key-rotate`, #115's,
+ * `removal-response` and `remove`, #100's `group-result`, #111's `result`,
+ * #121's `door-invited`, #125's `message` and #313's `room-wrap`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1195,12 +1349,20 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'removal-response':
+      return attach(parseRemovalResponse(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'remove':
+      return attach(parseRemove(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'group-result':
       return attach(parseGroupResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'result':
       return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'door-invited':
       return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'message':
+      return attach(parseMessage(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'room-wrap':
+      return attach(parseRoomWrap(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

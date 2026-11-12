@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { COUNTED, DOOR, ROTATED } from '../test/door';
-import type { ProposalBody, RulesProposalBody } from './event';
+import type { ProposalBody, RemovalProposalBody, RulesProposalBody } from './event';
 import { OFF } from './optIns';
 import {
   chosenWindow,
@@ -60,10 +60,12 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
       bars: {
         ordinary: { avgAtLeast: 2, zerosUnderPercent: 10 },
         entrenched: { avgAtLeast: 3, zerosUnderPercent: 5 },
+        removal: { avgAtLeast: 3, zerosUnderPercent: 5, zerosAllowed: 1 },
       },
       windows: {
         ordinary: { min: 3, max: 14, default: 7 },
         entrenched: { min: 14, max: 28, default: 14 },
+        removal: { min: 14, max: 14, default: 14 },
       },
       quorum: { min: 3, percent: 30 },
       vouches: 2,
@@ -83,6 +85,21 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
     for (const [path, value] of numericLeaves()) {
       expect(Number.isSafeInteger(value), path.join('.')).toBe(true);
     }
+  });
+
+  it('runs a removal for the entrenched default and no other length (ADR-0075 §3, #115)', () => {
+    const { removal, entrenched } = DEFAULT_RULES.windows;
+    expect(removal).toEqual({
+      min: entrenched.default,
+      max: entrenched.default,
+      default: entrenched.default,
+    });
+  });
+
+  it('gives removal the entrenched average and share of zeros, and forgives one 0 (ADR-0075 §3)', () => {
+    const { removal, entrenched } = DEFAULT_RULES.bars;
+    expect(removal).toEqual({ ...entrenched, zerosAllowed: 1 });
+    expect(entrenched).not.toHaveProperty('zerosAllowed');
   });
 
   it('keeps every class’s default window within its own bounds', () => {
@@ -175,7 +192,22 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
   it('leaves out fields it doesn’t know, so a later rule a newer device writes founds the group here', () => {
     const rules = { ...asJson(), optIns: { ...OFF, bot: false }, extra: 'x' };
     expect(foundingRules(rules)).toEqual(DEFAULT_RULES);
+    expect(foundingRules({ bars: { later: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
+  });
+
+  it('takes removal’s bar and window from a genesis that has none, as one from before #115 has', () => {
+    const before = asJson();
+    const bars = before.bars as Record<string, unknown>;
+    const windows = before.windows as Record<string, unknown>;
+    delete bars.removal;
+    delete windows.removal;
+    expect(foundingRules(before)).toEqual(DEFAULT_RULES);
     expect(foundingRules({ bars: { removal: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
+  });
+
+  it('refuses a genesis that takes away removal’s forgiven 0, or forgives two', () => {
+    expect(foundingRules({ bars: { removal: { zerosAllowed: 0 } } })).toBeNull();
+    expect(foundingRules({ bars: { removal: { zerosAllowed: 2 } } })).toBeNull();
   });
 
   it('reads only a field’s own value, never one an object inherits', () => {
@@ -232,6 +264,17 @@ describe('targetClass: how hard a change is', () => {
     expect(targetClass(standing({}), rules('signalBot', true))).toBe('ordinary');
   });
 
+  it('makes removing a member removal, whatever class or window the proposer wrote (#115)', () => {
+    const removal: RemovalProposalBody = {
+      target: { kind: 'remove', member: 'kim' },
+      title: 't',
+      why: 'w',
+    };
+    expect(targetClass({ rules: DEFAULT_RULES }, removal)).toBe('removal');
+    const forged = { ...removal, class: 'ordinary', window: 3 };
+    expect(targetClass({ rules: DEFAULT_RULES }, forged)).toBe('removal');
+  });
+
   it('never reads a class, bar or deadline the proposer wrote', () => {
     const forged = { ...EDIT, class: 'entrenched', bar: DEFAULT_RULES.bars.entrenched };
     expect(targetClass({ rules: DEFAULT_RULES }, forged)).toBe('ordinary');
@@ -243,9 +286,10 @@ describe('windows in relay minutes', () => {
     expect(DAY_MINUTES).toBe(1_440);
   });
 
-  it('gives each class’s default window: 7 days ordinary, 14 entrenched', () => {
+  it('gives each class’s default window: 7 days ordinary, 14 entrenched, and 14 for a removal', () => {
     expect(defaultWindowMinutes(DEFAULT_RULES, 'ordinary')).toBe(10_080);
     expect(defaultWindowMinutes(DEFAULT_RULES, 'entrenched')).toBe(20_160);
+    expect(defaultWindowMinutes(DEFAULT_RULES, 'removal')).toBe(20_160);
   });
 });
 

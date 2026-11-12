@@ -10,6 +10,7 @@ import { type SyntheticEvent, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
 import { formatAverageLine, formatZeroLine } from '../app/format';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { checkTitle, checkWhy } from '../app/proposalFields';
 import type { DissolveValues } from '../app/proposals';
@@ -134,7 +135,7 @@ function DissolveForm({ state, now, onPropose }: FormProps) {
           {dissolve.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {dissolve.submit}
         </Button>
