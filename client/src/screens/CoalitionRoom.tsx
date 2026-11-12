@@ -16,6 +16,7 @@ import { type SyntheticEvent, useEffect, useLayoutEffect, useRef, useState } fro
 import { Button, Form } from 'react-aria-components';
 
 import { TakePart } from '../app/CoalitionSection';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { RoomStanding, RoomView } from '../app/room';
 import { SendStatus } from '../app/SendStatus';
@@ -181,7 +182,7 @@ function Composer({ onSend }: Pick<CoalitionRoomProps, 'onSend'>) {
           {room.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {room.send}
         </Button>
