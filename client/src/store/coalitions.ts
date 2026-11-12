@@ -33,6 +33,10 @@
  *   #371), so the admitted group can read the room only once it's seated
  *   ({@link innerOf}), and takes only a wrap of that `inner`.
  *
+ * Each acts for a group only while this device's member still does there
+ * (#377): from the final pass of a removal of them, none of it runs for that
+ * group, before the `remove` archives it here.
+ *
  * A group's own fold takes the motions its seats decide (`motionsFor`), so
  * its members vote on them as on any Proposal ({@link foldWithCoalitions}). Nothing
  * here reads a person's key in one log to find them in another.
@@ -52,6 +56,7 @@ import { openSeatSecrets } from '../crypto/innerSeal';
 import { roomCommit, seatKxOf, unwrapInner, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
+import { can, isOusted } from '../engine/capabilities';
 import { type Coalition, MAX_LEVEL, type Motion, type ReconcileChange } from '../engine/coalition';
 import { foldTogether, motionsFor, promotionsOwed, resultsToReport } from '../engine/crossing';
 import {
@@ -799,11 +804,28 @@ export async function holdings(
 }
 
 /**
+ * Whether this device's member still acts for `log` in the coalitions above
+ * it (#377): a coalition entry does (#122); a group does while its member is
+ * in it, until a removal of them has passed there (#115). From that final
+ * pass they only read, so their device reports no result or promotion
+ * record for the group's seat, joins under it, proposes it or wraps the room
+ * for it, as once the `remove`, which may fold later, archives the group
+ * here. It doesn't ask `can()` for more than reading: a suspension narrows a
+ * member to reading too, and the group's seat mustn't fall silent at a
+ * steward's word, nor at a participant's step down to Member.
+ */
+function actsFor({ group, state }: FoldedLog): boolean {
+  const me = group.me.author;
+  return isCoalitionEntry(group) || (can(state, me, 'read') && !isOusted(state, me));
+}
+
+/**
  * After a pass (#114): for each coalition entry whose genesis has arrived,
  * and that hasn't been declined, joins as planned, queues its group's or its
  * coalition's results (#122) and promotion records (#126), proposes a
  * planned admission, and wraps the room's `inner` for each seat admitted
- * since (#313). Returns the ids of the entries that queued anything,
+ * since (#313), each only for a log its member still acts for
+ * ({@link actsFor}). Returns the ids of the entries that queued anything,
  * for the loop to send at once. `clock` is the device clock in ms, for each
  * event's display-only `ts`. `held` is what {@link holdings} read, when the
  * loop has read it already.
@@ -813,9 +835,10 @@ export async function settleCoalitions(
   clock: () => number,
   held?: Holdings,
 ): Promise<string[]> {
-  const { entries, coalitions, groups, logs } = held ?? (await holdings(store));
+  const { entries, coalitions, groups, logs: all } = held ?? (await holdings(store));
   if (entries.length === 0) return [];
   const keys = coalitionKeys(groups, entries);
+  const logs = all.filter(actsFor);
   const queued: string[] = [];
   for (const { entry, state: coalition } of coalitions) {
     const id = coalition.group;
