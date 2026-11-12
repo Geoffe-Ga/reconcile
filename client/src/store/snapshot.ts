@@ -18,7 +18,9 @@
  * leaving, and one whose genesis the relay hasn't returned yet, since
  * neither has anything to come back to. It leaves out a dissolved group's
  * read-only copy too (#108): its ballots are due to be cleared, or the group
- * to be erased, and a file would keep them past that.
+ * to be erased, and a file would keep them past that. So it does a copy a
+ * restore brought back that hasn't heard from its group yet (#231): its
+ * relay minute moves on with every pass, so a copy of it would look current.
  *
  * Each personal Document goes in whole: its id, title, text, and when it
  * was made and last edited, and its share by link while it is shared (#105),
@@ -61,7 +63,10 @@
  * group and Document in one transaction (`Store.restoreGroups`), then the
  * key. A group whose log folds to a `dissolve`, as an older app's file could
  * hold, comes back as a read-only copy, so a restore never brings a dissolved
- * group back to life (#108).
+ * group back to life (#108), as does one that folds to a `remove` of this
+ * member (#115), and the store keeps every other group it takes read-only
+ * until it hears from the group (#231), since the group may have dissolved
+ * after the file was made.
  *
  * A second device's link bundle (#96) is the same plaintext without the
  * passphrase layer: `takeSnapshot` makes it and `importSnapshot` checks and
@@ -191,8 +196,10 @@ function isFounded(
 
 /**
  * What a backup keeps of `groups`: each founded group that isn't leaving or
- * a read-only archive (#108), without its outbox, drafts, chat claims (#119),
- * what the chat bot learned of the webhook (#123) or marks.
+ * read-only, as a dissolved archive (#108), a removed member's copy (#115)
+ * or a restored copy that hasn't heard from its group (#231) is, without
+ * its outbox, drafts, chat claims (#119), what the chat bot learned of the
+ * webhook (#123) or marks.
  */
 export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
   return groups

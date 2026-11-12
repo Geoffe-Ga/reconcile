@@ -32,20 +32,23 @@ export function foldGroup(group: Pick<Group, 'log' | 'relayNow' | 'cleared'>): G
  * The closed Proposals this device's member should post a result for now:
  * none once they've left or are leaving (#77), since nothing is queued after
  * a leave; none while they're suspended (#102), or once a removal of them has
- * passed (#115), since the fold ignores their result then; none once the group has dissolved (#108), since the fold takes no
- * event after its dissolve; and none in a coalition's own log (#100), which
- * takes no result: its motions are decided by the groups' results, and each
- * group's own log carries the result of its vote on one. A Proposal whose
- * result already waits in the outbox is left out, so none is queued twice.
+ * passed (#115), since the fold ignores their result then; none once the
+ * group has dissolved (#108), since the fold takes no event after its
+ * dissolve; none while the device keeps the group read-only, as a restored
+ * copy that hasn't heard from it (#231); and none in a coalition's own log
+ * (#100), which takes no result: its motions are decided by the groups'
+ * results, and each group's own log carries the result of its vote on one.
+ * A Proposal whose result already waits in the outbox is left out, so none
+ * is queued twice.
  */
 export function resultsDue(
   state: GroupState,
-  group: Pick<Group, 'me' | 'relayNow' | 'leaving'> & Partial<Pick<Group, 'outbox'>>,
+  group: Pick<Group, 'me' | 'relayNow' | 'leaving' | 'archived'> & Partial<Pick<Group, 'outbox'>>,
 ): readonly Proposal[] {
   if (state.dissolved !== null || state.coalition !== null) return [];
   const me = group.me.author;
-  if (group.leaving !== undefined || !can(state, me, 'read')) return [];
-  if (isSuspended(state, me) || isOusted(state, me)) return [];
+  if (group.leaving !== undefined || group.archived !== undefined) return [];
+  if (!can(state, me, 'read') || isSuspended(state, me) || isOusted(state, me)) return [];
   const queued = queuedResults(group.outbox ?? []);
   return state.proposals.filter(
     (proposal) => needsResult(proposal, group.relayNow) && !queued.has(proposal.id),

@@ -258,6 +258,8 @@ describe('Dispatches on a linked device (#96, #112)', () => {
     expect(fold(onLaptop.log, onLaptop.relayNow).dispatches.map((d) => d.id)).toEqual([first]);
     expect(await laptop.services.store.readDraft(groupId, `${groupId}.0`)).toBeUndefined();
     expect(await phone.services.store.readDraft(groupId, `${groupId}.0`)).toEqual(draft);
+    // A linked copy reads only until its first sync hears from the group (#231).
+    await laptop.services.sync.syncOnce();
 
     const before = fake.requests.length;
     const second = await sendDispatch(laptop.services, groupId, {

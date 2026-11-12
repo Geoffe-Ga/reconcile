@@ -861,6 +861,23 @@ export const messages = {
     cleared: (date: string) => `${CLEARED_ON} ${date}.`,
   },
   /**
+   * A group a restore brought back that hasn't heard from the group since its
+   * copy was made (#231; ADR-0051's 2026-11-11 amendment). It may have
+   * dissolved meanwhile, so it reads only until this device hears something
+   * new, or the person opens a new invite link from someone in it.
+   */
+  unconfirmed: {
+    eyebrow: 'Read-only for now',
+    note: 'This copy came from a backup, and nothing new from your group has reached this device since. If your group dissolved after the backup was made, this copy stays read-only.',
+    opens:
+      'It opens as usual as soon as this device sees anything new from your group. To open it sooner, ask someone in your group for a new invite link and open it here.',
+    noVoting:
+      'This copy came from a backup and hasn’t heard from your group since, so you can’t vote here yet.',
+    readOnlyTitle: 'This group is read-only for now',
+    readOnly:
+      'This copy came from a backup and hasn’t heard from your group since. Nothing new can be proposed or sent until it does.',
+  },
+  /**
    * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat
    * bot and the front door. Each changes only by a Proposal, so nothing here
    * reads as a switch. Each warning says what the outside platform would hold.

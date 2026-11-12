@@ -233,6 +233,7 @@ describe('useGroup', () => {
       me: null,
       missingHistory: false,
       leaving: false,
+      unconfirmed: false,
       suggestBackup: false,
       loaded: true,
       cleared: null,
