@@ -10,7 +10,10 @@
  * record it writes when there's a vault, and every read that hands one back
  * whole joins it again: with the secrets it still holds itself, as a record
  * kept before #255 does until the device seals or unlocks, or else the
- * vault's, which a locked device refuses to open.
+ * vault's, which a locked device refuses to open. With a vault, `keepKeys`
+ * refuses a record that has secrets its split doesn't take, one holding only
+ * some of its keys, rather than write it as it is, its keys in the clear
+ * (#391).
  *
  * A shared personal Document's share keys (`shareSealing`, `./personal.ts`),
  * a sent front-door application's reply keys (`replySealing`,

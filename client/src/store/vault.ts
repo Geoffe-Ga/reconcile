@@ -25,11 +25,24 @@
  * secrets: it still opens, and the next write seals it as format 2, which an
  * older app refuses to open rather than drop secrets it doesn't know. Later
  * secrets (the recovery shares this device holds for others, #109) join them
- * here, so the vault comes to cover every secret. Each plaintext is zeroed
- * once sealed or read.
+ * here, so the vault comes to cover every secret. Each new format bumps the
+ * database's version too (`./db.ts`), so a build from before it can't open
+ * the database at all, rather than read the vault as one that doesn't open.
+ *
+ * Only keys the vault reads back are sealed (#390): `encodeVaultKeys` decodes
+ * its own plaintext and refuses keys that wouldn't come back exactly, since
+ * one bad entry would make the whole vault fail to open, and every key in it
+ * with it. So `resealKeys` throws, and the key transaction aborts, before a
+ * malformed key reaches the vault.
+ *
+ * Zeroing is best effort (#391): each plaintext's bytes are zeroed once sealed
+ * or read, and so are the keys an unlock opens only to check them, and the
+ * copy an encode decodes. The JSON strings a plaintext passes through, and
+ * the keys handed on to callers, can't be zeroed, so this narrows what a
+ * memory dump finds rather than ruling it out.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
-import { openVault, sealVault } from '../crypto/keyVault';
+import { openVault, PRF_BYTES, sealVault } from '../crypto/keyVault';
 
 /** The plaintext's format number: 2 adds other records' secrets (#255, #265). */
 export const VAULT_FORMAT = 2;
@@ -86,6 +99,15 @@ export interface VaultRecord extends VaultLock {
   readonly sealed: Uint8Array;
 }
 
+/** Keys a caller asked to seal that the vault couldn't read back exactly (#390). */
+export class UnsealableKeys extends Error {
+  /** Name the refusal; the keys stay out of the message. */
+  constructor() {
+    super('A key doesn’t fit the vault, so nothing was sealed.');
+    this.name = 'UnsealableKeys';
+  }
+}
+
 /** Every group's key and the relay backup key are 32 bytes. */
 const KEY_BYTES = 32;
 
@@ -111,12 +133,27 @@ function recordsJson(records: VaultKeys['records']) {
   );
 }
 
-/** `keys` as the vault's plaintext. */
-export function encodeVaultKeys({
-  groups,
-  backupKey,
-  records,
-}: VaultKeys): Uint8Array<ArrayBuffer> {
+/**
+ * `keys` as the vault's plaintext, which {@link decodeVaultKeys} reads back
+ * exactly (#390).
+ *
+ * @throws {UnsealableKeys} when it wouldn't: a key that isn't 32 bytes, a
+ * secret of none or more than {@link MAX_SECRET_BYTES} bytes, a record with
+ * no secret or no id, or a store or secret's name the vault doesn't take.
+ */
+export function encodeVaultKeys(keys: VaultKeys): Uint8Array<ArrayBuffer> {
+  const plaintext = plaintextOf(keys);
+  const check = decodeVaultKeys(plaintext);
+  if (check === null) {
+    plaintext.fill(0);
+    throw new UnsealableKeys();
+  }
+  zeroVaultKeys(check);
+  return plaintext;
+}
+
+/** `keys` spelled as the vault's plaintext, checked by no one yet. */
+function plaintextOf({ groups, backupKey, records }: VaultKeys): Uint8Array<ArrayBuffer> {
   const entries = [...groups].map(([groupId, { secret, signingKey, kxKey }]) => ({
     groupId,
     secret: base64url(secret),
@@ -254,8 +291,15 @@ export function resealKeys(vault: VaultRecord, key: Uint8Array, keys: VaultKeys)
   }
 }
 
-/** A vault for the passkey `lock`, holding no keys yet, sealed under `key`. */
+/**
+ * A vault for the passkey `lock`, holding no keys yet, sealed under `key`.
+ *
+ * @throws {RangeError} when `lock`'s salt isn't 32 bytes or it names no credential (#390).
+ */
 export function newVault(lock: VaultLock, key: Uint8Array): VaultRecord {
+  if (lock.prfSalt.length !== PRF_BYTES || lock.credentialId.length === 0) {
+    throw new RangeError('A passkey’s vault needs its credential id and a 32-byte salt.');
+  }
   const empty: VaultRecord = {
     id: VAULT_ID,
     credentialId: Uint8Array.from(lock.credentialId),
@@ -273,5 +317,24 @@ export function openKeys(vault: VaultRecord, key: Uint8Array): VaultKeys | null 
     return decodeVaultKeys(plaintext);
   } finally {
     plaintext.fill(0);
+  }
+}
+
+/**
+ * Zeroes every key `keys` holds, best effort (#391): each group's, the relay
+ * backup key and each record's secrets. For keys no one reads again, such as
+ * those an unlock opens only to check them.
+ */
+export function zeroVaultKeys(keys: VaultKeys): void {
+  for (const { secret, signingKey, kxKey } of keys.groups.values()) {
+    secret.fill(0);
+    signingKey.fill(0);
+    kxKey?.fill(0);
+  }
+  keys.backupKey?.fill(0);
+  for (const entries of keys.records.values()) {
+    for (const secrets of entries.values()) {
+      for (const bytes of Object.values(secrets)) bytes.fill(0);
+    }
   }
 }
