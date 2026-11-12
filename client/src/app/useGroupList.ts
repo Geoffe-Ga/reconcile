@@ -6,15 +6,17 @@ import type { Group, Store } from '../store/db';
 import type { StartGroup } from '../screens/Start';
 
 /**
- * A group's name and Document title, folded from relay records (null until
- * its genesis is back), and whether its leave waits for the relay.
+ * A group's name and its first Document's title (#92), folded from relay
+ * records (null until its genesis is back), and whether its leave waits for
+ * the relay.
  */
 function summarize(group: Group): StartGroup {
   const state = shownState(group);
   const leaving = group.leaving !== undefined;
+  const title = state.documents[0]?.title ?? null;
   return state.group === null
     ? { groupId: group.groupId, name: null, title: null, leaving }
-    : { groupId: group.groupId, name: state.name, title: state.title, leaving };
+    : { groupId: group.groupId, name: state.name, title, leaving };
 }
 
 /**

@@ -59,8 +59,7 @@ function founding() {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 11pm.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 11pm.'] }],
       kx: testKx('ana').kx,
     },
   });

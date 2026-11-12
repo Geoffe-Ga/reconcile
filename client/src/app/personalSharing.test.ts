@@ -47,7 +47,20 @@ describe('personalSharing.read', () => {
   it('reads a share as on, pending as its mark says, with no link, while the keys are locked', async () => {
     const sharing = sharingWith(new VaultLocked(), [ENTRY]);
 
-    expect(await sharing.read(ID)).toEqual({ link: null, pending: true });
+    expect(await sharing.read(ID)).toEqual({ link: null, pending: true, paused: false });
+  });
+
+  it('reads a share a restore paused as paused while the keys are locked, so no choice is offered (#328)', async () => {
+    const paused: PersonalEntry = {
+      ...ENTRY,
+      share: { n: 2, lastPostedAt: 3, pending: false, paused: true },
+    };
+
+    expect(await sharingWith(new VaultLocked(), [paused]).read(ID)).toEqual({
+      link: null,
+      pending: false,
+      paused: true,
+    });
   });
 
   it('reads none when the Document has no share by the time it looks', async () => {
@@ -67,5 +80,13 @@ describe('personalSharing.read', () => {
     const broken = new Error('IndexedDB refused.');
 
     await expect(sharingWith(broken, [ENTRY]).read(ID)).rejects.toBe(broken);
+  });
+});
+
+describe('personalSharing.keep', () => {
+  it('says locked, keeping and sending nothing, when the keys are locked (#328, #255)', async () => {
+    const sharing = sharingWith(new VaultLocked(), [ENTRY]);
+
+    expect(await sharing.keep(ID)).toBe('locked');
   });
 });

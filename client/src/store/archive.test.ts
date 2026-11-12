@@ -66,8 +66,7 @@ function founding(kx = true) {
     body: {
       name: CANARY_GROUP,
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 11pm.', 'Bins out on Sunday.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 11pm.', 'Bins out on Sunday.'] }],
       ...(kx ? { kx: testKx('ana').kx } : {}),
     },
   });

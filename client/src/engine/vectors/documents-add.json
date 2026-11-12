@@ -1,0 +1,1000 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "documents-add-other-document: the fold ignores an add whose anchor is in another Document than the one it names, and takes one whose anchor is in it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:1",
+                "after": "@1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "Guests leave by 11pm.\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1:1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "Guests leave by 11pm.\n"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:1",
+                "after": "@1:1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "Guests leave by 11pm.\n"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375021,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@5",
+            "number": 1,
+            "atom": "@5",
+            "target": {
+              "kind": "add",
+              "document": "@1:1",
+              "after": "@1:1.0"
+            },
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          }
+        ],
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@5",
+            "documentId": "@1:1",
+            "text": "Guests leave by 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": "@4"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 4]
+    },
+    {
+      "name": "documents-add-start: an add with after: null lands first in the Document it names, not first in the group's first Document",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:1",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "# House rules\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375021,
+      "expect": {
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@3",
+            "documentId": "@1:1",
+            "text": "# House rules\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-add-anchor-removed: an add whose anchor a removal took out first lands at the end of its own Document, not at the end of the last one",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "We cook together.\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Drop this section",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375031,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "closedAt": 29375031,
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          },
+          {
+            "id": "@4",
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          }
+        ],
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@3",
+            "documentId": "@1",
+            "text": "We cook together.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-add-unknown-document: an add naming a Document the group doesn't have, an Atom's id or a new Document still open is ignored, even at the start",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:2",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "A new section.\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1.0",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "A new section.\n"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "nowhere",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "A new section.\n"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500780000,
+            "body": {
+              "target": {
+                "kind": "new-document",
+                "title": "Budget"
+              },
+              "title": "Start a Document",
+              "why": "We keep coming back to it.",
+              "text": "We keep a budget.\n"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500840000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@6",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "A new section.\n"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375020,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@6",
+            "number": 1
+          }
+        ],
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": "@4"
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [3, 4, 5, 7]
+    },
+    {
+      "name": "documents-add-emptied: a Document whose every section a removal took out keeps its place, empty, and an add with after: null into it lands there",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1:1.0",
+              "title": "Drop this section",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "atom": "@1:1.1",
+              "title": "Drop this section too",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:1",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "We keep it quiet.\n"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@9",
+              "scores": {
+                "@9": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@9",
+              "scores": {
+                "@9": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375041,
+      "expect": {
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@9",
+            "documentId": "@1:1",
+            "text": "We keep it quiet.\n"
+          }
+        ],
+        "ignored": []
+      }
+    }
+  ]
+}

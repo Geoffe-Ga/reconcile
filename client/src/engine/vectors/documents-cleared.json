@@ -1,0 +1,343 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "documents-cleared-new: a cleared new-Document Proposal takes its pass from its result and still creates its Document, from its winning version's sections, and sends its Dispatch pointing there",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "new-document",
+                "title": "Budget"
+              },
+              "title": "Start a Document",
+              "why": "We keep coming back to it.",
+              "text": "# Budget\n\nWe share costs.\n",
+              "dispatch": {
+                "title": "New Document: Budget",
+                "text": "Read our budget."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "version",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@3",
+              "text": "# Budget\n\nWe split costs.\n"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 2, 0, 0]
+                },
+                {
+                  "id": "@4",
+                  "counts": [0, 0, 0, 0, 2]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@4"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "target": {
+              "kind": "new-document",
+              "title": "Budget"
+            },
+            "cleared": true,
+            "ballots": [],
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4"
+            }
+          }
+        ],
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          },
+          {
+            "id": "@3",
+            "title": "Budget"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          },
+          {
+            "id": "@3.0",
+            "documentId": "@3",
+            "text": "# Budget\n"
+          },
+          {
+            "id": "@3.1",
+            "documentId": "@3",
+            "text": "We split costs.\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "doc": "@3",
+            "received": 29375021
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "documents-cleared-add: a cleared add with after: null lands first in the Document it names, from its result",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:1",
+                "after": null
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "# House rules\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": true,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            }
+          }
+        ],
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@3",
+            "documentId": "@1:1",
+            "text": "# House rules\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ]
+      }
+    }
+  ]
+}

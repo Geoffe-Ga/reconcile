@@ -197,8 +197,7 @@ describe('WindowField in the composer', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: null,
-      title: 'House rules',
-      text: 'Quiet hours start at ten.',
+      documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
     });
     if (created.outcome !== 'created') throw new Error('Expected a group.');
     const { groupId } = created;

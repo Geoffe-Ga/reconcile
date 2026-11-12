@@ -91,8 +91,7 @@ function genesis(): SignedEvent {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
       kx: testKx(ANA).kx,
     },
   });
@@ -329,7 +328,7 @@ describe('a sync pass', () => {
     expect(ok).toBe(false);
     expect((await after.store.listGroups()).map((group) => group.groupId)).toEqual([GROUP]);
     const document = await after.state();
-    expect(document.title).toBe('House rules');
+    expect(document.documents[0]?.title).toBe('House rules');
     expect(document.atoms.map((atom) => atom.text)).toEqual([
       'Quiet after 10pm.',
       'Bins out on Sunday.',
@@ -447,7 +446,7 @@ describe('a sync pass', () => {
     const group = await ana.group();
     expect(group.log.map((record) => record.seq)).toEqual([2]);
     expect(group.cursors?.[keys.mailbox]).toBe(2);
-    expect((await ana.state()).title).toBe('House rules');
+    expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
   it('skips blobs that fail to open between good ones: the next good one folds, and the cursor moves past', async () => {
@@ -545,7 +544,7 @@ describe('a sync pass', () => {
     const ok = await ana.sync.syncOnce();
 
     expect(ok).toBe(false);
-    expect((await ana.state()).title).toBe('House rules');
+    expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
   it('fails without throwing when the store itself fails', async () => {
@@ -1025,8 +1024,7 @@ describe('a new group key when someone leaves (#98)', () => {
       body: {
         name: 'Riverside Tenants',
         founder: 'Ana',
-        title: 'House rules',
-        atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+        documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
         kx: testKx(ANA).kx,
       },
     });
@@ -1612,8 +1610,7 @@ describe('weekly mailboxes (#110)', () => {
     const body = {
       name: 'Allotment',
       founder: 'Ana',
-      title: 'Plot rules',
-      atoms: ['Share tools.'],
+      documents: [{ title: 'Plot rules', atoms: ['Share tools.'] }],
       kx: testKx(ANA).kx,
     };
     const theirs = signedAs(ANA, { type: 'genesis', group: '', ts: TS, body });

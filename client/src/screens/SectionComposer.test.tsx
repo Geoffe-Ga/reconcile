@@ -130,7 +130,7 @@ describe('AddSection', () => {
     expect(box('Discussion link (optional)')).toHaveValue(CHAT);
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${state.group ?? ''}/doc`,
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
     expect(screen.getByRole('button', { name: 'Propose this section' })).toBeEnabled();
     expect(await axeViolations()).toEqual([]);
@@ -148,7 +148,7 @@ describe('AddSection', () => {
   });
 
   it('hands over the add, with its spot as the target in place of an Atom', async () => {
-    const { user, afterId, onPropose } = await addSection({ after: 0 });
+    const { user, afterId, onPropose, state } = await addSection({ after: 0 });
     await fill(user, {
       Title: ' Guests ',
       Why: 'Guests come often.',
@@ -157,7 +157,7 @@ describe('AddSection', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Propose this section' }));
     expect(onPropose).toHaveBeenCalledWith({
-      target: { kind: 'add', after: afterId },
+      target: { kind: 'add', document: state.group, after: afterId },
       title: 'Guests',
       why: 'Guests come often.',
       text: 'Guests leave by 11pm.',
@@ -202,6 +202,7 @@ describe('AddSection', () => {
   it('keeps a draft for each spot, apart from the drafts of the sections themselves', async () => {
     const group = groupLog().state();
     const atom = `${group.group ?? ''}.0`;
+    const spot = addDraft({ document: group.group ?? '', after: atom });
     const atomDraft = { title: 'Mine', why: 'Mine.', text: 'Quiet after 9pm.', link: '' };
     const { user, memory } = await addSection({
       state: group,
@@ -211,10 +212,10 @@ describe('AddSection', () => {
     expect(box('Title')).toHaveValue('');
     await replace(user, 'Section text', 'Guests leave by 11pm.');
     await waitFor(() => {
-      expect(memory.shelf.get(addDraft(atom))).toMatchObject({ text: 'Guests leave by 11pm.' });
+      expect(memory.shelf.get(spot)).toMatchObject({ text: 'Guests leave by 11pm.' });
     });
     expect(memory.shelf.get(atom)).toEqual(atomDraft);
-    expect(memory.drafts.load).toHaveBeenCalledWith(addDraft(atom));
+    expect(memory.drafts.load).toHaveBeenCalledWith(spot);
   });
 
   it('says when the section it would follow isn’t in the Document', async () => {
@@ -269,7 +270,7 @@ describe('RemoveSection', () => {
     expect(screen.queryByRole('textbox', { name: /text/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${state.group ?? ''}/doc`,
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
     expect(await axeViolations()).toEqual([]);
   });
@@ -493,12 +494,105 @@ describe('Adding or removing as a newcomer still earning a vote (#101)', () => {
   });
 });
 
+describe('AddSection and RemoveSection in a group of several Documents (#92)', () => {
+  const DOCUMENTS = [
+    { title: 'Mission statement', atoms: ['We share.\n'] },
+    { title: 'House rules', atoms: ['Quiet after 11pm.\n', 'Bins go out on Tuesday.\n'] },
+  ];
+  const ENTRIES = { Title: 'Guests', Why: 'They visit.', 'Section text': 'Guests leave.' };
+
+  /** Renders Add a section with the route's `after` and `document`, as App passes them. */
+  async function addIn(state: GroupState, after: string | null, document?: string) {
+    const onPropose = vi.fn<OnPropose>(() => Promise.resolve('proposed'));
+    render(
+      <AddSection
+        state={state}
+        me={authorOf('ana')}
+        after={after}
+        {...(document === undefined ? {} : { document })}
+        drafts={memoryDrafts().drafts}
+        now={NOW}
+        onPropose={onPropose}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    return { user: userEvent.setup(), onPropose };
+  }
+
+  it('adds at the start of the Document the route names, and links back to it', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    const second = `${state.group ?? ''}:1`;
+    const { user, onPropose } = await addIn(state, null, second);
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc/${second}`,
+    );
+    await fill(user, ENTRIES);
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      target: { kind: 'add', document: second, after: null },
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('adds after a section of the second Document, in that Document, numbered within it', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    const second = `${state.group ?? ''}:1`;
+    const { user, onPropose } = await addIn(state, `${second}.1`);
+    expect(
+      screen.getByText('If your group passes it, your section goes right after section 2.'),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Section 2 now reads' })).toHaveTextContent(
+      'Bins go out on Tuesday.',
+    );
+    await fill(user, ENTRIES);
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      target: { kind: 'add', document: second, after: `${second}.1` },
+    });
+  });
+
+  it('says a Document the route names isn’t in this group, with no form', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    await addIn(state, null, `${state.group ?? ''}:2`);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This Document isn’t in this group' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Riverside Tenants' })).toBeVisible();
+  });
+
+  it('removes a section of the second Document, numbered within it, and links back to it', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    const second = `${state.group ?? ''}:1`;
+    render(
+      <RemoveSection
+        state={state}
+        me={authorOf('ana')}
+        atomId={`${second}.1`}
+        drafts={memoryDrafts().drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={vi.fn()}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.getByRole('region', { name: 'Section 2 now reads' })).toHaveTextContent(
+      'Bins go out on Tuesday.',
+    );
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc/${second}`,
+    );
+  });
+});
+
 describe('Send a Dispatch if this passes, on an add or a removal (#75, #112)', () => {
   const { composer } = messages;
   const choice = () => screen.getByRole('checkbox', { name: composer.dispatchLabel });
 
   it('offers it unchecked on Add a section, and the add carries what it opens', async () => {
-    const { user, afterId, onPropose } = await addSection({ after: 0 });
+    const { user, afterId, onPropose, state } = await addSection({ after: 0 });
     expect(choice()).not.toBeChecked();
     await fill(user, {
       Title: 'Guests',
@@ -513,7 +607,7 @@ describe('Send a Dispatch if this passes, on an add or a removal (#75, #112)', (
     await user.click(screen.getByRole('button', { name: 'Propose this section' }));
     expect(onPropose).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: { kind: 'add', after: afterId },
+        target: { kind: 'add', document: state.group, after: afterId },
         dispatch: { title: 'Updated: House rules', text: 'A rule for guests.' },
       }),
     );
@@ -587,7 +681,7 @@ describe('Proposing an add or a removal again (#74)', () => {
     expect(await axeViolations()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Propose this section' }));
     expect(onPropose).toHaveBeenCalledWith({
-      target: { kind: 'add', after: afterId },
+      target: { kind: 'add', document: state.group, after: afterId },
       title: 'Guests',
       why: 'They visit.',
       text: 'Guests leave by 11pm.\n',
