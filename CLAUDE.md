@@ -89,7 +89,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 1. **TDD:** a failing test first, then the code.
 2. **`./scripts/check-all.sh` passes.** It runs the checks for the areas the change touches (Python, client, deploy, and the end-to-end loop); `--all` forces every area.
 3. **Pre-commit is clean on the changed files:** `./scripts/precommit-changed.sh`. The commit hook already does this for staged files.
-4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes.
+4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes. `main` runs the full CI nightly and on dispatch, not on each merge.
 5. **The review bot passes.** LGTM is preferred. COMMENTS can merge, but only after every finding is filed as a P0–P3 follow-up issue: file first, then merge. CHANGES_REQUESTED blocks.
 
 **Mutation testing is recommended before a release, not a merge gate.** Run `./scripts/mutation.sh` (Python) and `client/scripts/mutation.sh` (client), or trigger CI's manual mutation job; aim for ≥80%.
