@@ -1,8 +1,9 @@
-import { Label, Link, RadioButton, RadioField, RadioGroup, Text } from 'react-aria-components';
+import { Link } from 'react-aria-components';
 
 import { type Level, LEVELS } from '../engine/capabilities';
 import { levelDescription, levelName } from './levels';
 import { messages } from './messages';
+import { RadioCards } from './RadioCards';
 import { routeHref } from './router';
 
 /** Props for {@link LevelPicker}. */
@@ -26,23 +27,20 @@ export function LevelPicker({ value, onChange, isDisabled = false }: LevelPicker
     const level = LEVELS.find((candidate) => candidate === picked);
     if (level !== undefined) onChange(level);
   };
+  const cards = LEVELS.map((level) => ({
+    value: level,
+    label: levelName(level),
+    description: levelDescription(level),
+  }));
   return (
-    <RadioGroup className="level-group" value={value} onChange={pick} isDisabled={isDisabled}>
-      <Label className="field-label">{messages.levels.label}</Label>
-      <Text slot="description" className="field-hint">
-        {messages.levels.hint}
-      </Text>
-      <div className="level-options">
-        {LEVELS.map((level) => (
-          <RadioField key={level} value={level} className="level-option">
-            <RadioButton className="level-button">{levelName(level)}</RadioButton>
-            <Text slot="description" className="level-description">
-              {levelDescription(level)}
-            </Text>
-          </RadioField>
-        ))}
-      </div>
-    </RadioGroup>
+    <RadioCards
+      label={messages.levels.label}
+      hint={messages.levels.hint}
+      value={value}
+      onChange={pick}
+      cards={cards}
+      isDisabled={isDisabled}
+    />
   );
 }
 

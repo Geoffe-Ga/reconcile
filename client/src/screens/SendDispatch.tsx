@@ -12,20 +12,13 @@
  * coalition above can vote on it in turn.
  */
 import { type SyntheticEvent, useState } from 'react';
-import {
-  Button,
-  Form,
-  Label,
-  RadioButton,
-  RadioField,
-  RadioGroup,
-  Text,
-} from 'react-aria-components';
+import { Button, Form } from 'react-aria-components';
 
 import { documentTitle } from '../app/dispatchLines';
 import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
+import { RadioCards } from '../app/RadioCards';
 import type { DispatchValues, RisingValues } from '../app/proposals';
 import { SuspendedNote } from '../app/stewards';
 import { BackLink, Field, PageHeader } from '../app/ui';
@@ -91,23 +84,19 @@ interface DocumentPickerProps {
 /** "Point to a Document (optional)": No Document, or each of the group's Documents by title. */
 function DocumentPicker({ state, value, onChange }: DocumentPickerProps) {
   const { sendDispatch } = messages;
-  const documents = documentIds(state).map((id) => ({ id, title: documentTitle(state, id) ?? '' }));
+  const documents = documentIds(state).map((id) => ({
+    value: id,
+    label: <bdi>{documentTitle(state, id) ?? ''}</bdi>,
+  }));
+  const cards = [{ value: NO_DOCUMENT, label: sendDispatch.noDocument }, ...documents];
   return (
-    <RadioGroup className="level-group" name="doc" value={value} onChange={onChange}>
-      <Label className="field-label">{sendDispatch.documentLabel}</Label>
-      <div className="level-options">
-        <RadioField value={NO_DOCUMENT} className="level-option">
-          <RadioButton className="level-button">{sendDispatch.noDocument}</RadioButton>
-        </RadioField>
-        {documents.map((document) => (
-          <RadioField key={document.id} value={document.id} className="level-option">
-            <RadioButton className="level-button">
-              <bdi>{document.title}</bdi>
-            </RadioButton>
-          </RadioField>
-        ))}
-      </div>
-    </RadioGroup>
+    <RadioCards
+      label={sendDispatch.documentLabel}
+      name="doc"
+      value={value}
+      onChange={onChange}
+      cards={cards}
+    />
   );
 }
 
@@ -118,8 +107,8 @@ interface CeilingPickerProps {
 
 /**
  * "How far can it go?" (#126): this group only, one level up, two levels up,
- * or as far as the coalitions go, each a card with the line that says what
- * happens.
+ * or as high as the group's coalitions reach, each a card with the line that
+ * says what happens.
  */
 function CeilingPicker({ value, onChange }: CeilingPickerProps) {
   const { ceilingLabel, ceilings, ceilingHints } = messages.sendDispatch;
@@ -127,20 +116,19 @@ function CeilingPicker({ value, onChange }: CeilingPickerProps) {
     const reach = REACHES.find((candidate) => String(candidate) === picked);
     if (reach !== undefined) onChange(reach);
   };
+  const cards = REACHES.map((reach) => ({
+    value: String(reach),
+    label: ceilings[reach],
+    description: ceilingHints[reach],
+  }));
   return (
-    <RadioGroup className="level-group" name="ceiling" value={String(value)} onChange={pick}>
-      <Label className="field-label">{ceilingLabel}</Label>
-      <div className="level-options">
-        {REACHES.map((reach) => (
-          <RadioField key={reach} value={String(reach)} className="level-option">
-            <RadioButton className="level-button">{ceilings[reach]}</RadioButton>
-            <Text slot="description" className="level-description">
-              {ceilingHints[reach]}
-            </Text>
-          </RadioField>
-        ))}
-      </div>
-    </RadioGroup>
+    <RadioCards
+      label={ceilingLabel}
+      name="ceiling"
+      value={String(value)}
+      onChange={pick}
+      cards={cards}
+    />
   );
 }
 
