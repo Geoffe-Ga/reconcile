@@ -584,4 +584,95 @@ describe('coalitionKeys (#122)', () => {
     expect(keys.has(deriveCoalitionEntryId(fromBase64url(testSecret('D'))))).toBe(false);
     expect(keys.has(entry.groupId)).toBe(true);
   });
+
+  /** A log as a device keeps it: a group's, or a coalition's entry under the id its secret makes. */
+  function kept(records: readonly LogRecord[], relayNow: number, secret?: string): Group {
+    const coalition =
+      secret === undefined
+        ? { groupId: 'A' }
+        : { kind: 'coalition', groupId: deriveCoalitionEntryId(fromBase64url(secret)) };
+    return { ...coalition, log: records, outbox: [], relayNow } as unknown as Group;
+  }
+
+  it('gives a group admitted into a formed coalition its inner only from a wrap for its seat, and then reaches above it (#313)', () => {
+    const logs = new NestedLogs();
+    const formed = logs.formed(R, ['X', 'Y'], ['cal', 'dee']);
+    logs.group('A', formed, ['ana']);
+    logs.reconcile('A', formed + 1, 'ana', 'A', { inner: false });
+    const seated = logs.admitted(formed + 2, 'ana', 'A', 'Riverside', [
+      ['cal', 'X'],
+      ['dee', 'Y'],
+    ]);
+    const id = logs.ids.coalition ?? '';
+    const sealed = sealSeatSecrets(id, fromBase64url(testSecret('inner')), {
+      secret: fromBase64url(testSecret('D')),
+      inner: fromBase64url(testSecret('innerD')),
+      seat: seatSecret('coalition'),
+    });
+    const target = {
+      kind: 'reconcile',
+      sealed,
+      key: seatKey('coalition'),
+      ...STATEMENT_D,
+    } as const;
+    logs.add('coalition', seated + 1, 'cal', {
+      type: 'proposal',
+      body: { target, title: 'Into D', why: 'W' },
+    });
+    const d = deriveCoalitionEntryId(fromBase64url(testSecret('D')));
+    const keysAt = () =>
+      coalitionKeys(
+        [kept(logs.logs.A ?? [], seated + 10)],
+        [kept(logs.logs.coalition ?? [], seated + 10, testSecret('coalition'))],
+      );
+
+    const before = keysAt();
+    expect([...(before.get(ENTRY)?.seats.keys() ?? [])]).toEqual([seatKey('A')]);
+    expect(before.get(ENTRY)?.inner).toBeNull();
+    expect(before.has(d)).toBe(false);
+
+    logs.wrap(seated + 2, 'cal', 'A');
+    const after = keysAt();
+    expect(base64url(after.get(ENTRY)?.inner ?? new Uint8Array())).toBe(testSecret('inner'));
+    expect(base64url(after.get(d)?.inner ?? new Uint8Array())).toBe(testSecret('innerD'));
+  });
+
+  it('keeps a coalition above with no inner while its seat there, sealed without one, waits for a wrap (#313)', () => {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', COALITION_STATEMENT);
+    const c = logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee']);
+    const sealed = sealSeatSecrets(logs.ids.C ?? '', fromBase64url(testSecret('innerC')), {
+      secret: SECRET,
+      seat: seatSecret('C'),
+    });
+    const target = {
+      kind: 'reconcile',
+      sealed,
+      key: seatKey('C'),
+      ...COALITION_STATEMENT,
+    } as const;
+    logs.add('C', c, 'cal', { type: 'proposal', body: { target, title: 'Into D', why: 'W' } });
+    const formed = logs.formed(c + 1, ['X', 'Y'], ['kim', 'zed']);
+    const seated = logs.admitted(formed, 'cal', 'C', 'Eastside', [
+      ['kim', 'X'],
+      ['zed', 'Y'],
+    ]);
+    const keysAt = () =>
+      coalitionKeys(
+        [kept(logs.logs.A ?? [], seated + 10)],
+        [
+          kept(logs.logs.C ?? [], seated + 10, testSecret('C')),
+          kept(logs.logs.coalition ?? [], seated + 10, testSecret('coalition')),
+        ],
+      );
+
+    const before = keysAt().get(ENTRY);
+    expect([...(before?.seats.keys() ?? [])]).toEqual([seatKey('C')]);
+    expect(before?.inner).toBeNull();
+
+    logs.wrap(seated + 1, 'kim', 'C');
+    const after = keysAt().get(ENTRY);
+    expect(base64url(after?.inner ?? new Uint8Array())).toBe(testSecret('inner'));
+  });
 });
