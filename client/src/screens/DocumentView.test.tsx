@@ -732,6 +732,7 @@ describe('DocumentView: entrenched and eternal sections (#116)', () => {
       'Propose removing this section, section 1',
       'Move this section, section 1',
       'Change its protection, section 1',
+      'History of section 1',
       'Add a section here, after section 1',
     ]);
     await user.click(screen.getByRole('button', { name: 'Change its protection, section 1' }));
@@ -739,12 +740,17 @@ describe('DocumentView: entrenched and eternal sections (#116)', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('offers no change, removal, move or protection on an eternal section, only the eternal line', async () => {
+  it('offers no change, removal, move or protection on an eternal section, only the eternal line and its History', async () => {
     const log = classed('eternal');
     const { container } = view(log.state());
     const atoms = Array.from(container.querySelectorAll('.document > .atom'));
     const eternal = atoms[0] as HTMLElement;
-    expect(within(eternal).queryAllByRole('button')).toEqual([]);
+    // History stays on every section, an eternal one's included (#104).
+    expect(
+      within(eternal)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['History of section 1']);
     expect(
       within(eternal).getByText('This section is eternal. It can’t be changed.'),
     ).toBeVisible();
@@ -788,7 +794,7 @@ describe('DocumentView: entrenched and eternal sections (#116)', () => {
     expect(screen.queryByRole('button', { name: /^Move this section/ })).not.toBeInTheDocument();
   });
 
-  it('sets Move and Protect on a row of their own, under the section’s change actions', () => {
+  it('sets Move, Protect and History on a row of their own, under the section’s change actions', () => {
     const { state } = testGroup();
     const { container } = view(state);
     const actions = container.querySelector('.document > .atom .atom-actions');
@@ -801,6 +807,7 @@ describe('DocumentView: entrenched and eternal sections (#116)', () => {
       '|',
       'Move this section',
       'Protect this section',
+      'History',
     ]);
     expect(actions?.querySelector('.atom-actions-break')).toHaveAttribute('aria-hidden', 'true');
   });

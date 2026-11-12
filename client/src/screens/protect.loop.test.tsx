@@ -123,7 +123,12 @@ describe('Protecting a section in the app (#116)', () => {
         expect(atom?.querySelector('.atom-badge')).toHaveTextContent('Eternal');
         return atom as HTMLElement;
       });
-      expect(within(section).queryAllByRole('button')).toEqual([]);
+      // Only its History stays, as on every section (#104).
+      expect(
+        within(section)
+          .getAllByRole('button')
+          .map((button) => button.getAttribute('aria-label')),
+      ).toEqual(['History of section 1']);
       expect(
         within(section).getByText('This section is eternal. It can’t be changed.'),
       ).toBeVisible();
