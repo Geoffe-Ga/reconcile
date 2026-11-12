@@ -38,6 +38,30 @@ describe('Start', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers Recover with my contacts, for someone who has lost every device (#118)', async () => {
+    render(<Start groups={[]} onOpenInvite={vi.fn()} />);
+
+    const section = screen.getByRole('region', { name: 'Lost every device?' });
+    expect(within(section).getByRole('link', { name: 'Recover with my contacts' })).toHaveAttribute(
+      'href',
+      '#/recover',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a recovery alert first, above the groups (#118)', () => {
+    render(
+      <Start
+        groups={GROUPS}
+        onOpenInvite={vi.fn()}
+        alert={<p data-testid="alert">A recovery is waiting.</p>}
+      />,
+    );
+    const alert = screen.getByTestId('alert');
+    const list = screen.getByRole('list');
+    expect(alert.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('lists every group on the device by name, however many there are', () => {
     const names = ['Riverside Tenants', 'Book club', 'Allotment society', 'Choir'];
     const groups = names.map((name, i) => ({

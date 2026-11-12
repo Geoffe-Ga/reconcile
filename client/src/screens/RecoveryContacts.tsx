@@ -46,6 +46,11 @@ export interface RecoveryContactsProps {
   readonly current: RecoveryStatus | null;
   /** Chooses the contacts; rejects when it couldn't. */
   readonly onSave: (choice: RecoveryChoice) => Promise<void>;
+  /**
+   * Whether this device came back through its recovery contacts and has
+   * chosen none since (#118): the screen then asks the person to choose again.
+   */
+  readonly recovered?: boolean;
 }
 
 /** A pick's key: its group and member, which no group id or key can run together. */
@@ -251,6 +256,9 @@ export function RecoveryContacts(props: RecoveryContactsProps) {
         pageTitle={recovery.pageTitle}
       />
       <div className="stack recovery-about">
+        {props.recovered === true ? (
+          <p className="notice recovery-again">{recovery.recovered}</p>
+        ) : null}
         <p className="lede">{recovery.lede}</p>
         <p className="lede">{recovery.pick}</p>
         {again ? <p className="caption">{recovery.again}</p> : null}

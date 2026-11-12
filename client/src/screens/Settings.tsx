@@ -45,6 +45,8 @@ export interface RecoveryProps {
   readonly held: readonly HeldShare[];
   /** Whether anyone in the person's groups can hold a share, so the picker has someone to offer. */
   readonly canChoose: boolean;
+  /** Whether this device came back through its contacts and has chosen none since (#118). */
+  readonly recovered?: boolean;
 }
 
 /**
@@ -139,17 +141,21 @@ function ContactList({ status }: { readonly status: RecoveryStatus }) {
 
 /**
  * Recovery contacts (#109; ADR-0043 §1, ADR-0008): what they are, in
- * trust's words; where the person's stand, or that they've chosen none; the
- * way to choose, or choose again; and the shares this device holds for
- * others. Quiet, like every protective feature here (ADR-0018).
+ * trust's words; after a recovery with contacts, a notice to choose again
+ * (#118); where the person's stand, or that they've chosen none; the way to
+ * choose, or choose again; and the shares this device holds for others,
+ * with Help someone recover (#118). Quiet, like every protective feature
+ * here (ADR-0018).
  */
 function RecoverySection({ recovery: props }: { readonly recovery: RecoveryProps }) {
   const { recovery } = messages;
   const { status, held, canChoose } = props;
   const heading = useId();
+  const recovered = status === null && props.recovered === true;
   return (
     <div className="stack">
       <p className="lede">{recovery.lede}</p>
+      {recovered ? <p className="notice recovery-again">{recovery.recovered}</p> : null}
       {status === null ? <p>{recovery.none}</p> : <ContactList status={status} />}
       {canChoose ? (
         <div>
@@ -164,6 +170,11 @@ function RecoverySection({ recovery: props }: { readonly recovery: RecoveryProps
             {recovery.holdingHeading}
           </h3>
           <HeldShares held={held} />
+          <div>
+            <Link className="button button-secondary" href={routeHref({ name: 'helpRecover' })}>
+              {recovery.help}
+            </Link>
+          </div>
         </section>
       )}
     </div>
