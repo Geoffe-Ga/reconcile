@@ -1721,13 +1721,16 @@ function takePull(
 /**
  * Moves `group` to the epoch `advance` names: its secret and base cursor, with
  * no cursor of the old epoch's mailboxes (#110), and its records to post
- * again ahead of the outbox, skipping any already queued.
+ * again ahead of the outbox, skipping any already queued. A restored copy
+ * that still reads only (#231) moves its keys and queues none: it sends
+ * nothing until it hears from its group.
  */
 function advanceTo(group: Group, { epoch, secret, cursor, repost }: EpochAdvance): void {
   group.epoch = epoch;
   group.secret = secret;
   group.cursor = cursor;
   delete group.cursors;
+  if (group.archived !== undefined) return;
   const fresh = repost.filter((bytes) => !group.outbox.some((queued) => sameBytes(queued, bytes)));
   group.outbox = [...fresh, ...group.outbox];
 }

@@ -176,6 +176,39 @@ describe('a pull into a copy that hasn’t heard from its group (#231)', () => {
     expect((await store.getGroup('group-1'))?.archived).toEqual(UNCONFIRMED);
   });
 
+  it('queues none of a key change’s reposts while it still reads only, though it moves to the new key (#98)', async () => {
+    const store = await restored();
+    const advance = {
+      epoch: 1,
+      secret: new Uint8Array(32).fill(5),
+      cursor: 4,
+      repost: [utf8('{"mine":5}')],
+    };
+
+    await store.applyPull('group-1', { ...pullAt(SINCE + GAP + 1), advance }, idOf);
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.archived).toEqual(UNCONFIRMED);
+    expect(kept?.epoch).toBe(1);
+    expect(kept?.outbox).toEqual([]);
+  });
+
+  it('queues a key change’s reposts once the same pull opens it (#98)', async () => {
+    const store = await restored();
+    const advance = {
+      epoch: 1,
+      secret: new Uint8Array(32).fill(5),
+      cursor: 4,
+      repost: [utf8('{"mine":5}')],
+    };
+
+    await store.applyPull('group-1', { ...pullAt(SINCE + GAP), advance }, idOf);
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.archived).toBeUndefined();
+    expect(kept?.outbox.map(text)).toEqual(['{"mine":5}']);
+  });
+
   it('leaves a dissolved archive as it is', async () => {
     const store = await restored({ archived: { reason: 'dissolved' } });
 
