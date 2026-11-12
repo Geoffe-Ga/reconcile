@@ -324,7 +324,10 @@ describe('PersonalDocument', () => {
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }),
     );
 
-    expect(onDeleted).toHaveBeenCalledOnce();
+    // Delete runs in IndexedDB after the press, so the screen hands back once it has: wait for that.
+    await vi.waitFor(() => {
+      expect(onDeleted).toHaveBeenCalledOnce();
+    });
     expect(await store.getPersonal(ID)).toBeUndefined();
     expect((await store.listPersonal()).map((kept) => kept.id)).toEqual([OTHER]);
   });
@@ -489,7 +492,9 @@ describe('PersonalDocument', () => {
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }),
     );
 
-    expect(onDeleted).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(onDeleted).toHaveBeenCalledOnce();
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
