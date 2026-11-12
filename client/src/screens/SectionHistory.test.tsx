@@ -72,6 +72,7 @@ function documentView(state: GroupState, me = authorOf('ana')) {
       onAdd={vi.fn()}
       onRemove={vi.fn()}
       onMove={vi.fn()}
+      onProtect={vi.fn()}
       copyText={vi.fn(() => Promise.resolve())}
     />,
   );
@@ -234,6 +235,29 @@ describe('SectionHistory', () => {
     expect(within(moved).getByText('Bins go out on Tuesday.')).toBeVisible();
     expect(moved).toHaveTextContent('Proposed by Ben');
     expect(within(founded).getByText('Bins go out on Tuesday.')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/canary/i);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a class change as the pass that protected the section, over its text, and opens on an eternal section (#116)', async () => {
+    const user = userEvent.setup();
+    const log = groupLog({ members: VOTERS.slice(1) });
+    const entrench = log.protect('Ben', `${log.group}.0`, 'entrenched', { title: 'Protect it' });
+    everyone(log, entrench, { [entrench]: 4 });
+    log.minute += 5;
+    const eternal = log.protect('Ben', `${log.group}.0`, 'eternal', { title: 'Keep it' });
+    everyone(log, eternal, { [eternal]: 4 });
+    documentView(log.state(log.minute + 1));
+    const sheet = await openHistory(user, 1);
+    const [made, protectedIt, founded] = entriesOf(sheet);
+    if (made === undefined || protectedIt === undefined || founded === undefined) {
+      throw new Error('Expected three entries.');
+    }
+    expect(within(made).getByRole('heading', { level: 3 })).toHaveTextContent('Keep it');
+    expect(within(made).getByText(messages.history.classChanged.eternal)).toBeVisible();
+    expect(within(made).getByText('Quiet hours start at ten.')).toBeVisible();
+    expect(made).toHaveTextContent('Proposed by Ben');
+    expect(within(protectedIt).getByText(messages.history.classChanged.entrenched)).toBeVisible();
     expect(document.body.textContent).not.toMatch(/canary/i);
     expect(await axeViolations()).toEqual([]);
   });

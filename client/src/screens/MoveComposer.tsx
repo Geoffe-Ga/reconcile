@@ -20,7 +20,7 @@ import {
 } from 'react-aria-components';
 
 import { documentBack } from '../app/backLinks';
-import { againStartOf, lapsed, whyNoForm } from '../app/compose';
+import { againStartOf, lapsed, whyNoForm, whySectionWaits } from '../app/compose';
 import { sectionPlace } from '../app/documentLines';
 import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
@@ -30,7 +30,13 @@ import { composeOption } from '../engine/composeOption';
 import { atomsOf } from '../engine/documents';
 import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { Draft } from '../store/drafts';
-import { type ComposerProps, CurrentText, ProposalForm, Unavailable } from './Composer';
+import {
+  type ComposerProps,
+  CurrentText,
+  EntrenchedNote,
+  ProposalForm,
+  Unavailable,
+} from './Composer';
 
 /** Props for {@link MoveComposer}. */
 export interface MoveComposerProps {
@@ -135,11 +141,11 @@ function PlaceField({ atom, sections, values, onChange }: PlaceFieldProps) {
 /** Why there's no move to write for this section, or null when there is one. */
 function whyNoMove(props: MoveComposerProps, sections: readonly Atom[]) {
   const { composer } = messages;
-  const refused = whyNoForm(props);
+  const refused = whyNoForm(props) ?? whySectionWaits(props.state, props.atomId);
   if (refused !== null) return refused;
-  const option = composeOption(props.state, props.atomId);
-  if (option === 'moving') return { title: composer.movingTitle, text: composer.moving };
-  if (option !== 'propose') return { title: composer.moveBusyTitle, text: composer.moveBusy };
+  if (composeOption(props.state, props.atomId) !== 'propose') {
+    return { title: composer.moveBusyTitle, text: composer.moveBusy };
+  }
   return sections.length < 2 ? { title: composer.moveAloneTitle, text: composer.moveAlone } : null;
 }
 
@@ -192,6 +198,7 @@ export function MoveComposer(props: MoveComposerProps) {
         <>
           {again === undefined ? null : <p className="lede">{composer.againLede}</p>}
           <p className="lede">{composer.moveLede}</p>
+          <EntrenchedNote state={state} atom={place.atom} />
           <CurrentText atom={place.atom} section={place.number} />
         </>
       }

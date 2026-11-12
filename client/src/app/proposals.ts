@@ -19,6 +19,7 @@ import type { Level } from '../engine/capabilities';
 import {
   type AddTarget,
   base64url,
+  type ClassTarget,
   type EventDraft,
   type MoveTarget,
   type NewDocumentTarget,
@@ -37,13 +38,14 @@ export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 /**
  * Where a Proposal goes (#75): the Atom whose text it would replace, where
  * blank text proposes removing the Atom, where a new section goes, a new
- * Document (#92), or a section's new place (#103).
+ * Document (#92), a section's new place (#103) or its class (#116).
  */
 export type ProposalPlace =
   | { readonly atom: string }
   | { readonly target: AddTarget }
   | { readonly target: NewDocumentTarget }
-  | { readonly target: MoveTarget };
+  | { readonly target: MoveTarget }
+  | { readonly target: ClassTarget };
 
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
 export type ProposalValues = ProposalPlace & {
@@ -104,6 +106,11 @@ export function moveDraft(atom: string): string {
   return `move:${atom}`;
 }
 
+/** The draft key of a class Proposal on Atom `atom` (#116), apart from any change drafted for it. */
+export function protectDraft(atom: string): string {
+  return `protect:${atom}`;
+}
+
 /** The draft key of a new Document's Proposal (#92): one per group, as the issue names it. */
 export const NEW_DOCUMENT_DRAFT = 'new-document';
 
@@ -111,37 +118,42 @@ export const NEW_DOCUMENT_DRAFT = 'new-document';
  * The private draft a Proposal is written in (spec §8): the lapsed
  * Proposal's when proposing again, else its Atom's for a change, the
  * removal's when its text is blank, the add's for its spot, a header's by
- * its level (#103), the move's (#103), or the new Document's (#92).
+ * its level (#103), the move's (#103), the class Proposal's (#116), or the
+ * new Document's (#92).
  */
 function draftOf(values: ProposalValues, text: string): string {
   if (values.again !== undefined) return againDraft(values.again);
   if (!('target' in values)) return text === '' ? removalDraft(values.atom) : values.atom;
   const { target } = values;
   if (target.kind === 'move') return moveDraft(target.atom);
+  if (target.kind === 'class') return protectDraft(target.atom);
   return target.kind === 'add' ? addDraft(target, values.heading) : NEW_DOCUMENT_DRAFT;
 }
 
 /**
  * A Proposal's body: where it goes first, its Atom or its target (#75, #92),
- * then its words, in the order every device has signed them. A move carries
- * no text (#103).
+ * then its words, in the order every device has signed them. A move (#103)
+ * and a class Proposal (#116) carry no text.
  */
 function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): ProposalEventBody {
   if (!('target' in place)) return { atom: place.atom, ...fields };
   const { target } = place;
-  if (target.kind === 'move') {
-    const { title, why, link, window, dispatch } = fields;
-    return {
-      target,
-      title,
-      why,
-      ...(link === undefined ? {} : { link }),
-      ...(window === undefined ? {} : { window }),
-      ...(dispatch === undefined ? {} : { dispatch }),
-    };
-  }
+  if (target.kind === 'move') return { target, ...withoutText(fields) };
+  if (target.kind === 'class') return { target, ...withoutText(fields) };
   // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
   return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
+}
+
+/** A targeted Proposal's words with no text (#103, #116): its title, why, and any link, window and Dispatch. */
+function withoutText(fields: Omit<ProposalBody, 'atom'>) {
+  const { title, why, link, window, dispatch } = fields;
+  return {
+    title,
+    why,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+    ...(dispatch === undefined ? {} : { dispatch }),
+  };
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */

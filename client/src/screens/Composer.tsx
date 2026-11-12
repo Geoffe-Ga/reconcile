@@ -8,10 +8,13 @@ import {
   textCheck,
   useSend,
   whyNoForm,
+  whySectionWaits,
 } from '../app/compose';
+import { AtomBadge } from '../app/AtomBadge';
 import { DocumentLine } from '../app/DocumentLine';
 import { type Back, documentBack, groupBack } from '../app/backLinks';
 import { documentLead, sectionPlace } from '../app/documentLines';
+import { formatAverageLine, formatZeroLine } from '../app/format';
 import { latestLink } from '../app/latestLink';
 import { holdPresses } from '../app/holdPresses';
 import { isHttpLink } from '../app/links';
@@ -116,11 +119,15 @@ function proposesDocument(place: ProposalPlace): boolean {
 
 /**
  * Where the Proposal goes: a new Document's title taken from the draft,
- * trimmed (#92), and a move's place from the draft too (#103).
+ * trimmed (#92), a move's place from the draft too (#103), and a class
+ * Proposal's class (#116).
  */
 function placeFor(place: ProposalPlace, draft: Draft): ProposalPlace {
   if ('target' in place && place.target.kind === 'move') {
     return { target: { ...place.target, after: draft.moveAfter ?? null } };
+  }
+  if ('target' in place && place.target.kind === 'class') {
+    return { target: { ...place.target, to: draft.classTo ?? '' } };
   }
   if (!proposesDocument(place)) return place;
   return { target: { kind: 'new-document', title: (draft.documentTitle ?? '').trim() } };
@@ -155,13 +162,15 @@ function withoutDispatch(draft: Draft): Draft {
 
 /**
  * The Document a Proposal changes (#92): its section's for a change, a
- * removal or a move (#103), the one an add names, or none yet for a new
- * Document.
+ * removal, a move (#103) or a class Proposal (#116), the one an add names, or
+ * none yet for a new Document.
  */
 function changedDocument(state: GroupState, place: ProposalPlace): string | undefined {
   if (!('target' in place)) return sectionPlace(state, place.atom)?.document.id;
   const { target } = place;
-  if (target.kind === 'move') return sectionPlace(state, target.atom)?.document.id;
+  if (target.kind === 'move' || target.kind === 'class') {
+    return sectionPlace(state, target.atom)?.document.id;
+  }
   return target.kind === 'add' ? target.document : undefined;
 }
 
@@ -243,7 +252,7 @@ export function Unavailable({ state, title, text, back = documentBack(state) }: 
   );
 }
 
-/** The section as it reads now, beside which the new text is written. */
+/** The section as it reads now, with its badge when it's protected (#116), beside which the new text is written. */
 export function CurrentText({ atom, section }: { readonly atom: Atom; readonly section: number }) {
   const heading = useId();
   return (
@@ -251,9 +260,21 @@ export function CurrentText({ atom, section }: { readonly atom: Atom; readonly s
       <h2 id={heading} className="eyebrow">
         {messages.composer.current(section)}
       </h2>
+      <AtomBadge cls={atom.class} />
       <AtomText text={atom.text} className="atom-card atom-card-current" />
     </section>
   );
+}
+
+/**
+ * Over a change, removal or move of an entrenched section (#116): that it
+ * needs the group's higher bar and a longer vote. Nothing for any other.
+ */
+export function EntrenchedNote({ state, atom }: { readonly state: GroupState; atom: Atom }) {
+  if (atom.class !== 'entrenched') return null;
+  const bar = state.rules.bars.entrenched;
+  const note = messages.composer.entrenchedNote(formatAverageLine(bar), formatZeroLine(bar));
+  return <p className="caption">{note}</p>;
 }
 
 /** The text field of a Proposal's form: its label, its hint, its check and how Preview shows it. */
@@ -858,6 +879,7 @@ function ChangeForm({ state, section, drafts, now, onPropose, again }: ChangeFor
       intro={
         <>
           <AgainLede again={again} />
+          <EntrenchedNote state={state} atom={atom} />
           <CurrentText atom={atom} section={number} />
         </>
       }
@@ -894,6 +916,11 @@ export function Composer(props: ComposerProps) {
   }
   const refused = whyNoForm(props);
   if (refused !== null) return <Unavailable state={state} {...refused} />;
+  const waits = whySectionWaits(state, atomId);
+  if (waits !== null) {
+    const back = documentBack(state, what.section?.atom.documentId);
+    return <Unavailable state={state} {...waits} back={back} />;
+  }
   if (what.kind === 'change') {
     const again = lapsed(props.again);
     return (
@@ -908,14 +935,7 @@ export function Composer(props: ComposerProps) {
       />
     );
   }
-  const option = composeOption(state, atomId);
-  if (option === 'moving') {
-    const back = documentBack(state, what.section?.atom.documentId);
-    return (
-      <Unavailable state={state} title={composer.movingTitle} text={composer.moving} back={back} />
-    );
-  }
-  if (option === 'ballot-full') {
+  if (composeOption(state, atomId) === 'ballot-full') {
     return <Unavailable state={state} title={composer.fullTitle} text={composer.full} />;
   }
   return (

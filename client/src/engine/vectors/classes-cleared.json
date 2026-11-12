@@ -1,0 +1,448 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "classes-cleared: a cleared class Proposal takes its early close and pass from its result, read at the entrenched bar, still makes its section eternal, and sends its Dispatch at that close",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1:1.1",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together.",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Bins day is now protected."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 0, 1, 1]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1:1.1",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        }
+      ],
+      "relayNow": 29375040,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": true,
+            "ballots": [],
+            "class": "entrenched",
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n",
+            "class": "eternal"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "doc": "@1:1",
+            "received": 29375021
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          }
+        ]
+      }
+    },
+    {
+      "name": "classes-cleared-fail: a cleared class Proposal whose result records a fail at the entrenched bar, an average of 2.5, closes and decides by it, and leaves its section ordinary",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1:1.1",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 1, 1, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "fail"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": true,
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n",
+            "class": "ordinary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "classes-cleared-understated: a cleared class Proposal's result that names a pass its counts give only at the ordinary bar, an average of 2.5, doesn't fit, so it is read nowhere ahead and the Proposal stays open with no ballots",
+      "cleared": ["@3"],
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1:1.1",
+                "to": "eternal"
+              },
+              "title": "Protect a section",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "result",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@3",
+              "closedAt": 29375021,
+              "eligible": 2,
+              "versions": [
+                {
+                  "id": "@3",
+                  "counts": [0, 0, 1, 1, 0]
+                }
+              ],
+              "outcome": {
+                "kind": "pass",
+                "version": "@3"
+              },
+              "commit": "commit-of-the-cleared-ballots"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "cleared": true,
+            "closedAt": null,
+            "final": false
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n",
+            "class": "ordinary"
+          }
+        ]
+      }
+    }
+  ]
+}

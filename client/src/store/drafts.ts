@@ -34,6 +34,11 @@ export interface Draft {
    * would follow, or null for first; absent until one is chosen.
    */
   readonly moveAfter?: string | null;
+  /**
+   * The class a class Proposal would give its section (#116), in its draft
+   * alone, as the composer's choice holds it; absent until one is chosen.
+   */
+  readonly classTo?: string;
 }
 
 /** A draft's Dispatch (#112): its title and text, as typed. */
@@ -51,20 +56,25 @@ function hasStrings(value: unknown, keys: readonly string[]): value is Record<st
   return keys.every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
 }
 
+/** True for a field that is absent or a string. */
+function optionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
 /**
  * True for a value shaped like a {@link Draft}: four strings, nothing
  * missing, any window a number, any Dispatch a title and a text (#112), any
- * new Document's title a string (#92), and any move's place a string or null
- * (#103).
+ * new Document's title a string (#92), any move's place a string or null
+ * (#103), and any class chosen a string (#116).
  */
 export function isDraft(value: unknown): value is Draft {
   if (!hasStrings(value, ['title', 'why', 'text', 'link'])) return false;
-  const { window, dispatch, documentTitle, moveAfter } = value;
+  const { window, dispatch, documentTitle, moveAfter, classTo } = value;
   const windowFits = window === undefined || typeof window === 'number';
-  const titleFits = documentTitle === undefined || typeof documentTitle === 'string';
-  const placeFits = moveAfter === undefined || moveAfter === null || typeof moveAfter === 'string';
+  const ownFits = optionalString(documentTitle) && optionalString(classTo);
+  const placeFits = moveAfter === null || optionalString(moveAfter);
   const dispatchFits = dispatch === undefined || hasStrings(dispatch, ['title', 'text']);
-  return windowFits && titleFits && placeFits && dispatchFits;
+  return windowFits && ownFits && placeFits && dispatchFits;
 }
 
 /** The draft a group's record holds for `target`, or undefined for none or for one that isn't whole. */

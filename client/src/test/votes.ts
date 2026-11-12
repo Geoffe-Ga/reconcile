@@ -76,6 +76,8 @@ export interface LogBuilder {
   newDocument(name: string, title: string, entry?: ProposalEntry): string;
   /** Adds `name`'s Proposal moving the Atom `atom` right after `after`, or first for null (#103). */
   move(name: string, atom: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal giving the Atom `atom` the class `to` (#116), returning its id. */
+  protect(name: string, atom: string, to: string, entry?: ProposalEntry): string;
   /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
   ask(
     name: string,
@@ -247,6 +249,18 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       const { title = 'Move a section', why = 'It reads better there.' } = entry;
       const proposal = {
         target: { kind: 'move', atom, after } as const,
+        title,
+        why,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    protect(name: string, atom: string, to: string, entry: ProposalEntry = {}) {
+      const { title = 'Protect a section', why = 'It holds us together.' } = entry;
+      const proposal = {
+        target: { kind: 'class', atom, to } as const,
         title,
         why,
         ...(entry.link === undefined ? {} : { link: entry.link }),

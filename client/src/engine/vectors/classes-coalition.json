@@ -1,0 +1,207 @@
+{
+  "kind": "coalition",
+  "vectors": [
+    {
+      "name": "classes-coalition: in a formed coalition a class motion is ignored, entrenched or eternal, as every targeted motion but admit is, so a coalition's sections stay ordinary; a rewording of one opens",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Hillside",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500660000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500720000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%zed"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500780000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500840000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375015,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500900000,
+              "body": {
+                "target": {
+                  "kind": "class",
+                  "atom": "@1.1",
+                  "to": "entrenched"
+                },
+                "title": "Protect a section",
+                "why": "It holds us together."
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500960000,
+              "body": {
+                "target": {
+                  "kind": "class",
+                  "atom": "@1.0",
+                  "to": "eternal"
+                },
+                "title": "Protect a section",
+                "why": "It holds us together."
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375017,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762501020000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "coalition": {
+          "atoms": [
+            {
+              "id": "@1.0",
+              "documentId": "@1",
+              "text": "We keep the river clean.",
+              "class": "ordinary"
+            },
+            {
+              "id": "@1.1",
+              "documentId": "@1",
+              "text": "We meet on the first Sunday.",
+              "class": "ordinary"
+            }
+          ],
+          "proposals": [
+            {
+              "id": "@8",
+              "atom": "@1.0",
+              "class": "ordinary"
+            }
+          ],
+          "ignored": [
+            {
+              "seq": 6,
+              "id": "@6"
+            },
+            {
+              "seq": 7,
+              "id": "@7"
+            }
+          ]
+        }
+      },
+      "unchangedWithout": {
+        "coalition": [6, 7]
+      }
+    }
+  ]
+}

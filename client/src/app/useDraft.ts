@@ -20,12 +20,14 @@ function sameDispatch(a: Draft['dispatch'], b: Draft['dispatch']): boolean {
 }
 
 /**
- * True when two drafts hold the same values, a new Document's title (#92) and
- * a move's place (#103) included. A blank window (NaN) equals another blank one.
+ * True when two drafts hold the same values, a new Document's title (#92), a
+ * move's place (#103) and a class chosen (#116) included. A blank window (NaN)
+ * equals another blank one.
  */
 function sameDraft(a: Draft, b: Draft): boolean {
   const texts = a.title === b.title && a.why === b.why && a.text === b.text && a.link === b.link;
-  const own = a.documentTitle === b.documentTitle && a.moveAfter === b.moveAfter;
+  const own =
+    a.documentTitle === b.documentTitle && a.moveAfter === b.moveAfter && a.classTo === b.classTo;
   return texts && own && Object.is(a.window, b.window) && sameDispatch(a.dispatch, b.dispatch);
 }
 
