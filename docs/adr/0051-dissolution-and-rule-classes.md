@@ -34,7 +34,7 @@ The Consequences above apply each class's bar to every `rules-change`. [ADR-0067
 - **No one authors it.** The `genesis` event records the template, and the template says when the group outgrows it. Every device derives the switch from the log at the event that brings the group to 10 voting members ([ADR-0072](0072-protocol-details-for-decomposition.md) item 9).
 - **It never overrides a vote.** It moves only rules still at the Circle default. Any rule the group set by Proposal keeps its value.
 
-Every other rule change still needs a `rules-change` Proposal at its class's bar. The MVP defers Circles and the switch ([spec §12](../spec/phase-1-spec.md#12-deferred)).
+Every other rule change still needs a `rules-change` Proposal at its class's bar. The MVP defers Circles and the switch ([spec §12](../spec/phase-1/12-deferred.md)).
 
 ## Amendment (2026-11-11, #231): A Backup From Before a Dissolve Comes Back Read-Only
 

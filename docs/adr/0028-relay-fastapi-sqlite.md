@@ -20,7 +20,7 @@
 ## Amendment (2026-11-10, #89)
 
 - **Web Push uses py-vapid and httpx2, not `pywebpush`.** Pushes carry no payload (ADR-0012), so `pywebpush`'s RFC 8291 encryption, and the `requests` and `aiohttp` it brings, have nothing to do. py-vapid (MPL-2.0, used unmodified) signs each push (RFC 8292), and httpx2, which Starlette's TestClient already runs on, sends it.
-- **Push adds two tables beside `blobs`,** as ADR-0019's "endpoints and wake minutes, nothing else" allows: `push_subs(mailbox, endpoint, expiry)` and `nudges(mailbox, due)`, with no push keys, timestamps or counters ([spec §6](../spec/phase-1-spec.md#6-relay-api)).
+- **Push adds two tables beside `blobs`,** as ADR-0019's "endpoints and wake minutes, nothing else" allows: `push_subs(mailbox, endpoint, expiry)` and `nudges(mailbox, due)`, with no push keys, timestamps or counters ([spec §6](../spec/phase-1/06-relay-api.md)).
 
 ## Amendment (2026-11-10, #141)
 
@@ -32,7 +32,7 @@
 
 ## Amendment (2026-11-10, #97)
 
-- **Backups get their own table and route,** as ADR-0043 §3 and [ADR-0072](0072-protocol-details-for-decomposition.md) items 13 and 14 set out: `PUT` and `GET /v1/backup/{id}`, and `backups(id, blob, expiry)` beside `blobs` ([spec §6](../spec/phase-1-spec.md#6-relay-api)).
+- **Backups get their own table and route,** as ADR-0043 §3 and [ADR-0072](0072-protocol-details-for-decomposition.md) items 13 and 14 set out: `PUT` and `GET /v1/backup/{id}`, and `backups(id, blob, expiry)` beside `blobs` ([spec §6](../spec/phase-1/06-relay-api.md)).
 - **What a row holds.** The 43-character id, which a device derives from its random backup key and nothing else, so it is linked to no mailbox, member or group; one padded blob of 64 KiB, 256 KiB, 1 MiB, 4 MiB or 16 MiB; and the UTC day it expires, 181 days after the day of its last write. There is no receipt time, and the table is `WITHOUT ROWID`, like the push tables, so no hidden counter orders backups by when each first arrived. A write replaces the row, and `secure_delete` zeroes the old blob's pages, so no earlier copy stays once the WAL is checkpointed. An index on `expiry` lets the daily purge find expired rows without reading a blob.
 - **The same refusals as a blob PUT.** The id rule, `Content-Length` checked before a byte is read (at most 16 MiB here), the media type, the privacy middleware and the constant error bodies are #62's, and the relay's 1 GiB `storage_full` cap applies. The per-mailbox cap (#141) counts blobs only: a backup is one row per id, replaced in place. There is no DELETE in the MVP; a backup goes when it expires.
 - **What the relay still learns.** That an opaque blob of one of five sizes is a backup, written at most once a day, and, live, the connecting IP address, which it doesn't keep. Uploads come from the same address as the device's group syncs, so whoever watches the relay live can tie the backup to those groups ([ADR-0075](0075-safeguards-for-the-revised-mvp.md) §2's accepted risk). Detecting a relay that serves an older backup, sharing one backup between linked devices, conditional writes and compression are deferred past the MVP.
