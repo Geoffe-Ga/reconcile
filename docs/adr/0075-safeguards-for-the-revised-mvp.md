@@ -162,6 +162,8 @@ None. The founder answered both on 2026-11-09 (§3 and §6).
   - an `unwrap-failed` from one of its recipients names it, read from the old epoch's mailbox;
   - no `key-taken` from one of its recipients names it, read from its own epoch's mailbox.
 
+  Since #372 (2026-11-12), neither counts from a recipient a removal had passed against by the key change's place: once a removal passes, nothing else of theirs counts (#115), though a key change still wraps to them until a `remove` lands. Every other recipient's device checks their wrap anyway.
+
   The fold reads both ahead and decides at the key change's place, so records between them in the old mailbox fold as usual. A refused key change:
   - moves nothing, and one stays due;
   - spends its epoch number, so the next key change names the one after. No mailbox of a refused epoch ever reaches an honest device's log;

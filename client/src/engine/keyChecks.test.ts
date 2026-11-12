@@ -8,6 +8,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { authorOf, signedAs, testKx } from '../test/keys';
+import { groupLog, type LogBuilder } from '../test/votes';
 import { parseRecord } from './event';
 import type { EventDraft } from './event';
 import { fold, type LogRecord } from './fold';
@@ -26,6 +27,7 @@ const ROTATION: CheckedRotation = {
   from: 2,
   to: 5,
   wraps: { ana: 'AA', ben: 'AA' },
+  ousted: [],
 };
 
 /** Checks with `failed` and `taken` naming {@link ROTATION}. */
@@ -64,6 +66,16 @@ describe('isRefused', () => {
   it('reads only the checks naming it', () => {
     const elsewhere = { failed: new Map([['s', [FAILED]]]), taken: new Map() };
     expect(isRefused(elsewhere, ROTATION)).toBe(false);
+  });
+
+  it('counts nothing from a recipient a removal had passed against by its place (#372)', () => {
+    const ousted = { ...ROTATION, ousted: ['ana'] };
+    expect(isRefused(checks([FAILED]), ousted)).toBe(false);
+    expect(isRefused(checks([FAILED, { ...FAILED, author: 'ben' }]), ousted)).toBe(true);
+    expect(
+      isRefused(checks([{ ...FAILED, author: 'ben' }], [{ ...TAKEN, author: 'ana' }]), ousted),
+    ).toBe(true);
+    expect(isRefused(checks([{ ...FAILED, author: 'ben' }], [TAKEN]), ousted)).toBe(false);
   });
 
   it('never takes a wrap key that only an object’s prototype has for a recipient', () => {
@@ -205,5 +217,53 @@ describe('properties of a refusal (#224)', () => {
         expect(state.rotationDue).toBe(refused);
       }),
     );
+  });
+});
+
+describe('an ousted recipient’s checks (#372)', () => {
+  /**
+   * Ana, Ben, Cal and Kim, all with keys. Their removal of Kim passes, so
+   * nothing else of Kim's counts (#115), but no `remove` has landed yet, so
+   * Kim is still a member when Cal leaves, and Ana's key change wraps to Kim
+   * too.
+   */
+  function afterOusting(): { log: LogBuilder; rotation: string } {
+    const log = groupLog({ members: ['Ben', 'Cal', 'Kim'], kx: true });
+    const removal = log.proposeRemoval('Ana', 'Kim');
+    for (const voter of ['Ana', 'Ben', 'Cal']) log.vote(voter, removal, 4);
+    log.minute += 1;
+    log.leave('Cal');
+    const rotation = log.rotate('Ana');
+    return { log, rotation };
+  }
+
+  /** Which key changes the fold kept and which it refused. */
+  function outcome(log: LogBuilder) {
+    const state = log.state();
+    return { rotations: state.rotations.map((r) => r.id), refused: state.refused.map((r) => r.id) };
+  }
+
+  it('keeps a key change whose only unwrap-failed comes from a recipient a removal has passed against', () => {
+    const { log, rotation } = afterOusting();
+    const before = log.state();
+    expect(before.removals.map((r) => r.member)).toEqual([authorOf('kim')]);
+    expect(Object.keys(before.rotations[0]?.wraps ?? {})).toContain(authorOf('kim'));
+    log.keyCheck('Kim', 'unwrap-failed', rotation, 0);
+    expect(outcome(log)).toEqual({ rotations: [rotation], refused: [] });
+  });
+
+  it('still refuses one a recipient still in good standing says doesn’t open', () => {
+    const { log, rotation } = afterOusting();
+    log.keyCheck('Ben', 'unwrap-failed', rotation, 0);
+    expect(outcome(log)).toEqual({ rotations: [], refused: [rotation] });
+  });
+
+  it('never keeps one on the ousted recipient’s key-taken', () => {
+    const { log, rotation } = afterOusting();
+    log.keyCheck('Ben', 'unwrap-failed', rotation, 0);
+    log.keyCheck('Kim', 'key-taken', rotation, 1);
+    expect(outcome(log)).toEqual({ rotations: [], refused: [rotation] });
+    log.keyCheck('Ana', 'key-taken', rotation, 1);
+    expect(outcome(log)).toEqual({ rotations: [rotation], refused: [] });
   });
 });
