@@ -5,19 +5,24 @@
  * An envelope is a header blob, then one blob per chunk, each sealed under the
  * invite key (`crypto/invite.ts`) with the `Seal` the group's own blobs use.
  *
- * - The header is JSON `{groupSecret, epoch, preview, token, chunkCount,
- *   cleared}`: the group's current secret in base64url and its epoch (#98),
- *   the preview a joiner sees before choosing a name (ADR-0052), the
- *   inviter's token, how many chunks follow, and the Proposals whose ballots
- *   the inviter's device has cleared (#111), so the joiner folds their
- *   outcomes from their results. Every preview field is cut to a limit, so
- *   the header stays small: `cleared` adds an id per cleared Proposal.
+ * - The header is JSON `{groupSecret, epoch, preview, token, chunkCount}`:
+ *   the group's current secret in base64url and its epoch (#98), the preview
+ *   a joiner sees before choosing a name (ADR-0052), the inviter's token, and
+ *   how many chunks follow. Every field has a limit, so the header stays a
+ *   few kilobytes at most, however long the group has run (#269).
  * - Each chunk packs log entries, `seq (8 bytes) ‖ received (8) ‖ epoch (4) ‖
- *   length (4) ‖ record`, big-endian, up to the 65,492 bytes a blob carries.
- *   `received` travels with each record because vote deadlines run on it, and
- *   `epoch`, the epoch of the mailbox it was read from, because the fold
- *   ignores a record read from an epoch's mailbox after its key changed (#98).
- *   An invite made before #98 has no epoch, and reads as damaged.
+ *   kept (1) ‖ length (4) ‖ record`, big-endian, up to the 65,492 bytes a blob
+ *   carries. `received` travels with each record because vote deadlines run
+ *   on it, and `epoch`, the epoch of the mailbox it was read from, because the
+ *   fold ignores a record read from an epoch's mailbox after its key changed
+ *   (#98). An invite made before #98 has no epoch, and reads as damaged.
+ * - `kept` is 1 for the one `result` a Proposal whose ballots the inviter's
+ *   device has cleared keeps (#111), and 0 for every other entry. The joiner
+ *   takes the Proposals those results name as its own `cleared`, so it folds
+ *   their outcomes from their results, as the inviter does. The marks replace
+ *   the header's list of ids, which grew by one per cleared Proposal until a
+ *   long-lived group's header could outgrow a blob (#269). A header that
+ *   still has `cleared`, from an invite made before #269, reads as damaged.
  *
  * Opening is all or nothing: an empty mailbox, a missing or extra blob, a blob
  * that won't open, or a header or chunk that doesn't parse all read as one
@@ -29,6 +34,7 @@ import { GROUP_SECRET_BYTES } from '../crypto/groupKeys';
 import type { InviteChannel } from '../crypto/invite';
 import { MAX_PLAINTEXT_BYTES, type Seal } from '../crypto/seal';
 import type { InviteToken } from '../engine/event';
+import { expiryKeyOf } from '../engine/expiry';
 import type { LogRecord } from '../engine/fold';
 import { codePointLength } from '../engine/text';
 
@@ -56,14 +62,28 @@ export interface Envelope {
   readonly token: InviteToken;
   /** The relay-accepted log, in seq order. */
   readonly entries: readonly LogRecord[];
-  /** The Proposals whose ballots the inviter's device has cleared (#111), which the joiner keeps. */
+  /**
+   * The Proposals whose ballots the inviter's device has cleared (#111), which
+   * the joiner keeps. Sealing marks the one result each keeps in `entries`,
+   * and opening reads them back from those marks, in log order, once each
+   * (#269). So an id that no result in `entries` names doesn't come back: a
+   * device clears a Proposal only by a result it keeps in its log
+   * (`clearExpiredBallots`, `store/expiry.ts`), and an id no record names
+   * changes no fold.
+   */
   readonly cleared: readonly string[];
 }
 
-/** An envelope's first blob: everything but the entries, and how many chunks hold them. */
-export interface InviteHeader extends Omit<Envelope, 'entries'> {
+/** An envelope's first blob: everything but the entries and their marks, and how many chunks hold them. */
+export interface InviteHeader extends Omit<Envelope, 'entries' | 'cleared'> {
   /** How many chunk blobs follow the header: at least 1, since the log holds genesis. */
   readonly chunkCount: number;
+}
+
+/** A log entry as a chunk carries it: marked `kept` when it's the result a cleared Proposal keeps (#269). */
+export interface ChunkEntry extends LogRecord {
+  /** True for the one result a Proposal whose ballots the inviter cleared keeps; absent for any other entry. */
+  readonly kept?: true;
 }
 
 /**
@@ -82,8 +102,8 @@ export const EXCERPT_MAX = 280;
 /** What a cut field ends with. */
 export const ELLIPSIS = '…';
 
-/** The bytes before each record in a chunk: seq (8), received (8), epoch (4) and length (4). */
-export const ENTRY_HEADER_BYTES = 24;
+/** The bytes before each record in a chunk: seq (8), received (8), epoch (4), kept (1) and length (4). */
+export const ENTRY_HEADER_BYTES = 25;
 
 /** The largest epoch: a u32 carries it. */
 const MAX_EPOCH = 0xffff_ffff;
@@ -105,14 +125,15 @@ export function clip(text: string, max: number): string {
   return points.length <= max ? text : `${points.slice(0, max).join('').trimEnd()}${ELLIPSIS}`;
 }
 
-/** One entry's bytes: seq ‖ received ‖ epoch ‖ length ‖ record. */
-function entryBytes({ seq, received, bytes, epoch = 0 }: LogRecord): Uint8Array {
+/** One entry's bytes: seq ‖ received ‖ epoch ‖ kept ‖ length ‖ record. */
+function entryBytes({ seq, received, bytes, epoch = 0, kept }: ChunkEntry): Uint8Array {
   const out = new Uint8Array(ENTRY_HEADER_BYTES + bytes.length);
   const view = new DataView(out.buffer);
   view.setBigUint64(0, BigInt(seq));
   view.setBigUint64(8, BigInt(received));
   view.setUint32(16, epoch);
-  view.setUint32(20, bytes.length);
+  view.setUint8(20, kept === true ? 1 : 0);
+  view.setUint32(21, bytes.length);
   out.set(bytes, ENTRY_HEADER_BYTES);
   return out;
 }
@@ -134,7 +155,7 @@ function joined(parts: readonly Uint8Array[]): Uint8Array {
  * large for any blob, which no device makes (the cap is 64,000 bytes), is
  * left out rather than failing the whole invite.
  */
-export function packEntries(entries: readonly LogRecord[]): Uint8Array[] {
+export function packEntries(entries: readonly ChunkEntry[]): Uint8Array[] {
   const chunks: Uint8Array[][] = [];
   let current: Uint8Array[] = [];
   let size = 0;
@@ -159,26 +180,30 @@ function safe(value: bigint): number | null {
 }
 
 /** The entry at `at` in `chunk` and where the next starts, or null when it doesn't parse. */
-function readEntry(chunk: Uint8Array, at: number): { entry: LogRecord; next: number } | null {
+function readEntry(chunk: Uint8Array, at: number): { entry: ChunkEntry; next: number } | null {
   if (chunk.length - at < ENTRY_HEADER_BYTES) return null;
   const view = new DataView(chunk.buffer, chunk.byteOffset + at, ENTRY_HEADER_BYTES);
   const seq = safe(view.getBigUint64(0));
   const received = safe(view.getBigUint64(8));
   const epoch = view.getUint32(16);
-  const length = view.getUint32(20);
+  const kept = view.getUint8(20);
+  const length = view.getUint32(21);
   const start = at + ENTRY_HEADER_BYTES;
   const next = start + length;
-  if (seq === null || seq < 1 || received === null || length < 1 || next > chunk.length) {
-    return null;
-  }
-  // The log keeps epoch 0 as no epoch at all, as it always has.
+  if (seq === null || seq < 1 || received === null || kept > 1) return null;
+  if (length < 1 || next > chunk.length) return null;
+  // The log keeps epoch 0 as no epoch at all, as it always has, and an entry not kept carries no mark.
   const bytes = chunk.slice(start, next);
-  return { entry: { seq, received, bytes, ...(epoch === 0 ? {} : { epoch }) }, next };
+  const marks = {
+    ...(epoch === 0 ? {} : { epoch }),
+    ...(kept === 1 ? { kept: true as const } : {}),
+  };
+  return { entry: { seq, received, bytes, ...marks }, next };
 }
 
 /** The entries packed in `chunk`, or null when it is empty or any entry doesn't parse. */
-export function unpackChunk(chunk: Uint8Array): LogRecord[] | null {
-  const entries: LogRecord[] = [];
+export function unpackChunk(chunk: Uint8Array): ChunkEntry[] | null {
+  const entries: ChunkEntry[] = [];
   let at = 0;
   while (at < chunk.length) {
     const read = readEntry(chunk, at);
@@ -191,7 +216,7 @@ export function unpackChunk(chunk: Uint8Array): LogRecord[] | null {
 
 /** The header's JSON bytes, each preview field cut to its limit. */
 export function encodeHeader(header: InviteHeader): Uint8Array {
-  const { groupSecret, epoch, preview, token, chunkCount, cleared } = header;
+  const { groupSecret, epoch, preview, token, chunkCount } = header;
   return encoder.encode(
     JSON.stringify({
       groupSecret: base64url(groupSecret),
@@ -204,7 +229,6 @@ export function encodeHeader(header: InviteHeader): Uint8Array {
       },
       token: { by: token.by, sig: token.sig },
       chunkCount,
-      cleared,
     }),
   );
 }
@@ -247,15 +271,6 @@ function parseToken(value: unknown): InviteToken | null {
   return TOKEN_KEY.test(by) && TOKEN_SIG.test(sig) ? { by, sig } : null;
 }
 
-/** A list of Proposal ids, or none for a header written before #111; null for anything else. */
-function parseCleared(value: unknown): string[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value)) return null;
-  const list: readonly unknown[] = value;
-  const ids = list.filter((id): id is string => typeof id === 'string');
-  return ids.length === list.length ? ids : null;
-}
-
 function parseJson(bytes: Uint8Array): unknown {
   try {
     const value: unknown = JSON.parse(decoder.decode(bytes));
@@ -265,26 +280,67 @@ function parseJson(bytes: Uint8Array): unknown {
   }
 }
 
-/** The header in `bytes`, or null for anything that isn't exactly a well-formed one. */
+/**
+ * The header in `bytes`, or null for anything that isn't exactly a
+ * well-formed one, such as a header from before #269, which lists `cleared`
+ * and whose chunks have no kept byte.
+ */
 export function decodeHeader(bytes: Uint8Array): InviteHeader | null {
   const raw = parseJson(bytes);
-  if (!isObject(raw)) return null;
+  if (!isObject(raw) || 'cleared' in raw) return null;
   const groupSecret = parseSecret(raw.groupSecret);
   const preview = parsePreview(raw.preview);
   const token = parseToken(raw.token);
-  const cleared = parseCleared(raw.cleared);
   const { chunkCount, epoch } = raw;
-  if (groupSecret === null || preview === null || token === null || cleared === null) return null;
-  if (!isEpoch(epoch)) return null;
+  if (groupSecret === null || preview === null || token === null || !isEpoch(epoch)) return null;
   if (!Number.isSafeInteger(chunkCount) || typeof chunkCount !== 'number' || chunkCount < 1) {
     return null;
   }
-  return { groupSecret, epoch, preview, token, chunkCount, cleared };
+  return { groupSecret, epoch, preview, token, chunkCount };
 }
 
 /** Whether `value` is an epoch: a whole number a u32 holds. */
 function isEpoch(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_EPOCH;
+}
+
+/**
+ * `entries`, each signed `result` for a Proposal in `cleared` marked kept:
+ * the one result a device keeps for each Proposal whose ballots it has
+ * cleared (#111, #269). Checking a record's signature again costs nothing,
+ * since its verdict is kept per page load.
+ */
+function markKept(
+  entries: readonly LogRecord[],
+  cleared: readonly string[],
+): readonly ChunkEntry[] {
+  if (cleared.length === 0) return entries;
+  const ids = new Set(cleared);
+  return entries.map((entry): ChunkEntry => {
+    const key = expiryKeyOf(entry.bytes);
+    return key?.result === true && ids.has(key.proposal) ? { ...entry, kept: true } : entry;
+  });
+}
+
+/**
+ * The Proposals the kept entries' results name, in log order, once each
+ * (#269), or null when an entry marked kept isn't a signed result, which no
+ * inviter marks.
+ */
+function keptProposals(entries: readonly ChunkEntry[]): string[] | null {
+  const cleared = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kept !== true) continue;
+    const key = expiryKeyOf(entry.bytes);
+    if (key?.result !== true) return null;
+    cleared.add(key.proposal);
+  }
+  return [...cleared];
+}
+
+/** `entry` as the log keeps it: without a kept mark. */
+function logRecordOf({ seq, received, bytes, epoch }: ChunkEntry): LogRecord {
+  return { seq, received, bytes, ...(epoch === undefined ? {} : { epoch }) };
 }
 
 /** The envelope's blobs, in the order they're posted: the header, then each chunk. */
@@ -293,7 +349,7 @@ export function sealEnvelope(
   { mailbox, key }: InviteChannel,
   envelope: Envelope,
 ): Uint8Array<ArrayBuffer>[] {
-  const chunks = packEntries(envelope.entries);
+  const chunks = packEntries(markKept(envelope.entries, envelope.cleared));
   const header = encodeHeader({ ...envelope, chunkCount: chunks.length });
   return [header, ...chunks].map((plaintext) => seal.seal(mailbox, key, plaintext));
 }
@@ -301,7 +357,8 @@ export function sealEnvelope(
 /**
  * The envelope in `blobs`, the invite mailbox's records in relay order, or
  * null unless every blob opens, the first is a header, and exactly its
- * chunk count of chunks follow, each holding whole entries.
+ * chunk count of chunks follow, each holding whole entries, every one marked
+ * kept a signed result.
  */
 export function openEnvelope(
   seal: Seal,
@@ -317,12 +374,14 @@ export function openEnvelope(
   const [first, ...chunks] = opened;
   const header = first === undefined ? null : decodeHeader(first);
   if (header === null || header.chunkCount !== chunks.length) return null;
-  const entries: LogRecord[] = [];
+  const entries: ChunkEntry[] = [];
   for (const chunk of chunks) {
     const read = unpackChunk(chunk);
     if (read === null) return null;
     entries.push(...read);
   }
-  const { groupSecret, epoch, preview, token, cleared } = header;
-  return { groupSecret, epoch, preview, token, entries, cleared };
+  const cleared = keptProposals(entries);
+  if (cleared === null) return null;
+  const { groupSecret, epoch, preview, token } = header;
+  return { groupSecret, epoch, preview, token, entries: entries.map(logRecordOf), cleared };
 }
