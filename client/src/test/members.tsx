@@ -3,6 +3,8 @@
  * actions (Create group, then Join from the founder's invite), for tests of
  * what comes after: proposing and voting.
  */
+import { within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -99,6 +101,28 @@ export async function joinLater(
   return device;
 }
 
+/**
+ * Lets `device`'s sync pass finish, running one if none is. An action queues
+ * its event and then calls `syncOnce`, which joins a pass already running; that
+ * pass may have posted the outbox before the event was queued, and no poller
+ * runs in tests to send it later (#260). So between two actions on one device,
+ * a test settles it before the action whose send it waits for.
+ */
+export async function settle(device: TestDevice): Promise<void> {
+  await act(() => device.services.sync.syncOnce());
+}
+
+/**
+ * A user-event session for whole apps. Its clicks skip moving the pointer onto
+ * each control first: React Aria re-renders every control the pointer enters
+ * or leaves for its hover state, which no test of the whole app reads, and that
+ * came to over a quarter of a loop test's time (#260). A test of hovering still
+ * calls `user.hover`.
+ */
+export function appUser() {
+  return userEvent.setup({ skipHover: true });
+}
+
 /** One device's app, mounted in its own container with its own React id prefix. */
 export interface MountedApp {
   readonly container: HTMLElement;
@@ -180,8 +204,14 @@ export async function proposeFrom(
   await user.click(where.getByRole('button', { name: 'Propose this change' }));
 }
 
-/** Picks a score pill on an app's open ballot and sends the ballot. */
+/**
+ * Picks a score pill on an app's open ballot and sends the ballot. It waits
+ * for the pills' group, whose name is quick to read, then finds the pill in it
+ * once: a pill's name is its label's whole text, which a wait would read again
+ * for every pill on every render while the ballot loads (#260).
+ */
 export async function score(where: AppQueries, user: Typist, pill: string): Promise<void> {
-  await user.click(await where.findByRole('radio', { name: pill }));
+  const pills = await where.findByRole('radiogroup', { name: /^Score for version/ });
+  await user.click(within(pills).getByRole('radio', { name: pill }));
   await user.click(where.getByRole('button', { name: /your vote$/ }));
 }

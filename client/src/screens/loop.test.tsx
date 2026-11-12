@@ -4,7 +4,6 @@
  * every change on screen comes from sync, never from a reload.
  */
 import { act, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
@@ -12,6 +11,7 @@ import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import {
+  appUser,
   go,
   joinLater,
   members,
@@ -19,6 +19,7 @@ import {
   mountApp,
   proposeFrom,
   score,
+  settle,
 } from '../test/members';
 
 freshIndexedDBPerTest();
@@ -52,13 +53,13 @@ async function sync(device: TestDevice | undefined): Promise<void> {
 
 describe('propose, vote, and see the Update', () => {
   it('closes early once everyone has scored, and both devices show the new text', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
+    if (ana === undefined || ben === undefined) throw new Error('Expected two devices.');
     const startMinute = fake.minute;
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
-    const b = mount(ben, 'b');
 
     // A proposes new wording for the first section, and lands on its ballot.
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
@@ -66,10 +67,13 @@ describe('propose, vote, and see the Update', () => {
     await waitFor(() => {
       expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
     });
+    // The Proposal's pass finishes first, so the ballot's send starts a pass of its own.
+    await settle(ana);
     await score(within(a), user, '3 · Supportive');
     expect(await within(a).findByText('Sent')).toBeVisible();
 
-    // B syncs, sees the Proposal appear, and scores it.
+    // B, open on the same route, syncs, sees the Proposal appear, and scores it.
+    const b = mount(ben, 'b');
     await sync(ben);
     expect(await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
     await score(within(b), user, '4 · Strongly supportive');
@@ -94,12 +98,16 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('lapses with only the proposer’s ballot once relay time passes the deadline', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
+    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // The Proposal's pass finishes first, so the ballot's send starts a pass of its own.
+    await settle(ana);
     await score(within(a), user, '4 · Strongly supportive');
     await within(a).findByText('Sent');
     // Let the pass that sent the ballot finish reading back before relay time moves on.
@@ -123,13 +131,16 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('tells a voter whose offline ballot reached the relay after the deadline, and nobody else', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
+    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // The Proposal's pass finishes first, so it is on the relay before Ben syncs.
+    await settle(ana);
     await sync(ben);
     const b = mount(ben, 'b');
 
@@ -151,7 +162,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapse again: the same wording, as a fresh Proposal with its own window', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/doc`);
@@ -188,7 +199,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapsed add again in Add a section, starting from its text (#75)', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/add/${groupId}.0`);
@@ -213,7 +224,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapsed removal again in the removal composer, with no text to write (#75)', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/remove/${groupId}.0`);
@@ -235,13 +246,16 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('keeps a ballot cast offline on the device, sends it on recovery, and says so', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
+    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // The Proposal's pass finishes first, so it is on the relay before Ben syncs.
+    await settle(ana);
     await sync(ben);
     const b = mount(ben, 'b');
 
@@ -273,7 +287,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('makes a Proposal’s new chat link the next prefill and Group home’s Join discussion', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { groupId, devices } = await group(['Ana', 'Ben'], 'https://chat.example.org/riverside');
     const [ana] = devices;
     go(`#/g/${groupId}/doc`);
@@ -304,7 +318,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('tells someone who joined after a Proposal opened that they can’t vote on it', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana] = devices;
     if (ana === undefined) throw new Error('Expected Ana.');
@@ -312,6 +326,8 @@ describe('propose, vote, and see the Update', () => {
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '3 · Supportive' });
+    // The Proposal's pass finishes first, so it is on the relay before Cy joins.
+    await settle(ana);
 
     // Cy joins afterwards, through the same invite, and opens the same Proposal.
     const cy = await joinLater(fake, ana, groupId, 'Cy');
@@ -326,11 +342,7 @@ describe('propose, vote, and see the Update', () => {
 
 describe('ask what to focus on, vote, and see the focus (#107)', () => {
   /** From Group home, asks about `options` with a why, and lands on the new vote. */
-  async function ask(
-    app: HTMLElement,
-    user: ReturnType<typeof userEvent.setup>,
-    options: string[],
-  ) {
+  async function ask(app: HTMLElement, user: ReturnType<typeof appUser>, options: string[]) {
     const view = within(app);
     await user.click(await view.findByRole('link', { name: 'Ask what to focus on' }));
     await user.click(await view.findByRole('textbox', { name: 'Why' }));
@@ -347,7 +359,7 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
   /** Scores each option with its pill, in order, and sends the ballot. */
   async function scoreEach(
     app: HTMLElement,
-    user: ReturnType<typeof userEvent.setup>,
+    user: ReturnType<typeof appUser>,
     pills: Record<string, string>,
   ) {
     const view = within(app);
@@ -360,13 +372,16 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
   }
 
   it('closes early once both have scored both options, and Group home shows the focus', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
+    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}`);
     const a = mount(ana, 'a');
     await ask(a, user, ['Fix the website', 'Plan the picnic']);
     expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+    // The vote's pass finishes first, so the ballot's send starts a pass of its own.
+    await settle(ana);
     await scoreEach(a, user, {
       'Fix the website': '3 · Supportive',
       'Plan the picnic': '4 · Strongly supportive',
@@ -392,7 +407,7 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
   });
 
   it('asks a lapsed priority vote again, from its options, as a fresh vote', async () => {
-    const user = userEvent.setup();
+    const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}`);
