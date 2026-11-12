@@ -5,7 +5,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { base64url, fromBase64url } from './base64url';
+import { base64url, canonicalBytes, fromBase64url } from './base64url';
 
 /** The `count` characters from `first` on. */
 function run(first: string, count: number): string {
@@ -56,4 +56,28 @@ describe('base64url', () => {
       expect(base64url(bytes)).toBe(reference(bytes));
     },
   );
+});
+
+describe('canonicalBytes', () => {
+  it('reads back exactly what base64url spells', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ maxLength: 100 }), (bytes) => {
+        expect(Array.from(canonicalBytes(base64url(bytes)) ?? [])).toEqual(Array.from(bytes));
+      }),
+    );
+  });
+
+  it('refuses any other spelling: padding, spare bits, other alphabets, spaces or a lone character', () => {
+    // "AQ" is one byte; "AR" sets spare bits; "+/" and padding are base64, not base64url.
+    expect(Array.from(canonicalBytes('AQ') ?? [])).toEqual([1]);
+    for (const text of ['AQ==', 'AR', 'A', '+/8', 'A Q', 'AQ\n', '!!']) {
+      expect(canonicalBytes(text), text).toBeNull();
+    }
+  });
+
+  it('refuses anything that isn’t a string', () => {
+    for (const value of [undefined, null, 7, ['AQ'], { text: 'AQ' }]) {
+      expect(canonicalBytes(value)).toBeNull();
+    }
+  });
 });

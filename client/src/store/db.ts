@@ -22,14 +22,15 @@
  * transaction; a shared one keeps its share state on its own record (#105).
  * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay. The relay backup's key and state (#97) are
- * one record in a store of their own, in no group, so no group's record ever
- * holds the key. Under a vault that record keeps its state, and the vault
- * its key. A front door's applications (#121) stay on the device too: those
- * a member's device read from its group's inbox on the group's record, and
- * those this device sent, with the reply keys only it holds, in a store of
- * their own (`./applications.ts`), outside the vault for now, as a share's
- * keys are.
+ * cleared while its outcomes stay. So does a group a vote removed this
+ * member from (#115), which keeps what it already had. The relay backup's
+ * key and state (#97) are one record in a store of their own, in no group,
+ * so no group's record ever holds the key. Under a vault that record keeps
+ * its state, and the vault its key. A front door's applications (#121) stay
+ * on the device too: those a member's device read from its group's inbox on
+ * the group's record, and those this device sent, with the reply keys only
+ * it holds, in a store of their own (`./applications.ts`), outside the vault
+ * for now, as a share's keys are.
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
@@ -44,6 +45,10 @@
  * there is one and refuses while it's locked, in the same transaction as the
  * records it writes. Every read of the relay backup's state opens the vault
  * too, so a locked device neither reads nor writes its key.
+ * The person's recovery contacts (#109) are another record in the device
+ * store, under its own key: the one place the device lists them, which no
+ * backup file, link bundle or relay copy carries. They hold no key, so they
+ * stay out of the vault.
  *
  * Once a decided Proposal's ballots expire (#111), `clearBallots` deletes
  * them, its other results and anything else that expires with them from the
@@ -58,6 +63,7 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import { expiryKeyOf } from '../engine/expiry';
+import { keptInRoom } from '../engine/room';
 import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
@@ -164,8 +170,9 @@ export interface Admitting {
 }
 
 /**
- * Everything the device keeps about one group, or about one coalition whose
- * secret a group on the device holds (#114): its `kind` says which.
+ * Everything the device keeps about one group, about one coalition whose
+ * secret a group on the device holds (#114), or about one coalition's room
+ * (#125): its `kind` says which.
  */
 export interface Group extends CoalitionPlan {
   /**
@@ -175,9 +182,12 @@ export interface Group extends CoalitionPlan {
   groupId: string;
   /**
    * `coalition` for a coalition's entry (#114): its own log, cursors, outbox
-   * and `me`, synced like a group's. Absent for a group.
+   * and `me`, synced like a group's. `room` for a coalition's room (#125,
+   * `./rooms.ts`): its `secret` is the coalition's `inner`, its signing key
+   * and author the coalition entry's, and its log keeps 30 days of relay
+   * time. Absent for a group.
    */
-  kind?: 'coalition';
+  kind?: 'coalition' | 'room';
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
@@ -270,10 +280,16 @@ export interface Group extends CoalitionPlan {
    */
   nudged?: string[];
   /**
-   * Set once the group is read-only on this device (#108): absent while it
-   * goes on. Nothing is queued, claimed or synced for it from then on.
+   * Set once the group is read-only on this device: it dissolved (#108), or
+   * a vote removed this member (#115). Absent while it goes on. Nothing is
+   * queued, claimed or synced for it from then on.
    */
   archived?: Archive;
+  /**
+   * The ids of the `recovery-share` events whose held-share line group home
+   * has already shown, and the person put away (#109). Absent until the first.
+   */
+  recoverySeen?: string[];
   /**
    * The front door's inbox as this device last read it (#121): absent until
    * the group's door is open and this member may invite. Never in a backup
@@ -295,8 +311,8 @@ export interface Clearing {
   readonly keep: string;
 }
 
-/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
-export type ArchiveReason = 'dissolved';
+/** Why a group only reads on this device: it dissolved (#108), or a vote removed this member (#115). */
+export type ArchiveReason = 'dissolved' | 'removed';
 
 /**
  * A dissolved archive once this device has cleared its ballots and notes
@@ -313,7 +329,10 @@ export interface ClearedArchive {
   readonly tallies: Readonly<Record<string, TallyDetail>>;
 }
 
-/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+/**
+ * A group this device keeps read-only: why (#108, #115), and its cleared
+ * state once a dissolved archive's ballots are cleared.
+ */
 export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
@@ -388,9 +407,14 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
   Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
 
-/** True for a coalition's entry (#114), false for a group. */
+/** True for a coalition's entry (#114), false for a group or a room. */
 export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {
   return group.kind === 'coalition';
+}
+
+/** True for a coalition's room (#125), false for a group or a coalition's entry. */
+export function isRoomEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'room';
 }
 
 /**
@@ -455,6 +479,35 @@ export interface RelayBackupState {
   readonly tooLarge: boolean;
 }
 
+/** One recovery contact as this device chose them (#109): who, and where, as they were then. */
+export interface ChosenContact {
+  /** The group they share with the person: the group the share went to. */
+  readonly groupId: string;
+  /** Their key in that group: the `author` of their events there. */
+  readonly member: string;
+  /** Their name in that group, as the picker showed it. */
+  readonly name: string;
+  /** The group's name. */
+  readonly groupName: string;
+}
+
+/**
+ * The person's recovery contacts (#109; ADR-0043 §1): the split their
+ * shares came from, `t` needed of `n`, who holds them, and when this device
+ * chose them. `retired` lists the relay backup ids an earlier key named,
+ * which still have to be overwritten with random bytes before every older
+ * share opens nothing.
+ */
+export interface RecoveryPlan {
+  readonly split: string;
+  readonly t: number;
+  readonly n: number;
+  readonly contacts: readonly ChosenContact[];
+  /** When this device chose them, in device milliseconds. */
+  readonly chosenAt: number;
+  readonly retired: readonly string[];
+}
+
 /** What a relay backup update may change: everything but the key. */
 export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
 
@@ -463,6 +516,22 @@ export type RelayBackupUpdate = Partial<Omit<RelayBackupState, 'key'>>;
  * changes: never a group id, which is 43 base64url characters.
  */
 export const RELAY_BACKUP_CHANGED = 'relay-backup';
+
+/**
+ * What {@link Store.subscribe}'s listeners hear when the recovery contacts
+ * change (#109): never a group id either.
+ */
+export const RECOVERY_CHANGED = 'recovery';
+
+/** The recovery contacts' one device-wide record (#109). */
+export interface RecoveryStore {
+  /** The person's recovery contacts, or undefined while they've chosen none on this device. */
+  getRecoveryPlan(): Promise<RecoveryPlan | undefined>;
+  /** Keep `plan` in place of any earlier one. */
+  setRecoveryPlan(plan: RecoveryPlan): Promise<void>;
+  /** Drop `id` from the plan's retired backup ids, in one transaction, once it is overwritten. */
+  forgetRetired(id: string): Promise<void>;
+}
 
 /**
  * The relay backup's one device-wide record (#97). Its key is a secret like a
@@ -495,13 +564,17 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
 
 /**
  * The device's groups, its personal Documents (#93), its relay backup's state
- * (#97), and the front-door applications it sent (#121).
+ * (#97), its recovery contacts (#109), and the front-door applications it
+ * sent (#121).
  */
-export interface Store extends DraftStore, PersonalStore, RelayBackupStore, SentStore {
-  /** Every group on the device: never a coalition's entry (#114). */
+export interface Store
+  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, SentStore {
+  /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
   listCoalitions(): Promise<Group[]>;
+  /** Every coalition room on the device (#125). */
+  listRooms(): Promise<Group[]>;
   /** One group or coalition entry, or `undefined` when the device has none by that id. */
   getGroup(groupId: string): Promise<Group | undefined>;
   /** Keep a new group or coalition entry; refuses an id the device already has. */
@@ -565,12 +638,13 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
-   * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts, any leave, the chat bot's
-   * claims (#119) and what it learned of the webhook (#123), and mark it
-   * archived for `reason`. From then on nothing is
-   * queued or claimed for it, and the sync loop sends, reads and posts
-   * nothing for it. A group already archived keeps its archive.
+   * Keep the group read-only on this device, in one change: once it has
+   * dissolved (#108), or a vote has removed this member (#115). Drop its
+   * outbox, its drafts, any leave, the chat bot's claims (#119) and what it
+   * learned of the webhook (#123), and mark it archived for `reason`. From
+   * then on nothing is queued or claimed for it, and the sync loop sends,
+   * reads and posts nothing for it. A group already archived keeps its
+   * archive.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
@@ -648,6 +722,11 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   /** Mark each of these groups still on the device, in one transaction (#78). */
   markBackup(groupIds: readonly string[], mark: BackupMark): Promise<void>;
   /**
+   * Add `ids` to the held shares group home has shown for the group, each
+   * once, in one change (#109), so its quiet card shows each line once.
+   */
+  markRecoverySeen(groupId: string, ids: readonly string[]): Promise<void>;
+  /**
    * Keep the group's push registration once the relay has taken it, or with
    * null turn push off for the group, in one change (#99).
    */
@@ -718,12 +797,33 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
   close(): void;
 }
 
+/**
+ * A record of the device store: the relay backup's (#97) or the recovery
+ * contacts' (#109), each under its own key.
+ */
+type DeviceRecord = StoredRelayBackup | RecoveryPlan;
+
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
   personal: { key: string; value: PersonalDocument };
-  device: { key: string; value: StoredRelayBackup };
+  device: { key: string; value: DeviceRecord };
   vault: { key: string; value: VaultRecord };
   sent: { key: string; value: SentApplication };
+}
+
+/** Whether a device record is the recovery contacts': only they have a split. */
+function isRecoveryPlan(record: DeviceRecord): record is RecoveryPlan {
+  return 'split' in record;
+}
+
+/** The relay backup's record in a device record read from its key, or undefined. */
+function relayBackupIn(record: DeviceRecord | undefined): StoredRelayBackup | undefined {
+  return record === undefined || isRecoveryPlan(record) ? undefined : record;
+}
+
+/** The recovery contacts in a device record read from their key, or undefined. */
+function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefined {
+  return record !== undefined && isRecoveryPlan(record) ? record : undefined;
 }
 
 /**
@@ -746,8 +846,10 @@ const VERSION = 7;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
-/** The device store's one key: the relay backup's record. */
+/** The device store's key for the relay backup's record. */
 const RELAY_BACKUP = 'relay-backup';
+/** The device store's key for the recovery contacts' record (#109): a key of its own, so no new version. */
+const RECOVERY = 'recovery';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -838,8 +940,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 
   return {
     listGroups: async () =>
-      (await readWhole(db, session, null)).filter((group) => !isCoalitionEntry(group)),
+      (await readWhole(db, session, null)).filter((group) => group.kind === undefined),
     listCoalitions: async () => (await readWhole(db, session, null)).filter(isCoalitionEntry),
+    listRooms: async () => (await readWhole(db, session, null)).filter(isRoomEntry),
     getGroup: async (groupId) => {
       const [group] = await readWhole(db, session, groupId);
       return group;
@@ -931,7 +1034,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;
-        // A dissolved group's front door has closed: its applications go (#121).
+        // A dissolved group's front door has closed, and a removed member reads it no more:
+        // its applications go (#121, #115).
         delete group.door;
       }),
     clearArchive: (groupId, cleared) =>
@@ -993,6 +1097,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       await writeKeys(db, (tx) => restoreInto(tx, session, { groups, personal, from }));
       for (const { groupId } of groups) notify(groupId);
     },
+    markRecoverySeen: (groupId, ids) =>
+      change(groupId, (group) => {
+        const seen = group.recoverySeen ?? [];
+        group.recoverySeen = [...seen, ...ids.filter((id) => !seen.includes(id))];
+      }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const marked: string[] = [];
@@ -1060,6 +1169,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...relayBackupStore(db, session, () => {
       notify(RELAY_BACKUP_CHANGED);
     }),
+    ...recoveryStore(db, () => {
+      notify(RECOVERY_CHANGED);
+    }),
     async readVault() {
       const vault = await db.get(VAULT, VAULT_ID);
       return vault === undefined
@@ -1076,7 +1188,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
           }
           await vaults.put(newVault(lock, key));
           const records = await tx.objectStore(GROUPS).getAll();
-          const backup = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+          const backup = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
           await keepKeys(tx, sealing, {
             put: records.map((record) => wholeGroup(record, null)),
             ...(backup === undefined ? {} : { relayBackup: wholeBackup(backup, null) }),
@@ -1149,12 +1261,20 @@ function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
   };
 }
 
-/** Saves what a sync pass read into `group`'s record: its new log records, in relay order, and sync state. */
+/**
+ * Saves what a sync pass read into `group`'s record: its new log records, in
+ * relay order, and sync state. A room (#125) then keeps only the records
+ * received at most 30 days of relay time before the pull's `now`, so each
+ * sync deletes the rest in the same change.
+ */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  if (isRoomEntry(group)) {
+    group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
+  }
   group.relayNow = pull.relayNow;
   group.instance = pull.instance;
   group.lastSyncAt = pull.lastSyncAt;
@@ -1207,6 +1327,26 @@ function relayBackupStore(
         held !== undefined && sameBytes(held.key, key) ? { ...held, ...update } : undefined,
       );
       return result.wrote;
+    },
+  };
+}
+
+/** The recovery contacts' record in `db`'s device store (#109), telling `changed` after each write. */
+function recoveryStore(db: IDBPDatabase<Schema>, changed: () => void): RecoveryStore {
+  return {
+    getRecoveryPlan: async () => recoveryPlanIn(await db.get(DEVICE, RECOVERY)),
+    async setRecoveryPlan(plan) {
+      await db.put(DEVICE, plan, RECOVERY);
+      changed();
+    },
+    async forgetRetired(id) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      const held = recoveryPlanIn(await tx.store.get(RECOVERY));
+      const kept = held?.retired.filter((retired) => retired !== id);
+      const wrote = held !== undefined && kept?.length !== held.retired.length;
+      if (wrote) await tx.store.put({ ...held, retired: kept ?? [] }, RECOVERY);
+      await tx.done;
+      if (wrote) changed();
     },
   };
 }
@@ -1482,7 +1622,7 @@ async function backupIn<Mode extends IDBTransactionMode>(
   session: Session,
 ): Promise<RelayBackupState | undefined> {
   const opened = await vaultKeys(tx, session);
-  const record = await tx.objectStore(DEVICE).get(RELAY_BACKUP);
+  const record = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
   return record === undefined ? undefined : wholeBackup(record, opened);
 }
 

@@ -6,7 +6,7 @@
  */
 import type { GroupState } from '../engine/fold';
 import { displayName } from '../engine/names';
-import { activeSuspension, type SeatNumber } from '../engine/stewards';
+import { activeSuspension, type SeatNumber, type Suspension } from '../engine/stewards';
 import { messages } from './messages';
 import { formatMinute } from './time';
 
@@ -32,10 +32,26 @@ export function motionFor(
   return { kind: change.member === null ? 'recall' : 'elect', seat: change.seat, name };
 }
 
-/** "A steward suspended you until <date>. …" while `me`'s suspension runs, else null. */
+/**
+ * "A steward suspended you until <date>. …" while `me`'s suspension runs, else
+ * null. A removal vote that extends it (ADR-0059, #115) is named: it ends
+ * when that vote closes, at the latest on the date shown.
+ */
 export function suspendedLine(state: GroupState, me: string): string | null {
   const suspension = activeSuspension(state, me);
-  return suspension === undefined
-    ? null
-    : messages.stewards.youAreSuspended(formatMinute(suspension.until));
+  if (suspension === undefined) return null;
+  const until = formatMinute(suspension.until);
+  const { stewards } = messages;
+  return suspension.removal === null
+    ? stewards.youAreSuspended(until)
+    : stewards.youAreSuspendedUntilVote(until);
+}
+
+/** "Suspended until <date>." on a person's row, naming a removal vote that extends it (ADR-0059). */
+export function suspensionRowLine(suspension: Pick<Suspension, 'until' | 'removal'>): string {
+  const until = formatMinute(suspension.until);
+  const { stewards } = messages;
+  return suspension.removal === null
+    ? stewards.suspendedUntil(until)
+    : stewards.suspendedUntilVote(until);
 }
