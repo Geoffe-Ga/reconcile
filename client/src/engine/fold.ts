@@ -439,6 +439,18 @@ export interface IgnoredRecord {
 }
 
 /**
+ * Where a group's Documents began (#104): the genesis's receipt, in relay
+ * minutes, its author, and every Atom it founded, Document by Document, with
+ * its founding text, whatever passes have changed since. `author` is null for
+ * a coalition, whose genesis author isn't one of its participants (#100).
+ */
+export interface Founding {
+  readonly received: number;
+  readonly author: string | null;
+  readonly atoms: readonly Atom[];
+}
+
+/**
  * The group's current focus (#107): the top option of the latest priority
  * vote whose pass is final, with the vote's id, the option's id and its text.
  */
@@ -502,7 +514,9 @@ export interface Focus {
  * coalition's log it holds the seats, the participants' bindings, the results
  * the groups posted, each motion's seats and the status (coalition.ts), and
  * once it is declined `at` stays at that minute. `focus` is the current
- * focus, or null before any priority vote passes (#107).
+ * focus, or null before any priority vote passes (#107). `founding` is where
+ * the Documents began, the founding text a section's history starts from, or
+ * null before a genesis (#104).
  */
 export interface GroupState {
   readonly group: string | null;
@@ -540,6 +554,7 @@ export interface GroupState {
   readonly coalitions: readonly HeldSeat[];
   readonly coalition: Coalition | null;
   readonly focus: Focus | null;
+  readonly founding: Founding | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -615,11 +630,12 @@ interface DocumentAt {
  * `judged` those of the closed removals `removals` already shows (#115), and
  * `dispatched` those of the closed Proposals carrying a Dispatch that
  * `dispatches` already reflects (#112). `founded` holds the Documents
- * genesis founded, before any pass (#92), and `document` the Documents as the
- * latest Proposal found them, kept until another closes. `exposed` holds
- * every front door secret, `sign` and `box`, that someone who has left could
- * read, and `carried` those the records of this epoch carried since the last
- * membership end, which the next one exposes (#288).
+ * genesis founded, before any pass (#92), `founding` where they began
+ * (#104), and `document` the Documents as the latest Proposal found them,
+ * kept until another closes. `exposed` holds every front door secret, `sign`
+ * and `box`, that someone who has left could read, and `carried` those the
+ * records of this epoch carried since the last membership end, which the
+ * next one exposes (#288).
  */
 interface Draft {
   group: string | null;
@@ -629,6 +645,7 @@ interface Draft {
   readonly members: Member[];
   readonly former: Member[];
   founded: readonly DocumentDraft[];
+  founding: Founding | null;
   document: DocumentAt;
   readonly proposals: OpenProposal[];
   at: number;
@@ -690,10 +707,25 @@ function applyCoalitionGenesis(draft: Draft, body: CoalitionGenesisBody, at: Rec
   draft.rules = rules;
   draft.name = body.name;
   draft.chat = body.chat ?? null;
-  draft.founded = documents;
-  draft.document = { closed: '', documents };
+  found(draft, documents, at.received, null);
   draft.coalition = coalition;
   return true;
+}
+
+/**
+ * Keeps the Documents a genesis founds, received at `received` and written by
+ * `author`, or null for a coalition's (#104), as the founding text and as the
+ * Documents every later event first finds.
+ */
+function found(
+  draft: Draft,
+  documents: readonly DocumentDraft[],
+  received: number,
+  author: string | null,
+): void {
+  draft.founded = documents;
+  draft.founding = { received, author, atoms: documents.flatMap((d) => d.atoms) };
+  draft.document = { closed: '', documents };
 }
 
 /** A Document's Atoms from their texts, `${documentId}.${i}`, in order. */
@@ -756,8 +788,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
-  draft.founded = documents;
-  draft.document = { closed: '', documents };
+  found(draft, documents, at.received, author);
   return true;
 }
 
@@ -2810,6 +2841,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     members: [],
     former: [],
     founded: [],
+    founding: null,
     document: { closed: '', documents: [] },
     proposals: [],
     at: 0,
@@ -2904,6 +2936,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     coalitions: heldSeats(proposals),
     coalition: draft.coalition,
     focus: focusOf(proposals),
+    founding: draft.founding,
     ignored,
   };
   return { state, distrusted };
