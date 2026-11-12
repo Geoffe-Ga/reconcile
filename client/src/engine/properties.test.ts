@@ -7,7 +7,9 @@
  * the entrenched bar is never easier than the ordinary one, and neither depends on the order
  * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
  * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
- * mailbox changes nothing, not even relay time. And of removal (#115): nothing the member a
+ * mailbox changes nothing, not even relay time, and a leave stranded in the old mailbox after a
+ * key change ends a membership only through its copy in the new one, so a device that never
+ * read the old copy folds the same (#225). And of removal (#115): nothing the member a
  * removal names sends on it counts, they are taken out once whoever posts the remove, and after
  * the pass only their leave counts; removal's bar is never harder than the entrenched one and
  * never depends on ballot order. And of coalitions (#100): a motion's outcome doesn't depend on
@@ -538,6 +540,48 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         const state = fold([...records.slice(0, at), stale, ...records.slice(at)], relayNow);
         expect(state.ignored).toContainEqual({ seq: 0, id: parseRecord(source.bytes)?.id ?? null });
         expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
+      }),
+    );
+  });
+
+  it('ends a membership whose leave was stranded after a key change only where its copy reaches the new mailbox, alike with or without the old copy (#225)', () => {
+    const scenario = fc.record({
+      count: fc.integer({ min: 3, max: 6 }),
+      who: fc.nat(),
+      proposalFirst: fc.boolean(),
+      gap: fc.integer({ min: 0, max: 3 * DAY_MINUTES }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, who, proposalFirst, gap }) => {
+        const log = Log.founded(count);
+        log.leave(R + 1, count - 1);
+        log.add(R + 2, member(0), { type: 'key-rotate', body: LATE_ROTATE });
+        const leaver = 1 + (who % (count - 2));
+        const stranded = log.leave(R + 3, leaver);
+        // A Proposal in the new mailbox lands before the copy, or after it.
+        log.propose(proposalFirst ? R + 4 : R + 5 + gap, `${log.group}.0`, 'New text');
+        const [rotated, leave, proposal] = [log.records.slice(0, -2), ...log.records.slice(-2)];
+        if (leave === undefined || proposal === undefined) throw new Error('two records');
+        const copyAt = proposalFirst ? R + 5 + gap : R + 4;
+        const copy = { seq: 0, received: copyAt, bytes: leave.bytes, epoch: 1 };
+        const newer = { ...proposal, epoch: 1 };
+        const ordered = proposalFirst ? [newer, copy] : [copy, newer];
+        const after = ordered.map((record, i) => ({ ...record, seq: leave.seq + 1 + i }));
+        const now = R + 10 * DAY_MINUTES;
+        const both = fold([...rotated, leave, ...after], now);
+        const copyOnly = fold([...rotated, ...after], now);
+        expect({ ...both, ignored: [] }).toEqual({ ...copyOnly, ignored: [] });
+        expect(both.former.map((m) => m.author)).toContain(authorOf(member(leaver)));
+        expect([both.epoch, both.rotationDue, both.strandedLeaves]).toEqual([1, true, []]);
+        const withoutCopy = after.filter((record) => record.bytes !== leave.bytes);
+        const alone = fold([...rotated, leave, ...withoutCopy], now);
+        expect(alone.strandedLeaves).toEqual([
+          { id: stranded, seq: leave.seq, author: authorOf(member(leaver)) },
+        ]);
+        expect({ ...alone, ignored: [], strandedLeaves: [] }).toEqual({
+          ...fold([...rotated, ...withoutCopy], now),
+          ignored: [],
+        });
       }),
     );
   });

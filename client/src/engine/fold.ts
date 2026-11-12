@@ -283,6 +283,22 @@ export interface Rotation {
 }
 
 /**
+ * A leave stranded in an earlier epoch's mailbox (#225): a `leave` read from
+ * there after the key change out of that epoch, as a device that hadn't heard
+ * of the key change posts one, from someone who is still a member. It ends no
+ * membership where it sits, as no record of another epoch's mailbox changes
+ * anything (#98), since a device that took up the key change before it landed
+ * never reads it. A device that holds it posts it again to the current
+ * epoch's mailbox (`store/epochs.ts`), where every device reads it, and the
+ * membership ends there.
+ */
+export interface StrandedLeave {
+  readonly id: string;
+  readonly seq: number;
+  readonly author: string;
+}
+
+/**
  * A recovery share as the log carries it (#109): the event's id, where it
  * sits in relay order, who sent it, and its box, unopened. The fold never
  * reads the box; each device tries to open it (`store/recovery.ts`), and
@@ -520,7 +536,11 @@ export interface Focus {
  * #224): none moved the group, and none of their authors may write another.
  * `rotationDue` is true once a membership has ended since the last canonical
  * key change, or genesis, until the next, or until the group dissolves, after
- * which no key change can land. `dissolved` is when the group dissolved, and whether its
+ * which no key change can land. `strandedLeaves` lists, in relay order, the
+ * leaves this device read stranded in an earlier epoch's mailbox whose
+ * authors are still members (#225): like `ignored`, it is what this device
+ * read, not something every device folds alike. `dissolved` is when the
+ * group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `recoveryShares` holds every `recovery-share` a current member sent, in
@@ -569,6 +589,7 @@ export interface GroupState {
   readonly rotations: readonly Rotation[];
   readonly refused: readonly Rotation[];
   readonly rotationDue: boolean;
+  readonly strandedLeaves: readonly StrandedLeave[];
   readonly dissolved: Dissolution | null;
   readonly recoveryShares: readonly SealedShare[];
   readonly recoveryAlerts: readonly SealedAlert[];
@@ -690,6 +711,8 @@ interface Draft {
   readonly rotations: Rotation[];
   readonly refused: Rotation[];
   rotationDue: boolean;
+  /** The leaves read stranded in an earlier epoch's mailbox (#225), each once, members' or not by now. */
+  readonly stranded: StrandedLeave[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
   readonly judged: Set<string>;
@@ -3109,6 +3132,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations: [],
     refused: [],
     rotationDue: false,
+    stranded: [],
     seated: new Set(),
     ruled: new Set(),
     judged: new Set(),
@@ -3174,6 +3198,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations,
     refused,
     rotationDue,
+    strandedLeaves: draft.stranded.filter((leave) => isMember(draft, leave.author)),
     dissolved: draft.dissolved,
     recoveryShares: draft.recoveryShares,
     recoveryAlerts: draft.recoveryAlerts,
@@ -3360,18 +3385,22 @@ function advanceTo(draft: Draft, received: number, seq: number): void {
  * A record read from a mailbox of another epoch than the group's now, such as
  * a stale invite's join or a late writer's Proposal after a key change (#98),
  * changes nothing at all: not relay time, and not the event ids seen, so the
- * copy its author posts again to the new mailbox folds once. Any front door
- * a record carries is noted first, whether it folds or not ({@link noteDoor},
- * #288). Otherwise relay time moves on, whatever the record holds, until the
- * group dissolves (#108), and the removals, seats, opt-ins and carried
- * Dispatches catch up to it before the event is checked. A repeated event id
- * is ignored. A membership that ends in a group makes a key change due and
- * closes the front door ({@link endMembership}).
+ * copy its author posts again to the new mailbox folds once. A leave among
+ * them is noted as stranded (#225), so the device posts it there too. Any
+ * front door a record carries is noted first, whether it folds or not
+ * ({@link noteDoor}, #288). Otherwise relay time moves on, whatever the record
+ * holds, until the group dissolves (#108), and the removals, seats, opt-ins
+ * and carried Dispatches catch up to it before the event is checked. A
+ * repeated event id is ignored. A membership that ends in a group makes a key
+ * change due and closes the front door ({@link endMembership}).
  */
 function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
   const { seq, received, epoch, parsed } = read;
   noteDoor(draft, read);
-  if (epoch !== draft.epoch) return false;
+  if (epoch !== draft.epoch) {
+    noteStranded(draft, read);
+    return false;
+  }
   if (!hasEnded(draft)) advanceTo(draft, received, seq);
   if (parsed === null) return false;
   const { event, id } = parsed;
@@ -3382,4 +3411,23 @@ function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
     endMembership(draft, { id, seq, received });
   }
   return applied;
+}
+
+/** Whether `author` is a current member. */
+function isMember(draft: Draft, author: string): boolean {
+  return draft.members.some((m) => m.author === author);
+}
+
+/**
+ * Notes `read` as a stranded leave (#225) when it was read from an earlier
+ * epoch's mailbox, so after the key change out of that epoch, and holds a
+ * `leave` the fold would take from a current member here, the first copy of
+ * its event id. It still changes nothing.
+ */
+function noteStranded(draft: Draft, { seq, epoch, parsed }: Read): void {
+  if (epoch > draft.epoch || parsed?.event.type !== 'leave') return;
+  const { event, id } = parsed;
+  if (!admits(draft, event) || !isMember(draft, event.author)) return;
+  if (draft.stranded.some((leave) => leave.id === id)) return;
+  draft.stranded.push({ id, seq, author: event.author });
 }

@@ -74,9 +74,14 @@
  * blob that won't open, so one bad blob never stalls a group.
  *
  * A group this device is leaving (#77) goes once the relay returns a seq for
- * its leave: the pass fires a `keepalive` DELETE of its push registration,
- * without waiting (#99), purges it from the store and reads nothing more for it.
- * Until then it stays, leaving, through failures and reloads.
+ * its leave and the pass has read its mailboxes once more, to see where the
+ * leave landed: the pass fires a `keepalive` DELETE of its push registration,
+ * without waiting (#99), purges it from the store and reads nothing more for
+ * it. Until then it stays, leaving, through failures and reloads. When that
+ * read brings a key change that came before the leave and checks out here,
+ * the leave reached the old epoch's mailbox too late to count (#225): the
+ * device moves to the new epoch, as any device does, and posts the leave
+ * again there before it lets the group go.
  *
  * A dissolved group (#108) is archived once its `dissolve` folds, and from
  * then on a pass sends nothing for it and reads nothing: no request names its
@@ -123,7 +128,10 @@
  * from the key change's seq. That change drops what the pass posted from the
  * outbox before it queues this member's records to post again to the new
  * epoch, so each goes once. The old epoch's are read no more, so whatever
- * reaches any week of them after the key change stays ignored. A pull that
+ * reaches any week of them after the key change stays ignored; the move
+ * posts again there this member's records that did, and every leave that did
+ * (#225), whoever wrote it, so a leave that raced the key change still ends a
+ * membership on every device. A pull that
  * brings a key change that doesn't check out queues an `unwrap-failed` naming
  * it, which the next pass posts to the old epoch's mailbox; once it folds, the
  * key change is refused, one is due again, and its author may write no other
@@ -175,8 +183,8 @@ import {
   hasDuty,
   isFrozen,
   keyRotateRecord,
-  keyStepFor,
   type KeyStep,
+  keyStepFor,
   kxRecord,
   needsKx,
   passesFreeze,
@@ -386,20 +394,21 @@ export function createSync(options: SyncOptions): Sync {
   /**
    * Post the group's current outbox in order. While `frozen` (#98), every
    * entry but a `key-rotate`, a `leave`, an `unwrap-failed` or a `key-taken`
-   * (#224) is held back. Once the relay has returned a seq for the group's
-   * leave, the group is purged: `left`. Else the records the relay took, in
-   * order, which stay queued (#343, #349): the pull that reads them back drops
-   * them in the change that saves it (`Pull.sent`), so every screen shows each
-   * from the outbox or the log at every moment, a ballot as cast and a message
-   * as listed.
+   * (#224) is held back. Returns the records the relay took, in order, which
+   * stay queued (#343, #349): the pull that reads them back drops them in the
+   * change that saves it (`Pull.sent`), so every screen shows each from the
+   * outbox or the log at every moment, a ballot as cast and a message as
+   * listed. `left` is true once the relay has taken the group's leave, which
+   * is always last, so nothing goes after it (#77); the group goes only once
+   * the pass has read where it landed (#225).
    */
   async function postOutbox(
     groupId: string,
     { mailbox, key }: Channel,
     frozen: boolean,
-  ): Promise<'left' | Uint8Array[]> {
+  ): Promise<Posted> {
     const current = await store.getGroup(groupId);
-    if (current === undefined) return [];
+    if (current === undefined) return { taken: [], left: false };
     let before: GroupState | null = null;
     const taken: Uint8Array[] = [];
     for (const bytes of current.outbox) {
@@ -409,21 +418,18 @@ export function createSync(options: SyncOptions): Sync {
       const wake =
         current.kind === undefined && wakeForRecord((before ??= foldGroup(current)), bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
-      if (await leftWith(current, bytes)) return 'left';
       taken.push(bytes);
+      if (isLeave(current, bytes)) return { taken, left: true };
     }
-    return taken;
+    return { taken, left: false };
   }
 
-  /**
-   * Whether `bytes`, which the relay just took, is the group's leave (#77):
-   * then its push registration is forgotten and the group purged.
-   */
-  async function leftWith(group: Group, bytes: Uint8Array): Promise<boolean> {
-    if (group.leaving === undefined || !sameBytes(bytes, group.leaving)) return false;
-    push?.forget(group);
-    await store.purgeGroup(group.groupId);
-    return true;
+  /** Lets go of a group this device has left (#77): forgets its push registration (#99), then purges it. */
+  async function letGo(groupId: string): Promise<'left'> {
+    const current = await store.getGroup(groupId);
+    if (current !== undefined) push?.forget(current);
+    await store.purgeGroup(groupId);
+    return 'left';
   }
 
   /** GETs week `week`'s mailbox of `secret`, after its cursor in `cursors` (#110). */
@@ -486,6 +492,15 @@ export function createSync(options: SyncOptions): Sync {
    * epoch (#98), else `stayed`. When the pull brings a key change that doesn't
    * check out here, it queues this member's `unwrap-failed` for the next pass
    * to post to the old epoch's mailbox (#224).
+   *
+   * Once the relay takes the leave, the group goes after the reads, unless
+   * they bring a key change that came before the leave and checks out here
+   * (#225): then the device moves, as any device does, with the leave queued
+   * again for the new epoch's mailbox, and goes once it is posted there. A
+   * pass that fails after the leave's PUT keeps the leave queued, as every
+   * entry stays until its pull (#349), so the next pass posts it again, which
+   * folds once, and decides the same way. A leaving device says nothing of a
+   * key change that doesn't check out: it queues nothing more.
    */
   async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
     // A room's log is messages alone (#125): it has no key change to freeze for or move to.
@@ -493,12 +508,12 @@ export function createSync(options: SyncOptions): Sync {
     const frozen = !room && isFrozen(foldGroup(group), group);
     const { first, cursors } = await firstRead(group);
     const week = weekOf(first.now);
-    const taken = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
-    if (taken === 'left') return 'left';
+    const { taken, left } = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
     const pass = { first, cursors, week, posted: taken.length > 0 };
     const reads = await readWeeks(group, pass);
     const { records, relayNow } = openReads(seal, group, reads);
     const step = room ? null : keyStepFor(group, records, relayNow, clock());
+    if (left && step?.kind !== 'move') return letGo(group.groupId);
     const pull: Pull = {
       records,
       cursors: cursorsAfter(group.secret, pass, reads),
@@ -509,10 +524,36 @@ export function createSync(options: SyncOptions): Sync {
       // What the relay took leaves the outbox as its relay copy joins the log (#343, #349).
       sent: taken,
     };
+    return savePull(group, pull, step);
+  }
+
+  /**
+   * Saves `pull`, which moves the group when `step` does, then queues the
+   * `unwrap-failed` that `step` calls for (#224) and settles a dissolve:
+   * `moved` or `stayed`.
+   */
+  async function savePull(
+    group: Group,
+    pull: Pull,
+    step: KeyStep | null,
+  ): Promise<'moved' | 'stayed'> {
     await store.applyPull(group.groupId, pull, idOf);
-    if (step?.kind === 'refuse') await store.enqueue(group.groupId, step.record);
+    if (step?.kind === 'refuse') await queueRefusal(group.groupId, step.record);
     await settleAfter(group, pull);
     return step?.kind === 'move' ? 'moved' : 'stayed';
+  }
+
+  /**
+   * Queues this member's `unwrap-failed` (#224), unless the group, as the
+   * pull left it, still reads only: a restored copy that hasn't heard from
+   * its group (#231) sends nothing until it has, and says so then if the key
+   * change still stands. A leaving device never gets here: it lets the group
+   * go instead (#225).
+   */
+  async function queueRefusal(groupId: string, record: Uint8Array): Promise<void> {
+    const current = await store.getGroup(groupId);
+    if (current === undefined || current.archived !== undefined) return;
+    await store.enqueue(groupId, record);
   }
 
   /**
@@ -783,6 +824,19 @@ export function createSync(options: SyncOptions): Sync {
       return () => listeners.delete(listener);
     },
   };
+}
+
+/**
+ * Whether `bytes`, which the relay just took, is `group`'s leave (#77).
+ */
+function isLeave(group: Pick<Group, 'leaving'>, bytes: Uint8Array): boolean {
+  return group.leaving !== undefined && sameBytes(bytes, group.leaving);
+}
+
+/** What {@link createSync}'s outbox post did: the records the relay took, and whether the leave was one. */
+interface Posted {
+  readonly taken: Uint8Array[];
+  readonly left: boolean;
 }
 
 /**
