@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { type ChatDetails, type ChatMoment, chatMessage } from '../app/chatMessages';
+import { messages } from '../app/messages';
 import type { ShareOutcome } from '../app/share';
 import { formatMinute } from '../app/time';
 import { LEVELS } from '../engine/capabilities';
@@ -1317,6 +1318,24 @@ describe('ProposalView, Tell your group', () => {
     setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
     expect(screen.getByRole('heading', { level: 1, name: 'Bins' })).toBeVisible();
     expect(tellButton()).not.toBeInTheDocument();
+  });
+});
+
+describe('ProposalView, on a coalition’s motion to take a seat above (#375)', () => {
+  it('offers no ballot while the device checks the seat it asks for, nor once it misstates it, and says why', async () => {
+    const { log, proposalId } = openVote();
+    const { rerender } = setup({ state: log.state(), proposalId });
+    expect(radios()).not.toHaveLength(0);
+
+    rerender({ seatCheck: 'checking' });
+    expect(radios()).toHaveLength(0);
+    expect(screen.getByText(messages.coalitions.checkingSeat)).toBeVisible();
+
+    rerender({ seatCheck: 'misstated' });
+    expect(radios()).toHaveLength(0);
+    expect(screen.getByText(messages.coalitions.misstatedSeat)).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
   });
 });
 

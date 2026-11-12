@@ -2039,6 +2039,14 @@ export const messages = {
     statement: 'The coalition’s statement',
     /** Under a reconcile ballot's one version. */
     reconcileLine: 'If your group and the other group both pass this, the coalition forms.',
+    /**
+     * In place of the ballot on a coalition's motion to take a seat above
+     * whose sealed seat secret doesn't make the seat key it states (#375).
+     */
+    misstatedSeat:
+      'This can’t be voted on. The seat it asks for doesn’t match the secret it carries, so no one could ever act for it.',
+    /** In place of the ballot on such a motion while this device checks its seat (#375). */
+    checkingSeat: 'Checking the seat this asks for…',
     /** A reconcile Proposal's pass, and a coalition motion's in the group. */
     reconcilePassed:
       'This passed. Your group’s pass goes to the coalition, which forms once every group has passed.',

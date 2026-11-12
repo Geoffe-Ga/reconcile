@@ -166,6 +166,24 @@ describe('resultsToReport', () => {
     expect(resultsToReport(folded(declined, 'A').state, after, seatKey('A'))).toEqual([]);
   });
 
+  it('owes nothing for a pass a holder of its seat secret posts while the group still decides: only a coalition withdraws a pass (#375)', () => {
+    const { logs, motion, at } = scene();
+    logs.join(at + 1, 'eve', 'A');
+    logs.result(at + 2, 'eve', motion, 'A', 'pass');
+    const logsNow = foldLogs(logs.logs, at + 3);
+    const group = folded(logsNow, 'A').state;
+    const coalition = folded(logsNow, 'coalition').state;
+    expect(coalition.coalition?.results.map((r) => r.result)).toContain('pass');
+    expect(resultsToReport(group, coalition, seatKey('A'))).toEqual([]);
+    // Once the group decides, its own result answers it.
+    logs.vote('A', at + 4, 'ana', motion, 0, 'Not like this.');
+    logs.vote('A', at + 5, 'ben', motion, 0, 'Not like this.');
+    const decided = foldLogs(logs.logs, at + 6);
+    expect(
+      resultsToReport(folded(decided, 'A').state, folded(decided, 'coalition').state, seatKey('A')),
+    ).toEqual([{ motion, seat: seatKey('A'), result: 'fail' }]);
+  });
+
   it('carries only the motion, the seat and the result, never a group key or name', () => {
     const { logs, motion } = scene();
     logs.vote('A', R + 200, 'ana', motion, 0, 'Not like this.');

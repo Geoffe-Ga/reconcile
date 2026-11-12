@@ -3338,7 +3338,9 @@ function endTime(draft: Draft, relayNow: number | null): number | null {
  * is final, a lapse as `fail`. A coalition's (#122) passes as soon as its
  * seats' pass is certain, before results on it stop counting, since a pass
  * that waited for that would reach the coalition above too late; a contest
- * that later turns it into a fail crosses as a fail.
+ * that later turns it into a fail crosses as a fail, and one that leaves it
+ * open is answered above with a fail too (`withdrawnPass` in crossing.ts,
+ * #375), since this fold can't see the pass that crossed.
  */
 function heldOutcome(proposal: Proposal, certain: boolean): HeldSeat['outcome'] {
   const pass = proposal.outcome.kind === 'pass';
