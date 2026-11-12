@@ -1,0 +1,103 @@
+/*
+ * Recovery contacts (#109), from tokens.css (DESIGN.md "Recovery contacts").
+ * Quiet like every protective feature: the picker's groups are plain cards
+ * of checkboxes, Settings' status is a short list, and a held share is one
+ * line on group home's sunken card. No alert color but the notice's warning
+ * rule when fewer than t contacts are left, and no counts beyond the
+ * person's own t of n.
+ */
+
+/* What recovery contacts are, and whom to pick, at the lede's reading width. */
+.recovery-about {
+  max-width: 34em;
+}
+
+/* The choose-again note in caption type ends where the ledes above it do (30em at 16px). */
+.recovery-about .caption {
+  max-width: 37em;
+}
+
+/* The two counts sit side by side where there's room, and stack on a phone. */
+.recovery-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+}
+
+.recovery-any,
+.recovery-picked {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* One group's people: a card on surface with a hairline border, its name above the boxes. */
+.recovery-group {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 30rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.recovery-group-label {
+  color: var(--ink);
+  font: var(--type-heading-3);
+  overflow-wrap: anywhere;
+}
+
+.recovery-people {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+/* A name is whatever its owner typed, so it may need to break anywhere. */
+.recovery-people .checkbox,
+.recovery-contacts li,
+.recovery-held li {
+  overflow-wrap: anywhere;
+}
+
+/* Settings: "<n> recovery contacts · <t> needed", then each contact on a line. */
+.recovery-count {
+  color: var(--ink);
+  font: var(--type-heading-3);
+}
+
+.recovery-contacts,
+.recovery-held {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34em;
+  padding: 0;
+  color: var(--ink);
+  font: var(--type-ui);
+  list-style: none;
+}
+
+.recovery-contacts .caption {
+  color: var(--muted);
+}
+
+/* "No longer in a shared group": words on a sunken chip, never a color alone. */
+.recovery-gone {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-caption);
+}
+
+/* In a stack, the gap spaces the notice; its own top margin would double it. */
+.recovery-status .notice {
+  margin-block-start: 0;
+}
+
+/* Group home's card: the same lines as Settings, then OK. */
+.recovery-card .recovery-held {
+  color: var(--body);
+}

@@ -637,6 +637,17 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
+ * `box` is the share sealed to the contact's encryption key
+ * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
+ * the rest of the group sees only that the author sent one. The fold keeps
+ * it from any current member and changes nothing else.
+ */
+export interface RecoveryShareBody {
+  readonly box: string;
+}
+
 /** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
 export type GroupResultValue = 'pass' | 'fail';
 
@@ -693,6 +704,7 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'recovery-share': RecoveryShareBody;
   readonly 'removal-response': RemovalResponseBody;
   readonly remove: RemoveBody;
   readonly 'door-invited': DoorInvitedBody;
@@ -1193,6 +1205,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseRecoveryShare(body: Json): RecoveryShareBody | null {
+  return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
+}
+
 function parseRemovalResponse(body: Json): RemovalResponseBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -1350,7 +1366,7 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 /**
  * {@link withBody} for the types the restored features added: `suspend`
  * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
- * (#119), `chat-thread` (#123) and `dispatch` (#112).
+ * (#119), `chat-thread` (#123), `dispatch` (#112) and `recovery-share` (#109).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1368,6 +1384,8 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'dispatch':
       return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-share':
+      return attach(parseRecoveryShare(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return withKeyBody(head, type, body);
   }
