@@ -20,7 +20,7 @@
  * this file reads only the few fields it names.
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
-import type { MotionTarget, ReconcileChange } from './coalition';
+import type { AdmitChange, MotionTarget, ReconcileChange } from './coalition';
 import type { AddTarget, DissolveTarget } from './event';
 import {
   effectiveOptIn,
@@ -100,7 +100,9 @@ export interface StewardChange {
  * What a Proposal changes: an Atom's text, where `""` removes it (#63, #72,
  * #75), a new section after an anchor (#75), a steward seat (#102), an opt-in
  * (#117), or whether the group goes on (#108). Or it reconciles the group
- * into a coalition, or is a coalition's motion, which its seats decide (#100).
+ * into a coalition, or is a coalition's motion, which its seats decide (#100),
+ * or in a coalition admits a group (#114). A priority vote changes nothing:
+ * its top option becomes the focus (#107).
  */
 export type ProposalTarget =
   | { readonly kind: 'edit' }
@@ -109,7 +111,9 @@ export type ProposalTarget =
   | RulesChange
   | DissolveTarget
   | ReconcileChange
-  | MotionTarget;
+  | MotionTarget
+  | { readonly kind: 'priority' }
+  | AdmitChange;
 
 /**
  * A suspension, from the relay's receipt of its `suspend` until `until`, that

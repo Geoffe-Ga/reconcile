@@ -1,9 +1,10 @@
 /**
  * What the composer, the ballot and the level picker do (spec §4 and §8),
- * apart from any screen: propose, add a version, vote, and choose a level;
- * for stewards (#102), propose a steward or a recall, and suspend; for the
- * opt-ins (#117), propose a rules change, with a steward's narrowing;
- * propose dissolving the group (#108); and send a Dispatch (#112).
+ * apart from any screen: propose, add a version, ask what to focus on (#107),
+ * vote, and choose a level; for stewards (#102), propose a steward or a
+ * recall, and suspend; for the opt-ins (#117), propose a rules change, with a
+ * steward's narrowing; propose dissolving the group (#108); and send a
+ * Dispatch (#112).
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -103,6 +104,16 @@ export interface VersionValues {
 export type AddVersionResult =
   { readonly outcome: 'added'; readonly versionId: string } | { readonly outcome: 'too-large' };
 
+/** A priority vote's entries (#107): the question and why, trimmed, and each option as typed. */
+export interface PriorityValues {
+  readonly title: string;
+  readonly why: string;
+  /** The options in ballot order, as typed; `askPriority` normalizes each with {@link optionText}. */
+  readonly options: readonly string[];
+  /** How many whole days voting runs, already checked against its class's bounds (#106). */
+  readonly window?: number;
+}
+
 /** One ballot: a score for each version, keyed by version id, and one note, blank for none. */
 export interface BallotValues {
   readonly proposal: string;
@@ -150,11 +161,16 @@ function allFit(events: readonly SignedEvent[]): boolean {
  * Proposed again (#74), it carries the lapsed Proposal's other versions: one
  * `version` of the new Proposal for each, queued after it in the same change,
  * which clears the draft kept under {@link againDraft} instead.
+ *
+ * `log` is the id the event names: the group's own, or for a coalition's
+ * entry on this device (#120), whose store key is its entry id, the
+ * coalition's genesis id, so the motion goes to the coalition's outbox.
  */
 export async function propose(
   services: ProposalServices,
   groupId: string,
   values: ProposalValues,
+  log: string = groupId,
 ): Promise<ProposeResult> {
   const { title, why, link, window, versions = [], dispatch } = values;
   const text = normalizeAtomText(values.text);
@@ -171,7 +187,7 @@ export async function propose(
   };
   const event = await signFor(services, groupId, {
     type: 'proposal',
-    group: groupId,
+    group: log,
     ts: services.now(),
     body,
   });
@@ -187,6 +203,48 @@ export async function propose(
     events.map((signed) => signed.record),
     draftOf(values, text),
   );
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
+/**
+ * A priority option as it is signed: NFC-normalized, then trimmed, which is
+ * how the composer checks it too (spec §4). The fold never re-normalizes it.
+ */
+export function optionText(option: string): string {
+  return nfc(option).trim();
+}
+
+/**
+ * Asks the group what to focus on (#107), as this device's member of
+ * `groupId`: one `proposal` whose target is `{kind: "priority"}`, its title the
+ * question, with the options in order. The fold ignores it unless there are
+ * 2–7 distinct options of 1–120 code points and no other priority vote is
+ * open, which the composer checks first, for the voting window the asker
+ * chose, if any (#106). It keeps no draft. A record over
+ * 64,000 bytes is refused before anything is queued.
+ */
+export async function askPriority(
+  services: ProposalServices,
+  groupId: string,
+  values: PriorityValues,
+): Promise<ProposeResult> {
+  const { window } = values;
+  const body = {
+    target: { kind: 'priority' } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+    options: values.options.map(optionText),
+    ...(window === undefined ? {} : { window }),
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
 }

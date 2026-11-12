@@ -8,6 +8,8 @@
  * that it no longer works. A share link's `#share/{seed}.{publicKey}` (#105)
  * reads as the shared page whatever follows it, and stays in the address
  * bar, so a reload reads it again; the page reads a damaged one as not shared.
+ * A front door's `#door/{address}` (#121) reads the same way: it carries no
+ * secret, so it stays in the address bar too.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -30,11 +32,16 @@ export type Route =
   /** Choose recovery contacts, or choose again (#109). */
   | { readonly name: 'recovery' }
   | { readonly name: 'join'; readonly payload: string | null }
+  /** A reconcile card (#114): its seed as written after `#reconcile/`, or null once read. */
+  | { readonly name: 'card'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
+  /** A group's front door (#121): what follows `#door/`, as written. */
+  | { readonly name: 'door'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   | { readonly name: 'document'; readonly groupId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
+  | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
   | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
@@ -58,16 +65,38 @@ export type Route =
   /** The group's Dispatches, newest first (#112). */
   | { readonly name: 'dispatches'; readonly groupId: string }
   /** Send a Dispatch (#112). */
-  | { readonly name: 'sendDispatch'; readonly groupId: string };
+  | { readonly name: 'sendDispatch'; readonly groupId: string }
+  /** Reconcile with another group (#114): the card's form. */
+  | { readonly name: 'reconcile'; readonly groupId: string }
+  /** A coalition's home (#120), by its genesis id. */
+  | { readonly name: 'coalition'; readonly coalitionId: string }
+  /** One of a coalition's Documents (#120), by its id: today, the coalition's genesis id. */
+  | {
+      readonly name: 'coalitionDocument';
+      readonly coalitionId: string;
+      readonly documentId: string;
+    }
+  /** Propose a change to one of a coalition's sections (#120). */
+  | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
+  /** A coalition's room (#125). */
+  | { readonly name: 'coalitionRoom'; readonly coalitionId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
+
+/** A route inside one coalition (#120). */
+export type CoalitionRoute = Extract<Route, { readonly coalitionId: string }>;
 
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
 /** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
 const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
+/**
+ * A Document's id (#120): its group's or coalition's genesis id for the first,
+ * and `${genesisId}:${k}` for each later one, as several Documents name them (#92).
+ */
+const DOCUMENT_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?$/;
 /** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
 const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
@@ -91,10 +120,19 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
 
 /**
  * The pages inside a group, Group home apart, that take nothing but the
- * group: the Document, the rules (#117), dissolving (#108), and the
- * Dispatches and Send a Dispatch (#112).
+ * group: the Document, the rules (#117), dissolving (#108), the Dispatches
+ * and Send a Dispatch (#112), Ask what to focus on (#107), and Reconcile
+ * with another group (#114).
  */
-const FIXED_NAMES = ['document', 'rules', 'dissolve', 'dispatches', 'sendDispatch'] as const;
+const FIXED_NAMES = [
+  'document',
+  'rules',
+  'dissolve',
+  'dispatches',
+  'sendDispatch',
+  'priority',
+  'reconcile',
+] as const;
 
 /** A page {@link FIXED_NAMES} lists. */
 type FixedName = (typeof FIXED_NAMES)[number];
@@ -106,6 +144,8 @@ const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
   dissolve: 'dissolve',
   dispatches: 'dispatches',
   sendDispatch: 'dispatch/new',
+  priority: 'priority',
+  reconcile: 'reconcile',
 };
 
 /** The fixed pages by path, as a group's route reads them. */
@@ -135,11 +175,11 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
 ]);
 
 /**
- * A page inside a group: one of the fixed pages, such as `doc` or
- * `dispatch/new`, `add` (a new first section, #75), or `propose/{atomId}`,
- * `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}` (a new section after
- * that Atom), `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`,
- * `rules/{optIn}` or `narrow/{optIn}`.
+ * A page inside a group: one of the fixed pages, such as `doc`, `priority`
+ * (#107) or `dispatch/new`, `add` (a new first section, #75), or
+ * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
+ * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
+ * `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
@@ -152,6 +192,33 @@ function groupRoute(rest: readonly string[]): Route {
   const [groupId, page, arg, ...extra] = rest;
   if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
+}
+
+/** The pages inside a coalition that take one argument (#120): a Document, and the composer. */
+const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) => Route> = new Map([
+  [
+    'doc',
+    (coalitionId: string, arg: string): Route =>
+      DOCUMENT_ID.test(arg) ? { name: 'coalitionDocument', coalitionId, documentId: arg } : START,
+  ],
+  [
+    'propose',
+    (coalitionId: string, arg: string): Route =>
+      ATOM_ID.test(arg) ? { name: 'coalitionPropose', coalitionId, atomId: arg } : START,
+  ],
+]);
+
+/**
+ * `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or
+ * `propose/{atomId}` (#120), or `room` (#125).
+ */
+function coalitionRoute(rest: readonly string[]): Route {
+  const [coalitionId, page, arg, ...extra] = rest;
+  if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
+  if (page === undefined) return { name: 'coalition', coalitionId };
+  if (page === 'room') return arg === undefined ? { name: 'coalitionRoom', coalitionId } : START;
+  const open = COALITION_PAGES.get(page);
+  return open === undefined || arg === undefined ? START : open(coalitionId, arg);
 }
 
 /** `#/me` (Personal), or `#/me/{id}`, one personal Document (#93). */
@@ -174,55 +241,69 @@ function joinRoute(rest: readonly string[]): Route {
 /** An invite link's own form: `#join/{seed}`, with no slash after `#` (spec §3). */
 const INVITE_PREFIX = '#join/';
 
+/** A reconcile card's own form (#114): `#reconcile/{seed}`, with no slash after `#`. */
+const CARD_PREFIX = '#reconcile/';
+
+/** `#reconcile/{seed}`: the card, or Start for anything with more after the seed. */
+function cardRoute(rest: readonly string[]): Route {
+  const [payload] = rest;
+  return rest.length === 1 && payload !== undefined && SEGMENT.test(payload)
+    ? { name: 'card', payload }
+    : START;
+}
+
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
  * the two sides of linking a device (#96), and Choose recovery contacts
  * (#109). A linking code never travels in a route: it's shown, scanned or
  * pasted, and held only in memory. Nor does a recovery contact.
  */
-/** A page that takes no argument. */
-export type BareRoute = Extract<
-  Route,
-  { readonly name: 'create' | 'settings' | 'linkNew' | 'linkThis' | 'recovery' }
->;
-
-/** Each page that takes no argument, and the path it writes after `#/`. */
-const BARE_PATHS: ReadonlyMap<BareRoute['name'], string> = new Map([
-  ['create', 'create'],
-  ['settings', 'settings'],
-  ['linkNew', 'link-new'],
-  ['linkThis', 'link-this'],
-  ['recovery', 'recovery'],
+const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
+  ['create', { name: 'create' }],
+  ['settings', { name: 'settings' }],
+  ['link-new', { name: 'linkNew' }],
+  ['link-this', { name: 'linkThis' }],
+  ['recovery', { name: 'recovery' }],
+  // A card once its seed has left the address bar (#114).
+  ['card', { name: 'card', payload: null }],
 ]);
 
-/** Each page that takes no argument, by its path after `#/`. */
-const PAGES: ReadonlyMap<string, Route> = new Map(
-  [...BARE_PATHS].map(([name, path]): [string, Route] => [path, { name }]),
-);
-
-/** Whether `route` is a page that takes no argument. */
-export function isBare(route: Route): route is BareRoute {
-  return [...BARE_PATHS.keys()].some((name) => name === route.name);
-}
-
-/** The pages after `#/` that read what follows them: Join, a group, and Personal (#93). */
+/** The pages after `#/` that read what follows them: Join, a group, Personal (#93) and a coalition (#120). */
 const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
   ['join', joinRoute],
   ['g', groupRoute],
   ['me', personalRoute],
+  ['c', coalitionRoute],
 ]);
 
 /** A share link's own form (#105): `#share/{seed}.{publicKey}`, with no slash after `#`. */
 const SHARE_PREFIX = '#share/';
 
-/** Reads a `location.hash` value as a route. */
-export function parseRoute(hash: string): Route {
+/** A front door link's own form (#121): `#door/{address}`, with no slash after `#`. */
+const DOOR_PREFIX = '#door/';
+
+/**
+ * A link's own route, with no slash after `#`: a share link's page (#105) or
+ * a front door (#121), each reading its payload itself, an invite's (spec
+ * §3) or a reconcile card's (#114); null for any other hash.
+ */
+function linkRoute(hash: string): Route | null {
   if (hash.startsWith(SHARE_PREFIX))
     return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
+  if (hash.startsWith(DOOR_PREFIX))
+    return { name: 'door', payload: hash.slice(DOOR_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
   }
+  if (hash.startsWith(CARD_PREFIX)) return cardRoute(hash.slice(CARD_PREFIX.length).split('/'));
+  return null;
+}
+
+/** Reads a `location.hash` value as a route. */
+export function parseRoute(hash: string): Route {
+  const link = linkRoute(hash);
+  if (link !== null) return link;
   if (!hash.startsWith('#/')) return START;
   const [head = '', ...rest] = hash.slice(2).split('/');
   const nested = NESTED.get(head);
@@ -287,23 +368,63 @@ function groupPath(route: GroupRoute): string {
   }
 }
 
-/** The `href` of a route, starting with `#`. */
-export function routeHref(route: Route): string {
-  if (isBare(route)) return `#/${BARE_PATHS.get(route.name) ?? ''}`;
+/** The `href` of a page inside a coalition (#120). */
+function coalitionHref(route: CoalitionRoute): string {
+  const home = `#/c/${route.coalitionId}`;
   switch (route.name) {
-    case 'start':
-      return '#/';
-    case 'personal':
-      return '#/me';
+    case 'coalition':
+      return home;
+    case 'coalitionDocument':
+      return `${home}/doc/${route.documentId}`;
+    case 'coalitionPropose':
+      return `${home}/propose/${route.atomId}`;
+    case 'coalitionRoom':
+      return `${home}/room`;
+  }
+}
+
+/** A route outside any group that takes nothing. */
+type FixedTop = Extract<
+  Route,
+  {
+    readonly name:
+      'start' | 'create' | 'settings' | 'personal' | 'linkNew' | 'linkThis' | 'recovery';
+  }
+>;
+
+/** Each such route's `href`. */
+const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
+  start: '#/',
+  create: '#/create',
+  settings: '#/settings',
+  personal: '#/me',
+  linkNew: '#/link-new',
+  linkThis: '#/link-this',
+  recovery: '#/recovery',
+};
+
+/** The `href` of a route outside any group or coalition. */
+function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
+  switch (route.name) {
     case 'personalDocument':
       return `#/me/${route.id}`;
     case 'join':
       return joinHref(route.payload);
+    case 'card':
+      return route.payload === null ? '#/card' : `${CARD_PREFIX}${route.payload}`;
     case 'shared':
       return `${SHARE_PREFIX}${route.payload}`;
+    case 'door':
+      return `${DOOR_PREFIX}${route.payload}`;
     default:
-      return `#/g/${route.groupId}${groupPath(route)}`;
+      return TOP_HREFS[route.name];
   }
+}
+
+/** The `href` of a route, starting with `#`. */
+export function routeHref(route: Route): string {
+  if ('groupId' in route) return `#/g/${route.groupId}${groupPath(route)}`;
+  return 'coalitionId' in route ? coalitionHref(route) : topHref(route);
 }
 
 const listeners = new Set<() => void>();

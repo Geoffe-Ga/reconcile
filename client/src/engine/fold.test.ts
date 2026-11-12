@@ -101,6 +101,7 @@ describe('fold', () => {
       narrowings: [],
       vouches: [],
       chatPosts: [],
+      doorInvites: [],
       chatThreads: [],
       dispatches: [],
       epoch: 0,
@@ -110,6 +111,7 @@ describe('fold', () => {
       recoveryShares: [],
       coalitions: [],
       coalition: null,
+      focus: null,
       ignored: [],
     });
   });

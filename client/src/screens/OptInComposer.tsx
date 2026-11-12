@@ -1,15 +1,18 @@
 import { type SyntheticEvent, useRef, useState } from 'react';
-import { Button, Form } from 'react-aria-components';
+import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
 import { formatAverageLine, formatZeroLine } from '../app/format';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { RulesValues } from '../app/proposals';
 import { SuspendedNote } from '../app/stewards';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { WindowField } from '../app/WindowField';
+import { newFrontDoor } from '../door/page';
 import { can, isSuspended } from '../engine/capabilities';
 import { type GroupState, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import {
+  type FrontDoor,
   isOff,
   isWebhook,
   OFF,
@@ -150,10 +153,30 @@ function Context({ state, optIn, narrow }: Pick<OptInComposerProps, 'state' | 'o
   );
 }
 
-/** The value the form would set: the webhook typed so far, an open front door, or off. */
-function valueOf(optIn: OptIn, on: boolean, webhook: string): OptInValue {
+/**
+ * The value the form would set: the webhook typed so far, an open front door
+ * (`door`, its secrets made when the form opened) with the count as chosen,
+ * or off.
+ */
+function valueOf(optIn: OptIn, on: boolean, webhook: string, door: FrontDoor): OptInValue {
   if (!on) return OFF[optIn];
-  return optIn === 'chatBot' ? { webhook: webhook.trim() } : true;
+  return optIn === 'chatBot' ? { webhook: webhook.trim() } : door;
+}
+
+/** Opening the front door's one choice: whether its page shows how many people are in the group (#121). */
+function CountChoice({ value, onChange }: { value: boolean; onChange: (show: boolean) => void }) {
+  const { door } = messages;
+  return (
+    <CheckboxField className="check-option" name="showCount" isSelected={value} onChange={onChange}>
+      <CheckboxButton className="checkbox">
+        <span className="checkbox-box" aria-hidden="true" />
+        {door.countLabel}
+      </CheckboxButton>
+      <Text slot="description" className="check-description">
+        {door.countHint}
+      </Text>
+    </CheckboxField>
+  );
 }
 
 /**
@@ -165,10 +188,14 @@ function OptInForm(props: OptInComposerProps) {
   const { state, optIn, narrow } = props;
   const on = turnsOn(props);
   const asksWebhook = on && optIn === 'chatBot';
+  const asksCount = on && optIn === 'frontDoor';
   const [webhook, setWebhook] = useState('');
+  // A new door's secrets, made once on this device when the form opens (#121).
+  const [secrets] = useState(() => newFrontDoor(false));
+  const [showCount, setShowCount] = useState(false);
   const [title, setTitle] = useState(motionOf(optIn, on));
   const [why, setWhy] = useState('');
-  const value = valueOf(optIn, on, webhook);
+  const value = valueOf(optIn, on, webhook, { ...secrets, showCount });
   const cls = classOf(state, optIn, value);
   const [days, setDays] = useState<number | null>(null);
   const window = days ?? state.rules.windows[cls].default;
@@ -194,6 +221,7 @@ function OptInForm(props: OptInComposerProps) {
           onChange={setWebhook}
         />
       ) : null}
+      {asksCount ? <CountChoice value={showCount} onChange={setShowCount} /> : null}
       <Field
         name="title"
         label={composer.titleLabel}
@@ -227,7 +255,7 @@ function OptInForm(props: OptInComposerProps) {
           {stewards.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {narrow ? optIns.submitNow : composer.submit}
         </Button>
@@ -241,7 +269,9 @@ function OptInForm(props: OptInComposerProps) {
  * Turn off now, `…/narrow/{optIn}`; ADR-0039, ADR-0040, #117): a rules
  * Proposal turning the opt-in on if it stands off, or off if it stands on,
  * with the opt-in's warning first. Turning the bot on asks for its Discord
- * webhook, checked by the fold's own validator. It shows a form only where
+ * webhook, checked by the fold's own validator. Opening the front door makes
+ * its two secrets on this device and asks whether its page shows the member
+ * count (#121). It shows a form only where
  * the fold would accept the Proposal, and Turn off now only where the
  * narrowing beside it would hold too; elsewhere it says why.
  */

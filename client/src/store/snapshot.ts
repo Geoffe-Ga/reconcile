@@ -65,6 +65,7 @@ import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import type { LogRecord } from '../engine/fold';
 import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
+import { deriveCoalitionEntryId } from '../crypto/card';
 import { epochOf, secretFits } from './epochs';
 import { eventIdOf } from './eventId';
 import { foldGroup } from './expiry';
@@ -112,9 +113,17 @@ export interface SavedBackup {
   readonly groupIds: readonly string[];
 }
 
-/** Whether the relay has returned the group's genesis: its log folds to the group itself. */
-function isFounded(group: Pick<Group, 'groupId' | 'log' | 'relayNow' | 'cleared'>): boolean {
-  return foldGroup(group).group === group.groupId;
+/**
+ * Whether the relay has returned the group's genesis: its log folds to the
+ * group itself, or for a coalition's entry (#114), to a coalition whose
+ * entry id is the one its secret derives.
+ */
+function isFounded(
+  group: Pick<Group, 'groupId' | 'log' | 'relayNow' | 'cleared' | 'kind' | 'secret'>,
+): boolean {
+  const state = foldGroup(group);
+  if (group.kind !== 'coalition') return state.group === group.groupId;
+  return state.coalition !== null && deriveCoalitionEntryId(group.secret) === group.groupId;
 }
 
 /**
@@ -127,6 +136,7 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     .filter((group) => group.leaving === undefined && group.archived === undefined)
     .filter(isFounded)
     .map((group) => ({
+      ...(group.kind === undefined ? {} : { kind: group.kind }),
       groupId: group.groupId,
       secret: group.secret,
       signingKey: group.signingKey,
@@ -150,14 +160,15 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
  * Document, and its relay backup key.
  */
 export async function deviceSnapshot(
-  store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>,
+  store: Pick<Store, 'listGroups' | 'listCoalitions' | 'listPersonal' | 'getRelayBackup'>,
 ): Promise<Snapshot> {
-  const [groups, personal, relayBackup] = await Promise.all([
+  const [groups, coalitions, personal, relayBackup] = await Promise.all([
     store.listGroups(),
+    store.listCoalitions(),
     store.listPersonal(),
     store.getRelayBackup(),
   ]);
-  const kept = { groups: backedUpGroups(groups), personal };
+  const kept = { groups: backedUpGroups([...groups, ...coalitions]), personal };
   return relayBackup === undefined ? kept : { ...kept, backupKey: relayBackup.key };
 }
 
@@ -196,6 +207,7 @@ export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8
   const json = {
     format: SNAPSHOT_FORMAT,
     groups: groups.map((group) => ({
+      ...(group.kind === undefined ? {} : { kind: group.kind }),
       groupId: group.groupId,
       secret: base64url(group.secret),
       signingKey: base64url(group.signingKey),
@@ -255,7 +267,7 @@ export async function takeSnapshot(
  * `log2N` (17 unless a test asks for less).
  */
 export async function exportGroups(
-  store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>,
+  store: Pick<Store, 'listGroups' | 'listCoalitions' | 'listPersonal' | 'getRelayBackup'>,
   passphrase: string,
   log2N = BACKUP_LOG2_N,
 ): Promise<SavedBackup> {
@@ -501,6 +513,24 @@ function hasSyncState(value: Record<string, unknown>): boolean {
   );
 }
 
+/** A coalition entry's kind (#114) as its own field, none for a group, or null for any other. */
+function kindIn(value: unknown): Pick<BackedUpGroup, 'kind'> | null {
+  if (value === undefined) return {};
+  return value === 'coalition' ? { kind: value } : null;
+}
+
+/**
+ * What a backed-up group says of who it is and what it holds: your
+ * membership, its kind (#114) and its cleared Proposals (#111), or null when
+ * any of them doesn't check out.
+ */
+function marksIn(value: Record<string, unknown>, signingKey: Uint8Array) {
+  const me = meIn(value.me, signingKey);
+  const kind = kindIn(value.kind);
+  const cleared = clearedIn(value.cleared);
+  return me === null || kind === null || cleared === null ? null : { me, kind, cleared };
+}
+
 /** One backed-up group in `value`, or null when any part of it doesn't check out. */
 function groupIn(value: unknown): BackedUpGroup | null {
   if (!isObject(value) || typeof value.groupId !== 'string' || !GROUP_ID.test(value.groupId)) {
@@ -510,10 +540,11 @@ function groupIn(value: unknown): BackedUpGroup | null {
   const signingKey = keyIn(value.signingKey);
   const log = logIn(value.log);
   if (secret === null || signingKey === null || log === null || !hasSyncState(value)) return null;
-  const me = meIn(value.me, signingKey);
-  const cleared = clearedIn(value.cleared);
-  if (me === null || cleared === null) return null;
+  const marks = marksIn(value, signingKey);
+  if (marks === null) return null;
+  const { me, kind, cleared } = marks;
   return restoredAs({
+    ...kind,
     groupId: value.groupId,
     secret,
     signingKey,
@@ -551,7 +582,7 @@ const DISSOLVED: Archive = { reason: 'dissolved' };
  */
 function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
   const state = foldGroup(group);
-  if (state.group !== group.groupId) return null;
+  if (!isFounded(group)) return null;
   return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
 }
 

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { inviteLink } from '../app/invite';
+import { cardLink } from '../coalition/card';
 import { newInviteSeed } from '../crypto/invite';
 import { axeViolations } from '../test/axe';
 import { Start, type StartGroup } from './Start';
@@ -118,6 +119,35 @@ describe('Start', () => {
     expect(Array.from(onOpenInvite.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
   });
 
+  it('opens a pasted reconcile card (#114), and no invite from it', async () => {
+    const user = userEvent.setup();
+    const onOpenInvite = vi.fn();
+    const onOpenCard = vi.fn();
+    const seed = newInviteSeed();
+    render(<Start groups={[]} onOpenInvite={onOpenInvite} onOpenCard={onOpenCard} />);
+
+    await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
+    await user.paste(` ${cardLink('https://reconcile.example', seed)} `);
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+
+    expect(onOpenInvite).not.toHaveBeenCalled();
+    expect(onOpenCard).toHaveBeenCalledTimes(1);
+    expect(Array.from(onOpenCard.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
+  });
+
+  it('takes a pasted card even where nothing opens one', async () => {
+    const user = userEvent.setup();
+    const onOpenInvite = vi.fn();
+    render(<Start groups={[]} onOpenInvite={onOpenInvite} />);
+    await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
+    await user.paste(cardLink('https://reconcile.example', newInviteSeed()));
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    expect(onOpenInvite).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Invite link' })).not.toHaveAttribute(
+      'aria-invalid',
+    );
+  });
+
   it('never reads the clipboard on its own', async () => {
     const user = userEvent.setup();
     const readText = vi.spyOn(navigator.clipboard, 'readText');
@@ -141,7 +171,7 @@ describe('Start', () => {
     expect(onOpenInvite).not.toHaveBeenCalled();
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(field).toHaveAccessibleDescription(
-      'Paste the link someone in your group sent you. This invite link has expired or is damaged. Ask someone in your group for a new one.',
+      'Paste the link someone in your group sent you, or a reconcile card from another group. This invite link has expired or is damaged. Ask someone in your group for a new one.',
     );
     expect(document.body).not.toHaveTextContent('not-a-real-payload');
     expect(await axeViolations()).toEqual([]);
@@ -167,4 +197,60 @@ describe('Start', () => {
       expect(screen.queryByText(/may clear Reconcile’s data/)).not.toBeInTheDocument();
     },
   );
+});
+
+describe('Start: front doors (#121)', () => {
+  const SENT_AT = Date.UTC(2026, 10, 11, 12);
+  const INVITE = new Uint8Array(32).fill(7);
+  const ADDRESS = `${'A'.repeat(42)}E`;
+
+  it('lists each request this device sent, then “<group> invited you” and the way into Join', async () => {
+    const user = userEvent.setup();
+    const onOpenInvite = vi.fn();
+    render(
+      <Start
+        groups={[]}
+        requests={[
+          { id: 'a', groupName: 'Riverside Tenants', sentAt: SENT_AT, invite: null },
+          { id: 'b', groupName: 'Book club', sentAt: SENT_AT, invite: INVITE },
+        ]}
+        onOpenInvite={onOpenInvite}
+        onOpenDoor={vi.fn()}
+      />,
+    );
+    const asked = screen.getByRole('region', { name: 'Asked to join' });
+    const [waiting, invited] = within(asked).getAllByRole('listitem');
+    expect(waiting).toHaveTextContent(/^Riverside TenantsAsked \w{3} 11 Nov\. No invite yet\.$/);
+    expect(invited?.querySelector('.request-invited')?.textContent).toBe('Book club invited you');
+    expect(within(waiting ?? asked).queryByRole('button')).toBeNull();
+    await user.click(within(asked).getByRole('button', { name: 'Open your invite' }));
+    expect(onOpenInvite).toHaveBeenCalledWith(INVITE);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows no requests section until this device has asked somewhere', () => {
+    render(<Start groups={[]} onOpenInvite={vi.fn()} />);
+    expect(screen.queryByRole('region', { name: 'Asked to join' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Have a front door link?' })).toBeNull();
+  });
+
+  it('opens a pasted front door link, from any origin, and refuses anything else', async () => {
+    const user = userEvent.setup();
+    const onOpenDoor = vi.fn();
+    render(<Start groups={[]} onOpenInvite={vi.fn()} onOpenDoor={onOpenDoor} />);
+    const section = screen.getByRole('region', { name: 'Have a front door link?' });
+    const field = within(section).getByRole('textbox', { name: 'Front door link' });
+    await user.click(field);
+    await user.paste(inviteLink('https://elsewhere.example', newInviteSeed()));
+    await user.click(within(section).getByRole('button', { name: 'Open the front door' }));
+    expect(
+      within(section).getByText('This isn’t a front door link. Check you copied all of it.'),
+    ).toBeVisible();
+    expect(onOpenDoor).not.toHaveBeenCalled();
+    await user.clear(field);
+    await user.paste(`https://elsewhere.example/#door/${ADDRESS}`);
+    await user.click(within(section).getByRole('button', { name: 'Open the front door' }));
+    expect(onOpenDoor).toHaveBeenCalledWith(ADDRESS);
+    expect(await axeViolations()).toEqual([]);
+  });
 });

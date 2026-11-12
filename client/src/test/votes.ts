@@ -52,6 +52,12 @@ export interface LogBuilder {
   propose(name: string, entry?: ProposalEntry): string;
   /** Adds `name`'s Proposal of a new section after Atom `after`, or first for null (#75). */
   addSection(name: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
+  ask(
+    name: string,
+    options: readonly string[],
+    entry?: Omit<ProposalEntry, 'text' | 'atom'>,
+  ): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
@@ -82,6 +88,8 @@ export interface LogBuilder {
   vouch(name: string, who: string): string;
   /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
+  /** Adds `name`'s record of an invite sent to the front door's `application` (#121), returning its id. */
+  doorInvited(name: string, application: string): string;
   /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
   chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
@@ -179,6 +187,19 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
     },
+    ask(name: string, options: readonly string[], entry: ProposalEntry = {}) {
+      const { title = 'What should we focus on?', why = 'One thing at a time.' } = entry;
+      const body = {
+        target: { kind: 'priority' } as const,
+        title,
+        why,
+        options,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
     vote(name: string, proposal: string, score: Score, note?: string) {
       log.ballot(name, proposal, { [proposal]: score }, note);
     },
@@ -250,6 +271,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     chatPosted(name: string, proposal: string, moment: string, nonce?: string) {
       const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
       return add(name, { type: 'chat-posted', group, ts: 0, body });
+    },
+    doorInvited(name: string, application: string) {
+      return add(name, { type: 'door-invited', group, ts: 0, body: { application } });
     },
     chatThread(name: string, proposal: string, url: string) {
       return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });

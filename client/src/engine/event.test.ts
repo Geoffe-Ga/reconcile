@@ -15,12 +15,14 @@ import {
   fromBase64url,
   isCoalitionGenesis,
   isDissolveProposal,
+  isAdmitProposal,
   isReconcileProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
   parseRecord,
   signEvent,
+  isPriorityProposal,
 } from './event';
 
 const encoder = new TextEncoder();
@@ -537,7 +539,7 @@ describe('parseEvent', () => {
       'proposal',
       {
         atom: 'a',
-        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        target: { kind: 'rules', optIn: 'frontDoor', value: false },
         title: 't',
         why: 'w',
       },
@@ -545,13 +547,13 @@ describe('parseEvent', () => {
     [
       'a rules Proposal without a title',
       'proposal',
-      { target: { kind: 'rules', optIn: 'frontDoor', value: true }, why: 'w' },
+      { target: { kind: 'rules', optIn: 'frontDoor', value: false }, why: 'w' },
     ],
     [
       'a rules Proposal with its window as text',
       'proposal',
       {
-        target: { kind: 'rules', optIn: 'frontDoor', value: true },
+        target: { kind: 'rules', optIn: 'frontDoor', value: false },
         title: 't',
         why: 'w',
         window: '14',
@@ -571,6 +573,9 @@ describe('parseEvent', () => {
       'chat-posted',
       { proposal: 'p', moment: 'open', nonce: 7 },
     ],
+    ['door-invited without an application', 'door-invited', {}],
+    ['door-invited with a numeric application', 'door-invited', { application: 7 }],
+    ['door-invited with a null application', 'door-invited', { application: null }],
     ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
     ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
     ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
@@ -815,7 +820,7 @@ describe('parseEvent', () => {
   });
 
   it('keeps a rules Proposal’s voting window as written, for the fold to bound (#106, #117)', () => {
-    const target = { kind: 'rules', optIn: 'frontDoor', value: true };
+    const target = { kind: 'rules', optIn: 'frontDoor', value: false };
     const parsed = parseEvent(
       json(envelope('proposal', { target, title: 't', why: 'w', window: 13 })),
     );
@@ -824,7 +829,7 @@ describe('parseEvent', () => {
 
   it('tells a rules Proposal from a steward one and from an edit', () => {
     const rules = {
-      target: { kind: 'rules', optIn: 'frontDoor', value: true },
+      target: { kind: 'rules', optIn: 'frontDoor', value: false },
       title: 't',
       why: 'w',
     } as const;
@@ -865,6 +870,19 @@ describe('parseEvent', () => {
     });
     const bare = parseEvent(json(envelope('chat-posted', { proposal: 'p1', moment: 'open' })));
     expect(bare?.event.body).toEqual({ proposal: 'p1', moment: 'open' });
+  });
+
+  it('reads a door-invited as its application, kept as written, dropping unknown keys (#121)', () => {
+    const body = { application: 'a1', name: 'Kim', message: 'Hello' };
+    const parsed = parseEvent(json(envelope('door-invited', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'door-invited',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { application: 'a1' },
+    });
   });
 
   it('reads a chat-thread as its Proposal and URL, kept as written, dropping unknown keys (#123)', () => {
@@ -965,6 +983,51 @@ describe('parseEvent', () => {
     }
     const without = parseEvent(json(envelope('proposal', body)));
     expect(without?.event.body).toEqual(body);
+  });
+});
+
+describe('parseEvent: a priority vote (#107)', () => {
+  const priority = { target: { kind: 'priority' }, title: 'q', why: 'w', options: ['a', 'b'] };
+
+  it('reads its target, question, why and options, keeping a link and dropping unknown keys', () => {
+    const body = { ...priority, link: 'https://l', extra: 1, target: { kind: 'priority', x: 1 } };
+    expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual({
+      ...priority,
+      link: 'https://l',
+    });
+  });
+
+  it('leaves an absent link absent', () => {
+    expect(Object.keys(parseEvent(json(envelope('proposal', priority)))?.event.body ?? {})).toEqual(
+      ['target', 'title', 'why', 'options'],
+    );
+  });
+
+  it.each([
+    ['an Atom', { ...priority, atom: 'a' }],
+    ['text', { ...priority, text: 'x' }],
+    ['no options', { target: { kind: 'priority' }, title: 'q', why: 'w' }],
+    ['a non-string option', { ...priority, options: ['a', 1] }],
+    ['options that are a string', { ...priority, options: 'a, b' }],
+    ['an unknown target', { ...priority, target: { kind: 'focus' } }],
+    ['a target that is a string', { ...priority, target: 'priority' }],
+    ['a non-string question', { ...priority, title: 1 }],
+    ['a non-string why', { ...priority, why: null }],
+    ['a non-string link', { ...priority, link: 1 }],
+  ])('rejects one with %s', (_what, body) => {
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  it('tells a priority vote from a steward change and an edit', () => {
+    const asked = { ...priority, target: { kind: 'priority' } } as const;
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null },
+      title: 't',
+      why: 'w',
+    } as const;
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    expect([asked, steward, edit].map(isPriorityProposal)).toEqual([true, false, false]);
+    expect([asked, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
   });
 });
 
@@ -1254,9 +1317,16 @@ describe('coalitions (#100)', () => {
     }
   });
 
+  it('reads a reconcile Proposal with no inner, as a group asking into a formed coalition writes (#313)', () => {
+    const target = Object.fromEntries(Object.entries(RECONCILE).filter(([key]) => key !== 'inner'));
+    const parsed = parseEvent(json(envelope('proposal', { target, title: 'Join C', why: 'W' })));
+    expect(parsed?.event.body).toEqual({ target, title: 'Join C', why: 'W' });
+  });
+
   it.each([
     ['a short secret', { ...RECONCILE, secret: SECRET.slice(1) }],
-    ['no inner', { ...RECONCILE, inner: undefined }],
+    ['a short inner', { ...RECONCILE, inner: INNER.slice(1) }],
+    ['an inner that isn’t canonical', { ...RECONCILE, inner: `${INNER.slice(0, 42)}B` }],
     ['a numeric seat', { ...RECONCILE, seat: 5 }],
     ['a seat that isn’t canonical', { ...RECONCILE, seat: `${SEAT.slice(0, 42)}B` }],
     ['no name', { ...RECONCILE, name: undefined }],
@@ -1264,6 +1334,51 @@ describe('coalitions (#100)', () => {
     ['atoms that aren’t strings', { ...RECONCILE, atoms: [1] }],
   ])('refuses a reconcile Proposal with %s', (_label, target) => {
     const body = { target, title: 'Join C', why: 'W' };
+    expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
+  });
+
+  const KX = base64url(new Uint8Array(32).fill(7));
+  const ADMIT = { kind: 'admit', seat: { name: 'Oak St', key: KEY }, proof: PROOF, kx: KX };
+
+  it('reads an admit Proposal (#114), keeping its window and dropping text and unknown keys', () => {
+    const body = {
+      target: { ...ADMIT, seat: { ...ADMIT.seat, secret: SEAT }, extra: 1 },
+      title: 'Admit Oak St',
+      why: 'W',
+      text: 'x',
+      window: 5,
+    };
+    const parsed = parseEvent(json(envelope('proposal', body)));
+    expect(parsed?.event.body).toEqual({
+      target: ADMIT,
+      title: 'Admit Oak St',
+      why: 'W',
+      window: 5,
+    });
+    const proposal = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+    expect(proposal !== null && isAdmitProposal(proposal)).toBe(true);
+    expect(proposal !== null && isReconcileProposal(proposal)).toBe(false);
+    const reconcile = parseEvent(
+      json(envelope('proposal', { target: RECONCILE, title: 'T', why: 'W' })),
+    );
+    const other = reconcile?.event.type === 'proposal' ? reconcile.event.body : null;
+    expect(other !== null && isAdmitProposal(other)).toBe(false);
+  });
+
+  it.each([
+    ['no seat', { ...ADMIT, seat: undefined }],
+    ['a seat without a name', { ...ADMIT, seat: { key: KEY } }],
+    ['a seat whose key is short', { ...ADMIT, seat: { name: 'Oak St', key: KEY.slice(1) } }],
+    ['no proof', { ...ADMIT, proof: undefined }],
+    ['a short proof', { ...ADMIT, proof: PROOF.slice(1) }],
+    ['a proof with a character base64url lacks', { ...ADMIT, proof: `${PROOF.slice(0, 85)}+` }],
+    ['a numeric proof', { ...ADMIT, proof: 6 }],
+    ['no kx (#313)', { ...ADMIT, kx: undefined }],
+    ['a short kx (#313)', { ...ADMIT, kx: KX.slice(1) }],
+    ['a kx that isn’t canonical (#313)', { ...ADMIT, kx: `${KX.slice(0, 42)}B` }],
+    ['a numeric kx (#313)', { ...ADMIT, kx: 7 }],
+  ])('refuses an admit Proposal with %s (#114)', (_label, target) => {
+    const body = { target, title: 'Admit Oak St', why: 'W' };
     expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
   });
 
@@ -1291,5 +1406,77 @@ describe('coalitions (#100)', () => {
     ['no result', { motion: 'm1', seat: KEY }],
   ])('refuses a group-result with %s', (_label, body) => {
     expect(parseEvent(json(envelope('group-result', body)))).toBeNull();
+  });
+});
+
+describe('a room wrap (#313)', () => {
+  const SEAT = base64url(new Uint8Array(32).fill(5));
+  const WRAP = base64url(new Uint8Array(104).fill(9));
+
+  it('reads a room-wrap with exactly its seat and a wrap of a 32-byte box', () => {
+    const body = { seat: SEAT, wrap: WRAP };
+    expect(WRAP).toHaveLength(139);
+    expect(parseEvent(json(envelope('room-wrap', body)))?.event).toEqual({
+      v: 1,
+      type: 'room-wrap',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body,
+    });
+  });
+
+  it.each([
+    ['an extra key such as inner', { seat: SEAT, wrap: WRAP, inner: SEAT }],
+    ['an extra key such as a name', { seat: SEAT, wrap: WRAP, name: 'Oak St' }],
+    ['no seat', { wrap: WRAP }],
+    ['a short seat', { seat: SEAT.slice(1), wrap: WRAP }],
+    ['no wrap', { seat: SEAT }],
+    ['a numeric wrap', { seat: SEAT, wrap: 9 }],
+    ['a wrap one byte short', { seat: SEAT, wrap: base64url(new Uint8Array(103).fill(9)) }],
+    ['a wrap one byte long', { seat: SEAT, wrap: base64url(new Uint8Array(105).fill(9)) }],
+    ['a wrap with a character base64url lacks', { seat: SEAT, wrap: `${WRAP.slice(0, 138)}+` }],
+    ['a wrap that isn’t canonical', { seat: SEAT, wrap: `${WRAP.slice(0, 138)}B` }],
+  ])('refuses a room-wrap with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('room-wrap', body)))).toBeNull();
+  });
+});
+
+describe('a room message (#125)', () => {
+  it('reads a message with exactly its text, as written', () => {
+    for (const text of ['Can we meet Thursday?', '', '  <script>alert(1)</script>\n']) {
+      expect(parseEvent(json(envelope('message', { text })))?.event).toEqual({
+        v: 1,
+        type: 'message',
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body: { text },
+      });
+    }
+  });
+
+  it.each([
+    ['an extra key such as a name', { text: 'Hi', name: 'Ana' }],
+    ['an extra key such as a group', { text: 'Hi', group: 'g2' }],
+    ['no text', {}],
+    ['a numeric text', { text: 1 }],
+    ['a list for text', { text: ['Hi'] }],
+  ])('refuses a message with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('message', body)))).toBeNull();
+  });
+
+  it('signs a message as any event, its text in NFC', () => {
+    const signed = signEvent(testKeys('ana').secretKey, {
+      type: 'message',
+      group: 'g1',
+      ts: 7,
+      body: { text: 'Café' },
+    });
+    expect(parseRecord(signed.record)?.event).toMatchObject({
+      type: 'message',
+      author: ANA,
+      body: { text: 'Café' },
+    });
   });
 });

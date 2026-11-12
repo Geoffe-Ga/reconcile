@@ -8,8 +8,10 @@ import './styles/proposals.css';
 import './styles/firstRun.css';
 import './styles/backup.css';
 import './styles/link.css';
+import './styles/door.css';
 import './styles/passkey.css';
 import './styles/recovery.css';
+import './styles/coalitions.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -32,6 +34,8 @@ import { noticeRecord } from './platform/notice';
 import { passkeyOfferRecord } from './platform/passkeyOffer';
 import { requestPersistence } from './platform/persist';
 import { browserPushPort, closeWhenVisible } from './platform/pushPort';
+import { plainText } from './app/text/markdown';
+import { createDoorKeeper } from './door/keeper';
 import { browserCredentials, webAuthn } from './platform/webauthn';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
@@ -60,7 +64,9 @@ if (root === null) {
  * complete sync pass, once its key changes and push upkeep are done, the
  * relay backup refreshes once a relay day, once the device keeps a backup
  * key (#97), and any backup id an earlier choice of recovery contacts
- * retired is overwritten (#109). Each launch also posts again any shared personal Document whose
+ * retired is overwritten (#109). Each sync keeps a group's front door, and
+ * looks for replies to the applications this device sent at one (#121). Each
+ * launch also posts again any shared personal Document whose
  * link is due a fresh copy or has an edit waiting (#105). That runs beside the
  * sync loop, not in its pass: a share has its own mailbox and keys, so no
  * group's key change or freeze touches it. A device whose keys are locked
@@ -83,7 +89,8 @@ async function start(container: HTMLElement): Promise<void> {
   const push = createPush({ store, relay: createPushRelay(), port });
   const now = (): number => Date.now();
   const afterPass = (): Promise<void> => afterSyncPass({ store, relay, now });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, afterPass });
+  const door = createDoorKeeper({ store, relay, seal: xchachaSeal, plainText, clock: now });
+  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, door, afterPass });
   closeWhenVisible(port, document);
   const platform = readPlatform();
   const credentials = browserCredentials();

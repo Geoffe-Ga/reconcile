@@ -32,6 +32,8 @@ export interface ConsentMeterProps {
   readonly tally: VersionTally;
   /** The bar the engine tallied against. */
   readonly bar: Bar;
+  /** The meter's name for a priority option (#107), in place of "How version N stands so far". */
+  readonly label?: string;
 }
 
 interface MeterBarProps {
@@ -91,12 +93,12 @@ function zeroReading(tally: VersionTally): string {
 }
 
 /** One version's meter: its two bars and how many have scored it of how many it needs. */
-export function ConsentMeter({ number, tally, bar }: ConsentMeterProps) {
+export function ConsentMeter({ number, tally, bar, label }: ConsentMeterProps) {
   const { meter } = messages;
   const scored = tally.scorers > 0;
   const lines = lineShare(bar);
   return (
-    <div className="meter" role="group" aria-label={meter.label(number)}>
+    <div className="meter" role="group" aria-label={label ?? meter.label(number)}>
       <p className="eyebrow">{meter.title}</p>
       <MeterBar
         name={meter.average}

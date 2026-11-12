@@ -1,6 +1,7 @@
 /**
  * Group home's slots for the backup card (#78) and the recovery card (#109):
- * after the open Proposals, before the Document.
+ * right after the open Proposals, ahead of the focus when it would follow them
+ * (#107), and before the Document.
  */
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -8,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MINUTE_MS } from '../app/time';
 import { testGroup } from '../test/groups';
 import { authorOf } from '../test/keys';
-import { START_MINUTE } from '../test/votes';
+import { groupLog, START_MINUTE } from '../test/votes';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 
 const NOW = START_MINUTE + 60;
@@ -49,6 +50,19 @@ describe('GroupHome', () => {
     expect(
       card.compareDocumentPosition(documentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('keeps the card under Needs your vote, ahead of the focus (#107), when nothing else is open', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.propose('ben', { title: 'Later quiet hours' });
+    renderHome({ state: log.state(), backupCard: <p>The backup card</p> });
+
+    const card = screen.getByText('The backup card');
+    const waits = screen.getByRole('region', { name: 'Needs your vote' });
+    const focus = screen.getByRole('region', { name: 'Focus' });
+    expect(screen.queryByRole('region', { name: /Open Proposals/ })).toBeNull();
+    expect(waits.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(focus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows none without one', () => {

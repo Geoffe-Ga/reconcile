@@ -17,12 +17,12 @@
  * `vectors/share.json` pins both derivations and one record, computed
  * outside @noble.
  */
-import { concatBytes, randomBytes } from '@noble/hashes/utils.js';
+import { randomBytes } from '@noble/hashes/utils.js';
 
 import { base64url } from './base64url';
 import { hkdf32 } from './hkdf';
-import { RECORD_HEADER_BYTES } from './record';
-import { PUBLIC_KEY_BYTES, SHARE_CONTEXT, type SigningKeys, sign, verify } from './sign';
+import { openTagged, signTagged } from './record';
+import { SHARE_CONTEXT, type SigningKeys } from './sign';
 
 /** A share seed's length in bytes. */
 export const SHARE_SEED_BYTES = 32;
@@ -86,8 +86,7 @@ export function shareChannelOf(seed: Uint8Array): ShareChannel {
  * signature ‖ copy, framed as an event's record is, under the share tag.
  */
 export function signShareRecord(keys: SigningKeys, copy: Uint8Array): Uint8Array<ArrayBuffer> {
-  const signature = sign(SHARE_CONTEXT, keys.secretKey, copy);
-  return Uint8Array.from(concatBytes(keys.publicKey, signature, copy));
+  return signTagged(SHARE_CONTEXT, keys, copy);
 }
 
 /**
@@ -97,10 +96,5 @@ export function signShareRecord(keys: SigningKeys, copy: Uint8Array): Uint8Array
  * key or any changed byte. The copy comes back in bytes of its own.
  */
 export function openShareRecord(record: Uint8Array, publicKey: Uint8Array): Uint8Array | null {
-  if (record.length < RECORD_HEADER_BYTES || publicKey.length !== PUBLIC_KEY_BYTES) return null;
-  const key = record.subarray(0, PUBLIC_KEY_BYTES);
-  if (!key.every((byte, i) => byte === publicKey[i])) return null;
-  const signature = record.subarray(PUBLIC_KEY_BYTES, RECORD_HEADER_BYTES);
-  const copy = record.subarray(RECORD_HEADER_BYTES);
-  return verify(SHARE_CONTEXT, publicKey, signature, copy) ? copy.slice() : null;
+  return openTagged(SHARE_CONTEXT, record, publicKey);
 }

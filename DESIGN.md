@@ -166,6 +166,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each version shows a word diff of the Markdown source against the current text, in Newsreader with its line breaks kept: additions underlined on `primary-soft`, and deletions struck through on `negative-soft`, the `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
+  - A priority vote's options (#107) are cards like versions, each headed by the option as plain text in Newsreader, with its own pills and consent meter. Phones stack them; wide screens set two columns, then three.
 - **Level picker** (#90): the three involvement levels as a radio group of cards, Member to Co-Creator.
   - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
   - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
@@ -179,11 +180,24 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Totals come next.
   - Individual ballots appear under a disclosure, with the expiry date shown under its toggle ("Individual scores and notes are visible until Sat 12 Dec. Screenshots taken before then can outlast this.", #111).
   - Once they expire, a caption takes the disclosure's place ("Individual scores and notes were cleared on Sat 12 Dec."), and the totals stay.
+  - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots. Once the ballots expire, that disclosure, now "Totals", keeps the totals, with the cleared caption in the ballots' place.
 - **Dispatch card** (#112): a `surface` card with a `hairline` border, as every card.
   - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it.
   - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.
   - "Open <Document title> →" as a forward link when it points to a Document.
   - On the Dispatches view, Send a Dispatch is the one primary action; on Group home, it's secondary, beside See all.
+- **Front door** (#121): the public page a group opens by Proposal.
+  - The eyebrow "Front door", the group's name as the heading, then a `surface` card: the eyebrow "From their Document" over the excerpt in Newsreader at document size, and, only when the group chose it, how many people are in it (ui, `body`). Never a member's name.
+  - "Ask to join" (heading-3), then two fields, the name to use and why, one line in `body` (ui) saying not to include anything the group shouldn't read, and Send, the page's one primary action. No contact field.
+  - A closed door reads "This front door is closed." under the heading "Front door", with one quiet line and no form.
+  - **Applications** on group home: one `surface` card each, the name (heading-3) and the day it arrived (meta) on one line, the message as plain body text, "Invited by <name>" in caption, then Send an invite (secondary) and Dismiss (quiet).
+- **Coalition room** (#125): a list and a box, never a chat product.
+  - The eyebrow "Room", the coalition's name as the heading, then one line in `body` saying who can read it (only the coalition's member groups: not the relay, not its followers) and that each device deletes a message 30 days after the relay received it.
+  - Messages run oldest at the top to newest at the bottom, as hairline rows on the paper: the author's coalition name (ui, 650, `ink`) and the relay's time (caption, `muted`; the time alone today, the day and time before) on one line, then the text in body as plain pre-wrapped text inside `<bdi>`: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links. No avatars, reactions, counts or read receipts.
+  - A message the relay doesn't have yet sits last, under the writer's name, with its send status (caption, `muted`) under its text.
+  - At the bottom, the box ("Message", a few lines tall, taller on drag) and Send, the view's one primary action. Someone who hasn't taken part gets Take part (secondary) there instead, and anyone else one line in `body` saying who writes here.
+  - New messages are announced politely, only while the person is at the bottom.
+  - On the coalition's home, a card link "Open the room" in its own section, shown only on a device in a member group.
 - **Notification switches** (Settings, #99): the disclosure first, as plain body text, then one React Aria switch per group, "Notify me about <group>", all off to start.
   - Each switch is a card on `surface` with a `hairline` border, and a tap anywhere on it toggles it. The track sits at the row's end, at least a 44px target with the card.
   - Off: a `muted` ring with a `muted` thumb at the start. On: the track fills `primary` and the thumb, in `surface`, moves to the end, so the state never rests on color alone.

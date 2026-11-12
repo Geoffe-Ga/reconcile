@@ -22,7 +22,7 @@ import {
 import { resultMismatches, resultsToReport } from './crossing';
 import { fold } from './fold';
 import { DEFAULT_RULES } from './rules';
-import { tally } from './tally';
+import { rank, tally } from './tally';
 
 /** What a member group owes and what it would flag, each for the seat it holds (#100). */
 function crossings(logs: Record<string, FoldedLog>, log: string) {
@@ -47,10 +47,12 @@ describe('vector files', () => {
       'chat-posted-ignored.json',
       'chat-thread-first.json',
       'chat-thread-ignored.json',
+      'coalition-admit.json',
       'coalition-contest.json',
       'coalition-forgery.json',
       'coalition-formation.json',
       'coalition-group.json',
+      'coalition-room-wrap.json',
       'coalition-thresholds.json',
       'dispatch-carried.json',
       'dispatch-limits.json',
@@ -62,6 +64,8 @@ describe('vector files', () => {
       'dissolve-terminal.json',
       'dissolve-unfinished.json',
       'dissolve-window.json',
+      'door-class.json',
+      'door-invited.json',
       'fold.json',
       'home-two-open-proposals.json',
       'invite.json',
@@ -77,6 +81,16 @@ describe('vector files', () => {
       'optin-class.json',
       'optin-ignored.json',
       'optin-narrow.json',
+      'priority-admission.json',
+      'priority-chat-thread.json',
+      'priority-cleared.json',
+      'priority-coalition.json',
+      'priority-dispatch.json',
+      'priority-dissolve.json',
+      'priority-focus.json',
+      'priority-options.json',
+      'priority-rank.json',
+      'priority-suspend.json',
       'proposal-number.json',
       'recovery-share-coalition.json',
       'recovery-share.json',
@@ -84,6 +98,9 @@ describe('vector files', () => {
       'result-cleared.json',
       'result-mismatch.json',
       'result-no-votes.json',
+      'room-fold.json',
+      'room-ignored.json',
+      'room-keys.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -141,6 +158,10 @@ describe('vector files', () => {
       'coalition',
       'coalition',
       'coalition',
+      'coalition',
+      'coalition',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -167,12 +188,25 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'tally',
+      'fold',
+      'fold',
       'coalition',
       'fold',
       'fold',
       'fold',
       'fold',
       'fold',
+      'room',
+      'fold',
+      'room-keys',
       'fold',
       'fold',
       'fold',
@@ -261,6 +295,13 @@ describe('vector files', () => {
     'an average of exactly 2.5 with no zeros fails the entrenched bar',
     'an average of exactly 2.5 with no zeros passes the ordinary bar',
     'entrenched lapse below quorum',
+    'priority-rank: of four options, A and B pass and tie on average and zeros, so A, the earlier, comes first; C is below quorum and D fails the floor',
+    'priority-rank: the higher average ranks first, wherever it sits on the ballot',
+    'priority-rank: an equal average ranks the option with fewer zeros first, then the earlier option',
+    'priority-rank: two options, one at exactly 2.0 and one just under, rank only the one at 2.0',
+    'priority-rank: seven options, of which the three that clear the floor and quorum rank by average',
+    'priority-rank: options at quorum that all miss the floor rank nothing, and the vote fails',
+    'priority-rank: options that all miss quorum rank nothing, and the vote lapses',
   ])('include the tally vector "%s"', (name) => {
     expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
   });
@@ -432,6 +473,24 @@ describe('vector files', () => {
     'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
     'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
     "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
+    'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
+    'priority-options: a priority vote with 7 options opens',
+    'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
+    'priority-options: an option of 121 code points is ignored, and one of exactly 120 opens, though it takes 240 UTF-16 units',
+    'priority-options: a priority vote with two equal options is ignored, and so is one with a blank or empty option',
+    'priority-options: a second priority vote while one is open is ignored, and one opens once the first has closed early, even in the same minute',
+    'priority-options: an edit Proposal opens beside an open priority vote',
+    'priority-options: a priority vote\'s window of 3 days sets its deadline to received + 4,320; one of 15 days is ignored, and one of "7", a string, holds no event',
+    'priority-options: a version on a priority vote is ignored, so its options stay as proposed',
+    "priority-options: a Collaborator's priority vote is ignored, since asking needs propose",
+    'priority-options: a priority vote that also names an Atom or text, lacks options, has a non-string option or list, or names an unknown target holds no event, and one with an empty question is ignored',
+    'priority-focus: of four options, Fix the website and Plan the picnic pass and tie, so the earlier, Fix the website, becomes the focus, and every Atom stays byte-identical',
+    'priority-focus: a priority vote whose top option passes sets no focus until its pass is final',
+    'priority-focus: a later priority vote that lapses leaves the focus unchanged',
+    'priority-focus: a later priority vote in which no option passes leaves the focus unchanged',
+    'priority-focus: a later priority vote that passes replaces the focus with its top option',
+    'priority-focus: an edit that passes after a priority vote changes its Atom and leaves the focus',
+    'priority-focus: a group whose only priority vote fails has no focus',
     "dissolve-terminal: Ana, Ben and Cy pass a dissolve with three 4s, which closes it early at 30,000,000; Ana's dissolve at 30,000,001 ends the group, so Ben's ballot on the other open Proposal at 30,000,002 and a join at 30,000,003 are ignored, and that Proposal has no outcome",
     'dissolve-bar: a dissolve Proposal averaging exactly 2.5 with no zeros fails, because it is entrenched, so a dissolve naming it is ignored and the group goes on',
     'dissolve-open: a dissolve naming a dissolve Proposal that is still open is ignored, and the ballot that closes it still counts',
@@ -447,6 +506,16 @@ describe('vector files', () => {
     'dissolve-unfinished: an edit and a steward election still open when the group dissolves never close, apply or seat, even once later records and relay time pass their deadlines, and a Proposal decided before keeps its outcome and its text',
   ])('include the fold vector "%s"', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    'door-invited-first',
+    'door-invited-ignored',
+    'door-count',
+    'door-rotate',
+    'door-shape',
+  ])('include the front door vector "%s" (#121)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 
   it.each([
@@ -527,6 +596,29 @@ describe('vector files', () => {
       'sections-chat-thread',
     );
   });
+
+  it.each([
+    'priority-chat-thread',
+    'priority-dispatch-pass',
+    'priority-dispatch-lapse',
+    'priority-dispatch-ignored',
+    'priority-dissolve',
+    'priority-suspend',
+    'priority-admission',
+    'priority-cleared',
+    'priority-cleared-fail',
+  ])(
+    'include the priority vote vector "%s" (#107 with #101, #102, #108, #111, #112, #123)',
+    (name) => {
+      expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
+  it('include the priority vote vector "priority-coalition" (#107, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'priority-coalition',
+    );
+  });
 });
 
 describe('coalition vector files (#100)', () => {
@@ -556,6 +648,18 @@ describe('coalition vector files (#100)', () => {
     'group-motion-number',
     'group-motion-chat',
     'group-motion-dispatch',
+    'admit-pass',
+    'admit-open',
+    'admit-fail',
+    'admit-every-seat',
+    'forgery-admit-proof',
+    'forgery-admit-participant',
+    'forgery-admit-seat',
+    'forgery-admit-repeat',
+    'forgery-admit-dispatch',
+    'forgery-admit-in-group',
+    'forgery-admit-genesis-result',
+    'forgery-admit-forming',
   ])('include "%s"', (name) => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
@@ -574,6 +678,9 @@ describe('tally vectors', () => {
     const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
     const { eligible, versions } = vector;
     expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
+    if (vector.rank !== undefined) {
+      expect(rank({ eligible, versions, bar }).map((option) => option.id)).toEqual(vector.rank);
+    }
   });
 });
 

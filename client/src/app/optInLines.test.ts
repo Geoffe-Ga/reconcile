@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { OFF, rulesChange } from '../engine/optIns';
+import { COUNTED, DOOR, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { directionOf, optInState, type RulesView, rulesView, webhookTail } from './optInLines';
@@ -28,8 +29,9 @@ describe('directionOf', () => {
     expect(directionOf(change('chatBot', bot(W1)))).toBe('on');
     expect(directionOf(change('chatBot', null, { ...OFF, chatBot: bot(W1) }))).toBe('off');
     expect(directionOf(change('chatBot', bot(W2), { ...OFF, chatBot: bot(W1) }))).toBe('replace');
-    expect(directionOf(change('frontDoor', true))).toBe('on');
-    expect(directionOf(change('frontDoor', false, { ...OFF, frontDoor: true }))).toBe('off');
+    expect(directionOf(change('frontDoor', DOOR))).toBe('on');
+    expect(directionOf(change('frontDoor', false, { ...OFF, frontDoor: DOOR }))).toBe('off');
+    expect(directionOf(change('frontDoor', ROTATED, { ...OFF, frontDoor: DOOR }))).toBe('replace');
   });
 });
 
@@ -55,15 +57,44 @@ describe('rulesView: what a rules ballot decides, in words', () => {
   });
 
   it('words the front door opening and closing', () => {
-    expect(rulesView(change('frontDoor', true))).toMatchObject({
+    expect(rulesView(change('frontDoor', DOOR))).toMatchObject({
       title: 'Open a front door',
       passed: 'This passed. Your group’s front door is open.',
       tail: null,
     });
-    expect(rulesView(change('frontDoor', false, { ...OFF, frontDoor: true }))).toMatchObject({
+    expect(rulesView(change('frontDoor', false, { ...OFF, frontDoor: DOOR }))).toMatchObject({
       title: 'Close the front door',
       line: 'If this passes, the front door closes.',
     });
+  });
+
+  it('says when an opening shows the count, and leaves it unsaid when it doesn’t (#121)', () => {
+    expect(rulesView(change('frontDoor', DOOR)).line).toBe(
+      'If this passes, your group gets a public page where people can ask to join.',
+    );
+    expect(rulesView(change('frontDoor', COUNTED)).line).toBe(
+      'If this passes, your group gets a public page where people can ask to join. Its page shows how many people are in your group.',
+    );
+  });
+
+  it('words a change of an open door by what changes: its link, its count, or both (#121)', () => {
+    const open = { ...OFF, frontDoor: DOOR };
+    expect(rulesView(change('frontDoor', ROTATED, open))).toEqual<RulesView>({
+      optIn: 'frontDoor',
+      title: 'Change the front door',
+      line: 'If this passes, the front door changes. It moves to a new link, and the old link closes.',
+      passed: 'This passed. The front door changed.',
+      tail: null,
+    });
+    expect(rulesView(change('frontDoor', COUNTED, open)).line).toBe(
+      'If this passes, the front door changes. Its page shows how many people are in your group.',
+    );
+    expect(rulesView(change('frontDoor', DOOR, { ...OFF, frontDoor: COUNTED })).line).toBe(
+      'If this passes, the front door changes. Its page stops showing how many people are in your group.',
+    );
+    expect(rulesView(change('frontDoor', { ...ROTATED, showCount: true }, open)).line).toBe(
+      'If this passes, the front door changes. It moves to a new link, and the old link closes. Its page shows how many people are in your group.',
+    );
   });
 });
 

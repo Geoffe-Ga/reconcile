@@ -37,8 +37,13 @@ describe('parseRoute', () => {
     ['#share/', { name: 'shared', payload: '' }],
     ['#share/abc/def', { name: 'shared', payload: 'abc/def' }],
     ['#share/has space', { name: 'shared', payload: 'has space' }],
+    // Any #door/ link reaches the front door, which reads a damaged one itself (#121).
+    [`#door/${SHARE.slice(0, 43)}`, { name: 'door', payload: SHARE.slice(0, 43) }],
+    ['#door/', { name: 'door', payload: '' }],
+    ['#door/abc/def', { name: 'door', payload: 'abc/def' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
+    [`#/g/${GROUP}/priority`, { name: 'priority', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
     [`#/g/${GROUP}/add`, { name: 'add', groupId: GROUP, after: null }],
@@ -100,6 +105,7 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/again/${ATOM}`,
     `#/g/${GROUP}/again/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
+    `#/g/${GROUP}/priority/${PROPOSAL}`,
     `#/g/${GROUP}/add/`,
     `#/g/${GROUP}/add/has space`,
     `#/g/${GROUP}/add/${ATOM}/extra`,
@@ -179,6 +185,64 @@ describe('share links and Dispatches (#105, #112)', () => {
   });
 });
 
+describe('reconcile cards (#114)', () => {
+  it.each([`#reconcile/abc/def`, `#reconcile/`, `#reconcile/a+b`, `#/card/abc`])(
+    'sends %j to Start',
+    (hash) => {
+      expect(parseRoute(hash)).toEqual({ name: 'start' });
+    },
+  );
+});
+
+describe('coalitions (#120)', () => {
+  const COALITION = 'c'.repeat(43);
+
+  it('reads a coalition’s home, its Document and its composer', () => {
+    expect(parseRoute(`#/c/${COALITION}`)).toEqual({ name: 'coalition', coalitionId: COALITION });
+    expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}`)).toEqual({
+      name: 'coalitionDocument',
+      coalitionId: COALITION,
+      documentId: COALITION,
+    });
+    expect(parseRoute(`#/c/${COALITION}/propose/${COALITION}.2`)).toEqual({
+      name: 'coalitionPropose',
+      coalitionId: COALITION,
+      atomId: `${COALITION}.2`,
+    });
+  });
+
+  it('reads a coalition’s room (#125)', () => {
+    expect(parseRoute(`#/c/${COALITION}/room`)).toEqual({
+      name: 'coalitionRoom',
+      coalitionId: COALITION,
+    });
+  });
+
+  it('reads a later Document’s id, as several Documents name it (#92)', () => {
+    expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}:1`)).toEqual({
+      name: 'coalitionDocument',
+      coalitionId: COALITION,
+      documentId: `${COALITION}:1`,
+    });
+  });
+
+  it.each([
+    '#/c',
+    '#/c/',
+    `#/c/${COALITION}/doc`,
+    `#/c/${COALITION}/doc/a+b`,
+    `#/c/${COALITION}/doc/${COALITION}/more`,
+    `#/c/${COALITION}/propose`,
+    `#/c/${COALITION}/propose/a.b`,
+    `#/c/${COALITION}/p/${COALITION}`,
+    `#/c/${COALITION}/room/${COALITION}`,
+    `#/c/${COALITION}/rooms`,
+    '#/c/a+b',
+  ])('sends %j to Start', (hash) => {
+    expect(parseRoute(hash)).toEqual({ name: 'start' });
+  });
+});
+
 describe('routeHref', () => {
   it.each<[Route, string]>([
     [{ name: 'start' }, '#/'],
@@ -192,8 +256,10 @@ describe('routeHref', () => {
     [{ name: 'join', payload: null }, '#/join'],
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'shared', payload: SHARE }, `#share/${SHARE}`],
+    [{ name: 'door', payload: 'abc' }, '#door/abc'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
+    [{ name: 'priority', groupId: GROUP }, `#/g/${GROUP}/priority`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
     [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
     [{ name: 'add', groupId: GROUP, after: null }, `#/g/${GROUP}/add`],
@@ -214,6 +280,19 @@ describe('routeHref', () => {
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
     [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
     [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
+    [{ name: 'reconcile', groupId: GROUP }, `#/g/${GROUP}/reconcile`],
+    [{ name: 'card', payload: null }, '#/card'],
+    [{ name: 'card', payload: 'abc-def' }, '#reconcile/abc-def'],
+    [{ name: 'coalition', coalitionId: GROUP }, `#/c/${GROUP}`],
+    [
+      { name: 'coalitionDocument', coalitionId: GROUP, documentId: GROUP },
+      `#/c/${GROUP}/doc/${GROUP}`,
+    ],
+    [
+      { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
+      `#/c/${GROUP}/propose/${ATOM}`,
+    ],
+    [{ name: 'coalitionRoom', coalitionId: GROUP }, `#/c/${GROUP}/room`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

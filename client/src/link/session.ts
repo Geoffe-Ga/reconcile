@@ -76,6 +76,7 @@ export interface LinkServices {
   readonly store: Pick<
     Store,
     | 'listGroups'
+    | 'listCoalitions'
     | 'listPersonal'
     | 'getRelayBackup'
     | 'requireUnlocked'

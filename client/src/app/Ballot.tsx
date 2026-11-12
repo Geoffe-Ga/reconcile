@@ -15,11 +15,21 @@ import { NOTE_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
 import { holdPresses } from './holdPresses';
 import { messages } from './messages';
+import { ChoiceList } from './Options';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
 import { useSaving } from './useSaving';
-import { VersionList } from './Versions';
 import type { VersionView } from './versionViews';
+
+/**
+ * Whether a version is the one card of a ballot that decides something other
+ * than a section's text (a steward, an opt-in, dissolving, or a coalition,
+ * #102, #117, #108, #114), whose pills read "Your score".
+ */
+function decidesOne(version: VersionView): boolean {
+  const { steward, rules, dissolve, decision } = version;
+  return [steward, rules, dissolve, decision].some((field) => field !== undefined);
+}
 
 /** A score for each version, by version id. */
 export type Scores = Readonly<Record<string, Score>>;
@@ -46,6 +56,11 @@ export interface BallotProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** What goes under each version's pills, such as its consent meter. */
   readonly below?: (version: VersionView) => ReactNode;
+  /**
+   * `versions` shows each version with its change (the default); `options`
+   * shows a priority vote's options as plain text (#107).
+   */
+  readonly layout?: 'versions' | 'options';
   /** Why a disabled ballot can't change, in place of "Voting has closed", such as a suspension (#102). */
   readonly disabledNote?: ReactNode;
 }
@@ -88,6 +103,8 @@ function ScorePill({ score }: { readonly score: Score }) {
 
 interface ScoreGroupProps {
   readonly version: VersionView;
+  /** The group's label: "Score for version N", or "Score for <option>". */
+  readonly label: ReactNode;
   readonly score: Score | undefined;
   /** The id of the line that says who sees the scores. */
   readonly hint: string;
@@ -96,7 +113,7 @@ interface ScoreGroupProps {
 }
 
 /** One version's five pills, in a React Aria RadioGroup labelled "Score for version N". */
-function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupProps) {
+function ScoreGroup({ version, label, score, hint, isDisabled, onChange }: ScoreGroupProps) {
   return (
     <RadioGroup
       className="score-group"
@@ -110,13 +127,7 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       isDisabled={isDisabled}
       aria-describedby={hint}
     >
-      <Label className="field-label">
-        {version.steward === undefined &&
-        version.rules === undefined &&
-        version.dissolve === undefined
-          ? messages.ballot.scoreFor(version.number)
-          : messages.stewards.score}
-      </Label>
+      <Label className="field-label">{label}</Label>
       <div className="score-pills">
         {SCORES.map((option) => (
           <ScorePill key={option} score={option} />
@@ -173,6 +184,22 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
 }
 
 /**
+ * "Score for version N", a steward, rules, dissolve or coalition ballot's own
+ * label (#102, #117, #108, #114), or for a priority option, "Score for <option>" with the
+ * option in `<bdi>` (#107).
+ */
+function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
+  if (layout === 'options') {
+    return (
+      <>
+        {messages.ballot.scoreForOption} <bdi>{version.text}</bdi>
+      </>
+    );
+  }
+  return decidesOne(version) ? messages.stewards.score : messages.ballot.scoreFor(version.number);
+}
+
+/**
  * The ballot (DESIGN.md, Ballot; spec §8): every version side by side, each
  * with its word diff and five score pills in a React Aria RadioGroup that
  * always shows each pill's number and label, then one note for the whole
@@ -180,7 +207,8 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
  * asks "What would make this a 3 for you?" when a score is 1 and none is 0.
  * Every version needs a score. Sending again before the close replaces the
  * earlier ballot in full, so a voter whose latest ballot misses a version
- * added since is asked to score it, with their earlier scores kept.
+ * added since is asked to score it, with their earlier scores kept. A
+ * priority vote's ballot shows its options instead, each with its own pills.
  */
 export function Ballot(props: BallotProps) {
   const { versions, current, initialScores, hasVoted, isDisabled, pending, reachable } = props;
@@ -210,11 +238,12 @@ export function Ballot(props: BallotProps) {
       <p id={hint} className="field-hint">
         {messages.ballot.visibility}
       </p>
-      <VersionList versions={versions} current={current}>
+      <ChoiceList versions={versions} current={current} layout={props.layout ?? 'versions'}>
         {(version) => (
           <>
             <ScoreGroup
               version={version}
+              label={scoreLabel(version, props.layout)}
               score={scores[version.id]}
               hint={hint}
               isDisabled={isDisabled}
@@ -225,7 +254,7 @@ export function Ballot(props: BallotProps) {
             {props.below?.(version)}
           </>
         )}
-      </VersionList>
+      </ChoiceList>
       <BallotNote note={note} ask={ask} isDisabled={isDisabled} onChange={setNote} />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">

@@ -25,7 +25,11 @@
  * cleared while its outcomes stay. The relay backup's key and state (#97) are
  * one record in a store of their own, in no group, so no group's record ever
  * holds the key. Under a vault that record keeps its state, and the vault
- * its key.
+ * its key. A front door's applications (#121) stay on the device too: those
+ * a member's device read from its group's inbox on the group's record, and
+ * those this device sent, with the reply keys only it holds, in a store of
+ * their own (`./applications.ts`), outside the vault for now, as a share's
+ * keys are.
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
@@ -58,6 +62,8 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import { expiryKeyOf } from '../engine/expiry';
+import { keptInRoom } from '../engine/room';
+import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
@@ -130,10 +136,57 @@ export interface PushRegistration {
   readonly at: number;
 }
 
-/** Everything the device keeps about one group. */
-export interface Group {
-  /** The group's id. */
+/**
+ * What a coalition entry means to do once it can (#114): join under the seat
+ * of a group on this device, and propose admitting a group whose reconcile
+ * Proposal passes.
+ */
+export interface CoalitionPlan {
+  /**
+   * The id of the group on this device whose seat this device joins the
+   * coalition under once the coalition names that seat: the maker's group,
+   * and a group being admitted. Absent once joined, or with nothing to join.
+   */
+  joinAs?: string;
+  /**
+   * The group this device brought a formed coalition's card to, and its
+   * reconcile Proposal: once that passes, this device proposes admitting the
+   * group into the coalition. Absent once proposed, or once it didn't pass.
+   */
+  admitting?: Admitting;
+}
+
+/**
+ * An admission this device will propose (#114): the group it brought a
+ * formed coalition's card to, that group's reconcile Proposal, and the title
+ * and why the admit motion will carry.
+ */
+export interface Admitting {
+  readonly group: string;
+  readonly proposal: string;
+  readonly title: string;
+  readonly why: string;
+}
+
+/**
+ * Everything the device keeps about one group, about one coalition whose
+ * secret a group on the device holds (#114), or about one coalition's room
+ * (#125): its `kind` says which.
+ */
+export interface Group extends CoalitionPlan {
+  /**
+   * The group's id; for a coalition, its entry id, derived from its secret
+   * (`crypto/card.ts`), since a device keeps it before its genesis exists.
+   */
   groupId: string;
+  /**
+   * `coalition` for a coalition's entry (#114): its own log, cursors, outbox
+   * and `me`, synced like a group's. `room` for a coalition's room (#125,
+   * `./rooms.ts`): its `secret` is the coalition's `inner`, its signing key
+   * and author the coalition entry's, and its log keeps 30 days of relay
+   * time. Absent for a group.
+   */
+  kind?: 'coalition' | 'room';
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
@@ -236,6 +289,12 @@ export interface Group {
    */
   recoverySeen?: string[];
   /**
+   * The front door's inbox as this device last read it (#121): absent until
+   * the group's door is open and this member may invite. Never in a backup
+   * file, and dropped with an archive.
+   */
+  door?: DoorInbox;
+  /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
    * takes, oldest first. Absent until the first. #73's invite header, #78's
    * backup file and #96's link carry it, so a newcomer or a restored device
@@ -311,6 +370,7 @@ export class VaultLocked extends Error {
  */
 export type BackedUpGroup = Pick<
   Group,
+  | 'kind'
   | 'groupId'
   | 'secret'
   | 'signingKey'
@@ -340,7 +400,28 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
  * inviter has cleared (#111).
  */
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
-  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared'>>;
+  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
+
+/** True for a coalition's entry (#114), false for a group or a room. */
+export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'coalition';
+}
+
+/** True for a coalition's room (#125), false for a group or a coalition's entry. */
+export function isRoomEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'room';
+}
+
+/**
+ * A change to a coalition entry's plan and name (#114): each field given
+ * replaces it, and null clears it.
+ */
+export interface PlanChange {
+  /** The name this device joins the coalition under. */
+  readonly name?: string;
+  readonly joinAs?: string | null;
+  readonly admitting?: CoalitionPlan['admitting'] | null;
+}
 
 /**
  * A move to the group's next epoch (#98): its secret, the cursor to read its
@@ -477,16 +558,27 @@ export interface RelayBackupStore {
 export type EventIdOf = (bytes: Uint8Array) => string | null;
 
 /**
- * The device's groups, its personal Documents (#93), its relay backup's
- * state (#97), and its recovery contacts (#109).
+ * The device's groups, its personal Documents (#93), its relay backup's state
+ * (#97), its recovery contacts (#109), and the front-door applications it
+ * sent (#121).
  */
-export interface Store extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore {
-  /** Every group on the device. */
+export interface Store
+  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, SentStore {
+  /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
-  /** One group, or `undefined` when the device isn't in it. */
+  /** Every coalition entry on the device (#114). */
+  listCoalitions(): Promise<Group[]>;
+  /** Every coalition room on the device (#125). */
+  listRooms(): Promise<Group[]>;
+  /** One group or coalition entry, or `undefined` when the device has none by that id. */
   getGroup(groupId: string): Promise<Group | undefined>;
-  /** Keep a new group; refuses an id the device already has. */
+  /** Keep a new group or coalition entry; refuses an id the device already has. */
   addGroup(group: NewGroup): Promise<Group>;
+  /**
+   * Change a coalition entry's plan and the name it joins under, in one change
+   * (#114). Refuses an entry that isn't a coalition's.
+   */
+  planCoalition(groupId: string, change: PlanChange): Promise<void>;
   /**
    * Queue a signed record for the relay, after the ones already queued. A
    * Proposal or version names the `draft` target it came from, and that draft
@@ -639,6 +731,15 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Reco
    */
   markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /**
+   * Replace the group's front-door inbox with `edit` of it (#121), in one
+   * change, or drop it when `edit` returns undefined. A group this device is
+   * leaving or keeps read-only takes none (#77, #108).
+   */
+  updateInbox(
+    groupId: string,
+    edit: (held: DoorInbox | undefined) => DoorInbox | undefined,
+  ): Promise<void>;
+  /**
    * The passkey that opens this device's vault and the salt it's asked with,
    * or null when its keys aren't locked with a passkey (#95).
    */
@@ -701,6 +802,7 @@ interface Schema extends DBSchema {
   personal: { key: string; value: PersonalDocument };
   device: { key: string; value: DeviceRecord };
   vault: { key: string; value: VaultRecord };
+  sent: { key: string; value: SentApplication };
 }
 
 /** Whether a device record is the recovery contacts': only they have a split. */
@@ -719,7 +821,8 @@ function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefi
 }
 
 /**
- * The schema version. Version 6 adds the key vault (#95), version 5 the
+ * The schema version. Version 7 adds the store of front-door applications
+ * this device sent (#121), version 6 the key vault (#95), version 5 the
  * device store, which holds the relay backup's state (#97), and version 4
  * the personal store (#93); none of them deletes anything. Version 3 holds a
  * real group secret, from which the mailbox id and seal key derive (#71);
@@ -733,7 +836,7 @@ function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefi
  * link (#105): a version 4 or 5 Document that holds one keeps it whole
  * through the upgrade.
  */
-const VERSION = 6;
+const VERSION = 7;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
@@ -742,6 +845,7 @@ const RELAY_BACKUP = 'relay-backup';
 /** The device store's key for the recovery contacts' record (#109): a key of its own, so no new version. */
 const RECOVERY = 'recovery';
 const VAULT = 'vault';
+const SENT = 'sent';
 
 /**
  * The stores a key transaction spans: the records, the personal Documents,
@@ -755,7 +859,8 @@ type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
 /**
  * Brings a database at `oldVersion` up to {@link VERSION}, one version at a
  * time: groups from before version 3 are deleted, then the personal store,
- * the device store and the vault are added, in that order, beside whatever
+ * the device store, the vault and the sent applications' store (#121) are
+ * added, in that order, beside whatever
  * groups version 3 kept.
  */
 function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
@@ -766,6 +871,7 @@ function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
   if (oldVersion < 4) database.createObjectStore(PERSONAL, { keyPath: 'id' });
   if (oldVersion < 5) database.createObjectStore(DEVICE);
   if (oldVersion < 6) database.createObjectStore(VAULT, { keyPath: 'id' });
+  if (oldVersion < 7) database.createObjectStore(SENT, { keyPath: 'id' });
 }
 
 /** The IndexedDB database the app keeps its groups in. */
@@ -827,7 +933,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
   };
 
   return {
-    listGroups: () => readWhole(db, session, null),
+    listGroups: async () =>
+      (await readWhole(db, session, null)).filter((group) => group.kind === undefined),
+    listCoalitions: async () => (await readWhole(db, session, null)).filter(isCoalitionEntry),
+    listRooms: async () => (await readWhole(db, session, null)).filter(isRoomEntry),
     getGroup: async (groupId) => {
       const [group] = await readWhole(db, session, groupId);
       return group;
@@ -852,6 +961,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       return stored;
     },
     enqueue: (groupId, bytes, draft) => enqueueAll(groupId, [bytes], draft),
+    planCoalition: (groupId, plan) =>
+      change(groupId, (group) => {
+        if (!isCoalitionEntry(group)) throw new Error('This isn’t a coalition’s entry.');
+        replan(group, plan);
+      }),
     enqueueAll,
     async readDraft(groupId, target) {
       const group = await db.get(GROUPS, groupId);
@@ -914,6 +1028,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;
+        // A dissolved group's front door has closed: its applications go (#121).
+        delete group.door;
       }),
     clearArchive: (groupId, cleared) =>
       change(groupId, (group) => {
@@ -1001,6 +1117,16 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       changeQuietly(groupId, (group) => {
         group.nudged = [...nudged];
       }),
+    updateInbox: (groupId, edit) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined || group.archived !== undefined) return;
+        const door = edit(group.door);
+        if (door === undefined) delete group.door;
+        else group.door = door;
+      }),
+    ...sentStore(db, () => {
+      notify(SENT_CHANGED);
+    }),
     async listPersonal() {
       return (await db.getAll(PERSONAL)).sort(byCreation);
     },
@@ -1104,12 +1230,44 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
   };
 }
 
-/** Saves what a sync pass read into `group`'s record: its new log records, in relay order, and sync state. */
+/** The applications this device sent, in `db`'s sent store (#121), telling `changed` after each write. */
+function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
+  return {
+    async listSent() {
+      return (await db.getAll(SENT)).sort((a, b) => a.sentAt - b.sentAt);
+    },
+    async addSent(application) {
+      await db.put(SENT, application);
+      changed();
+    },
+    async updateSent(id, edit) {
+      const tx = db.transaction(SENT, 'readwrite');
+      const held = await tx.store.get(id);
+      if (held !== undefined) await tx.store.put({ ...edit(held), id });
+      await tx.done;
+      if (held !== undefined) changed();
+    },
+    async dropSent(id) {
+      await db.delete(SENT, id);
+      changed();
+    },
+  };
+}
+
+/**
+ * Saves what a sync pass read into `group`'s record: its new log records, in
+ * relay order, and sync state. A room (#125) then keeps only the records
+ * received at most 30 days of relay time before the pull's `now`, so each
+ * sync deletes the rest in the same change.
+ */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  if (isRoomEntry(group)) {
+    group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
+  }
   group.relayNow = pull.relayNow;
   group.instance = pull.instance;
   group.lastSyncAt = pull.lastSyncAt;
@@ -1578,6 +1736,15 @@ async function writeKeys<T>(
  * then notifies. An edit that throws, like a missing group, changes nothing.
  * No edit touches key material, which only `keepKeys` writes.
  */
+/** Applies a {@link PlanChange} to a coalition entry's record. */
+function replan(group: StoredGroup, { name, joinAs, admitting }: PlanChange): void {
+  if (name !== undefined) group.me = { ...group.me, name };
+  if (joinAs === null) delete group.joinAs;
+  else if (joinAs !== undefined) group.joinAs = joinAs;
+  if (admitting === null) delete group.admitting;
+  else if (admitting !== undefined) group.admitting = admitting;
+}
+
 function changer(
   db: IDBPDatabase<Schema>,
   notify: (groupId: string) => void,

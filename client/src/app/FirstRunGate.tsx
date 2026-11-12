@@ -22,6 +22,7 @@
  */
 import { type ReactNode, useEffect, useState } from 'react';
 
+import type { DoorView } from '../door/page';
 import { canCreateKeys, type PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import type { PasskeyOfferRecord } from '../platform/passkeyOffer';
@@ -65,6 +66,8 @@ export interface FirstRunGateProps extends FirstRunServices {
   readonly copyText: (text: string) => Promise<void>;
   /** Opens an invite's envelope, for the guide's preview (#73's `lookupInvite`). */
   readonly lookup: (seed: Uint8Array) => Promise<InviteLookup>;
+  /** Reads a front door's page, for the guide (#121's `readDoor`). */
+  readonly readDoor: (address: Uint8Array) => Promise<DoorView>;
   /** Passkey setup, for the offer (#95). */
   readonly passkey: Passkey;
   /** Erases all of Reconcile's data on this device, for the unlock screen (#95). */
@@ -73,9 +76,10 @@ export interface FirstRunGateProps extends FirstRunServices {
   readonly children: (opened: OpenedApp) => ReactNode;
 }
 
-/** How the page was opened, read from its `#join/{seed}` route. */
+/** How the page was opened, read from its `#join/{seed}` or `#door/{address}` route. */
 function arrivalFrom(hash: string): Arrival {
   const route = parseRoute(hash);
+  if (route.name === 'door') return { kind: 'door', payload: route.payload };
   if (route.name !== 'join' || route.payload === null) return { kind: 'plain' };
   const seed = parseInvitePayload(route.payload);
   return seed === null ? { kind: 'damaged' } : { kind: 'invite', seed };
@@ -90,9 +94,12 @@ interface Held {
 /**
  * Takes an invite's secret out of the address bar. The guide clears the
  * whole address, since this browser never opens the app; under the notice,
- * Join's route stays, so the app opens there with the invite in hand.
+ * Join's route stays, so the app opens there with the invite in hand. A
+ * front door's link holds no secret (#121), so it stays, and the app opens
+ * at the door once the notice is accepted.
  */
 function release(arrival: Arrival, open: boolean): void {
+  if (arrival.kind === 'door') return;
   if (!open) window.history.replaceState(null, '', '/');
   else if (arrival.kind !== 'plain') replaceRoute({ name: 'join', payload: null });
 }
@@ -202,7 +209,7 @@ function useSteps(props: FirstRunGateProps, open: boolean) {
 
 /** Shows the install guide, the pilot notice, the unlock screen or the passkey offer, then the app. */
 export function FirstRunGate(props: FirstRunGateProps) {
-  const { platform, requestPersistence, origin, copyText, lookup, children } = props;
+  const { platform, requestPersistence, origin, copyText, lookup, readDoor, children } = props;
   const open = canCreateKeys(platform);
   const steps = useSteps(props, open);
   const { step } = steps;
@@ -219,6 +226,7 @@ export function FirstRunGate(props: FirstRunGateProps) {
           origin={origin}
           lookup={lookup}
           copyText={copyText}
+          readDoor={readDoor}
         />
       );
     case 'notice':

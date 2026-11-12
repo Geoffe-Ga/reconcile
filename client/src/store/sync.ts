@@ -28,12 +28,16 @@
  *    only while the group has its bot on and hasn't dissolved, and never once
  *    the loop is halted (#78). Nothing the bot does, or fails to do, changes
  *    whether the pass succeeded;
- * 6. posts the push nudges due for this device's own open Proposals (#99,
+ * 6. keeps the group's front door (#121, src/door/keeper.ts): posts its
+ *    page when it's due and reads its inbox while the door is open, closes
+ *    the page of a door no longer open, a dissolved group's included (#108),
+ *    and never fails the pass;
+ * 7. posts the push nudges due for this device's own open Proposals (#99,
  *    ./push.ts), each once, which likewise never fails the pass. A read-only
  *    archive (#108) posts none.
  *
  * After a pass in which every group synced, and unless the loop is halted,
- * four things follow, in this order:
+ * five things follow, in this order:
  *
  * 1. the key changes due (#98, below), so what comes next sees each group at
  *    the epoch it moved to;
@@ -50,7 +54,9 @@
  *    30 days, so a phone is under a new mailbox as soon as the pass that
  *    moved it. A read-only archive gets no upkeep: its registration is left
  *    to expire at the relay, so no request names its mailbox again;
- * 4. `afterPass`: in the app, the relay backup's daily refresh (#97,
+ * 4. replies to the front-door applications this device sent (#121), which
+ *    runs on a device in no group too, and never fails the pass;
+ * 5. `afterPass`: in the app, the relay backup's daily refresh (#97,
  *    ./relayBackup.ts), last because it may send the largest request of the
  *    day, and so that its snapshot holds each group after its key change.
  *    It waits while a key change this device should write is still due
@@ -99,6 +105,15 @@
  * after the key change stays ignored. A member with no encryption key posts
  * one. A dissolve ends all of this (#108): the fold makes no key change due
  * once a group has dissolved, and an archive neither writes one nor posts a key.
+ *
+ * Coalitions follow the groups in a complete pass (#114, ./coalitions.ts),
+ * then each coalition's room (#125, ./rooms.ts), synced as a group is under
+ * keys from the coalition's `inner`: no key change, no `kx`, chat bot, door
+ * or nudges, and no wake. A room never read before reads its last 5 weeks,
+ * and each pull deletes what is more than 30 days of relay time old. Every
+ * pass first keeps the device's rooms from the store alone, so a room whose
+ * last member group here is leaving, read-only or gone is purged at once,
+ * even while the relay can't be reached.
  */
 
 import { newKxKey } from '../crypto/box';
@@ -110,7 +125,8 @@ import type { GroupState, LogRecord } from '../engine/fold';
 import { wakeForRecord } from '../engine/wake';
 import { settleDissolve } from './archive';
 import type { ChatBot } from './chatBot';
-import { type EventIdOf, type Group, type Pull, sameBytes, type Store } from './db';
+import { ensureEntries, settleCoalitions, stillSyncs } from './coalitions';
+import { type EventIdOf, type Group, isRoomEntry, type Pull, sameBytes, type Store } from './db';
 import {
   advanceFor,
   epochOf,
@@ -125,6 +141,7 @@ import { eventIdOf } from './eventId';
 import { clearExpiredBallots, foldGroup, resultsDue, signResults } from './expiry';
 import { keptWeeks, pollWeeks } from './mailbox';
 import type { PushUpkeep } from './push';
+import { keepRooms, type RoomReads } from './rooms';
 
 /** The wait between passes while they succeed. */
 export const POLL_MS = 3000;
@@ -134,6 +151,17 @@ export const MAX_WAIT_MS = 30_000;
 
 /** How long the relay keeps a group's events, in days (ADR-0057). */
 export const GROUP_TTL_DAYS = 30;
+
+/**
+ * The front door's work in a pass (#121): `createDoorKeeper` in src/door/,
+ * kept apart from this module so sync needs nothing of the door's.
+ */
+export interface DoorUpkeep {
+  /** Keeps `groupId`'s door after the group synced. */
+  run(groupId: string): Promise<void>;
+  /** Looks for replies to this device's applications, after a complete pass. */
+  replies(): Promise<void>;
+}
 
 /** The timer functions the poller uses; tests hand in ones they control. */
 export interface Timers {
@@ -264,6 +292,8 @@ export interface SyncOptions {
   chatBot?: Pick<ChatBot, 'run'>;
   /** Push's nudges, upkeep and Leave's forget (#99); without it, nothing is registered or nudged. */
   push?: PushUpkeep;
+  /** The front door's keeper (#121); without it, no page is kept and no inbox or reply read. */
+  door?: DoorUpkeep;
   /**
    * Run after each pass in which every group synced, unless halted, once the
    * pass's key changes (#98) and push upkeep (#99) are done: the relay
@@ -291,11 +321,15 @@ export interface Sync extends Poller {
 /** A sync loop over `options.store`; call `start()` to begin polling. */
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
-  const { chatBot, push, afterPass } = options;
+  const { chatBot, push, door, afterPass } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let halted = false;
   let inFlight: Promise<boolean> | null = null;
+  // Each group as the coalitions' part of a pass last read it (#114), so an unchanged one isn't folded again.
+  const scanned = new Map<string, string>();
+  // Each group's fold as the rooms last read it (#125), for the same reason.
+  const roomReads: RoomReads = new Map();
 
   /**
    * Post the group's current outbox in order; an entry leaves only once the
@@ -315,8 +349,10 @@ export function createSync(options: SyncOptions): Sync {
     let posted: 'posted' | 'none' = 'none';
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
-      before ??= foldGroup(current);
-      const wake = wakeForRecord(before, bytes);
+      // No phone registers under a coalition's or a room's mailboxes (#120, #284), so nothing
+      // there asks to wake one.
+      const wake =
+        current.kind === undefined && wakeForRecord((before ??= foldGroup(current)), bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
       if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
         push?.forget(current);
@@ -369,7 +405,7 @@ export function createSync(options: SyncOptions): Sync {
    */
   async function readWeeks(group: Group, pass: Pass): Promise<WeekRead[]> {
     const { first, cursors, week, posted } = pass;
-    const last = group.relayNow === null ? null : weekOf(group.relayNow);
+    const last = group.relayNow === null ? neverRead(group) : weekOf(group.relayNow);
     const reads: WeekRead[] = [];
     for (const each of pollWeeks(last, week)) {
       if (each !== first.week) reads.push(await readWeek(group.secret, each, cursors));
@@ -389,7 +425,9 @@ export function createSync(options: SyncOptions): Sync {
    * epoch (#98), else `stayed`.
    */
   async function syncMailbox(group: Group): Promise<'left' | 'moved' | 'stayed'> {
-    const frozen = isFrozen(foldGroup(group), group);
+    // A room's log is messages alone (#125): it has no key change to freeze for or move to.
+    const room = isRoomEntry(group);
+    const frozen = !room && isFrozen(foldGroup(group), group);
     const { first, cursors } = await firstRead(group);
     const week = weekOf(first.now);
     const outcome = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
@@ -397,7 +435,7 @@ export function createSync(options: SyncOptions): Sync {
     const pass = { first, cursors, week, posted: outcome === 'posted' };
     const reads = await readWeeks(group, pass);
     const { records, relayNow } = openReads(seal, group, reads);
-    const advance = advanceFor(group, records, relayNow);
+    const advance = room ? null : advanceFor(group, records, relayNow);
     const pull: Pull = {
       records,
       cursors: cursorsAfter(group.secret, pass, reads),
@@ -417,6 +455,7 @@ export function createSync(options: SyncOptions): Sync {
    * later minute.
    */
   async function settleAfter(group: Group, pull: Pull): Promise<void> {
+    if (group.kind !== undefined) return;
     if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
       await settleDissolve(store, group.groupId, clock);
     }
@@ -433,21 +472,32 @@ export function createSync(options: SyncOptions): Sync {
    * mailbox (#108).
    */
   async function syncGroup(group: Group): Promise<boolean> {
-    if (group.archived !== undefined) return true;
-    let current = group;
-    for (;;) {
-      const outcome = await syncMailbox(current);
-      const fresh = outcome === 'left' ? undefined : await store.getGroup(group.groupId);
-      if (fresh === undefined) return false;
-      current = fresh;
-      if (outcome === 'stayed') break;
-    }
+    if (group.archived !== undefined || !stillSyncs(group)) return true;
+    const current = await syncEpochs(group);
+    if (current === undefined) return false;
+    // A coalition or a room has no key of its own to post, no chat bot and no nudges (#114, #120, #125).
+    if (current.kind !== undefined) return true;
     await queueKx(current);
     // Once halted (Erase, #78), the bot neither claims nor posts, and no nudge goes.
     if (halted) return true;
     await chatBot?.run(group.groupId).catch(() => undefined);
+    await door?.run(group.groupId).catch(() => undefined);
     await push?.nudge(group.groupId).catch(() => undefined);
     return true;
+  }
+
+  /**
+   * Syncs the group's mailboxes, and each new epoch's a key change moves it
+   * to at once (#98); the group as it stands after, or undefined once gone.
+   */
+  async function syncEpochs(group: Group): Promise<Group | undefined> {
+    let current = group;
+    for (;;) {
+      const outcome = await syncMailbox(current);
+      const fresh = outcome === 'left' ? undefined : await store.getGroup(group.groupId);
+      if (fresh === undefined || outcome === 'stayed') return fresh;
+      current = fresh;
+    }
   }
 
   /** Queues this member's `kx` when the fold has no encryption key for them (#98). */
@@ -479,24 +529,55 @@ export function createSync(options: SyncOptions): Sync {
     await syncGroup(fresh);
   }
 
-  /** Runs `step` for each group in turn while not halted; true when every group's step succeeded. */
-  async function eachGroup(step: (group: Group) => Promise<unknown>): Promise<boolean> {
+  /** Runs `step` for each of `groups` in turn while not halted; true when every step succeeded. */
+  async function each(
+    groups: readonly Group[],
+    step: (group: Group) => Promise<unknown>,
+  ): Promise<boolean> {
     let ok = true;
-    for (const group of await store.listGroups()) {
+    for (const group of groups) {
       if (halted) break;
       ok = (await step(group).then(succeeded, failed)) && ok;
     }
     return ok;
   }
 
+  /** Runs `step` for each group in turn while not halted; true when every group's step succeeded. */
+  async function eachGroup(step: (group: Group) => Promise<unknown>): Promise<boolean> {
+    return each(await store.listGroups(), step);
+  }
+
+  /**
+   * The coalitions' part of a pass (#114), once every group has synced:
+   * keeps an entry for each coalition secret a group holds, syncs each, then
+   * joins, reports and proposes admissions as `settleCoalitions` decides,
+   * and sends what that queued at once. Then the rooms (#125): one for each
+   * coalition whose `inner` a group here holds, each synced as a group is.
+   */
+  async function syncCoalitions(): Promise<boolean> {
+    await ensureEntries(store, scanned);
+    const ok = await each(await store.listCoalitions(), syncGroup);
+    if (!ok || halted) return ok;
+    const queued = await settleCoalitions(store, clock);
+    const entries = await Promise.all(queued.map((id) => store.getGroup(id)));
+    const sent = await each(
+      entries.filter((entry) => entry !== undefined),
+      syncGroup,
+    );
+    await keepRooms(store, roomReads);
+    return (await each(await store.listRooms(), syncGroup)) && sent;
+  }
+
   /**
    * What follows a pass in which every group synced and its key changes,
-   * results and clearing were made, unless halted: push upkeep (#99), then,
-   * last, the relay backup's refresh (#97), so each sees every group at the
-   * epoch it moved to (#98), with its expired ballots gone (#111).
+   * results and clearing were made, unless halted: push upkeep (#99), the
+   * front door's replies (#121), then, last, the relay backup's refresh
+   * (#97), so each sees every group at the epoch it moved to (#98), with its
+   * expired ballots gone (#111).
    */
   async function afterComplete(): Promise<void> {
     if (!halted) await push?.upkeep();
+    if (!halted) await door?.replies().catch(() => undefined);
     if (!halted) await afterPass?.().catch(() => undefined);
   }
 
@@ -539,11 +620,15 @@ export function createSync(options: SyncOptions): Sync {
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
+      // First, from the store alone: a room this device may no longer read goes now, even offline (#125).
+      await keepRooms(store, roomReads);
       ok = await eachGroup(syncGroup);
       // Only after a complete pass: a device that missed records mustn't write a key change.
       if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));
       // Then results and expiry (#111), at each group's epoch after any key change.
       if (ok) ok = await eachGroup((group) => settleExpiry(group.groupId));
+      // Coalitions read their groups as this pass left them (#114).
+      if (ok && !halted) ok = await syncCoalitions();
     } catch {
       ok = false;
     }
@@ -585,6 +670,16 @@ export function createSync(options: SyncOptions): Sync {
       return () => listeners.delete(listener);
     },
   };
+}
+
+/**
+ * The week a pass treats as the last read of an entry that has never synced
+ * (#110): none, so a group reads last week and this one, as its invite or
+ * genesis is no older; but week 0 for a room (#125), so a device that comes
+ * to one reads every week the relay can still hold, its last 30 days.
+ */
+function neverRead(group: Pick<Group, 'kind'>): number | null {
+  return isRoomEntry(group) ? 0 : null;
 }
 
 /** Where a group's blobs go and the key they're sealed under, both derived from its secret. */
@@ -672,6 +767,52 @@ function cursorsAfter(
     ...Object.entries(cursors.held).filter(([mailbox]) => kept.has(mailbox)),
     ...reads.map((read) => [read.mailbox, read.records.at(-1)?.seq ?? read.after] as const),
   ]);
+}
+
+/** A log read straight from the relay, outside any store entry (#114). */
+export interface RecentLog {
+  /** The records that opened, as log records, in seq order. */
+  readonly records: LogRecord[];
+  /** The highest seq read, or 0 for none. */
+  readonly cursor: number;
+  /** The relay minute the reads stand at: the earliest of their `now`s. */
+  readonly relayNow: number;
+  /** The relay instance that answered. */
+  readonly instance: string;
+}
+
+/**
+ * Reads `secret`'s mailboxes for last week and the week of relay minute `now`
+ * from the start (#110, #114), as a sync pass that has never synced would,
+ * and opens what they hold: how Bring a card reads a coalition whose genesis,
+ * if any, is no older than the card. Every read must come from one relay
+ * instance.
+ *
+ * @throws {Error} when the relay can't be reached or changes instance.
+ */
+export async function readRecentLog(
+  relay: Pick<Relay, 'getBlobs'>,
+  seal: Seal,
+  secret: Uint8Array,
+  now: number,
+): Promise<RecentLog> {
+  const week = weekOf(now);
+  const key = deriveSealKey(secret);
+  const pages = [];
+  for (const each of pollWeeks(null, week)) {
+    const mailbox = deriveWeekMailboxId(secret, each);
+    pages.push({ mailbox, page: await relay.getBlobs(mailbox, 0) });
+  }
+  const [first] = pages;
+  if (first === undefined || pages.some(({ page }) => page.instance !== first.page.instance)) {
+    throw new Error('The relay changed instance during the read.');
+  }
+  const records = pages
+    .flatMap(({ mailbox, page }) => openRecords(seal, { mailbox, key }, page.records))
+    .sort((a, b) => a.seq - b.seq);
+  const relayNow = Math.min(...pages.map(({ page }) => page.now));
+  const cursor = records.reduce((highest, record) => Math.max(highest, record.seq), 0);
+  return { records, cursor, relayNow, instance: first.page.instance };
 }
 
 /**

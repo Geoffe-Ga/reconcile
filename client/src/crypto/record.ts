@@ -13,6 +13,7 @@ import {
   EVENT_CONTEXT,
   PUBLIC_KEY_BYTES,
   SIGNATURE_BYTES,
+  type SignContext,
   type SigningKeys,
   sign,
   verify,
@@ -71,6 +72,39 @@ const verified = new Set<string>();
 export function signRecord(keys: SigningKeys, eventBytes: Uint8Array): Uint8Array<ArrayBuffer> {
   const signature = sign(EVENT_CONTEXT, keys.secretKey, eventBytes);
   return Uint8Array.from(concatBytes(keys.publicKey, signature, eventBytes));
+}
+
+/**
+ * A record framed as an event's is, signed under `ctx` instead: public key ‖
+ * signature ‖ message. A shared Document's copy (#105) and a front door's
+ * page (#121) travel this way, each under its own tag, so neither is ever an
+ * event nor the other.
+ */
+export function signTagged(
+  ctx: SignContext,
+  keys: SigningKeys,
+  message: Uint8Array,
+): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(concatBytes(keys.publicKey, sign(ctx, keys.secretKey, message), message));
+}
+
+/**
+ * The message inside a {@link signTagged} record when its key is exactly
+ * `publicKey` and its signature verifies under `ctx`; otherwise `null`, for
+ * bytes too short to hold a key and a signature as for any other key or any
+ * changed byte. The message comes back in bytes of its own.
+ */
+export function openTagged(
+  ctx: SignContext,
+  record: Uint8Array,
+  publicKey: Uint8Array,
+): Uint8Array | null {
+  if (record.length < RECORD_HEADER_BYTES || publicKey.length !== PUBLIC_KEY_BYTES) return null;
+  const key = record.subarray(0, PUBLIC_KEY_BYTES);
+  if (!key.every((byte, i) => byte === publicKey[i])) return null;
+  const signature = record.subarray(PUBLIC_KEY_BYTES, RECORD_HEADER_BYTES);
+  const message = record.subarray(RECORD_HEADER_BYTES);
+  return verify(ctx, publicKey, signature, message) ? message.slice() : null;
 }
 
 /**

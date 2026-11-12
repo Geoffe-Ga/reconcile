@@ -1,0 +1,76 @@
+/*
+ * A group's front door (#121), from tokens.css (DESIGN.md "Front door"): the
+ * public page and its form, an open door's link on Group rules, Applications
+ * on group home, and the requests on Your groups. Every word a stranger or
+ * the group wrote is plain text; the excerpt reads like print.
+ */
+
+/* The group's own words: the first section of its Document, then the count it chose to show. */
+.door-excerpt {
+  gap: var(--space-2);
+}
+
+.door-excerpt .invite-excerpt {
+  margin-block-start: 0;
+}
+
+.door-count {
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* Show what's visible, in words, at the moment it matters (DESIGN.md, Do): one line above Send. */
+.door-careful {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* An open door's link on Group rules, with whether it shows the count. */
+.door-link {
+  gap: var(--space-2);
+}
+
+/* Applications on group home: one card each, the name and day, then the message. */
+.application {
+  gap: var(--space-2);
+}
+
+.application-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.application-head .heading-3 {
+  overflow-wrap: anywhere;
+}
+
+.application-message {
+  max-width: 34em;
+  color: var(--ink);
+  font: var(--type-body);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.application-invited {
+  color: var(--muted);
+  font: var(--type-caption);
+  overflow-wrap: anywhere;
+}
+
+.application-actions {
+  gap: var(--space-2);
+}
+
+/* Your groups' requests: the group's name, then how it stands. */
+.request {
+  gap: var(--space-2);
+}
+
+.request .heading-3 {
+  overflow-wrap: anywhere;
+}

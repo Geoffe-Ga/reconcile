@@ -4,6 +4,7 @@ import { Link, SwitchButton, SwitchField } from 'react-aria-components';
 import type { BackupToSave } from '../app/backup';
 import { EraseCard } from '../app/EraseCard';
 import { HeldShares } from '../app/HeldShares';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { Protection } from '../app/passkey';
 import { PasskeySetup } from '../app/PasskeySetup';
@@ -217,7 +218,7 @@ function NotifySection({ notify }: { readonly notify: NotifyProps }) {
           {notify.groups.length === 0 ? <p className="notify-note">{push.none}</p> : null}
           <ul className="notify-list">
             {notify.groups.map((group) => (
-              <li key={group.groupId}>
+              <li key={group.groupId} onPointerDownCapture={holdPresses(busy.has(group.groupId))}>
                 <SwitchField
                   isSelected={group.on}
                   isDisabled={busy.has(group.groupId)}

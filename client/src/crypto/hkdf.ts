@@ -1,14 +1,16 @@
 /**
  * The one HKDF call site (spec §3): HKDF-SHA-256 (RFC 5869). A group secret's
  * weekly mailbox ids and seal key (`groupKeys.ts`), an invite seed's mailbox
- * id and key (`invite.ts`), a share seed's (`share.ts`, #105) and a link's
- * channels (`link.ts`, #96) all derive through it, each under a label of its
- * own, so no two ever coincide. Most take an empty salt and 32 bytes of
- * output. A weekly mailbox id's info is bytes, its label then its week
- * (#110). A box's key (`box.ts`, #98) is salted with the two public keys of
- * its X25519 exchange; a link's number and key are salted with the hash of
- * the link's transcript, and its number takes 4 bytes; the key vault's key
- * (`keyVault.ts`, #95) is salted with the passkey's PRF salt.
+ * id and key (`invite.ts`), a share seed's (`share.ts`, #105), a front
+ * door's page, inbox and reply mailboxes (`door.ts`, #121), a link's
+ * channels (`link.ts`, #96), a coalition room's entry id (`room.ts`, #125)
+ * and a seat's encryption key (`room.ts`, #313) all derive through it, each
+ * under a label of its own, so no two ever coincide. Most take an empty salt
+ * and 32 bytes of output. A weekly mailbox id's info is bytes, its label then
+ * its week (#110). A box's key (`box.ts`, #98) is salted with the two public
+ * keys of its X25519 exchange; a link's number and key are salted with the
+ * hash of the link's transcript, and its number takes 4 bytes; the key
+ * vault's key (`keyVault.ts`, #95) is salted with the passkey's PRF salt.
  */
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';

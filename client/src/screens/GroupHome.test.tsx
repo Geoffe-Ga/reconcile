@@ -10,6 +10,8 @@ import { createEvent, type ParsedEvent, parseEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
+import { DOOR } from '../test/door';
+import { held, pastPressFallback } from '../test/press';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
@@ -281,7 +283,7 @@ describe('GroupHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('shows, in order: Needs your vote, the other open Proposals, Dispatches (#112), the Document, Decided, People', async () => {
+  it('shows, in order: Needs your vote, Focus, the other open Proposals, Dispatches (#112), the Document, Decided, People', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     const scored = log.propose('ben', { title: 'Bins on Monday', atom: 1 });
     log.vote('ana', scored, 3);
@@ -293,8 +295,9 @@ describe('GroupHome', () => {
     const regions = screen
       .getAllByRole('region')
       .map((region) => region.querySelector('h2')?.textContent);
-    expect(regions.slice(0, 6)).toEqual([
+    expect(regions.slice(0, 7)).toEqual([
       'Needs your vote',
+      'Focus',
       'Other open Proposals',
       'Dispatches',
       'Document',
@@ -584,6 +587,26 @@ describe('GroupHome', () => {
     });
   });
 
+  it('keeps the choice when another level is tapped while it saves and saving fails (#193)', async () => {
+    const saving = held<undefined>();
+    const onChooseLevel = vi.fn<OnChooseLevel>(() => saving.promise);
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
+      me: authorOf('ben'),
+      onChooseLevel,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    await user.click(screen.getByRole('button', { name: 'Save your choice' }));
+    const collaborator = screen.getByRole('radio', { name: 'Collaborator' });
+    expect(collaborator).toBeDisabled();
+    await user.click(collaborator);
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(collaborator).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
+    expect(onChooseLevel).toHaveBeenCalledTimes(1);
+  });
+
   it('reads Sent once the change has left the outbox', async () => {
     const { user, rerender } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
       me: authorOf('ben'),
@@ -609,6 +632,107 @@ describe('GroupHome', () => {
     setup(chat === undefined ? {} : { chat });
     expect(screen.queryByRole('link', { name: /Join discussion/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Discussion' })).not.toBeInTheDocument();
+  });
+});
+
+describe('GroupHome: the current focus (#107)', () => {
+  /** Ana asks in a group of Ana, Ben and Cal, and all three score both options, closing it early. */
+  function focused() {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const id = log.ask('ana', ['Fix the website', 'Plan the picnic']);
+    const [a, b] = [`${id}.0`, `${id}.1`];
+    log.minute += 5;
+    log.ballot('ana', id, { [a]: 4, [b]: 2 });
+    log.ballot('ben', id, { [a]: 3, [b]: 3 });
+    log.ballot('cal', id, { [a]: 3, [b]: 2 });
+    return { log, id };
+  }
+
+  it('says there is no focus yet, and offers Ask what to focus on to someone who can propose', async () => {
+    const { state } = setup();
+    const focus = section('Focus');
+    expect(within(focus).getByText('Your group hasn’t chosen a focus yet.')).toBeVisible();
+    expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/priority`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Ask what to focus on to someone who can’t propose', () => {
+    setup({ levels: { Ben: VOTING } }, authorOf('ben'));
+    expect(within(section('Focus')).queryByRole('link')).toBeNull();
+  });
+
+  it('shows the current focus after a pass, linking to its result, under Needs your vote', async () => {
+    const { log, id } = focused();
+    renderHome(log.state());
+    const focus = section('Focus');
+    const card = within(focus).getByRole('link', { name: /Current focus/ });
+    expect(card).toHaveTextContent('Current focusFix the website');
+    expect(card).toHaveAttribute('href', `#/g/${log.group}/p/${id}`);
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 5)).toEqual([
+      'Focus',
+      'Open Proposals',
+      'Dispatches',
+      'Document',
+      'Decided',
+    ]);
+    expect(within(focus).getByRole('link', { name: 'Ask what to focus on' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('names the top option on the Decided card of a priority vote that passed', () => {
+    const { log } = focused();
+    renderHome(log.state());
+    const card = within(section('Decided')).getByRole('link', { name: /What should we focus on/ });
+    expect(card).toHaveTextContent(/^What should we focus on\?→Fix the websitePassed/);
+  });
+
+  it('keeps the focus, and offers no Ask, while another priority vote is open', () => {
+    const { log } = focused();
+    log.minute += 5;
+    log.ask('ben', ['New bylaws', 'Rent strike']);
+    renderHome(log.state());
+    const focus = section('Focus');
+    expect(within(focus).getByRole('link', { name: /Current focus/ })).toHaveTextContent(
+      'Fix the website',
+    );
+    expect(within(focus).queryByRole('link', { name: 'Ask what to focus on' })).toBeNull();
+    expect(within(section('Needs your vote')).getByText('What should we focus on?')).toBeVisible();
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 2)).toEqual(['Needs your vote', 'Focus']);
+  });
+
+  it('offers no Ask what to focus on while this member is leaving', () => {
+    renderHome(testGroup({ joiners: ['Ben'] }).state, { leaving: true });
+    expect(within(section('Focus')).queryByRole('link')).toBeNull();
+  });
+
+  it('keeps the focus a dissolved group had, after its Proposals that never closed, with no Ask (#108)', async () => {
+    const { log, id } = focused();
+    log.minute += 5;
+    const open = log.ask('ben', ['New bylaws', 'Rent strike']);
+    const end = log.proposeDissolve('ana', false);
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, end, 4);
+    log.minute += 1;
+    log.dissolve('ana', end);
+    renderHome(log.state(log.minute + 50_000));
+
+    const focus = section('Focus');
+    expect(within(focus).getByRole('link', { name: /Current focus/ })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${id}`,
+    );
+    expect(within(focus).queryByRole('link', { name: 'Ask what to focus on' })).toBeNull();
+    const order = [...document.querySelectorAll('section h2')].map((h) => h.textContent);
+    expect(order.slice(0, 2)).toEqual(['Not decided', 'Focus']);
+    expect(within(section('Not decided')).getByRole('link')).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/p/${open}`,
+    );
+    expect(await axeViolations()).toEqual([]);
   });
 });
 
@@ -736,7 +860,7 @@ describe('Leave this group', () => {
 describe('GroupHome: the group’s rules (#117)', () => {
   it('links to the rules, saying where the chat bot and the front door stand', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const door = log.rules('Ana', 'frontDoor', true);
+    const door = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
     renderHome(log.state(), { me: authorOf('ben') });
     const rules = section('Rules');
@@ -744,5 +868,42 @@ describe('GroupHome: the group’s rules (#117)', () => {
     expect(link).toHaveAttribute('href', `#/g/${log.group}/rules`);
     expect(link).toHaveTextContent('Chat bot: Off · Front door: Open');
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('GroupHome: the front door’s Applications (#121)', () => {
+  it('shows them under their own heading, before Invite people', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    renderHome(log.state(), { applications: <p>Kim’s card</p> });
+    const applications = section('Applications');
+    expect(within(applications).getByText('Kim’s card')).toBeVisible();
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings.indexOf('Applications')).toBe(headings.indexOf('Invite people') - 1);
+  });
+
+  it('shows none while this member’s leave waits for the relay, nor when none are given', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const { rerender } = renderHome(log.state(), {
+      applications: <p>Kim’s card</p>,
+      leaving: true,
+    });
+    expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
+    rerender({ applications: undefined, leaving: false });
+    expect(screen.queryByRole('region', { name: 'Applications' })).toBeNull();
+  });
+});
+
+describe('GroupHome: the front door beside Dispatches (#112, #121)', () => {
+  it('keeps Dispatches and Applications each in its own section, Applications before Invite people', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.dispatch('Ana', { title: 'Our front door is open', text: 'Share the link.' });
+    renderHome(log.state(), { applications: <p>Kim’s card</p> });
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toContain('Dispatches');
+    expect(headings.indexOf('Applications')).toBe(headings.indexOf('Invite people') - 1);
+    expect(within(section('Dispatches')).getByText('Our front door is open')).toBeVisible();
+    expect(within(section('Applications')).getByText('Kim’s card')).toBeVisible();
   });
 });

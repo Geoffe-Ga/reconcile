@@ -5,6 +5,7 @@ import { ChatLink } from '../app/ChatLink';
 import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
 import { DispatchCard } from '../app/DispatchCard';
+import { holdPresses } from '../app/holdPresses';
 import { latestLink } from '../app/latestLink';
 import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
@@ -30,6 +31,7 @@ import type { ParsedEvent } from '../engine/event';
 import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
 import { homeLists } from '../engine/home';
 import { displayName } from '../engine/names';
+import { isPriority, openPriority } from '../engine/priority';
 import { activeSuspension, maySuspend, seatOf, type Suspension } from '../engine/stewards';
 import type { KeyChange } from '../store/epochs';
 
@@ -74,7 +76,23 @@ export interface GroupHomeProps {
    * once each; none when absent, or once the group has dissolved (#108).
    */
   readonly recoveryCard?: ReactNode;
+  /**
+   * The front door's applications (#121), under their own heading before
+   * Invite people: given only while the door is open and this member may
+   * invite.
+   */
+  readonly applications?: ReactNode;
+  /** The group's Coalitions (#114), after Decided; none when absent. */
+  readonly coalitions?: ReactNode;
+  /**
+   * Each coalition's name by its genesis id (#120), which tags its motions in
+   * the lists as "Coalition vote · <name>"; none when absent.
+   */
+  readonly coalitionNames?: CoalitionNames;
 }
+
+/** Each coalition's name by its genesis id (#120). */
+export type CoalitionNames = Readonly<Record<string, string>>;
 
 /** Whether the relay answers, and when this device last synced. */
 export interface SyncStatus {
@@ -112,10 +130,27 @@ interface ProposalCardsProps {
   readonly now: number;
   /** What each card says under its title in place of its countdown, such as why it closed (#108). */
   readonly line?: string;
+  /** Each coalition's name, for its motions' tags (#120). */
+  readonly names?: CoalitionNames | undefined;
+}
+
+/**
+ * "Coalition vote · <coalition>" over a coalition motion's title (#120), the
+ * name in its own `<bdi>`; nothing for the group's own Proposals.
+ */
+function MotionTag({ proposal, names }: { proposal: Proposal; names: CoalitionNames | undefined }) {
+  const { target } = proposal;
+  if (target.kind !== 'motion') return null;
+  const { voteTag, tagSeparator } = messages.coalitions;
+  return (
+    <span className="eyebrow card-link-tag">
+      {voteTag} {tagSeparator} <bdi>{names?.[target.coalition] ?? ''}</bdi>
+    </span>
+  );
 }
 
 /** Open Proposals as cards, each with its title and countdown, opening its ballot. */
-function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
+function ProposalCards({ groupId, proposals, now, line, names }: ProposalCardsProps) {
   return (
     <ul className="card-list">
       {proposals.map((proposal) => (
@@ -124,6 +159,7 @@ function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <MotionTag proposal={proposal} names={names} />
             <span className="card-link-title">
               <span className="heading-3">
                 <bdi>{proposal.title}</bdi>
@@ -146,38 +182,53 @@ function ProposalCards({ groupId, proposals, now, line }: ProposalCardsProps) {
 
 interface OpenListsProps {
   readonly groupId: string;
+  /** What goes right under Needs your vote: the current focus (#107). */
+  readonly children?: ReactNode;
+  /** What goes right after the last list of open Proposals: the quiet cards (#78, #109). */
+  readonly after?: ReactNode;
   /** What waits on this person; nothing while they're leaving. */
   readonly needsYourVote: readonly Proposal[];
   /** The other open Proposals, or every open one while they're leaving. */
   readonly otherOpen: readonly Proposal[];
   readonly now: number;
+  /** Each coalition's name, for its motions' tags (#120). */
+  readonly names?: CoalitionNames | undefined;
 }
 
 /**
- * 'Needs your vote', when anything waits on this person, then the other open
- * Proposals: "Open Proposals", or "Other open Proposals" after it. With none
- * open, one line says so.
+ * 'Needs your vote', when anything waits on this person, then the current
+ * focus (#107), then the other open Proposals: "Open Proposals", or "Other
+ * open Proposals" after it. With none open, one line says so. `after`, the
+ * backup card (#78), follows the last list of Proposals, so it sits under
+ * Needs your vote, ahead of the focus, when nothing else is open.
  */
-function OpenLists({ groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
+function OpenLists(props: OpenListsProps) {
+  const { groupId, needsYourVote, otherOpen, now, children, after, names } = props;
   const { home } = messages;
   const waits = needsYourVote.length > 0;
+  const others = otherOpen.length > 0;
+  // Needs your vote is the last list when nothing else is open.
+  const lastIsWaits = waits && !others;
   return (
     <>
       {waits ? (
         <Section title={home.needsYourVote}>
-          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} />
+          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} names={names} />
         </Section>
       ) : null}
-      {otherOpen.length > 0 ? (
+      {lastIsWaits ? after : null}
+      {children}
+      {others ? (
         <Section title={waits ? home.otherOpen : home.openProposals}>
-          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} />
+          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} names={names} />
         </Section>
       ) : null}
-      {waits || otherOpen.length > 0 ? null : (
+      {waits || others ? null : (
         <Section title={home.openProposals}>
           <p>{home.noProposals}</p>
         </Section>
       )}
+      {lastIsWaits ? null : after}
     </>
   );
 }
@@ -187,27 +238,53 @@ function OpenLists({ groupId, needsYourVote, otherOpen, now }: OpenListsProps) {
  * under "Not decided", each saying it closed then, with no outcome. Nothing
  * when there were none.
  */
-function Unfinished({ groupId, proposals, now }: Omit<ProposalCardsProps, 'line'>) {
+function Unfinished({ groupId, proposals, now, names }: Omit<ProposalCardsProps, 'line'>) {
   if (proposals.length === 0) return null;
   const { archive } = messages;
   return (
     <Section title={archive.unfinished}>
-      <ProposalCards groupId={groupId} proposals={proposals} now={now} line={archive.closed} />
+      <ProposalCards
+        groupId={groupId}
+        proposals={proposals}
+        now={now}
+        line={archive.closed}
+        names={names}
+      />
     </Section>
+  );
+}
+
+/** A closed priority vote's top option once it passed, else null (#107). */
+function topOption(proposal: Proposal): string | null {
+  if (!isPriority(proposal) || proposal.outcome.kind !== 'pass') return null;
+  const winner = proposal.outcome.version;
+  return proposal.versions.find((version) => version.id === winner)?.text ?? null;
+}
+
+/** A passed priority vote's top option, on its Decided card. */
+function TopOption({ proposal }: { readonly proposal: Proposal }) {
+  const top = topOption(proposal);
+  return top === null ? null : (
+    <span className="card-link-focus">
+      <bdi>{top}</bdi>
+    </span>
   );
 }
 
 /**
  * Decided: the group's history, each closed Proposal with its title, its
  * outcome in a word, and its close date, opening its result, and "Scores
- * cleared" once this device has deleted its individual ballots (#111).
+ * cleared" once this device has deleted its individual ballots (#111). A
+ * priority vote that passed also names its top option (#107).
  */
 function Decided({
   groupId,
   closed,
+  names,
 }: {
   readonly groupId: string;
   readonly closed: readonly Proposal[];
+  readonly names?: CoalitionNames | undefined;
 }) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
   return (
@@ -218,6 +295,7 @@ function Decided({
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <MotionTag proposal={proposal} names={names} />
             <span className="card-link-title">
               <span className="heading-3">
                 <bdi>{proposal.title}</bdi>
@@ -226,6 +304,7 @@ function Decided({
                 {messages.app.forward}
               </span>
             </span>
+            <TopOption proposal={proposal} />
             <span className="meta countdown">
               <span>{messages.decided.outcomes[proposal.outcome.kind]}</span>
               <time dateTime={minuteIso(closeTime(proposal))}>
@@ -239,6 +318,60 @@ function Decided({
         </li>
       ))}
     </ul>
+  );
+}
+
+interface FocusProps {
+  readonly state: GroupState;
+  readonly me: string;
+  /** True while this member leaves, or once the group has dissolved: nothing new is asked. */
+  readonly readOnly: boolean;
+}
+
+/**
+ * The group's current focus (#107): the top option of the latest priority
+ * vote to pass, opening its result, or a sentence before there is one. Those
+ * who can propose may ask what to focus on while no priority vote is open,
+ * unless they're leaving or the group has dissolved (#77, #108), whose
+ * read-only copy keeps the focus it had.
+ */
+function Focus({ state, me, readOnly }: FocusProps) {
+  const groupId = state.group ?? '';
+  const { focus } = state;
+  const canAsk = !readOnly && can(state, me, 'propose') && openPriority(state) === undefined;
+  return (
+    <Section title={messages.home.focus}>
+      <div className="stack">
+        {focus === null ? (
+          <p>{messages.home.noFocus}</p>
+        ) : (
+          <Link
+            className="card-link"
+            href={routeHref({ name: 'proposal', groupId, proposalId: focus.proposal })}
+          >
+            <span className="eyebrow">{messages.home.currentFocus}</span>
+            <span className="card-link-title">
+              <span className="heading-3">
+                <bdi>{focus.text}</bdi>
+              </span>
+              <span className="card-link-arrow" aria-hidden="true">
+                {messages.app.forward}
+              </span>
+            </span>
+          </Link>
+        )}
+        {canAsk ? (
+          <div>
+            <Link
+              className="button button-secondary"
+              href={routeHref({ name: 'priority', groupId })}
+            >
+              {messages.home.askFocus}
+            </Link>
+          </div>
+        ) : null}
+      </div>
+    </Section>
   );
 }
 
@@ -519,7 +652,7 @@ function Involvement(props: InvolvementProps) {
     });
   };
   return (
-    <div className="involvement">
+    <div className="involvement" onPointerDownCapture={holdPresses(running)}>
       <LevelPicker value={picked} onChange={setChoice} isDisabled={running || suspended} />
       {newcomer ? <p className="caption">{messages.admission.levelsWait}</p> : null}
       {outcome === 'failed' ? (
@@ -722,14 +855,38 @@ function Invite({ makeInviteLink, copyText }: InviteProps) {
 }
 
 /**
- * People, the Stewards (#102), the Rules (#117) and the invite, each for
+ * The front door's Applications (#121), given only while the door is open
+ * and this member may invite, then Invite people, for whoever may invite,
+ * while the group's key is this device's (#98). Neither shows while this
+ * member leaves (#77).
+ */
+function InviteSections(props: GroupHomeProps & { readonly current: boolean }) {
+  const { state, me, makeInviteLink, copyText, leaving = false, current } = props;
+  if (leaving) return null;
+  return (
+    <>
+      {props.applications === undefined ? null : (
+        <Section title={messages.door.applications}>{props.applications}</Section>
+      )}
+      {can(state, me, 'invite') && current ? (
+        <Section title={messages.home.invite}>
+          <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
+        </Section>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * People, the Stewards (#102), the Rules (#117), the front door's
+ * Applications (#121) and the invite, each for
  * whoever may see it. While this member's leave waits for the relay, there's
  * no invite, nor once the group's key changed past this device (#98): its
  * link would carry a key nobody reads any more. A dissolved group has no
  * stewards or opt-ins to speak of, so its copy leaves both out (#108).
  */
 function MemberSections(props: GroupHomeProps) {
-  const { state, me, makeInviteLink, copyText, leaving = false } = props;
+  const { state, me, leaving = false } = props;
   const roster = can(state, me, 'see-roster');
   const current = (props.sync.keyChange ?? null) === null;
   return (
@@ -745,11 +902,7 @@ function MemberSections(props: GroupHomeProps) {
           <RulesLink state={state} />
         </Section>
       ) : null}
-      {can(state, me, 'invite') && !leaving && current ? (
-        <Section title={messages.home.invite}>
-          <Invite makeInviteLink={makeInviteLink} copyText={copyText} />
-        </Section>
-      ) : null}
+      <InviteSections {...props} leaving={leaving} current={current} />
     </>
   );
 }
@@ -777,23 +930,43 @@ interface OpenSectionsProps {
   readonly lists: ReturnType<typeof homeLists>;
   readonly now: number;
   readonly leaving: boolean;
+  /** The current focus (#107), right under Needs your vote. */
+  readonly children: ReactNode;
+  /**
+   * The quiet cards, a backup (#78) and recovery shares held here (#109),
+   * after the open Proposals; none in a dissolved group.
+   */
+  readonly after: ReactNode;
+  /** Each coalition's name, for its motions' tags (#120). */
+  readonly names?: CoalitionNames | undefined;
 }
 
 /**
- * The open Proposals: Needs your vote and the rest, or every one together
- * while this member leaves. In a dissolved group, those still open when it
- * dissolved, as closed (#108).
+ * The open Proposals: Needs your vote, the current focus (#107) and the rest,
+ * or every one together while this member leaves. In a dissolved group, those
+ * still open when it dissolved, as closed (#108), then the focus it had.
  */
-function OpenSections({ groupId, state, lists, now, leaving }: OpenSectionsProps) {
-  if (state.dissolved !== null)
-    return <Unfinished groupId={groupId} proposals={lists.open} now={now} />;
+function OpenSections(props: OpenSectionsProps) {
+  const { groupId, state, lists, now, leaving, children, after, names } = props;
+  if (state.dissolved !== null) {
+    return (
+      <>
+        <Unfinished groupId={groupId} proposals={lists.open} now={now} names={names} />
+        {children}
+      </>
+    );
+  }
   return (
     <OpenLists
       groupId={groupId}
       needsYourVote={leaving ? [] : lists.needsYourVote}
       otherOpen={leaving ? lists.open : lists.otherOpen}
       now={now}
-    />
+      after={after}
+      names={names}
+    >
+      {children}
+    </OpenLists>
   );
 }
 
@@ -815,9 +988,10 @@ function QuietCards({ props }: { readonly props: GroupHomeProps }) {
 
 /**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
- * other open Proposals and the backup card under them (#78), the latest
- * Dispatch (#112), the group's Document, the Decided list of closed ones,
- * its people with their levels, the viewer's own involvement and Leave this
+ * group's current focus (#107), the other open Proposals and, under them, the
+ * backup card (#78) and the recovery shares held here (#109), the latest
+ * Dispatch (#112), the group's Document, the
+ * Decided list of closed ones, its Coalitions (#114), its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
  * whoever may propose it, Propose dissolving the group (#108). While the viewer's
@@ -854,8 +1028,17 @@ export function GroupHome(props: GroupHomeProps) {
       {readOnly ? null : <WaitingNote state={state} me={me} />}
       <div className="sections">
         {leads ? news : null}
-        <OpenSections groupId={groupId} state={state} lists={lists} now={now} leaving={leaving} />
-        <QuietCards props={props} />
+        <OpenSections
+          groupId={groupId}
+          state={state}
+          lists={lists}
+          now={now}
+          leaving={leaving}
+          after={<QuietCards props={props} />}
+          names={props.coalitionNames}
+        >
+          <Focus state={state} me={me} readOnly={readOnly} />
+        </OpenSections>
         {leads ? null : news}
         <Section title={messages.home.documentLabel}>
           <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
@@ -870,8 +1053,9 @@ export function GroupHome(props: GroupHomeProps) {
           </Link>
         </Section>
         <Section title={messages.decided.title}>
-          <Decided groupId={groupId} closed={lists.decided} />
+          <Decided groupId={groupId} closed={lists.decided} names={props.coalitionNames} />
         </Section>
+        {props.coalitions}
         <MemberSections {...props} leaving={readOnly} />
         {discussion === null ? null : (
           <Section title={messages.home.discussion}>

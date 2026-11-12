@@ -72,10 +72,11 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
 
 /** A version's heading: "Version N · <name>", or what a steward, rules or dissolve ballot decides. */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules, dissolve } = version;
+  const { steward, rules, dissolve, decision } = version;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
   if (dissolve !== undefined) return <>{dissolve.title}</>;
+  if (decision !== undefined) return <bdi>{decision.title}</bdi>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -86,10 +87,11 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
 
 /** Under the heading: the version's change, or what passing a steward, rules or dissolve ballot does. */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules, dissolve } = version;
+  const { steward, rules, dissolve, decision } = version;
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;
-  if (dissolve !== undefined) return <p className="caption">{dissolve.line}</p>;
+  const line = dissolve?.line ?? decision?.line;
+  if (line !== undefined) return <p className="caption">{line}</p>;
   return <Change version={version} current={current} />;
 }
 

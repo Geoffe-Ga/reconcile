@@ -1,0 +1,232 @@
+/*
+ * Coalitions (#114; DESIGN.md, Components): a reconcile card read as plain
+ * text, a reconcile Proposal's coalition, and group home's Coalitions rows,
+ * styled only from tokens.css. Every status is said in words; no color
+ * stands for one alone.
+ */
+
+/* A card's statement: its sections as plain text, set like print, each
+ * section's line breaks kept, and nothing in it read as Markdown. */
+.card-statement {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+}
+
+.card-atom {
+  max-width: 34em;
+  color: var(--ink);
+  font: var(--type-document);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* A reconcile Proposal's coalition: its name, the other groups once named,
+ * then its statement under a hairline, as a Document reads. */
+.reconcile-statement {
+  gap: var(--space-2);
+}
+
+.reconcile-statement > .heading-3,
+.reconcile-with {
+  overflow-wrap: anywhere;
+}
+
+.reconcile-with {
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.reconcile-document {
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+/* One coalition on group home: its status as an eyebrow, its name, then what
+ * it waits for, the member groups, and how this person takes part. */
+.coalition {
+  gap: var(--space-2);
+}
+
+.coalition > .heading-3,
+.coalition-members,
+.coalition-lines {
+  overflow-wrap: anywhere;
+}
+
+.coalition-members {
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.coalition-lines {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.coalition-take-part,
+.coalition-another {
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+/* The mismatch notice sits inside the card, with the card's own spacing. */
+.coalition > .result-mismatch {
+  margin-block-start: var(--space-1);
+}
+
+/* A coalition's own screens (#120) ---------------------------------------- */
+
+/* "Coalition vote · <coalition>" over a motion's title on a group's cards. */
+.card-link-tag {
+  overflow-wrap: anywhere;
+}
+
+/* A motion card the device can't open: no group here decides it. */
+.card-link-static:hover {
+  border-color: var(--hairline);
+}
+
+/* A motion's progress line: only groups, in words. */
+.coalition-progress-line {
+  color: var(--body);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.coalition-progress-line time {
+  white-space: nowrap;
+}
+
+/* On a coalition vote's page: what the coalition has heard so far. */
+.coalition-progress {
+  gap: var(--space-2);
+}
+
+.coalition-progress > .coalition-progress-line {
+  color: var(--ink);
+  font: var(--type-body);
+}
+
+/* A motion this device sent, while the relay doesn't have it yet. */
+.coalition-pending {
+  gap: var(--space-1);
+}
+
+.coalition-pending > .heading-3 {
+  overflow-wrap: anywhere;
+}
+
+/* The member groups, each on its own hairline row, "Your group" beside this device's. */
+.coalition-groups {
+  display: grid;
+  max-width: 30rem;
+  padding: 0;
+  list-style: none;
+}
+
+.coalition-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+.coalition-group:first-child {
+  padding-block-start: 0;
+}
+
+/* Take part on a coalition's home: the form follows its line, with no rule
+ * between them as inside group home's row. */
+.coalition-join > .coalition-take-part {
+  margin-block-start: 0;
+  padding-block-start: 0;
+  border-top: 0;
+}
+
+/* On a coalition's Document, Take part fills its note, as a form does. */
+.level-note.coalition-join {
+  justify-items: stretch;
+  gap: var(--space-3);
+  padding-block-end: var(--space-4);
+}
+
+/* A coalition's room (#125) ------------------------------------------------ */
+
+/* The messages, oldest at the top: hairline rows on the paper, each its
+ * author's coalition name and the relay's time on one line, then its text. */
+.room-messages {
+  display: grid;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+  list-style: none;
+}
+
+.room-message {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* A name can be long, so the time wraps under it rather than off the row. */
+.room-message-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.room-author {
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 650;
+}
+
+.room-time {
+  color: var(--muted);
+  font: var(--type-caption);
+  white-space: nowrap;
+}
+
+/* Plain text, never Markdown or links: line breaks and spaces show as typed. */
+.room-text {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.room-empty,
+.room-note {
+  max-width: 30em;
+  color: var(--body);
+  font: var(--type-body);
+}
+
+/* The box: a few lines to start, taller as the person likes. */
+.input-message {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+/* Take part in the room's place for the box: the form follows its line. */
+.room-take-part > .coalition-take-part {
+  margin-block-start: 0;
+  padding-block-start: 0;
+  border-top: 0;
+}

@@ -36,7 +36,8 @@ export const messages = {
     create: 'Create group',
     inviteHeading: 'Have an invite link?',
     inviteLabel: 'Invite link',
-    inviteHint: 'Paste the link someone in your group sent you.',
+    inviteHint:
+      'Paste the link someone in your group sent you, or a reconcile card from another group.',
     openInvite: 'Join with an invite link',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
@@ -229,6 +230,11 @@ export const messages = {
     unreachableSince: (time: string) => `Can’t reach the relay right now. Last synced ${time}.`,
     missingTitle: 'This group isn’t on this device',
     missing: 'Open an invite link to join it, or go back to your groups.',
+    focus: 'Focus',
+    /** Over the option a priority vote chose, on the card that opens its result (#107). */
+    currentFocus: 'Current focus',
+    noFocus: 'Your group hasn’t chosen a focus yet.',
+    askFocus: 'Ask what to focus on',
     settingUpTitle: 'Setting up your group',
     settingUp: 'Your group is saved on this device. It appears here once it reaches the relay.',
   },
@@ -316,6 +322,34 @@ export const messages = {
     dispatchTitleLabel: 'Dispatch title',
     dispatchTextLabel: 'Dispatch text (optional)',
   },
+  /** The priority composer (#107): one question, 2–7 options, everyone scores each. */
+  priority: {
+    pageTitle: 'Ask what to focus on',
+    title: 'Ask what to focus on',
+    lede: 'Everyone scores each option from 0 to 4. The options that pass rank by their average, and the top one becomes your group’s focus.',
+    questionLabel: 'Question',
+    question: 'What should we focus on?',
+    questionMissing: 'Write the question your group will answer.',
+    questionTooLong: (max: number) => `Keep the question to ${count(max)} characters or fewer.`,
+    whyHint: 'Tell your group why it’s time to choose.',
+    whyMissing: 'Say why you’re asking now.',
+    optionsLabel: 'Options',
+    optionsHint: (min: number, max: number, length: number) =>
+      `From ${count(min)} to ${count(max)} options, each up to ${count(length)} characters.`,
+    optionLabel: (option: number) => `Option ${String(option)}`,
+    optionBlank: 'Write this option, or remove it.',
+    optionTooLong: (max: number) => `Keep each option to ${count(max)} characters or fewer.`,
+    optionRepeated: 'This option is already on the list.',
+    addOption: 'Add option',
+    remove: 'Remove',
+    removeLabel: (option: number) => `Remove option ${String(option)}`,
+    visibility: 'Everyone in your group sees this question and that you asked it.',
+    submit: 'Ask your group',
+    failed: 'Your question couldn’t be saved on this device. Try again.',
+    openTitle: 'Your group is already choosing a focus',
+    open: 'You can ask again once its vote closes.',
+    seeOpen: 'See the open vote',
+  },
   proposal: {
     pageTitle: 'Proposal',
     /** Over an ordered Proposal's title: its number among the group's Proposals (#123), and whether it's open. */
@@ -342,10 +376,18 @@ export const messages = {
     dispatchLine: 'Everyone in your group gets this Dispatch.',
     missingTitle: 'This Proposal isn’t on this device',
     missing: 'Go back to your group to see its open Proposals.',
+    /** Over a priority vote's question (#107): its number, as any Proposal's (#123). */
+    eyebrowPriority: (number: number) => `Proposal ${String(number)} · Priority vote`,
+    eyebrowPriorityClosed: (number: number) => `Proposal ${String(number)} · Closed priority vote`,
+    options: 'Options',
+    optionsHint:
+      'Score each option. The options that pass rank by their average, and the top one becomes your group’s focus.',
   },
   ballot: {
     version: (version: number) => `Version ${String(version)}`,
     scoreFor: (version: number) => `Score for version ${String(version)}`,
+    /** Before a priority option's text, which follows in `<bdi>`: "Score for Fix the website". */
+    scoreForOption: 'Score for',
     visibility: 'Everyone in your group sees your scores and note.',
     newVersion: 'A new version was added. Score it to update your ballot.',
     separator: '·',
@@ -365,6 +407,7 @@ export const messages = {
     /** The meter's eyebrow, over each version's two bars while the vote is open. */
     title: 'So far',
     label: (version: number) => `How version ${String(version)} stands so far`,
+    optionLabel: (option: string) => `How ${option} stands so far`,
     average: 'Average',
     zeros: 'Zeros',
     /** The line the average must reach, from the bar, such as "needs 2.5". */
@@ -428,6 +471,18 @@ export const messages = {
     ranTo: '–',
     ranEnd: '.',
     ranEarlyEnd: ', when everyone had voted.',
+    /** A priority vote's result (#107). */
+    focusNow: 'Your group’s focus is now:',
+    noOption: 'No option passed, so your group’s focus stays as it was.',
+    ranked: 'Passed, best first',
+    notCleared: 'Didn’t clear the floor',
+    /** The disclosure that holds a priority vote's totals and its ballots. */
+    details: (n: number) =>
+      n === 1 ? 'Totals and individual ballots (1)' : `Totals and individual ballots (${count(n)})`,
+    /** Between an option, in `<bdi>`, and what follows, as in "Fix the website: 3 · Supportive". */
+    optionSeparator: ':',
+    notScored: 'not scored',
+    priorityBusy: 'Your group has an open priority vote now. You can ask again once it closes.',
     /** "Individual scores and notes are visible until <date>. …", the date in a `<time>` element (#111). */
     visibleUntil: 'Individual scores and notes are visible until',
     visibleUntilEnd: '. Screenshots taken before then can outlast this.',
@@ -725,7 +780,11 @@ export const messages = {
         off: 'Turn off the Discord chat bot',
         replace: 'Replace the chat bot’s webhook',
       },
-      frontDoor: { on: 'Open a front door', off: 'Close the front door' },
+      frontDoor: {
+        on: 'Open a front door',
+        off: 'Close the front door',
+        replace: 'Change the front door',
+      },
     },
     /** What passing does, under the ballot's heading. */
     lines: {
@@ -738,7 +797,14 @@ export const messages = {
       frontDoor: {
         on: 'If this passes, your group gets a public page where people can ask to join.',
         off: 'If this passes, the front door closes.',
+        replace: 'If this passes, the front door changes.',
       },
+    },
+    /** What else a front door change does, after its line (#121). */
+    doorCount: {
+      shows: 'Its page shows how many people are in your group.',
+      hides: 'Its page stops showing how many people are in your group.',
+      moves: 'It moves to a new link, and the old link closes.',
     },
     /** A pass's outcome sentence. */
     passed: {
@@ -750,6 +816,7 @@ export const messages = {
       frontDoor: {
         on: 'This passed. Your group’s front door is open.',
         off: 'This passed. The front door is closed.',
+        replace: 'This passed. The front door changed.',
       },
     },
     narrowedBallot: {
@@ -772,6 +839,91 @@ export const messages = {
       'Your group may be voting on this already. Go back to your group’s rules to see where it stands.',
     nowUnavailable:
       'You can’t turn this off at once right now. You can still propose turning it off.',
+  },
+  /**
+   * A group's front door (#121; ADR-0038): the public page, its form, and
+   * what members and applicants see of what follows. Where a name sits inside
+   * a sentence, the words around it are kept apart, so the screen sets the
+   * name in `<bdi>`.
+   */
+  door: {
+    /** The tab's title on every state: never the group's own name, which browser history would keep. */
+    pageTitle: 'Front door',
+    eyebrow: 'Front door',
+    loading: 'Opening the front door…',
+    closed: 'This front door is closed.',
+    closedHint: 'If you know someone in the group, ask them for an invite link.',
+    damaged: 'This front door link is damaged. Check you copied all of it.',
+    offlineTitle: 'Can’t open this front door yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+    /** The page's excerpt, read as a quotation from the group. */
+    excerptLabel: 'From their Document',
+    people: (n: number) =>
+      n === 1 ? '1 person is in this group.' : `${count(n)} people are in this group.`,
+    askHeading: 'Ask to join',
+    nameLabel: 'Name you’d like to use',
+    nameHint: 'Only this group sees it. It doesn’t have to be your real name.',
+    nameMissing: 'Add the name you’d like to use.',
+    nameTooLong: (max: number) => `Use ${count(max)} characters or fewer.`,
+    messageLabel: 'Why you’d like to join',
+    messageHint: (max: number) => `Up to ${count(max)} characters.`,
+    messageMissing: 'Say a little about why you’d like to join.',
+    messageTooLong: (max: number) => `Use ${count(max)} characters or fewer.`,
+    careful: 'Don’t include anything you wouldn’t want this group to read.',
+    send: 'Send',
+    failed: 'Your request didn’t go. Check your connection, then try again.',
+    /** Around the group's name: "Sent. If someone in Riverside Tenants invites you, it shows on Your groups." */
+    sent: { before: 'Sent. If someone in', after: 'invites you, it shows on Your groups.' },
+    asked: {
+      before: 'You asked to join',
+      after: 'from this device. Any invite shows on Your groups.',
+    },
+    yourGroups: 'Go to Your groups',
+    /** The install guide (ADR-0029): an iPhone outside the installed app copies the link instead. */
+    installLabel: 'This front door’s link',
+    installHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
+    copyLink: 'Copy link',
+    openToApply: 'Open Reconcile from your Home Screen and tap Open the front door.',
+    /** Start's field for a front door link. */
+    startHeading: 'Have a front door link?',
+    startLabel: 'Front door link',
+    startHint: 'Paste the link a group posted.',
+    startOpen: 'Open the front door',
+    startBadLink: 'This isn’t a front door link. Check you copied all of it.',
+    /** Start's list of this device's requests. */
+    requestsHeading: 'Asked to join',
+    waiting: (day: string) => `Asked ${day}. No invite yet.`,
+    /** After the group's name: "Riverside Tenants invited you". */
+    invitedYou: 'invited you',
+    openInvite: 'Open your invite',
+    /** Group home's Applications, for members who may invite. */
+    applications: 'Applications',
+    applicationsLede:
+      'People who asked to join at your front door. Only your group’s devices can read these.',
+    noApplications: 'No one has asked to join yet.',
+    askedOn: (day: string) => `Asked ${day}`,
+    /** Before the inviter's name: "Invited by Ana". */
+    invitedBy: 'Invited by',
+    sendInvite: 'Send an invite',
+    /** Read after Send an invite's own words, so each button says whose it is. */
+    forApplicant: (name: string) => `to ${name}`,
+    dismiss: 'Dismiss',
+    /** Read after Dismiss's own word: "Dismiss Kim’s application". */
+    applicationOf: (name: string) => `${name}’s application`,
+    dismissHint: 'Hides it on this device only.',
+    sending: 'Sending the invite…',
+    inviteSent: 'Invite sent. It waits 2 days for their device.',
+    inviteFailed: 'The invite didn’t go. Check your connection, then try again.',
+    /** Group rules' front door card, while the door is open. */
+    linkLabel: 'Front door link',
+    linkHint:
+      'Post it anywhere. Whoever opens it sees your group’s name and the first section of your Document, and can ask to join.',
+    counted: 'It shows how many people are in your group.',
+    uncounted: 'It doesn’t show how many people are in your group.',
+    /** The opt-in composer's one choice when it opens the door. */
+    countLabel: 'Show how many people are in the group',
+    countHint: 'Off unless your group chooses it. The page never shows who they are.',
   },
   // Personal (#93): a person's own Documents, kept on this device only (ADR-0001).
   personal: {
@@ -1183,5 +1335,204 @@ export const messages = {
     body: 'Save a backup so you can get this group back if you lose your phone.',
     save: 'Save a backup',
     notNow: 'Not now',
+  },
+  /** Reconcile with another group (#114): making a card, and the card a formed coalition's row makes. */
+  card: {
+    pageTitle: 'Reconcile with another group',
+    title: 'Reconcile with another group',
+    lede: 'Propose a coalition with another group. Your group votes on it here, then theirs votes on it there. It forms only if both pass.',
+    nameLabel: 'The coalition’s name',
+    nameHint: 'A name of its own, apart from either group’s.',
+    nameMissing: 'Add a name for the coalition.',
+    nameTooLong: (max: number) => `Keep the name to ${count(max)} characters or fewer.`,
+    statementLabel: 'Its first statement',
+    statementHint:
+      'What both groups would stand for together. Leave a blank line between sections.',
+    statementMissing: 'Add the statement both groups will vote on.',
+    whyLabel: 'Why',
+    whyHint: 'Tell your group why you’d reconcile.',
+    whyMissing: 'Tell your group why.',
+    whyTooLong: (max: number) => `Keep this to ${count(max)} characters or fewer.`,
+    yourNameLabel: 'Your name in the coalition',
+    yourNameHint: 'This name is only shown in this coalition.',
+    yourNameMissing: 'Add the name the coalition will see.',
+    submit: 'Make the card',
+    making: 'Making the card…',
+    tooLarge: 'This statement is too long to send. Shorten it, then try again.',
+    failed:
+      'Can’t reach the relay right now, so there’s no card yet. Your group’s Proposal is saved. Try again.',
+    retry: 'Try again',
+    madeTitle: 'Your card is ready',
+    linkLabel: 'Card link',
+    warning:
+      'Anyone who opens this link in the next 2 days can read the coalition from then on. Send it only to someone in the group you want to reconcile with.',
+    copy: 'Copy',
+    copied: 'Copied.',
+    copyFailed: 'Couldn’t copy it. Select the link and copy it yourself.',
+    proposalLink: 'Open your group’s Proposal',
+    /** The coalition statement's title: every card's Document is its mission statement. */
+    documentTitle: 'Mission statement',
+    proposalTitle: (name: string) => `Reconcile into ${name}`,
+    admitTitle: (group: string) => `Admit ${group}`,
+    another: 'Make a card for another group',
+    failedAnother: 'Can’t reach the relay right now, so there’s no card yet. Try again.',
+    anotherLede: 'Bring in another group: they vote, then every group in the coalition does.',
+  },
+  /** Opening a card and bringing it to one of your groups (#114). */
+  bring: {
+    pageTitle: 'Bring a card',
+    loading: 'Opening the card…',
+    eyebrow: 'A reconcile card',
+    /** Around the maker's group, which renders in its own `<bdi>`: "From Riverside Tenants". */
+    from: 'From',
+    statementLabel: 'Their proposed statement',
+    admitLede:
+      'This coalition has already formed. Your group votes first, then every group in it votes on letting yours in.',
+    question: 'Bring this to one of your groups?',
+    groupLabel: 'Your group',
+    groupHint: 'It votes on this card. Only groups where you can propose are listed.',
+    noGroups:
+      'None of your groups on this device can take this card. You need to be able to propose there, and it can’t hold this card already.',
+    yourNameLabel: 'Your name in the coalition',
+    yourNameHint: 'This name is only shown in this coalition.',
+    yourNameMissing: 'Add the name the coalition will see.',
+    submit: 'Bring to my group',
+    notNow: 'Not now',
+    failed: 'Bringing the card didn’t finish. Try again.',
+    badLinkTitle: 'This card doesn’t work',
+    badLink: 'This card has expired or is damaged. Ask the group that sent it for a new one.',
+    usedTitle: 'Can’t bring this card',
+    used: 'This card has already been used.',
+    offlineTitle: 'Can’t open the card yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+  },
+  /** Group home's Coalitions, and what a reconcile Proposal says of its coalition (#114). */
+  coalitions: {
+    heading: 'Coalitions',
+    start: 'Reconcile with another group',
+    forming: 'Forming',
+    formed: 'Formed',
+    declined: 'Didn’t form',
+    /** Around a group's name, in its own `<bdi>`: "Waiting for Oak St Co-op’s vote". */
+    waitingBefore: 'Waiting for',
+    waitingAfter: '’s vote',
+    /** Around a group's name: "Oak St Co-op didn’t pass this". */
+    didntPassAfter: 'didn’t pass this',
+    waitingCard: 'Waiting for another group to bring the card.',
+    lapsed: 'Not every group voted in time.',
+    youTakePart: 'You take part as',
+    takePart: 'Take part',
+    takePartHint: 'Join the coalition under your group’s seat.',
+    nameLabel: 'Your name in the coalition',
+    nameHint: 'This name is only shown in this coalition.',
+    nameMissing: 'Add the name the coalition will see.',
+    joining: 'Joining…',
+    takePartFailed: 'That didn’t save. Try again.',
+    mismatch: 'The result reported for your group doesn’t match your group’s vote.',
+    /** On a reconcile Proposal: "Reconcile with Oak St Co-op", the other group in its own `<bdi>`. */
+    with: 'Reconcile with',
+    statement: 'The coalition’s statement',
+    /** Under a reconcile ballot's one version. */
+    reconcileLine: 'If your group and the other group both pass this, the coalition forms.',
+    /** A reconcile Proposal's pass, and a coalition motion's in the group. */
+    reconcilePassed:
+      'This passed. Your group’s pass goes to the coalition, which forms once every group has passed.',
+    motionPassed:
+      'This passed in your group. Your group’s pass goes to the coalition, which decides with every group’s.',
+    /** Under a coalition motion's one version. */
+    motionLine:
+      'Every group in the coalition votes on this. Only your group’s pass or fail goes back.',
+    from: 'From the coalition',
+    /** A coalition motion's own lapse in a group (#120): it goes to the coalition as a fail. */
+    motionLapsed:
+      'Not enough people in your group weighed in, so the coalition counts your group as not passing it.',
+    /** Opens the coalition's home from group home's row (#120). */
+    open: 'Open the coalition',
+    /** Over a coalition motion in a group's lists and on its page, before the coalition's name (#120). */
+    voteTag: 'Coalition vote',
+    tagSeparator: '·',
+    /** The coalition's home (#120). */
+    missingTitle: 'This coalition isn’t on this device',
+    missing: 'Go back to your groups, and open it from a group that’s in it.',
+    homeEyebrow: 'Coalition',
+    homePageTitle: 'Coalition',
+    groups: 'Member groups',
+    /** Beside a member group this person is in. */
+    yourGroup: 'Your group',
+    documents: 'Documents',
+    openMotions: 'Open Proposals',
+    noOpen: 'Nothing is open in the coalition right now.',
+    /** A motion this device proposed, before the relay has it. */
+    pending: 'Saved on this device. Every group sees it once the relay has it.',
+    /** The progress of a coalition motion (#120): only whether each group passed, never a count of people. */
+    progressTitle: 'Across the coalition',
+    passedOf: (passed: number, seats: number) =>
+      `${count(passed)} of ${count(seats)} groups ${passed === 1 ? 'has' : 'have'} passed.`,
+    /** Before the groups still deciding, each in its own `<bdi>`, as in "Waiting for Oak St Co-op." */
+    waitingFor: 'Waiting for',
+    /** Between the last two names in a list. */
+    and: 'and',
+    listSeparator: ',',
+    end: '.',
+    twoThirds: (needed: number, seats: number, passed: number, failed: number) =>
+      `Needs ${count(needed)} of ${count(seats)} · ${count(passed)} passed${
+        failed === 0 ? '' : `, ${count(failed)} didn’t`
+      }`,
+    mine: { pass: 'Your group passed this.', fail: 'Your group didn’t pass this.' },
+    waitingMore: (groups: number) =>
+      groups === 1 ? 'Waiting for 1 more group.' : `Waiting for ${count(groups)} more groups.`,
+    passed: 'The coalition passed this.',
+    /** "The coalition passed this. It takes effect on <day>.", the day in a `<time>` element (#250). */
+    takesEffect: 'The coalition passed this. It takes effect on',
+    nowReads: 'The coalition passed this. It now reads:',
+    failedEvery: 'Not every group passed.',
+    failedTwoThirds: 'Fewer than two-thirds of the groups passed.',
+    resultTitle: 'The coalition’s result',
+    eachGroup: 'Each group',
+    standing: { pass: 'Passed', fail: 'Didn’t pass', deciding: 'Still deciding' },
+    /** The coalition's Document and its composer (#120). */
+    documentEyebrow: 'Coalition Document',
+    takePartFirst: 'To propose a change to the coalition’s Document, take part in it first.',
+    cantPropose:
+      'Changes here are proposed by people who can propose in a member group and take part in the coalition.',
+    sectionOpen: 'A change to this section is open for a vote.',
+    composerLede:
+      'Every group in the coalition votes on this inside the group. Only each group’s pass or fail comes back.',
+    composerWhyHint: 'Tell every group in the coalition what this fixes or makes better.',
+    composerTextHint: 'If the coalition passes it, this replaces the section.',
+    composerLinkHint: 'Where the groups can talk it over.',
+    composerVisibility:
+      'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
+  },
+  /** A coalition's room (#125): one small encrypted room where its member groups' people talk. */
+  room: {
+    /** The room's entry on the coalition's home. */
+    homeTitle: 'Room',
+    open: 'Open the room',
+    homeLine: 'Where people from every member group talk. Only the member groups can read it.',
+    eyebrow: 'Room',
+    pageTitle: 'Room',
+    /** Under the room's heading: who can read it, and the 30-day rule. */
+    note: 'Only people in the coalition’s member groups can read this room. The relay can’t, and neither can anyone who only follows the coalition. Each device deletes a message 30 days after the relay received it.',
+    listLabel: 'Messages',
+    empty: 'No messages yet.',
+    /** The polite announcement of messages that arrive while the person is at the bottom. */
+    newFrom: (name: string, text: string) => `New message from ${name}: ${text}`,
+    newMessages: (n: number) => `${count(n)} new messages`,
+    messageLabel: 'Message',
+    messageHint:
+      'Plain text. Everyone in the coalition’s member groups sees it under your coalition name.',
+    send: 'Send',
+    emptyMessage: 'Write a message first.',
+    longMessage: 'A message can be up to 2,000 characters.',
+    failed: 'That didn’t save. Try again.',
+    takePartFirst: 'To write here, take part in the coalition first.',
+    joining: 'You can write here once you’ve joined the coalition. That happens at the next sync.',
+    reads:
+      'People who take part in the coalition write here. To take part, you need to be able to propose in your group.',
+    missingTitle: 'There’s no room for you here',
+    missing:
+      'Only people in the coalition’s member groups can read its room. Go back to the coalition’s home.',
   },
 } as const;

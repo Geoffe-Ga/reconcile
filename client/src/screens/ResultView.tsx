@@ -15,84 +15,44 @@
  * is read from the group's own log on this device; nothing is sent to the
  * relay. Once a dissolved group's archive has cleared its ballots (#108), the
  * totals come from the tally this device kept, and the ballots give way to
- * when they were cleared.
+ * when they were cleared. A priority vote's result is PriorityResult.tsx's
+ * (#107); the two share ResultParts.tsx.
  */
-import { Fragment, useId } from 'react';
-import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
+import { useId } from 'react';
 
-import type { ChatDetails, ChatMoment } from '../app/chatMessages';
-import { formatAverage, formatAverageLine, formatDay, formatShortfall } from '../app/format';
+import { OutcomeSentence } from '../app/CoalitionProgress';
+import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
-import type { ShareOutcome } from '../app/share';
-import { MotionTitle, Named } from '../app/stewards';
+import type { RulesView } from '../app/optInLines';
+import { Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
-import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
-import type { RulesView } from '../app/optInLines';
 import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
-import { can } from '../engine/capabilities';
-import { composeOption } from '../engine/composeOption';
-import { ballotsExpireAt } from '../engine/expiry';
-import type { Ballot, GroupState, Proposal } from '../engine/fold';
+import type { CoalitionProgress } from '../engine/coalitionProgress';
 import { proposalTally } from '../engine/fold';
-import { displayName } from '../engine/names';
-import type { OwnBallot } from '../engine/ownBallot';
+import { isPriority } from '../engine/priority';
 import type { Bar } from '../engine/rules';
 import type { TallyDetail, VersionTally } from '../engine/tally';
+import { PriorityResult } from './PriorityResult';
+import {
+  Ballots,
+  Cleared,
+  LateNotice,
+  Mismatches,
+  ProposeAgain,
+  Ran,
+  type ResultViewProps,
+  Thanks,
+  Totals,
+} from './ResultParts';
 
-/** Props for {@link ResultView}. */
-export interface ResultViewProps {
-  /** The group, folded from relay records. */
-  readonly state: GroupState;
-  /** The Proposal, once the fold says it has closed. */
-  readonly proposal: Proposal;
-  /** This device's author id in the group. */
-  readonly me: string;
-  /** Where this viewer's own ballot stands: a late one is named to them alone. */
-  readonly own: OwnBallot;
-  /** Opens the composer to propose a lapsed Proposal again. */
-  readonly onProposeAgain: () => void;
-  /** Shares the result message into the group's chat, or copies it (#113). */
-  readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
-  /**
-   * Whether this device's leave waits for the relay (#77), or the group has
-   * dissolved (#108): then nothing is proposed again, and the result offers
-   * no message to tell the group.
-   */
-  readonly leaving?: boolean;
-  /** Once a dissolved group's ballots are cleared (#108): when, and the tally kept for this Proposal. */
-  readonly cleared?: ClearedResult;
-}
-
-/** A Proposal's result in a cleared archive: when this device cleared it, and its kept tally (#108). */
-export interface ClearedResult {
-  /** When the ballots were cleared, in device milliseconds. */
-  readonly at: number;
-  readonly tally: TallyDetail;
-}
+export type { ClearedResult, ResultViewProps } from './ResultParts';
 
 /** What the outcome blocks read. */
 interface OutcomeProps {
   readonly props: ResultViewProps;
   readonly detail: TallyDetail;
   readonly versions: readonly VersionView[];
-}
-
-/** "Thank you, Ben and Ana.", each name inside `<bdi>`. */
-function Thanks({ names }: { readonly names: readonly string[] }) {
-  const { result } = messages;
-  return (
-    <p className="result-thanks">
-      {result.thanks}{' '}
-      {names.map((name, index) => (
-        <Fragment key={name}>
-          {index > 0 ? ` ${result.and} ` : null}
-          <bdi>{name}</bdi>
-        </Fragment>
-      ))}
-      {result.end}
-    </p>
-  );
 }
 
 /** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
@@ -183,46 +143,17 @@ function Failed({ detail, versions }: OutcomeProps) {
 }
 
 /**
- * Propose again, for someone who can propose and isn't leaving (ADR-0069, as
- * ADR-0073 cuts it: a fresh Proposal with a fresh window). It waits, and says
- * why, while another Proposal is open on the section.
+ * A lapse: ADR-0069's sentence, a late ballot's notice, then Propose again.
+ * A coalition motion's lapse goes to the coalition as a fail, so it says
+ * that instead (#100, #120).
  */
-function ProposeAgain({ props }: { readonly props: ResultViewProps }) {
-  const { state, me, proposal, onProposeAgain, leaving = false } = props;
-  const reason = useId();
-  // A steward or rules vote isn't proposed again from here (#102, #117); a change, a removal or an add is (#75).
-  const { kind } = proposal.target;
-  if (leaving || (kind !== 'edit' && kind !== 'add') || !can(state, me, 'propose')) return null;
-  const busy = composeOption(state, proposal.atom) !== 'propose';
-  return (
-    <div className="row result-again">
-      <Button
-        className="button button-primary"
-        isDisabled={busy}
-        {...(busy ? { 'aria-describedby': reason } : {})}
-        onPress={onProposeAgain}
-      >
-        {messages.result.proposeAgain}
-      </Button>
-      {busy ? (
-        <p id={reason} className="caption">
-          {messages.result.busy}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/** "Your vote arrived after voting closed and wasn't counted.", to its author alone. */
-function LateNotice({ own }: { readonly own: OwnBallot }) {
-  return own === 'late' ? <p className="ballot-notice">{messages.result.late}</p> : null;
-}
-
-/** A lapse: ADR-0069's sentence, a late ballot's notice, then Propose again. */
 function Lapsed({ props }: OutcomeProps) {
+  const motion = props.proposal.target.kind === 'motion';
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{messages.result.lapsed}</p>
+      <p className="outcome-sentence">
+        {motion ? messages.coalitions.motionLapsed : messages.result.lapsed}
+      </p>
       <LateNotice own={props.own} />
       <ProposeAgain props={props} />
     </div>
@@ -238,189 +169,51 @@ function DissolvePassed() {
   );
 }
 
-/** The outcome block the result leads with. */
-function Outcome(props: OutcomeProps) {
-  const { outcome } = props.detail;
-  const { steward, rules, dissolve } = props.versions[0] ?? {};
-  if (outcome.kind === 'pass' && dissolve !== undefined) return <DissolvePassed />;
-  if (outcome.kind === 'pass' && steward !== undefined) return <StewardPassed steward={steward} />;
-  if (outcome.kind === 'pass' && rules !== undefined) return <RulesPassed rules={rules} />;
-  if (outcome.kind === 'pass') return <Passed {...props} winner={outcome.version} />;
-  return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
-}
-
-/** "Version 1 · Ana", the version's heading wherever the result names it, or what a steward or rules ballot decided. */
-function VersionName({ version }: { readonly version: VersionView }) {
-  if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
-  if (version.rules !== undefined) return <>{version.rules.title}</>;
-  if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;
+/**
+ * A reconcile Proposal's or a coalition motion's pass (#114): only the
+ * group's pass goes to the coalition, which decides with every group's.
+ */
+function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']['proposal'] }) {
+  const { coalitions } = messages;
+  const sentence =
+    proposal.target.kind === 'reconcile' ? coalitions.reconcilePassed : coalitions.motionPassed;
   return (
-    <>
-      {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
-      <bdi>{version.author}</bdi>
-    </>
-  );
-}
-
-/** Each version's totals, in ballot order: who scored it, its average, its zeros. */
-function Totals({ detail, versions }: Omit<OutcomeProps, 'props'>) {
-  const heading = useId();
-  return (
-    <div className="result-totals">
-      <h3 id={heading} className="eyebrow">
-        {messages.result.totals}
-      </h3>
-      <ul className="result-list" aria-labelledby={heading}>
-        {versions.map((version, index) => {
-          const totals = detail.versions[index];
-          const line =
-            totals === undefined || totals.scorers === 0
-              ? messages.result.noScores
-              : messages.result.totalsLine(totals.scorers, formatAverage(totals), totals.zeros);
-          return (
-            <li key={version.id} className="result-row">
-              <p className="result-version">
-                <VersionName version={version} />
-              </p>
-              <p className="caption">{line}</p>
-            </li>
-          );
-        })}
-      </ul>
+    <div className="result-outcome">
+      <p className="outcome-sentence">{sentence}</p>
     </div>
   );
 }
 
-/** One score on a ballot: "4 · Strongly supportive", numbered by version when there are several. */
-function scoreText(ballot: Ballot, version: VersionView, several: boolean): string {
-  const { result } = messages;
-  const score = ballot.scores[version.id];
-  if (score === undefined) return result.unscored(version.number);
-  const scored = result.scored(score, messages.ballot.scores[score]);
-  return several ? result.scoreOn(version.number, scored) : scored;
-}
-
-interface BallotRowProps {
-  readonly state: GroupState;
-  readonly ballot: Ballot;
-  readonly versions: readonly VersionView[];
-}
-
-/** One ballot: its voter's name, each score, and the note, if any. */
-function BallotRow({ state, ballot, versions }: BallotRowProps) {
-  const name = useId();
-  const several = versions.length > 1;
-  return (
-    <li className="result-ballot" aria-labelledby={name}>
-      <bdi id={name} className="result-voter">
-        {displayName(state, ballot.voter)}
-      </bdi>
-      <ul className="result-scores">
-        {versions.map((version) => (
-          <li key={version.id}>{scoreText(ballot, version, several)}</li>
-        ))}
-      </ul>
-      {ballot.note === null ? null : (
-        <p className="result-note" dir="auto">
-          {ballot.note}
-        </p>
-      )}
-    </li>
-  );
-}
-
-/** A relay minute as a day, in a `<time>` element that never breaks across lines. */
-function Day({ minute }: { readonly minute: number }) {
-  return <time dateTime={minuteIso(minute)}>{formatDay(minute)}</time>;
-}
-
 /**
- * The individual ballots and notes, by name, one tap away (ADR-0010: open
- * inside the group), with the day they expire (#111). Once this device has
- * cleared them, only that day is left to say.
+ * A pass's block: what a one-card ballot decided, or the winning text as the
+ * Document reads. A coalition motion's pass in the group only goes to the
+ * coalition (#120), whose own result says what changed.
  */
-function Ballots({ props, versions }: Omit<OutcomeProps, 'detail'>) {
-  const { state, proposal } = props;
-  const { result } = messages;
-  const expires = ballotsExpireAt(state.rules, proposal);
-  if (proposal.cleared) {
-    return (
-      <p className="caption result-expiry">
-        {result.clearedOn} <Day minute={expires} />
-        {result.clearedOnEnd}
-      </p>
-    );
+function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
+  const { steward, rules, dissolve, decision } = props.versions[0] ?? {};
+  const { proposal } = props.props;
+  if (decision !== undefined || proposal.target.kind === 'motion') {
+    return <DecisionPassed proposal={proposal} />;
   }
-  const label = result.ballots(proposal.ballots.length);
-  return (
-    <Disclosure className="reads-as result-ballots">
-      <Heading level={3} className="reads-as-heading">
-        <Button slot="trigger" className="reads-as-toggle">
-          {label}
-        </Button>
-      </Heading>
-      {proposal.ballots.length === 0 ? null : (
-        <p className="caption result-expiry">
-          {result.visibleUntil} <Day minute={expires} />
-          {result.visibleUntilEnd}
-        </p>
-      )}
-      <DisclosurePanel>
-        {proposal.ballots.length === 0 ? (
-          <p className="caption">{result.noBallots}</p>
-        ) : (
-          <ul className="result-list" aria-label={label}>
-            {proposal.ballots.map((ballot) => (
-              <BallotRow key={ballot.voter} state={state} ballot={ballot} versions={versions} />
-            ))}
-          </ul>
-        )}
-      </DisclosurePanel>
-    </Disclosure>
-  );
+  if (dissolve !== undefined) return <DissolvePassed />;
+  if (steward !== undefined) return <StewardPassed steward={steward} />;
+  if (rules !== undefined) return <RulesPassed rules={rules} />;
+  return <Passed {...props} winner={winner} />;
 }
 
-/** Each record of the decision that doesn't match this device's ballots, by who posted it (#111). */
-function Mismatches({ state, proposal }: Pick<ResultViewProps, 'state' | 'proposal'>) {
-  const { mismatchBefore, mismatchAfter } = messages.result;
-  return proposal.mismatched.map((author) => (
-    <p key={author} className="ballot-notice">
-      {mismatchBefore} <bdi>{displayName(state, author)}</bdi> {mismatchAfter}
-    </p>
-  ));
+/** The outcome block the result leads with. */
+function Outcome(props: OutcomeProps) {
+  const { outcome } = props.detail;
+  if (outcome.kind === 'pass') return <PassOutcome props={props} winner={outcome.version} />;
+  return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
-/** A relay minute as a date and time, in a `<time>` element that never breaks across lines. */
-function At({ minute }: { readonly minute: number }) {
-  return <time dateTime={minuteIso(minute)}>{formatMinute(minute)}</time>;
-}
-
-/** "Voting ran <start> – <end>." in relay time, adding that everyone had voted after an early close. */
-function Ran({ proposal }: { readonly proposal: Proposal }) {
-  const { result } = messages;
-  const early = proposal.closedAt !== null;
-  return (
-    <p className="caption result-ran">
-      {result.ranFrom} <At minute={proposal.received} /> {result.ranTo}{' '}
-      <At minute={proposal.closedAt ?? proposal.deadline} />
-      {early ? result.ranEarlyEnd : result.ranEnd}
-    </p>
-  );
-}
-
-/** "Individual scores and notes were cleared on <date>.", where the ballots were. */
-function Cleared({ at }: { readonly at: number }) {
-  return (
-    <p className="caption">{messages.archive.cleared(formatDate(Math.floor(at / MINUTE_MS)))}</p>
-  );
-}
-
-/** A closed Proposal's result, from the engine's tally of its ballots, or the tally a cleared archive kept. */
-export function ResultView(props: ResultViewProps) {
+/** A closed edit's result, from the engine's tally of its ballots, or the tally a cleared archive kept. */
+function EditResult(props: ResultViewProps) {
   const { state, proposal, own, cleared } = props;
   const heading = useId();
   const detail = cleared?.tally ?? proposalTally(proposal);
-  const versions = versionViews(state, proposal);
+  const versions = versionViews(state, proposal, props.names ?? state);
   return (
     <section className="result" aria-labelledby={heading}>
       <h2 id={heading} className="eyebrow">
@@ -432,13 +225,83 @@ export function ResultView(props: ResultViewProps) {
       {props.leaving === true ? null : (
         <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
       )}
-      <Totals detail={detail} versions={versions} />
+      <Totals detail={detail} versions={versions} naming="versions" />
       {cleared === undefined ? (
-        <Ballots props={props} versions={versions} />
+        <Ballots props={props} versions={versions} naming="versions" />
       ) : (
         <Cleared at={cleared.at} />
       )}
       <Ran proposal={proposal} />
     </section>
   );
+}
+
+/** Props for {@link CoalitionResult}. */
+export interface CoalitionResultProps {
+  /** The motion's progress once the coalition has decided it (`coalitionProgress`). */
+  readonly progress: CoalitionProgress;
+  /** The text a final pass put in the coalition's Document, or `""` for none, as admitting a group has. */
+  readonly text: string;
+  /** The proposer's name in the coalition, thanked once its pass is final, or `""` for none. */
+  readonly author: string;
+}
+
+/** Each member group, in seat order, with whether it passed, didn't, or is still deciding. */
+function GroupStandings({ groups }: { readonly groups: CoalitionProgress['groups'] }) {
+  const heading = useId();
+  const { coalitions } = messages;
+  return (
+    <div className="result-totals">
+      <h3 id={heading} className="eyebrow">
+        {coalitions.eachGroup}
+      </h3>
+      <ul className="result-list" aria-labelledby={heading}>
+        {groups.map((group, index) => (
+          <li key={index} className="result-row">
+            <p className="result-version">
+              <bdi>{group.name}</bdi>
+            </p>
+            <p className="caption">{coalitions.standing[group.result ?? 'deciding']}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The coalition's result on a motion (#120; ADR-0036, ADR-0069), shown on its
+ * vote in each member group once the coalition has decided it. A final pass
+ * reads "The coalition passed this. It now reads:", the new text full width
+ * and thanks to its proposer by their coalition name, with no numbers. A
+ * pass not yet final says the day it takes effect (#250); a fail says not
+ * every group passed it, or from 5 groups, fewer than two-thirds. Then each
+ * group with "Passed" or "Didn't pass": only those cross group lines, so no
+ * group's ballots, notes or counts appear here; each group's own stay in its
+ * own result below.
+ */
+export function CoalitionResult({ progress, text, author }: CoalitionResultProps) {
+  const heading = useId();
+  const passed = progress.outcome === 'pass' && progress.final;
+  const reads = passed && text !== '';
+  return (
+    <section className="result coalition-result" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow">
+        {messages.coalitions.resultTitle}
+      </h2>
+      <div className="result-outcome">
+        <p className="outcome-sentence">
+          {reads ? messages.coalitions.nowReads : <OutcomeSentence progress={progress} />}
+        </p>
+        {reads ? <AtomText text={text} className="atom-card result-text" /> : null}
+        {passed && author !== '' ? <Thanks names={[author]} /> : null}
+      </div>
+      <GroupStandings groups={progress.groups} />
+    </section>
+  );
+}
+
+/** A closed Proposal's result, or a priority vote's (#107), from the engine's tally of its ballots. */
+export function ResultView(props: ResultViewProps) {
+  return isPriority(props.proposal) ? <PriorityResult {...props} /> : <EditResult {...props} />;
 }
