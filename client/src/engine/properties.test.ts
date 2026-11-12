@@ -572,13 +572,18 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         const copyOnly = fold([...rotated, ...after], now);
         expect({ ...both, ignored: [] }).toEqual({ ...copyOnly, ignored: [] });
         expect(both.former.map((m) => m.author)).toContain(authorOf(member(leaver)));
-        expect([both.epoch, both.rotationDue, both.strandedLeaves]).toEqual([1, true, []]);
+        expect([both.epoch, both.rotationDue, both.stranded]).toEqual([1, true, []]);
         const withoutCopy = after.filter((record) => record.bytes !== leave.bytes);
         const alone = fold([...rotated, leave, ...withoutCopy], now);
-        expect(alone.strandedLeaves).toEqual([
-          { id: stranded, seq: leave.seq, author: authorOf(member(leaver)) },
+        expect(alone.stranded).toEqual([
+          {
+            id: stranded,
+            seq: leave.seq,
+            author: authorOf(member(leaver)),
+            member: authorOf(member(leaver)),
+          },
         ]);
-        expect({ ...alone, ignored: [], strandedLeaves: [] }).toEqual({
+        expect({ ...alone, ignored: [], stranded: [] }).toEqual({
           ...fold([...rotated, ...withoutCopy], now),
           ignored: [],
         });

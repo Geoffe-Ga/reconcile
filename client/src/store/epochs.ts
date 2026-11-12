@@ -219,12 +219,12 @@ function lateRecords(
 }
 
 /**
- * The records in `log` of each leave `state` names stranded (#225), one per
- * event, oldest first: a device that moves posts them again to the new
- * epoch's mailbox, whoever wrote them.
+ * The records in `log` of each leave (#225) and remove (#376) `state` names
+ * stranded, one per event, oldest first: a device that moves posts them again
+ * to the new epoch's mailbox, whoever wrote them.
  */
 function strandedRecords(log: readonly LogRecord[], state: GroupState): Uint8Array[] {
-  const ids = new Set(state.strandedLeaves.map((leave) => leave.id));
+  const ids = new Set(state.stranded.map((stranded) => stranded.id));
   return log.flatMap((record) => {
     const id = parseRecord(record.bytes)?.id;
     if (id === undefined || !ids.delete(id)) return [];
@@ -281,7 +281,7 @@ interface Context {
 /**
  * The move into `rotation` with its `secret`, posting a `key-taken` first when
  * the fold refused it, then this member's late records, then every stranded
- * leave (#225).
+ * leave and remove (#225, #376).
  */
 function moveInto(group: Group, context: Context, rotation: Rotation, secret: Uint8Array): KeyStep {
   const { log, state } = context;
@@ -378,7 +378,7 @@ export function keyFits(state: GroupState, epoch: number, secret: Uint8Array): b
  * secret fits its canonical key change, every wrap included ({@link keyFits}).
  * Like a move by sync, it posts again this member's records that reached the
  * old mailbox after the key change that left the device behind, and every
- * stranded leave (#225).
+ * stranded leave and remove (#225, #376).
  */
 export function adoptionFor(group: Group, epoch: number, secret: Uint8Array): EpochAdvance | null {
   if (epoch <= epochOf(group)) return null;

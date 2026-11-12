@@ -1,6 +1,6 @@
 {
   "kind": "fold",
-  "about": "#225: a leave read from an earlier epoch's mailbox after the key change out of it changes nothing there, as any record read from another epoch's mailbox doesn't (#98), and the fold names it in strandedLeaves while its author is still a member. A device that holds it posts it again to the current epoch's mailbox, where it ends the membership at its own place and makes the next key change due, which must leave the leaver out. So a device that never read the old copy folds the same state. Wraps are placeholders.",
+  "about": "#225: a leave read from an earlier epoch's mailbox after the key change out of it changes nothing there, as any record read from another epoch's mailbox doesn't (#98), and the fold names it in stranded while its author is still a member. A device that holds it posts it again to the current epoch's mailbox, where it ends the membership at its own place and makes the next key change due, which must leave the leaver out. So a device that never read the old copy folds the same state. Wraps are placeholders.",
   "vectors": [
     {
       "name": "a leave read from epoch 0's mailbox after the key change out of it ends no membership there, and the fold names it stranded",
@@ -148,7 +148,7 @@
             "epoch": 1
           }
         ],
-        "strandedLeaves": [
+        "stranded": [
           {
             "id": "@7",
             "seq": 7,
@@ -314,7 +314,7 @@
             "author": "%cal"
           }
         ],
-        "strandedLeaves": [],
+        "stranded": [],
         "ignored": [
           {
             "seq": 7,
@@ -535,7 +535,7 @@
             }
           }
         ],
-        "strandedLeaves": [],
+        "stranded": [],
         "ignored": [
           {
             "seq": 7,
@@ -725,7 +725,7 @@
             "author": "%dee"
           }
         ],
-        "strandedLeaves": [],
+        "stranded": [],
         "ignored": [
           {
             "seq": 7,
@@ -889,7 +889,7 @@
             }
           }
         ],
-        "strandedLeaves": [
+        "stranded": [
           {
             "id": "@7",
             "seq": 7,
@@ -1067,7 +1067,7 @@
             "author": "%cal"
           }
         ],
-        "strandedLeaves": [],
+        "stranded": [],
         "ignored": [
           {
             "seq": 7,
