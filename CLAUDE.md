@@ -254,3 +254,11 @@ Give each subagent:
 3. **Privacy impact:** what personal, affiliation, or voting data the change touches, checked against the threat model.
 4. **Acceptance criteria:** the gates above pass (`./scripts/check-all.sh` exits 0, coverage ≥90%, mypy strict, security scan clean), public APIs are documented, and an ADR exists if an architectural decision was made.
 5. **Open questions:** any TBD product decision the task depends on, flagged explicitly.
+
+**Run only parallelizable work at once.** A lane is a subagent or session that opens a PR.
+
+- Before giving a lane a task, list the files it will likely change: the issue's named files, plus a quick grep of the code it names.
+- Compare them with the files each unmerged branch changes, pushed or still local: `git diff --name-only $(git merge-base origin/main <head>) <head>`.
+- On any overlap, the task waits. Leave the lane empty instead, even down to one lane: each conflict between in-flight PRs forces a re-push, and every push re-runs CI.
+- Shared files count as overlap: the spec, an ADR that more than one branch amends, and `client/src/engine/`'s `fold.ts`, `event.ts` and `stewards.ts`.
+- If two in-flight branches overlap anyway, sequence them. The later one waits until the earlier one merges, then merges `main` locally and pushes once.
