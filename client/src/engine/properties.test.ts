@@ -45,7 +45,7 @@ import {
 import { doorOf } from '../test/door';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
-import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
+import { coalitionOutcome, RESULT_GRACE_MINUTES, seatResult, UNANIMOUS_UP_TO } from './coalition';
 import { resultsToReport, seatIn } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
@@ -2067,6 +2067,84 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
 /** A result a seat may report, or none. */
 const maybeResult = fc.option(fc.constantFrom<'pass' | 'fail'>('pass', 'fail'), { nil: null });
 
+/** What a lower seat reports on a motion (#375): a pass, a fail, both (a contest), or nothing. */
+type LowerReport = 'pass' | 'fail' | 'contest' | null;
+
+/** A {@link LowerReport}. */
+const lowerReport = fc.constantFrom<LowerReport>('pass', 'fail', 'contest', null);
+
+/** The results a seat posts for `report`, a contest's pass before its fail. */
+function reportsOf(report: LowerReport): ('pass' | 'fail')[] {
+  if (report === null) return [];
+  return report === 'contest' ? ['pass', 'fail'] : [report];
+}
+
+/** The result a seat counts as for `report`: a contest counts as a fail (`seatResult`). */
+function seatValue(report: LowerReport): 'pass' | 'fail' | null {
+  return report === 'contest' ? 'fail' : report;
+}
+
+/** One run of the contest property (#375): C's seats' reports, D's other seats', and the order C's arrive in. */
+interface ContestRun {
+  readonly lower: readonly LowerReport[];
+  readonly others: readonly ('pass' | 'fail' | null)[];
+  readonly order: readonly number[];
+  readonly expired: boolean;
+}
+
+/**
+ * C, of one seat per `run.lower`, and D, of C's seat and one per
+ * `run.others`, decide a motion in D (#375). D's other seats report first;
+ * then C's report in the order `run.order` gives, a contest as a pass and a
+ * fail. C's devices post to D whatever C owes it after each report
+ * `crossing` marks, as a sync would, and once every report is in. Returns
+ * D's outcome, its finality and Atoms, and what C's seat counts as in D.
+ */
+function contestedLines(run: ContestRun, crossing: readonly boolean[]) {
+  const logs = new NestedLogs();
+  const cSeats = run.lower.map((_, i) => [`L${String(i)}`] as const);
+  const cWho = run.lower.map((_, i) => `l${String(i)}`);
+  logs.formedIn('C', R, cSeats, cWho);
+  const into = logs.sealedInto('C', R + 5, 'l0', 'D', STATEMENT_D);
+  cSeats.forEach(([seat], i) => logs.resultIn('C', R + 6, cWho[i] ?? '', into, seat, 'pass'));
+  const dSeats: NestedSeat[] = [['C', 1], ...run.others.map((_, i) => [`E${String(i)}`] as const)];
+  const dWho = ['q', ...run.others.map((_, i) => `e${String(i)}`)];
+  logs.formedIn('D', R + 7, dSeats, dWho, STATEMENT_D);
+  const motion = logs.motionIn('D', R + 20, 'e0', 'Rent stays fair for everyone.');
+  run.others.forEach((result, i) => {
+    if (result !== null)
+      logs.resultIn('D', R + 21, `e${String(i)}`, motion, `E${String(i)}`, result);
+  });
+  const cross = (when: number) => {
+    const states = logs.foldAll(when);
+    const [c, d] = [states.C, states.D];
+    const seat = c === undefined || d === undefined ? null : seatIn(c, d);
+    if (c === undefined || d === undefined || seat === null) throw new Error('Expected C’s seat.');
+    for (const body of resultsToReport(c, d, seat)) {
+      logs.add('D', when, 'q', { type: 'group-result', body });
+    }
+  };
+  reportSteps(run).forEach(({ seat, result }, n) => {
+    const when = R + 22 + n;
+    logs.resultIn('C', when, `l${String(seat)}`, motion, `L${String(seat)}`, result);
+    if (crossing[n] === true) cross(when);
+  });
+  cross(R + 40);
+  const deadline = R + 20 + WINDOW;
+  const d = logs.foldAll(run.expired ? deadline + RESULT_GRACE_MINUTES : deadline).D;
+  const p = d?.proposals.find((proposal) => proposal.id === motion);
+  const seatC = seatResult(d?.coalition?.results ?? [], motion, seatKey('C'));
+  return { outcome: p?.outcome.kind, final: p?.final, atoms: d?.atoms, seatC };
+}
+
+/** Each of C's reports in `run`, a contest's pass before its fail, in the order `run.order` gives. */
+function reportSteps(run: ContestRun) {
+  return run.lower
+    .flatMap((report, seat) => reportsOf(report).map((result) => ({ seat, result })))
+    .map((step, i) => ({ ...step, rank: run.order[i] ?? 0, i }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i);
+}
+
 /** The outcome kind `results` reach over `seats` seats, as `coalitionOutcome` decides it. */
 function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: boolean) {
   const passes = results.filter((r) => r === 'pass').length;
@@ -2211,6 +2289,52 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
         expect(first.final).toBe(kind === 'fail' || s.expired);
       }),
       { numRuns: 30 },
+    );
+  });
+
+  it('never counts C’s seat in D as a pass C didn’t make, whenever C’s devices cross and a contest lands, and with C of four seats or fewer decides the same whenever they cross (#375)', () => {
+    const scenario = fc.integer({ min: 2, max: 6 }).chain((seats) =>
+      fc.record({
+        lower: fc.array(lowerReport, { minLength: seats, maxLength: seats }),
+        others: fc.array(maybeResult, { minLength: 1, maxLength: 3 }),
+        order: fc.array(fc.nat(), { minLength: 2 * seats, maxLength: 2 * seats }),
+        crossAfter: fc.array(fc.boolean(), { minLength: 2 * seats, maxLength: 2 * seats }),
+        expired: fc.boolean(),
+      }),
+    );
+    type Run = typeof scenario extends fc.Arbitrary<infer T> ? T : never;
+    // Five seats decide by two-thirds: four passes cross up early, then L0's contest leaves C open.
+    const withdrawn: Run = {
+      lower: ['contest', 'pass', 'pass', 'pass', null],
+      others: ['pass'],
+      order: [0, 9, 1, 2, 3, 4, 5, 6, 7, 8],
+      crossAfter: [false, false, false, true, false, false, false, false, false, false],
+      expired: false,
+    };
+    // As above, but the fail for the withdrawn pass crosses, and then L4's pass makes C pass after all.
+    const recovered: Run = {
+      lower: ['contest', 'pass', 'pass', 'pass', 'pass'],
+      others: ['pass'],
+      order: [0, 4, 1, 2, 3, 5, 6, 7, 8, 9],
+      crossAfter: [false, false, false, true, true, false, false, false, false, false],
+      expired: true,
+    };
+    fc.assert(
+      fc.property(scenario, (run) => {
+        const once = contestedLines(run, []);
+        const early = contestedLines(run, run.crossAfter);
+        const fromC = outcomeOver(run.lower.map(seatValue), false);
+        // Crossing once every report is in carries C's own outcome, and D decides on it.
+        expect(once.seatC).toBe(fromC === 'open' ? null : fromC);
+        const kind = outcomeOver([once.seatC, ...run.others], run.expired);
+        expect(once.outcome).toBe(kind === 'open' ? 'lapse' : kind);
+        // Whenever C's devices cross, C's seat in D is a pass only if C's own outcome is.
+        if (early.seatC === 'pass') expect(fromC).toBe('pass');
+        if (fromC === 'fail') expect(early.seatC).toBe('fail');
+        // Up to four seats every seat must pass, so a contest turns C's pass straight into a fail.
+        if (run.lower.length <= UNANIMOUS_UP_TO) expect(early).toEqual(once);
+      }),
+      { numRuns: 30, examples: [[withdrawn], [recovered]] },
     );
   });
 

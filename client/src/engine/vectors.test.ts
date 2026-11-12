@@ -125,6 +125,7 @@ describe('vector files', () => {
       'move-ignored.json',
       'move-place.json',
       'move-unchanged.json',
+      'nested-contest.json',
       'nested-forgery.json',
       'nested-levels.json',
       'nested-three-levels.json',
@@ -291,6 +292,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'nested',
       'nested',
       'nested',
       'nested',
@@ -1107,6 +1109,12 @@ describe('nested vector files (#122)', () => {
     'forgery-reconcile-repeat-key',
     'forgery-reconcile-forming',
     'forgery-reconcile-sealed-in-group',
+    'early-pass-contested-owed',
+    'early-pass-contested',
+    'withdrawn-pass-owed',
+    'withdrawn-pass',
+    'withdrawn-pass-recovered',
+    'withdrawn-pass-genesis',
   ])('include "%s"', (name) => {
     expect(NESTED_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });

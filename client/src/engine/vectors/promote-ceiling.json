@@ -2427,7 +2427,7 @@
       }
     },
     {
-      "name": "ceiling-2-stops-at-D: with three levels, a Dispatch with ceiling 2 rises through C to D, and D owes F nothing",
+      "name": "ceiling-2-stops-at-D: with three levels, a Dispatch with ceiling 2 rises through C to D, and D owes F nothing; C’s seats pass D’s reconcile into F, as Fay reports for C’s seat there",
       "logs": {
         "A": [
           {
@@ -2843,6 +2843,38 @@
               "ts": 1762501800000,
               "body": {
                 "motion": "@27",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 46,
+            "received": 29375030,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762501800000,
+              "body": {
+                "motion": "@35",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 47,
+            "received": 29375030,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762501800000,
+              "body": {
+                "motion": "@35",
                 "seat": "^B",
                 "result": "pass"
               }
