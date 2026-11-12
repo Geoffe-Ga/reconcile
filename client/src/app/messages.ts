@@ -1719,6 +1719,21 @@ export const messages = {
     another: 'Make a card for another group',
     failedAnother: 'Can’t reach the relay right now, so there’s no card yet. Try again.',
     anotherLede: 'Bring in another group: they vote, then every group in the coalition does.',
+    /** Reconcile with another coalition (#122): the same card, from a coalition's row. */
+    coalitionTitle: 'Reconcile with another coalition',
+    coalitionLede:
+      'Propose a coalition of coalitions. Every group in your coalition votes on it, then the other side votes. It forms only if both pass.',
+    coalitionWhyHint: 'Tell every group in your coalition why you’d reconcile.',
+    coalitionNameHint: 'A name of its own, apart from either side’s.',
+    coalitionStatementHint:
+      'What both sides would stand for together. Leave a blank line between sections.',
+    coalitionWarning:
+      'Anyone who opens this link in the next 2 days can read the new coalition from then on. Send it only to someone in the group or coalition you want to reconcile with.',
+    coalitionLink: 'Open your coalition',
+    coalitionCant:
+      'Only someone who takes part in this coalition and can propose there makes its card, and a coalition already three levels up can’t join another.',
+    coalitionKeyWaits:
+      'This coalition’s key hasn’t reached this device yet. You can make its card once it arrives.',
   },
   /** Opening a card and bringing it to one of your groups (#114). */
   bring: {
@@ -1731,14 +1746,23 @@ export const messages = {
     admitLede:
       'This coalition has already formed. Your group votes first, then every group in it votes on letting yours in.',
     question: 'Bring this to one of your groups?',
+    /** When a coalition this person takes part in may take it too (#122). */
+    questionBoth: 'Bring this to one of your groups or coalitions?',
     groupLabel: 'Your group',
     groupHint: 'It votes on this card. Only groups where you can propose are listed.',
+    /** When a coalition this person takes part in can take the card too (#122). */
+    groupOrCoalitionLabel: 'Your group or coalition',
+    groupOrCoalitionHint:
+      'It votes on this card. A coalition votes group by group. Only those where you can propose are listed.',
+    /** Under a coalition's name in the picker (#122). */
+    coalitionOption: 'Coalition',
     noGroups:
       'None of your groups on this device can take this card. You need to be able to propose there, and it can’t hold this card already.',
     yourNameLabel: 'Your name in the coalition',
     yourNameHint: 'This name is only shown in this coalition.',
     yourNameMissing: 'Add the name the coalition will see.',
     submit: 'Bring to my group',
+    submitCoalition: 'Bring to my coalition',
     notNow: 'Not now',
     failed: 'Bringing the card didn’t finish. Try again.',
     badLinkTitle: 'This card doesn’t work',
@@ -1819,9 +1843,30 @@ export const messages = {
       'Not enough people in your group weighed in, so the coalition counts your group as not passing it.',
     /** Opens the coalition's home from group home's row (#120). */
     open: 'Open the coalition',
+    /** From a coalition's row (#122): the card flow one level up. */
+    reconcileCoalition: 'Reconcile with another coalition',
+    /** Between the names of a chain, as in "Riverside Tenants · in Eastside Housing" (#122). */
+    chainIn: 'in',
+    /** Above the coalitions a coalition is in or asks into (#122). */
+    above: 'Coalitions it’s in',
+    /** A coalition still waiting for its own groups' vote on joining one above (#122). */
+    waitingOwn: 'Waiting for its groups’ vote.',
     /** Over a coalition motion in a group's lists and on its page, before the coalition's name (#120). */
     voteTag: 'Coalition vote',
     tagSeparator: '·',
+    /** After the tag's coalition, around the coalitions a motion came through (#122). */
+    through: '(through',
+    throughEnd: ')',
+    then: 'then',
+    /** Before a coalition's name on a nested motion's progress lines (#122). */
+    progressIn: 'In',
+    /** Under a nested motion's progress (#122): what crosses each line. */
+    nestedLine:
+      'Your group’s pass or fail goes to the coalition it’s in. Only that coalition’s pass or fail goes on up.',
+    /** On an admit ballot for a coalition (#122), before its member groups. */
+    admitsCoalition: 'A coalition of',
+    admitsTitle: 'Asking to join',
+    admitsLevel: (level: number) => `Level ${count(level)}`,
     /** The coalition's home (#120). */
     missingTitle: 'This coalition isn’t on this device',
     missing: 'Go back to your groups, and open it from a group that’s in it.',
@@ -1830,6 +1875,9 @@ export const messages = {
     groups: 'Member groups',
     /** Beside a member group this person is in. */
     yourGroup: 'Your group',
+    /** Beside a member that is a coalition (#122), and one this person takes part in. */
+    coalitionSeat: 'Coalition',
+    yourCoalition: 'Your coalition',
     documents: 'Documents',
     openMotions: 'Open Proposals',
     noOpen: 'Nothing is open in the coalition right now.',

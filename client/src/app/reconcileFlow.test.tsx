@@ -81,7 +81,7 @@ describe('reconciling two groups', SLOW, () => {
     const { proposal, found: card } = await anaMakesCard(ana, cy, riverside);
 
     expect(card.mode).toBe('found');
-    expect(card.groups).toEqual([{ groupId: oak, name: 'Oak St Co-op' }]);
+    expect(card.groups).toEqual([{ groupId: oak, name: 'Oak St Co-op', kind: 'group' }]);
     expect(card.card.seat.name).toBe('Riverside Tenants');
     const brought = await bringCard(cy.services, card, oak, 'Cy');
     await syncAll(1);

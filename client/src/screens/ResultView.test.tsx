@@ -491,6 +491,7 @@ describe('ResultView, a coalition motion in the group (#120)', () => {
     const target = {
       kind: 'motion',
       coalition: 'coalition-1',
+      chain: [],
       bar: state.rules.bars.ordinary,
     } as const;
     const proposals = state.proposals.map((p) => (p.id === id ? { ...p, target } : p));

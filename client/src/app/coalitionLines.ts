@@ -9,13 +9,13 @@
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { can, isOusted } from '../engine/capabilities';
-import { seatResult } from '../engine/coalition';
+import { MAX_LEVEL, seatLevel, seatResult } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { resultMismatches, seatIn } from '../engine/crossing';
 import type { ReconcileTarget, SeatEntry } from '../engine/event';
 import type { GroupState, HeldSeat, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
-import type { HeldCoalition } from '../store/coalitions';
+import { type HeldCoalition, innerOf } from '../store/coalitions';
 
 /** One line under a coalition's name: whom it waits for, or who didn't pass it. */
 export type CoalitionLine =
@@ -48,14 +48,39 @@ export interface CoalitionRow {
   readonly me: CoalitionMe;
   /** Whether this person may make a card from it for another group: they take part in it. */
   readonly makesCards: boolean;
+  /**
+   * Whether this person may make a card from it for another coalition (#122):
+   * they take part in it, it has formed, one more level stays within 3, and
+   * the group's seat gives this device the coalition's `inner`, which seals
+   * its seat above: a group admitted later holds none until a seated group's
+   * wrap for its seat arrives (#313).
+   */
+  readonly reconciles: boolean;
   /** How many results the coalition recorded for this group that its own vote doesn't match. */
   readonly mismatches: number;
+  /** The coalitions above it that it is in or asks into (#122), each line up in turn. */
+  readonly above: readonly AboveRow[];
+}
+
+/**
+ * A coalition above one of the group's coalitions (#122), as group home
+ * lists it under that coalition's row: its name, its home once formed, where
+ * it stands for the seat below it, and the chain of names from the group up
+ * to it, as in "Riverside Tenants · in Eastside Housing · in Metro Renters".
+ */
+export interface AboveRow {
+  readonly key: string;
+  readonly name: string;
+  readonly coalitionId: string | null;
+  readonly status: CoalitionRow['status'];
+  readonly lines: readonly CoalitionLine[];
+  readonly chain: readonly string[];
 }
 
 /** The reconcile target of the group's Proposal `id`, or null. */
 function targetOf(state: GroupState, id: string): ReconcileTarget | null {
   const target = state.proposals.find((p) => p.id === id)?.target;
-  return target?.kind === 'reconcile' ? target : null;
+  return target?.kind === 'reconcile' && 'secret' in target ? target : null;
 }
 
 /** The coalition entry on this device for the coalition whose secret is `secret`, in base64url. */
@@ -145,6 +170,47 @@ function standingOf(
   return seat === undefined ? admitting(state, held, coalition) : seated(coalition);
 }
 
+/** The coalition on this device whose seats name `key`, once its genesis is back (#122). */
+function coalitionSeating(
+  coalitions: readonly HeldCoalition[],
+  key: string,
+): HeldCoalition | undefined {
+  return coalitions.find(({ state }) => state.coalition?.seats.some((s) => s.key === key));
+}
+
+/**
+ * The coalitions above `lower` (#122): one row for each of its reconcile
+ * motions, by the coalition on this device whose seats name its key, then
+ * the coalitions above that one, up to level 3. `chain` is the names from
+ * the group up to `lower`.
+ */
+function aboveRows(
+  lower: GroupState,
+  chain: readonly string[],
+  coalitions: readonly HeldCoalition[],
+): AboveRow[] {
+  if (chain.length > MAX_LEVEL) return [];
+  return lower.coalitions.flatMap((held) => {
+    const above = coalitionSeating(coalitions, held.key)?.state;
+    const seat = above?.coalition?.seats.find((s) => s.key === held.key);
+    const standing =
+      above === undefined ? beforeGenesis(lower, held) : standingOf(lower, held, above, seat);
+    const name = above === undefined ? held.name : above.name;
+    const row = {
+      key: held.key,
+      name,
+      coalitionId: above?.group ?? null,
+      ...standing,
+      chain: [...chain, name],
+    };
+    const higher =
+      above === undefined || standing.status !== 'formed'
+        ? []
+        : aboveRows(above, row.chain, coalitions);
+    return [row, ...higher];
+  });
+}
+
 /** One coalition row for the group's reconcile Proposal `held`, or null with no entry yet. */
 function rowOf(
   state: GroupState,
@@ -154,33 +220,59 @@ function rowOf(
 ): CoalitionRow | null {
   const target = targetOf(state, held.proposal);
   const entry = target === null ? undefined : coalitionFor(coalitions, target.secret);
-  if (entry === undefined) return null;
+  if (target === null || entry === undefined) return null;
   const coalition = entry.state;
   const seat = coalition.coalition?.seats.find((s) => s.key === held.key);
   const standing = standingOf(state, held, coalition, seat);
   const me = meIn(state, author, entry, seat !== undefined && standing.status !== 'declined');
+  const name = coalition.group === null ? held.name : coalition.name;
+  const formed = standing.status === 'formed';
   return {
     entryId: entry.entry.groupId,
     proposal: held.proposal,
     coalitionId: coalition.group,
-    name: coalition.group === null ? held.name : coalition.name,
+    name,
     ...standing,
-    ...membership(coalition, standing.status === 'formed', me, actsForGroup(state, author)),
+    ...membership(
+      coalition,
+      { formed, keyed: holdsInner(target, held, coalition) },
+      me,
+      actsForGroup(state, author),
+    ),
     me,
     mismatches: seat === undefined ? 0 : resultMismatches(state, coalition, held.key).length,
+    above: seat === undefined ? [] : aboveRows(coalition, [state.name, name], coalitions),
   };
 }
 
-/** A formed coalition's member groups, and whether this person, taking part, may make cards. */
+/**
+ * Whether the group's reconcile target `target`, for the seat `held`, gives
+ * this device `coalition`'s `inner` (#313): its own, for a founding group's,
+ * or a wrap for its seat in the coalition's log, as `innerOf` opens one.
+ */
+function holdsInner(target: ReconcileTarget, held: HeldSeat, coalition: GroupState): boolean {
+  const { coalition: info, group } = coalition;
+  if (info === null || group === null) return false;
+  return innerOf({ ...target, key: held.key }, info, group) !== null;
+}
+
+/**
+ * A formed coalition's member groups, and whether this person, taking part,
+ * may make cards: for another group, and while one more level stays within 3
+ * and this device holds its `inner` (`keyed`, #313), for another coalition
+ * (#122).
+ */
 function membership(
   coalition: GroupState,
-  formed: boolean,
+  { formed, keyed }: { readonly formed: boolean; readonly keyed: boolean },
   me: CoalitionMe,
   live: boolean,
-): Pick<CoalitionRow, 'members' | 'makesCards'> {
-  if (!formed) return { members: [], makesCards: false };
+): Pick<CoalitionRow, 'members' | 'makesCards' | 'reconciles'> {
+  if (!formed) return { members: [], makesCards: false, reconciles: false };
   const members = (coalition.coalition?.seats ?? []).map((s) => s.name);
-  return { members, makesCards: me.kind === 'in' && live };
+  const makesCards = me.kind === 'in' && live;
+  const level = coalition.coalition?.level ?? MAX_LEVEL;
+  return { members, makesCards, reconciles: makesCards && keyed && level < MAX_LEVEL };
 }
 
 /**
@@ -217,15 +309,44 @@ export interface ReconcileView {
   readonly others: readonly string[] | null;
 }
 
-/** The coalition a reconcile Proposal proposes, or null for any other Proposal. */
+/**
+ * The reconcile target a Proposal carries: a group's own, or for a coalition
+ * motion, the coalition's own reconcile motion's (#122), or null.
+ */
+function reconcileTargetOf(
+  proposal: Pick<Proposal, 'id' | 'target'>,
+  coalitions: readonly HeldCoalition[],
+): Extract<Proposal['target'], { kind: 'reconcile' }> | null {
+  const { target } = proposal;
+  if (target.kind === 'reconcile') return target;
+  const origin = motionIn(proposal.id, target, coalitions)?.motion.target;
+  return origin?.kind === 'reconcile' ? origin : null;
+}
+
+/** The coalition on this device a reconcile target names, once its genesis is back. */
+function coalitionOf(
+  target: Extract<Proposal['target'], { kind: 'reconcile' }>,
+  coalitions: readonly HeldCoalition[],
+): GroupState | undefined {
+  const held =
+    'secret' in target
+      ? coalitionFor(coalitions, target.secret)
+      : coalitionSeating(coalitions, target.key);
+  return held?.state.group === null ? undefined : held?.state;
+}
+
+/**
+ * The coalition a reconcile Proposal proposes, or a coalition's motion to
+ * join one above (#122), as the group votes on it, or null for any other
+ * Proposal.
+ */
 export function reconcileView(
-  proposal: Pick<Proposal, 'target'>,
+  proposal: Pick<Proposal, 'id' | 'target'>,
   coalitions: readonly HeldCoalition[],
 ): ReconcileView | null {
-  const { target } = proposal;
-  if (target.kind !== 'reconcile') return null;
-  const coalition = coalitionFor(coalitions, target.secret)?.state;
-  const seats = coalition?.group === null ? undefined : coalition?.coalition?.seats;
+  const target = reconcileTargetOf(proposal, coalitions);
+  if (target === null) return null;
+  const seats = coalitionOf(target, coalitions)?.coalition?.seats;
   const others = seats === undefined ? null : seats.filter((s) => s.key !== target.key);
   return {
     name: target.name,
@@ -243,25 +364,54 @@ export function reconcileView(
 export interface MotionWords {
   readonly title: string;
   readonly why: string;
+  /** The name of the coalition whose motion it is: for a nested one, the highest (#122). */
   readonly coalition: string;
   readonly coalitionId: string;
+  /** The coalitions it came through to reach this group, nearest first, by name (#122). */
+  readonly through: readonly string[];
   readonly admits: string | null;
+  /** For a coalition it admits (#122): the level and member groups its motion states. */
+  readonly admitsLevel: number;
+  readonly admitsGroups: readonly string[];
   readonly text: string;
   readonly link: string | null;
   /** The proposer's key in the coalition, whose name only the coalition's own state holds. */
   readonly author: string;
 }
 
-/** The coalition `target` names, and its own Proposal `id` there, or null when this device lacks either. */
+/**
+ * The coalition whose motion `target` opens, its own Proposal `id` there,
+ * and the coalitions on this device it came through, nearest first (#122):
+ * for a coalition's own motion, the coalition `target` names; for one from
+ * further up, the last in its chain. Null when this device lacks any of them.
+ */
 function motionIn(
   id: string,
   target: Proposal['target'],
   coalitions: readonly HeldCoalition[],
-): { readonly coalition: GroupState; readonly motion: Proposal } | null {
+): {
+  readonly coalition: GroupState;
+  readonly motion: Proposal;
+  readonly through: readonly GroupState[];
+} | null {
   if (target.kind !== 'motion') return null;
-  const coalition = coalitions.find(({ state }) => state.group === target.coalition)?.state;
+  const route = [target.coalition, ...target.chain].map(
+    (cid) => coalitions.find(({ state }) => state.group === cid)?.state,
+  );
+  const coalition = route.at(-1);
   const motion = coalition?.proposals.find((p) => p.id === id);
-  return coalition === undefined || motion === undefined ? null : { coalition, motion };
+  const through = route.slice(0, -1).flatMap((state) => (state === undefined ? [] : [state]));
+  if (coalition === undefined || motion === undefined || through.length < route.length - 1) {
+    return null;
+  }
+  return { coalition, motion, through };
+}
+
+/** The level and member groups an admit motion states for a coalition (#122), or none. */
+function admitted(motion: Proposal): Pick<MotionWords, 'admits' | 'admitsLevel' | 'admitsGroups'> {
+  if (motion.target.kind !== 'admit') return { admits: null, admitsLevel: 0, admitsGroups: [] };
+  const { seat, groups } = motion.target;
+  return { admits: seat.name, admitsLevel: seatLevel(seat), admitsGroups: groups };
 }
 
 /** The words of the coalition motion `proposal`, or null for any other Proposal, or one not read yet. */
@@ -271,14 +421,14 @@ export function motionWords(
 ): MotionWords | null {
   const found = motionIn(proposal.id, proposal.target, coalitions);
   if (found === null) return null;
-  const { coalition, motion } = found;
-  const admits = motion.target.kind === 'admit' ? motion.target.seat.name : null;
+  const { coalition, motion, through } = found;
   return {
     title: motion.title,
     why: motion.why,
     coalition: coalition.name,
     coalitionId: coalition.group ?? '',
-    admits,
+    through: through.map((state) => state.name),
+    ...admitted(motion),
     text: motion.text,
     link: motion.link,
     author: motion.author,
@@ -317,9 +467,17 @@ export function withMotionWords(
 export interface MotionView {
   readonly coalitionId: string;
   readonly coalition: string;
+  /** The coalitions it came through, nearest first, by name (#122). */
+  readonly through: readonly string[];
   readonly state: GroupState;
   readonly motion: Proposal;
   readonly progress: CoalitionProgress;
+  /**
+   * For a motion from further up (#122), each coalition it came through,
+   * nearest first, with its progress on it, read for the seat below it on
+   * this device's way up: the group's in the nearest.
+   */
+  readonly steps: readonly { readonly name: string; readonly progress: CoalitionProgress }[];
   readonly author: string;
   readonly section: { readonly number: number; readonly text: string } | null;
 }
@@ -330,6 +488,20 @@ function sectionOf(coalition: GroupState, motion: Proposal): MotionView['section
   if (atom === undefined) return null;
   const sections = coalition.atoms.filter((a) => a.documentId === atom.documentId);
   return { number: sections.indexOf(atom) + 1, text: atom.text };
+}
+
+/** Each coalition a nested motion came through, with its progress for the seat below it (#122). */
+function stepsOf(
+  group: Pick<GroupState, 'coalitions'>,
+  through: readonly GroupState[],
+  id: string,
+): MotionView['steps'] {
+  let below: Pick<GroupState, 'coalitions'> = group;
+  return through.flatMap((coalition) => {
+    const progress = coalitionProgress(coalition, id, seatIn(below, coalition) ?? undefined);
+    below = coalition;
+    return progress === null ? [] : [{ name: coalition.name, progress }];
+  });
 }
 
 /**
@@ -343,15 +515,18 @@ export function motionView(
 ): MotionView | null {
   const found = motionIn(proposal.id, proposal.target, coalitions);
   if (found === null) return null;
-  const { coalition, motion } = found;
-  const progress = coalitionProgress(coalition, motion.id, seatIn(group, coalition) ?? undefined);
+  const { coalition, motion, through } = found;
+  const below = through.at(-1) ?? group;
+  const progress = coalitionProgress(coalition, motion.id, seatIn(below, coalition) ?? undefined);
   if (progress === null) return null;
   return {
     coalitionId: coalition.group ?? '',
     coalition: coalition.name,
+    through: through.map((state) => state.name),
     state: coalition,
     motion,
     progress,
+    steps: stepsOf(group, through, motion.id),
     author: displayName(coalition, motion.author) ?? '',
     section: sectionOf(coalition, motion),
   };

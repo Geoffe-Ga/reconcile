@@ -17,7 +17,9 @@ const ROW: CoalitionRow = {
   members: ['Riverside Tenants', 'Oak St Co-op'],
   me: { kind: 'in', name: 'Ana E.' },
   makesCards: true,
+  reconciles: false,
   mismatches: 0,
+  above: [],
 };
 
 function props(overrides: Partial<CoalitionSectionProps> = {}): CoalitionSectionProps {
@@ -36,6 +38,57 @@ const section = () => screen.getByRole('region', { name: 'Coalitions' });
 
 beforeEach(() => {
   document.title = 'Riverside Tenants · Reconcile';
+});
+
+describe('CoalitionSection, nested (#122)', () => {
+  const ABOVE: CoalitionRow['above'] = [
+    {
+      key: 'seat-c',
+      name: 'Metro Renters',
+      coalitionId: 'metro-1',
+      status: 'formed',
+      lines: [],
+      chain: ['Riverside Tenants', 'Eastside Housing', 'Metro Renters'],
+    },
+    {
+      key: 'seat-d',
+      name: 'State Renters',
+      coalitionId: null,
+      status: 'forming',
+      lines: [{ kind: 'waiting', group: 'Grove' }],
+      chain: ['Riverside Tenants', 'Eastside Housing', 'Metro Renters', 'State Renters'],
+    },
+  ];
+
+  it('lists the coalitions above one, each with its chain, its standing and its home once formed', async () => {
+    render(<CoalitionSection {...props({ rows: [{ ...ROW, above: ABOVE }] })} />);
+    const above = within(section()).getByRole('list', { name: messages.coalitions.above });
+    const [metro, state] = within(above).getAllByRole('listitem');
+    expect(metro).toHaveTextContent(
+      'FormedRiverside Tenants · in Eastside Housing · in Metro RentersOpen the coalition→',
+    );
+    expect(
+      within(metro as HTMLElement).getByRole('link', { name: 'Open the coalition' }),
+    ).toHaveAttribute('href', '#/c/metro-1');
+    expect(state).toHaveTextContent(
+      'FormingRiverside Tenants · in Eastside Housing · in Metro Renters · in State RentersWaiting for Grove’s vote',
+    );
+    expect(within(state as HTMLElement).queryByRole('link')).toBeNull();
+    expect(within(metro as HTMLElement).getByText('Metro Renters').tagName).toBe('BDI');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Reconcile with another coalition only to whoever may make its card', () => {
+    const { unmount } = render(
+      <CoalitionSection {...props({ rows: [{ ...ROW, reconciles: true }] })} />,
+    );
+    const link = within(section()).getByRole('link', { name: /Reconcile with another coalition/ });
+    expect(link).toHaveAttribute('href', '#/c/coalition-1/reconcile');
+    unmount();
+    render(<CoalitionSection {...props()} />);
+    expect(within(section()).queryByRole('link', { name: /another coalition/ })).toBeNull();
+    expect(within(section()).queryByRole('list', { name: messages.coalitions.above })).toBeNull();
+  });
 });
 
 describe('CoalitionSection', () => {
