@@ -47,8 +47,25 @@ BARK_DARK: Color = (38, 26, 22)
 BARK_LIT: Color = (146, 104, 74)
 BARK_RIM: Color = (200, 158, 112)
 ROOT: Color = (166, 124, 94)
-ROOT_DARK: Color = (92, 62, 46)
-ROOT_LIT: Color = (216, 178, 142)
+ROOTLET: Color = (150, 112, 84)
+# Wood, as (shadow, body, half-light, light, rim): a limb is shaded round, not flat.
+Wood = tuple[Color, Color, Color, Color, Color]
+BOUGH_WOOD: Wood = (
+    (36, 25, 21),
+    (84, 59, 45),
+    (122, 90, 66),
+    (170, 132, 96),
+    (216, 182, 136),
+)
+FAR_WOOD: Wood = ((22, 40, 32), (32, 50, 38), (42, 62, 44), (56, 78, 52), (72, 96, 62))
+ROOT_WOOD: Wood = (
+    (50, 33, 25),
+    (110, 77, 55),
+    (148, 108, 80),
+    (172, 134, 102),
+    (204, 170, 132),
+)
+LIGHT = np.array([0.5, -0.86])  # the sun is up and to the right
 THREAD: Color = (238, 222, 172)
 THREAD_DIM: Color = (176, 152, 108)
 GLOW: Color = (255, 190, 92)
@@ -76,11 +93,11 @@ WIDE = Layout(
     name="wide",
     width=1600,
     units=1600,
-    heights=(0.8, 1.15, 0.92, 0.7, 1.15),
+    heights=(0.8, 1.3, 0.98, 0.7, 1.3),
     trees=(0.09, 0.26, 0.74, 0.91),
     crowns=0.25,
     floor=0.2,
-    web=0.42,
+    web=0.38,
     sun=(0.82, 0.11),
     clouds=((0.66, 0.2, 150), (0.9, 0.27, 100), (0.6, 0.4, 60), (0.97, 0.42, 50)),
 )
@@ -88,11 +105,11 @@ TALL = Layout(
     name="tall",
     width=720,
     units=900,
-    heights=(2.3, 4.6, 2.9, 2.4, 3.4),
+    heights=(2.3, 5.4, 3.1, 2.4, 4.3),
     trees=(0.07, 0.3, 0.7, 0.93),
     crowns=0.7,
     floor=0.5,
-    web=0.3,
+    web=0.25,
     sun=(0.78, 0.26),
     clouds=((0.7, 1.26, 120), (0.2, 1.4, 90), (0.9, 1.5, 70), (0.45, 1.16, 50)),
 )
@@ -107,6 +124,36 @@ def bezier(p0: np.ndarray, ctrl: np.ndarray, p1: np.ndarray, n: int = 24) -> np.
 def pt(p: np.ndarray | tuple[float, float]) -> tuple[int, int]:
     """Round a point to whole pixels, as OpenCV wants it."""
     return round(float(p[0])), round(float(p[1]))
+
+
+@dataclass(frozen=True)
+class Habit:
+    """How a kind of limb grows: how it wanders, what draws it, how it forks."""
+
+    turn: float  # how far its heading can drift at each step
+    pull: float | None  # a heading it bends toward (down, for roots), if any
+    rate: float  # how hard that pull is
+    forks: int  # how many limbs fork off the first one
+    spread: tuple[float, float]  # the angle a fork leaves at
+    reach: tuple[float, float]  # a fork's length, as a share of its parent's
+    thin: float  # a fork's width, as a share of its parent's where it leaves
+    finest: float  # in scene units: nothing thinner than this forks again
+
+
+BOUGH = Habit(0.085, None, 0.0, 4, (0.45, 0.95), (0.3, 0.5), 0.5, 2.0)
+SINKER = Habit(0.07, 1.57, 0.1, 4, (0.6, 1.15), (0.22, 0.36), 0.46, 2.6)
+LATERAL = Habit(0.11, 1.57, 0.022, 3, (0.4, 0.95), (0.35, 0.55), 0.5, 2.6)
+HYPHA = Habit(0.35, None, 0.0, 2, (0.4, 1.0), (0.4, 0.7), 0.8, 0.9)
+
+
+@dataclass
+class Limb:
+    """One stretch of branch or root, tapering from ``w0`` wide to ``w1``."""
+
+    path: np.ndarray
+    w0: float
+    w1: float
+    depth: int  # 0 for the first limb, 1 for what forks off it, and so on
 
 
 @dataclass
@@ -139,6 +186,7 @@ class Scene:
         self.rays = np.zeros((self.h, self.w), np.float32)
         self.glow = np.zeros((self.h, self.w), np.float32)
         self.angle = np.zeros((self.h, self.w), np.float32)
+        self.over = np.zeros((self.h, self.w), np.uint8)  # what sits in front of lines
         self.tree_x = [f * self.w for f in self.lay.trees]
 
     # ----- small tools -----
@@ -178,13 +226,22 @@ class Scene:
         axes = (max(1, round(rx)), max(1, round(ry)))
         cv2.ellipse(self.ref, pt(c), axes, 0, 0, 360, col, -1, cv2.LINE_AA)
 
-    def clump(self, x: float, y: float, rad: float, shades: Shades) -> None:
-        """Paint one rounded mass of leaves, lit from the upper right."""
+    def clump(
+        self, x: float, y: float, rad: float, shades: Shades, over: bool = False
+    ) -> None:
+        """Paint one rounded mass of leaves, lit from the upper right.
+
+        ``over`` says it hangs in front of whatever was drawn before it, so the
+        painter's fine lines stop at its edge.
+        """
         squash = self.r(0.72, 0.95)
         self.ellipse((x, y + rad * 0.14), rad, rad * squash, shades[0])
         self.ellipse((x, y), rad * 0.9, rad * squash * 0.88, shades[1])
         self.ellipse((x + rad * 0.2, y - rad * 0.24), rad * 0.56, rad * 0.46, shades[2])
         self.ellipse((x + rad * 0.36, y - rad * 0.4), rad * 0.24, rad * 0.2, shades[3])
+        if over:
+            axes = (max(1, round(rad)), max(1, round(rad * squash)))
+            cv2.ellipse(self.over, pt((x, y)), axes, 0, 0, 360, 1, -1)
 
     def ridge(self, base: float, rise: float, col: Color, bottom: int) -> None:
         """Fill everything under a rolling, tree-lined horizon with ``col``."""
@@ -199,39 +256,135 @@ class Scene:
         outline = [*zip(xs, ys, strict=True), (self.w, bottom), (0, bottom)]
         cv2.fillPoly(self.ref, [np.array(outline, np.int32)], col, cv2.LINE_AA)
 
-    def limb(
-        self,
-        points: np.ndarray,
-        w0: float,
-        w1: float,
-        body: Color,
-        shade: Color,
-        light: Color | None = None,
-    ) -> None:
-        """Draw a branch, trunk or root that tapers from ``w0`` wide to ``w1``."""
-        n = len(points)
-        widths = np.linspace(w0, w1, n)
-        for off, col, part in (((-0.16, 0.2), shade, 1.0), ((0.0, 0.0), body, 0.82)):
-            for i in range(n - 1):
-                shift = np.array(off) * widths[i]
-                thick = max(1, round(widths[i] * part))
-                a, b = pt(points[i] + shift), pt(points[i + 1] + shift)
-                cv2.line(self.ref, a, b, col, thick, cv2.LINE_AA)
-        if light is not None:
-            lift = np.stack([widths * 0.2, -widths * 0.26], axis=1)
-            self.details.append(Detail(points + lift, light, max(1.2, w0 * 0.16)))
-
     def wander(
-        self, start: np.ndarray, heading: float, length: float, turn: float
+        self,
+        start: np.ndarray,
+        heading: float,
+        length: float,
+        turn: float,
+        pull: float | None = None,
+        rate: float = 0.0,
     ) -> np.ndarray:
         """Return a path that sets off along ``heading`` and drifts as it goes."""
-        steps = max(4, round(length / (14 * self.u)))
+        steps = max(4, round(length / (12 * self.u)))
         points = [np.asarray(start, float)]
         for _ in range(steps):
             heading += self.r(-turn, turn)
+            if pull is not None:
+                heading += (pull - heading) * rate
             step = np.array([math.cos(heading), math.sin(heading)]) * length / steps
             points.append(points[-1] + step)
         return np.array(points)
+
+    def grow(
+        self,
+        start: np.ndarray,
+        heading: float,
+        length: float,
+        wide: float,
+        habit: Habit,
+        depth: int = 0,
+    ) -> list[Limb]:
+        """Grow a limb from ``start`` and everything that forks off it."""
+        path = self.wander(start, heading, length, habit.turn, habit.pull, habit.rate)
+        tip = max(wide * 0.3, 1.1 * self.u)
+        limbs = [Limb(path, wide, tip, depth)]
+        if depth >= 4 or wide * habit.thin < habit.finest * self.u:
+            return limbs
+        spots = np.arange(len(path) // 5, len(path) - 1)
+        count = min(max(2, habit.forks - depth), len(spots))
+        for at in self.rng.choice(spots, size=count, replace=False):
+            here = wide + (tip - wide) * at / (len(path) - 1)
+            step = path[at + 1] - path[at]
+            side = 1 if self.r(0, 1) < 0.5 else -1
+            turn = math.atan2(step[1], step[0]) + side * self.r(*habit.spread)
+            if habit.pull is not None:  # roots head down, never up
+                turn = float(np.clip(turn, 0.12, math.pi - 0.12))
+            reach = length * self.r(*habit.reach)
+            limbs += self.grow(
+                path[at], turn, reach, here * habit.thin, habit, depth + 1
+            )
+        return limbs
+
+    def wood(self, limb: Limb, pal: Wood, rim: bool = True) -> None:
+        """Draw a limb in the round: shadow underneath, light along the sunward side."""
+        path = limb.path
+        widths = np.linspace(limb.w0, limb.w1, len(path))
+        along = np.gradient(path, axis=0)
+        along /= np.linalg.norm(along, axis=1, keepdims=True) + 1e-6
+        across = np.stack([-along[:, 1], along[:, 0]], axis=1)
+        facing = (
+            across @ LIGHT
+        )  # how squarely this stretch faces the sun, and which side
+        lit = across * facing[:, None] * widths[:, None] * 1.25
+        bands = ((-0.26, 1.0), (0.0, 0.86), (0.2, 0.5), (0.34, 0.24))
+        for (shift, part), col in zip(bands, pal, strict=False):
+            pts = path + lit * shift
+            for i in range(len(path) - 1):
+                thick = max(1, round(widths[i] * part))
+                cv2.line(self.ref, pt(pts[i]), pt(pts[i + 1]), col, thick, cv2.LINE_AA)
+        self.grain(path, widths, across * np.sign(facing)[:, None], pal)
+        if rim and limb.w0 > 9 * self.u:
+            edge = max(1.1 * self.u, limb.w0 * 0.07)
+            self.details.append(Detail(path + lit * 0.44, pal[4], edge))
+
+    def grain(
+        self, path: np.ndarray, widths: np.ndarray, sunward: np.ndarray, pal: Wood
+    ) -> None:
+        """Streak a limb along its length, as bark does: dark below, pale above."""
+        n = len(path)
+        for _ in range(round(n * widths[0] / (14 * self.u))):
+            i0 = int(self.rng.integers(0, n - 2))
+            run = slice(i0, i0 + int(self.rng.integers(2, 7)))
+            side = self.r(-0.4, 0.4)  # below zero: the shaded side
+            tones = (
+                pal[2:4] if side > 0.12 else pal[0:2] if side < -0.12 else pal[0:3:2]
+            )
+            col = tones[int(self.rng.integers(0, 2))]
+            streak = path[run] + sunward[run] * side * widths[run, None]
+            line = [np.round(streak).astype(np.int32)]
+            thick = max(1, round(widths[i0] * 0.07))
+            cv2.polylines(self.ref, line, False, col, thick, cv2.LINE_AA)
+
+    def shade_under(
+        self,
+        limbs: list[Limb],
+        rows: tuple[int, int],
+        drop: tuple[float, float],
+        strength: float,
+    ) -> None:
+        """Darken what lies behind the heavier limbs, so they stand off from it."""
+        y0, y1 = rows
+        mask = np.zeros((y1 - y0, self.w), np.float32)
+        for limb in limbs:
+            if limb.w0 < 6 * self.u:
+                continue
+            widths = np.linspace(limb.w0, limb.w1, len(limb.path))
+            pts = limb.path + np.array(drop) * widths[:, None] - [0, y0]
+            for i in range(len(pts) - 1):
+                thick = max(1, round(widths[i] * 1.5))
+                cv2.line(mask, pt(pts[i]), pt(pts[i + 1]), 1.0, thick, cv2.LINE_AA)
+        mask = np.clip(cv2.GaussianBlur(mask, (0, 0), 7 * self.u), 0, 1)
+        band = self.ref[y0:y1].astype(np.float32) * (1 - strength * mask)[:, :, None]
+        self.ref[y0:y1] = band.astype(np.uint8)
+
+    def timber(self, limbs: list[Limb], pal: Wood, fine: Color) -> None:
+        """Draw a whole tree of limbs, thinnest first so the joints close over."""
+        for limb in sorted(limbs, key=lambda limb: limb.w0):
+            if limb.w0 < 4.5 * self.u:
+                self.details.append(Detail(limb.path, fine, limb.w0))
+            else:
+                self.wood(limb, pal)
+
+    def spray(self, center: np.ndarray, count: int, size: tuple[float, float]) -> None:
+        """A bunch of leaves in front of whatever is there."""
+        u = self.u
+        for _ in range(count):
+            spot = (
+                center + np.array([self.r(-1.4, 1.4), self.r(-1.0, 1.0)]) * size[1] * u
+            )
+            shades = LEAF_LIT if self.r(0, 1) < 0.4 else LEAF_MID
+            self.clump(spot[0], spot[1], self.r(*size) * u, shades, over=True)
 
     # ----- the picture, top to bottom -----
 
@@ -327,14 +480,15 @@ class Scene:
         self.set_angle(y0, y1, 1.2, 1.5)
         cv2.rectangle(self.ref, (0, y0), (self.w, y1), LEAF_DEEP[1], -1)
         light = self.noise(y0, y1, 240 * u)
-        for _ in range(int((y1 - y0) * self.w / (u * u * 1500))):
-            x, y = self.r(0, self.w), self.r(y0 - 20 * u, y1 + 20 * u)
-            row = int(np.clip(y - y0, 0, y1 - y0 - 1))
-            sun = light[row, int(np.clip(x, 0, self.w - 1))] + 0.25 * x / self.w
-            sun += self.r(-0.15, 0.15)
-            shades = LEAF_LIT if sun > 1.02 else LEAF_MID if sun > 0.74 else LEAF_DEEP
-            self.clump(x, y, self.r(22, 52) * u, shades)
-        self.boughs(y0, y1)
+        self.leaf_mass(y0, y1, 1500, light)
+        for limb in self.boughs(y0, y1, (24, 36)):  # limbs further back, lost in shade
+            if limb.w0 > 5 * u:
+                self.wood(limb, FAR_WOOD, rim=False)
+        self.leaf_mass(y0, y1, 3400, light)
+        near = self.boughs(y0, y1, (54, 76))
+        self.shade_under(near, (y0, y1), (-0.5, 0.6), 0.45)
+        self.timber(near, BOUGH_WOOD, (96, 68, 50))
+        self.leaves_on(near)
         for _ in range(int(14 * (y1 - y0) / self.w) + 6):  # gaps where the sky shows
             x = self.r(0.5, 1.0) * self.w
             y = self.r(y0 + 40 * u, y1 - 60 * u)
@@ -343,10 +497,21 @@ class Scene:
                 self.ellipse(spot, self.r(4, 11) * u, self.r(3, 8) * u, (226, 238, 212))
         self.shafts(y0, y1, 0.16)
 
-    def boughs(self, y0: int, y1: int) -> None:
-        """Heavy limbs from the trees on either side, reaching over and interlacing."""
+    def leaf_mass(self, y0: int, y1: int, each: float, light: np.ndarray) -> None:
+        """Fill rows ``y0`` to ``y1`` with leaves, a mass per ``each`` square units."""
         u = self.u
-        count = max(4, round(2.8 * (y1 - y0) / self.w))
+        for _ in range(int((y1 - y0) * self.w / (u * u * each))):
+            x, y = self.r(0, self.w), self.r(y0 - 20 * u, y1 + 20 * u)
+            row = int(np.clip(y - y0, 0, y1 - y0 - 1))
+            sun = light[row, int(np.clip(x, 0, self.w - 1))] + 0.25 * x / self.w
+            sun += self.r(-0.15, 0.15)
+            shades = LEAF_LIT if sun > 1.02 else LEAF_MID if sun > 0.74 else LEAF_DEEP
+            self.clump(x, y, self.r(22, 52) * u, shades)
+
+    def boughs(self, y0: int, y1: int, wide: tuple[float, float]) -> list[Limb]:
+        """Grow heavy limbs from the trees on either side, reaching across."""
+        u = self.u
+        count = max(3, round(2.4 * (y1 - y0) / self.w))
         limbs = []
         for i in range(count):
             from_left = i % 2 == 0
@@ -354,46 +519,22 @@ class Scene:
             start = np.array([-40 * u if from_left else self.w + 40 * u, y])
             sway = self.r(0.1, 0.45) if i == 0 else self.r(-0.45, 0.45)
             heading = sway if from_left else math.pi - sway
-            path = self.wander(start, heading, self.r(0.72, 1.0) * self.w, 0.075)
-            path[:, 1] += max(0.0, y0 + 50 * u - path[:, 1].min())  # stay under the sky
-            limbs.append((path, self.r(44, 62) * u, 9 * u))
-            limbs += self.forks(path, heading, y0 + 60 * u)
-            for at in np.linspace(6, len(path) - 4, 5).astype(int):
-                self.twig(path[at], self.up_or_down())
-        for path, w0, w1 in sorted(limbs, key=lambda limb: limb[1]):
-            self.limb(path, w0, w1, (98, 68, 50), (44, 30, 24), (190, 150, 108))
-
-    def up_or_down(self) -> int:
-        """Pick a side for a twig: more often up, toward the light."""
-        return -1 if self.r(0, 1) < 0.6 else 1
-
-    def forks(
-        self, path: np.ndarray, heading: float, ceiling: float
-    ) -> list[tuple[np.ndarray, float, float]]:
-        """Return the lesser limbs that fork off a bough, each ending in twigs."""
-        u = self.u
-        limbs = []
-        for at in self.rng.choice(len(path) - 8, size=3, replace=False) + 4:
-            side = 1 if self.r(0, 1) < 0.5 else -1
-            turn = heading + side * self.r(0.5, 0.95)
-            fork = self.wander(path[at], turn, self.r(0.2, 0.34) * self.w, 0.1)
-            if fork[:, 1].min() < ceiling:
-                continue
-            limbs.append((fork, self.r(18, 26) * u, 5 * u))
-            self.twig(fork[-1], -1)
-            self.twig(fork[len(fork) // 2], self.up_or_down())
+            reach = self.r(0.72, 1.0) * self.w
+            grown = self.grow(start, heading, reach, self.r(*wide) * u, BOUGH)
+            lift = max(0.0, y0 + 50 * u - grown[0].path[:, 1].min())
+            for limb in grown:
+                limb.path[:, 1] += lift  # the main limb stays under the sky
+            limbs += [limb for limb in grown if limb.path[:, 1].min() > y0 + 30 * u]
         return limbs
 
-    def twig(self, start: np.ndarray, up: int) -> None:
-        """A side shoot off a bough, ending in a spray of sunlit leaves."""
-        u = self.u
-        end = start + np.array([self.r(-70, 70) * u, up * self.r(50, 120) * u])
-        ctrl = (start + end) / 2 + np.array([self.r(-30, 30) * u, 0])
-        path = bezier(start, ctrl, end, 10)
-        self.limb(path, 7 * u, 2 * u, (88, 62, 46), (46, 32, 26))
-        for _ in range(5):
-            spot = end + np.array([self.r(-34, 34) * u, self.r(-26, 26) * u])
-            self.clump(spot[0], spot[1], self.r(12, 24) * u, LEAF_LIT)
+    def leaves_on(self, limbs: list[Limb]) -> None:
+        """Hang leaves from the fine ends, and in front of stretches of heavy limb."""
+        for limb in limbs:
+            if limb.depth >= 3 and self.r(0, 1) < 0.8:
+                self.spray(limb.path[-1], 4, (12, 24))
+            elif limb.w0 > 14 * self.u and self.r(0, 1) < 0.8:
+                at = limb.path[int(self.rng.integers(2, len(limb.path) - 2))]
+                self.spray(at + np.array([0, self.r(-6, 22) * self.u]), 5, (20, 36))
 
     def shafts(self, y0: int, y1: int, reach: float) -> None:
         """Mark slanting shafts of sunlight for the painter to glaze in at the end."""
@@ -511,12 +652,12 @@ class Scene:
         for x in self.tree_x:
             side = 1 if x < self.w / 2 else -1
             start = np.array([x + side * 30 * u, y0 + depth + self.r(120, 260) * u])
-            end = start + np.array([side * self.r(120, 200) * u, -self.r(110, 180) * u])
-            path = bezier(start, start + np.array([side * 90 * u, -10 * u]), end, 12)
-            self.limb(path, 16 * u, 4 * u, BARK, BARK_DARK, BARK_RIM)
-            for _ in range(6):
-                spot = end + np.array([self.r(-44, 44) * u, self.r(-30, 30) * u])
-                self.clump(spot[0], spot[1], self.r(14, 28) * u, LEAF_LIT)
+            heading = -0.6 if side > 0 else math.pi + 0.6
+            grown = self.grow(start, heading, self.r(200, 300) * u, 18 * u, BOUGH)
+            self.timber(grown, BOUGH_WOOD, (96, 68, 50))
+            for limb in grown:
+                if limb.depth >= 2:
+                    self.spray(limb.path[-1], 3, (12, 24))
 
     def undergrowth(self) -> None:
         """Ferns, grass, mushrooms and a few flowers along the front of the floor."""
@@ -574,47 +715,55 @@ class Scene:
         self.mottle(y0, y1, 150 * u, 9)
         self.mottle(y0, y1, 36 * u, 6)
         self.set_angle(y0, y1, 0.0, 0.7)
-        for _ in range(round(14 * (y1 - y0) * self.w / (u * u * 900_000))):
+        stones = round(14 * (y1 - y0) * self.w / (u * u * 900_000))
+        for _ in range(stones):
             self.stone(self.r(0, self.w), self.r(y0, y1), self.r(12, 34) * u)
+        limbs = self.roots()
+        reach = self.tops[4] + int(0.12 * (self.tops[5] - self.tops[4]))
+        self.shade_under(limbs, (self.turf, reach), (-0.12, 0.34), 0.5)
+        self.timber(limbs, ROOT_WOOD, ROOTLET)
+        for limb in limbs:
+            if limb.w0 < 7 * u:
+                self.root_hairs(limb.path[-1])
+        for _ in range(stones // 2):  # and a few stones the roots pass behind
+            spot = (self.r(0, self.w), self.r(y0, y1))
+            self.stone(spot[0], spot[1], self.r(12, 30) * u, over=True)
+
+    def roots(self) -> list[Limb]:
+        """Grow each tree's roots: one sinker straight down, laterals fanning out."""
+        u = self.u
         tips = self.tops[4] + 0.06 * (self.tops[5] - self.tops[4])
         self.root_tips = []
+        limbs = []
         for x in self.tree_x:
-            start = np.array([x, self.turf + 4 * u])
-            self.root(start, 1.57, tips - start[1], 30 * u, 0)
-            for side in (-1, 1):
-                heading = 1.57 - side * self.r(0.75, 1.15)
-                branch = start + np.array([side * 18 * u, 0])
-                self.root(branch, heading, self.r(220, 340) * u, 20 * u, 1)
+            base = np.array([x, self.turf + 4 * u])
+            sinker = self.grow(base, 1.57, tips - base[1], 44 * u, SINKER)
+            self.root_tips.append(sinker[0].path[-1])
+            limbs += sinker
+            for heading in (0.16, 0.7, 2.44, 2.98):
+                start = base + np.array([math.cos(heading) * 22 * u, 0])
+                aim = heading + self.r(-0.08, 0.08)
+                reach, wide = self.r(340, 560) * u, self.r(30, 46) * u
+                limbs += self.grow(start, aim, reach, wide, LATERAL)
+        return limbs
 
-    def stone(self, x: float, y: float, rad: float) -> None:
-        """A buried stone, lit on its upper right."""
+    def root_hairs(self, tip: np.ndarray) -> None:
+        """Fray the end of a fine root into hairs."""
+        u = self.u
+        for _ in range(5):
+            end = tip + np.array([self.r(-34, 34) * u, self.r(14, 52) * u])
+            bend = (tip + end) / 2 + np.array([self.r(-12, 12) * u, 0])
+            self.details.append(Detail(bezier(tip, bend, end, 7), ROOTLET, 1.3 * u))
+
+    def stone(self, x: float, y: float, rad: float, over: bool = False) -> None:
+        """A buried stone, lit on its upper right. ``over``: in front of the roots."""
         self.ellipse((x, y + rad * 0.14), rad, rad * 0.62, (48, 36, 28))
         self.ellipse((x, y), rad * 0.94, rad * 0.56, (98, 84, 72))
-        self.ellipse(
-            (x + rad * 0.2, y - rad * 0.14), rad * 0.5, rad * 0.24, (138, 122, 104)
-        )
-
-    def root(
-        self, start: np.ndarray, heading: float, length: float, wide: float, depth: int
-    ) -> None:
-        """Grow a root from ``start``, sending out thinner roots as it goes."""
-        u = self.u
-        path = self.wander(start, heading, length, 0.045 if depth == 0 else 0.22)
-        thin = max(wide * 0.3, 1.5 * u)
-        if wide < 5 * u:
-            self.details.append(Detail(path, ROOT if depth < 4 else ROOT_DARK, wide))
-        else:
-            self.limb(path, wide, thin, ROOT, ROOT_DARK, ROOT_LIT)
-        if depth == 0:
-            self.root_tips.append(path[-1])
-        if depth >= 3 or wide < 2.4 * u:
-            return
-        for at in self.rng.choice(len(path) - 2, size=2 if depth else 5, replace=False):
-            side = 1 if self.r(0, 1) < 0.5 else -1
-            turn = heading + side * self.r(0.5, 1.0)
-            turn = float(np.clip(turn, 0.25, 2.9))  # roots head down, never up
-            reach = min(length * self.r(0.3, 0.5), 300 * u)
-            self.root(path[at + 1], turn, reach, wide * 0.5, depth + 1)
+        lit = (x + rad * 0.2, y - rad * 0.14)
+        self.ellipse(lit, rad * 0.5, rad * 0.24, (138, 122, 104))
+        if over:
+            axes = (max(1, round(rad)), max(1, round(rad * 0.62)))
+            cv2.ellipse(self.over, pt((x, y)), axes, 0, 0, 360, 1, -1)
 
     def deep(self) -> None:
         """The deepest earth, the last root tips, and the network that joins them."""
@@ -633,11 +782,11 @@ class Scene:
             mid = (nodes[a] + nodes[b]) / 2
             bend = (nodes[b] - nodes[a])[::-1] * [-1, 1] * self.r(-0.34, 0.34)
             path = bezier(nodes[a], mid + bend, nodes[b], 14)
-            self.thread(path, THREAD, 1.4 * u, 0.5)
-        for _ in range(len(nodes) * 2):
-            start = nodes[int(self.rng.integers(0, len(nodes)))]
-            path = self.wander(start, self.r(0, 6.28), self.r(30, 100) * u, 0.5)
-            self.thread(path, THREAD_DIM, 1.1 * u, 0.16)
+            self.thread(path, THREAD, 1.2 * u, 0.45)
+        for node in nodes:  # finer hyphae, forking as they feel their way out
+            reach = self.r(70, 170) * u
+            for limb in self.grow(node, self.r(0, 6.28), reach, 1.6 * u, HYPHA):
+                self.thread(limb.path, THREAD_DIM, limb.w0 * 0.7, 0.14)
         for i, node in enumerate(nodes):
             rad = (5 if i % 4 == 0 else 2.6) * u
             cv2.circle(
@@ -678,11 +827,11 @@ class Scene:
         return nodes
 
     def web_edges(self, nodes: list[np.ndarray]) -> set[tuple[int, int]]:
-        """Join every meeting point to its three nearest neighbors."""
+        """Join every meeting point to its two nearest neighbors."""
         edges = set()
         for i, node in enumerate(nodes):
             gaps = [float(np.hypot(*(node - other))) for other in nodes]
-            for j in np.argsort(gaps)[1:4]:
+            for j in np.argsort(gaps)[1:3]:
                 edges.add((min(i, int(j)), max(i, int(j))))
         return edges
 
@@ -712,8 +861,19 @@ class Painter:
             self.layer(max(radius * u, 1.5), longest, shortest, tolerance)
         for detail in self.scene.details:
             color = np.array(detail.color, np.float32)
-            self.stroke(detail.points, color, max(detail.width / 2, 0.8), 3)
+            for run in self.shown(detail.points):
+                self.stroke(run, color, max(detail.width / 2, 0.8), 3)
         return self.finish()
+
+    def shown(self, points: np.ndarray) -> list[np.ndarray]:
+        """Split a line into the stretches that nothing hangs in front of."""
+        over = self.scene.over
+        xs = np.clip(np.round(points[:, 0]).astype(int), 0, over.shape[1] - 1)
+        ys = np.clip(np.round(points[:, 1]).astype(int), 0, over.shape[0] - 1)
+        clear = np.concatenate([[False], over[ys, xs] == 0, [False]])
+        edges = np.flatnonzero(np.diff(clear.astype(np.int8)))
+        runs = zip(edges[::2], edges[1::2], strict=True)
+        return [points[a:b] for a, b in runs if b - a >= min(2, len(points))]
 
     def layer(self, radius: float, longest: int, shortest: int, tolerance: int) -> None:
         """Paint one layer with a brush ``radius`` px across its half-width."""

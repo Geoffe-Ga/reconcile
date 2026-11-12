@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#32477a" media="(prefers-color-scheme: dark)" />
     <meta
       name="description"
-      content="Reconcile helps a group write down what it agrees on and change it only by a vote of the people in it. Private by design: your group's words and votes live on your own devices."
+      content="Reconcile is a place for groups to write to the people who follow them, and to join with other groups around what they share. A feed built on affiliation and shared values, private by design."
     />
     <title>Reconcile</title>
     <link rel="stylesheet" href="landing.css" />
@@ -23,84 +23,95 @@
     <header class="sky">
       <div class="wrap sky-inner">
         <nav class="topbar" aria-label="Site">
-          <span class="wordmark">Reconcile</span>
-          <a class="quiet-link" href="#how">How it works</a>
+          <a class="quiet-link" href="#reconcile">Reconciling</a>
+          <a class="quiet-link" href="#dispatches">Dispatches</a>
+          <a class="quiet-link" href="#below">Privacy</a>
         </nav>
         <div class="hero">
-          <p class="eyebrow">Living documents, governed together</p>
-          <h1>Find the ground you share.</h1>
+          <h1>Reconcile</h1>
+          <p class="define">
+            <i>verb.</i> To find the ground you share with people you disagree with, and act on it
+            together.
+          </p>
           <p class="lede">
-            Reconcile helps a group write down what it agrees on, and change it only by a vote of
-            the people in it. Groups that disagree about most things can still act on whatever they
-            share.
+            A place for groups to write to the people who follow them, and to join with other
+            groups around what they both hold. What you write travels as far as people vote to
+            carry it, and no further.
           </p>
           <div class="actions">
             <!-- OPEN: where the app lives relative to this page (landing/README.md). -->
             <a class="button" href="/">Start a group</a>
-            <a class="quiet-link" href="#below">See what's underneath</a>
+            <a class="quiet-link" href="#dispatches">See how a Dispatch travels</a>
           </div>
         </div>
       </div>
     </header>
 
     <main>
-      <section class="canopy" aria-labelledby="h-canopy">
-        <div class="wrap">
+      <section class="canopy" aria-labelledby="h-reconcile">
+        <div class="wrap" id="reconcile">
           <div class="win prose">
-            <p class="eyebrow">In the canopy</p>
-            <h2 id="h-canopy">Every group is its own tree.</h2>
+            <p class="eyebrow">Where branches meet</p>
+            <h2 id="h-reconcile">To reconcile is to join around what you share.</h2>
             <p>
-              A family. A fan community. A recovery fellowship. A workplace. A movement chapter.
-              Each keeps its own living Documents: a mission statement, house rules, points of
-              unity.
+              Two groups can disagree about most things and still hold one thing in common. When
+              they find it, they reconcile. Each group votes. If both say yes, they form a
+              Coalition, with a mission statement they write together.
             </p>
-            <p>Each group decides for itself who is in, and what its words say.</p>
+            <p>
+              Each group keeps its own Documents and its own disagreements. Coalitions can
+              reconcile too, into wider and wider circles.
+            </p>
           </div>
         </div>
-        <div class="wrap" id="how">
+        <div class="wrap" id="dispatches">
           <div class="win prose">
-            <p class="eyebrow">How a Document changes</p>
-            <h2>Where branches meet, people propose.</h2>
+            <p class="eyebrow">Dispatches</p>
+            <h2>Write to the people who chose to hear from you.</h2>
+            <p>
+              A Dispatch is a post: an essay, an update, a call to act. It goes to the people who
+              follow your group. From there it travels only by vote.
+            </p>
           </div>
           <ol class="steps">
             <li class="win">
-              <h3>Propose</h3>
+              <h3>Write</h3>
+              <p>A Co-Creator writes a Dispatch and sets how far it may travel.</p>
+            </li>
+            <li class="win">
+              <h3>Your group votes</h3>
+              <p>If it passes, your group sends it up to its Coalition.</p>
+            </li>
+            <li class="win">
+              <h3>Each Coalition votes</h3>
               <p>
-                A Co-Creator proposes a change to one part of a Document, with a title and a reason.
+                Level by level, it reaches wider circles of groups that share something with yours.
               </p>
             </li>
             <li class="win">
-              <h3>Discuss</h3>
-              <p>Your group talks it over in the chat it already uses.</p>
-            </li>
-            <li class="win">
-              <h3>Vote</h3>
+              <h3>It stops where agreement stops</h3>
               <p>
-                Voters score each version from 0 to 4 before the window closes. Competing versions
-                share one ballot.
+                Nothing is broadcast to everyone, and a Dispatch never passes the limit its author
+                set.
               </p>
-            </li>
-            <li class="win">
-              <h3>Update</h3>
-              <p>If it passes, the Document changes, and the people who follow your group hear.</p>
             </li>
           </ol>
           <p class="win pullquote">
-            The Document isn't the last thing someone typed. It's the last edit that survived a
-            vote.
+            A feed that grows from what you've joined and what you share, not from whoever holds
+            your attention longest.
           </p>
         </div>
       </section>
 
       <section class="understory" aria-labelledby="h-trunk">
-        <div class="understory-mid">
-          <div class="wrap">
+        <div class="wrap">
           <div class="win notice">
-            <p class="eyebrow">What holds it up</p>
-            <h2 id="h-trunk">Consent, not a bare majority.</h2>
+            <p class="eyebrow">What holds a group up</p>
+            <h2 id="h-trunk">Living Documents, changed only by vote.</h2>
             <p>
-              A Proposal passes when its average score is at least 2.0 and fewer than 10% of voters
-              score it 0. A change most people like still fails if too many can't live with it.
+              A group keeps its mission statement, its house rules or its points of unity as living
+              Documents. A Co-Creator proposes a change, the group scores it from 0 to 4, and it
+              passes on consent: an average of at least 2.0, with fewer than 10% scoring it 0.
             </p>
             <ul class="scale" aria-label="The ballot scale">
               <li class="s0"><b>0</b> Strongly opposed</li>
@@ -109,10 +120,14 @@
               <li class="s3"><b>3</b> Supportive</li>
               <li class="s4"><b>4</b> Strongly supportive</li>
             </ul>
+            <p>
+              The Document isn't the last thing someone typed. It's the last edit that survived a
+              vote.
+            </p>
             <dl class="levels">
               <div>
                 <dt>Member</dt>
-                <dd>Follows the group and hears what changes.</dd>
+                <dd>Follows the group and gets its Dispatches.</dd>
               </div>
               <div>
                 <dt>Collaborator</dt>
@@ -124,7 +139,6 @@
               </div>
             </dl>
             <p class="caption">Once you're in a group, you choose your own level.</p>
-          </div>
           </div>
         </div>
       </section>
@@ -159,44 +173,52 @@
         </section>
 
         <div class="deep">
-        <section class="network" aria-labelledby="h-network">
-          <div class="wrap">
-            <div class="win prose">
-            <p class="eyebrow">The network</p>
-            <h2 id="h-network">Roots that reach each other.</h2>
-            <p>
-              Trees that look separate share water and warning through the threads between their
-              roots. Groups can too. When two groups find something they both hold, they can
-              reconcile: each group votes, and if both say yes they form a Coalition, with a mission
-              statement they write together.
-            </p>
-            <p>
-              Each group keeps its own Documents and its own disagreements. Coalitions form by
-              private invitation from one group to another, and there is no public map of who has
-              joined with whom.
-            </p>
+          <section class="network" aria-labelledby="h-network">
+            <div class="wrap">
+              <div class="win prose">
+                <p class="eyebrow">The network</p>
+                <h2 id="h-network">A feed that follows your roots.</h2>
+                <p>
+                  Trees that look separate pass water and warning through the threads between their
+                  roots. Dispatches move the same way: through the groups you've joined and the
+                  Coalitions those groups have formed.
+                </p>
+                <ul class="plain">
+                  <li>
+                    <h3>Reach is voted, never bought</h3>
+                    <p>A Dispatch spreads because groups chose to carry it, one level at a time.</p>
+                  </li>
+                  <li>
+                    <h3>Nothing to mine</h3>
+                    <p>No ads, no like counts, no leaderboards. Reconcile runs on gifts.</p>
+                  </li>
+                  <li>
+                    <h3>No map of who is joined to whom</h3>
+                    <p>Coalitions form by private invitation from one group to another.</p>
+                  </li>
+                </ul>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="bedrock" aria-labelledby="h-start">
-          <div class="wrap">
-            <div class="win prose">
-            <h2 id="h-start">Start with your own group.</h2>
-            <p>
-              Reconcile is in a small pilot. It's free to use, it runs in your browser, and you can
-              add it to your phone's Home Screen.
-            </p>
-            <div class="actions">
-              <a class="button" href="/">Start a group</a>
+          <section class="bedrock" aria-labelledby="h-start">
+            <div class="wrap">
+              <div class="win prose">
+                <h2 id="h-start">Start with your own group.</h2>
+                <p>
+                  Reconcile is in a small pilot. It's free to use, it runs in your browser, and you
+                  can add it to your phone's Home Screen.
+                </p>
+                <div class="actions">
+                  <a class="button" href="/">Start a group</a>
+                </div>
+              </div>
             </div>
-            </div>
-          </div>
-          <footer class="wrap foot">
-            <span class="wordmark">Reconcile</span>
-            <p>This page runs no scripts, sets no cookies and loads nothing from anyone else.</p>
-          </footer>
-        </section>
+            <footer class="wrap foot">
+              <span class="wordmark">Reconcile</span>
+              <p>This page runs no scripts, sets no cookies and loads nothing from anyone else.</p>
+            </footer>
+          </section>
         </div>
       </div>
     </main>
