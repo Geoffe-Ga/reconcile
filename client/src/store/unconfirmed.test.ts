@@ -4,7 +4,8 @@
  * for now, noting the relay minute its copy last synced, and comes back live
  * once a pull shows the relay still held everything since then, or brings a
  * record the copy didn't hold, or an invite's merge brings word from someone
- * in the group. A `dissolve` makes it a dissolved archive instead.
+ * in the group. A `dissolve` makes it a dissolved archive instead, and a
+ * `remove` of this member a removed one (#115): both are for good.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -216,12 +217,64 @@ describe('a dissolve folded into a copy that hasn’t heard from its group (#231
     expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'dissolved' });
   });
 
-  it('clears nothing until then: only a dissolved archive’s ballots are cleared', async () => {
+  it('clears nothing until then: only an archive’s ballots, for good, are cleared', async () => {
     const store = await restored();
 
     await expect(
       store.clearArchive('group-1', { at: 7, state: testGroup().state, tallies: {} }),
     ).rejects.toThrow('This group isn’t archived.');
     expect((await store.getGroup('group-1'))?.log).toHaveLength(1);
+  });
+});
+
+describe('a copy that hasn’t heard from its group, beside a removal (#115)', () => {
+  it('keeps a copy that folds to this member’s removal removed, for good', async () => {
+    const store = await restored({ archived: { reason: 'removed' } });
+
+    await store.applyPull('group-1', pullAt(SINCE), idOf);
+
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'removed' });
+  });
+
+  it('makes it a removed archive once a remove of this member folds', async () => {
+    const store = await restored();
+
+    await store.markArchived('group-1', 'removed');
+
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'removed' });
+  });
+
+  it('keeps a removed archive removed: a later dissolve doesn’t replace it', async () => {
+    const store = await restored();
+    await store.markArchived('group-1', 'removed');
+
+    await store.markArchived('group-1', 'dissolved');
+
+    expect((await store.getGroup('group-1'))?.archived).toEqual({ reason: 'removed' });
+  });
+
+  it('lets no invite’s merge open a removed archive, nor add to it', async () => {
+    const store = await restored({ archived: { reason: 'removed' } });
+
+    await store.mergeLog(
+      'group-1',
+      [{ seq: 4, received: SINCE + 1, bytes: utf8('{"m":4}') }],
+      idOf,
+    );
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.archived).toEqual({ reason: 'removed' });
+    expect(kept?.log.map((each) => text(each.bytes))).toEqual(['{"held":3}']);
+  });
+
+  it('clears a removed archive’s ballots, as a dissolved one’s', async () => {
+    const store = await restored({ archived: { reason: 'removed' } });
+    const cleared = { at: 7, state: testGroup().state, tallies: {} };
+
+    await store.clearArchive('group-1', cleared);
+
+    const kept = await store.getGroup('group-1');
+    expect(kept?.archived).toEqual({ reason: 'removed', cleared });
+    expect(kept?.log).toEqual([]);
   });
 });

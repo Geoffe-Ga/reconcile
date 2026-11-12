@@ -160,9 +160,9 @@ function previewOf(state: GroupState, me: Me): InvitePreview {
  * mailbox, kept {@link INVITE_TTL_DAYS} day. Returns the link only once every
  * PUT has succeeded; otherwise it rejects, and no link exists to copy. A copy
  * this device keeps read-only makes none: a dissolved group's (#108), whose
- * link would carry a group that has ended, and a restored copy that hasn't
- * heard from its group (#231), since a member who opens a link counts it as
- * word from a copy that takes new things.
+ * link would carry a group that has ended, a removed member's (#115), and a
+ * restored copy that hasn't heard from its group (#231), since a member who
+ * opens a link counts it as word from a copy that takes new things.
  *
  * @throws {Error} when the device isn't in the group, keeps it read-only, or
  *   the relay can't be reached.

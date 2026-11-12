@@ -1,16 +1,14 @@
-import { act, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { axeViolations } from '../test/axe';
+import { pastPressFallback } from '../test/press';
 import { type ChatDetails, type ChatMoment, chatMessage } from './chatMessages';
 import type { ShareOutcome } from './share';
 import { TellYourGroup, type TellYourGroupProps } from './TellYourGroup';
 
 type OnTell = (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
-
-/** How long React Aria's usePress waits for a click after a pointerup before clicking itself. */
-const PRESS_FALLBACK_MS = 80;
 
 const DEADLINE = 29_010_080;
 const EDIT = { deadline: DEADLINE, title: 'Quiet hours', target: { kind: 'edit' } } as const;
@@ -127,7 +125,7 @@ describe('TellYourGroup', () => {
     // A press on a disabled React Aria control still gets pointerdown and pointerup,
     // and usePress clicks the control itself when no click follows within 80 ms
     // (#190, #192). Wait past that so a late click can't hide.
-    await act(() => new Promise((resolve) => setTimeout(resolve, PRESS_FALLBACK_MS + 20)));
+    await pastPressFallback();
     expect(tell()).toBeEnabled();
     expect(includeTitle()).not.toBeChecked();
     expect(screen.getByText(chatMessage('open', { deadline: DEADLINE }))).toBeVisible();

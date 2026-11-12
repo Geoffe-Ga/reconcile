@@ -110,6 +110,16 @@ describe('Group home for a copy back from a backup (#231)', () => {
     expect(screen.getByRole('region', { name: 'Decided' })).toBeVisible();
   });
 
+  it('shows no backup or recovery card: no file carries it, and no share held there goes back (#109)', () => {
+    renderHome(group().state(), {
+      backupCard: <p>The backup card</p>,
+      recoveryCard: <p>The recovery card</p>,
+    });
+
+    expect(screen.queryByText('The backup card')).toBeNull();
+    expect(screen.queryByText('The recovery card')).toBeNull();
+  });
+
   it('removes the copy only once confirmed', async () => {
     const onRemove = vi.fn(() => Promise.resolve());
     const user = renderHome(group().state(), { onRemove });
