@@ -509,9 +509,9 @@ export interface Pull {
   advance?: EpochAdvance;
   /**
    * Outbox entries the relay took this pass, by their bytes, each dropped in
-   * the change that saves the records this pull read back. A room's message
-   * stays queued until then (#343), so the room lists it once throughout:
-   * from its outbox, then from its log.
+   * the change that saves the records this pull read back. Every entry stays
+   * queued until then (#343, #349), so a screen shows it once throughout:
+   * pending from the outbox, then folded from the log, never neither.
    */
   sent?: readonly Uint8Array[];
 }
@@ -525,7 +525,10 @@ export interface RelayBackupState {
   readonly key: Uint8Array;
   /** The SHA-256, in hex, of what the last upload held, or null before one. */
   readonly digest: string | null;
-  /** The relay's UTC day of the last daily check, or null before one. */
+  /**
+   * The relay's UTC day of the last daily check, or null before one, and
+   * again once a group is purged (#327), so the next complete pass checks.
+   */
   readonly checkedDay: number | null;
   /** When the last upload succeeded, in device milliseconds, or null before one. */
   readonly uploadedAt: number | null;
@@ -538,6 +541,16 @@ export interface RelayBackupState {
    * device wrote. Absent on a record from before #247.
    */
   readonly uploaded?: readonly string[];
+  /**
+   * A tag of each group this device held at a successful upload, sorted
+   * (#327): `groupTagFor` of the backup key, the group's id and this
+   * member's author, never the id itself. A later upload leaves out a group
+   * the relay copy holds whose tag is here and that this device no longer
+   * holds, since it left or removed it, or a dissolve wiped it, and keeps
+   * one only a linked device joined. A tag goes once a read finds the copy
+   * without its group. Absent on a record from before #327.
+   */
+  readonly uploadedGroups?: readonly string[];
 }
 
 /** One recovery contact as this device chose them (#109): who, and where, as they were then. */
@@ -741,7 +754,11 @@ export interface Store
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
    * calls it once the relay has returned a seq for the group's leave, a
    * dissolved group's wipe calls it, and so does Remove from this device
-   * (#108). A group that is already gone is left alone.
+   * (#108). A group that is already gone is left alone. In the same
+   * transaction it sets the relay backup's `checkedDay` back to null (#327),
+   * so the next complete pass, the leave's own, reads the relay copy and
+   * takes the group out of it, and Erase or a lost phone later that day
+   * can't leave it there for a linked device to carry.
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
@@ -760,8 +777,6 @@ export interface Store
    * them. Refuses a group that isn't archived.
    */
   clearArchive(groupId: string, cleared: ClearedArchive): Promise<void>;
-  /** Drop the first outbox entry with exactly these bytes, once the relay has it. */
-  markSent(groupId: string, bytes: Uint8Array): Promise<void>;
   /**
    * Add each record whose event id isn't in the log yet for its epoch, in
    * relay order (`logOrder.ts`, #110), and save the sync state: the cursors
@@ -769,10 +784,11 @@ export interface Store
    * instance the group hasn't read before, a fresh relay database, puts its
    * records after the whole log and starts every cursor over from 0. A pull
    * more than {@link HISTORY_GAP_MS} after the last sync sets
-   * `missingHistory`. A pull that carries an `advance` moves the group to its
-   * next epoch in the same change (#98): the new secret and base cursor with
-   * no other cursors, and the records to post again ahead of the outbox, each
-   * once.
+   * `missingHistory`. Each entry the pull says the relay took (`sent`) leaves
+   * the outbox in the same change (#343, #349). A pull that carries an
+   * `advance` moves the group to its next epoch in the same change too (#98):
+   * the new secret and base cursor with no other cursors, and the records to
+   * post again ahead of the outbox, each once, after the sent entries left it.
    * A ballot, a result or anything else that expires with ballots, for a
    * Proposal in `cleared`, is dropped (#111).
    */
@@ -1160,6 +1176,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       const found = await writeKeys(db, async (tx) => {
         if ((await tx.objectStore(GROUPS).getKey(groupId)) === undefined) return false;
         await keepKeys(tx, session, { drop: [groupId] });
+        await checkBackupAgain(tx);
         return true;
       });
       if (found) notify(groupId);
@@ -1185,10 +1202,6 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         if (group.archived === undefined) throw new Error('This group isn’t archived.');
         group.archived = { ...group.archived, cleared };
         group.log = [];
-      }),
-    markSent: (groupId, bytes) =>
-      change(groupId, (group) => {
-        dropSent(group, bytes);
       }),
     applyPull(groupId, pull, idOf) {
       const { advance } = pull;
@@ -1464,9 +1477,11 @@ function dropSent(group: Pick<Group, 'outbox'>, bytes: Uint8Array): void {
 /**
  * Saves what a sync pass read into `group`'s record: its new log records, in
  * relay order, and sync state, dropping from the outbox each entry the pull
- * says the relay took (#343). A room (#125) then keeps only the records
- * received at most 30 days of relay time before the pull's `now`, so each
- * sync deletes the rest in the same change.
+ * says the relay took (#343, #349), before any `advance` queues records to
+ * post again (`applyPull`), so none is skipped as queued and then dropped. A
+ * room (#125) then keeps only the records received at most 30 days of relay
+ * time before the pull's `now`, so each sync deletes the rest in the same
+ * change.
  */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
@@ -1516,6 +1531,7 @@ function relayBackupStore(
     uploadedAt: null,
     tooLarge: false,
     uploaded: [],
+    uploadedGroups: [],
   });
   return {
     getRelayBackup: () => backupIn(db.transaction([DEVICE, VAULT]), session),
@@ -2172,6 +2188,18 @@ async function keepGroups(
     });
     await records.put(sealed === null ? group : rest);
   }
+}
+
+/**
+ * Sets the relay backup's `checkedDay` back to null in `tx`, when the device
+ * keeps one, so the next complete pass reads and checks the relay copy
+ * (#327). It touches nothing else of the record, so it needs no key, and no
+ * listener hears of it: Settings shows nothing of the day.
+ */
+async function checkBackupAgain(tx: KeyTransaction): Promise<void> {
+  const records = tx.objectStore(DEVICE);
+  const record = await records.get(RELAY_BACKUP);
+  if (record !== undefined) await records.put({ ...record, checkedDay: null }, RELAY_BACKUP);
 }
 
 /**
