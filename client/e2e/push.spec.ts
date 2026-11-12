@@ -64,11 +64,16 @@ interface Shown {
 
 /**
  * Every notification the service worker shows now, read in the worker itself,
- * so no Reconcile window is open to close them; none while it isn't running.
+ * so no Reconcile window is open to close them. It reads in the one worker
+ * Playwright lists, which a push has just run or the app's page keeps, and
+ * fails when there isn't exactly one, so no check passes by reading nothing.
  */
 async function shown(context: BrowserContext): Promise<Shown[]> {
-  const [worker] = context.serviceWorkers();
-  if (worker === undefined) return [];
+  const workers = context.serviceWorkers();
+  const [worker] = workers;
+  if (worker === undefined || workers.length > 1) {
+    throw new Error(`Expected one service worker to read in, found ${String(workers.length)}`);
+  }
   return worker.evaluate(async () => {
     const scope = self as unknown as { registration: ServiceWorkerRegistration };
     const list = await scope.registration.getNotifications();

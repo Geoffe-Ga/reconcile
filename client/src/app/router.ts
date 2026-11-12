@@ -60,6 +60,8 @@ export type Route =
       readonly narrow: boolean;
     }
   | { readonly name: 'dissolve'; readonly groupId: string }
+  /** Propose removing a member (#115), by their key in the group. */
+  | { readonly name: 'removal'; readonly groupId: string; readonly member: string }
   /** The group's Dispatches, newest first (#112). */
   | { readonly name: 'dispatches'; readonly groupId: string }
   /** Send a Dispatch (#112). */
@@ -170,6 +172,7 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
   ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
+  ['remove-member', idPage(ID, (groupId, member) => ({ name: 'removal', groupId, member }))],
 ]);
 
 /**
@@ -177,7 +180,9 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
  * (#107) or `dispatch/new`, `add` (a new first section, #75), or
  * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
  * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
- * `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
+ * `recall/{seat}`, `rules/{optIn}`, `narrow/{optIn}` or
+ * `remove-member/{member}` (#115), which a section's own `remove` can't share:
+ * an added Atom's id is a Proposal's.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
@@ -355,6 +360,8 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'removal':
+      return `/remove-member/${route.member}`;
     case 'propose':
     case 'add':
     case 'remove':

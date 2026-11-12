@@ -22,14 +22,15 @@
  * transaction; a shared one keeps its share state on its own record (#105).
  * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay. The relay backup's key and state (#97) are
- * one record in a store of their own, in no group, so no group's record ever
- * holds the key. Under a vault that record keeps its state, and the vault
- * its key. A front door's applications (#121) stay on the device too: those
- * a member's device read from its group's inbox on the group's record, and
- * those this device sent, with the reply keys only it holds, in a store of
- * their own (`./applications.ts`), outside the vault for now, as a share's
- * keys are.
+ * cleared while its outcomes stay. So does a group a vote removed this
+ * member from (#115), which keeps what it already had. The relay backup's
+ * key and state (#97) are one record in a store of their own, in no group,
+ * so no group's record ever holds the key. Under a vault that record keeps
+ * its state, and the vault its key. A front door's applications (#121) stay
+ * on the device too: those a member's device read from its group's inbox on
+ * the group's record, and those this device sent, with the reply keys only
+ * it holds, in a store of their own (`./applications.ts`), outside the vault
+ * for now, as a share's keys are.
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
@@ -275,8 +276,9 @@ export interface Group extends CoalitionPlan {
    */
   nudged?: string[];
   /**
-   * Set once the group is read-only on this device (#108): absent while it
-   * goes on. Nothing is queued, claimed or synced for it from then on.
+   * Set once the group is read-only on this device: it dissolved (#108), or
+   * a vote removed this member (#115). Absent while it goes on. Nothing is
+   * queued, claimed or synced for it from then on.
    */
   archived?: Archive;
   /**
@@ -300,8 +302,8 @@ export interface Clearing {
   readonly keep: string;
 }
 
-/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
-export type ArchiveReason = 'dissolved';
+/** Why a group only reads on this device: it dissolved (#108), or a vote removed this member (#115). */
+export type ArchiveReason = 'dissolved' | 'removed';
 
 /**
  * A dissolved archive once this device has cleared its ballots and notes
@@ -318,7 +320,10 @@ export interface ClearedArchive {
   readonly tallies: Readonly<Record<string, TallyDetail>>;
 }
 
-/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+/**
+ * A group this device keeps read-only: why (#108, #115), and its cleared
+ * state once a dissolved archive's ballots are cleared.
+ */
 export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
@@ -577,12 +582,13 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
-   * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts, any leave, the chat bot's
-   * claims (#119) and what it learned of the webhook (#123), and mark it
-   * archived for `reason`. From then on nothing is
-   * queued or claimed for it, and the sync loop sends, reads and posts
-   * nothing for it. A group already archived keeps its archive.
+   * Keep the group read-only on this device, in one change: once it has
+   * dissolved (#108), or a vote has removed this member (#115). Drop its
+   * outbox, its drafts, any leave, the chat bot's claims (#119) and what it
+   * learned of the webhook (#123), and mark it archived for `reason`. From
+   * then on nothing is queued or claimed for it, and the sync loop sends,
+   * reads and posts nothing for it. A group already archived keeps its
+   * archive.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
@@ -944,7 +950,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;
-        // A dissolved group's front door has closed: its applications go (#121).
+        // A dissolved group's front door has closed, and a removed member reads it no more:
+        // its applications go (#121, #115).
         delete group.door;
       }),
     clearArchive: (groupId, cleared) =>
