@@ -42,10 +42,14 @@
  *
  * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
  * device keeps one, so a device restored from the file keeps the relay
- * backup fresh. A restoring device that already keeps a key keeps its own. A
- * file from before #97 has no `backupKey`, and brings no key. The plaintext
- * the relay backup seals is this same snapshot without the key
- * (`relayBackup.ts`), and `importSnapshot` reads it back. Its upload may also
+ * backup fresh, and the split the key was cut into as `backupSplit` (#272),
+ * the recovery plan's random split id and never its contacts, so the key and
+ * the plan travel together. A restoring device that already keeps a key
+ * keeps its own. A file from before #97 has no `backupKey`, and brings no
+ * key; one from before #272 has no `backupSplit`, and its key comes with
+ * none. The plaintext the relay backup seals is this same snapshot without
+ * the key or its split (`relayBackup.ts`), and `importSnapshot` reads it
+ * back. Its upload may also
  * carry group entries from the relay copy that a linked device wrote (#327):
  * `decodeRelayCopy` reads only each one's id and author, the carry keeps only
  * an entry a restore would read (`restorable`, #336), and `encodeSnapshot`
@@ -85,6 +89,7 @@
  * `importSnapshot` from one.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
+import { isSplitId } from '../crypto/shares';
 import { base64url, canonicalBytes } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
@@ -134,6 +139,8 @@ export interface Snapshot {
   readonly personal: readonly PersonalDocument[];
   /** The device's relay backup key; absent when it keeps none, and from the relay's own copy. */
   readonly backupKey?: Uint8Array;
+  /** The split the backup key was cut into (#272); only ever beside `backupKey`. */
+  readonly backupSplit?: string;
   /**
    * Group entries carried through from the relay copy (#327), written after
    * `groups` as the copy held them: only a relay backup upload holds any.
@@ -252,7 +259,9 @@ export async function deviceSnapshot(
     store.getRelayBackup(),
   ]);
   const kept = { groups: backedUpGroups([...groups, ...coalitions]), personal };
-  return relayBackup === undefined ? kept : { ...kept, backupKey: relayBackup.key };
+  if (relayBackup === undefined) return kept;
+  const { key, split } = relayBackup;
+  return { ...kept, backupKey: key, ...(split === undefined ? {} : { backupSplit: split }) };
 }
 
 /**
@@ -294,6 +303,7 @@ export function encodeSnapshot({
   groups,
   personal,
   backupKey,
+  backupSplit,
   carried = [],
 }: Snapshot): Uint8Array<ArrayBuffer> {
   const own = groups.map((group) => ({
@@ -325,6 +335,7 @@ export function encodeSnapshot({
     groups: [...own, ...carried.map((group) => group.entry)],
     personal: personal.map(personalJson),
     ...(backupKey === undefined ? {} : { backupKey: base64url(backupKey) }),
+    ...(backupSplit === undefined ? {} : { backupSplit }),
   };
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
@@ -446,7 +457,7 @@ async function keepSnapshot(
 ): Promise<Restored> {
   const snapshot = from === 'link' ? withoutShares(decoded) : decoded;
   await store.restoreGroups(snapshot.groups, snapshot.personal, from);
-  if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
+  await adoptKeyOf(store, snapshot);
   return { groups: snapshot.groups.length, skipped: decoded.skipped };
 }
 
@@ -470,8 +481,16 @@ export async function replaceWithBackup(
 ): Promise<RestoredFile> {
   const { snapshot, older } = await readBackup(file, passphrase);
   await store.replaceGroups(snapshot.groups, snapshot.personal);
-  if (snapshot.backupKey !== undefined) await store.adoptRelayBackupKey(snapshot.backupKey);
+  await adoptKeyOf(store, snapshot);
   return { groups: snapshot.groups.length, skipped: snapshot.skipped, older };
+}
+
+/** Keeps `snapshot`'s relay backup key, with its split (#272), when it holds one and the device holds none. */
+async function adoptKeyOf(
+  store: Pick<Store, 'adoptRelayBackupKey'>,
+  { backupKey, backupSplit }: Snapshot,
+): Promise<void> {
+  if (backupKey !== undefined) await store.adoptRelayBackupKey(backupKey, backupSplit);
 }
 
 /** A backup's plaintext read: everything in it that checks out, and whether it is a format 1 file (#225). */
@@ -513,10 +532,23 @@ function decodeFile(plaintext: Uint8Array): DecodedFile | null {
   const personal = personalOf(json);
   if (read === null || personal === null) return null;
   const { groups, skipped } = read;
-  if (!('backupKey' in json)) return { snapshot: { groups, personal, skipped }, older };
-  // A file from before #97 has no key; one that has a key holds a well-formed one.
+  const key = backupKeyOf(json);
+  return key === null ? null : { snapshot: { groups, personal, skipped, ...key }, older };
+}
+
+/**
+ * The backup key and its split in a backup's `json` (#97, #272): none from a
+ * file from before #97, a key with no split from one from before #272, or
+ * null when either is there but malformed, or a split comes without a key.
+ */
+function backupKeyOf(
+  json: Record<string, unknown>,
+): Pick<Snapshot, 'backupKey' | 'backupSplit'> | null {
+  if (!('backupKey' in json)) return 'backupSplit' in json ? null : {};
   const backupKey = keyIn(json.backupKey);
-  return backupKey === null ? null : { snapshot: { groups, personal, backupKey, skipped }, older };
+  if (backupKey === null) return null;
+  if (!('backupSplit' in json)) return { backupKey };
+  return isSplitId(json.backupSplit) ? { backupKey, backupSplit: json.backupSplit } : null;
 }
 
 /**

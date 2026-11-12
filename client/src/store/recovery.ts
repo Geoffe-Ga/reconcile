@@ -13,16 +13,27 @@
  *   so the group sees only an opaque box from the person. A contact picked
  *   in two groups gets a share in each, and can then tell both names are the
  *   same person, as the picker says (ADR-0075 §4).
- * - **Choosing again.** Every later choice makes a new backup key, as does
- *   the first on a device recovered with contacts (#118), so the
+ * - **Choosing again.** Every choice makes a new backup key (#272): a later
+ *   one, the first on a device recovered with contacts (#118), and the first
+ *   on a device whose key came from a backup file (#78) or a link (#96),
+ *   which other copies of the file, or the other device, hold too. So the
  *   relay copy moves to a new id. It sends the new shares, then overwrites
  *   the old id with 65,536 random bytes, so every older share, a dropped
- *   contact's included, rebuilds only a key whose backup is gone. An id the
- *   relay couldn't take then waits in the plan's `retired` list, and
- *   {@link retireOldBackups} tries again after each complete sync pass.
+ *   contact's included, rebuilds only a key whose backup is gone.
+ * - **Keeping it gone (#272).** The plan's `retired` list keeps every id a
+ *   choice here replaced, and {@link retireOldBackups} reads each once a
+ *   relay day, after a complete sync pass: a backup there again, as another
+ *   device's upload that landed just after the overwrite, or nothing, as
+ *   once the relay forgets an id after 180 days, gets random bytes again.
+ *   Any other device of the person's that still holds a replaced key finds
+ *   those bytes before its next upload and stops (`relayBackup.ts`), so the
+ *   latest choice wins on every device, and a device whose plan a later
+ *   choice elsewhere replaced marks it superseded.
  * - **The list stays here.** The plan (`RecoveryPlan`) lives in the store's
  *   device record, and no backup file, link bundle or relay copy carries it.
- *   Nothing about the choice leaves the device but the sealed shares.
+ *   Nothing about the choice leaves the device but the sealed shares, and,
+ *   beside the backup key in a backup file or a link bundle, the split's
+ *   random id (#272), which every contact's share already names.
  * - **Holding.** Each device tries every `recovery-share` in its groups
  *   against its own encryption key there, and keeps the latest that opens per
  *   (group, person) while both are in the group ({@link heldShares}). It
@@ -38,7 +49,7 @@
  */
 import { fromBase64url } from '../crypto/base64url';
 import { isAllowedThreshold } from '../crypto/recoveryPolicy';
-import { newScrubBlob } from '../crypto/relayBackup';
+import { isRelayBackupBlob, newScrubBlob } from '../crypto/relayBackup';
 import { newSplitId, openShare, type RecoveryShare, sealShare, splitKey } from '../crypto/shares';
 import { can } from '../engine/capabilities';
 import { signEvent } from '../engine/event';
@@ -79,16 +90,16 @@ export interface RecoveryChoice {
 export interface RecoveryServices extends RelayBackupServices {
   readonly store: RelayBackupServices['store'] &
     RetireServices['store'] &
-    Pick<Store, 'listGroups' | 'getGroup' | 'enqueueAll' | 'setRecoveryPlan' | 'getRecoveredAt'>;
+    Pick<Store, 'listGroups' | 'getGroup' | 'enqueueAll' | 'setRecoveryPlan'>;
   readonly relay: RelayBackupServices['relay'];
   /** The sync loop, run once so the new shares go before the old backup is overwritten. */
   readonly sync: Pick<Sync, 'syncOnce'>;
 }
 
-/** What overwriting a retired backup id works with. */
+/** What keeping the retired backup ids overwritten works with: the plan, the groups' relay day, and the relay. */
 export interface RetireServices {
-  readonly store: Pick<Store, 'getRecoveryPlan' | 'forgetRetired'>;
-  readonly relay: Pick<Relay, 'putBackup'>;
+  readonly store: Pick<Store, 'getRecoveryPlan' | 'markRetiredChecked' | 'listGroups'>;
+  readonly relay: Pick<Relay, 'putBackup' | 'getBackup'>;
 }
 
 /** One contact as Settings shows them: as chosen, and whether they still share a group with the person. */
@@ -103,6 +114,12 @@ export interface RecoveryStatus {
   readonly contacts: readonly ContactStatus[];
   /** True once fewer than `t` contacts still share a group with the person: time to choose again. */
   readonly chooseAgain: boolean;
+  /**
+   * True once a later choice on another of the person's devices retired the
+   * plan's key (#272): these contacts' shares rebuild a key whose backup is
+   * gone, so it's time to choose again here, or keep the other device's.
+   */
+  readonly superseded: boolean;
 }
 
 /** One share this device holds, as Settings and group home show it: whose, and where. */
@@ -240,11 +257,13 @@ async function signedShares(
  * Chooses the person's recovery contacts (#109): `t` needed of the contacts
  * picked, each from {@link contactGroups}.
  *
- * It awaits the relay backup's start, with a new key when the device has
- * chosen before or was recovered with contacts (#118), whose key the old
- * contacts' shares still rebuild, splits that key, queues each contact's sealed share in
- * their group, keeps the plan, runs the sync loop once so the shares go,
- * and then overwrites the replaced key's relay backup ({@link retireOldBackups}).
+ * It awaits the relay backup's start with a new key, always (#272): whatever
+ * key the device held, its own earlier choice's, a recovered one (#118), or
+ * one a backup file or a link brought, someone else could still rebuild or
+ * hold it. It keeps the split's id beside the key, splits the key, queues
+ * each contact's sealed share in their group, keeps the plan, runs the sync
+ * loop once so the shares go, and then overwrites the replaced key's relay
+ * backup ({@link retireOldBackups}).
  *
  * @throws {RangeError | Error} for a choice the picker never offers, before
  *   anything is made, kept or queued.
@@ -256,11 +275,9 @@ export async function chooseContacts(
   const { store } = services;
   const picked = checked(await store.listGroups(), choice);
   const held = await store.getRecoveryPlan();
-  // A device recovered with contacts (#118) has no plan, but its key is one they held shares of.
-  const recovered = (await store.getRecoveredAt()) !== undefined;
-  const replaced = await startRelayBackup(services, { newKey: held !== undefined || recovered });
-  const shares = await splitKey(await backupKey(store), picked.length, choice.t);
   const split = newSplitId();
+  const replaced = await startRelayBackup(services, { newKey: true, split });
+  const shares = await splitKey(await backupKey(store), picked.length, choice.t);
   try {
     const byGroup = await signedShares(services, picked, shares, { split, t: choice.t });
     for (const [groupId, records] of byGroup) await store.enqueueAll(groupId, records);
@@ -284,24 +301,73 @@ export async function chooseContacts(
   };
   await store.setRecoveryPlan(plan);
   await services.sync.syncOnce();
-  await retireOldBackups(services);
+  await retireOldBackups(services, { now: true });
+}
+
+/** Minutes in a UTC day: a relay minute's day is ⌊minute / 1,440⌋. */
+const DAY_MINUTES = 1440;
+
+/** When to read the retired ids: now, as a choice does, or once a relay day, as each sync pass does. */
+export interface RetireOptions {
+  readonly now?: boolean;
 }
 
 /**
- * Overwrites each relay backup id the plan has retired with 65,536 random
- * bytes, and forgets each id the relay took. One the relay doesn't take,
- * offline say, stays for the next try: the app runs this after each complete
- * sync pass, beside the relay backup's own refresh.
+ * Keeps every relay backup id the plan retired overwritten with 65,536
+ * random bytes (#272): reads each from the relay, and puts fresh random bytes
+ * under one that holds a backup again or nothing, leaving one that already
+ * holds random bytes. After a sync pass it runs once a relay day, by the
+ * latest `relayNow` among the device's groups, and notes the day once every
+ * id checked out; one the relay couldn't read or take, offline say, leaves
+ * the day unchecked, so the next complete pass tries again. A choice runs it
+ * at once (`now`), whatever the day.
  */
-export async function retireOldBackups(services: RetireServices): Promise<void> {
+export async function retireOldBackups(
+  services: RetireServices,
+  { now = false }: RetireOptions = {},
+): Promise<void> {
   const plan = await services.store.getRecoveryPlan();
-  for (const id of plan?.retired ?? []) {
-    const taken = await services.relay.putBackup(id, newScrubBlob()).then(
-      () => true,
-      () => false,
-    );
-    if (taken) await services.store.forgetRetired(id);
-  }
+  if (plan === undefined || plan.retired.length === 0) return;
+  const day = relayDayOf(await services.store.listGroups());
+  if (!now && !isDue(plan, day)) return;
+  const kept = await keepAllOverwritten(services.relay, plan.retired);
+  if (kept && day !== null) await services.store.markRetiredChecked(day);
+}
+
+/** Keeps each of `ids` overwritten, in turn; true once every one checked out. */
+async function keepAllOverwritten(
+  relay: RetireServices['relay'],
+  ids: readonly string[],
+): Promise<boolean> {
+  let kept = true;
+  for (const id of ids) kept = (await keepOverwritten(relay, id)) && kept;
+  return kept;
+}
+
+/** Whether relay day `day` is a later one than the last the plan's retired ids were checked on. */
+function isDue({ retiredCheckedDay }: RecoveryPlan, day: number | null): day is number {
+  return day !== null && (retiredCheckedDay === undefined || day > retiredCheckedDay);
+}
+
+/**
+ * Reads the retired id `id`, and puts fresh random bytes there unless it
+ * already holds some; true once it does, false when the relay couldn't be
+ * read or didn't take them.
+ */
+async function keepOverwritten(relay: RetireServices['relay'], id: string): Promise<boolean> {
+  const blob = await relay.getBackup(id).catch(() => undefined);
+  if (blob === undefined) return false;
+  if (blob !== null && !isRelayBackupBlob(blob)) return true;
+  return relay.putBackup(id, newScrubBlob()).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** The relay's UTC day by the latest `relayNow` among `groups`, or null before any synced. */
+function relayDayOf(groups: readonly Pick<Group, 'relayNow'>[]): number | null {
+  const latest = Math.max(...groups.map((group) => group.relayNow ?? -1));
+  return latest < 0 ? null : Math.floor(latest / DAY_MINUTES);
 }
 
 /**
@@ -334,7 +400,8 @@ export function recoveryStatus(
     return { ...contact, shared };
   });
   const left = contacts.filter(({ shared }) => shared).length;
-  return { t: plan.t, n: plan.n, contacts, chooseAgain: left < plan.t };
+  const superseded = plan.supersededAt !== undefined;
+  return { t: plan.t, n: plan.n, contacts, chooseAgain: superseded || left < plan.t, superseded };
 }
 
 /**

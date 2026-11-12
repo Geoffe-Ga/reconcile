@@ -140,6 +140,46 @@ describe('the relay backup’s state', () => {
     expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(KEY)));
   });
 
+  it('keeps the split a key was cut into beside it, set or adopted, and none when it’s given none (#272)', async () => {
+    const store = await openStore();
+
+    expect(await store.adoptRelayBackupKey(KEY, 'split-of-a-db-test-2')).toBe(true);
+    expect((await store.getRelayBackup())?.split).toBe('split-of-a-db-test-2');
+    await store.setRelayBackupKey(KEY, 'split-of-a-db-test-1');
+    expect(comparable(await store.getRelayBackup())).toEqual({
+      ...fresh(local(KEY)),
+      split: 'split-of-a-db-test-1',
+    });
+    await store.setRelayBackupKey(NEW_KEY);
+    expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(NEW_KEY)));
+  });
+
+  it('retires only the key it names: forgets it and notes when, and a new key clears the note (#272)', async () => {
+    const store = await openStore();
+    const heard = vi.fn();
+    await store.setRelayBackupKey(KEY, 'split-of-a-db-test-1');
+    store.subscribe(heard);
+
+    expect(await store.retireRelayBackup(NEW_KEY, 5)).toBe(false);
+    expect(comparable(await store.getRelayBackup())?.key).toEqual(local(KEY));
+    expect(await store.getRelayBackupRetiredAt()).toBeUndefined();
+    expect(heard).not.toHaveBeenCalled();
+
+    expect(await store.retireRelayBackup(KEY, 7)).toBe(true);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    expect(await store.getRelayBackupRetiredAt()).toBe(7);
+    expect(heard.mock.calls).toContainEqual([RELAY_BACKUP_CHANGED]);
+    expect(await store.retireRelayBackup(KEY, 8)).toBe(false);
+    expect(await store.getRelayBackupRetiredAt()).toBe(7);
+
+    // A key from a link, a file or a new choice starts afresh.
+    expect(await store.adoptRelayBackupKey(NEW_KEY)).toBe(true);
+    expect(await store.getRelayBackupRetiredAt()).toBeUndefined();
+    await store.retireRelayBackup(NEW_KEY, 9);
+    await store.setRelayBackupKey(KEY);
+    expect(await store.getRelayBackupRetiredAt()).toBeUndefined();
+  });
+
   it('tells listeners when the state changes, under its own name and no group’s', async () => {
     const store = await openStore();
     const heard = vi.fn();

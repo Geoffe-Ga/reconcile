@@ -17,6 +17,7 @@ import {
   BACKUP_SEAL_INFO,
   backupIdFor,
   groupTagFor,
+  isRelayBackupBlob,
   MAX_RELAY_BACKUP_PLAINTEXT,
   newBackupKey,
   newScrubBlob,
@@ -241,6 +242,18 @@ describe('newScrubBlob', () => {
     expect(random).toHaveBeenCalled();
     expect(bytesToHex(newScrubBlob())).not.toBe(bytesToHex(blob));
     expect(openRelayBackup(newBackupKey(), blob)).toBeNull();
+  });
+});
+
+describe('isRelayBackupBlob (#272)', () => {
+  it('tells a backup of any key from a scrub, a size no backup has, or another magic', () => {
+    const sealed = sealRelayBackup(newBackupKey(), new Uint8Array(10));
+    expect(isRelayBackupBlob(sealed)).toBe(true);
+    expect(isRelayBackupBlob(newScrubBlob())).toBe(false);
+    expect(isRelayBackupBlob(sealed.subarray(0, sealed.length - 1))).toBe(false);
+    const otherMagic = Uint8Array.from(sealed);
+    otherMagic[0] = 0;
+    expect(isRelayBackupBlob(otherMagic)).toBe(false);
   });
 });
 

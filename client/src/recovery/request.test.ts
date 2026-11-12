@@ -145,6 +145,10 @@ describe('recovering on a new device', DEVICES, () => {
     expect(local((await fresh.services.store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(
       await anaKey(world),
     );
+    // The key comes with the split the contacts' shares came from (#272).
+    expect((await fresh.services.store.getRelayBackup())?.split).toBe(
+      (await world.ana.services.store.getRecoveryPlan())?.split,
+    );
     expect(await fresh.services.store.getRecoverRequest()).toBeUndefined();
     expect(await fresh.services.store.getRecoveredAt()).toBeTypeOf('number');
   });

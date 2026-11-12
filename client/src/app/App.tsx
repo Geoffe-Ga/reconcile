@@ -306,6 +306,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
         held: recovery.held,
         canChoose: recovery.groups.length > 0,
         recovered: recovery.recovered,
+        elsewhere: recovery.elsewhere,
       }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}

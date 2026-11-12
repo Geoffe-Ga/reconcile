@@ -574,6 +574,19 @@ describe('#97’s relay backup key under the vault', () => {
     expect(heard).toEqual([RELAY_BACKUP_CHANGED, RELAY_BACKUP_CHANGED, RELAY_BACKUP_CHANGED]);
   });
 
+  it('takes a retired key out of the vault, and leaves no trace of it (#272)', async () => {
+    const store = await sealedDevice();
+    await store.setRelayBackupKey(BACKUP_KEY, 'split-of-a-vault-test');
+
+    expect(await store.retireRelayBackup(BACKUP_KEY, 11)).toBe(true);
+
+    expect(await vaultBackupKey()).toBeUndefined();
+    expect(await rawRelayBackup()).toBeUndefined();
+    expect(findCanaries(await rawDatabase(), backupCanaries)).toEqual([]);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    expect(await store.getRelayBackupRetiredAt()).toBe(11);
+  });
+
   it('keeps its own copy of a key it seals, so the caller can zero theirs', async () => {
     const store = await sealedDevice();
     const key = Uint8Array.from(BACKUP_KEY);

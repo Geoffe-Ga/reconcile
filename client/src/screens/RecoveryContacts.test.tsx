@@ -174,6 +174,7 @@ describe('RecoveryContacts', () => {
         t: 2,
         n: 3,
         chooseAgain: false,
+        superseded: false,
         contacts: [
           {
             groupId: 'riverside',

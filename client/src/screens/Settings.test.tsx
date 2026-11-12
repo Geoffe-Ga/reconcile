@@ -157,6 +157,7 @@ describe('Settings', () => {
     t: 2,
     n: 3,
     chooseAgain: false,
+    superseded: false,
     contacts: [
       { groupId: 'g1', member: 'ben', name: 'Ben', groupName: 'Riverside Tenants', shared: true },
       { groupId: 'g1', member: 'cal', name: 'Cal', groupName: 'Riverside Tenants', shared: false },
@@ -193,6 +194,37 @@ describe('Settings', () => {
     expect(section).toHaveTextContent(
       'Fewer than 2 of your recovery contacts still share a group with you. Choose again so they can help you back in.',
     );
+  });
+
+  it('says a later choice on another device replaced these contacts, in place of their list (#272)', async () => {
+    setup({
+      recovery: {
+        status: { ...STATUS, chooseAgain: true, superseded: true },
+        held: [],
+        canChoose: true,
+      },
+    });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'You chose recovery contacts again on another of your devices. The people you chose here no longer hold a working share.',
+    );
+    expect(within(section).queryByText('Ben')).not.toBeInTheDocument();
+    expect(section).not.toHaveTextContent('Fewer than');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says the contacts were chosen on another device when this one holds their key but not the list (#272)', async () => {
+    setup({ recovery: { status: null, held: [], canChoose: true, elsewhere: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'You chose recovery contacts on another of your devices. Who they are stays on that device. Choosing again here replaces them.',
+    );
+    expect(section).not.toHaveTextContent('You haven’t chosen anyone yet.');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
   });
 
   it('lists the shares this device holds for others, and nothing more about them (#109)', async () => {
@@ -290,6 +322,10 @@ describe('Settings’ relay backup line (#97)', () => {
     [
       { kind: 'waiting' } as const,
       'Your groups will be backed up to the relay the next time Reconcile syncs.',
+    ],
+    [
+      { kind: 'retired', at: AT } as const,
+      'You chose recovery contacts again on another of your devices, so this one stopped backing up to the relay. Link it again from that device to back it up.',
     ],
   ])('says where the relay backup stands: %o', async (relayBackup, words) => {
     setup({ relayBackup });

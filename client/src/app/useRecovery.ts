@@ -21,6 +21,11 @@ export interface RecoveryView {
   readonly groups: readonly ContactGroup[];
   /** Whether this device came back through its recovery contacts (#118). */
   readonly recovered: boolean;
+  /**
+   * Whether this device keeps no list but holds the backup key of a choice
+   * made on another of the person's devices, as its split says (#272).
+   */
+  readonly elsewhere: boolean;
 }
 
 /**
@@ -28,7 +33,10 @@ export interface RecoveryView {
  * again after every store change, or null until the store answers.
  */
 export function useRecovery(
-  store: Pick<Store, 'listGroups' | 'getRecoveryPlan' | 'getRecoveredAt' | 'subscribe'>,
+  store: Pick<
+    Store,
+    'listGroups' | 'getRecoveryPlan' | 'getRecoveredAt' | 'getRelayBackup' | 'subscribe'
+  >,
 ): RecoveryView | null {
   const [view, setView] = useState<RecoveryView | null>(null);
   useEffect(() => {
@@ -37,8 +45,13 @@ export function useRecovery(
     const load = (): void => {
       latest += 1;
       const ticket = latest;
-      Promise.all([store.listGroups(), store.getRecoveryPlan(), store.getRecoveredAt()]).then(
-        ([groups, plan, recoveredAt]) => {
+      Promise.all([
+        store.listGroups(),
+        store.getRecoveryPlan(),
+        store.getRecoveredAt(),
+        store.getRelayBackup(),
+      ]).then(
+        ([groups, plan, recoveredAt, relayBackup]) => {
           // Only the newest read counts: an older one may answer last.
           if (!live || ticket !== latest) return;
           setView({
@@ -46,6 +59,7 @@ export function useRecovery(
             held: heldShares(groups),
             groups: contactGroups(groups),
             recovered: recoveredAt !== undefined,
+            elsewhere: plan === undefined && relayBackup?.split !== undefined,
           });
         },
         // A failed read keeps the last view shown; the next change reads again.

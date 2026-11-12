@@ -607,6 +607,13 @@ export interface RelayBackupState {
    * without its group. Absent on a record from before #327.
    */
   readonly uploadedGroups?: readonly string[];
+  /**
+   * The split the key was cut into (#272): the recovery plan's `split`, which
+   * travels with the key in a backup file and a link bundle, never with the
+   * contacts. Absent before the key is split, on a key adopted without one,
+   * and on a record from before #272.
+   */
+  readonly split?: string;
 }
 
 /** One recovery contact as this device chose them (#109): who, and where, as they were then. */
@@ -624,9 +631,9 @@ export interface ChosenContact {
 /**
  * The person's recovery contacts (#109; ADR-0043 §1): the split their
  * shares came from, `t` needed of `n`, who holds them, and when this device
- * chose them. `retired` lists the relay backup ids an earlier key named,
- * which still have to be overwritten with random bytes before every older
- * share opens nothing.
+ * chose them. `retired` lists the relay backup id of every key a choice on
+ * this device replaced, which the device keeps overwritten with random bytes
+ * so every older share opens nothing (#272).
  */
 export interface RecoveryPlan {
   readonly split: string;
@@ -636,6 +643,15 @@ export interface RecoveryPlan {
   /** When this device chose them, in device milliseconds. */
   readonly chosenAt: number;
   readonly retired: readonly string[];
+  /** The relay's UTC day it last found every retired id overwritten, or absent before (#272). */
+  readonly retiredCheckedDay?: number;
+  /**
+   * When this device found the plan's key retired by a later choice on
+   * another of the person's devices, in device milliseconds (#272): these
+   * contacts' shares then rebuild a key whose backup is gone. Absent while
+   * the plan is the person's latest.
+   */
+  readonly supersededAt?: number;
 }
 
 /** How a hold ended (#118): the share went to the new device, or the recovery stopped, and when, in device ms. */
@@ -689,8 +705,8 @@ export interface RecoveryStore {
   getRecoveryPlan(): Promise<RecoveryPlan | undefined>;
   /** Keep `plan` in place of any earlier one. */
   setRecoveryPlan(plan: RecoveryPlan): Promise<void>;
-  /** Drop `id` from the plan's retired backup ids, in one transaction, once it is overwritten. */
-  forgetRetired(id: string): Promise<void>;
+  /** Note `day`, the relay's UTC day, as the last one every retired backup id was found overwritten (#272). */
+  markRetiredChecked(day: number): Promise<void>;
   /** This device's request to recover with contacts (#118), or undefined while it has none. */
   getRecoverRequest(): Promise<RecoverRequest | undefined>;
   /**
@@ -718,15 +734,27 @@ export interface RelayBackupStore {
   /** The relay backup's state, or undefined while the device keeps none. */
   getRelayBackup(): Promise<RelayBackupState | undefined>;
   /**
-   * Keep `key` as the backup key, with nothing uploaded or checked yet, in
-   * place of any earlier one. Returns the state it replaced, if any.
+   * Keep `key` as the backup key, cut into `split` once given (#272), with
+   * nothing uploaded or checked yet, in place of any earlier one, and forget
+   * that an earlier key was retired. Returns the state it replaced, if any.
    */
-  setRelayBackupKey(key: Uint8Array): Promise<RelayBackupState | undefined>;
+  setRelayBackupKey(key: Uint8Array, split?: string): Promise<RelayBackupState | undefined>;
   /**
-   * Keep `key` as the backup key only when the device holds none, as a
-   * restored backup file's key is (#97, ADR-0075 §4). Returns whether it did.
+   * Keep `key`, with the `split` it was cut into when it came with one, as
+   * the backup key only when the device holds none, as a restored backup
+   * file's key is (#97, ADR-0075 §4), and then forget that an earlier key was
+   * retired (#272). Returns whether it did.
    */
-  adoptRelayBackupKey(key: Uint8Array): Promise<boolean>;
+  adoptRelayBackupKey(key: Uint8Array, split?: string): Promise<boolean>;
+  /**
+   * In one key transaction, only while the backup key is still `key`: forget
+   * the key and its state, the vault's copy included, note `at` (device ms)
+   * as when it was retired, and mark a plan of this device's superseded
+   * (#272). Returns whether it did.
+   */
+  retireRelayBackup(key: Uint8Array, at: number): Promise<boolean>;
+  /** When this device's last backup key was retired by a choice on another device (#272), or undefined. */
+  getRelayBackupRetiredAt(): Promise<number | undefined>;
   /**
    * Apply `update` in one transaction, only while the backup key is still
    * `key`, so an upload that finishes after a new key was made can't record
@@ -1013,12 +1041,18 @@ interface RecoveredMark {
   readonly recoveredAt: number;
 }
 
+/** The mark a device keeps once a later choice on another device retired its backup key (#272). */
+interface RetiredMark {
+  readonly retiredAt: number;
+}
+
 /**
  * A record of the device store, each under its own key: the relay backup's
  * (#97), the recovery contacts' (#109), and a recovering device's request and
  * the mark it leaves (#118).
  */
-type DeviceRecord = StoredRelayBackup | RecoveryPlan | StoredRecoverRequest | RecoveredMark;
+type DeviceRecord =
+  StoredRelayBackup | RecoveryPlan | StoredRecoverRequest | RecoveredMark | RetiredMark;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -1046,6 +1080,11 @@ function recoverRequestIn(record: DeviceRecord | undefined): StoredRecoverReques
 /** When the device was recovered, in a device record read from its key, or undefined (#118). */
 function recoveredAtIn(record: DeviceRecord | undefined): number | undefined {
   return record !== undefined && 'recoveredAt' in record ? record.recoveredAt : undefined;
+}
+
+/** When the device's backup key was retired, in a device record read from its key, or undefined (#272). */
+function retiredAtIn(record: DeviceRecord | undefined): number | undefined {
+  return record !== undefined && 'retiredAt' in record ? record.retiredAt : undefined;
 }
 
 /**
@@ -1076,6 +1115,8 @@ const RECOVERY = 'recovery';
 const RECOVER_REQUEST = 'recover-request';
 /** The device store's key for the mark a recovered device keeps (#118). */
 const RECOVERED = 'recovered';
+/** The device store's key for the mark a device keeps once its backup key was retired (#272). */
+const RELAY_BACKUP_RETIRED = 'relay-backup-retired';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -1417,8 +1458,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       if (shared)
         await writeKeys(db, (keys) => keepKeys(keys, session, { personal: { drop: [id] } }));
     },
-    ...relayBackupStore(db, session, () => {
+    ...relayBackupStore(db, session, (plan) => {
       notify(RELAY_BACKUP_CHANGED);
+      if (plan) notify(RECOVERY_CHANGED);
     }),
     ...recoveryStore(db, session, () => {
       notify(RECOVERY_CHANGED);
@@ -1595,25 +1637,28 @@ function hearsFrom(archived: Group['archived'], pull: Pull, added: readonly LogR
 function relayBackupStore(
   db: IDBPDatabase<Schema>,
   session: Session,
-  changed: () => void,
+  changed: (plan: boolean) => void,
 ): RelayBackupStore {
   /**
-   * Writes `next(held)` in one key transaction, unless it's undefined;
+   * Writes `next(held)` in one key transaction, unless it's undefined, and
+   * with `fresh` set also forgets that an earlier key was retired (#272);
    * returns the state held before.
    */
   const write = async (
     next: (held: RelayBackupState | undefined) => RelayBackupState | undefined,
+    fresh = false,
   ): Promise<{ held: RelayBackupState | undefined; wrote: boolean }> => {
     const result = await writeKeys(db, async (tx) => {
       const held = await backupIn(tx, session);
       const state = next(held);
       if (state !== undefined) await keepKeys(tx, session, { relayBackup: state });
+      if (state !== undefined && fresh) await tx.objectStore(DEVICE).delete(RELAY_BACKUP_RETIRED);
       return { held, wrote: state !== undefined };
     });
-    if (result.wrote) changed();
+    if (result.wrote) changed(false);
     return result;
   };
-  const fresh = (key: Uint8Array): RelayBackupState => ({
+  const fresh = (key: Uint8Array, split?: string): RelayBackupState => ({
     key: Uint8Array.from(key),
     digest: null,
     checkedDay: null,
@@ -1621,14 +1666,16 @@ function relayBackupStore(
     tooLarge: false,
     uploaded: [],
     uploadedGroups: [],
+    ...(split === undefined ? {} : { split }),
   });
   return {
     getRelayBackup: () => backupIn(db.transaction([DEVICE, VAULT]), session),
-    async setRelayBackupKey(key) {
-      return (await write(() => fresh(key))).held;
+    async setRelayBackupKey(key, split) {
+      return (await write(() => fresh(key, split), true)).held;
     },
-    async adoptRelayBackupKey(key) {
-      return (await write((held) => (held === undefined ? fresh(key) : undefined))).wrote;
+    async adoptRelayBackupKey(key, split) {
+      return (await write((held) => (held === undefined ? fresh(key, split) : undefined), true))
+        .wrote;
     },
     async updateRelayBackup(key, update) {
       const result = await write((held) =>
@@ -1636,6 +1683,22 @@ function relayBackupStore(
       );
       return result.wrote;
     },
+    async retireRelayBackup(key, at) {
+      const result = await writeKeys(db, async (tx) => {
+        const held = await backupIn(tx, session);
+        if (held === undefined || !sameBytes(held.key, key)) return { wrote: false, plan: false };
+        await keepKeys(tx, session, { relayBackup: null });
+        const devices = tx.objectStore(DEVICE);
+        await devices.put({ retiredAt: at }, RELAY_BACKUP_RETIRED);
+        const plan = recoveryPlanIn(await devices.get(RECOVERY));
+        const supersedes = plan !== undefined && plan.supersededAt === undefined;
+        if (supersedes) await devices.put({ ...plan, supersededAt: at }, RECOVERY);
+        return { wrote: true, plan: supersedes };
+      });
+      if (result.wrote) changed(result.plan);
+      return result.wrote;
+    },
+    getRelayBackupRetiredAt: async () => retiredAtIn(await db.get(DEVICE, RELAY_BACKUP_RETIRED)),
   };
 }
 
@@ -1651,14 +1714,12 @@ function recoveryStore(
       await db.put(DEVICE, plan, RECOVERY);
       changed();
     },
-    async forgetRetired(id) {
+    async markRetiredChecked(day) {
       const tx = db.transaction(DEVICE, 'readwrite');
       const held = recoveryPlanIn(await tx.store.get(RECOVERY));
-      const kept = held?.retired.filter((retired) => retired !== id);
-      const wrote = held !== undefined && kept?.length !== held.retired.length;
-      if (wrote) await tx.store.put({ ...held, retired: kept ?? [] }, RECOVERY);
+      if (held !== undefined) await tx.store.put({ ...held, retiredCheckedDay: day }, RECOVERY);
       await tx.done;
-      if (wrote) changed();
+      if (held !== undefined) changed();
     },
     async getRecoverRequest() {
       const tx = db.transaction([DEVICE, VAULT]);
@@ -2129,7 +2190,8 @@ async function wholeIn<Whole extends Kept, Kept extends { readonly id: string }>
 interface KeyChange {
   readonly put?: readonly Group[];
   readonly drop?: readonly string[];
-  readonly relayBackup?: RelayBackupState;
+  /** The relay backup's state to keep, or null to forget it, key and all (#272). */
+  readonly relayBackup?: RelayBackupState | null;
   readonly personal?: RecordChange<PersonalDocument>;
   readonly sent?: RecordChange<SentApplication>;
   readonly recoverRequest?: RecoverRequest | null;
@@ -2312,13 +2374,18 @@ async function checkBackupAgain(tx: KeyTransaction): Promise<void> {
 
 /**
  * `keepKeys`' relay backup: its record put in `tx`, its key into `sealed`
- * when the device has a vault.
+ * when the device has a vault; or, for null, both gone (#272).
  */
 async function keepBackup(
   tx: KeyTransaction,
   sealed: VaultKeys | null,
-  state: RelayBackupState,
+  state: RelayBackupState | null,
 ): Promise<void> {
+  if (state === null) {
+    if (sealed !== null) delete sealed.backupKey;
+    await tx.objectStore(DEVICE).delete(RELAY_BACKUP);
+    return;
+  }
   const { key, ...rest } = state;
   if (sealed !== null) sealed.backupKey = Uint8Array.from(key);
   await tx.objectStore(DEVICE).put(sealed === null ? state : rest, RELAY_BACKUP);

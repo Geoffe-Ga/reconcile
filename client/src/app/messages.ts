@@ -1588,6 +1588,9 @@ export const messages = {
     saved: (day: string) => `Backed up to the relay ${day}.`,
     tooLarge: 'Your groups are too large for the relay backup. Save a backup file instead.',
     waiting: 'Your groups will be backed up to the relay the next time Reconcile syncs.',
+    /** Once a later choice of recovery contacts on another device retired this device's backup key (#272). */
+    retired:
+      'You chose recovery contacts again on another of your devices, so this one stopped backing up to the relay. Link it again from that device to back it up.',
   },
   restore: {
     lede: 'Bring back the groups in a backup file you saved. On a second device, they vote as you.',
@@ -1736,6 +1739,12 @@ export const messages = {
     saving: 'Backing up your groups and sending each share…',
     failed: 'Your recovery contacts couldn’t be saved. Try again.',
     none: 'You haven’t chosen anyone yet.',
+    /** When this device holds the backup key the contacts' shares rebuild, but not the list (#272). */
+    elsewhere:
+      'You chose recovery contacts on another of your devices. Who they are stays on that device. Choosing again here replaces them.',
+    /** Once a later choice on another device retired this plan's key (#272). */
+    superseded:
+      'You chose recovery contacts again on another of your devices. The people you chose here no longer hold a working share.',
     choose: 'Choose recovery contacts',
     chooseAgain: 'Choose again',
     status: (n: number, t: number) => `${String(n)} recovery contacts · ${String(t)} needed`,
