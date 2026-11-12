@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import type { BackupToSave } from './backup';
 import { SaveBackup } from './SaveBackup';
 import type { SaveOutcome } from './share';
@@ -144,6 +145,21 @@ describe('SaveBackup', () => {
       'The backup file couldn’t be made. Try again.',
     );
     expect(make()).toBeEnabled();
+  });
+
+  it('makes the file once when it is tapped again while it makes one and that fails (#193)', async () => {
+    const making = held<BackupToSave>();
+    const { user, onMake } = setup(vi.fn<OnMake>(() => making.promise));
+    await user.type(passphrase(), 'a long walk to the river');
+    await user.type(again(), 'a long walk to the river');
+    await user.click(make());
+    expect(make()).toBeDisabled();
+    await user.click(make());
+    making.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(make()).toBeEnabled();
+    expect(onMake).toHaveBeenCalledTimes(1);
   });
 
   it('offers nothing to back up on a device with no groups', () => {

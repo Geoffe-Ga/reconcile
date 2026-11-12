@@ -7,6 +7,7 @@ import { newGroupSecret } from '../crypto/groupKeys';
 import { inviteChannelOf } from '../crypto/invite';
 import { BLOB_SIZES, MAX_PLAINTEXT_BYTES, xchachaSeal } from '../crypto/seal';
 import type { LogRecord } from '../engine/fold';
+import { packEntries } from '../invite/envelope';
 import { stubSeal } from '../test/stubSeal';
 import {
   type Card,
@@ -74,6 +75,16 @@ describe('a card’s envelope', () => {
     expect(openCard(xchachaSeal, cardChannelOf(seed), blobs)).toEqual(made);
   });
 
+  it('reads as damaged when an entry is marked kept, since a coalition’s log keeps no result (#269)', () => {
+    const seed = newCardSeed();
+    const channel = cardChannelOf(seed);
+    const [header] = sealCard(stubSeal, channel, card({ entries: [entry(1, 30)] }));
+    const [chunk = new Uint8Array()] = packEntries([{ ...entry(1, 30), kept: true }]);
+    const marked = stubSeal.seal(channel.mailbox, channel.key, chunk);
+
+    expect(openCard(stubSeal, channel, [header ?? new Uint8Array(), marked])).toBeNull();
+  });
+
   it('round-trips any name, statement and secrets it can carry', () => {
     const text = fc.string({ minLength: 1, maxLength: 120, unit: 'grapheme-composite' });
     fc.assert(
@@ -103,6 +114,24 @@ describe('a card’s envelope', () => {
       'title',
     ]);
     expect(Object.keys((JSON.parse(text) as { seat: object }).seat)).toEqual(['name', 'key']);
+  });
+
+  it('carries no inner on a card from a formed coalition, and opens without one (#313)', () => {
+    const seed = newCardSeed();
+    const channel = cardChannelOf(seed);
+    const { secret, seat, name, title, atoms, entries } = card({ entries: [entry(1, 30)] });
+    const formed = { secret, seat, name, title, atoms, entries };
+    const blobs = sealCard(stubSeal, channel, formed);
+    const text = new TextDecoder().decode(
+      stubSeal.open(channel.mailbox, channel.key, blobs[0] ?? new Uint8Array()) ?? new Uint8Array(),
+    );
+
+    expect(Object.keys(JSON.parse(text) as object)).not.toContain('inner');
+    const opened = openCard(stubSeal, channel, blobs);
+    expect(opened).toEqual(formed);
+    expect(opened !== null && 'inner' in opened).toBe(false);
+    const dropped = headerBlob(seed, (json) => ({ ...json, inner: undefined }));
+    expect(openCard(stubSeal, channel, [dropped])?.inner).toBeUndefined();
   });
 
   it('refuses a statement too large for one blob', () => {
@@ -135,6 +164,7 @@ describe('a card’s envelope', () => {
   it.each([
     ['no secret', (json: Record<string, unknown>) => ({ ...json, secret: undefined })],
     ['a short inner', (json: Record<string, unknown>) => ({ ...json, inner: 'abc' })],
+    ['a numeric inner', (json: Record<string, unknown>) => ({ ...json, inner: 4 })],
     [
       'a secret that isn’t canonical',
       (json: Record<string, unknown>) => ({

@@ -1,8 +1,9 @@
 /**
  * Regression tests for the rules eslint.config.js adds itself (#162): NO_CLOCK and
  * INTEGERS_ONLY in src/engine, the network globals outside src/net, the messages
- * rule in src/app and src/screens, NO_RAW_HTML across src/ (#70), and
- * `navigator.credentials` outside src/platform/webauthn.ts (#95). Each must fire on a bad snippet where it applies,
+ * rule in src/app and src/screens, NO_RAW_HTML across src/ (#70),
+ * `navigator.credentials` outside src/platform/webauthn.ts (#95), and HELD_SUBMIT in
+ * src/app and src/screens (#193). Each must fire on a bad snippet where it applies,
  * and stay quiet on a good snippet or where it doesn't apply.
  *
  * The snippets are linted in memory as if they were files at the paths given, with
@@ -277,6 +278,66 @@ describe('NO_RAW_HTML: nothing in src/ is ever parsed as HTML', () => {
       RAW,
       'no-restricted-syntax: Visible text comes from src/app/messages.ts.',
     ]);
+  });
+});
+
+describe('HELD_SUBMIT: no press starts on a disabled submit button (#193)', () => {
+  const HELD =
+    'no-restricted-syntax: A submit Button that is disabled while its form sends needs holdPresses(…) as onPointerDownCapture on it or on a parent (#193): React Aria clicks a button pressed while disabled itself, 80 ms on, and that click sends the form again once the button is enabled.';
+  const component = (jsx: string): string =>
+    [
+      "import { Button, Form } from 'react-aria-components';",
+      "import { holdPresses } from './holdPresses';",
+      'export function Fixture({ running }: { running: boolean }) {',
+      `  return <Form>${jsx}</Form>;`,
+      '}',
+    ].join('\n');
+  const SUBMIT = '<Button type="submit" isDisabled={running}>{null}</Button>';
+
+  describe.each(['src/app/Fixture.tsx', 'src/screens/Fixture.tsx'])('in %s', (filePath) => {
+    it('flags a disabled submit Button with nothing holding presses', async () => {
+      expect(await lint(component(`<div className="row">${SUBMIT}</div>`), filePath)).toEqual([
+        HELD,
+      ]);
+    });
+
+    it('flags one whose parent catches pointerdown with something else', async () => {
+      const row = `<div onPointerDownCapture={() => undefined}>${SUBMIT}</div>`;
+      expect(await lint(component(row), filePath)).toEqual([HELD]);
+    });
+
+    it('flags one beside a held row rather than in it', async () => {
+      const rows = `<div onPointerDownCapture={holdPresses(running)} /><div>${SUBMIT}</div>`;
+      expect(await lint(component(rows), filePath)).toEqual([HELD]);
+    });
+
+    it.each([
+      ['its row', `<div onPointerDownCapture={holdPresses(running)}>${SUBMIT}</div>`],
+      [
+        'a parent further up',
+        `<div onPointerDownCapture={holdPresses(running)}><p>${SUBMIT}</p></div>`,
+      ],
+      [
+        'the button itself',
+        '<Button type="submit" isDisabled={running} onPointerDownCapture={holdPresses(running)}>{null}</Button>',
+      ],
+    ])('allows one held by %s', async (_where, jsx) => {
+      expect(await lint(component(jsx), filePath)).toEqual([]);
+    });
+
+    it.each([
+      ['a submit Button that is never disabled', '<Button type="submit">{null}</Button>'],
+      [
+        'a disabled Button that only presses',
+        '<Button isDisabled={running} onPress={() => undefined}>{null}</Button>',
+      ],
+    ])('allows %s', async (_name, jsx) => {
+      expect(await lint(component(jsx), filePath)).toEqual([]);
+    });
+  });
+
+  it("doesn't apply to tests", async () => {
+    expect(await lint(component(SUBMIT), 'src/screens/Fixture.test.tsx')).toEqual([]);
   });
 });
 
