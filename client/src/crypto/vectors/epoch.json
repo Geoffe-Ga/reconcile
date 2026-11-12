@@ -1,6 +1,6 @@
 {
   "kind": "epoch",
-  "about": "A group key change's commit and one wrap (#98, crypto/epoch.ts). commit = SHA-256(UTF-8 'reconcile/v1/epoch-commit' ‖ 0x00 ‖ UTF-8 group id ‖ u32be(epoch) ‖ secret), and the event carries its unpadded base64url. The wrap is a box of the secret sealed to the member's X25519 key with info 'reconcile/v1/epoch-wrap' and AAD = UTF-8 group id ‖ u32be(epoch) ‖ UTF-8 member key ‖ UTF-8 base64url commit, the three texts as the key-rotate event spells them. Computed with Python's hashlib and the cryptography package as box.json is, and opened again with libsodium (PyNaCl); neither is @noble. The group id and member key are placeholder texts of the right length. Each value is its bytes.",
+  "about": "A group key change's commit and wraps (#98, #224; crypto/epoch.ts). commit = SHA-256(UTF-8 'reconcile/v1/epoch-commit' ‖ 0x00 ‖ UTF-8 group id ‖ u32be(epoch) ‖ secret), and the event carries its unpadded base64url. A wrap is a box of the secret sealed to the member's X25519 key with info 'reconcile/v1/epoch-wrap' and AAD = UTF-8 group id ‖ u32be(epoch) ‖ UTF-8 member key ‖ UTF-8 base64url commit, the three texts as the key-rotate event spells them. `wrap` is #98's, with a random ephemeral key and nonce; it still opens. `derivedWrap` is how a key change is wrapped since #224: its ephemeral secret and nonce are the 56 bytes HKDF-SHA-256(ikm = secret, empty salt, info = UTF-8 'reconcile/v1/epoch-wrap-coins' ‖ 0x00 ‖ the member's 32-byte X25519 public key ‖ AAD), the first 32 and the last 24, so whoever holds the secret makes every wrap again, byte for byte. Computed with Python's hashlib, hmac and the cryptography package (XChaCha20 as HChaCha20 from its raw ChaCha20 block, checked against draft-irtf-cfrg-xchacha-03) as box.json is, and opened again there; none of it is @noble. The group id and member key are placeholder texts of the right length. Each value is its bytes.",
   "vectors": [
     {
       "name": "epoch 1's secret, committed to and wrapped to one member",
@@ -39,6 +39,24 @@
         147, 21, 195, 80, 82, 207, 114, 226, 29, 43, 220, 205, 198, 21, 158, 118, 203, 16, 195, 112,
         41, 91, 27, 96, 80, 74, 196, 31, 130, 38, 181, 240, 169, 93, 13, 14, 10, 21, 30, 252, 172,
         60, 134, 29, 74, 45
+      ],
+      "coins": {
+        "ephemeral": [
+          219, 66, 28, 218, 18, 210, 30, 19, 37, 152, 229, 90, 115, 178, 238, 166, 95, 234, 175,
+          250, 133, 233, 129, 31, 104, 163, 192, 85, 65, 66, 237, 77
+        ],
+        "nonce": [
+          42, 66, 129, 235, 181, 204, 112, 180, 239, 202, 8, 203, 143, 230, 126, 106, 47, 78, 45,
+          247, 232, 136, 157, 62
+        ]
+      },
+      "derivedWrap": [
+        68, 56, 175, 173, 125, 23, 67, 101, 233, 84, 250, 100, 211, 156, 24, 20, 84, 8, 161, 183,
+        230, 119, 12, 163, 66, 154, 21, 127, 9, 140, 246, 47, 42, 66, 129, 235, 181, 204, 112, 180,
+        239, 202, 8, 203, 143, 230, 126, 106, 47, 78, 45, 247, 232, 136, 157, 62, 143, 249, 202,
+        124, 45, 212, 180, 254, 226, 184, 195, 112, 235, 110, 8, 239, 241, 176, 100, 206, 214, 80,
+        243, 76, 126, 70, 124, 255, 198, 45, 2, 154, 147, 17, 104, 5, 246, 82, 70, 164, 247, 138,
+        13, 167, 206, 79, 212, 13
       ]
     }
   ]

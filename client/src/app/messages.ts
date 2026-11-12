@@ -13,6 +13,17 @@ const LOCALE = 'en-GB';
 /** A whole number as this language writes it, such as "2,000". */
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
+/**
+ * What a restore or a link says of the group entries it left out because
+ * they didn't check out (#336), `where` they were, or null for none.
+ */
+function leftOut(skipped: number, where: string): string | null {
+  if (skipped === 0) return null;
+  return skipped === 1
+    ? `One group ${where} couldn’t be read and was left out.`
+    : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+}
+
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
 const CLEARED_ON = 'Individual scores and notes were cleared on';
 
@@ -670,6 +681,48 @@ export const messages = {
     copyFailed:
       'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
     markdownLabel: 'The Document as Markdown',
+  },
+  /**
+   * A section's history, in its side sheet, and a Document's change log
+   * (#104). Where a person's name or a date sits inside a line, the words
+   * around it are kept apart, so the screen sets the name in `<bdi>` and the
+   * date in `<time>`.
+   */
+  history: {
+    open: 'History',
+    /** Each section's History button: its visible word, then the section (WCAG 2.5.3). */
+    openLabel: (section: number) => `History of section ${String(section)}`,
+    title: (section: number) => `History of section ${String(section)}`,
+    /** The sheet's heading for a section a pass has since removed, opened from the change log. */
+    removedTitle: 'History of a removed section',
+    close: 'Close',
+    /** Under the heading while nothing has changed the section since it began. */
+    unchanged: 'No Proposal has changed this section since it began.',
+    founding: 'Founding text',
+    writtenBy: 'Written by',
+    founded: 'Founded',
+    proposedBy: 'Proposed by',
+    decided: 'Decided',
+    /** In place of the text, for the pass that removed the section (#75). */
+    removed: 'This removed the section.',
+    /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
+    noResult: 'No result',
+    seeResult: 'See the full result',
+    notPassed: (proposals: number) => `Proposals that didn’t pass (${count(proposals)})`,
+  },
+  changeLog: {
+    pageTitle: 'Change log',
+    eyebrow: 'Change log',
+    /** The Document view's link to its change log. */
+    link: 'Change log',
+    lede: 'Every change that passed, newest first. Open one to see its section’s history.',
+    /** In place of the lede while the log holds only the Document's beginning. */
+    unchanged: 'Nothing has changed this Document since it began.',
+    founded: 'Founding text',
+    created: 'Started this Document',
+    added: 'Added a section',
+    changed: (words: string) => `Changed ‘${words}’`,
+    removed: (words: string) => `Removed ‘${words}’`,
   },
   /**
    * Stewards and suspensions (#102). Where a person's name sits inside a
@@ -1393,11 +1446,18 @@ export const messages = {
     passphraseMissing: 'Enter the passphrase this backup was saved with.',
     submit: 'Restore',
     restoring: 'Opening your backup…',
-    restored: (groups: number) => {
-      if (groups === 0) return 'This backup holds no groups.';
-      return groups === 1
-        ? '1 group is back on this device.'
-        : `${count(groups)} groups are back on this device.`;
+    /**
+     * How many groups came back, then how many group entries didn't check out
+     * and were left out (#336), when any were: only that, when none came back.
+     */
+    restored: (groups: number, skipped: number) => {
+      const left = leftOut(skipped, 'in this backup');
+      if (groups === 0) return left ?? 'This backup holds no groups.';
+      const back =
+        groups === 1
+          ? '1 group is back on this device.'
+          : `${count(groups)} groups are back on this device.`;
+      return left === null ? back : `${back} ${left}`;
     },
     failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
   },
@@ -1467,10 +1527,15 @@ export const messages = {
     waitingOther: 'Waiting for your other device…',
     check: 'Check that your other device shows the same number, then confirm there.',
     cancel: 'Cancel',
-    linked: (groups: number) =>
-      groups === 1
-        ? 'Linked. This device now has 1 group.'
-        : `Linked. This device now has ${count(groups)} groups.`,
+    /** How many groups the device now has, then how many from the bundle were left out (#336). */
+    linked: (groups: number, skipped: number) => {
+      const now =
+        groups === 1
+          ? 'Linked. This device now has 1 group.'
+          : `Linked. This device now has ${count(groups)} groups.`;
+      const left = leftOut(skipped, 'from your other device');
+      return left === null ? now : `${now} ${left}`;
+    },
     mismatch: 'That code didn’t match. Start again on your other device.',
     damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
     joinExpired: 'That code has expired. Start again on your other device.',

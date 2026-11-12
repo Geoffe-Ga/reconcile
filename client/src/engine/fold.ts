@@ -120,6 +120,7 @@ import {
   isReconcileProposal,
   isRemovalProposal,
   isRulesProposal,
+  type KeyCheckBody,
   type KeyRotateBody,
   type KxBody,
   isStewardProposal,
@@ -151,6 +152,7 @@ import {
   type VouchBody,
 } from './event';
 import { type DoorInvite, mayRecordInvite } from './frontDoor';
+import { isRefused, type KeyChecks, keyChecksOf } from './keyChecks';
 import { isOpenAt } from './open';
 import {
   type DoorClosure,
@@ -250,10 +252,13 @@ export interface Member {
 }
 
 /**
- * A canonical key change (#98): the first valid `key-rotate` of its epoch,
- * where it sits in relay order, who wrote it, its commit, and its wraps by
- * member key. Records read from the epoch before it, from its seq on, are
- * ignored.
+ * A key change (#98): a valid `key-rotate`, where it sits in relay order, who
+ * wrote it, its epoch, its commit, its wraps by member key, and `keys`, the
+ * encryption key the group held for each recipient then, which a device checks
+ * every wrap against (#224). A canonical one, the first valid `key-rotate` of
+ * its epoch that isn't refused, moves the group: records read from the epoch
+ * before it, from its seq on, are ignored. A refused one (`keyChecks.ts`)
+ * moves nothing.
  */
 export interface Rotation {
   readonly id: string;
@@ -263,6 +268,7 @@ export interface Rotation {
   readonly epoch: number;
   readonly commit: string;
   readonly wraps: Readonly<Record<string, string>>;
+  readonly keys: Readonly<Record<string, string>>;
 }
 
 /**
@@ -438,6 +444,18 @@ export interface IgnoredRecord {
 }
 
 /**
+ * Where a group's Documents began (#104): the genesis's receipt, in relay
+ * minutes, its author, and every Atom it founded, Document by Document, with
+ * its founding text, whatever passes have changed since. `author` is null for
+ * a coalition, whose genesis author isn't one of its participants (#100).
+ */
+export interface Founding {
+  readonly received: number;
+  readonly author: string | null;
+  readonly atoms: readonly Atom[];
+}
+
+/**
  * The group's current focus (#107): the top option of the latest priority
  * vote whose pass is final, with the vote's id, the option's id and its text.
  */
@@ -476,12 +494,16 @@ export interface Focus {
  * first valid `door-invited` per application, in relay order (#121).
  * `doorClosure` is the `leave` or `remove` that closed the front door, while
  * it stays closed, and `exposedDoors` the front door Proposals that were open
- * when a membership ended, whose pass opens no door (#288). `epoch`
- * is the group key's epoch: 0 at genesis, then one more for each canonical
- * key change, which `rotations` keeps in order (#98). `rotationDue` is true
- * once a membership has ended since the last canonical key change, or
- * genesis, until the next, or until the group dissolves, after which no key
- * change can land. `dissolved` is when the group dissolved, and whether its
+ * when a membership ended, whose pass opens no door (#288). `epoch` is the
+ * group key's epoch: 0 at genesis, then the epoch of each canonical key
+ * change, which `rotations` keeps in order (#98). `nextEpoch` is the epoch
+ * the next key change must name: one past the last key change's, canonical or
+ * refused, so a refused key change spends its epoch (#224). `refused` keeps
+ * the key changes a recipient said don't open, in relay order (`keyChecks.ts`,
+ * #224): none moved the group, and none of their authors may write another.
+ * `rotationDue` is true once a membership has ended since the last canonical
+ * key change, or genesis, until the next, or until the group dissolves, after
+ * which no key change can land. `dissolved` is when the group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `recoveryShares` holds every `recovery-share` a current member sent, in
@@ -497,7 +519,9 @@ export interface Focus {
  * coalition's log it holds the seats, the participants' bindings, the results
  * the groups posted, each motion's seats and the status (coalition.ts), and
  * once it is declined `at` stays at that minute. `focus` is the current
- * focus, or null before any priority vote passes (#107).
+ * focus, or null before any priority vote passes (#107). `founding` is where
+ * the Documents began, the founding text a section's history starts from, or
+ * null before a genesis (#104).
  */
 export interface GroupState {
   readonly group: string | null;
@@ -524,7 +548,9 @@ export interface GroupState {
   readonly doorClosure: DoorClosure | null;
   readonly exposedDoors: readonly string[];
   readonly epoch: number;
+  readonly nextEpoch: number;
   readonly rotations: readonly Rotation[];
+  readonly refused: readonly Rotation[];
   readonly rotationDue: boolean;
   readonly dissolved: Dissolution | null;
   readonly recoveryShares: readonly SealedShare[];
@@ -533,6 +559,7 @@ export interface GroupState {
   readonly coalitions: readonly HeldSeat[];
   readonly coalition: Coalition | null;
   readonly focus: Focus | null;
+  readonly founding: Founding | null;
   readonly ignored: readonly IgnoredRecord[];
 }
 
@@ -608,11 +635,12 @@ interface DocumentAt {
  * `judged` those of the closed removals `removals` already shows (#115), and
  * `dispatched` those of the closed Proposals carrying a Dispatch that
  * `dispatches` already reflects (#112). `founded` holds the Documents
- * genesis founded, before any pass (#92), and `document` the Documents as the
- * latest Proposal found them, kept until another closes. `exposed` holds
- * every front door secret, `sign` and `box`, that someone who has left could
- * read, and `carried` those the records of this epoch carried since the last
- * membership end, which the next one exposes (#288).
+ * genesis founded, before any pass (#92), `founding` where they began
+ * (#104), and `document` the Documents as the latest Proposal found them,
+ * kept until another closes. `exposed` holds every front door secret, `sign`
+ * and `box`, that someone who has left could read, and `carried` those the
+ * records of this epoch carried since the last membership end, which the
+ * next one exposes (#288).
  */
 interface Draft {
   group: string | null;
@@ -622,6 +650,7 @@ interface Draft {
   readonly members: Member[];
   readonly former: Member[];
   founded: readonly DocumentDraft[];
+  founding: Founding | null;
   document: DocumentAt;
   readonly proposals: OpenProposal[];
   at: number;
@@ -640,7 +669,9 @@ interface Draft {
   readonly exposed: Set<string>;
   readonly carried: Set<string>;
   epoch: number;
+  nextEpoch: number;
   readonly rotations: Rotation[];
+  readonly refused: Rotation[];
   rotationDue: boolean;
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
@@ -657,6 +688,8 @@ interface Draft {
   readonly firstResults: ReadonlyMap<string, FirstResult>;
   /** Cleared Proposals whose read-ahead result didn't hold up where it sits: read nothing ahead. */
   readonly distrusted: ReadonlySet<string>;
+  /** Every `unwrap-failed` and `key-taken` in the log, read before the fold starts (#224). */
+  readonly keyChecks: KeyChecks;
 }
 
 /** `kx` when it is a key a box can be sealed to (`crypto/box.ts`), else null (#98). */
@@ -679,10 +712,25 @@ function applyCoalitionGenesis(draft: Draft, body: CoalitionGenesisBody, at: Rec
   draft.rules = rules;
   draft.name = body.name;
   draft.chat = body.chat ?? null;
-  draft.founded = documents;
-  draft.document = { closed: '', documents };
+  found(draft, documents, at.received, null);
   draft.coalition = coalition;
   return true;
+}
+
+/**
+ * Keeps the Documents a genesis founds, received at `received` and written by
+ * `author`, or null for a coalition's (#104), as the founding text and as the
+ * Documents every later event first finds.
+ */
+function found(
+  draft: Draft,
+  documents: readonly DocumentDraft[],
+  received: number,
+  author: string | null,
+): void {
+  draft.founded = documents;
+  draft.founding = { received, author, atoms: documents.flatMap((d) => d.atoms) };
+  draft.document = { closed: '', documents };
 }
 
 /** A Document's Atoms from their texts, `${documentId}.${i}`, in order. */
@@ -745,8 +793,7 @@ function applyGenesis(draft: Draft, body: GenesisBody, author: string, at: Recei
   });
   // The founder holds seat 1 with no term until the group elects someone (ADR-0049).
   draft.stewards = draft.stewards.map((s) => (s.seat === 1 ? { ...s, holder: author } : s));
-  draft.founded = documents;
-  draft.document = { closed: '', documents };
+  found(draft, documents, at.received, author);
   return true;
 }
 
@@ -2022,25 +2069,29 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
 
 /**
  * The events a suspended member may still post: a removal's response (#115),
- * and the recovery events, which govern nothing: a recovery share (#109), and
- * a recovery alert or cancel (#118).
+ * the recovery events, which govern nothing: a recovery share (#109), and a
+ * recovery alert or cancel (#118); and an `unwrap-failed` or `key-taken`
+ * (#224).
  */
 const UNSUSPENDED: ReadonlySet<GroupEvent['type']> = new Set([
   'removal-response',
   'recovery-share',
   'recovery-alert',
   'recovery-cancel',
+  'unwrap-failed',
+  'key-taken',
 ]);
 
 /**
  * Whether the author of `event` may act now: anyone may leave, since exit is
  * always possible (ADR-0010, #77); once a removal of them has passed, nothing
  * else counts (#115); and while a suspension runs (ADR-0016), only their
- * response to a removal of them (ADR-0049) and their recovery events, which
- * govern nothing, do: a `recovery-share` (#109), and a `recovery-alert` or
+ * response to a removal of them (ADR-0049), their recovery events, which
+ * govern nothing: a `recovery-share` (#109), and a `recovery-alert` or
  * `recovery-cancel` (#118), since a suspended person must still hear of a
  * recovery and be able to stop it, and a suspended contact's alert must still
- * reach them.
+ * reach them; and their `unwrap-failed` and `key-taken`, since a suspended
+ * member keeps their wrap and a suspension takes no one's key (#224), do.
  */
 function mayAct(draft: Draft, event: GroupEvent): boolean {
   if (event.type === 'leave') return true;
@@ -2169,6 +2220,8 @@ type LaterEvent = Extract<
       | 'dispatch'
       | 'kx'
       | 'key-rotate'
+      | 'unwrap-failed'
+      | 'key-taken'
       | 'group-result'
       | 'door-invited'
       | 'room-wrap';
@@ -2199,9 +2252,9 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
 }
 
 /**
- * {@link applyLater} for `kx` and `key-rotate` (#98), `group-result` (#100)
- * and `door-invited` (#121), and the events that act on a Proposal
- * ({@link applyProposalEvent}).
+ * {@link applyLater} for `kx` and `key-rotate` (#98), `unwrap-failed` and
+ * `key-taken` (#224), `group-result` (#100) and `door-invited` (#121), and the
+ * events that act on a Proposal ({@link applyProposalEvent}).
  */
 function applyKeyed(
   draft: Draft,
@@ -2221,6 +2274,10 @@ function applyKeyed(
       return applyKx(draft, event.body, event.author);
     case 'key-rotate':
       return applyKeyRotate(draft, event.body, event.author, at);
+    case 'unwrap-failed':
+      return names(draft.refused, event.body, event.author);
+    case 'key-taken':
+      return names(draft.rotations.slice(-1), event.body, event.author);
     case 'group-result':
       return applyGroupResult(draft, event.body, event.author, at);
     case 'door-invited':
@@ -2298,28 +2355,55 @@ function wrapsExactly(wraps: Readonly<Record<string, string>>, recipients: reado
 }
 
 /**
- * Changes the group key (#98; ADR-0072 item 11), when a current member wrote
- * it, a membership has ended since the last canonical change, it names the
- * next epoch, and its wraps name exactly the current members with an
- * encryption key. The first valid one per epoch is canonical (relay order
- * decides, ADR-0073); from it on, records read from the old epoch's mailbox
- * change nothing.
+ * Whether `author` may write a key change now: one is due, they are a current
+ * member, and no key change of theirs was refused (#224), so whoever posts
+ * one that doesn't open does it once.
+ */
+function mayRotate(draft: Draft, author: string): boolean {
+  if (!draft.rotationDue || draft.refused.some((rotation) => rotation.by === author)) return false;
+  return draft.members.some((m) => m.author === author);
+}
+
+/**
+ * Changes the group key (#98; ADR-0072 item 11), when {@link mayRotate}
+ * allows its author, it names the next epoch, and its wraps name exactly the
+ * current members with an encryption key. The first valid one per epoch is
+ * canonical (relay order decides, ADR-0073); from it on, records read from the
+ * old epoch's mailbox change nothing. Unless it is refused (#224,
+ * `keyChecks.ts`): then it moves nothing, its epoch is spent, so the next
+ * names the one after, and the key change stays due.
  */
 function applyKeyRotate(draft: Draft, body: KeyRotateBody, author: string, at: Receipt): boolean {
-  const valid =
-    draft.rotationDue &&
-    draft.members.some((m) => m.author === author) &&
-    body.epoch === draft.epoch + 1 &&
-    wrapsExactly(
-      body.wraps,
-      keyHolders(draft).map((m) => m.author),
-    );
-  if (!valid) return false;
+  const recipients = keyHolders(draft);
   const { epoch, commit, wraps } = body;
-  draft.rotations.push({ ...at, by: author, epoch, commit, wraps });
+  const named = recipients.map((m) => m.author);
+  if (!mayRotate(draft, author) || epoch !== draft.nextEpoch || !wrapsExactly(wraps, named)) {
+    return false;
+  }
+  const keys = Object.fromEntries(recipients.map((m) => [m.author, m.kx]));
+  const rotation = { ...at, by: author, epoch, commit, wraps, keys };
+  draft.nextEpoch = epoch + 1;
+  const group = draft.group ?? '';
+  if (isRefused(draft.keyChecks, { ...at, group, from: draft.epoch, to: epoch, wraps })) {
+    draft.refused.push(rotation);
+    return true;
+  }
+  draft.rotations.push(rotation);
   draft.epoch = epoch;
   draft.rotationDue = false;
   return true;
+}
+
+/**
+ * Whether an `unwrap-failed` or a `key-taken` counts where it sits (#224): it
+ * names one of `rotations`, and its author is among that key change's
+ * recipients. An `unwrap-failed` counts against a refused key change, read
+ * from the old epoch's mailbox; a `key-taken` for the canonical one, read from
+ * its own. The fold reads both ahead (`keyChecks.ts`), so this decides only
+ * whether one shows in `ignored`.
+ */
+function names(rotations: readonly Rotation[], body: KeyCheckBody, author: string): boolean {
+  return rotations.some((r) => r.id === body.rotation && Object.hasOwn(r.wraps, author));
 }
 
 /** Every score the ballots gave version `id`, one per ballot that scored it. */
@@ -2738,6 +2822,7 @@ export function fold(
     cleared: clearedSet,
     firstResults: firstResults(reads, clearedSet, outside),
     distrusted: new Set<string>(),
+    keyChecks: keyChecksOf(reads),
   };
   const first = foldPass(pass);
   if (first.distrusted.length === 0) return first.state;
@@ -2809,6 +2894,7 @@ interface Pass {
   readonly cleared: ReadonlySet<string>;
   readonly firstResults: Draft['firstResults'];
   readonly distrusted: ReadonlySet<string>;
+  readonly keyChecks: KeyChecks;
 }
 
 /**
@@ -2825,6 +2911,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     members: [],
     former: [],
     founded: [],
+    founding: null,
     document: { closed: '', documents: [] },
     proposals: [],
     at: 0,
@@ -2843,7 +2930,9 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     exposed: new Set(),
     carried: new Set(),
     epoch: 0,
+    nextEpoch: 1,
     rotations: [],
+    refused: [],
     rotationDue: false,
     seated: new Set(),
     ruled: new Set(),
@@ -2857,6 +2946,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     cleared: pass.cleared,
     firstResults: pass.firstResults,
     distrusted: pass.distrusted,
+    keyChecks: pass.keyChecks,
   };
   const ignored: IgnoredRecord[] = [];
   const seen = new Set<string>();
@@ -2878,8 +2968,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const documents = applyPasses(draft.founded, proposals);
   const { group, rules, name, chat, members, former, at, stewards, suspensions } = draft;
   const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
-  const { dispatches, doorInvites, doorClosure, exposedDoors, epoch, rotations, rotationDue } =
-    draft;
+  const { dispatches, doorInvites, doorClosure, exposedDoors } = draft;
+  const { epoch, nextEpoch, rotations, refused, rotationDue } = draft;
   const state = {
     group,
     rules,
@@ -2905,7 +2995,9 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     doorClosure,
     exposedDoors,
     epoch,
+    nextEpoch,
     rotations,
+    refused,
     rotationDue,
     dissolved: draft.dissolved,
     recoveryShares: draft.recoveryShares,
@@ -2914,6 +3006,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     coalitions: heldSeats(proposals, draft.coalition !== null),
     coalition: draft.coalition,
     focus: focusOf(proposals),
+    founding: draft.founding,
     ignored,
   };
   return { state, distrusted };

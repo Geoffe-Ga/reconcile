@@ -15,6 +15,7 @@ import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
 import { Applications } from '../screens/Applications';
+import { GroupChangeLog } from '../screens/ChangeLog';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
@@ -822,7 +823,7 @@ function DocumentScreen({
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, leaving, unconfirmed }) => (
+      {({ state, me, leaving, cleared, unconfirmed }) => (
         <DocumentView
           state={state}
           me={me.author}
@@ -833,6 +834,22 @@ function DocumentScreen({
           copyText={services.copyText}
           leaving={leaving}
           unconfirmed={unconfirmed}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** One of the group's Documents' change log (#104), with a cleared archive's kept tallies (#108). */
+function ChangeLogScreen({ groupId, documentId }: { groupId: string; documentId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, cleared }) => (
+        <GroupChangeLog
+          state={state}
+          documentId={documentId}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
         />
       )}
     </GroupGate>
@@ -1193,6 +1210,10 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
       );
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'documentLog':
+      return (
+        <ChangeLogScreen key={route.documentId} groupId={groupId} documentId={route.documentId} />
+      );
     case 'rules':
       return <RulesScreen services={services} groupId={groupId} />;
     case 'dispatches':

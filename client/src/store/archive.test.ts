@@ -566,7 +566,7 @@ describe('a dissolved group and backup files (#78)', () => {
     const later = (held.lastSyncAt ?? 0) + DAY_MINUTES * MINUTE_MS;
     const file = await fileOf([copyOf(held, { log: live, lastSyncAt: later })]);
 
-    expect(await importGroups(store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
 
     const kept = (await store.getGroup(groupId)) ?? never();
     expect(kept).toEqual({ ...held, backup: 'saved' });
@@ -590,7 +590,7 @@ describe('a dissolved group and backup files (#78)', () => {
     });
     opened.push(sync);
 
-    expect(await importGroups(other, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(other, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
 
     const restored = (await other.getGroup(groupId)) ?? never();
     expect(restored.archived).toEqual({ reason: 'dissolved' });
@@ -647,7 +647,7 @@ describe('a backup made before the dissolve (#231)', () => {
     fake.minute = DISSOLVED + EXPIRED;
     const phone = await freshDevice(fake, 'restored-after');
 
-    expect(await importGroups(phone.store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
     const before = fake.requests.length;
     expect(await phone.sync.syncOnce()).toBe(true);
     fake.minute += 60;
@@ -667,7 +667,7 @@ describe('a backup made before the dissolve (#231)', () => {
     fake.minute = DISSOLVED + 10 * DAY_MINUTES;
     const phone = await freshDevice(fake, 'restored-before');
 
-    expect(await importGroups(phone.store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
     expect(await phone.sync.syncOnce()).toBe(true);
 
     const restored = (await phone.store.getGroup(groupId)) ?? never();

@@ -23,7 +23,8 @@ import { fold } from '../engine/fold';
 import { createRelay, type Relay } from '../net/relay';
 import { type Group, openStore, type Store, VaultLocked } from '../store/db';
 import { eventIdOf } from '../store/eventId';
-import { local, utf8 } from '../test/bytes';
+import { takeSnapshot } from '../store/snapshot';
+import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -151,7 +152,7 @@ describe('linking, end to end over the relay', () => {
     expect(await join.poll()).toEqual(onA);
 
     expect(await offer.confirm()).toBe('sent');
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1 });
+    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 0 });
 
     const held = await onlyGroup(b.store);
     expect(held.groupId).toBe(kept.groupId);
@@ -180,7 +181,7 @@ describe('linking, end to end over the relay', () => {
     await join.poll();
     await offer.confirm();
 
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 2 });
+    expect(await join.poll()).toEqual({ kind: 'linked', groups: 2, skipped: 0 });
   });
 
   it('puts every blob in this flow with ttl_days=1, in throwaway mailboxes', async () => {
@@ -227,7 +228,7 @@ describe('linking, end to end over the relay', () => {
     await offer.poll();
     await join.poll();
     await offer.confirm();
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1 });
+    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 0 });
 
     const canaries = [
       ...keyCanaries('seed', seed),
@@ -315,7 +316,7 @@ describe('linking a device whose keys are locked with a passkey (#95)', () => {
     await offer.poll();
     await join.poll();
     expect(await offer.confirm()).toBe('sent');
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1 });
+    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 0 });
 
     const canaries = [
       ...keyCanaries('group secret', kept.secret),
@@ -642,10 +643,34 @@ describe('the new device (B)', () => {
     expect(Object.keys(join).sort()).toEqual(['drop', 'poll']);
   });
 
+  it('keeps the rest of a bundle with a group entry that doesn’t check out, and counts it left out (#336)', async () => {
+    const fake = createFakeRelay();
+    const a = await device(fake, 'phone');
+    const b = await device(fake, 'laptop');
+    const kept = await keepCanary(a.store);
+    const keysA = newLinkKeys();
+    const keysB = newLinkKeys();
+    const offer = offerLink(a, keysA);
+    const code = codeOf(offer);
+    const join = await joinLink(b, code, keysB);
+    await offer.poll();
+    await join.poll();
+    const { plaintext } = await takeSnapshot(a.store, 'link');
+    const snapshot = JSON.parse(text(plaintext)) as { groups: unknown[] };
+    const withBad = { ...snapshot, groups: ['not a group', ...snapshot.groups] };
+    const bundle = bundleOf(code, keysA, keysB);
+    for (const blob of sealBundle(xchachaSeal, bundle, utf8(JSON.stringify(withBad)))) {
+      await a.relay.putBlob(bundle.mailbox, blob, 1);
+    }
+
+    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 1 });
+    expect((await onlyGroup(b.store)).groupId).toBe(kept.groupId);
+  });
+
   it.each([
     [
-      'groups that don’t check out',
-      (bundle: LinkChannel) => sealBundle(xchachaSeal, bundle, utf8('{"format":1,"groups":[{}]}')),
+      'groups that aren’t a list',
+      (bundle: LinkChannel) => sealBundle(xchachaSeal, bundle, utf8('{"format":1,"groups":{}}')),
     ],
     [
       'a header that doesn’t parse',

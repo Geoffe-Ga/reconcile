@@ -20,14 +20,14 @@ import { sha256 } from '../crypto/hash';
 import { xchachaSeal } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
 import type { SignedEvent } from '../engine/event';
-import { base64url } from '../crypto/base64url';
 import { createRelay, type Fetch } from '../net/relay';
 import { SHARE_TTL_DAYS } from '../share/shareLink';
 import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
+import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
-import { openStore, type Store } from './db';
+import { type BackedUpGroup, openStore, type Store } from './db';
 import type { PersonalDocument, ShareState } from './personal';
 import {
   carriedGroups,
@@ -37,7 +37,13 @@ import {
   type RelayBackupServices,
   startRelayBackup,
 } from './relayBackup';
-import { importSnapshot, type RelayGroup, takeSnapshot } from './snapshot';
+import {
+  decodeRelayCopy,
+  encodeSnapshot,
+  importSnapshot,
+  type RelayGroup,
+  takeSnapshot,
+} from './snapshot';
 import { createSync, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -161,37 +167,74 @@ describe('mergePersonal (#247)', () => {
 
 describe('carriedGroups (#327)', () => {
   const KEY = new Uint8Array(32).fill(0x5c);
-  /** Three group ids and two authors: 43 base64url characters each. */
-  const [G1, G2, G3, ANA, ANA_AGAIN] = ['g1', 'g2', 'g3', 'a1', 'a2'].map((seed) =>
-    base64url(sha256(utf8(seed))),
-  ) as [string, string, string, string, string];
+  const ANA = testKeys('ana').author;
+  const BEA = testKeys('bea').author;
 
-  /** The relay copy's entry for `groupId`, as member `author`. */
-  function entry(groupId: string, author = ANA): RelayGroup {
-    return { groupId, author, entry: { groupId, me: { author, name: 'Ana' }, log: [] } };
+  /**
+   * The relay copy's entry for the group named `name`, as `holder` holds it,
+   * read as the relay backup reads it: one a restore reads whole (#336).
+   */
+  function entry(name: string, holder = 'ana'): RelayGroup {
+    const { state, records } = testGroup({ name });
+    const { secretKey, author } = testKeys(holder);
+    const group: BackedUpGroup = {
+      groupId: state.group ?? '',
+      secret: sha256(utf8(`${name}'s secret`)),
+      signingKey: secretKey,
+      me: { author, name: holder },
+      log: [...records],
+      cursor: records.length,
+      relayNow: null,
+      instance: null,
+      lastSyncAt: null,
+      missingHistory: false,
+    };
+    const [read] = decodeRelayCopy(encodeSnapshot({ groups: [group], personal: [] }))?.groups ?? [];
+    if (read === undefined) throw new Error(`Expected ${name}'s entry to read.`);
+    return read;
   }
+
+  /** `group`'s entry with its log replaced by something no restore reads, as anyone holding the key could plant (#336). */
+  function broken(group: RelayGroup): RelayGroup {
+    return { ...group, entry: { ...group.entry, log: 'not a log' } };
+  }
+
+  const [G1, G2, G3] = ['Riverside Tenants', 'Allotment Society', 'Oak St Co-op'].map((name) =>
+    entry(name),
+  ) as [RelayGroup, RelayGroup, RelayGroup];
 
   /** What an upload carries of `relay` when this device holds `held` and uploaded `left` before. */
   function carry(
     relay: readonly RelayGroup[],
-    held: readonly string[] = [],
-    left: readonly (readonly [string, string])[] = [],
+    held: readonly RelayGroup[] = [],
+    left: readonly (readonly [RelayGroup, string])[] = [],
   ): RelayGroup[] {
-    const tags = left.map(([groupId, author]) => groupTagFor(KEY, groupId, author));
-    return carriedGroups(relay, { held: new Set(held), left: new Set(tags), key: KEY });
+    const tags = left.map(([group, author]) => groupTagFor(KEY, group.groupId, author));
+    const holds = new Set(held.map((group) => group.groupId));
+    return carriedGroups(relay, { held: holds, left: new Set(tags), key: KEY });
   }
 
   it('carries each group this device neither holds nor uploaded before, whole and in the copy’s order', () => {
-    expect(carry([entry(G3), entry(G1)])).toEqual([entry(G3), entry(G1)]);
+    expect(carry([G3, G1])).toEqual([G3, G1]);
     expect(carry([])).toEqual([]);
   });
 
   it('leaves out one this device holds, in any state, and one it uploaded and no longer holds', () => {
-    expect(carry([entry(G1), entry(G2), entry(G3)], [G1], [[G2, ANA]])).toEqual([entry(G3)]);
+    expect(carry([G1, G2, G3], [G1], [[G2, ANA]])).toEqual([G3]);
   });
 
   it('carries a group rejoined under another author, though this device left it as the first', () => {
-    expect(carry([entry(G1, ANA_AGAIN)], [], [[G1, ANA]])).toEqual([entry(G1, ANA_AGAIN)]);
+    const rejoined = entry('Riverside Tenants', 'bea');
+
+    expect(rejoined.author).toBe(BEA);
+    expect(carry([rejoined], [], [[G1, ANA]])).toEqual([rejoined]);
+  });
+
+  it('leaves out an entry a restore wouldn’t read, and of two for one group, the first a restore reads (#336)', () => {
+    const again = entry('Allotment Society', 'bea');
+
+    expect(carry([broken(G1), G2, again, G3])).toEqual([G2, G3]);
+    expect(carry([broken(G2), again, G2])).toEqual([again]);
   });
 });
 

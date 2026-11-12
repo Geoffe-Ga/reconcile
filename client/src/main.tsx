@@ -12,6 +12,7 @@ import './styles/door.css';
 import './styles/passkey.css';
 import './styles/recovery.css';
 import './styles/coalitions.css';
+import './styles/history.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

@@ -15,6 +15,11 @@
  * last. Once the phone leaves it, it stays out of the copy for good, even
  * when the phone is erased the same day.
  *
+ * Someone else holding the backup key could plant a group entry in the copy
+ * that doesn't check out (#336). A restore leaves it out, brings back every
+ * other group and Document, and says how many it left out, and the laptop's
+ * next upload leaves it out too, so it isn't carried for good.
+ *
  * Everything runs through the app's real services on one fake relay: the
  * link's whole handshake, each device's sync loop with its daily refresh,
  * and the restore that recovery (#118) runs, `fetchRelayBackup` then
@@ -22,7 +27,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { backupIdFor } from '../crypto/relayBackup';
+import { base64url } from '../crypto/base64url';
+import { backupIdFor, sealRelayBackup } from '../crypto/relayBackup';
 import { shareChannelOf } from '../crypto/share';
 import { createRelay } from '../net/relay';
 import {
@@ -35,9 +41,9 @@ import {
 } from '../share/shareLink';
 import type { PersonalDocument } from '../store/personal';
 import { fetchRelayBackup, startRelayBackup } from '../store/relayBackup';
-import { importSnapshot } from '../store/snapshot';
+import { importSnapshot, type Restored } from '../store/snapshot';
 import { TEST_NOW, testDevice, type TestDevice } from '../test/appServices';
-import { local } from '../test/bytes';
+import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { linkDevice } from '../test/link';
@@ -106,15 +112,25 @@ async function nextDay(fake: FakeRelay, device: TestDevice): Promise<void> {
 /**
  * A new device that restores the relay copy under `key` after every other
  * device is lost, as recovery (#118) does: it reads the copy, then keeps it.
- * Its clock reads `now`.
+ * Its clock reads `now`. Returns the device and what the restore said it
+ * brought back (#336).
  */
-async function restoredFrom(fake: FakeRelay, key: Uint8Array, now = TEST_NOW): Promise<TestDevice> {
+async function restoring(
+  fake: FakeRelay,
+  key: Uint8Array,
+  now = TEST_NOW,
+): Promise<{ device: TestDevice; restored: Restored }> {
   const device = await testDevice(fake, `restored-${String(opened.length)}`, () => now);
   opened.push(device);
   const plaintext = await fetchRelayBackup(device.services.relay, key);
   if (plaintext === null) throw new Error('Expected the relay copy.');
-  await importSnapshot(device.services.store, plaintext);
-  return device;
+  const restored = await importSnapshot(device.services.store, plaintext);
+  return { device, restored };
+}
+
+/** The device {@link restoring} restores, its clock reading `now`. */
+async function restoredFrom(fake: FakeRelay, key: Uint8Array, now = TEST_NOW): Promise<TestDevice> {
+  return (await restoring(fake, key, now)).device;
 }
 
 /** The titles of `device`'s personal Documents, oldest first. */
@@ -380,3 +396,64 @@ async function erased(device: TestDevice, name: string): Promise<void> {
     };
   });
 }
+
+/**
+ * A group entry someone else holding the backup key could plant in the relay
+ * copy (#336): its id and author are well formed, so a linked device's carry
+ * reads them (#327), and nothing else in it is, so no restore can keep it.
+ */
+const PLANTED = {
+  groupId: base64url(new Uint8Array(32).fill(0x50)),
+  me: { author: base64url(new Uint8Array(32).fill(0x51)), name: 'Planted' },
+  log: 'not a log',
+};
+
+/**
+ * Puts `entry` into the relay copy under `key`, after its first group, and
+ * seals it again, as anyone else holding the key could.
+ */
+async function plant(fake: FakeRelay, key: Uint8Array, entry: unknown): Promise<void> {
+  const relay = createRelay({ fetch: fake.fetch });
+  const plaintext = await fetchRelayBackup(relay, key);
+  if (plaintext === null) throw new Error('Expected the relay copy.');
+  const copy = JSON.parse(text(plaintext)) as { groups: unknown[] };
+  const [first, ...rest] = copy.groups;
+  const groups = [first, entry, ...rest];
+  await relay.putBackup(
+    backupIdFor(key),
+    sealRelayBackup(key, utf8(JSON.stringify({ ...copy, groups }))),
+  );
+}
+
+describe('a group entry planted in the relay copy that doesn’t check out (#336)', () => {
+  it.each([
+    ['with a well-formed id and author', PLANTED],
+    ['that isn’t a group entry at all', 'not a group'],
+  ])(
+    'is left out of a restore, which brings back the rest and says so, and of the laptop’s next upload: %s',
+    async (_, entry) => {
+      const fake = createFakeRelay();
+      const { phone, laptop } = await phoneAndLaptop(fake);
+      const key = await keyOf(phone);
+      const founded = await groupIds(phone);
+      const joined = await joinedOnThePhone(fake, phone);
+      await nextDay(fake, phone);
+      await nextDay(fake, laptop);
+      const all = sorted(...founded, joined);
+      await plant(fake, key, entry);
+
+      const { device, restored } = await restoring(fake, key);
+      expect(restored).toEqual({ groups: 2, skipped: 1 });
+      expect(await groupIds(device)).toEqual(all);
+      expect(await titles(device)).toEqual(['What I stand for']);
+
+      // The laptop holds neither the planted group nor the phone's join: it carries the join, not the plant.
+      await nextDay(fake, laptop);
+      expect((await restoring(fake, key)).restored).toEqual({ groups: 2, skipped: 0 });
+      await nextDay(fake, phone);
+      const again = await restoring(fake, key);
+      expect(again.restored).toEqual({ groups: 2, skipped: 0 });
+      expect(await groupIds(again.device)).toEqual(all);
+    },
+  );
+});
