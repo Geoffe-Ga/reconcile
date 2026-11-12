@@ -99,6 +99,28 @@ export async function joinLater(
   return device;
 }
 
+/**
+ * Waits until `device` has posted everything it queued: the pass running now
+ * and the one after it, or one pass when none runs. An action sends its event
+ * in a pass the test doesn't wait for, so a test settles the device before
+ * another device reads what it just did; otherwise that device could sync
+ * before the pass has posted it.
+ */
+export async function settle(device: TestDevice): Promise<void> {
+  await act(() => device.services.sync.syncOnce());
+}
+
+/**
+ * The user-event options for whole apps, as `userEvent.setup(APP_USER)`. Its
+ * clicks skip moving the pointer onto each control first: React Aria
+ * re-renders every control the pointer enters or leaves for its hover state,
+ * which no test of the whole app reads, and that came to over a quarter of a
+ * loop test's time (#260). A test of hovering still calls `user.hover`. Only
+ * test files import Testing Library (dependency-cruiser's
+ * no-test-imports-in-prod), so each makes its own session from these.
+ */
+export const APP_USER = { skipHover: true } as const;
+
 /** One device's app, mounted in its own container with its own React id prefix. */
 export interface MountedApp {
   readonly container: HTMLElement;
@@ -180,9 +202,15 @@ export async function proposeFrom(
   await user.click(where.getByRole('button', { name: 'Propose this change' }));
 }
 
-/** Picks a score pill on an app's open ballot and sends the ballot. */
+/**
+ * Picks a score pill on an app's open ballot and sends the ballot. It waits
+ * for the pills' group, whose name is quick to read, then finds the pill
+ * once: a pill's name is its label's whole text, which a wait would read again
+ * for every pill on every render while the ballot loads (#260).
+ */
 export async function score(where: AppQueries, user: Typist, pill: string): Promise<void> {
-  await user.click(await where.findByRole('radio', { name: pill }));
+  await where.findByRole('radiogroup', { name: /^Score for version/ });
+  await user.click(where.getByRole('radio', { name: pill }));
   await user.click(where.getByRole('button', { name: /your vote$/ }));
 }
 

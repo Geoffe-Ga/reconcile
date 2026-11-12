@@ -774,6 +774,7 @@ describe('joinGroup', () => {
     const group = await stored(ben, groupId);
     const [lastWeek, thisWeek] = [mailboxAt(group, 29_000_000), mailboxAt(group, fake.minute)];
     expect(lastWeek).not.toBe(thisWeek);
+    // The join's own pass, then the one this call gets after it (#260), with nothing to post.
     expect(
       fake.requests.slice(before).map((r) => `${r.method} ${r.url.split('?')[0] ?? ''}`),
     ).toEqual([
@@ -781,6 +782,8 @@ describe('joinGroup', () => {
       `PUT /v1/mailbox/${thisWeek}`,
       `GET /v1/mailbox/${lastWeek}`,
       `GET /v1/mailbox/${thisWeek}`,
+      `GET /v1/mailbox/${thisWeek}`,
+      `GET /v1/mailbox/${lastWeek}`,
     ]);
     await ana.sync.syncOnce();
     expect(await folded(ana, groupId)).toEqual(['Ana', 'Ben']);

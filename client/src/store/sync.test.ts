@@ -475,24 +475,142 @@ describe('a sync pass', () => {
     expect((await ana.state()).title).toBe('House rules');
   });
 
-  it('shares one pass between callers that ask at the same time', async () => {
-    const fake = createFakeRelay();
-    const keys = newKeys();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), keys);
-    await ana.store.enqueue(GROUP, genesis().record);
-
-    const results = await Promise.all([ana.sync.syncOnce(), ana.sync.syncOnce()]);
-
-    expect(results).toEqual([true, true]);
-    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
-  });
-
   it('fails without throwing when the store itself fails', async () => {
     const fake = createFakeRelay();
     const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
     vi.spyOn(ana.store, 'listGroups').mockRejectedValue(new Error('closed'));
 
     expect(await ana.sync.syncOnce()).toBe(false);
+  });
+});
+
+/**
+ * A relay that, once armed, holds every request after its next PUT until the
+ * test lets them go: a pass held just after it has posted its outbox. `held`
+ * counts the requests waiting now.
+ */
+function holdAfterPut(fake: FakeRelay) {
+  let armed = true;
+  let gate: Promise<void> | null = null;
+  let letGo = (): void => undefined;
+  let held = 0;
+  const fetch: Fetch = async (input, init) => {
+    if (gate !== null) {
+      held += 1;
+      await gate;
+      held -= 1;
+    }
+    const response = await fake.fetch(input, init);
+    if (armed && init?.method === 'PUT') {
+      armed = false;
+      gate = new Promise((resolve) => {
+        letGo = resolve;
+      });
+    }
+    return response;
+  };
+  return {
+    relay: createRelay({ fetch }),
+    held: () => held,
+    /** Lets every held request go, and holds none until armed again. */
+    release: () => {
+      gate = null;
+      letGo();
+    },
+    /** Holds the requests after the next PUT. */
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
+describe('calls made while a pass runs (#260)', () => {
+  /** Ana's device on a relay that holds her first pass once its outbox is posted, counting complete passes. */
+  async function heldAna() {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const gate = holdAfterPut(fake);
+    const ana = await device('ana', gate.relay, keys);
+    const afterPass = vi.fn(() => Promise.resolve());
+    const sync = createSync({
+      store: ana.store,
+      relay: gate.relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+      afterPass,
+    });
+    opened.push(sync);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+    const first = sync.syncOnce();
+    await expect.poll(() => gate.held()).toBe(1);
+    return { fake, keys, gate, ana, sync, afterPass, founding, first };
+  }
+
+  it('sends an event queued after the running pass posted its outbox, before the call resolves', async () => {
+    const { fake, keys, gate, ana, sync, founding, first } = await heldAna();
+
+    await ana.store.enqueue(GROUP, proposal(founding, 'Quiet after 11pm.').record);
+    const second = sync.syncOnce();
+    gate.release();
+
+    expect(await second).toBe(true);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'proposal:']);
+    expect((await ana.group()).outbox).toEqual([]);
+    expect(await first).toBe(true);
+  });
+
+  it('runs one trailing pass for every call made meanwhile, after the running one and never beside it', async () => {
+    const { gate, sync, afterPass, first } = await heldAna();
+
+    const during = [sync.syncOnce(), sync.syncOnce(), sync.syncOnce()];
+    // A pass started beside the held one would reach the relay and be held too.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(gate.held()).toBe(1);
+    expect(during[1]).toBe(during[0]);
+    expect(during[2]).toBe(during[0]);
+    gate.release();
+
+    expect(await Promise.all([first, ...during])).toEqual([true, true, true, true]);
+    expect(afterPass).toHaveBeenCalledTimes(2);
+    expect(await sync.syncOnce()).toBe(true);
+    expect(afterPass).toHaveBeenCalledTimes(3);
+  });
+
+  it('starts no trailing pass once halted, and its callers get false', async () => {
+    const { fake, gate, sync, afterPass, first } = await heldAna();
+
+    const trailing = sync.syncOnce();
+    const halting = sync.halt();
+    gate.release();
+    await halting;
+    const requests = fake.requests.length;
+
+    expect(await trailing).toBe(false);
+    expect(await first).toBe(true);
+    expect(fake.requests.length).toBe(requests);
+    expect(afterPass).not.toHaveBeenCalled();
+  });
+
+  it('waits, when halted, for a trailing pass already running', async () => {
+    const { fake, keys, gate, ana, sync, founding } = await heldAna();
+    const trailing = sync.syncOnce();
+    await ana.store.enqueue(GROUP, proposal(founding, 'Quiet after 11pm.').record);
+    gate.arm();
+    gate.release();
+    await expect.poll(() => gate.held()).toBe(1);
+
+    let halted = false;
+    const halting = sync.halt().then(() => {
+      halted = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(halted).toBe(false);
+    gate.release();
+    await halting;
+
+    expect(await trailing).toBe(true);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'proposal:']);
   });
 });
 

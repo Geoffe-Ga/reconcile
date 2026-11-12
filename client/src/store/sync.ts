@@ -314,16 +314,22 @@ export interface SyncOptions {
 
 /** The running sync loop. */
 export interface Sync extends Poller {
-  /** Run one pass over every group, or join the one running; true when every group synced. */
+  /**
+   * Run one pass over every group; true when every group synced. A call made
+   * while a pass runs gets the one pass that follows it (#260), which every
+   * call made meanwhile shares, so what was queued after the running pass
+   * posted its outbox goes out now, not at the next poll.
+   */
   syncOnce(): Promise<boolean>;
   /** Whether the last pass succeeded (true before the first). */
   isReachable(): boolean;
   /** Hear when {@link Sync.isReachable} changes; returns the way to stop. */
   subscribe(listener: () => void): () => void;
   /**
-   * Stop for good (#78): no pass starts again, even on `start`, and a pass
-   * already running stops before its next group, running no chat bot for the
-   * group it finishes. Resolves once it has.
+   * Stop for good (#78): no pass starts again, even on `start` or one waiting
+   * to follow the running pass, and a pass already running stops before its
+   * next group, running no chat bot for the group it finishes. Resolves once
+   * it has.
    */
   halt(): Promise<void>;
 }
@@ -336,6 +342,8 @@ export function createSync(options: SyncOptions): Sync {
   let reachable = true;
   let halted = false;
   let inFlight: Promise<boolean> | null = null;
+  // The pass to run once the one in flight ends, for every call made meanwhile (#260).
+  let trailing: Promise<boolean> | null = null;
   // Each group as the coalitions' part of a pass last read it (#114), so an unchanged one isn't folded again.
   const scanned = new Map<string, string>();
   // Each group's fold as the rooms last read it (#125), for the same reason.
@@ -671,12 +679,29 @@ export function createSync(options: SyncOptions): Sync {
     return ok;
   }
 
-  function syncOnce(): Promise<boolean> {
-    if (halted) return Promise.resolve(false);
-    inFlight ??= pass().finally(() => {
+  /** Starts a pass, in flight until it ends. */
+  function start(): Promise<boolean> {
+    inFlight = pass().finally(() => {
       inFlight = null;
     });
     return inFlight;
+  }
+
+  /**
+   * A pass now, or, while one runs, the one pass that follows it (#260): the
+   * running pass may have posted the outbox before this call's event was
+   * queued. Passes never overlap, and none follows once halted.
+   */
+  function syncOnce(): Promise<boolean> {
+    if (halted) return Promise.resolve(false);
+    if (trailing !== null) return trailing;
+    if (inFlight === null) return start();
+    const follow = (): Promise<boolean> => {
+      trailing = null;
+      return halted ? Promise.resolve(false) : start();
+    };
+    trailing = inFlight.then(follow, follow);
+    return trailing;
   }
 
   const poller = createPoller(syncOnce, options.timers);
