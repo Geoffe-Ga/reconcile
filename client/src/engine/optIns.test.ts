@@ -6,6 +6,7 @@ import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { LEVELS } from './capabilities';
 import {
+  doorIn,
   effectiveOptIn,
   effectiveOptIns,
   isOff,
@@ -297,6 +298,14 @@ describe('rulesChange and withChange', () => {
     if (on === null || open === null) throw new Error('Expected two changes.');
     expect(withChange(OFF, on)).toEqual({ chatBot: bot(W1), frontDoor: false });
     expect(withChange(OFF, open)).toEqual({ chatBot: null, frontDoor: DOOR });
+  });
+
+  it('finds the door a change carries, with its secrets, and none in a close or a bot change (#288)', () => {
+    expect(doorIn(rulesChange(OFF, 'frontDoor', DOOR))).toBe(DOOR);
+    expect(doorIn(rulesChange({ ...OFF, frontDoor: DOOR }, 'frontDoor', ROTATED))).toBe(ROTATED);
+    expect(doorIn(rulesChange({ ...OFF, frontDoor: DOOR }, 'frontDoor', false))).toBeNull();
+    expect(doorIn(rulesChange(OFF, 'chatBot', bot(W1)))).toBeNull();
+    expect(doorIn(null)).toBeNull();
   });
 });
 

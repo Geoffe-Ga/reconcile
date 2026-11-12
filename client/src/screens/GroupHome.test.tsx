@@ -870,6 +870,16 @@ describe('GroupHome: the group’s rules (#117)', () => {
     expect(link).toHaveTextContent('Chat bot: Off · Front door: Open');
     expect(await axeViolations()).toEqual([]);
   });
+
+  it('says the front door closed when a member left, until a door opens again (#288)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const door = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, door, 4);
+    log.leave('Cal');
+    renderHome(log.state(), { me: authorOf('ben') });
+    const link = within(section('Rules')).getByRole('link', { name: /Chat bot and front door/ });
+    expect(link).toHaveTextContent('Chat bot: Off · Front door: Closed when a member left');
+  });
 });
 
 describe('GroupHome: the front door’s Applications (#121)', () => {

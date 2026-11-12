@@ -838,6 +838,8 @@ export const messages = {
     homeHeading: 'Rules',
     homeLink: 'Chat bot and front door',
     homeSummary: (bot: string, door: string) => `Chat bot: ${bot} · Front door: ${door}`,
+    /** Group home's word for the front door once a membership's end closed it (#288). */
+    closedByLeave: 'Closed when a member left',
     /** What each change does, as its ballot is headed and its title starts. */
     motions: {
       chatBot: {
@@ -887,6 +889,18 @@ export const messages = {
     narrowedBallot: {
       before: 'Steward',
       after: 'turned this off at once. It stays off while your group votes.',
+    },
+    /** Group rules' front door, once a membership's end closed it (#288). */
+    doorClosedByLeave:
+      'The front door closed because a member left, and they still have its keys. A new Proposal to open it reopens it, with new keys and a new link.',
+    /**
+     * A front door Proposal that was open when a member left (#288): what
+     * passing it does, after its line, and its pass, which opens no door.
+     */
+    exposed: {
+      line: 'A member left while this vote was open, and they have the keys it carries, so if it passes the front door stays closed. A new Proposal to open it reopens it.',
+      passed:
+        'This passed, but the front door stays closed: a member left while the vote was open, and they have its keys. A new Proposal to open it reopens it.',
     },
     composerPageTitle: 'Propose a rules change',
     nowTitle: (motion: string) => `${motion} now`,
