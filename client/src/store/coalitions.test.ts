@@ -15,6 +15,7 @@ import { fold, type LogRecord } from '../engine/fold';
 import {
   COALITION_STATEMENT,
   Logs,
+  NESTED_STATEMENTS,
   NestedLogs,
   seatKey,
   seatSecret,
@@ -30,6 +31,7 @@ import {
   heldCoalitions,
   newEntry,
   outsideFor,
+  retireCoalitionsOf,
   settleCoalitions,
   stillSyncs,
 } from './coalitions';
@@ -674,5 +676,88 @@ describe('coalitionKeys (#122)', () => {
     logs.wrap(seated + 1, 'kim', 'C');
     const after = keysAt().get(ENTRY);
     expect(base64url(after?.inner ?? new Uint8Array())).toBe(testSecret('inner'));
+  });
+});
+
+describe('retiring the coalitions a removed group alone held (#115, #122)', () => {
+  /** Keeps the coalition `name`'s entry on `store`, with `records` as its log. */
+  async function keepCoalition(store: Store, name: string, records: readonly LogRecord[]) {
+    const secret = fromBase64url(testSecret(name));
+    const groupId = deriveCoalitionEntryId(secret);
+    await store.addGroup({
+      kind: 'coalition',
+      groupId,
+      secret,
+      signingKey: testKeys('cal').secretKey,
+      me: { author: authorOf('cal'), name: 'cal' },
+    });
+    if (records.length > 0) {
+      const pull = { records: [...records], relayNow: R + 100, instance: 'i', lastSyncAt: 1 };
+      await store.applyPull(groupId, pull, eventIdOf);
+    }
+    return groupId;
+  }
+
+  /**
+   * Group A in Eastside Housing (C), C formed with its sealed seat in Metro
+   * Renters (D), and both coalitions' entries on `store`; and group B in C
+   * too, its target carrying C's inner or not, as `b` says. Returns the
+   * entries' ids.
+   */
+  async function nestedOn(store: Store, b: 'none' | 'inner' | 'no-inner') {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', NESTED_STATEMENTS.C);
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    if (b !== 'none') {
+      logs.group('B', R, ['ana']);
+      const target = {
+        kind: 'reconcile',
+        secret: testSecret('C'),
+        seat: base64url(seatSecret('B')),
+        ...NESTED_STATEMENTS.C,
+        ...(b === 'inner' ? { inner: testSecret('innerC') } : {}),
+      } as const;
+      logs.add('B', R + 1, 'ana', { type: 'proposal', body: { target, title: 'In', why: 'W' } });
+      await keepGroup(store, 'B', 'ana', logs.logs.B ?? []);
+    }
+    const at = logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee'], NESTED_STATEMENTS.C);
+    logs.sealedInto('C', at, 'cal', 'D', NESTED_STATEMENTS.D);
+    const c = await keepCoalition(store, 'C', logs.logs.C ?? []);
+    const d = await keepCoalition(store, 'D', []);
+    return { c, d };
+  }
+
+  /** Removes group A from `store`'s member, as `settleRemoval` does, and retires what it alone held. */
+  async function removeA(store: Store) {
+    const removed = await store.getGroup('A');
+    if (removed === undefined) throw new Error('Expected group A.');
+    await store.markArchived('A', 'removed');
+    await retireCoalitionsOf(store, removed);
+  }
+
+  it('retires the coalitions above that only its coalitions reached, as well as its own', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'none');
+    await removeA(store);
+    expect((await store.getGroup(c))?.archived).toEqual({ reason: 'removed' });
+    expect((await store.getGroup(d))?.archived).toEqual({ reason: 'removed' });
+  });
+
+  it('keeps every coalition another group on the device still reaches, above it included', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'inner');
+    await removeA(store);
+    expect((await store.getGroup(c))?.archived).toBeUndefined();
+    expect((await store.getGroup(d))?.archived).toBeUndefined();
+  });
+
+  it('keeps a coalition above one another group still holds, though it holds no inner there yet (#313)', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'no-inner');
+    await removeA(store);
+    // B reaches D again once a wrap gives it C's inner, so D's entry stays to sync then.
+    expect((await store.getGroup(c))?.archived).toBeUndefined();
+    expect((await store.getGroup(d))?.archived).toBeUndefined();
   });
 });

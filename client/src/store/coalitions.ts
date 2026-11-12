@@ -347,26 +347,37 @@ export async function ensureEntries(
   );
 }
 
-/** The store id of the coalition entry for `secret`, in base64url. */
-function entryIdOf(secret: string): string {
-  return deriveCoalitionEntryId(fromBase64url(secret));
+/**
+ * Whether the coalition `id` stays reached on this device without the
+ * removed group: another group holds it, or a coalition below it that one
+ * holds, whose `inner` may still arrive in a wrap (#313), carries its seat.
+ */
+function stillReached(
+  id: string,
+  own: ReadonlyMap<string, CoalitionKeys>,
+  kept: ReadonlyMap<string, CoalitionKeys>,
+): boolean {
+  return kept.has(id) || (own.get(id)?.from ?? []).some(({ holder }) => kept.has(holder));
 }
 
 /**
  * Archives the coalition entries that `removed`, a group a vote removed this
  * device's member from, alone held here (#115): their copy reads nothing new,
- * the coalition's log included, so no request names its mailboxes again. An
- * entry another of their groups on this device still holds keeps syncing.
+ * the coalition's log included, so no request names its mailboxes again. So
+ * are the coalitions above them that only they reached (#122). An entry
+ * another of their groups on this device still holds, or reaches through a
+ * coalition it holds, keeps syncing.
  */
 export async function retireCoalitionsOf(store: Store, removed: Group): Promise<void> {
-  const own = heldSecrets(foldGroup(removed)).map(entryIdOf);
-  if (own.length === 0) return;
+  const entries = await store.listCoalitions();
+  const own = coalitionKeys([removed], entries);
+  if (own.size === 0) return;
   const others = (await store.listGroups()).filter(
     (group) => group.groupId !== removed.groupId && group.archived?.reason !== 'removed',
   );
-  const kept = new Set(others.flatMap((group) => heldSecrets(foldGroup(group)).map(entryIdOf)));
-  for (const id of own) {
-    if (kept.has(id) || (await store.getGroup(id)) === undefined) continue;
+  const kept = coalitionKeys(others, entries);
+  for (const id of own.keys()) {
+    if (stillReached(id, own, kept) || (await store.getGroup(id)) === undefined) continue;
     await store.markArchived(id, 'removed');
   }
 }
