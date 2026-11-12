@@ -10,10 +10,14 @@
  *
  * 1. **The page.** While the door is open in effect, the device posts its
  *    page when what it says (the name, the excerpt, the shown count) differs
- *    from the newest copy, or that copy is 7 days old (`page.ts`). Every
- *    other door the group has had, one rotated away, closed, narrowed or
- *    dissolved (#108), gets a closed page, `{v: 1, open: false}`, once, while
- *    its newest copy still says open.
+ *    from the newest copy, or that copy is 7 days old (`page.ts`). The
+ *    standing door a steward's narrowing holds shut, which the group may yet
+ *    reopen, gets a closed page, `{v: 1, open: false}`, once, while its newest
+ *    copy still says open. Every other door the group has had, one rotated
+ *    away, closed by a vote or by a membership's end (#288), or in a group
+ *    that dissolved (#108), never opens with its keys again, so it gets a
+ *    final page, `{v: 1, open: false, final: true}`, which readers let no
+ *    later copy outrank, posted again whenever it is 7 days old.
  * 2. **The inbox.** While the door is open in effect, the device of a member
  *    who may invite reads its inbox (`inbox.ts`). Once it's off, no device
  *    reads it.
@@ -37,6 +41,8 @@ import { readInbox } from './inbox';
 import {
   type DoorPage,
   encodePage,
+  FINAL,
+  isFinal,
   PAGE_VERSION,
   pageFor,
   publishPage,
@@ -62,7 +68,7 @@ export interface DoorKeeper {
   replies(): Promise<void>;
 }
 
-/** A closed page: every door the group no longer has open shows it. */
+/** A closed page: the standing door shows it while a steward's narrowing holds it shut. */
 export const CLOSED: DoorPage = { v: PAGE_VERSION, open: false };
 
 /** The door open in effect, unless the group has dissolved (#108). */
@@ -74,7 +80,10 @@ export function openDoor(state: GroupState): FrontDoor | null {
 
 /**
  * Every door the group has had stand: each passed front door change's door,
- * once by its key, oldest first. The standing door is the last of them.
+ * once by its key, oldest first. The standing door is the last of them. A
+ * door whose Proposal passed after a membership end exposed it never stood
+ * (#288), but whoever left knows its address, so it is listed too, and its
+ * page closes for good.
  */
 export function doorsThatStood(state: GroupState): FrontDoor[] {
   const doors = new Map<string, FrontDoor>();
@@ -88,7 +97,20 @@ export function doorsThatStood(state: GroupState): FrontDoor[] {
   return [...doors.values()];
 }
 
-/** The pages to keep now: the open door's, and a closed one for each other door that stood. */
+/**
+ * Whether `door` may open again with its own keys: it is the standing door of
+ * a group that goes on, which only a steward's narrowing holds shut. Any other
+ * door that stood is closed for good (#288).
+ */
+export function mayReopen(state: GroupState, door: FrontDoor): boolean {
+  const standing = state.rules.optIns.frontDoor;
+  return state.dissolved === null && standing !== false && standing.sign === door.sign;
+}
+
+/**
+ * The pages to keep now: the open door's, and for each other door that stood
+ * a closed one while it may reopen, else a final one ({@link mayReopen}).
+ */
 export function pagesDue(
   state: GroupState,
   plainText: DoorKeeperOptions['plainText'],
@@ -96,7 +118,7 @@ export function pagesDue(
   const open = openDoor(state);
   const closed = doorsThatStood(state)
     .filter((door) => door.sign !== open?.sign)
-    .map((door) => [door, CLOSED] as const);
+    .map((door) => [door, mayReopen(state, door) ? CLOSED : FINAL] as const);
   return open === null ? closed : [[open, pageFor(state, open, plainText)], ...closed];
 }
 
@@ -111,9 +133,9 @@ export function createDoorKeeper(options: DoorKeeperOptions): DoorKeeper {
     const held = current.get(door.sign);
     if (held?.page === text && at < held.until) return;
     const outcome = await publishPage({ relay, seal }, door, page, at);
-    // A closed page needs posting only once; an open one again once its copy comes due.
+    // A closed page needs posting only once; an open or final one again once its copy comes due.
     const since = outcome.kind === 'posted' ? at : outcome.received;
-    const until = page.open ? since + REFRESH_MINUTES : Infinity;
+    const until = page.open || isFinal(page) ? since + REFRESH_MINUTES : Infinity;
     current.set(door.sign, { page: text, until });
   }
 

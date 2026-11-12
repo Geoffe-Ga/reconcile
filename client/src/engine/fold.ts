@@ -42,9 +42,11 @@
  * Proposal's counts and a commitment to its ballots (#111): with the ballots
  * held, the fold checks it against them, and once a device has cleared them,
  * the Proposal closes, counts and decides by the result it reads ahead,
- * closing where the result says its closing ballot came (#289). The fold is
- * pure: no I/O, no clock, no randomness, so every device that folds the same
- * records builds the same state.
+ * closing where the result says its closing ballot came (#289). A membership
+ * that ends in a group closes its front door at that record, and no door
+ * whose secrets someone who has left could read opens again (#288). The fold
+ * is pure: no I/O, no clock, no randomness, so every device that folds the
+ * same records builds the same state.
  */
 import { isUsableKxKey } from '../crypto/box';
 import { verifyInviteToken } from '../crypto/invite';
@@ -151,7 +153,11 @@ import {
 import { type DoorInvite, mayRecordInvite } from './frontDoor';
 import { isOpenAt } from './open';
 import {
+  type DoorClosure,
+  doorIn,
   effectiveOptIns,
+  type FrontDoor,
+  isFrontDoor,
   isOptIn,
   mayProposeRules,
   type Narrowing,
@@ -467,7 +473,10 @@ export interface Focus {
  * (#112): each valid `dispatch` at its receipt, and each passed Proposal's at
  * its close, in close order, ahead of any record received from that minute
  * on. `doorInvites` holds each invite a member sent from the front door, the
- * first valid `door-invited` per application, in relay order (#121). `epoch`
+ * first valid `door-invited` per application, in relay order (#121).
+ * `doorClosure` is the `leave` or `remove` that closed the front door, while
+ * it stays closed, and `exposedDoors` the front door Proposals that were open
+ * when a membership ended, whose pass opens no door (#288). `epoch`
  * is the group key's epoch: 0 at genesis, then one more for each canonical
  * key change, which `rotations` keeps in order (#98). `rotationDue` is true
  * once a membership has ended since the last canonical key change, or
@@ -512,6 +521,8 @@ export interface GroupState {
   readonly chatThreads: readonly ChatThread[];
   readonly dispatches: readonly Dispatch[];
   readonly doorInvites: readonly DoorInvite[];
+  readonly doorClosure: DoorClosure | null;
+  readonly exposedDoors: readonly string[];
   readonly epoch: number;
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
@@ -598,7 +609,10 @@ interface DocumentAt {
  * `dispatched` those of the closed Proposals carrying a Dispatch that
  * `dispatches` already reflects (#112). `founded` holds the Documents
  * genesis founded, before any pass (#92), and `document` the Documents as the
- * latest Proposal found them, kept until another closes.
+ * latest Proposal found them, kept until another closes. `exposed` holds
+ * every front door secret, `sign` and `box`, that someone who has left could
+ * read, and `carried` those the records of this epoch carried since the last
+ * membership end, which the next one exposes (#288).
  */
 interface Draft {
   group: string | null;
@@ -621,6 +635,10 @@ interface Draft {
   readonly chatThreads: ChatThread[];
   readonly dispatches: Dispatch[];
   readonly doorInvites: DoorInvite[];
+  doorClosure: DoorClosure | null;
+  readonly exposedDoors: string[];
+  readonly exposed: Set<string>;
+  readonly carried: Set<string>;
   epoch: number;
   readonly rotations: Rotation[];
   rotationDue: boolean;
@@ -1196,12 +1214,13 @@ function applySteward(
  * standing value it would replace, which the fold records as `from`, and it
  * runs the window its proposer chose within that class's bounds, or the
  * class default (#106): 14 to 28 days to turn one on. Like a steward
- * Proposal, its one version has no text.
+ * Proposal, its one version has no text. A front door it carries must be
+ * fresh ({@link doorIsFresh}, #288).
  */
 function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: Receipt): boolean {
   if (!fieldsAreValid(body) || !mayProposeRules(draft, author, body.target)) return false;
   const target = rulesChange(draft.rules.optIns, body.target.optIn, body.target.value);
-  if (target === null) return false;
+  if (target === null || !doorIsFresh(draft, doorIn(target))) return false;
   const cls = targetClass(draft, body);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
@@ -1214,6 +1233,66 @@ function applyRules(draft: Draft, body: RulesProposalBody, author: string, at: R
     versions: [{ id: at.id, author, text: '' }],
   });
   return true;
+}
+
+/**
+ * Whether a front door a rules Proposal carries may stand (#288): nobody who
+ * has left could read either of its secrets ({@link noteDoor}). A change that
+ * carries no door passes.
+ */
+function doorIsFresh(draft: Draft, door: FrontDoor | null): boolean {
+  return door === null || (!draft.exposed.has(door.sign) && !draft.exposed.has(door.box));
+}
+
+/** The front door a record's rules Proposal carries, whether the fold applies it or not, or null. */
+function doorCarried(parsed: ParsedEvent | null): FrontDoor | null {
+  const event = parsed?.event;
+  if (event?.type !== 'proposal' || !isRulesProposal(event.body)) return null;
+  const { optIn, value } = event.body.target;
+  return optIn === 'frontDoor' && isFrontDoor(value) ? value : null;
+}
+
+/**
+ * Notes the secrets of a front door a record carries before it folds (#288),
+ * whether the fold then applies it or not: anyone who holds the key it was
+ * sealed under can read them. A record read from an earlier epoch's mailbox
+ * after the key changed (#98), such as a late writer's, or one read while a
+ * key change is due, was sealed under a key someone who has left still
+ * holds, so its secrets are exposed at once, and neither it nor the copy its
+ * author's device posts again to the new mailbox opens a door. Any other
+ * record's are carried until the next membership end exposes them. One from
+ * a later epoch, read before that epoch began, was sealed under a key no one
+ * who has left holds.
+ */
+function noteDoor(draft: Draft, { epoch, parsed }: Read): void {
+  const door = doorCarried(parsed);
+  if (door === null || epoch > draft.epoch) return;
+  const into = epoch < draft.epoch || draft.rotationDue ? draft.exposed : draft.carried;
+  into.add(door.sign).add(door.box);
+}
+
+/**
+ * A membership has ended in a group (#98, #288): the key change becomes due,
+ * and whoever left keeps every front door secret the log has carried. So each
+ * is exposed, each front door Proposal still open is listed in
+ * `exposedDoors`, whose pass then opens nothing, and a door that stands
+ * closes here, on every device, at this record. Only a new opening Proposal,
+ * made once the key has changed and carrying fresh secrets, opens it again.
+ */
+function endMembership(draft: Draft, at: Receipt): void {
+  draft.rotationDue = true;
+  for (const secret of draft.carried) draft.exposed.add(secret);
+  draft.carried.clear();
+  for (const proposal of draft.proposals) {
+    const listed = draft.exposedDoors.includes(proposal.id);
+    const door = doorIn(rulesChangeOf(proposal));
+    if (door !== null && !listed && isOpenAt(proposal, at.received)) {
+      draft.exposedDoors.push(proposal.id);
+    }
+  }
+  if (draft.rules.optIns.frontDoor === false) return;
+  draft.rules = { ...draft.rules, optIns: { ...draft.rules.optIns, frontDoor: false } };
+  draft.doorClosure = { id: at.id, seq: at.seq, received: at.received };
 }
 
 /** True while a priority vote is open at relay minute `received`. A group has at most one. */
@@ -2399,16 +2478,18 @@ function advanceSeats(draft: Draft): void {
 /**
  * Brings the standing opt-ins up to `draft.at` (#117): each rules Proposal
  * that has passed and closed by then sets its value, once, in order of close
- * time and then relay order. A narrowing needs nothing here: it ends when its
+ * time and then relay order, except one a membership end exposed while it was
+ * open, which opens no door (#288). A door that opens ends any closure by a
+ * membership end. A narrowing needs nothing here: it ends when its
  * off-Proposal closes. Runs before each event, beside {@link advanceSeats}.
  */
 function advanceOptIns(draft: Draft): void {
   const rules = (proposal: OpenProposal) => proposal.target.kind === 'rules';
   for (const { proposal, passed } of newlyClosed(draft, draft.ruled, rules)) {
     const change = rulesChangeOf(proposal);
-    if (change !== null && passed) {
-      draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
-    }
+    if (change === null || !passed || draft.exposedDoors.includes(proposal.id)) continue;
+    draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
+    if (doorIn(change) !== null) draft.doorClosure = null;
   }
 }
 
@@ -2757,6 +2838,10 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatThreads: [],
     dispatches: [],
     doorInvites: [],
+    doorClosure: null,
+    exposedDoors: [],
+    exposed: new Set(),
+    carried: new Set(),
     epoch: 0,
     rotations: [],
     rotationDue: false,
@@ -2793,7 +2878,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const documents = applyPasses(draft.founded, proposals);
   const { group, rules, name, chat, members, former, at, stewards, suspensions } = draft;
   const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
-  const { dispatches, doorInvites, epoch, rotations, rotationDue } = draft;
+  const { dispatches, doorInvites, doorClosure, exposedDoors, epoch, rotations, rotationDue } =
+    draft;
   const state = {
     group,
     rules,
@@ -2816,6 +2902,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatThreads,
     dispatches,
     doorInvites,
+    doorClosure,
+    exposedDoors,
     epoch,
     rotations,
     rotationDue,
@@ -3004,20 +3092,26 @@ function advanceTo(draft: Draft, received: number, seq: number): void {
  * A record read from a mailbox of another epoch than the group's now, such as
  * a stale invite's join or a late writer's Proposal after a key change (#98),
  * changes nothing at all: not relay time, and not the event ids seen, so the
- * copy its author posts again to the new mailbox folds once. Otherwise relay
- * time moves on, whatever the record holds, until the group dissolves (#108),
- * and the removals, seats, opt-ins and carried Dispatches catch up to it
- * before the event is checked. A repeated event id is ignored.
+ * copy its author posts again to the new mailbox folds once. Any front door
+ * a record carries is noted first, whether it folds or not ({@link noteDoor},
+ * #288). Otherwise relay time moves on, whatever the record holds, until the
+ * group dissolves (#108), and the removals, seats, opt-ins and carried
+ * Dispatches catch up to it before the event is checked. A repeated event id
+ * is ignored. A membership that ends in a group makes a key change due and
+ * closes the front door ({@link endMembership}).
  */
 function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
   const { seq, received, epoch, parsed } = read;
+  noteDoor(draft, read);
   if (epoch !== draft.epoch) return false;
   if (!hasEnded(draft)) advanceTo(draft, received, seq);
   if (parsed === null) return false;
   const { event, id } = parsed;
   const applied = !seen.has(id) && applyEvent(draft, event, { id, seq, received });
   seen.add(id);
-  // A coalition has no group key, so a leave there ends only that participant (#100).
-  if (applied && endsMembership(event) && draft.coalition === null) draft.rotationDue = true;
+  // A coalition has no group key or front door, so a leave there ends only that participant (#100).
+  if (applied && endsMembership(event) && draft.coalition === null) {
+    endMembership(draft, { id, seq, received });
+  }
   return applied;
 }
