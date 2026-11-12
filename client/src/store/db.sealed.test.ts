@@ -630,12 +630,12 @@ describe('an unlock whose move into the vault fails', () => {
 });
 
 describe('Restore on the unlock screen, with shares and sent applications', () => {
-  it('gives a Document whose share went with the vault the file’s share, or none, and forgets sent applications', async () => {
+  it('gives a Document whose share went with the vault the file’s share, paused, or none, and forgets sent applications', async () => {
     const store = await lockedDevice();
     const heard: string[] = [];
     store.subscribe((changed) => heard.push(changed));
     const fileShare = shareOf(10, 4);
-    // The file's copy is older, so the device's words stay, with the file's share.
+    // The file's copy is older, so the device's words stay, with the file's share, paused (#328).
     const fileCopy: PersonalDocument = {
       ...SHARED,
       text: 'Older.',
@@ -648,7 +648,7 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
     expect(await store.readVault()).toBeNull();
     const shared = await store.getPersonal(SHARED.id);
     expect(comparableDocument(shared)).toEqual(
-      comparableDocument({ ...SHARED, share: { ...fileShare, pending: true } }),
+      comparableDocument({ ...SHARED, share: { ...fileShare, pending: true, paused: true } }),
     );
     expect(await store.getPersonal(OTHER_SHARED.id)).toEqual(textOnly(OTHER_SHARED));
     expect(await store.getPersonal(PLAIN_DOC.id)).toEqual(PLAIN_DOC);
@@ -656,7 +656,7 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
     expect(heard).toContain(SENT_CHANGED);
   });
 
-  it('takes the file’s later copy whole, and leaves a plain device’s shares and applications alone', async () => {
+  it('takes the file’s later copy, its share paused, and leaves a plain device’s shares and applications alone', async () => {
     const locked = await lockedDevice();
     const later: PersonalDocument = {
       ...SHARED,
@@ -665,8 +665,9 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
       share: shareOf(10, 6),
     };
     await locked.replaceGroups([], [later]);
+    // Its share is the file's, so it comes back paused (#328).
     expect(comparableDocument(await locked.getPersonal(SHARED.id))).toEqual(
-      comparableDocument(later),
+      comparableDocument({ ...later, share: { ...shareOf(10, 6), paused: true } }),
     );
     locked.close();
 
