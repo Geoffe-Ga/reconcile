@@ -30,8 +30,10 @@
  *
  * No request carries the seed, the secret key, a share or the backup key:
  * the relay sees the mailbox id, the padded blobs and the backup id the key
- * names. The seed and secret key stay on the device record, outside the
- * vault (#95), from start to restore.
+ * names. The seed and secret key stay on the device record from start to
+ * restore, sealed in the passkey vault on a device that has one (#95), which
+ * a new device may make at the offer after the pilot notice or during the
+ * wait (`store/recoverRequest.ts`).
  */
 import { BackupUnreadable } from '../crypto/backup';
 import { base64url } from '../crypto/base64url';
