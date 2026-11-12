@@ -37,6 +37,7 @@ import {
 } from '../test/coalitionDevices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { APP_USER } from '../test/members';
 
 freshIndexedDBPerTest();
 
@@ -112,7 +113,7 @@ async function motionIn(device: TestDevice, groupId: string, motion: string): Pr
 
 describe('a coalition’s mission statement through the normal loop', SLOW, () => {
   it('opens Ana’s change in both groups, and changes the Document for everyone once its pass is final', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const fake = createFakeRelay();
     const { ana, ben, cy, riverside, oak, coalition } = await formed(fake);
     const before = await firstSection(ben);
@@ -128,11 +129,13 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
     const documents = screen.getByRole('region', { name: 'Documents' });
     await user.click(within(documents).getByRole('link', { name: /Mission statement/ }));
     await user.click(await screen.findByRole('button', { name: 'Propose a change to section 1' }));
-    await user.type(await screen.findByRole('textbox', { name: 'Title' }), CHANGE.title);
-    await user.type(screen.getByRole('textbox', { name: 'Why' }), CHANGE.why);
-    const text = screen.getByRole('textbox', { name: 'New text' });
-    await user.clear(text);
-    await user.type(text, CHANGE.text);
+    // Pasted, not typed key by key: the composer's typing isn't under test here (#260).
+    await user.click(await screen.findByRole('textbox', { name: 'Title' }));
+    await user.paste(CHANGE.title);
+    await user.click(screen.getByRole('textbox', { name: 'Why' }));
+    await user.paste(CHANGE.why);
+    await user.clear(screen.getByRole('textbox', { name: 'New text' }));
+    await user.paste(CHANGE.text);
     await user.click(screen.getByRole('button', { name: 'Propose this change' }));
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Eastside Housing' }),
@@ -259,7 +262,7 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
   });
 
   it('never shows one group another group’s ballots, notes, counts or voters', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const fake = createFakeRelay();
     const { ana, ben, cy, riverside, oak, coalition } = await formed(fake);
     const motion = await anaProposes(ana, coalition);
