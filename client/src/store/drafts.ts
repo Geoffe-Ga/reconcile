@@ -29,6 +29,11 @@ export interface Draft {
   readonly dispatch?: DraftDispatch;
   /** A new Document's title (#92), as typed, in a new-Document Proposal's draft alone. */
   readonly documentTitle?: string;
+  /**
+   * Where a move puts its section (#103), in a move's draft alone: the Atom it
+   * would follow, or null for first; absent until one is chosen.
+   */
+  readonly moveAfter?: string | null;
 }
 
 /** A draft's Dispatch (#112): its title and text, as typed. */
@@ -48,17 +53,18 @@ function hasStrings(value: unknown, keys: readonly string[]): value is Record<st
 
 /**
  * True for a value shaped like a {@link Draft}: four strings, nothing
- * missing, any window a number, any Dispatch a title and a text (#112), and
- * any new Document's title a string (#92).
+ * missing, any window a number, any Dispatch a title and a text (#112), any
+ * new Document's title a string (#92), and any move's place a string or null
+ * (#103).
  */
 export function isDraft(value: unknown): value is Draft {
   if (!hasStrings(value, ['title', 'why', 'text', 'link'])) return false;
-  const { window, dispatch, documentTitle } = value;
+  const { window, dispatch, documentTitle, moveAfter } = value;
   const windowFits = window === undefined || typeof window === 'number';
   const titleFits = documentTitle === undefined || typeof documentTitle === 'string';
-  return (
-    windowFits && titleFits && (dispatch === undefined || hasStrings(dispatch, ['title', 'text']))
-  );
+  const placeFits = moveAfter === undefined || moveAfter === null || typeof moveAfter === 'string';
+  const dispatchFits = dispatch === undefined || hasStrings(dispatch, ['title', 'text']);
+  return windowFits && titleFits && placeFits && dispatchFits;
 }
 
 /** The draft a group's record holds for `target`, or undefined for none or for one that isn't whole. */

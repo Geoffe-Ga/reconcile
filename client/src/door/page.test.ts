@@ -121,6 +121,20 @@ describe('pageFor: what the page says, and nothing else', () => {
     expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Everyone is welcome here.\n');
   });
 
+  it('takes its excerpt from whichever section a passed move puts first, and not before it passes (#103)', () => {
+    const log = opened();
+    const move = log.move('Ana', `${log.group}.1`, null, { title: 'Bins first' });
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('We keep rents fair.');
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, move, 4);
+    log.minute += 1;
+    expect(log.state().atoms.map((atom) => atom.id)).toEqual([`${log.group}.1`, `${log.group}.0`]);
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Bins.');
+    const back = log.move('Ben', `${log.group}.1`, `${log.group}.0`, { title: 'Rents first' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, back, 4);
+    log.minute += 1;
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('We keep rents fair.');
+  });
+
   it('takes its excerpt from the first Document only, even once that Document has no sections (#92)', () => {
     const log = groupLog({
       members: ['Ben', 'Cal'],

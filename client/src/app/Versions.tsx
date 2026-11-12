@@ -16,7 +16,7 @@ import type { RulesView } from './optInLines';
 import { MotionTitle, Named } from './stewards';
 import { AtomText } from './text/AtomText';
 import { WordDiff } from './text/WordDiff';
-import type { VersionView } from './versionViews';
+import type { MoveView, VersionView } from './versionViews';
 
 /** A version's text as the Document will show it, one tap away from the diff. */
 export function ReadsAs({ text, level }: { readonly text: string; readonly level: 3 | 4 }) {
@@ -72,10 +72,11 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
 
 /**
  * A version's heading: "Version N · <name>", or what a steward, rules,
- * dissolve, member removal or coalition ballot decides.
+ * dissolve, member removal, coalition or move ballot decides.
  */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules, dissolve, removal, decision } = version;
+  const { steward, rules, dissolve, removal, decision, move } = version;
+  if (move !== undefined) return <>{move.line}</>;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
   if (dissolve !== undefined) return <>{dissolve.title}</>;
@@ -90,12 +91,20 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
   );
 }
 
+/** A move's card under its heading (#103): the section as it reads, or nothing once it has gone. */
+function MoveBody({ move }: { readonly move: MoveView }) {
+  if (move.text === null) return null;
+  return <AtomText text={move.text} className="atom-card atom-card-current" />;
+}
+
 /**
- * Under the heading: the version's change, or what passing a steward, rules,
- * dissolve, member removal or coalition ballot does.
+ * Under the heading: the version's change, what passing a steward, rules,
+ * dissolve, member removal or coalition ballot does, or the section a move
+ * moves, as it reads (#103).
  */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules, dissolve, removal, decision } = version;
+  const { steward, rules, dissolve, removal, decision, move } = version;
+  if (move !== undefined) return <MoveBody move={move} />;
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;
   const line = dissolve?.line ?? removal?.line ?? decision?.line;

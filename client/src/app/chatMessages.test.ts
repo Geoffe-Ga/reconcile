@@ -172,6 +172,16 @@ describe('shareableTitle and chatDetails', () => {
     });
   });
 
+  it('offers the title of a move, as of any change to the Document (#103)', () => {
+    const log = groupLog();
+    log.move('ana', `${log.group}.1`, null, { title: 'Bins first' });
+    const [moved] = log.state().proposals;
+    if (moved === undefined) throw new Error('Expected the move.');
+
+    expect(shareableTitle(moved)).toBe('Bins first');
+    expect(chatDetails(moved, true)).toEqual({ deadline: moved.deadline, title: 'Bins first' });
+  });
+
   it('never offers a steward Proposal’s title, which names a member', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     log.steward('ana', 1, 'Ben', { title: 'Make Ben steward (seat 1)' });

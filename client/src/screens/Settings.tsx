@@ -73,7 +73,8 @@ export interface SettingsProps {
   readonly onSave: (backup: BackupToSave) => Promise<SaveOutcome>;
   /**
    * Restores a backup file's bytes under its passphrase; resolves to how many
-   * groups came back, and how many group entries were left out (#336).
+   * groups came back, how many group entries were left out (#336), and
+   * whether the file is an older one (#225).
    */
   readonly onRestore: RestoreBackupProps['onRestore'];
   /** Erases all of Reconcile's data on this device and reloads; rejects when it couldn't. */

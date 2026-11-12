@@ -2,17 +2,28 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAX_BACKUP_BYTES, type Restored } from '../store/snapshot';
+import { MAX_BACKUP_BYTES, type RestoredFile } from '../store/snapshot';
 import { axeViolations } from '../test/axe';
 import { held, pastPressFallback } from '../test/press';
+import { messages } from './messages';
 import { RestoreBackup } from './RestoreBackup';
 
-type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<Restored>;
+type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<RestoredFile>;
 
-/** What a restore of `groups` groups, leaving out `skipped` group entries, resolves to. */
-const restored = (groups: number, skipped = 0): Restored => ({ groups, skipped });
+/**
+ * What a restore of `groups` groups resolves to, leaving out `skipped` group
+ * entries (#336), from an older file or not (#225).
+ */
+function restored(groups: number, { skipped = 0, older = false } = {}): RestoredFile {
+  return { groups, skipped, older };
+}
 
 const FILE = new File([Uint8Array.of(82, 67, 66, 49)], 'reconcile-backup-2026-11-08.bin');
+
+/** The live status region that holds `element`, or null. */
+function inStatus(element: HTMLElement): Element | null {
+  return element.closest('[role="status"]');
+}
 
 function setup(onRestore = vi.fn<OnRestore>(() => Promise.resolve(restored(2)))) {
   document.title = 'Settings · Reconcile';
@@ -121,6 +132,36 @@ describe('RestoreBackup', () => {
     await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
     await user.click(screen.getByRole('button', { name: 'Restore' }));
     expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
+    expect(screen.queryByText(messages.restore.older)).not.toBeInTheDocument();
+  });
+
+  it('says plainly when the file is from before groups changed keys, and how this device gets back in (#225)', async () => {
+    const onRestore = vi.fn<OnRestore>(() => Promise.resolve(restored(2, { older: true })));
+    const { user } = setup(onRestore);
+
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    const status = await screen.findByRole('status');
+    await vi.waitFor(() => {
+      expect(status).toHaveTextContent('2 groups are back on this device.');
+    });
+    expect(status).toHaveTextContent(
+      'This backup is from an older version of Reconcile. If you’ve used Reconcile on another device since you saved it, this device won’t get a group’s new key when someone leaves. Ask someone in that group for a new invite link then, or restore a newer backup saved on that device.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of an older file that holds no groups', async () => {
+    const { user } = setup(vi.fn<OnRestore>(() => Promise.resolve(restored(0, { older: true }))));
+
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
+    expect(screen.queryByText(messages.restore.older)).not.toBeInTheDocument();
   });
 
   /** Chooses the file again, as Choose backup file lets, and restores it under its passphrase. */
@@ -135,49 +176,56 @@ describe('RestoreBackup', () => {
   it('says how many group entries it left out after how many came back, in the one status line (#336)', async () => {
     const onRestore = vi
       .fn<OnRestore>()
-      .mockResolvedValueOnce(restored(2, 1))
-      .mockResolvedValueOnce(restored(1, 3));
+      .mockResolvedValueOnce(restored(2, { skipped: 1 }))
+      .mockResolvedValueOnce(restored(1, { skipped: 3 }));
     const { user } = setup(onRestore);
 
     await restoreAgain(user);
     const status = await screen.findByText(
       '2 groups are back on this device. One group in this backup couldn’t be read and was left out.',
     );
-    expect(status).toHaveAttribute('role', 'status');
+    // In the one status region, beside any older-file line (#225).
+    expect(status.closest('[role="status"]')).toHaveClass('restore-status');
     // Two sentences of caption text keep a field hint's measure (backup.css).
-    expect(status).toHaveClass('status', 'restore-status');
+    expect(status).toHaveClass('status');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
 
     await restoreAgain(user);
     expect(
-      await screen.findByText(
-        '1 group is back on this device. 3 groups in this backup couldn’t be read and were left out.',
+      inStatus(
+        await screen.findByText(
+          '1 group is back on this device. 3 groups in this backup couldn’t be read and were left out.',
+        ),
       ),
-    ).toHaveAttribute('role', 'status');
+    ).not.toBeNull();
   });
 
   it('says only what it left out when no group came back (#336)', async () => {
     const onRestore = vi
       .fn<OnRestore>()
-      .mockResolvedValueOnce(restored(0, 1))
-      .mockResolvedValueOnce(restored(0, 2));
+      .mockResolvedValueOnce(restored(0, { skipped: 1 }))
+      .mockResolvedValueOnce(restored(0, { skipped: 2 }));
     const { user } = setup(onRestore);
 
     await restoreAgain(user);
     expect(
-      await screen.findByText('One group in this backup couldn’t be read and was left out.'),
-    ).toHaveAttribute('role', 'status');
+      inStatus(
+        await screen.findByText('One group in this backup couldn’t be read and was left out.'),
+      ),
+    ).not.toBeNull();
 
     await restoreAgain(user);
     expect(
-      await screen.findByText('2 groups in this backup couldn’t be read and were left out.'),
-    ).toHaveAttribute('role', 'status');
+      inStatus(
+        await screen.findByText('2 groups in this backup couldn’t be read and were left out.'),
+      ),
+    ).not.toBeNull();
     expect(screen.queryByText(/holds no groups/)).not.toBeInTheDocument();
   });
 
   it('restores once when Restore is tapped again while it restores and the backup doesn’t open (#193)', async () => {
-    const restoring = held<Restored>();
+    const restoring = held<RestoredFile>();
     const { user, onRestore } = setup(vi.fn<OnRestore>(() => restoring.promise));
     await user.upload(fileInput(), FILE);
     await user.type(screen.getByLabelText('Its passphrase'), 'the wrong passphrase');

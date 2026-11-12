@@ -9,7 +9,8 @@
  * Proposal's class, set when it opens, picks its bar and bounds the window its
  * proposer chose. A Document changes only when a Proposal's pass is final: an
  * edit sets an Atom's text or, with `""`, removes it, an add puts a new Atom
- * after its anchor in the Document it names (#75), and a new Document joins
+ * after its anchor in the Document it names (#75), a move takes an Atom out
+ * and puts it after another in its Document (#103), and a new Document joins
  * after every other (#92). Final passes apply in order of close time, then
  * the Proposals' relay order. Steward seats
  * change when a steward Proposal's pass is final, and a suspension narrows
@@ -118,6 +119,7 @@ import {
   isAddProposal,
   isCoalitionGenesis,
   isDispatchProposal,
+  isMoveProposal,
   isDissolveProposal,
   isAdmitProposal,
   isSealedReconcileProposal,
@@ -132,6 +134,7 @@ import {
   type KxBody,
   isStewardProposal,
   type LevelBody,
+  type MoveProposalBody,
   type NarrowBody,
   type NewDocumentProposalBody,
   type ParsedEvent,
@@ -280,6 +283,22 @@ export interface Rotation {
 }
 
 /**
+ * A leave stranded in an earlier epoch's mailbox (#225): a `leave` read from
+ * there after the key change out of that epoch, as a device that hadn't heard
+ * of the key change posts one, from someone who is still a member. It ends no
+ * membership where it sits, as no record of another epoch's mailbox changes
+ * anything (#98), since a device that took up the key change before it landed
+ * never reads it. A device that holds it posts it again to the current
+ * epoch's mailbox (`store/epochs.ts`), where every device reads it, and the
+ * membership ends there.
+ */
+export interface StrandedLeave {
+  readonly id: string;
+  readonly seq: number;
+  readonly author: string;
+}
+
+/**
  * A recovery share as the log carries it (#109): the event's id, where it
  * sits in relay order, who sent it, and its box, unopened. The fold never
  * reads the box; each device tries to open it (`store/recovery.ts`), and
@@ -372,6 +391,8 @@ export interface DecisionRecord {
  * Atom; an add (#75), whose `atom` is its own id, the Atom it would create
  * after its anchor; a new Document (#92), whose `atom` is its own id too, the
  * Document it would create, so its versions gather under it as an add's do;
+ * a move of `atom` (#103), whose `text` is `""` and whose one version, under
+ * its own id, has no text, so it holds its section's slot as an edit does;
  * a steward change (#102); a rules change to an opt-in (#117); or dissolving
  * the group (#108). A steward, rules or dissolve
  * Proposal's `atom` and `text` are `""`, and its one version, under its own
@@ -511,7 +532,11 @@ export interface Focus {
  * #224): none moved the group, and none of their authors may write another.
  * `rotationDue` is true once a membership has ended since the last canonical
  * key change, or genesis, until the next, or until the group dissolves, after
- * which no key change can land. `dissolved` is when the group dissolved, and whether its
+ * which no key change can land. `strandedLeaves` lists, in relay order, the
+ * leaves this device read stranded in an earlier epoch's mailbox whose
+ * authors are still members (#225): like `ignored`, it is what this device
+ * read, not something every device folds alike. `dissolved` is when the
+ * group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
  * `recoveryShares` holds every `recovery-share` a current member sent, in
@@ -560,6 +585,7 @@ export interface GroupState {
   readonly rotations: readonly Rotation[];
   readonly refused: readonly Rotation[];
   readonly rotationDue: boolean;
+  readonly strandedLeaves: readonly StrandedLeave[];
   readonly dissolved: Dissolution | null;
   readonly recoveryShares: readonly SealedShare[];
   readonly recoveryAlerts: readonly SealedAlert[];
@@ -681,6 +707,8 @@ interface Draft {
   readonly rotations: Rotation[];
   readonly refused: Rotation[];
   rotationDue: boolean;
+  /** The leaves read stranded in an earlier epoch's mailbox (#225), each once, members' or not by now. */
+  readonly stranded: StrandedLeave[];
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
   readonly judged: Set<string>;
@@ -1010,6 +1038,32 @@ function addIsValid(draft: Draft, body: AddProposalBody, author: string, at: Rec
 }
 
 /**
+ * Whether a move's spot is in a Document the move finds (#103): its Atom is
+ * in one, and its anchor, unless null for the start, is another Atom of that
+ * same Document, never the Atom itself.
+ */
+function moveSpotIsValid(draft: Draft, body: MoveProposalBody, received: number): boolean {
+  const { atom, after } = body.target;
+  const document = documentsAt(draft, received).find((d) => d.atoms.some((a) => a.id === atom));
+  if (document === undefined) return false;
+  return after === null || (after !== atom && document.atoms.some((a) => a.id === after));
+}
+
+/**
+ * A move (#103) needs an author who may propose, a section with no open
+ * Proposal, since a move holds its section's slot as an edit does (ADR-0073),
+ * and a spot in that section's Document.
+ */
+function moveIsValid(draft: Draft, body: MoveProposalBody, author: string, at: Receipt): boolean {
+  return (
+    can(draft, author, 'propose') &&
+    moveSpotIsValid(draft, body, at.received) &&
+    optionFor(openOn(draft, body.target.atom, at.received)) === 'propose' &&
+    fieldsAreValid(body)
+  );
+}
+
+/**
  * A new Document (#92) needs an author who may propose, a title that fits,
  * and text that splits into at least one section. It names no Atom, so no
  * other Proposal can be open on it.
@@ -1222,6 +1276,28 @@ function openWithText(
 /** Opens an add (#75) whose spot is in the Document it names (#92). */
 function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Receipt): boolean {
   return addIsValid(draft, body, author, at) && openWithText(draft, body, author, at);
+}
+
+/**
+ * Opens a move (#103) on its section, so no other Proposal opens there while
+ * it runs. It has no text: its one version, under its own id, is the move
+ * itself, and it takes no others. Like an edit, it runs the window its
+ * proposer chose within its class's bounds, or the class default (#106).
+ */
+function applyMove(draft: Draft, body: MoveProposalBody, author: string, at: Receipt): boolean {
+  if (!moveIsValid(draft, body, author, at)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: body.target.atom,
+    target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
 }
 
 /** Opens a new Document (#92), whose id, on a pass, is the Proposal's own. */
@@ -1719,14 +1795,18 @@ function applyGroupProposal(
   return applyDocumentChange(draft, body, author, at);
 }
 
-/** Opens a group's Proposal that changes its Documents: a new Document (#92), an add (#75) or an edit. */
+/**
+ * Opens a group's Proposal that changes its Documents: a new Document (#92),
+ * a move (#103), an add (#75) or an edit of one Atom, its removal included.
+ */
 function applyDocumentChange(
   draft: Draft,
-  body: ProposalBody | AddProposalBody | NewDocumentProposalBody,
+  body: ProposalBody | AddProposalBody | NewDocumentProposalBody | MoveProposalBody,
   author: string,
   at: Receipt,
 ): boolean {
   if (isNewDocumentProposal(body)) return applyNewDocument(draft, body, author, at);
+  if (isMoveProposal(body)) return applyMove(draft, body, author, at);
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
@@ -2700,6 +2780,21 @@ function insertAfter(atoms: readonly Atom[], after: string | null, atom: Atom): 
 }
 
 /**
+ * A move's Atoms after its pass (#103): the Atom `atom` taken out of its place
+ * and put right after `after`, first for null, or last once `after` is gone.
+ * A Document that doesn't hold the Atom stays as it was.
+ */
+function moved(atoms: readonly Atom[], atom: string, after: string | null): readonly Atom[] {
+  const section = atoms.find((a) => a.id === atom);
+  if (section === undefined) return atoms;
+  return insertAfter(
+    atoms.filter((a) => a.id !== atom),
+    after,
+    section,
+  );
+}
+
+/**
  * Brings the removals up to `draft.at` (#115): each removal that has passed
  * and closed by then, once, in order of close time and then relay order.
  * From then on its member only reads (`can()`), until a `remove` takes them
@@ -2734,8 +2829,10 @@ function newDocument(id: string, title: string, text: string): DocumentDraft {
  * #117, #107): an
  * edit sets its Atom's text or, with `""`, removes it; an add puts its Atom
  * after its anchor in the Document it names, or last there once the anchor
- * is gone (#75); and a new Document joins after every other (#92). Atom ids
- * are unique across Documents, so an edit touches only its own Atom's.
+ * is gone (#75); a move puts its Atom after its anchor the same way, in its
+ * own Document (#103); and a new Document joins after every other (#92).
+ * Atom ids are unique across Documents, so an edit or a move touches only its
+ * own Atom's Document.
  */
 function applyPass(
   documents: readonly DocumentDraft[],
@@ -2756,6 +2853,9 @@ function applyPass(
           }
         : d,
     );
+  }
+  if (target.kind === 'move') {
+    return documents.map((d) => ({ ...d, atoms: moved(d.atoms, target.atom, target.after) }));
   }
   if (target.kind !== 'edit') return documents;
   return documents.map((d) => ({ ...d, atoms: edited(d.atoms, proposal.atom, text) }));
@@ -3043,6 +3143,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations: [],
     refused: [],
     rotationDue: false,
+    stranded: [],
     seated: new Set(),
     ruled: new Set(),
     judged: new Set(),
@@ -3108,6 +3209,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations,
     refused,
     rotationDue,
+    strandedLeaves: draft.stranded.filter((leave) => isMember(draft, leave.author)),
     dissolved: draft.dissolved,
     recoveryShares: draft.recoveryShares,
     recoveryAlerts: draft.recoveryAlerts,
@@ -3324,18 +3426,22 @@ function advanceTo(draft: Draft, received: number, seq: number): void {
  * A record read from a mailbox of another epoch than the group's now, such as
  * a stale invite's join or a late writer's Proposal after a key change (#98),
  * changes nothing at all: not relay time, and not the event ids seen, so the
- * copy its author posts again to the new mailbox folds once. Any front door
- * a record carries is noted first, whether it folds or not ({@link noteDoor},
- * #288). Otherwise relay time moves on, whatever the record holds, until the
- * group dissolves (#108), and the removals, seats, opt-ins and carried
- * Dispatches catch up to it before the event is checked. A repeated event id
- * is ignored. A membership that ends in a group makes a key change due and
- * closes the front door ({@link endMembership}).
+ * copy its author posts again to the new mailbox folds once. A leave among
+ * them is noted as stranded (#225), so the device posts it there too. Any
+ * front door a record carries is noted first, whether it folds or not
+ * ({@link noteDoor}, #288). Otherwise relay time moves on, whatever the record
+ * holds, until the group dissolves (#108), and the removals, seats, opt-ins
+ * and carried Dispatches catch up to it before the event is checked. A
+ * repeated event id is ignored. A membership that ends in a group makes a key
+ * change due and closes the front door ({@link endMembership}).
  */
 function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
   const { seq, received, epoch, parsed } = read;
   noteDoor(draft, read);
-  if (epoch !== draft.epoch) return false;
+  if (epoch !== draft.epoch) {
+    noteStranded(draft, read);
+    return false;
+  }
   if (!hasEnded(draft)) advanceTo(draft, received, seq);
   if (parsed === null) return false;
   const { event, id } = parsed;
@@ -3346,4 +3452,23 @@ function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
     endMembership(draft, { id, seq, received });
   }
   return applied;
+}
+
+/** Whether `author` is a current member. */
+function isMember(draft: Draft, author: string): boolean {
+  return draft.members.some((m) => m.author === author);
+}
+
+/**
+ * Notes `read` as a stranded leave (#225) when it was read from an earlier
+ * epoch's mailbox, so after the key change out of that epoch, and holds a
+ * `leave` the fold would take from a current member here, the first copy of
+ * its event id. It still changes nothing.
+ */
+function noteStranded(draft: Draft, { seq, epoch, parsed }: Read): void {
+  if (epoch > draft.epoch || parsed?.event.type !== 'leave') return;
+  const { event, id } = parsed;
+  if (!admits(draft, event) || !isMember(draft, event.author)) return;
+  if (draft.stranded.some((leave) => leave.id === id)) return;
+  draft.stranded.push({ id, seq, author: event.author });
 }

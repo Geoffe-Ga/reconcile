@@ -439,3 +439,47 @@ describe('a key change that doesn’t open (#224)', () => {
     expect(adoptionFor(device('dee', log), 1, secret)).toBeNull();
   });
 });
+
+describe('a leave stranded in the old mailbox (#225)', () => {
+  /**
+   * Ana, Ben, Cal and Dee; Cal leaves and Ana writes the key change; then Dee,
+   * who hadn't heard, leaves into the old mailbox after it, twice over, and
+   * a level change of Ben's lands there too.
+   */
+  function strandedLog() {
+    const log = Log.founded('ben', 'cal', 'dee');
+    log.add('cal', { type: 'leave', body: {} });
+    const rotate = keyRotateRecord(device('ana', log), log.state(), TS);
+    log.records.push({ seq: log.records.length + 1, received: R + 99, bytes: rotate });
+    const late = log.add('ben', { type: 'level', body: { level: 'x' } });
+    const leave = log.add('dee', { type: 'leave', body: {} });
+    log.records.push({ seq: log.records.length + 1, received: R + 99, bytes: leave });
+    return { log, late, leave };
+  }
+
+  it('posts it again when it moves, whoever left, once, after its own late records', () => {
+    const { log, late, leave } = strandedLog();
+    expect(log.state().strandedLeaves.map((stranded) => stranded.author)).toEqual([
+      authorOf('dee'),
+    ]);
+    const step = keyStepFor(device('ben', log), [], R + 100, TS);
+    expect(step?.kind === 'move' ? [step.advance.epoch, step.advance.repost] : step).toEqual([
+      1,
+      [late, leave],
+    ]);
+  });
+
+  it('posts it again when an invite moves the device, too', () => {
+    const { log, late, leave } = strandedLog();
+    const advance = advanceFor(device('ben', log), [], R + 100);
+    const adoption = adoptionFor(device('ben', log), 1, advance?.secret ?? new Uint8Array());
+    expect(adoption?.repost).toEqual([late, leave]);
+  });
+
+  it('posts a leaving member’s own leave once, though it is both late and stranded', () => {
+    const { log, leave } = strandedLog();
+    const dee = device('dee', log, { leaving: leave });
+    const step = keyStepFor(dee, [], R + 100, TS);
+    expect(step?.kind === 'move' ? step.advance.repost : step).toEqual([leave]);
+  });
+});

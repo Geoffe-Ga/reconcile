@@ -14,7 +14,7 @@
  * relay backup.
  */
 import type { Store } from '../store/db';
-import { exportGroups, importGroups, type Restored } from '../store/snapshot';
+import { exportGroups, importGroups, type RestoredFile } from '../store/snapshot';
 import type { Sync } from '../store/sync';
 import { backupFile, type FileTargets, type SaveOutcome, saveFile } from './share';
 import { messages } from './messages';
@@ -71,7 +71,8 @@ export async function saveBackup(
 
 /**
  * Restores the backup in `bytes` under `passphrase`, then syncs. Returns how
- * many groups it brought back, and how many group entries it left out (#336).
+ * many groups it brought back, how many group entries it left out (#336),
+ * and whether it is an older file, which holds no encryption key (#225).
  *
  * @throws {BackupUnreadable} when it doesn't open or doesn't check out; nothing is written then.
  */
@@ -82,7 +83,7 @@ export async function restoreBackup(
   },
   bytes: Uint8Array,
   passphrase: string,
-): Promise<Restored> {
+): Promise<RestoredFile> {
   const restored = await importGroups(services.store, bytes, passphrase);
   void services.sync.syncOnce();
   return restored;

@@ -112,6 +112,36 @@ describe('useDraft', () => {
     expect(result.current.changed).toBe(false);
   });
 
+  it('counts a move’s place chosen as a change, and saves it, first included (#103)', async () => {
+    const { drafts, shelf } = memoryDrafts();
+    const { result } = await mount(drafts);
+    act(() => {
+      result.current.update({ ...START, moveAfter: null });
+      vi.advanceTimersByTime(DRAFT_SAVE_DELAY_MS);
+    });
+    expect(result.current.changed).toBe(true);
+    expect(shelf.get('atom-1')).toEqual({ ...START, moveAfter: null });
+    act(() => {
+      result.current.update({ ...START, moveAfter: 'g.1' });
+    });
+    expect(result.current.changed).toBe(true);
+    act(() => {
+      result.current.update(START);
+    });
+    expect(result.current.changed).toBe(false);
+  });
+
+  it('counts a new Document’s title typed as a change, and saves it (#92)', async () => {
+    const { drafts, shelf } = memoryDrafts();
+    const { result } = await mount(drafts, { ...START, documentTitle: '' });
+    act(() => {
+      result.current.update({ ...START, documentTitle: 'Budget' });
+      vi.advanceTimersByTime(DRAFT_SAVE_DELAY_MS);
+    });
+    expect(result.current.changed).toBe(true);
+    expect(shelf.get('atom-1')?.documentTitle).toBe('Budget');
+  });
+
   it('clears the draft instead when the values are back where they started', async () => {
     const { drafts, shelf } = memoryDrafts({ 'atom-1': TYPED });
     const { result } = await mount(drafts);

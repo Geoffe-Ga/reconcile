@@ -31,6 +31,12 @@ describe('optionFor', () => {
     expect(optionFor({ versions: [1, 2, 3] })).toBe('ballot-full');
     expect(optionFor({ versions: [1, 2, 3, 4] })).toBe('ballot-full');
   });
+
+  it('says a section is moving while a move is open on it, whatever its ballot holds (#103)', () => {
+    expect(optionFor({ versions: [1], target: { kind: 'move' } })).toBe('moving');
+    expect(optionFor({ versions: [1], target: { kind: 'edit' } })).toBe('add-version');
+    expect(optionFor({ versions: [1], target: { kind: 'add' } })).toBe('add-version');
+  });
 });
 
 describe('composeOption', () => {
@@ -58,6 +64,17 @@ describe('composeOption', () => {
     const { log, atom, proposal } = busyGroup();
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, proposal, 3);
     expect(log.state().proposals[0]?.final).toBe(true);
+    expect(composeOption(log.state(), atom)).toBe('propose');
+  });
+
+  it('says a section with an open move is moving, takes no version, and is free once it closes (#103)', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const atom = `${log.group}.0`;
+    const move = log.move('Ana', atom, `${log.group}.1`);
+    expect(composeOption(log.state(), atom)).toBe('moving');
+    expect(composeOption(log.state(), `${log.group}.1`)).toBe('propose');
+    log.vote('Ana', move, 4);
+    log.vote('Ben', move, 4);
     expect(composeOption(log.state(), atom)).toBe('propose');
   });
 

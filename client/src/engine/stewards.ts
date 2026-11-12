@@ -25,6 +25,7 @@ import type {
   AddTarget,
   DispatchTarget,
   DissolveTarget,
+  MoveTarget,
   NewDocumentTarget,
   PromoteTarget,
   RemoveTarget,
@@ -107,19 +108,20 @@ export interface StewardChange {
 
 /**
  * What a Proposal changes: an Atom's text, where `""` removes it (#63, #72,
- * #75), a new section after an anchor (#75), a new Document (#92), a steward
- * seat (#102), an opt-in (#117), whether the group goes on (#108), or who is
- * in it (#115). Or it reconciles the group into a coalition, or is a
- * coalition's motion, which its seats decide (#100), or in a coalition admits
- * a group (#114) or takes a seat above, its secrets sealed (#122). A priority
- * vote changes nothing: its top option becomes the focus (#107). Nor does a
- * Dispatch put to a vote so it can rise, or a coalition's promotion record,
- * which sends it on (#126).
+ * #75), a new section after an anchor (#75), a new Document (#92), a
+ * section's place (#103), a steward seat (#102), an opt-in (#117), whether
+ * the group goes on (#108), or who is in it (#115). Or it reconciles the
+ * group into a coalition, or is a coalition's motion, which its seats decide
+ * (#100), or in a coalition admits a group (#114) or takes a seat above, its
+ * secrets sealed (#122). A priority vote changes nothing: its top option
+ * becomes the focus (#107). Nor does a Dispatch put to a vote so it can rise,
+ * or a coalition's promotion record, which sends it on (#126).
  */
 export type ProposalTarget =
   | { readonly kind: 'edit' }
   | AddTarget
   | NewDocumentTarget
+  | MoveTarget
   | StewardChange
   | RulesChange
   | DissolveTarget

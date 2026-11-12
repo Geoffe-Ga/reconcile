@@ -37,6 +37,7 @@ import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
 import { NewDocumentComposer } from '../screens/NewDocumentComposer';
+import { MoveComposer } from '../screens/MoveComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
@@ -818,11 +819,21 @@ function DocumentScreen({
     navigate({ name: 'propose', groupId, atomId });
   };
   // After an Atom, its Document is the Atom's; at the start, the route names the Document (#92).
-  const openAdd = ({ document, after }: AddPlace) => {
-    navigate({ name: 'add', groupId, after, ...(after === null ? { document } : {}) });
+  // A header's choice names its level (#103).
+  const openAdd = ({ document, after, heading }: AddPlace) => {
+    navigate({
+      name: 'add',
+      groupId,
+      after,
+      ...(after === null ? { document } : {}),
+      ...(heading === undefined ? {} : { heading }),
+    });
   };
   const openRemove = (atomId: string) => {
     navigate({ name: 'remove', groupId, atomId });
+  };
+  const openMove = (atomId: string) => {
+    navigate({ name: 'move', groupId, atomId });
   };
   return (
     <GroupGate groupId={groupId}>
@@ -834,6 +845,7 @@ function DocumentScreen({
           onPropose={openComposer}
           onAdd={openAdd}
           onRemove={openRemove}
+          onMove={openMove}
           copyText={services.copyText}
           leaving={leaving}
           unconfirmed={unconfirmed}
@@ -945,8 +957,8 @@ function Ask({ again, ...props }: ComposeProps & { readonly again?: Proposal }) 
  * Propose again (#74): the composer for what the lapsed Proposal targets,
  * starting from it. A change opens the composer on its section, a removal the
  * removal composer, an add Add a section at its spot in its Document (#75,
- * #92), a new Document the new-Document composer (#92), and a priority vote
- * Ask what to focus on (#107).
+ * #92), a new Document the new-Document composer (#92), a move Move this
+ * section (#103), and a priority vote Ask what to focus on (#107).
  */
 function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
   const again = props.state.proposals.find((proposal) => proposal.id === againId);
@@ -954,6 +966,7 @@ function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: 
   if (isPriority(again)) return <Ask {...props} again={again} />;
   const { target } = again;
   if (target.kind === 'new-document') return <NewDocumentComposer {...props} again={again} />;
+  if (target.kind === 'move') return <MoveComposer {...props} atomId={target.atom} again={again} />;
   if (target.kind === 'add') {
     return <AddSection {...props} after={target.after} document={target.document} again={again} />;
   }
@@ -1051,7 +1064,7 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
 /** A route that opens a composer. */
 type ComposeRoute = Extract<
   Route,
-  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'newDocument' | 'priority' }
+  { readonly name: 'propose' | 'add' | 'remove' | 'move' | 'again' | 'newDocument' | 'priority' }
 >;
 
 /** The composer a route opens, given what every composer is handed. */
@@ -1065,8 +1078,11 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
           {...props}
           after={route.after}
           {...(route.document === undefined ? {} : { document: route.document })}
+          {...(route.heading === undefined ? {} : { heading: route.heading })}
         />
       );
+    case 'move':
+      return (props) => <MoveComposer {...props} atomId={route.atomId} />;
     case 'newDocument':
       return (props) => <NewDocumentComposer {...props} />;
     case 'remove':

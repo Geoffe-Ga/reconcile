@@ -13,9 +13,10 @@
  * Proposal's totals come from its result's counts (`proposalTally`), and a
  * cleared archive's from the tallies it kept (#108). A coalition's motions
  * are decided by its groups, so a passed motion carries each group's pass or
- * fail and no totals, as its result does (ADR-0036). Priority, steward,
- * rules, dissolve, reconcile and admit Proposals change no section, so none
- * of them appears. `describeChange` says what a pass did as data; the
+ * fail and no totals, as its result does (ADR-0036). A passed move (#103)
+ * leaves its section's text as it was, and appears as where it put it.
+ * Priority, steward, rules, dissolve, reconcile, admit and member removal
+ * Proposals change no section, so none of them appears. `describeChange` says what a pass did as data; the
  * screens put it into words, since src/engine imports no app code.
  */
 import { RESULT_GRACE_MINUTES } from './coalition';
@@ -26,18 +27,30 @@ import type { ProposalTarget } from './stewards';
 import type { TallyDetail, VersionTotals } from './tally';
 
 /**
+ * Where a passed move put its section (#103): to the `top` of its Document,
+ * `after` another section, whose text as it read then is `quote`, or at the
+ * `end`, where the fold puts it once the section it named had gone.
+ */
+export type MovedTo =
+  | { readonly kind: 'top' }
+  | { readonly kind: 'after'; readonly quote: string }
+  | { readonly kind: 'end' };
+
+/**
  * What a decision did to a Document, as data. A Document's founding text was
  * `founded` with its group (or coalition), and a passed new Document
  * `created` it (#92). A pass `added` a section (#75), `changed` one's text,
  * or `removed` it, and `quote` is that section's text as it read before, for
- * the screens to quote its first words.
+ * the screens to quote its first words; or it `moved` one, `to` a new place
+ * (#103).
  */
 export type Change =
   | { readonly kind: 'founded' }
   | { readonly kind: 'created' }
   | { readonly kind: 'added' }
   | { readonly kind: 'changed'; readonly quote: string }
-  | { readonly kind: 'removed'; readonly quote: string };
+  | { readonly kind: 'removed'; readonly quote: string }
+  | { readonly kind: 'moved'; readonly to: MovedTo };
 
 /** What a Proposal's pass did: any {@link Change} but a founding. */
 export type PassChange = Exclude<Change, { readonly kind: 'founded' }>;
@@ -127,22 +140,30 @@ interface Step {
  */
 const NO_CHANGE = (): null => null;
 
+/** What {@link DESCRIBED} reads of a final pass. */
+interface Passing {
+  /** Whether its winning text is `""`. */
+  readonly removes: boolean;
+  /** Its section's text before it, or null when there was none. */
+  readonly before: string | null;
+  /** Where a move put its section (#103), or null for any other target. */
+  readonly to: MovedTo | null;
+}
+
 /**
- * What a pass of each target kind did, given whether its winning text is
- * `""` and its section's text before. Keyed by every kind in the target
+ * What a pass of each target kind did. Keyed by every kind in the target
  * union, so a kind added later fails `tsc` here until it has an entry of its
- * own: the exhaustive check, without a `switch` whose eleven cases would
+ * own: the exhaustive check, without a `switch` whose twelve cases would
  * pass the complexity limit.
  */
 const DESCRIBED: {
-  readonly [K in ProposalTarget['kind']]: (
-    removes: boolean,
-    before: string | null,
-  ) => PassChange | null;
+  readonly [K in ProposalTarget['kind']]: (pass: Passing) => PassChange | null;
 } = {
-  edit: (removes, before) => ({ kind: removes ? 'removed' : 'changed', quote: before ?? '' }),
+  edit: ({ removes, before }) => ({ kind: removes ? 'removed' : 'changed', quote: before ?? '' }),
   add: () => ({ kind: 'added' }),
   'new-document': () => ({ kind: 'created' }),
+  // A move of a section that had gone by its pass moves nothing, as the fold leaves it (#103).
+  move: ({ before, to }) => (before === null || to === null ? null : { kind: 'moved', to }),
   steward: NO_CHANGE,
   rules: NO_CHANGE,
   dissolve: NO_CHANGE,
@@ -156,18 +177,35 @@ const DESCRIBED: {
 };
 
 /**
+ * Where a move put its section (#103), given each section's text before its
+ * pass: to the top for a null anchor, after its anchor, quoted as it read
+ * then, or at the end once its anchor had gone. Null for any other target.
+ */
+function movedTo(target: ProposalTarget, held: ReadonlyMap<string, string>): MovedTo | null {
+  if (target.kind !== 'move') return null;
+  if (target.after === null) return { kind: 'top' };
+  const quote = held.get(target.after);
+  return quote === undefined ? { kind: 'end' } : { kind: 'after', quote };
+}
+
+/**
  * What a final pass did to its Document (#104), from its target: an edit
  * `changed` its section, or `removed` it when its winning text is `""`; an add
- * `added` one (#75); and a new Document `created` its Document (#92).
- * `before` is the section's text before the pass, which a change or a
- * removal quotes, or null when there was none. Null for a Proposal that
- * changes no Document.
+ * `added` one (#75); a new Document `created` its Document (#92); and a move
+ * `moved` its section (#103). `held` is each section's text before the pass,
+ * by id: a change or a removal quotes its own section's, and a move names
+ * the section it follows by its. Null for a Proposal that changes no
+ * Document.
  */
-export function describeChange(proposal: Proposal, before: string | null): PassChange | null {
+export function describeChange(
+  proposal: Proposal,
+  held: ReadonlyMap<string, string>,
+): PassChange | null {
   const { target, outcome } = proposal;
   const winner = outcome.kind === 'pass' ? outcome.version : null;
   const removes = proposal.versions.some((v) => v.id === winner && v.text === '');
-  return DESCRIBED[target.kind](removes, before);
+  const before = held.get(proposal.atom) ?? null;
+  return DESCRIBED[target.kind]({ removes, before, to: movedTo(target, held) });
 }
 
 /** The sections a pass `change`d, given each section's text before it and its winning `text`. */
@@ -183,6 +221,9 @@ function sectionsOf(
       return [{ id: proposal.atom, before, after: text }];
     case 'removed':
       return [{ id: proposal.atom, before, after: null }];
+    case 'moved':
+      // A move leaves its section's text as it was (#103).
+      return before === null ? [] : [{ id: proposal.atom, before, after: before }];
     case 'added':
       return [{ id: proposal.id, before: null, after: text }];
     case 'created':
@@ -214,7 +255,7 @@ function passesInOrder(state: GroupState): { proposal: Proposal; winner: Version
 function steps(state: GroupState): Step[] {
   const held = new Map((state.founding?.atoms ?? []).map((atom) => [atom.id, atom.text]));
   return passesInOrder(state).flatMap(({ proposal, winner }) => {
-    const change = describeChange(proposal, held.get(proposal.atom) ?? null);
+    const change = describeChange(proposal, held);
     if (change === null) return [];
     const sections = sectionsOf(change, proposal, winner.text, held);
     for (const { id, after } of sections) {
