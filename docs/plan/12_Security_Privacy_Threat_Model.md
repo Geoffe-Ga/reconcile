@@ -81,6 +81,16 @@ High-risk data types (conceptually):
 - location metadata (if ever added),
 - private debate transcripts (if stored).
 
+## What the passkey vault doesn't cover on a seized device
+
+The passkey vault ([#95](https://github.com/Geoffe-Ga/reconcile/issues/95), [ADR-0008](../adr/0008-passkeys-and-social-recovery.md)) seals the device's keys: each group's secret, signing key and encryption key, the relay backup key, a shared Document's share keys, a sent application's reply keys, and a recovering device's request keys. A seized device that is still locked doesn't give up any of them. It does give up whatever the device keeps beside them in the clear ([#391](https://github.com/Geoffe-Ga/reconcile/issues/391)), and that is most of what this document calls high-risk data:
+- each group's log, whose signed events hold members' names, Proposals and ballots;
+- the person's recovery contacts list;
+- a contact's held recovery code, which holds the recovering device's seed;
+- the reply seeds of front-door applications a member's device has read.
+
+That is by design for the MVP: [ADR-0073](../adr/0073-mvp-scope.md) defers the app lock and the padded vault ([ADR-0046](../adr/0046-padded-vault-and-panic-wipe.md)), leaving the phone's own lock and Erase. A test reads a locked device's database and confirms the list (`client/src/store/db.locked.test.ts`).
+
 ## Design principles implied by the critique (still open decisions)
 
 Without specifying architecture, the critique pushes toward principles like:

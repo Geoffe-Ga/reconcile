@@ -12,9 +12,9 @@
  * At each launch, {@link sweepArchives} acts on the archives whose time has
  * come, by the device's own clock, since no relay time arrives after a
  * dissolve: with wipe, it erases the group a week after the dissolve's
- * receipt, so everyone sees the result first; without, it clears every ballot
- * and note `ballotExpiryDays` after it, keeping each outcome and its totals
- * from this device's own tally. That clearing is a device-local stand-in for
+ * receipt, so everyone sees the result first; without, it clears every ballot,
+ * note and vouch (#222) `ballotExpiryDays` after it, keeping each outcome and
+ * its totals from this device's own tally. That clearing is a device-local stand-in for
  * #111's expiry, which can't run here: it needs a `result` in the log, and a
  * dissolved group posts nothing. A removed member's copy (#115), which no
  * longer syncs, clears the same way, `ballotExpiryDays` after the `remove`,
@@ -77,14 +77,17 @@ export async function settleDissolve(
 /**
  * The state to keep once an archive's ballots and notes are cleared: every
  * Proposal with no ballot, no removal response, which expires with them
- * (#111, #115), and each decided one's totals and outcome from this device's
- * tally. `at` is the device clock in ms.
+ * (#111, #115), no vouch, and each decided one's totals and outcome from
+ * this device's tally. A vouch says who knows whom, which nothing reads once
+ * the group only reads, so it goes with them (#222; ADR-0075 §5); each
+ * member keeps only when their rights arrived. `at` is the device clock in ms.
  */
 export function clearedArchive(state: GroupState, at: number): ClearedArchive {
   const decided = state.proposals.filter((proposal) => proposal.final);
   const tallies = Object.fromEntries(decided.map((p) => [p.id, proposalTally(p)]));
   const proposals = state.proposals.map((proposal) => ({ ...proposal, ballots: [] }));
-  return { at, state: { ...state, proposals, responses: [], ignored: [] }, tallies };
+  const kept = { ...state, proposals, responses: [], vouches: [], ignored: [] };
+  return { at, state: kept, tallies };
 }
 
 /**

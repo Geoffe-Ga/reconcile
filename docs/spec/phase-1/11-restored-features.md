@@ -94,6 +94,6 @@ These come from ADR-0074's "Rules this needs":
   - A coalition speaks only through passed motions.
   - Following a coalition posts nothing, so followers can't see each other.
   - Anyone holding a seat secret can block a motion or act in the coalition. This is an accepted risk, and #129 revisits it.
-- **Dissolved archives** (§5; #108). No relay time arrives after a dissolve, so each device clears the archive's ballots and notes 30 days after it, and with wipe erases the archive 7 days after it, by its own clock at launch (§7, Dissolved archives). This is the one place device time decides anything.
+- **Dissolved archives** (§5; #108). No relay time arrives after a dissolve, so each device clears the archive's ballots, notes and vouches (#222) 30 days after it, and with wipe erases the archive 7 days after it, by its own clock at launch (§7, Dissolved archives). This is the one place device time decides anything.
 
 ---

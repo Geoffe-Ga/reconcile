@@ -103,6 +103,7 @@ import {
   type VaultKeys,
   type VaultLock,
   type VaultRecord,
+  zeroVaultKeys,
 } from './vault';
 import {
   byCreation,
@@ -120,7 +121,7 @@ import {
   textOf,
 } from './personal';
 import { type RecoverRequest, requestSealing, type StoredRecoverRequest } from './recoverRequest';
-import { plainRecords, type Sealing, wholeRecord } from './sealing';
+import { plainRecords, type Sealing, type Split, wholeRecord } from './sealing';
 
 export type { RecoverRequest } from './recoverRequest';
 
@@ -1199,8 +1200,14 @@ function pushForgetsIn(record: DeviceRecord | undefined): PushForget[] {
  * record without one reads as epoch 0. So is a personal Document's share by
  * link (#105): a version 4 or 5 Document that holds one keeps it whole
  * through the upgrade.
+ *
+ * Version 8 adds nothing but marks the vault's format 2 (#255, #265; #391):
+ * each new vault format bumps the version, so a build from before it, as
+ * after a rolled-back deploy, can't open the database at all, rather than
+ * read the vault as one that doesn't open and offer Restore, which clears it.
+ * `db.version.test.ts` pins which version each format came with.
  */
-const VERSION = 7;
+const VERSION = 8;
 const GROUPS = 'groups';
 const PERSONAL = 'personal';
 const DEVICE = 'device';
@@ -1233,7 +1240,7 @@ type KeyTransaction = IDBPTransaction<Schema, Stores, 'readwrite'>;
  * time: groups from before version 3 are deleted, then the personal store,
  * the device store, the vault and the sent applications' store (#121) are
  * added, in that order, beside whatever
- * groups version 3 kept.
+ * groups version 3 kept. Version 8 changes no store.
  */
 function upgradeFrom(database: IDBPDatabase<Schema>, oldVersion: number): void {
   if (oldVersion < 3) {
@@ -1590,18 +1597,19 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       const sealing: Session = { key: Uint8Array.from(key) };
       try {
         await writeKeys(db, async (tx) => {
-          const vaults = tx.objectStore(VAULT);
-          if ((await vaults.getKey(VAULT_ID)) !== undefined) {
+          if ((await tx.objectStore(VAULT).getKey(VAULT_ID)) !== undefined) {
             throw new Error('This device’s keys are already locked with a passkey.');
           }
-          await vaults.put(newVault(lock, key));
           const records = await tx.objectStore(GROUPS).getAll();
           const backup = relayBackupIn(await tx.objectStore(DEVICE).get(RELAY_BACKUP));
-          await keepKeys(tx, sealing, {
+          const change = {
             put: records.map((record) => wholeGroup(record, null)),
             ...(backup === undefined ? {} : { relayBackup: wholeBackup(backup, null) }),
             ...(await plainSecrets(tx)),
-          });
+          };
+          // The new vault is written once, already holding every key (#391).
+          const empty = { groups: new Map(), records: new Map() };
+          await keepKeysIn(tx, { vault: newVault(lock, key), keys: empty, key }, change);
         });
       } catch (error) {
         sealing.key?.fill(0);
@@ -1611,7 +1619,10 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     },
     async unlock(key) {
       const vault = await db.get(VAULT, VAULT_ID);
-      if (vault === undefined || openKeys(vault, key) === null) return false;
+      const check = vault === undefined ? null : openKeys(vault, key);
+      if (check === null) return false;
+      // Opened only to check the key, so zeroed at once, best effort (#391).
+      zeroVaultKeys(check);
       const opening: Session = { key: Uint8Array.from(key) };
       try {
         await writeKeys(db, (tx) => sealPlain(tx, opening));
@@ -1635,7 +1646,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         const backups = tx.objectStore(DEVICE);
         const held = (await backups.getKey(RELAY_BACKUP)) !== undefined;
         await backups.delete(RELAY_BACKUP);
-        const lost = await forgetSealed(tx, personal);
+        const lost = await forgetSealed(tx, session, personal);
         const request = await forgetSealedRequest(tx);
         await restoreInto(tx, session, { groups, personal, from: 'backup' });
         return { backup: held, sent: lost, request };
@@ -2022,18 +2033,20 @@ async function restoreInto(
  */
 async function forgetSealed(
   tx: KeyTransaction,
+  session: Session,
   personal: readonly PersonalDocument[],
 ): Promise<boolean> {
   const shares = new Map(personal.map(({ id, share }) => [id, share]));
-  const documents = tx.objectStore(PERSONAL);
-  const orphaned = (await documents.getAll()).filter(isSealedShare);
-  for (const document of orphaned) {
+  const orphaned = (await tx.objectStore(PERSONAL).getAll()).filter(isSealedShare);
+  // Through the one key-writing path, as every write of a share's keys goes (#391).
+  const put = orphaned.map((document): PersonalDocument => {
     const share = shares.get(document.id);
-    await documents.put({
+    return {
       ...textOf(document),
       ...(share && { share: { ...share, pending: true, paused: true } }),
-    });
-  }
+    };
+  });
+  await keepKeys(tx, session, { personal: { put } });
   const sent = tx.objectStore(SENT);
   const lost = (await sent.getAll()).filter(
     (record) => replySealing.split(record).secrets === null,
@@ -2326,6 +2339,19 @@ interface KeyChange {
   readonly recoverRequest?: RecoverRequest | null;
 }
 
+/** One write `keepKeys` makes, planned before it makes any (#391). */
+type KeyWrite = () => Promise<unknown>;
+
+/**
+ * `keepKeys`' writes, in the order that never leaves a key in neither place
+ * (#391, S4): each delete before the vault lets go of its keys, and each put
+ * after the vault holds them.
+ */
+interface KeyWrites {
+  readonly drops: KeyWrite[];
+  readonly puts: KeyWrite[];
+}
+
 /**
  * The one write path for key material (#95). Inside `tx`, deletes each group
  * in `drop`, puts each in `put`, and keeps `relayBackup`. Without a vault,
@@ -2334,19 +2360,39 @@ interface KeyChange {
  * transaction, and each record goes without them, so no secret is ever
  * written outside it.
  *
+ * It plans every write first, so a refusal writes nothing, then deletes, then
+ * reseals the vault, then puts (#391). Should the transaction commit early,
+ * as an await of anything but IndexedDB inside it would make it, every key
+ * is still in its record or in the vault: never in neither.
+ *
  * @throws {VaultLocked} when the device has a vault this session hasn't opened.
+ * @throws {UnsealableKeys} when a key wouldn't read back from the vault (#390).
+ * @throws {Error} when, with a vault, a record holds only some of its keys (#391).
  */
 async function keepKeys(tx: KeyTransaction, session: Session, change: KeyChange): Promise<void> {
-  const opened = await vaultKeys(tx, session);
+  await keepKeysIn(tx, await vaultKeys(tx, session), change);
+}
+
+/**
+ * {@link keepKeys} with the vault `opened` already, or null without one: a
+ * vault `sealKeys` makes goes in only once it holds every key.
+ */
+async function keepKeysIn(
+  tx: KeyTransaction,
+  opened: OpenedVault | null,
+  change: KeyChange,
+): Promise<void> {
   const sealed = opened?.keys ?? null;
-  await keepGroups(tx, sealed, change);
-  if (change.relayBackup !== undefined) await keepBackup(tx, sealed, change.relayBackup);
-  await keepRecords(tx.objectStore(PERSONAL), SHARES, sealed, change.personal);
-  await keepRecords(tx.objectStore(SENT), REPLIES, sealed, change.sent);
-  if (change.recoverRequest !== undefined) await keepRequest(tx, sealed, change.recoverRequest);
-  if (opened !== null) {
-    await tx.objectStore(VAULT).put(resealKeys(opened.vault, opened.key, opened.keys));
-  }
+  const writes: KeyWrites = { drops: [], puts: [] };
+  planGroups(tx, sealed, change, writes);
+  if (change.relayBackup !== undefined) planBackup(tx, sealed, change.relayBackup, writes);
+  planRecords(tx.objectStore(PERSONAL), SHARES, sealed, change.personal, writes);
+  planRecords(tx.objectStore(SENT), REPLIES, sealed, change.sent, writes);
+  if (change.recoverRequest !== undefined) planRequest(tx, sealed, change.recoverRequest, writes);
+  const vault = opened === null ? null : resealKeys(opened.vault, opened.key, opened.keys);
+  for (const write of writes.drops) await write();
+  if (vault !== null) await tx.objectStore(VAULT).put(vault);
+  for (const write of writes.puts) await write();
 }
 
 /** Where the vault keeps the secrets of `store`'s records, made when it holds none yet; null without a vault. */
@@ -2366,38 +2412,57 @@ function sealedFor(
   return opened?.keys.records.get(store)?.get(id);
 }
 
-/** Just what `keepRecords` asks of a sealed store: to put a record, and delete one by id. */
+/** Just what `keepKeys` asks of a sealed store: to put a record, and delete one by id. */
 interface RecordStore<Kept> {
   put(value: Kept): Promise<unknown>;
   delete(key: string): Promise<void>;
 }
 
 /**
+ * `whole` split by `sealing` for the vault (#391): its record without its
+ * secrets, and the secrets.
+ *
+ * @throws {Error} when it has secrets the split doesn't take, which would
+ * otherwise be written in the clear: a record holding only some of its keys.
+ */
+function sealedSplit<Whole extends Kept, Kept>(
+  sealing: Sealing<Whole, Kept>,
+  whole: Kept,
+): Split<Kept> {
+  const split = sealing.split(whole);
+  if (split.secrets === null && sealing.hasSecrets(whole)) {
+    throw new Error('A record’s keys are incomplete, so nothing was written.');
+  }
+  return split;
+}
+
+/**
  * `keepKeys`' records of one sealed store (#255, #265): each in `drop`
  * deleted, and each in `put` kept whole without a vault, or split by its
  * kind's sealing with one, its secrets into `sealed` and the rest into its
- * record.
+ * record. The vault's side is done here; the records' writes go in `writes`.
  */
-async function keepRecords<Whole extends Kept, Kept extends { readonly id: string }>(
+function planRecords<Whole extends Kept, Kept extends { readonly id: string }>(
   records: RecordStore<Kept>,
   { store, sealing }: SealedKind<Whole, Kept>,
   sealed: VaultKeys | null,
   change: RecordChange<Whole> = {},
-): Promise<void> {
+  writes: KeyWrites,
+): void {
   const entries = entriesIn(sealed, store);
   for (const id of change.drop ?? []) {
-    await records.delete(id);
     entries?.delete(id);
+    writes.drops.push(() => records.delete(id));
   }
   for (const whole of change.put ?? []) {
     if (entries === null) {
-      await records.put(whole);
+      writes.puts.push(() => records.put(whole));
       continue;
     }
-    const { kept, secrets } = sealing.split(whole);
+    const { kept, secrets } = sealedSplit(sealing, whole);
     if (secrets === null) entries.delete(whole.id);
     else entries.set(whole.id, secrets);
-    await records.put(kept);
+    writes.puts.push(() => records.put(kept));
   }
 }
 
@@ -2406,26 +2471,27 @@ async function keepRecords<Whole extends Kept, Kept extends { readonly id: strin
  * a vault, or split by {@link requestSealing} with one, its seed and secret
  * key into `sealed` and when it started into its record.
  */
-async function keepRequest(
+function planRequest(
   tx: KeyTransaction,
   sealed: VaultKeys | null,
   request: RecoverRequest | null,
-): Promise<void> {
+  writes: KeyWrites,
+): void {
   const records = tx.objectStore(DEVICE);
   const entries = entriesIn(sealed, DEVICE);
   if (request === null) {
     entries?.delete(RECOVER_REQUEST);
-    await records.delete(RECOVER_REQUEST);
+    writes.drops.push(() => records.delete(RECOVER_REQUEST));
     return;
   }
   if (entries === null) {
-    await records.put(request, RECOVER_REQUEST);
+    writes.puts.push(() => records.put(request, RECOVER_REQUEST));
     return;
   }
-  const { kept, secrets } = requestSealing.split(request);
+  const { kept, secrets } = sealedSplit(requestSealing, request);
   if (secrets === null) entries.delete(RECOVER_REQUEST);
   else entries.set(RECOVER_REQUEST, secrets);
-  await records.put(kept, RECOVER_REQUEST);
+  writes.puts.push(() => records.put(kept, RECOVER_REQUEST));
 }
 
 /**
@@ -2466,17 +2532,18 @@ async function sealPlain(tx: KeyTransaction, session: Session): Promise<void> {
 
 /**
  * `keepKeys`' groups: each deleted or put in `tx`, its keys into `sealed`
- * when the device has a vault.
+ * when the device has a vault, the records' writes in `writes`.
  */
-async function keepGroups(
+function planGroups(
   tx: KeyTransaction,
   sealed: VaultKeys | null,
   change: KeyChange,
-): Promise<void> {
+  writes: KeyWrites,
+): void {
   const records = tx.objectStore(GROUPS);
   for (const groupId of change.drop ?? []) {
-    await records.delete(groupId);
     sealed?.groups.delete(groupId);
+    writes.drops.push(() => records.delete(groupId));
   }
   for (const group of change.put ?? []) {
     const { secret, signingKey, kxKey, ...rest } = group;
@@ -2485,7 +2552,7 @@ async function keepGroups(
       signingKey,
       ...(kxKey === undefined ? {} : { kxKey }),
     });
-    await records.put(sealed === null ? group : rest);
+    writes.puts.push(() => records.put(sealed === null ? group : rest));
   }
 }
 
@@ -2503,21 +2570,24 @@ async function checkBackupAgain(tx: KeyTransaction): Promise<void> {
 
 /**
  * `keepKeys`' relay backup: its record put in `tx`, its key into `sealed`
- * when the device has a vault; or, for null, both gone (#272).
+ * when the device has a vault; or, for null, both gone (#272). The record's
+ * write goes in `writes`.
  */
-async function keepBackup(
+function planBackup(
   tx: KeyTransaction,
   sealed: VaultKeys | null,
   state: RelayBackupState | null,
-): Promise<void> {
+  writes: KeyWrites,
+): void {
+  const records = tx.objectStore(DEVICE);
   if (state === null) {
     if (sealed !== null) delete sealed.backupKey;
-    await tx.objectStore(DEVICE).delete(RELAY_BACKUP);
+    writes.drops.push(() => records.delete(RELAY_BACKUP));
     return;
   }
   const { key, ...rest } = state;
   if (sealed !== null) sealed.backupKey = Uint8Array.from(key);
-  await tx.objectStore(DEVICE).put(sealed === null ? state : rest, RELAY_BACKUP);
+  writes.puts.push(() => records.put(sealed === null ? state : rest, RELAY_BACKUP));
 }
 
 /**
