@@ -294,7 +294,7 @@ a {
 /* Tall painting: each piece's height in widths matches `TALL.heights` in paint.py. */
 .sky {
   --piece: url('img/tall/sky.webp');
-  aspect-ratio: 100 / 230;
+  aspect-ratio: 100 / 270;
   background-color: var(--sky);
   background-position: center bottom;
 }
