@@ -272,6 +272,22 @@ describe('settleCarries', () => {
     expect(await queued(store, b)).toHaveLength(1);
   });
 
+  it('casts nothing while the member can’t vote there, as a suspension leaves them, and keeps the plan', async () => {
+    const { logs, motion } = scenario(3, ORIGINAL);
+    // Ben, B's founder and steward, suspends Cy's ivy there before the minute comes (#102).
+    logs.add('B', R + 35, 'ben', { type: 'suspend', body: { member: authorOf('ivy') } });
+    const b = logs.ids.B ?? '';
+    const store = await cyDevice(logs, R + 40);
+    await settle(store, fixed(500));
+    const castAt = R + 40 + 500;
+    expect((await store.getGroup(b))?.carries?.map((plan) => plan.motion)).toEqual([motion]);
+
+    await tick(store, castAt);
+    expect(await settle(store, fixed(0))).toEqual([]);
+    expect(await queued(store, b)).toEqual([]);
+    expect((await store.getGroup(b))?.carries?.map((plan) => plan.castAt)).toEqual([castAt]);
+  });
+
   it('never casts at or after the deadline: a minute the device reaches only then is dropped', async () => {
     const { logs, deadline } = scenario(3);
     const b = logs.ids.B ?? '';

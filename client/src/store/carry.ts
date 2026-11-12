@@ -26,6 +26,7 @@
  */
 import { base64url } from '../crypto/base64url';
 import { newBallotSalt } from '../crypto/salt';
+import { can } from '../engine/capabilities';
 import { MAX_LEVEL, RESULT_GRACE_MINUTES } from '../engine/coalition';
 import {
   type Ceiling,
@@ -36,6 +37,7 @@ import {
   signEvent,
 } from '../engine/event';
 import { closeTime, type GroupState, type Proposal } from '../engine/fold';
+import { isOpenAt } from '../engine/open';
 import { DAY_MINUTES } from '../engine/rules';
 import { type HeldCoalition, type Holdings, holdings } from './coalitions';
 import {
@@ -246,7 +248,7 @@ function hasVoted(held: Held, proposal: Proposal, pending: readonly ParsedEvent[
 
 /** Whether `proposal` still takes ballots at relay minute `now`. */
 function openAt(proposal: Proposal, now: number): boolean {
-  return !proposal.final && proposal.closedAt === null && now < proposal.deadline;
+  return !proposal.final && isOpenAt(proposal, now);
 }
 
 /** What planning reads besides the group: the coalitions, every kept score, the random source and now. */
@@ -299,6 +301,15 @@ function plansFor(held: Held, planning: Planning): CarryPlan[] {
 /** Whether `plan` is cast now: not kept back, not a 0, and its minute has come. */
 function isDue(plan: CarryPlan, now: number): boolean {
   return plan.skipped !== true && plan.score !== 0 && plan.castAt <= now;
+}
+
+/**
+ * Whether `held`'s member may vote there now, as the fold checks every
+ * ballot: not while a suspension narrows them to reading (#102), nor once a
+ * removal of them has passed (#115). Until then their plans wait.
+ */
+function mayCast(held: Held): boolean {
+  return can(held.state, held.group.me.author, 'vote');
 }
 
 /** The carried ballot for `plan`: its score alone, with fresh salt and no note, signed by `held`'s member. */
@@ -359,7 +370,7 @@ export async function settleCarries(
     const pending = parsedOf(each.group.outbox);
     const planning = { coalitions, scores, random: options.random, now: now ?? 0, pending };
     const plans = now === null ? (each.group.carries ?? []) : plansFor(each, planning);
-    const due = now === null ? [] : plans.filter((plan) => isDue(plan, now));
+    const due = now === null || !mayCast(each) ? [] : plans.filter((plan) => isDue(plan, now));
     if (due.length > 0) {
       const ts = options.clock();
       await store.enqueueAll(
