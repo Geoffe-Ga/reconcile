@@ -129,6 +129,16 @@ function DoorLink({ state, origin, copyText }: GroupRulesProps) {
   );
 }
 
+/**
+ * Why the front door is closed, once a member's leave or removal closed it
+ * (#288), and that a new Proposal to open it reopens it: until a door opens
+ * again.
+ */
+function ClosedByLeave({ state }: { readonly state: GroupState }) {
+  if (state.doorClosure === null) return null;
+  return <p className="caption">{messages.optIns.doorClosedByLeave}</p>;
+}
+
 /** One opt-in: its name, where it stands, its warning, and what this member can do about it. */
 function OptInCard(props: CardProps) {
   const { state, me, optIn } = props;
@@ -139,6 +149,7 @@ function OptInCard(props: CardProps) {
         {messages.optIns.names[optIn]}
       </h2>
       <Standing state={state} standing={optInState(state, optIn)} />
+      {optIn === 'frontDoor' ? <ClosedByLeave state={state} /> : null}
       {optIn === 'frontDoor' ? <DoorLink {...props} /> : null}
       <p className="opt-in-warning">{messages.optIns.warnings[optIn]}</p>
       <Actions state={state} me={me} optIn={optIn} />
@@ -151,7 +162,8 @@ function OptInCard(props: CardProps) {
  * the chat bot and the front door, each with where it stands, the plain
  * warning of what the outside platform would hold, and a link to propose a
  * change. While the front door is open, its card holds its link to copy and
- * says whether its page shows the count (#121). Nothing here changes an opt-in: only a passed Proposal does, and a
+ * says whether its page shows the count (#121); once a member's leave or
+ * removal has closed it, why, and how to reopen it (#288). Nothing here changes an opt-in: only a passed Proposal does, and a
  * steward's Turn off now goes through its own off-Proposal. The other rules
  * were set at founding and don't change.
  */

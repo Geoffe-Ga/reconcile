@@ -98,6 +98,25 @@ describe('rulesView: what a rules ballot decides, in words', () => {
   });
 });
 
+describe('rulesView of a front door Proposal open when a member left (#288)', () => {
+  it('says passing it opens no door, and its pass that the door stays closed', () => {
+    const view = rulesView(change('frontDoor', DOOR), true);
+    expect(view.line).toBe(
+      'If this passes, your group gets a public page where people can ask to join. A member left while this vote was open, and they have the keys it carries, so if it passes the front door stays closed. A new Proposal to open it reopens it.',
+    );
+    expect(view.passed).toBe(
+      'This passed, but the front door stays closed: a member left while the vote was open, and they have its keys. A new Proposal to open it reopens it.',
+    );
+    expect(view.title).toBe('Open a front door');
+  });
+
+  it('words a Proposal no one left during as before', () => {
+    expect(rulesView(change('frontDoor', DOOR), false)).toEqual(
+      rulesView(change('frontDoor', DOOR)),
+    );
+  });
+});
+
 describe('optInState: where an opt-in stands now', () => {
   it('reads each opt-in off at founding', () => {
     const state = groupLog({ members: ['Ben', 'Cal'] }).state();
