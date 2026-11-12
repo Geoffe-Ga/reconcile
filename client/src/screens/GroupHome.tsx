@@ -5,6 +5,7 @@ import { ChatLink } from '../app/ChatLink';
 import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
 import { DispatchCard } from '../app/DispatchCard';
+import { holdPresses } from '../app/holdPresses';
 import { latestLink } from '../app/latestLink';
 import { LeaveDialog } from '../app/LeaveDialog';
 import { LevelPicker } from '../app/LevelPicker';
@@ -691,7 +692,7 @@ function Involvement(props: InvolvementProps) {
     });
   };
   return (
-    <div className="involvement">
+    <div className="involvement" onPointerDownCapture={holdPresses(running)}>
       <LevelPicker value={picked} onChange={setChoice} isDisabled={running || suspended} />
       {newcomer ? <p className="caption">{messages.admission.levelsWait}</p> : null}
       {outcome === 'failed' ? (

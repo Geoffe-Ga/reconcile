@@ -11,6 +11,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { testGroup, type TestGroupOptions } from '../test/groups';
 import { DOOR } from '../test/door';
+import { held, pastPressFallback } from '../test/press';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
@@ -585,6 +586,26 @@ describe('GroupHome', () => {
     await waitFor(() => {
       expect(screen.getByRole('radio', { name: 'Member' })).toBeEnabled();
     });
+  });
+
+  it('keeps the choice when another level is tapped while it saves and saving fails (#193)', async () => {
+    const saving = held<undefined>();
+    const onChooseLevel = vi.fn<OnChooseLevel>(() => saving.promise);
+    const { user } = renderHome(testGroup({ joiners: ['Ben'] }).state, {
+      me: authorOf('ben'),
+      onChooseLevel,
+    });
+    await user.click(screen.getByRole('radio', { name: 'Member' }));
+    await user.click(screen.getByRole('button', { name: 'Save your choice' }));
+    const collaborator = screen.getByRole('radio', { name: 'Collaborator' });
+    expect(collaborator).toBeDisabled();
+    await user.click(collaborator);
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(collaborator).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Member' })).toBeChecked();
+    expect(onChooseLevel).toHaveBeenCalledTimes(1);
   });
 
   it('reads Sent once the change has left the outbox', async () => {
