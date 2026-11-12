@@ -30,7 +30,8 @@
  *     (#98); a record without one was read from epoch 0's.
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
- *     deep-equal.
+ *     deep-equal. `unchangedExcept` names any other fields left out of that comparison, as a
+ *     `recovery-share` (#109) is kept in `recoveryShares` and changes nothing else.
  * - A coalition file (#100), `{kind: "coalition", vectors}`, holds vectors with several logs:
  *   `{name, logs: {coalition: [...], A: [...]}, relayNow, expect: {coalition, A}, report?,
  *   mismatches?, unchangedWithout?}`. Seqs are global, as the relay's one counter is, so `@n`
@@ -113,6 +114,7 @@ export interface FoldVector {
   readonly relayNow: number | null;
   readonly expect: object;
   readonly unchangedWithout?: readonly number[];
+  readonly unchangedExcept?: readonly string[];
 }
 
 /** One vector with several logs (#100): a coalition's and its member groups', by name. */

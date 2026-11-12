@@ -69,6 +69,7 @@ These rules close the capture paths a steward's powers open ([ADR-0015](0015-ant
 - **Fix: one library beyond `@noble/*`.** This amends ADR-0060's "audited libraries only (`@noble/*`)".
   - It allows one more library, `shamir-secret-sharing`, pinned exactly and imported only by `client/src/crypto/shares.ts`.
   - The PR that adds it links a published third-party audit of that version. If there isn't one, the work stops and asks.
+  - **Amendment:** 0.0.4 accepted by the founder on 2026-11-12 (#271), on the basis of Zellic's audit of 0.0.2 (commit cd8422d) plus a reviewed 40-line delta: Zellic's x = 0 guard and a revert restoring full secrecy; the v0.0.4 tag rebuilds byte-identically.
 - **Disclose ([ADR-0009](0009-per-group-identities.md)): one contact in two groups links your names.** If someone picks the same person as a contact in two groups, that person can tell both names belong to one person. The picker says so.
 
 ### 5. Smaller rules

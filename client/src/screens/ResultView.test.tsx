@@ -135,6 +135,21 @@ describe('ResultView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('leads an add’s pass with its sentence and the new section’s text, as an edit’s (#75)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const proposalId = log.addSection('ana', null, { text: 'Bins out on Thursdays.' });
+    for (const voter of ['ana', 'ben', 'cal']) {
+      log.minute += 10;
+      log.vote(voter, proposalId, 4);
+    }
+    const { result } = show({ state: log.state(), proposalId });
+
+    const [sentence, text, thanks] = within(outcomeBlock(result)).getAllByRole('paragraph');
+    expect(sentence).toHaveTextContent('This passed. The Document now reads:');
+    expect(text).toHaveTextContent('Bins out on Thursdays.');
+    expect(thanks).toHaveTextContent(/^Thank you, Ana\.$/);
+  });
+
   it('thanks the winning version’s author and the proposer, and names the version', () => {
     const { log, proposalId } = bensVersionPasses();
     const { result } = show({ state: log.state(), proposalId });

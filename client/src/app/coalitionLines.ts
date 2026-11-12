@@ -8,7 +8,7 @@
  */
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
-import { can } from '../engine/capabilities';
+import { can, isOusted } from '../engine/capabilities';
 import { MAX_LEVEL, seatLevel, seatResult } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { resultMismatches, seatIn } from '../engine/crossing';
@@ -233,7 +233,12 @@ function rowOf(
     coalitionId: coalition.group,
     name,
     ...standing,
-    ...membership(state, coalition, { formed, keyed: holdsInner(target, held, coalition) }, me),
+    ...membership(
+      coalition,
+      { formed, keyed: holdsInner(target, held, coalition) },
+      me,
+      actsForGroup(state, author),
+    ),
     me,
     mismatches: seat === undefined ? 0 : resultMismatches(state, coalition, held.key).length,
     above: seat === undefined ? [] : aboveRows(coalition, [state.name, name], coalitions),
@@ -258,16 +263,25 @@ function holdsInner(target: ReconcileTarget, held: HeldSeat, coalition: GroupSta
  * (#122).
  */
 function membership(
-  state: GroupState,
   coalition: GroupState,
   { formed, keyed }: { readonly formed: boolean; readonly keyed: boolean },
   me: CoalitionMe,
+  live: boolean,
 ): Pick<CoalitionRow, 'members' | 'makesCards' | 'reconciles'> {
   if (!formed) return { members: [], makesCards: false, reconciles: false };
   const members = (coalition.coalition?.seats ?? []).map((s) => s.name);
-  const makesCards = me.kind === 'in' && state.dissolved === null;
+  const makesCards = me.kind === 'in' && live;
   const level = coalition.coalition?.level ?? MAX_LEVEL;
   return { members, makesCards, reconciles: makesCards && keyed && level < MAX_LEVEL };
+}
+
+/**
+ * Whether `author` still acts for the group here: it hasn't dissolved (#108),
+ * they're in it, and no removal of them has passed (#115). Only then does
+ * their device make cards for its coalitions.
+ */
+function actsForGroup(state: GroupState, author: string): boolean {
+  return state.dissolved === null && can(state, author, 'read') && !isOusted(state, author);
 }
 
 /**

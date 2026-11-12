@@ -184,6 +184,28 @@ describe('coalitionRows', () => {
     expect(coalitionRows(dissolved, authorOf('ana'), [held])[0]?.makesCards).toBe(false);
   });
 
+  it('still lists the coalition on a removed member’s copy, and makes no cards from it (#115)', () => {
+    const logs = new Logs();
+    riverside(logs);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const target = { kind: 'remove', member: authorOf('ben') } as const;
+    const body = { target, title: 'Remove Ben', why: 'Threats in the chat.' };
+    const removal = logs.add('A', at, 'ana', { type: 'proposal', body });
+    logs.vote('A', at + 1, 'ana', removal, 4);
+    logs.add('A', at + 2, 'ana', { type: 'remove', body: { proposal: removal } });
+    const held = heldCoalition(logs, at + 10);
+    const state = groupState(logs, 'A', at + 10, held);
+
+    expect(state.former.map((m) => m.author)).toEqual([authorOf('ben')]);
+    expect(coalitionRows(state, authorOf('ben'), [held])[0]).toMatchObject({
+      status: 'formed',
+      members: ['A', 'B'],
+      me: { kind: 'in', name: 'kim' },
+      makesCards: false,
+    });
+    expect(coalitionRows(state, authorOf('ana'), [held])[0]?.makesCards).toBe(true);
+  });
+
   it('counts the results recorded for the group’s seat that don’t match its vote', () => {
     const logs = new Logs();
     riverside(logs, false);

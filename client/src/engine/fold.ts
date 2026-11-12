@@ -33,8 +33,11 @@
  * (coalition.ts). A group's reconcile Proposals carry its seats, and
  * `outside` opens each coalition motion the group owes a result on as a
  * Proposal of its own (crossing.ts), with no number, no chat bot claims and
- * no Dispatch. A priority vote changes no Atom: the top option of the latest
- * one to pass is the group's focus (#107). A `result` records a decided
+ * no Dispatch. A removal (#115) runs a fixed 14 days at its own bar without
+ * the person it names, who may post one response; from its final pass they
+ * only read, and the first valid `remove` takes them out as a leave would, so
+ * the key changes once. A priority vote changes no Atom: the top option of the
+ * latest one to pass is the group's focus (#107). A `result` records a decided
  * Proposal's counts and a commitment to its ballots (#111): with the ballots
  * held, the fold checks it against them, and once a device has cleared them,
  * the Proposal closes, counts and decides by the result it reads ahead. The
@@ -50,6 +53,7 @@ import {
   DEFAULT_JOIN_LEVEL,
   FOUNDER_LEVEL,
   isLevel,
+  isOusted,
   isSuspended,
   type Level,
   PARTICIPANT_LEVEL,
@@ -108,6 +112,7 @@ import {
   isSealedReconcileProposal,
   isPriorityProposal,
   isReconcileProposal,
+  isRemovalProposal,
   isRulesProposal,
   type KeyRotateBody,
   type KxBody,
@@ -120,10 +125,14 @@ import {
   type ProposalBody,
   type ProposalEventBody,
   type AdmitProposalBody,
+  type RecoveryShareBody,
   type SealedReconcileProposalBody,
   type SealedReconcileTarget,
   type ReconcileProposalBody,
   type RecordedOutcome,
+  type RemovalProposalBody,
+  type RemovalResponseBody,
+  type RemoveBody,
   type RoomWrapBody,
   type ResultBody,
   type ResultVersion,
@@ -147,6 +156,15 @@ import {
   withChange,
 } from './optIns';
 import { isPriority, optionId, optionsAreValid } from './priority';
+import {
+  extendedBy,
+  mayProposeRemoval,
+  mayRemove,
+  mayRespond,
+  type Removal,
+  type RemovalResponse,
+  responseFits,
+} from './removal';
 import {
   type Bar,
   chosenWindow,
@@ -234,6 +252,20 @@ export interface Rotation {
   readonly epoch: number;
   readonly commit: string;
   readonly wraps: Readonly<Record<string, string>>;
+}
+
+/**
+ * A recovery share as the log carries it (#109): the event's id, where it
+ * sits in relay order, who sent it, and its box, unopened. The fold never
+ * reads the box; each device tries to open it (`store/recovery.ts`), and
+ * only the contact it was sealed to can.
+ */
+export interface SealedShare {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly by: string;
+  readonly box: string;
 }
 
 /**
@@ -405,6 +437,13 @@ export interface Focus {
  * change can land. `dissolved` is when the group dissolved, and whether its
  * vote chose to wipe every copy, or null while it goes on (#108). Once it has
  * dissolved, `at` stays at that receipt whatever the relay's `now`.
+ * `recoveryShares` holds every `recovery-share` a current member sent, in
+ * relay order, boxes unopened (#109): they govern nothing, so no other field
+ * reads them.
+ * `removals` holds each removal whose pass is final by `at`, in order of
+ * close, with the `remove` that took its member out once one folds, and
+ * `responses` each response the person a removal names posted on its ballot,
+ * in relay order (#115).
  * `coalitions` lists the group's reconcile Proposals (#100), each with its
  * public seat key and outcome. `coalition` is null for a group; for a
  * coalition's log it holds the seats, the participants' bindings, the results
@@ -426,6 +465,8 @@ export interface GroupState {
   readonly at: number;
   readonly stewards: readonly Seat[];
   readonly suspensions: readonly Suspension[];
+  readonly removals: readonly Removal[];
+  readonly responses: readonly RemovalResponse[];
   readonly narrowings: readonly Narrowing[];
   readonly vouches: readonly Vouch[];
   readonly chatPosts: readonly ChatPost[];
@@ -436,6 +477,7 @@ export interface GroupState {
   readonly rotations: readonly Rotation[];
   readonly rotationDue: boolean;
   readonly dissolved: Dissolution | null;
+  readonly recoveryShares: readonly SealedShare[];
   readonly coalitions: readonly HeldSeat[];
   readonly coalition: Coalition | null;
   readonly focus: Focus | null;
@@ -505,6 +547,7 @@ interface DocumentAt {
  * The state the fold builds up, one event at a time. `seated` holds the ids
  * of the closed steward Proposals whose outcome the seats already show,
  * `ruled` those of the closed rules Proposals the opt-ins already show, and
+ * `judged` those of the closed removals `removals` already shows (#115), and
  * `dispatched` those of the closed Proposals carrying a Dispatch that
  * `dispatches` already reflects (#112). `founded` is the Document genesis
  * founded, before any pass, and `document` the Document as the latest
@@ -524,6 +567,8 @@ interface Draft {
   at: number;
   stewards: readonly Seat[];
   readonly suspensions: Suspension[];
+  readonly removals: Removal[];
+  readonly responses: RemovalResponse[];
   readonly narrowings: Narrowing[];
   readonly vouches: Vouch[];
   readonly chatPosts: ChatPost[];
@@ -535,8 +580,10 @@ interface Draft {
   rotationDue: boolean;
   readonly seated: Set<string>;
   readonly ruled: Set<string>;
+  readonly judged: Set<string>;
   readonly dispatched: Set<string>;
   dissolved: Dissolution | null;
+  readonly recoveryShares: SealedShare[];
   coalition: CoalitionDraft | null;
   /** The Proposals whose ballots this device has cleared (#111). */
   readonly cleared: ReadonlySet<string>;
@@ -720,15 +767,16 @@ function applyLevel(draft: Draft, body: LevelBody, author: string): boolean {
 }
 
 /**
- * A member leaves (ADR-0010: exit is always possible). They move from
- * `members` to `former`, so from here on `can()` refuses them everything and
- * the fold ignores their later events. A Proposal already open keeps them in
- * its eligible set (ADR-0015 §1), so its quorum and early close don't change,
- * the ballots they sent before still count, and their Proposals and versions
- * stay on the ballot. This is the one place a leave takes effect: a seat the
- * member holds empties here too (#102), and a suspension stays on record.
+ * A member leaves (ADR-0010: exit is always possible), or a `remove` takes
+ * them out (#115). They move from `members` to `former`, so from here on
+ * `can()` refuses them everything and the fold ignores their later events. A
+ * Proposal already open keeps them in its eligible set (ADR-0015 §1), so its
+ * quorum and early close don't change, the ballots they sent before still
+ * count, and their Proposals and versions stay on the ballot. This is the one
+ * place a membership ends: a seat the member holds empties here too (#102),
+ * and a suspension stays on record.
  */
-function applyLeave(draft: Draft, author: string): boolean {
+function departs(draft: Draft, author: string): boolean {
   const index = draft.members.findIndex((m) => m.author === author);
   const member = draft.members[index];
   if (member === undefined) return false;
@@ -1124,6 +1172,37 @@ function seatKeysAbove(draft: Pick<Draft, 'proposals'>): string[] {
 }
 
 /**
+ * Opens a removal (ADR-0049, ADR-0075 §3, #115) when its author may propose
+ * one against its member now (removal.ts). It runs the removal class's fixed
+ * window, whatever the proposer wrote, at removal's own bar; its one version
+ * has no text, and the member it names isn't in its eligible set, so their
+ * own 0 never counts. A suspension of them running now lasts until it closes
+ * (ADR-0059).
+ */
+function applyRemovalProposal(
+  draft: Draft,
+  body: RemovalProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { member } = body.target;
+  if (!fieldsAreValid(body) || !mayProposeRemoval(draft, author, member)) return false;
+  const cls = targetClass(draft, body);
+  const proposal = openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window: draft.rules.windows[cls].default }),
+    atom: '',
+    target: { kind: 'remove', member },
+    text: '',
+    eligible: eligibleNow(draft, member),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  // The suspension of them running now, if any, lasts until this vote closes:
+  // a cleared one's early close comes from its result, read ahead (#111).
+  extendSuspension(draft, proposal, (s) => s.member === member && draft.at < s.until);
+  return true;
+}
+
+/**
  * Opens a reconcile Proposal, a group's (#100) or a coalition's (#122), when
  * its author may propose: ordinary, for the window its proposer chose or the
  * default, with one version that has no text, keeping `target`. A seat key
@@ -1188,6 +1267,24 @@ function applySealedReconcile(
   const seats = coalition.seats.map((s) => s.key);
   coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
   return true;
+}
+
+/**
+ * Keeps the suspension `which` picks, if any, until removal `proposal` closes
+ * (ADR-0059): the one running when the removal opens, to its deadline, and
+ * then the one it extended, to its early close once one comes. A suspension
+ * that starts while a removal is open is never tied to it.
+ */
+function extendSuspension(
+  draft: Draft,
+  proposal: OpenProposal,
+  which: (suspension: Suspension) => boolean,
+): void {
+  const index = draft.suspensions.findIndex(which);
+  const suspension = draft.suspensions[index];
+  if (suspension !== undefined) {
+    draft.suspensions[index] = extendedBy(suspension, draft.rules, proposal);
+  }
 }
 
 /**
@@ -1271,6 +1368,17 @@ function applyAdmit(
   return true;
 }
 
+/**
+ * Whether a Proposal's body is only ever a coalition's motion: admitting a
+ * group (#114), or a sealed reconcile target (#122), since a group has no
+ * inner to seal under. A group's own log takes neither.
+ */
+function isCoalitionOnly(
+  body: ProposalEventBody,
+): body is AdmitProposalBody | SealedReconcileProposalBody {
+  return isAdmitProposal(body) || isSealedReconcileProposal(body);
+}
+
 function applyProposal(
   draft: Draft,
   body: ProposalEventBody,
@@ -1278,14 +1386,13 @@ function applyProposal(
   at: Receipt,
 ): boolean {
   if (draft.coalition !== null) return applyMotion(draft, draft.coalition, body, author, at);
+  if (isRemovalProposal(body)) return applyRemovalProposal(draft, body, author, at);
   if (isReconcileProposal(body)) return applyReconcile(draft, body, author, at);
   if (isPriorityProposal(body)) return applyPriority(draft, body, author, at);
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  // Admitting a group is a coalition's motion (#114), and so is a sealed reconcile
-  // target (#122): a group has no inner to seal under. A group's own log takes neither.
-  if (isAdmitProposal(body) || isSealedReconcileProposal(body)) return false;
+  if (isCoalitionOnly(body)) return false;
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
@@ -1346,15 +1453,16 @@ function applyRoomWrap(draft: Draft, body: RoomWrapBody, author: string, at: Rec
 /**
  * Suspends a member for the group's `suspensionDays` from the relay's receipt
  * (ADR-0016), when the author may suspend them now and the reason fits
- * (stewards.ts). Stewards can't lengthen one (ADR-0059): #115's open removal
- * vote is the only thing that will.
+ * (stewards.ts). Stewards can't lengthen one (ADR-0059): only a removal vote
+ * against the member, opened while it runs, does ({@link extendSuspension}).
  */
 function applySuspend(draft: Draft, body: SuspendBody, author: string, at: Receipt): boolean {
   const reason = body.reason ?? null;
   if (!maySuspend(draft, author, body.member) || !reasonFits(reason)) return false;
   const { id, seq, received } = at;
   const until = suspensionEnd(draft.rules, received);
-  draft.suspensions.push({ id, seq, received, by: author, member: body.member, reason, until });
+  const { member } = body;
+  draft.suspensions.push({ id, seq, received, by: author, member, reason, until, removal: null });
   return true;
 }
 
@@ -1387,10 +1495,11 @@ function applyChatPosted(draft: Draft, body: ChatPostedBody, author: string, at:
 }
 
 /**
- * Whether a version's text fits its Proposal: a steward, rules or dissolve
- * Proposal has no text, so it takes none (#102, #117, #108), nor does a
- * priority vote, whose options are fixed when it opens (#107), and only an
- * edit's version may be `""`, a removal; an add's needs text (#75).
+ * Whether a version's text fits its Proposal: a steward, rules, dissolve or
+ * member removal Proposal has no text, so it takes none (#102, #117, #108,
+ * #115), nor does a priority vote, whose options are fixed when it opens
+ * (#107), and only an edit's version may be `""`, which removes its section;
+ * an add's needs text (#75).
  */
 function versionTextFits(proposal: OpenProposal, text: string): boolean {
   const { kind } = proposal.target;
@@ -1519,7 +1628,13 @@ export function everyoneHasScored(proposal: ScoredProposal): boolean {
   });
 }
 
-/** A ballot counts toward an uncleared Proposal only: a cleared one's counts come from its result. */
+/**
+ * Keeps a voter's latest valid ballot, toward an uncleared Proposal only: a
+ * cleared one's counts come from its result (#111). The ballot after which
+ * everyone eligible has scored every version closes the Proposal early, and a
+ * suspension a removal vote extends then ends at the later of its own end and
+ * that close (ADR-0059, #115).
+ */
 function applyVote(draft: Draft, body: VoteBody, author: string, at: Receipt): boolean {
   const proposal = draft.proposals.find((p) => p.id === body.proposal);
   if (proposal === undefined || proposal.cleared) return false;
@@ -1527,8 +1642,44 @@ function applyVote(draft: Draft, body: VoteBody, author: string, at: Receipt): b
   const note = body.note ?? null;
   const ballot = { ...at, voter: author, scores: body.scores, note, salt: body.salt ?? '' };
   proposal.ballots = [...proposal.ballots.filter((b) => b.voter !== author), ballot];
-  if (everyoneHasScored(proposal)) proposal.closedAt = at.received;
+  if (everyoneHasScored(proposal)) {
+    proposal.closedAt = at.received;
+    extendSuspension(draft, proposal, (s) => s.removal === proposal.id);
+  }
   return true;
+}
+
+/**
+ * Keeps the response the person a removal names posts on its ballot (#115),
+ * when they may post it now and it fits (removal.ts): theirs, once, while it
+ * is open, suspended or not.
+ */
+function applyRemovalResponse(
+  draft: Draft,
+  body: RemovalResponseBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { proposal, text } = body;
+  if (!mayRespond(draft, author, proposal) || !responseFits(text)) return false;
+  draft.responses.push({ ...at, by: author, proposal, text });
+  return true;
+}
+
+/**
+ * Takes the member a removal names out of the group (#115): the first valid
+ * `remove` naming a removal whose pass is final (removal.ts). They leave as
+ * on a leave ({@link departs}), so their seat empties and the group's key
+ * changes after it (#98).
+ */
+function applyRemove(draft: Draft, body: RemoveBody, author: string, at: Receipt): boolean {
+  if (!mayRemove(draft, author, body.proposal)) return false;
+  const index = draft.removals.findIndex((removal) => removal.proposal === body.proposal);
+  const removal = draft.removals[index];
+  if (removal === undefined) return false;
+  const { id, seq, received } = at;
+  draft.removals[index] = { ...removal, removed: { id, seq, received, by: author } };
+  return departs(draft, removal.member);
 }
 
 /** True when two lists hold the same items in the same order. */
@@ -1629,6 +1780,25 @@ function inGroup(draft: Draft, event: GroupEvent): boolean {
     : event.group === draft.group;
 }
 
+/** The events a suspended member may still post: a removal's response (#115) and a recovery share (#109). */
+const UNSUSPENDED: ReadonlySet<GroupEvent['type']> = new Set([
+  'removal-response',
+  'recovery-share',
+]);
+
+/**
+ * Whether the author of `event` may act now: anyone may leave, since exit is
+ * always possible (ADR-0010, #77); once a removal of them has passed, nothing
+ * else counts (#115); and while a suspension runs (ADR-0016), only their
+ * response to a removal of them (ADR-0049) and their `recovery-share`, which
+ * governs nothing (#109), do.
+ */
+function mayAct(draft: Draft, event: GroupEvent): boolean {
+  if (event.type === 'leave') return true;
+  if (isOusted(draft, event.author)) return false;
+  return UNSUSPENDED.has(event.type) || !isSuspended(draft, event.author);
+}
+
 /**
  * The event types a coalition's log takes (#100). Everything else, `vote` and
  * `version` included, is ignored there, so a motion has one version and no
@@ -1661,25 +1831,27 @@ function hasEnded(draft: Draft): boolean {
 /**
  * The one event guard: a version-1 event for a group that hasn't dissolved,
  * or a coalition that wasn't declined, of a type its log takes, from someone
- * who isn't suspended. After a `dissolve` the fold ignores every event, a
- * second `dissolve` included (#108), and after a coalition is declined every
- * event (#100). It ignores a suspended member's events until the suspension
- * ends (ADR-0016), except their `leave`, since exit is always possible
- * (ADR-0010, #77).
+ * who may act now ({@link mayAct}). After a `dissolve` the fold ignores every
+ * event, a second `dissolve` included (#108), and after a coalition is
+ * declined every event (#100). A coalition's log takes no `recovery-share`
+ * (`fitsLog`): a share travels only in a group the person shares with their
+ * contact (#109).
  */
 function admits(draft: Draft, event: GroupEvent): boolean {
-  const free = event.type === 'leave' || !isSuspended(draft, event.author);
   const current = !hasEnded(draft) && event.v === EVENT_VERSION;
-  return current && inGroup(draft, event) && fitsLog(draft, event) && free;
+  return current && inGroup(draft, event) && fitsLog(draft, event) && mayAct(draft, event);
 }
 
 /**
  * The events that act on a Proposal: proposing, wording, voting, its result
- * (#111), and dissolving on a pass (#108).
+ * (#111), dissolving on a pass (#108), and a removal's response and `remove`
+ * (#115).
  */
 type ProposalEvent = Extract<
   GroupEvent,
-  { type: 'proposal' | 'version' | 'vote' | 'result' | 'dissolve' }
+  {
+    type: 'proposal' | 'version' | 'vote' | 'result' | 'dissolve' | 'removal-response' | 'remove';
+  }
 >;
 
 /** Applies one admitted event that acts on a Proposal, or returns false to ignore it. */
@@ -1695,6 +1867,10 @@ function applyProposalEvent(draft: Draft, event: ProposalEvent, at: Receipt): bo
       return applyResult(draft, event.body, event.author, at);
     case 'dissolve':
       return applyDissolve(draft, event.body, event.author, at);
+    case 'removal-response':
+      return applyRemovalResponse(draft, event.body, event.author, at);
+    case 'remove':
+      return applyRemove(draft, event.body, event.author, at);
   }
 }
 
@@ -1713,7 +1889,9 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
     case 'level':
       return applyLevel(draft, event.body, event.author);
     case 'leave':
-      return applyLeave(draft, event.author);
+      return departs(draft, event.author);
+    case 'recovery-share':
+      return applyRecoveryShare(draft, event.body, event.author, at);
     case 'message':
       // A room's message belongs to the room's own log (room.ts, #125), never a group's.
       return false;
@@ -1805,11 +1983,11 @@ function applyKeyed(
 
 /**
  * Whether `event` ends a membership, and so calls for a new group key (#98;
- * ADR-0072 item 11): a `leave` now, and #115's `remove` once it lands. The
- * fold asks only of events it applied. This is the one trigger.
+ * ADR-0072 item 11): a `leave`, or a `remove` (#115). The fold asks only of
+ * events it applied. This is the one trigger.
  */
 export function endsMembership(event: Pick<GroupEvent, 'type'>): boolean {
-  return event.type === 'leave';
+  return event.type === 'leave' || event.type === 'remove';
 }
 
 /**
@@ -1823,6 +2001,21 @@ function applyKx(draft: Draft, body: KxBody, author: string): boolean {
   const kx = usableKx(body.kx);
   if (member === undefined || member.kx !== null || kx === null) return false;
   draft.members[index] = { ...member, kx };
+  return true;
+}
+
+/**
+ * Keeps a recovery share (#109) from any current member, its box unopened.
+ * It changes nothing else: no Atom, Proposal, member or seat reads it.
+ */
+function applyRecoveryShare(
+  draft: Draft,
+  body: RecoveryShareBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (!draft.members.some((m) => m.author === author)) return false;
+  draft.recoveryShares.push({ ...at, by: author, box: body.box });
   return true;
 }
 
@@ -2050,6 +2243,24 @@ function insertAfter(atoms: readonly Atom[], after: string | null, atom: Atom): 
 }
 
 /**
+ * Brings the removals up to `draft.at` (#115): each removal that has passed
+ * and closed by then, once, in order of close time and then relay order.
+ * From then on its member only reads (`can()`), until a `remove` takes them
+ * out; one who has already left needs no `remove` (removal.ts). Runs before
+ * each event, before {@link advanceSeats}, so no one a removal has passed
+ * against is seated.
+ */
+function advanceRemovals(draft: Draft): void {
+  const removes = (proposal: OpenProposal) => proposal.target.kind === 'remove';
+  for (const { proposal, passed } of newlyClosed(draft, draft.judged, removes)) {
+    const { target } = proposal;
+    if (target.kind !== 'remove' || !passed) continue;
+    const passedAt = closeTime(proposal);
+    draft.removals.push({ proposal: proposal.id, member: target.member, passedAt, removed: null });
+  }
+}
+
+/**
  * The Atoms after one Proposal's pass, or as they were when it hasn't passed
  * or changes no Atom (a steward, rules or priority Proposal, #102, #117,
  * #107): an edit sets
@@ -2073,11 +2284,11 @@ function applyPass(
 }
 
 /**
- * The Document a Proposal changes (#112): its Atom's, for an edit or a
- * removal, and the one Document an add's new Atom joins (#75), as
- * {@link applyPasses} gives it. An Atom that genesis didn't found came from
- * an add, so it's in that Document too. A steward, rules or dissolve Proposal
- * changes none.
+ * The Document a Proposal changes (#112): its Atom's, for an edit, one that
+ * removes its section included, and the one Document an add's new Atom joins
+ * (#75), as {@link applyPasses} gives it. An Atom that genesis didn't found
+ * came from an add, so it's in that Document too. A steward, rules, dissolve
+ * or member removal (#115) Proposal changes none.
  */
 function documentOf(draft: Draft, proposal: OpenProposal): string | null {
   const { kind } = proposal.target;
@@ -2108,6 +2319,14 @@ function advanceDispatches(draft: Draft): void {
       received: closeTime(proposal),
     });
   }
+}
+
+/** Brings the removals, the seats, the opt-ins and the carried Dispatches up to `draft.at`, in that order. */
+function advanceAll(draft: Draft): void {
+  advanceRemovals(draft);
+  advanceSeats(draft);
+  advanceOptIns(draft);
+  advanceDispatches(draft);
 }
 
 /**
@@ -2294,6 +2513,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     at: 0,
     stewards: EMPTY_SEATS,
     suspensions: [],
+    removals: [],
+    responses: [],
     narrowings: [],
     vouches: [],
     chatPosts: [],
@@ -2305,8 +2526,10 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotationDue: false,
     seated: new Set(),
     ruled: new Set(),
+    judged: new Set(),
     dispatched: new Set(),
     dissolved: null,
+    recoveryShares: [],
     coalition: null,
     cleared: pass.cleared,
     firstResults: pass.firstResults,
@@ -2324,17 +2547,15 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const now = endTime(draft, pass.relayNow);
   draft.at = now ?? draft.at;
   if (draft.coalition !== null) advanceAdmissions(draft, draft.coalition);
-  advanceSeats(draft);
-  advanceOptIns(draft);
-  advanceDispatches(draft);
+  advanceAll(draft);
   const distrusted = draft.proposals
     .filter((p) => p.readAhead !== null && p.result === null)
     .map((p) => p.id);
   const proposals = draft.proposals.map((p) => settle(p, draft, now));
   const atoms = applyPasses(draft.founded, proposals, draft.group);
   const { group, rules, name, chat, title, members, former, at, stewards, suspensions } = draft;
-  const { narrowings, vouches, chatPosts, chatThreads, dispatches, doorInvites } = draft;
-  const { epoch, rotations, rotationDue } = draft;
+  const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
+  const { dispatches, doorInvites, epoch, rotations, rotationDue } = draft;
   const state = {
     group,
     rules,
@@ -2349,6 +2570,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     at,
     stewards,
     suspensions,
+    removals,
+    responses,
     narrowings,
     vouches,
     chatPosts,
@@ -2359,6 +2582,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     rotations,
     rotationDue,
     dissolved: draft.dissolved,
+    recoveryShares: draft.recoveryShares,
     coalitions: heldSeats(proposals, draft.coalition !== null),
     coalition: draft.coalition,
     focus: focusOf(proposals),
@@ -2483,10 +2707,11 @@ function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
 }
 
 /**
- * Moves relay time on to `received`, never back, and brings the seats,
- * opt-ins and carried Dispatches up to it (#112). A coalition still forming
- * when it reaches its `formsBy` is declined there, and relay time stops at
- * that minute (#100). A coalition seats each group admitted by then (#114).
+ * Moves relay time on to `received`, never back, and brings the removals
+ * (#115), seats, opt-ins and carried Dispatches (#112) up to it
+ * ({@link advanceAll}). A coalition still forming when it reaches its
+ * `formsBy` is declined there, and relay time stops at that minute (#100). A
+ * coalition seats each group admitted by then (#114).
  */
 function advanceTo(draft: Draft, received: number): void {
   draft.at = Math.max(draft.at, received);
@@ -2495,9 +2720,7 @@ function advanceTo(draft: Draft, received: number): void {
     draft.at = draft.coalition.declinedAt ?? draft.at;
     advanceAdmissions(draft, draft.coalition);
   }
-  advanceSeats(draft);
-  advanceOptIns(draft);
-  advanceDispatches(draft);
+  advanceAll(draft);
 }
 
 /**
@@ -2508,8 +2731,8 @@ function advanceTo(draft: Draft, received: number): void {
  * changes nothing at all: not relay time, and not the event ids seen, so the
  * copy its author posts again to the new mailbox folds once. Otherwise relay
  * time moves on, whatever the record holds, until the group dissolves (#108),
- * and the seats, opt-ins and carried Dispatches catch up to it before the
- * event is checked. A repeated event id is ignored.
+ * and the removals, seats, opt-ins and carried Dispatches catch up to it
+ * before the event is checked. A repeated event id is ignored.
  */
 function foldRecord(draft: Draft, read: Read, seen: Set<string>): boolean {
   const { seq, received, epoch, parsed } = read;

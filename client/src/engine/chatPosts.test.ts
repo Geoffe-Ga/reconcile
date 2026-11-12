@@ -419,3 +419,28 @@ describe('Dispatches beside Proposal numbers and threads (#112, #123)', () => {
     expect(state.chatThreads).toHaveLength(1);
   });
 });
+
+describe('a claim beside a passed removal (#115)', () => {
+  it('lets the person a passed removal names claim nothing and record no thread, as the fold takes neither', () => {
+    // The bot on, and Ben's edit, whose opening Cal claims.
+    const log = botOn();
+    const edit = log.propose('Ben');
+    const opened = log.minute;
+    log.chatPosted('Cal', edit, 'open');
+    // Ana's removal of Cal passes on Ana's and Ben's 4s, closing early.
+    const removal = log.proposeRemoval('Ana', 'Cal');
+    for (const voter of ['Ana', 'Ben']) log.vote(voter, removal, 4);
+    // The edit's last day.
+    log.minute = deadlineOf(opened) - DAY_MINUTES;
+    const state = log.state();
+    expect(mayClaim(state, authorOf('cal'), edit, 'closing')).toBe(false);
+    expect(dueClaims(state, authorOf('cal'))).toEqual([]);
+    expect(mayRecordThread(state, authorOf('cal'), edit)).toBe(false);
+    // The fold agrees: neither lands, while Ben may still claim.
+    log.chatPosted('Cal', edit, 'closing');
+    log.chatThread('Cal', edit, THREAD_URL);
+    expect(claimFor(log.state(), edit, 'closing')).toBeUndefined();
+    expect(threadFor(log.state(), edit)).toBeUndefined();
+    expect(mayClaim(log.state(), authorOf('ben'), edit, 'closing')).toBe(true);
+  });
+});
