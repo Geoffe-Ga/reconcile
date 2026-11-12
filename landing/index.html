@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#bfd9e4" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1d2e36" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#78acd2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#32477a" media="(prefers-color-scheme: dark)" />
     <meta
       name="description"
       content="Reconcile helps a group write down what it agrees on and change it only by a vote of the people in it. Private by design: your group's words and votes live on your own devices."
@@ -15,13 +15,12 @@
   <body>
     <!--
       The landing page (landing/README.md). One scene, read top to bottom:
-      sky, canopy, branches, trunks, soil, roots, mycelium. The pictures are
-      pixel art drawn by scene.mjs and set as backgrounds in landing.css.
+      sky, canopy, branches, trunks, soil, roots, mycelium. The backgrounds
+      are one tall painting, made by paint.py and cut into a piece per section.
       No scripts, no inline styles, nothing from another host: it passes the
       deploy CSP (deploy/Caddyfile) as it stands.
     -->
     <header class="sky">
-      <div class="sun"></div>
       <div class="wrap sky-inner">
         <nav class="topbar" aria-label="Site">
           <span class="wordmark">Reconcile</span>
@@ -42,7 +41,6 @@
           </div>
         </div>
       </div>
-      <div class="strip strip-horizon"></div>
     </header>
 
     <main>
@@ -59,7 +57,6 @@
             <p>Each group decides for itself who is in, and what its words say.</p>
           </div>
         </div>
-        <div class="strip strip-branches"></div>
         <div class="wrap" id="how">
           <div class="win prose">
             <p class="eyebrow">How a Document changes</p>
@@ -93,7 +90,6 @@
             vote.
           </p>
         </div>
-        <div class="strip strip-underside"></div>
       </section>
 
       <section class="understory" aria-labelledby="h-trunk">
@@ -131,7 +127,6 @@
           </div>
           </div>
         </div>
-        <div class="strip strip-ground"></div>
       </section>
 
       <div class="earth">
@@ -163,8 +158,8 @@
           </div>
         </section>
 
+        <div class="deep">
         <section class="network" aria-labelledby="h-network">
-          <div class="strip strip-mycelium"></div>
           <div class="wrap">
             <div class="win prose">
             <p class="eyebrow">The network</p>
@@ -202,6 +197,7 @@
             <p>This page runs no scripts, sets no cookies and loads nothing from anyone else.</p>
           </footer>
         </section>
+        </div>
       </div>
     </main>
   </body>

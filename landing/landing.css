@@ -1,21 +1,29 @@
 /*
- * The Reconcile landing page, in the style of a 16-bit game. Colors come from
- * ../DESIGN.md; the scene colors under them match the palette in scene.mjs,
- * which draws the pixel art in img/. Change a scene color in both places.
+ * The Reconcile landing page, over a hand-painted background. Colors and type
+ * come from ../DESIGN.md. The background is one tall painting made by
+ * paint.py and cut into a piece per section (img/).
  *
- * Layout: one scene read top to bottom. Pixel-art strips (320 art pixels wide,
- * tiling sideways from the page's center, scaled by the whole number --px and
- * never smoothed) alternate with stretches of tiled texture. Text sits in
- * dialog-box windows on top. The four trees are at the same place in every
- * strip, so trunks and roots line up down the page.
+ * Layout: one scene read top to bottom. Each section is as tall as its piece
+ * of the painting (aspect-ratio), so the pieces meet edge to edge and read as
+ * one picture. Text sits on paper cards over it. Phones and narrow windows get
+ * the tall painting; wide windows get the wide one. If a section's text needs
+ * more room than its piece allows, the section grows and the painting crops
+ * at the sides.
  */
 
 @font-face {
-  font-family: 'Press Start 2P';
+  font-family: 'Newsreader Variable';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 200 800;
   font-display: swap;
-  src: url('fonts/press-start-2p-latin-400-normal.woff2') format('woff2');
+  src: url('fonts/newsreader-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Newsreader Variable';
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('fonts/newsreader-latin-wght-italic.woff2') format('woff2-variations');
 }
 @font-face {
   font-family: 'Public Sans Variable';
@@ -44,49 +52,27 @@
   --score-2: #76705f;
   --score-3: #4f7746;
   --score-4: #1f4a33;
+  --scrim: #1d1c1973;
 
-  /* Scene: the flat colors the pixel art starts and ends in (scene.mjs: sky1, g4, mist, soil2, soil4) */
-  --sky: #b3d4e3;
-  --leaf: #1f4a33;
-  --mist: #f6f1e7;
-  --soil: #493327;
-  --deep: #221812;
+  /* What shows while a piece of the painting loads: its own main color. */
+  --sky: #9cc6dc;
+  --leaf: #245c3c;
+  --mist: #cfdcae;
+  --soil: #5a3f2e;
+  --deep: #261c16;
+
+  /* The painting is multiplied by this. White leaves it as painted; night cools and dims it,
+     less so underground, where the network gives its own light. */
+  --tint: #ffffff;
+  --tint-earth: #ffffff;
+  --sky-text: #1d1c19;
   --on-deep: #d6d0c2;
-  --window-shadow: #1d1c1973;
 
-  /* Day pictures. Night swaps the palette, not the drawing. */
-  --img-stars: url('img/day/stars.png');
-  --img-sun: url('img/day/sun.png');
-  --img-horizon: url('img/day/horizon.png');
-  --img-leaves: url('img/day/leaves.png');
-  --img-branches: url('img/day/branches.png');
-  --img-underside: url('img/day/underside.png');
-  --img-trunks: url('img/day/trunks.png');
-  --img-ground: url('img/day/ground.png');
-  --img-soil: url('img/day/soil.png');
-  --img-mycelium: url('img/day/mycelium.png');
-  --img-deep: url('img/day/deep.png');
-
-  --font-pixel: 'Press Start 2P', ui-monospace, 'Courier New', monospace;
+  --font-serif: 'Newsreader Variable', 'Newsreader', 'Iowan Old Style', Georgia, serif;
   --font-sans:
     'Public Sans Variable', 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  /* How many screen pixels one art pixel takes. Always a whole number. */
-  --px: 2;
-  --u: calc(var(--px) * 1px);
-  --tile: calc(320px * var(--px));
   --gutter: clamp(16px, 4vw, 32px);
-}
-
-@media (min-width: 700px) {
-  :root {
-    --px: 3;
-  }
-}
-@media (min-width: 1600px) {
-  :root {
-    --px: 4;
-  }
 }
 
 /* Night. Two blocks so an explicit theme choice wins either way. */
@@ -108,23 +94,15 @@
     --score-2: #a39d8f;
     --score-3: #93b986;
     --score-4: #8fbf98;
-    --sky: #16232d;
-    --leaf: #172c20;
-    --mist: #15140f;
-    --soil: #281c15;
-    --deep: #140e0a;
-    --window-shadow: #0a0a07b3;
-    --img-stars: url('img/night/stars.png');
-    --img-sun: url('img/night/sun.png');
-    --img-horizon: url('img/night/horizon.png');
-    --img-leaves: url('img/night/leaves.png');
-    --img-branches: url('img/night/branches.png');
-    --img-underside: url('img/night/underside.png');
-    --img-trunks: url('img/night/trunks.png');
-    --img-ground: url('img/night/ground.png');
-    --img-soil: url('img/night/soil.png');
-    --img-mycelium: url('img/night/mycelium.png');
-    --img-deep: url('img/night/deep.png');
+    --scrim: #0a0a07b3;
+    --sky: #2c3f66;
+    --leaf: #122c22;
+    --mist: #4a5a52;
+    --soil: #2a1d16;
+    --deep: #120d0a;
+    --tint: #5f6a96;
+    --tint-earth: #a9a3ad;
+    --sky-text: #f1ece0;
   }
 }
 :root[data-theme='dark'] {
@@ -144,23 +122,15 @@
   --score-2: #a39d8f;
   --score-3: #93b986;
   --score-4: #8fbf98;
-  --sky: #16232d;
-  --leaf: #172c20;
-  --mist: #15140f;
-  --soil: #281c15;
-  --deep: #140e0a;
-  --window-shadow: #0a0a07b3;
-  --img-stars: url('img/night/stars.png');
-  --img-sun: url('img/night/sun.png');
-  --img-horizon: url('img/night/horizon.png');
-  --img-leaves: url('img/night/leaves.png');
-  --img-branches: url('img/night/branches.png');
-  --img-underside: url('img/night/underside.png');
-  --img-trunks: url('img/night/trunks.png');
-  --img-ground: url('img/night/ground.png');
-  --img-soil: url('img/night/soil.png');
-  --img-mycelium: url('img/night/mycelium.png');
-  --img-deep: url('img/night/deep.png');
+  --scrim: #0a0a07b3;
+  --sky: #2c3f66;
+  --leaf: #122c22;
+  --mist: #4a5a52;
+  --soil: #2a1d16;
+  --deep: #120d0a;
+  --tint: #5f6a96;
+  --tint-earth: #a9a3ad;
+  --sky-text: #f1ece0;
 }
 
 /* ---------- Base ---------- */
@@ -201,27 +171,27 @@ ul {
 }
 
 h1,
-h2,
-h3 {
-  font-family: var(--font-pixel);
-  font-weight: 400;
+h2 {
+  font-family: var(--font-serif);
+  font-weight: 500;
   color: var(--ink);
   text-wrap: balance;
+  letter-spacing: -0.01em;
 }
 
 h1 {
-  font-size: clamp(22px, 4.4vw, 44px);
-  line-height: 1.3;
+  font-size: clamp(42px, 8.4vw, 80px);
+  line-height: 1.02;
 }
 
 h2 {
-  font-size: clamp(16px, 2.3vw, 23px);
-  line-height: 1.45;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.1;
 }
 
 h3 {
-  font-size: 13px;
-  line-height: 1.5;
+  font: 650 18px/1.3 var(--font-sans);
+  color: var(--ink);
 }
 
 a {
@@ -231,6 +201,7 @@ a {
 :focus-visible {
   outline: 3px solid var(--ochre);
   outline-offset: 3px;
+  border-radius: 6px;
 }
 
 .wrap {
@@ -247,8 +218,8 @@ a {
 }
 
 .eyebrow {
-  font: 400 10px/1.5 var(--font-pixel);
-  letter-spacing: 0.04em;
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--primary);
 }
@@ -260,153 +231,125 @@ a {
 }
 
 .wordmark {
-  font: 400 15px/1 var(--font-pixel);
+  font: 500 24px/1 var(--font-serif);
+  letter-spacing: -0.01em;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px 24px;
+  gap: 12px 24px;
 }
 
-/* A menu choice: a hard-edged button with the cursor arrow beside it. */
 .button {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   min-height: 48px;
-  padding: 0 24px 0 20px;
-  border: var(--u) solid var(--ink);
+  padding: 0 28px;
+  border-radius: 9999px;
   background: var(--primary);
   color: var(--on-primary);
-  box-shadow: calc(var(--u) * 2) calc(var(--u) * 2) 0 var(--window-shadow);
-  font: 400 13px/1.2 var(--font-pixel);
+  font: 600 16px/1.2 var(--font-sans);
   text-decoration: none;
   touch-action: pan-x pan-y pinch-zoom;
-}
-
-.button::before {
-  content: '';
-  width: 0;
-  height: 0;
-  border-block: 6px solid transparent;
-  border-left: 9px solid currentColor;
-  animation: blink 1s steps(2, jump-none) infinite;
-}
-
-.button:active {
-  translate: var(--u) var(--u);
-  box-shadow: var(--u) var(--u) 0 var(--window-shadow);
 }
 
 .quiet-link {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  font: 400 11px/1.5 var(--font-pixel);
+  font: 500 15px/1.4 var(--font-sans);
   text-decoration: underline;
-  text-decoration-thickness: 2px;
+  text-decoration-thickness: 1px;
   text-underline-offset: 4px;
 }
 
-/* A dialog box: paper, a hard ink edge, an inner rule and a hard shadow. */
+/* A card of paper laid over the painting. */
 .win {
-  position: relative;
-  padding: clamp(20px, 3.5vw, 32px);
-  border: var(--u) solid var(--ink);
+  padding: clamp(20px, 3.5vw, 36px);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
   background: var(--surface);
   color: var(--body);
-  box-shadow:
-    inset 0 0 0 var(--u) var(--surface),
-    inset 0 0 0 calc(var(--u) * 2) var(--hairline),
-    calc(var(--u) * 2) calc(var(--u) * 2) 0 var(--window-shadow);
+  box-shadow: 0 10px 30px var(--scrim);
 }
 
-/* ---------- Pixel-art strips ---------- */
+/* ---------- The painting ---------- */
 
-.strip,
 .sky,
-.sun,
 .canopy,
-.understory-mid,
+.understory,
 .soil,
-.network,
-.bedrock {
-  image-rendering: crisp-edges; /* older Firefox */
-  image-rendering: pixelated;
+.deep {
+  /* The tint is a flat layer multiplied over the picture; it isn't a gradient. */
+  background-image: linear-gradient(var(--tint), var(--tint)), var(--piece);
+  background-blend-mode: multiply, normal;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
-.strip {
-  height: calc(var(--rows) * var(--u));
-  background-image: var(--img);
-  background-size: var(--tile) auto;
-  background-position: center top;
-  background-repeat: repeat-x;
+/* Tall painting: each piece's height in widths matches `TALL.heights` in paint.py. */
+.sky {
+  --piece: url('img/tall/sky.webp');
+  aspect-ratio: 100 / 230;
+  background-color: var(--sky);
+  background-position: center bottom;
+}
+.canopy {
+  --piece: url('img/tall/canopy.webp');
+  aspect-ratio: 100 / 460;
+  background-color: var(--leaf);
+}
+.understory {
+  --piece: url('img/tall/trunks.webp');
+  aspect-ratio: 100 / 290;
+  background-color: var(--mist);
+}
+.soil {
+  --tint: var(--tint-earth);
+  --piece: url('img/tall/soil.webp');
+  aspect-ratio: 100 / 240;
+  background-color: var(--soil);
+}
+.deep {
+  --tint: var(--tint-earth);
+  --piece: url('img/tall/deep.webp');
+  aspect-ratio: 100 / 340;
+  background-color: var(--deep);
 }
 
-.strip-horizon {
-  --rows: 160;
-  --img: var(--img-horizon);
-}
-.strip-branches {
-  --rows: 128;
-  --img: var(--img-branches);
-}
-.strip-underside {
-  --rows: 96;
-  --img: var(--img-underside);
-}
-.strip-ground {
-  --rows: 128;
-  --img: var(--img-ground);
-}
-
-/* Twelve frames stacked in one picture; the lights travel by stepping down it. */
-.strip-mycelium {
-  --rows: 200;
-  --img: var(--img-mycelium);
-  background-position-y: 0;
-  animation: travel 3s steps(12) infinite;
-}
-
-@keyframes travel {
-  to {
-    background-position-y: calc(var(--u) * -2400);
+/* Wide painting: `WIDE.heights` in paint.py. */
+@media (min-width: 1100px) {
+  .sky {
+    --piece: url('img/wide/sky.webp');
+    aspect-ratio: 100 / 80;
   }
-}
-
-@keyframes blink {
-  from {
-    opacity: 1;
+  .canopy {
+    --piece: url('img/wide/canopy.webp');
+    aspect-ratio: 100 / 115;
   }
-  to {
-    opacity: 0;
+  .understory {
+    --piece: url('img/wide/trunks.webp');
+    aspect-ratio: 100 / 92;
+  }
+  .soil {
+    --piece: url('img/wide/soil.webp');
+    aspect-ratio: 100 / 70;
+  }
+  .deep {
+    --piece: url('img/wide/deep.webp');
+    aspect-ratio: 100 / 115;
   }
 }
 
 /* ---------- Sky ---------- */
 
 .sky {
-  position: relative;
-  background-color: var(--sky);
-  background-image: var(--img-stars);
-  background-size: calc(128px * var(--px)) auto;
-  background-position: center top;
-  color: var(--body);
-}
-
-.sky-inner {
-  position: relative;
-}
-
-.sun {
-  position: absolute;
-  top: clamp(64px, 8vw, 110px);
-  right: clamp(20px, 11vw, 180px);
-  width: calc(28px * var(--px));
-  aspect-ratio: 1;
-  background: var(--img-sun) center / contain no-repeat;
+  /* Keep the words clear of the treetops at the bottom of this piece. */
+  padding-bottom: 74vw;
+  color: var(--sky-text);
 }
 
 .topbar {
@@ -415,47 +358,48 @@ a {
   justify-content: space-between;
   gap: 16px;
   padding-block: 16px;
-  color: var(--ink);
 }
 
 .hero {
   display: grid;
   gap: 20px;
   max-width: 44rem;
-  padding-block: clamp(96px, 10vw, 112px) clamp(24px, 4vw, 48px);
+  padding-top: clamp(40px, 8vw, 96px);
+}
+
+.hero h1 {
+  color: var(--sky-text);
+}
+
+.hero .eyebrow {
+  color: var(--sky-text);
 }
 
 .lede {
   max-width: 34rem;
-  font-size: clamp(18px, 2vw, 20px);
-  line-height: 1.5;
-  color: var(--ink);
+  font: 400 clamp(19px, 2.2vw, 22px) / 1.5 var(--font-serif);
 }
 
 .hero .actions {
   padding-top: 8px;
-  color: var(--ink);
 }
 
 /* ---------- Canopy ---------- */
 
 .canopy {
-  background-color: var(--leaf);
-  background-image: var(--img-leaves);
-  background-size: calc(64px * var(--px)) auto;
-  background-position: center top;
-  padding-top: clamp(24px, 5vw, 56px);
+  padding-block: 8vw 12vw;
 }
 
-.strip-branches {
-  margin-block: clamp(16px, 3vw, 32px);
+/* Room to see the boughs cross between the two groups of cards. */
+#how {
+  padding-top: 34vw;
 }
 
 .steps {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
-  gap: 24px;
-  padding-top: 24px;
+  gap: 20px;
+  padding-top: 20px;
   counter-reset: step;
 }
 
@@ -464,39 +408,29 @@ a {
   align-content: start;
   gap: 8px;
   min-width: 0;
-  padding: 20px;
+  padding: 20px 24px 24px;
   counter-increment: step;
 }
 
 .steps li::before {
   content: counter(step);
-  font: 400 22px/1 var(--font-pixel);
+  font: 500 40px/1 var(--font-serif);
   color: var(--ochre-ink);
 }
 
 .pullquote {
   max-width: 34rem;
-  margin-top: 24px;
-  font: 400 clamp(12px, 1.5vw, 14px) / 1.8 var(--font-pixel);
+  margin-top: 20px;
+  font: italic 400 clamp(21px, 2.6vw, 27px) / 1.3 var(--font-serif);
   color: var(--ink);
   text-wrap: balance;
-}
-
-.strip-underside {
-  margin-top: clamp(40px, 6vw, 72px);
 }
 
 /* ---------- Understory: trunks ---------- */
 
 .understory {
-  background: var(--mist);
-}
-
-.understory-mid {
-  padding-block: 8px 40px;
-  background-image: var(--img-trunks);
-  background-size: var(--tile) auto;
-  background-position: center top;
+  /* Below the canopy's underside, above the forest floor. */
+  padding-block: 42vw 56vw;
 }
 
 .notice {
@@ -518,12 +452,14 @@ a {
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0 14px 0 12px;
+  border-radius: 9999px;
   color: var(--surface);
   font: 500 14px/1.2 var(--font-sans);
 }
 .scale b {
-  font: 400 12px/1 var(--font-pixel);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .scale .s0 {
   background: var(--score-0);
@@ -546,7 +482,7 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 16px 24px;
   padding-top: 16px;
-  border-top: var(--u) solid var(--hairline);
+  border-top: 1px solid var(--hairline);
 }
 
 .levels div {
@@ -556,7 +492,7 @@ a {
 }
 
 .levels dt {
-  font: 400 12px/1.5 var(--font-pixel);
+  font: 650 15px/1.4 var(--font-sans);
   color: var(--ink);
 }
 
@@ -568,16 +504,11 @@ a {
 /* ---------- Underground ---------- */
 
 .soil {
-  padding-block: clamp(16px, 4vw, 40px) clamp(40px, 6vw, 72px);
-  background-color: var(--soil);
-  background-image: var(--img-soil);
-  background-size: var(--tile) auto;
-  background-position: center top;
+  padding-block: 30vw 24vw;
 }
 
 .soil .win,
-.network .win,
-.bedrock .win {
+.deep .win {
   margin-inline: auto;
 }
 
@@ -591,28 +522,16 @@ a {
   display: grid;
   gap: 4px;
   padding-top: 16px;
-  border-top: var(--u) solid var(--hairline);
+  border-top: 1px solid var(--hairline);
 }
 
-.network,
+.deep {
+  /* The network fills the top of this piece; the cards come after it. */
+  padding-top: 108vw;
+}
+
 .bedrock {
-  background-color: var(--deep);
-  background-image: var(--img-deep);
-  background-size: calc(64px * var(--px)) auto;
-  background-position: center top;
-}
-
-/* The strip paints over the deep-earth texture and ends in it. */
-.network .strip {
-  background-color: var(--soil);
-}
-
-.network .wrap {
-  padding-block: 8px clamp(40px, 6vw, 64px);
-}
-
-.bedrock .wrap {
-  padding-bottom: clamp(40px, 6vw, 64px);
+  padding-top: 24px;
 }
 
 .bedrock .actions {
@@ -625,23 +544,35 @@ a {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px 24px;
-  padding-top: 0;
+  padding-block: 32px;
   color: var(--on-deep);
   font-size: 14px;
   line-height: 1.4;
 }
 
-/* ---------- Motion ---------- */
+@media (min-width: 1100px) {
+  .sky {
+    padding-bottom: 28vw;
+  }
+  .canopy {
+    padding-block: 6vw 10vw;
+  }
+  #how {
+    padding-top: 24vw;
+  }
+  .understory {
+    padding-block: 15vw 26vw;
+  }
+  .soil {
+    padding-block: 9vw 8vw;
+  }
+  .deep {
+    padding-top: 50vw;
+  }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .strip-mycelium,
-  .button::before {
-    animation: none;
   }
 }

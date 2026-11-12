@@ -1,9 +1,10 @@
 # Landing page
 
-One static page that says what Reconcile is, for phones and desktops alike, drawn like a 16-bit
-video game. It is a single scene read from top to bottom: sky, canopy, intertwining branches,
-trunks, soil, roots, and the mycelial network that joins them. Each layer carries the part of the
-product it stands for, and the words sit in dialog-box windows on top.
+One static page that says what Reconcile is, for phones and desktops alike, set over a
+hand-painted background in the manner of an old animated film or a pre-rendered game screen. It is
+a single scene read from top to bottom: sky, canopy, intertwining branches, trunks, soil, roots,
+and the mycelial network that joins them. Each layer carries the part of the product it stands
+for, and the words sit on paper cards over the painting.
 
 | Layer | What it says |
 |-------|--------------|
@@ -16,23 +17,45 @@ product it stands for, and the words sit in dialog-box windows on top.
 ## Files
 
 - `index.html`: the copy and structure. Edit the words here.
-- `landing.css`: layout, type and which picture goes where. The tokens at the top mirror
-  [`DESIGN.md`](../DESIGN.md); the scene colors under them match the palette in `scene.mjs`.
-- `scene.mjs`: draws the pixel art. `node landing/scene.mjs` rewrites every PNG in `img/`. It has
-  no dependencies and a fixed random seed, so an unchanged script writes the same files. Change
-  the art there, never by editing a PNG.
-- `img/day/`, `img/night/`: the pictures. Night is a palette swap of day: same drawing, different
-  colors, and the stars only show at night.
-- `fonts/`: self-hosted Press Start 2P and Public Sans (see `fonts/README.md`).
+- `landing.css`: layout, type and which piece of the painting goes behind which section. The
+  tokens at the top mirror [`DESIGN.md`](../DESIGN.md).
+- `paint.py`: paints the background. See below.
+- `img/wide/`, `img/tall/`: the painting, cut into one WebP per section. `wide` is for windows
+  1100px and up, `tall` for phones and narrow windows.
+- `fonts/`: self-hosted Newsreader and Public Sans (see `fonts/README.md`).
 
-### How the pictures fit together
+### How the painting is made
 
-- Every strip is 320 art pixels wide and tiles sideways from the middle of the page. The four
-  trees are at the same x in every strip (`TREES` in `scene.mjs`), so trunks and roots line up.
-- `--px` in `landing.css` is how many screen pixels one art pixel takes: 2 on phones, 3 on most
-  screens, 4 on very wide ones. Keep it a whole number, or the pixels blur.
-- The lights in the mycelium are 12 frames stacked in one PNG. The CSS steps down it. If you
-  change the frame count in `scene.mjs`, change `steps(12)` and the `-2400` in `landing.css` too.
+`paint.py` simulates a brush. Nothing in it is a photograph or a model's output.
+
+1. **Compose.** It blocks in one tall picture in flat color: the underdrawing.
+2. **Paint.** It covers a toned ground with strokes that follow the underdrawing, big brushes
+   first, then finer ones only where the picture still differs from it. Each stroke is a bundle of
+   bristles of slightly different color, so it streaks like gouache. Fine lines (twigs, grass,
+   root hairs, fungal threads) go on last, and the sunbeams and the network's glow are glazed over
+   the top.
+3. **Cut.** It slices the tall picture into a piece per page section.
+
+```bash
+python3 -m venv /tmp/paint && /tmp/paint/bin/pip install numpy opencv-python-headless
+/tmp/paint/bin/python landing/paint.py                              # both layouts: about ten minutes
+/tmp/paint/bin/python landing/paint.py --scale 0.4 --out /tmp/look  # a quick look: about a minute
+```
+
+numpy and OpenCV are needed only to repaint; they aren't in the repo's requirements, and the page
+itself needs nothing. The random seed is fixed, so the same script paints the same picture.
+
+### How the pieces fit the page
+
+- Each section's `aspect-ratio` in `landing.css` matches its piece's height in `paint.py`
+  (`WIDE.heights`, `TALL.heights`), so the pieces meet edge to edge. Change one, change the other.
+- The four near trees are at the same x in every piece (`trees` in each layout), so trunks run
+  straight down into their roots.
+- If a section's text needs more room than its piece gives, the section grows and the painting
+  crops at the sides. A small seam can show there. Give the layout more height in `paint.py`
+  rather than fighting it in CSS.
+- Night doesn't repaint anything: `--tint` multiplies the same painting down to a cool, dim
+  version.
 
 ## See it
 
@@ -45,13 +68,10 @@ Check it at a phone width (about 390px) and a desktop width, in light and dark.
 ## Rules it keeps
 
 - **No scripts, no cookies, no third-party requests.** The page says so in its footer, so keep it
-  true. The moving lights in the network and the blinking menu arrow are CSS animations, and they stop under
-  `prefers-reduced-motion`.
+  true. Nothing on the page moves.
 - **It passes the deploy CSP as it stands** (`deploy/Caddyfile`): one stylesheet from its own
   origin, images and fonts from its own origin, no `<style>` elements, no `style` attributes, no
   `data:` URLs.
-- **A small fixed palette, taken from `DESIGN.md`.** Shading is done with dithering, never a
-  smooth gradient, and the pictures are never smoothed when scaled.
 - **The copy uses the domain vocabulary** in the root `CLAUDE.md`, and the ballot labels match
   `client/src/app/messages.ts`.
 - **Nothing here promises a public directory**, or names a real group.
