@@ -1139,6 +1139,8 @@ export const messages = {
       'Sharing couldn’t be stopped, so nothing was deleted. Check your connection, then try again.',
     /** Under a shared Document's title on Personal (#105). */
     sharedLine: 'Shared by link',
+    /** In place of sharedLine while a restore has paused the Document's share (#328). */
+    pausedLine: 'Link paused after a restore',
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
@@ -1184,10 +1186,30 @@ export const messages = {
         'Sharing stopped. People who opened the link may have kept a copy, and earlier copies stay on the relay, still sealed, until they expire within a month.',
       stopFailed:
         'Sharing couldn’t be stopped, so nothing changed and the link still works. Stopping needs the relay. Check your connection, then try again.',
+      /**
+       * In place of the link while a restore has paused the share (#328): the
+       * backup may predate Stop sharing, so nothing is sent until the person chooses.
+       */
+      paused: 'This link was live when the backup was made. Keep sharing?',
+      pausedNote:
+        'Nothing goes to the link until you choose. Keep sharing sends it this Document’s latest version.',
+      keep: 'Keep sharing',
+      keeping: 'Updating the link…',
+      kept: 'Still shared. The link shows this Document’s latest version.',
+      keptPending: 'Still shared. The link hasn’t caught up with this Document yet.',
+      keepStopped: 'This link had already been stopped, so it stays off.',
+      pausedStopFailed:
+        'Sharing couldn’t be stopped, so the link stays paused. Stopping needs the relay. Check your connection, then try again.',
       /** In place of the link while the device's keys are locked with a passkey, which holds its seed (#255). */
       locked:
         'This Document is shared by link, but your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to see the link, stop sharing or delete this Document.',
-      /** When Share link or Stop sharing finds the keys locked, as another tab can lock them (#255). */
+      /**
+       * In place of the paused question while the device's keys are locked (#255, #328):
+       * keeping or stopping a share needs its keys, and nothing goes to the link meanwhile.
+       */
+      lockedPaused:
+        'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
       lockedNow:
         'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
     },
