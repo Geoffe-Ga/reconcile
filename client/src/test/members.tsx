@@ -102,11 +102,11 @@ export async function joinLater(
 }
 
 /**
- * Lets `device`'s sync pass finish, running one if none is. An action queues
- * its event and then calls `syncOnce`, which joins a pass already running; that
- * pass may have posted the outbox before the event was queued, and no poller
- * runs in tests to send it later (#260). So between two actions on one device,
- * a test settles it before the action whose send it waits for.
+ * Waits until `device` has posted everything it queued: the pass running now
+ * and the one after it, or one pass when none runs. An action sends its event
+ * in a pass the test doesn't wait for, so a test settles the device before
+ * another device reads what it just did; otherwise that device could sync
+ * before the pass has posted it.
  */
 export async function settle(device: TestDevice): Promise<void> {
   await act(() => device.services.sync.syncOnce());

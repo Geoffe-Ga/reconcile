@@ -7,15 +7,7 @@ import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import {
-  appUser,
-  go,
-  members,
-  type MountedApp,
-  mountApp,
-  proposeFrom,
-  settle,
-} from '../test/members';
+import { appUser, go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
 import { pastPressFallback } from '../test/press';
 import { Ballot, type BallotProps } from './Ballot';
 import { castBallot } from './proposals';
@@ -386,15 +378,11 @@ describe('Ballot, in the app', () => {
     });
 
     // Ben first blocks his own Proposal with a 0, then changes his mind before the close.
-    // Each send waits for the pass before it, so it starts a pass of its own.
-    await b.findByRole('radio', { name: '0 · Strongly opposed' });
-    await settle(ben);
-    await user.click(b.getByRole('radio', { name: '0 · Strongly opposed' }));
+    await user.click(await b.findByRole('radio', { name: '0 · Strongly opposed' }));
     await user.click(b.getByRole('textbox', { name: 'Your reason for a 0' }));
     await user.paste('Wrong day.');
     await user.click(b.getByRole('button', { name: 'Send your vote' }));
     await b.findByText('Sent');
-    await settle(ben);
     await user.click(b.getByRole('radio', { name: '4 · Strongly supportive' }));
     await user.click(b.getByRole('button', { name: 'Update your vote' }));
     // The ballot's own status line: Tell your group has one of its own on this page (#77).

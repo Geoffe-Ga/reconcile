@@ -19,7 +19,6 @@ import {
   mountApp,
   proposeFrom,
   score,
-  settle,
 } from '../test/members';
 
 freshIndexedDBPerTest();
@@ -67,7 +66,6 @@ describe('propose, vote, and see the Update', () => {
       const user = appUser();
       const { fake, groupId, devices } = await group(['Ana', 'Ben']);
       const [ana, ben] = devices;
-      if (ana === undefined || ben === undefined) throw new Error('Expected two devices.');
       const startMinute = fake.minute;
       go(`#/g/${groupId}/doc`);
       const a = mount(ana, 'a');
@@ -78,8 +76,6 @@ describe('propose, vote, and see the Update', () => {
       await waitFor(() => {
         expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
       });
-      // The Proposal's pass finishes first, so the ballot's send starts a pass of its own.
-      await settle(ana);
       await score(within(a), user, '3 · Supportive');
       expect(await within(a).findByText('Sent')).toBeVisible();
 
@@ -115,13 +111,9 @@ describe('propose, vote, and see the Update', () => {
     const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
-    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
-    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
-    // The Proposal's pass finishes first, so the ballot's send starts a pass of its own.
-    await settle(ana);
     await score(within(a), user, '4 · Strongly supportive');
     await within(a).findByText('Sent');
     // Let the pass that sent the ballot finish reading back before relay time moves on.
@@ -148,13 +140,10 @@ describe('propose, vote, and see the Update', () => {
     const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
-    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
-    // The Proposal's pass finishes first, so it is on the relay before Ben syncs.
-    await settle(ana);
     await sync(ben);
     const b = mount(ben, 'b');
 
@@ -263,13 +252,10 @@ describe('propose, vote, and see the Update', () => {
     const user = appUser();
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
-    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}/doc`);
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
-    // The Proposal's pass finishes first, so it is on the relay before Ben syncs.
-    await settle(ana);
     await sync(ben);
     const b = mount(ben, 'b');
 
@@ -340,8 +326,6 @@ describe('propose, vote, and see the Update', () => {
     const a = mount(ana, 'a');
     await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
     await within(a).findByRole('radio', { name: '3 · Supportive' });
-    // The Proposal's pass finishes first, so it is on the relay before Cy joins.
-    await settle(ana);
 
     // Cy joins afterwards, through the same invite, and opens the same Proposal.
     const cy = await joinLater(fake, ana, groupId, 'Cy');
@@ -389,13 +373,10 @@ describe('ask what to focus on, vote, and see the focus (#107)', () => {
     const user = appUser();
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
-    if (ana === undefined) throw new Error('Expected Ana.');
     go(`#/g/${groupId}`);
     const a = mount(ana, 'a');
     await ask(a, user, ['Fix the website', 'Plan the picnic']);
     expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
-    // The vote's pass finishes first, so the ballot's send starts a pass of its own.
-    await settle(ana);
     await scoreEach(a, user, {
       'Fix the website': '3 · Supportive',
       'Plan the picnic': '4 · Strongly supportive',
