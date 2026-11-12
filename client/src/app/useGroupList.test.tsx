@@ -24,7 +24,14 @@ async function storeWithGroup(): Promise<{ store: Store; groupId: string }> {
     type: 'genesis',
     group: '',
     ts: 0,
-    body: { name: 'Riverside Tenants', founder: 'Ana', title: 'House rules', atoms: ['A'] },
+    body: {
+      name: 'Riverside Tenants',
+      founder: 'Ana',
+      documents: [
+        { title: 'House rules', atoms: ['A'] },
+        { title: 'Budget', atoms: ['B'] },
+      ],
+    },
   });
   const me = { author: authorOf('ana'), name: 'Ana' };
   await store.addGroup({

@@ -27,6 +27,8 @@ export interface Draft {
    * typed, while "Send a Dispatch if this passes" is checked; absent otherwise.
    */
   readonly dispatch?: DraftDispatch;
+  /** A new Document's title (#92), as typed, in a new-Document Proposal's draft alone. */
+  readonly documentTitle?: string;
 }
 
 /** A draft's Dispatch (#112): its title and text, as typed. */
@@ -46,13 +48,17 @@ function hasStrings(value: unknown, keys: readonly string[]): value is Record<st
 
 /**
  * True for a value shaped like a {@link Draft}: four strings, nothing
- * missing, any window a number, and any Dispatch a title and a text (#112).
+ * missing, any window a number, any Dispatch a title and a text (#112), and
+ * any new Document's title a string (#92).
  */
 export function isDraft(value: unknown): value is Draft {
   if (!hasStrings(value, ['title', 'why', 'text', 'link'])) return false;
-  const { window, dispatch } = value;
+  const { window, dispatch, documentTitle } = value;
   const windowFits = window === undefined || typeof window === 'number';
-  return windowFits && (dispatch === undefined || hasStrings(dispatch, ['title', 'text']));
+  const titleFits = documentTitle === undefined || typeof documentTitle === 'string';
+  return (
+    windowFits && titleFits && (dispatch === undefined || hasStrings(dispatch, ['title', 'text']))
+  );
 }
 
 /** The draft a group's record holds for `target`, or undefined for none or for one that isn't whole. */

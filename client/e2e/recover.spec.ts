@@ -226,7 +226,7 @@ test('a new device recovers Ana through two contacts after the wait, and her can
       NAMES.dee,
       SYNCED,
     );
-    await ana.page.getByRole('link', { name: DOCUMENT }).click();
+    await ana.page.getByRole('link', { name: DOCUMENT, exact: true }).click();
     await ana.page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await ana.page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await ana.page.getByRole('textbox', { name: 'Why' }).fill('Mornings are when we sleep.');
@@ -372,7 +372,7 @@ test('a new device recovers Ana through two contacts after the wait, and her can
     await page.getByRole('link', { name: 'Your groups' }).click();
     await page.getByRole('link', { name: new RegExp(GROUP) }).click();
     await expect(heading(page, GROUP)).toBeVisible();
-    await page.getByRole('link', { name: DOCUMENT }).click();
+    await page.getByRole('link', { name: DOCUMENT, exact: true }).click();
     await expect(page.getByText('Bins go out on Tuesday.')).toBeVisible();
     const [restored] = await storedGroups(page);
     const [original] = await storedGroups(ana.page);

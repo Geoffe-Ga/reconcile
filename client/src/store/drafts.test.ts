@@ -170,6 +170,8 @@ describe('draft helpers', () => {
       { ...draft, dispatch: { title: 'Updated', text: '' } },
       true,
     ],
+    ['a new Document’s draft, with its title (#92)', { ...draft, documentTitle: 'Budget' }, true],
+    ['a new Document’s draft with a numeric title', { ...draft, documentTitle: 1 }, false],
     ['a draft with a Dispatch as text', { ...draft, dispatch: 'Updated' }, false],
     ['a draft with a null Dispatch', { ...draft, dispatch: null }, false],
     ['a draft with a Dispatch missing its text', { ...draft, dispatch: { title: 'U' } }, false],

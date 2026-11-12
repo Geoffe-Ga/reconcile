@@ -48,7 +48,8 @@ class Log {
   static founded(...joiners: string[]): Log {
     const log = new Log();
     const atoms = ['Quiet after 10pm.'];
-    const body = { name: 'G', founder: 'ana', title: 'T', atoms, kx: testKx('ana').kx };
+    const documents = [{ title: 'T', atoms }];
+    const body = { name: 'G', founder: 'ana', documents, kx: testKx('ana').kx };
     log.add('ana', { type: 'genesis', body });
     for (const name of joiners)
       log.add(name, { type: 'join', body: { name, kx: testKx(name).kx } });

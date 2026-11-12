@@ -1,0 +1,747 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "documents-dispatch-new: a new Document carrying a Dispatch passes, so the Dispatch goes out at its close, from the Proposal, pointing to the new Document",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "new-document",
+                "title": "Budget"
+              },
+              "title": "Start a Document",
+              "why": "We keep coming back to it.",
+              "text": "We keep a budget.\n",
+              "dispatch": {
+                "title": "New: Budget",
+                "text": "Read our budget."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375021,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "dispatch": {
+              "title": "New: Budget",
+              "text": "Read our budget."
+            },
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "title": "New: Budget",
+            "text": "Read our budget.",
+            "doc": "@3",
+            "received": 29375021
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-dispatch-second: an add into the second Document, a change to one of its sections and a removal of another each send their Dispatch pointing to that Document",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1:1",
+                "after": "@1:1.0"
+              },
+              "title": "Add a section",
+              "why": "We keep coming back to it.",
+              "text": "Guests leave by 11pm.\n",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Read the rules again."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "atom": "@1:1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "Quiet after 10pm.\n",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Read the rules again."
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "atom": "@1:1.1",
+              "title": "Drop this section",
+              "why": "It reads better.",
+              "text": "",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Read the rules again."
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@5",
+              "scores": {
+                "@5": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375041,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 10pm.\n"
+          },
+          {
+            "id": "@3",
+            "documentId": "@1:1",
+            "text": "Guests leave by 11pm.\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "doc": "@1:1",
+            "received": 29375021
+          },
+          {
+            "id": "@4",
+            "by": {
+              "proposal": "@4"
+            },
+            "doc": "@1:1",
+            "received": 29375031
+          },
+          {
+            "id": "@5",
+            "by": {
+              "proposal": "@5"
+            },
+            "doc": "@1:1",
+            "received": 29375041
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-dispatch-sent: a Co-Creator's Dispatch may point to the second Document, to a new Document once it has passed, and to a Document whose sections were all removed; one pointing to a new Document still open, or to an Atom, is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500300000,
+            "body": {
+              "title": "Meeting moved",
+              "text": "We meet on Thursday now.",
+              "doc": "@1:1"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "new-document",
+                "title": "Budget"
+              },
+              "title": "Start a Document",
+              "why": "We keep coming back to it.",
+              "text": "We keep a budget.\n"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "title": "Meeting moved",
+              "text": "We meet on Thursday now.",
+              "doc": "@4"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500720000,
+            "body": {
+              "title": "Meeting moved",
+              "text": "We meet on Thursday now.",
+              "doc": "@1:1.0"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501320000,
+            "body": {
+              "title": "Meeting moved",
+              "text": "We meet on Thursday now.",
+              "doc": "@4"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1:1.0",
+              "title": "Drop this section",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501860000,
+            "body": {
+              "atom": "@1:1.1",
+              "title": "Drop this section too",
+              "why": "It reads better.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@11",
+              "scores": {
+                "@11": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@11",
+              "scores": {
+                "@11": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375050,
+          "event": {
+            "v": 1,
+            "type": "dispatch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762503000000,
+            "body": {
+              "title": "Meeting moved",
+              "text": "We meet on Thursday now.",
+              "doc": "@1:1"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          },
+          {
+            "id": "@4",
+            "title": "Budget"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@4.0",
+            "documentId": "@4",
+            "text": "We keep a budget.\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": "%ana",
+            "doc": "@1:1",
+            "received": 29375005
+          },
+          {
+            "id": "@9",
+            "by": "%ben",
+            "doc": "@4",
+            "received": 29375022
+          },
+          {
+            "id": "@16",
+            "by": "%ana",
+            "doc": "@1:1",
+            "received": 29375050
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      },
+      "unchangedWithout": [5, 6]
+    }
+  ]
+}

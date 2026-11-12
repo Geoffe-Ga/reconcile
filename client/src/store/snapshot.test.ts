@@ -771,7 +771,7 @@ function plain(value: unknown): unknown {
 }
 
 describe('a shared Document in a backup (#105)', () => {
-  it('brings its share back whole, so the restored device keeps the same link and counts on', async () => {
+  it('brings its share back whole, paused until the person keeps it (#328), so the restored device keeps the same link and counts on', async () => {
     const device = await openStore('ana');
     await keepShared(device);
     await device.savePersonal(READING);
@@ -781,7 +781,7 @@ describe('a shared Document in a backup (#105)', () => {
     await importGroups(fresh, file, PASSPHRASE);
 
     expect(plain(await fresh.listPersonal())).toEqual(
-      plain([{ ...canaryStatement(), share: SHARE }, READING]),
+      plain([{ ...canaryStatement(), share: { ...SHARE, paused: true } }, READING]),
     );
   });
 
@@ -954,7 +954,7 @@ describe('a shared Document in a link bundle (#96, #105)', () => {
     );
   });
 
-  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97)', async () => {
+  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97), paused (#328)', async () => {
     const device = await openStore('ana');
     await keepShared(device);
     const fresh = await openStore('fresh');
@@ -962,7 +962,7 @@ describe('a shared Document in a link bundle (#96, #105)', () => {
     await importSnapshot(fresh, await snapshotOf(device));
 
     expect(plain(await fresh.listPersonal())).toEqual(
-      plain([{ ...canaryStatement(), share: SHARE }]),
+      plain([{ ...canaryStatement(), share: { ...SHARE, paused: true } }]),
     );
   });
 });

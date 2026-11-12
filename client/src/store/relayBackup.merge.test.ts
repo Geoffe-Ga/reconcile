@@ -240,7 +240,7 @@ async function found(device: Device, name = 'Riverside Tenants'): Promise<string
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name, founder: 'Ana', title: 'House rules', atoms: ['Quiet.'] },
+    body: { name, founder: 'Ana', documents: [{ title: 'House rules', atoms: ['Quiet.'] }] },
   });
   const { secretKey, author } = testKeys('ana');
   await device.store.addGroup({

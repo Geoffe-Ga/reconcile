@@ -13,9 +13,11 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  isAddProposal,
   isCoalitionGenesis,
   isDissolveProposal,
   isAdmitProposal,
+  isNewDocumentProposal,
   isReconcileProposal,
   isRemovalProposal,
   isRulesProposal,
@@ -59,6 +61,9 @@ const PROPOSAL: EventInput = {
   ts: 1762650000000,
   body: { atom: 'g1.0', title: 'Quiet hours', why: 'Sleep.', text: 'Quiet after 10pm.' },
 };
+
+/** A genesis's Documents (#92), for shape tests: one, with no Atoms, which the fold checks. */
+const DOCS = [{ title: 'T', atoms: [] }];
 
 /** A valid v1 envelope around `body`, for shape tests. */
 function envelope(type: string, body: unknown, overrides: Record<string, unknown> = {}): unknown {
@@ -119,14 +124,17 @@ describe('createEvent', () => {
       group: '',
       author: ANA,
       ts: 0,
-      body: { name: 'Cafe\u0301', founder: 'Jose\u0301', title: 'T', atoms: ['e\u0301te\u0301'] },
+      body: {
+        name: 'Cafe\u0301',
+        founder: 'Jose\u0301',
+        documents: [{ title: 'Re\u0301gles', atoms: ['e\u0301te\u0301'] }],
+      },
     });
     const parsed = parseEvent(bytes);
     expect(parsed?.event.body).toEqual({
       name: 'Caf\u00e9',
       founder: 'Jos\u00e9',
-      title: 'T',
-      atoms: ['\u00e9t\u00e9'],
+      documents: [{ title: 'R\u00e9gles', atoms: ['\u00e9t\u00e9'] }],
     });
   });
 
@@ -205,16 +213,13 @@ describe('parseEvent', () => {
 
   it('keeps optional fields and drops unknown body keys', () => {
     const genesis = parseEvent(
-      json(
-        envelope('genesis', { name: 'G', chat: 'https://c', founder: 'A', title: 'T', atoms: [] }),
-      ),
+      json(envelope('genesis', { name: 'G', chat: 'https://c', founder: 'A', documents: DOCS })),
     );
     expect(genesis?.event.body).toEqual({
       name: 'G',
       chat: 'https://c',
       founder: 'A',
-      title: 'T',
-      atoms: [],
+      documents: DOCS,
     });
     const join = parseEvent(json(envelope('join', { name: 'Ben', token: 'later' })));
     expect(join?.event.body).toEqual({ name: 'Ben' });
@@ -224,8 +229,31 @@ describe('parseEvent', () => {
 
   it('keeps a genesis’s rules as written, so the fold checks them against the defaults', () => {
     const rules = { bars: { entrenched: { avgAtLeast: 1 } }, unknown: ['kept'] };
-    const body = { name: 'G', founder: 'A', title: 'T', atoms: [], rules };
+    const body = { name: 'G', founder: 'A', documents: DOCS, rules };
     expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual(body);
+  });
+
+  it('reads a genesis’s Documents in order, each as its title and Atoms alone (#92)', () => {
+    const documents = [
+      { title: 'Mission statement', atoms: ['We share.\n'], id: 'mine', extra: 1 },
+      { title: 'House rules', atoms: ['Quiet after 11pm.\n', 'No pets.\n'] },
+    ];
+    const body = { name: 'G', founder: 'A', documents };
+    expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual({
+      name: 'G',
+      founder: 'A',
+      documents: [
+        { title: 'Mission statement', atoms: ['We share.\n'] },
+        { title: 'House rules', atoms: ['Quiet after 11pm.\n', 'No pets.\n'] },
+      ],
+    });
+  });
+
+  it('keeps a genesis with no Documents, or a blank title, for the fold to refuse (#92)', () => {
+    for (const documents of [[], [{ title: '', atoms: ['x'] }], [{ title: 'T', atoms: [] }]]) {
+      const body = { name: 'G', founder: 'A', documents };
+      expect(parseEvent(json(envelope('genesis', body)))?.event.body).toEqual(body);
+    }
   });
 
   it('keeps a well-shaped invite token on a join, and drops any other, keeping the join', () => {
@@ -274,7 +302,7 @@ describe('parseEvent', () => {
   });
 
   it.each([
-    ['genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] }],
+    ['genesis', { name: 'G', founder: 'A', documents: DOCS }],
     ['join', { name: 'Ben' }],
     ['proposal', { atom: 'a', title: 't', why: 'w', text: 'x' }],
     ['vote', { proposal: 'p', scores: {} }],
@@ -323,36 +351,70 @@ describe('parseEvent', () => {
   });
 
   it.each([
-    ['genesis without atoms', 'genesis', { name: 'G', founder: 'A', title: 'T' }],
-    ['genesis with a numeric Atom', 'genesis', { name: 'G', founder: 'A', title: 'T', atoms: [1] }],
+    ['genesis without documents', 'genesis', { name: 'G', founder: 'A' }],
+    [
+      'genesis with a title and Atoms but no documents (#92)',
+      'genesis',
+      { name: 'G', founder: 'A', title: 'T', atoms: ['One.'] },
+    ],
+    ['genesis whose documents are no list', 'genesis', { name: 'G', founder: 'A', documents: {} }],
+    [
+      'genesis with a Document that is text',
+      'genesis',
+      { name: 'G', founder: 'A', documents: ['T'] },
+    ],
+    [
+      'genesis with a Document without atoms',
+      'genesis',
+      { name: 'G', founder: 'A', documents: [{ title: 'T' }] },
+    ],
+    [
+      'genesis with a Document without a title',
+      'genesis',
+      { name: 'G', founder: 'A', documents: [{ atoms: [] }] },
+    ],
+    [
+      'genesis with a numeric Document title',
+      'genesis',
+      { name: 'G', founder: 'A', documents: [{ title: 1, atoms: [] }] },
+    ],
+    [
+      'genesis with a numeric Atom',
+      'genesis',
+      { name: 'G', founder: 'A', documents: [{ title: 'T', atoms: [1] }] },
+    ],
     [
       'genesis with atoms not a list',
       'genesis',
-      { name: 'G', founder: 'A', title: 'T', atoms: 'x' },
+      { name: 'G', founder: 'A', documents: [{ title: 'T', atoms: 'x' }] },
+    ],
+    [
+      'genesis with one good Document and one bad',
+      'genesis',
+      { name: 'G', founder: 'A', documents: [...DOCS, { title: 'T', atoms: [null] }] },
     ],
     [
       'genesis with a null chat',
       'genesis',
-      { name: 'G', chat: null, founder: 'A', title: 'T', atoms: [] },
+      { name: 'G', chat: null, founder: 'A', documents: DOCS },
     ],
     [
       'genesis with null rules',
       'genesis',
-      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: null },
+      { name: 'G', founder: 'A', documents: DOCS, rules: null },
     ],
     [
       'genesis with a list of rules',
       'genesis',
-      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: [] },
+      { name: 'G', founder: 'A', documents: DOCS, rules: [] },
     ],
     [
       'genesis with rules as text',
       'genesis',
-      { name: 'G', founder: 'A', title: 'T', atoms: [], rules: 'defaults' },
+      { name: 'G', founder: 'A', documents: DOCS, rules: 'defaults' },
     ],
-    ['genesis without a founder', 'genesis', { name: 'G', title: 'T', atoms: [] }],
-    ['genesis without a name', 'genesis', { founder: 'A', title: 'T', atoms: [] }],
-    ['genesis without a title', 'genesis', { name: 'G', founder: 'A', atoms: [] }],
+    ['genesis without a founder', 'genesis', { name: 'G', documents: DOCS }],
+    ['genesis without a name', 'genesis', { founder: 'A', documents: DOCS }],
     ['join without a name', 'join', {}],
     ['join with a numeric level', 'join', { name: 'Ben', level: 2 }],
     ['join with a null level', 'join', { name: 'Ben', level: null }],
@@ -424,7 +486,13 @@ describe('parseEvent', () => {
     [
       'proposal with both an atom and a target',
       'proposal',
-      { atom: 'a', target: { kind: 'add', after: null }, title: 't', why: 'w', text: 'x' },
+      {
+        atom: 'a',
+        target: { kind: 'add', document: 'd', after: null },
+        title: 't',
+        why: 'w',
+        text: 'x',
+      },
     ],
     [
       'proposal with a target that is a string',
@@ -435,22 +503,80 @@ describe('parseEvent', () => {
     [
       'add with no anchor',
       'proposal',
-      { target: { kind: 'add' }, title: 't', why: 'w', text: 'x' },
+      { target: { kind: 'add', document: 'd' }, title: 't', why: 'w', text: 'x' },
     ],
     [
       'add with a numeric anchor',
       'proposal',
-      { target: { kind: 'add', after: 0 }, title: 't', why: 'w', text: 'x' },
+      { target: { kind: 'add', document: 'd', after: 0 }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'add without a Document (#92)',
+      'proposal',
+      { target: { kind: 'add', after: null }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'add with a numeric Document (#92)',
+      'proposal',
+      { target: { kind: 'add', document: 0, after: null }, title: 't', why: 'w', text: 'x' },
     ],
     [
       'add without text',
       'proposal',
-      { target: { kind: 'add', after: null }, title: 't', why: 'w' },
+      { target: { kind: 'add', document: 'd', after: null }, title: 't', why: 'w' },
     ],
     [
       'add with its window as text',
       'proposal',
-      { target: { kind: 'add', after: null }, title: 't', why: 'w', text: 'x', window: '7' },
+      {
+        target: { kind: 'add', document: 'd', after: null },
+        title: 't',
+        why: 'w',
+        text: 'x',
+        window: '7',
+      },
+    ],
+    [
+      'new Document without a title (#92)',
+      'proposal',
+      { target: { kind: 'new-document' }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'new Document with a numeric title (#92)',
+      'proposal',
+      { target: { kind: 'new-document', title: 7 }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'new Document without text (#92)',
+      'proposal',
+      { target: { kind: 'new-document', title: 'B' }, title: 't', why: 'w' },
+    ],
+    [
+      'new Document that also names an atom (#92)',
+      'proposal',
+      { atom: 'a', target: { kind: 'new-document', title: 'B' }, title: 't', why: 'w', text: 'x' },
+    ],
+    [
+      'new Document with its window as text (#92)',
+      'proposal',
+      {
+        target: { kind: 'new-document', title: 'B' },
+        title: 't',
+        why: 'w',
+        text: 'x',
+        window: '7',
+      },
+    ],
+    [
+      'new Document whose dispatch has no text (#92)',
+      'proposal',
+      {
+        target: { kind: 'new-document', title: 'B' },
+        title: 't',
+        why: 'w',
+        text: 'x',
+        dispatch: { title: 'u' },
+      },
     ],
     ['a steward target that is a list', 'proposal', { target: [], title: 't', why: 'w' }],
     [
@@ -675,7 +801,7 @@ describe('parseEvent', () => {
       'an add whose dispatch has no text (#75)',
       'proposal',
       {
-        target: { kind: 'add', after: null },
+        target: { kind: 'add', document: 'd', after: null },
         title: 't',
         why: 'w',
         text: 'x',
@@ -761,29 +887,63 @@ describe('parseEvent', () => {
   it.each([
     ['an anchor', 'a.1'],
     ['no anchor, for the start', null],
-  ])('reads an add Proposal with %s, keeping only its kind and anchor', (_label, after) => {
+  ])(
+    'reads an add Proposal with %s, keeping only its kind, Document and anchor (#92)',
+    (_label, after) => {
+      const body = {
+        target: { kind: 'add', after, document: 'd', extra: 'x' },
+        title: 't',
+        why: 'w',
+        text: 'New section.\n',
+        link: 'https://l',
+        window: 10,
+      };
+      const parsed = parseEvent(json(envelope('proposal', body)));
+      expect(parsed?.event.body).toEqual({
+        target: { kind: 'add', document: 'd', after },
+        title: 't',
+        why: 'w',
+        text: 'New section.\n',
+        link: 'https://l',
+        window: 10,
+      });
+    },
+  );
+
+  it('reads a new-Document Proposal: its title, and its first sections as its text (#92)', () => {
     const body = {
-      target: { kind: 'add', after, document: 'd' },
-      title: 't',
-      why: 'w',
-      text: 'New section.\n',
+      target: { kind: 'new-document', title: 'Budget', after: 'x' },
+      title: 'Start a budget',
+      why: 'We spend together.',
+      text: '# Budget\n\nWe share costs.\n',
       link: 'https://l',
       window: 10,
+      dispatch: { title: 'New: Budget', text: 'Read it.', doc: 'g1' },
+      extra: 1,
     };
     const parsed = parseEvent(json(envelope('proposal', body)));
     expect(parsed?.event.body).toEqual({
-      target: { kind: 'add', after },
-      title: 't',
-      why: 'w',
-      text: 'New section.\n',
+      target: { kind: 'new-document', title: 'Budget' },
+      title: 'Start a budget',
+      why: 'We spend together.',
+      text: '# Budget\n\nWe share costs.\n',
       link: 'https://l',
       window: 10,
+      dispatch: { title: 'New: Budget', text: 'Read it.' },
     });
+    const body2 = parsed?.event.type === 'proposal' ? parsed.event.body : null;
+    expect(body2 !== null && isNewDocumentProposal(body2)).toBe(true);
+    expect(body2 !== null && isAddProposal(body2)).toBe(false);
+  });
+
+  it('keeps a new-Document Proposal whose title or text is blank, for the fold to refuse (#92)', () => {
+    const body = { target: { kind: 'new-document', title: '' }, title: 't', why: 'w', text: '' };
+    expect(parseEvent(json(envelope('proposal', body)))?.event.body).toEqual(body);
   });
 
   it('reads the Dispatch an add carries, keeping its title and text alone (#75, #112)', () => {
     const body = {
-      target: { kind: 'add', after: 'a.1' },
+      target: { kind: 'add', document: 'g1', after: 'a.1' },
       title: 't',
       why: 'w',
       text: 'New section.\n',
@@ -791,7 +951,7 @@ describe('parseEvent', () => {
     };
     const parsed = parseEvent(json(envelope('proposal', body)));
     expect(parsed?.event.body).toEqual({
-      target: { kind: 'add', after: 'a.1' },
+      target: { kind: 'add', document: 'g1', after: 'a.1' },
       title: 't',
       why: 'w',
       text: 'New section.\n',
@@ -1212,7 +1372,7 @@ describe('encryption keys and key changes (#98)', () => {
   const WRAP = base64url(new Uint8Array(104).fill(5));
 
   it('keeps a genesis’s or join’s well-shaped kx, and drops any other, keeping the event', () => {
-    const genesis = { name: 'G', founder: 'A', title: 'T', atoms: [], kx: KX };
+    const genesis = { name: 'G', founder: 'A', documents: DOCS, kx: KX };
     expect(parseEvent(json(envelope('genesis', genesis)))?.event.body).toEqual(genesis);
     expect(parseEvent(json(envelope('join', { name: 'Ben', kx: KX })))?.event.body).toEqual({
       name: 'Ben',
@@ -1327,7 +1487,12 @@ describe('coalitions (#100)', () => {
     { name: 'Riverside', key: KEY },
     { name: 'Hillside', key: SECRET },
   ];
-  const COALITION = { kind: 'coalition', name: 'C', title: 'T', atoms: ['One.'], seats: SEATS };
+  const COALITION = {
+    kind: 'coalition',
+    name: 'C',
+    documents: [{ title: 'T', atoms: ['One.'] }],
+    seats: SEATS,
+  };
   const RECONCILE = {
     kind: 'reconcile',
     secret: SECRET,
@@ -1345,7 +1510,7 @@ describe('coalitions (#100)', () => {
     const genesis = parsed?.event.type === 'genesis' ? parsed.event.body : null;
     expect(genesis !== null && isCoalitionGenesis(genesis)).toBe(true);
     const group = parseEvent(
-      json(envelope('genesis', { name: 'G', founder: 'A', title: 'T', atoms: [] })),
+      json(envelope('genesis', { name: 'G', founder: 'A', documents: DOCS })),
     );
     const founded = group?.event.type === 'genesis' ? group.event.body : null;
     expect(founded !== null && isCoalitionGenesis(founded)).toBe(false);
@@ -1367,8 +1532,12 @@ describe('coalitions (#100)', () => {
       'with a seat whose key isn’t canonical',
       { ...COALITION, seats: [{ name: 'R', key: `${KEY.slice(0, 42)}B` }] },
     ],
-    ['without a title', { ...COALITION, title: undefined }],
-    ['without atoms', { ...COALITION, atoms: undefined }],
+    ['without documents', { ...COALITION, documents: undefined }],
+    [
+      'with a title and Atoms but no documents (#92)',
+      { ...COALITION, documents: undefined, title: 'T', atoms: ['One.'] },
+    ],
+    ['with a Document without atoms (#92)', { ...COALITION, documents: [{ title: 'T' }] }],
     ['without a name', { ...COALITION, name: undefined }],
     ['of another kind', { ...COALITION, kind: 'federation' }],
   ])('refuses a coalition genesis %s', (_label, body) => {

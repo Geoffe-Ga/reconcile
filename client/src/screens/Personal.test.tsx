@@ -133,4 +133,34 @@ describe('Personal', () => {
     expect(shared).toHaveTextContent('Shared by link');
     expect(await axeViolations()).toEqual([]);
   });
+
+  it('marks a Document whose share a restore paused, so the person knows to open it (#328)', async () => {
+    const [first, second] = DOCUMENTS;
+    if (first === undefined || second === undefined) throw new Error('Expected two Documents.');
+    const share = {
+      seed: new Uint8Array(32),
+      secretKey: new Uint8Array(32),
+      publicKey: new Uint8Array(32),
+      n: 1,
+      lastPostedAt: 1,
+      pending: false,
+    };
+    render(
+      <Personal
+        documents={[
+          { ...first, share: { ...share, paused: true } },
+          { ...second, share },
+        ]}
+        newId={NEW_ID}
+        relayBackup={false}
+      />,
+    );
+
+    const [paused, shared] = within(screen.getByRole('list')).getAllByRole('link');
+    expect(paused).toHaveTextContent('My mission statement');
+    expect(paused).toHaveTextContent('Link paused after a restore');
+    expect(paused).not.toHaveTextContent('Shared by link');
+    expect(shared).toHaveTextContent('Shared by link');
+    expect(await axeViolations()).toEqual([]);
+  });
 });
