@@ -35,6 +35,7 @@ import { concatBytes, randomBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
 import { base64url, canonicalBytes } from './base64url';
 import { openBox, sealTo } from './box';
+import { objectIn } from './json';
 import { isAllowedThreshold } from './recoveryPolicy';
 import { BACKUP_KEY_BYTES } from './relayBackup';
 
@@ -139,8 +140,8 @@ function shareAad({ groupId, contact, author }: SharePlace): Uint8Array {
   return concatBytes(utf8ToBytes(groupId), utf8ToBytes(contact), utf8ToBytes(author));
 }
 
-/** Whether `split` is 16 bytes in canonical unpadded base64url. */
-function isSplitId(split: unknown): split is string {
+/** Whether `split` is 16 bytes in canonical unpadded base64url, as a split id is. */
+export function isSplitId(split: unknown): split is string {
   return canonicalBytes(split)?.length === SPLIT_ID_BYTES;
 }
 
@@ -168,26 +169,41 @@ export function sealShare(
   }
 }
 
-/** The JSON object in `plaintext`, or null for bad UTF-8, bad JSON or anything but an object. */
-function objectIn(plaintext: Uint8Array): Readonly<Record<string, unknown>> | null {
-  try {
-    const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plaintext));
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-      ? (value as Readonly<Record<string, unknown>>)
-      : null;
-  } catch {
-    return null;
-  }
+/**
+ * The share `body` holds, or null unless it is well shaped: a 16-byte split,
+ * an allowed threshold and a 33-byte share with a coordinate from 1 to 255.
+ */
+function shareOf(body: Readonly<Record<string, unknown>> | null): RecoveryShare | null {
+  if (body === null || !isSplitId(body.split)) return null;
+  const { t, n } = body;
+  const share = canonicalBytes(body.share);
+  if (typeof t !== 'number' || typeof n !== 'number' || !isAllowedThreshold(t, n)) return null;
+  return share !== null && isShare(share) ? { split: body.split, t, n, share } : null;
 }
 
 /** The share a box's plaintext holds, or null unless it is a well-shaped version-1 share. */
 function shareIn(plaintext: Uint8Array): RecoveryShare | null {
   const body = objectIn(plaintext);
-  if (body === null || body.v !== SHARE_VERSION || !isSplitId(body.split)) return null;
-  const { t, n } = body;
-  const share = canonicalBytes(body.share);
-  if (typeof t !== 'number' || typeof n !== 'number' || !isAllowedThreshold(t, n)) return null;
-  return share !== null && isShare(share) ? { split: body.split, t, n, share } : null;
+  return body?.v === SHARE_VERSION ? shareOf(body) : null;
+}
+
+/**
+ * `share` as the UTF-8 JSON `{split, t, n, share}`, the share in unpadded
+ * base64url: what a contact releases to a recovering device (#118,
+ * `recovery.ts`), whose box's label carries the version.
+ *
+ * @throws {RangeError} unless it is a well-shaped share.
+ */
+export function encodeShare({ split: splitId, t, n, share }: RecoveryShare): Uint8Array {
+  if (!isShare(share) || !isSplitId(splitId) || !isAllowedThreshold(t, n)) {
+    throw new RangeError('That isn’t a recovery share.');
+  }
+  return utf8ToBytes(JSON.stringify({ split: splitId, t, n, share: base64url(share) }));
+}
+
+/** The share in {@link encodeShare}'s `plaintext`, or null unless it is a well-shaped share. */
+export function decodeShare(plaintext: Uint8Array): RecoveryShare | null {
+  return shareOf(objectIn(plaintext));
 }
 
 /**
