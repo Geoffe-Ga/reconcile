@@ -29,11 +29,8 @@ export interface PushRelay {
   key(): Promise<string>;
   /** Register `endpoint` under `mailbox` for 30 days, or refresh it. */
   register(mailbox: string, endpoint: string): Promise<void>;
-  /**
-   * Forget `endpoint` under `mailbox`. With `keepalive`, the request carries
-   * on if the page closes, as it may just after Leave.
-   */
-  unregister(mailbox: string, endpoint: string, options?: { keepalive?: boolean }): Promise<void>;
+  /** Forget `endpoint` under `mailbox`. */
+  unregister(mailbox: string, endpoint: string): Promise<void>;
   /** Wake `mailbox`'s endpoints at relay minute `notBefore`, or now if it has passed. */
   nudge(mailbox: string, notBefore: number): Promise<void>;
 }
@@ -71,13 +68,9 @@ export function createPushRelay({
     register: async (mailbox, endpoint) => {
       await write(pushUrl(mailbox), { method: 'PUT', body: JSON.stringify({ endpoint }) });
     },
-    unregister: async (mailbox, endpoint, { keepalive = false } = {}) => {
+    unregister: async (mailbox, endpoint) => {
       const body = JSON.stringify({ endpoint });
-      await write(pushUrl(mailbox), {
-        method: 'DELETE',
-        body,
-        ...(keepalive ? { keepalive } : {}),
-      });
+      await write(pushUrl(mailbox), { method: 'DELETE', body });
     },
     nudge: async (mailbox, notBefore) => {
       const body = JSON.stringify({ not_before: notBefore });

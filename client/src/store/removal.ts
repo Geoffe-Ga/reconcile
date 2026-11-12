@@ -8,9 +8,10 @@
  * `removed`): its outbox goes, and no request names its mailbox again. By
  * then the group's key is changing past this device (#98), so it couldn't
  * read anything new anyway; it keeps what it already has (ADR-0016). Its push
- * registration is forgotten first, as a leave's is (#99), so nothing posted to
- * the old mailbox wakes this phone, and the coalitions only that group held
- * here stop syncing too (#114). Until then, a device whose member may post
+ * registration is forgotten first, as a leave's is (#99): its DELETEs go at a
+ * random minute within the next day, so the relay can't line them up with the
+ * key change (#356). The coalitions only that group held here stop syncing
+ * too (#114). Until then, a device whose member may post
  * it, and that folds a removal's final pass with no `remove` yet, queues one;
  * the fold takes the first, and the key changes once.
  */
@@ -31,12 +32,13 @@ function removeQueued(group: Group, proposal: string): boolean {
 /**
  * Archives `group`, whose fold holds a `remove` of this device's member, as
  * removed (#115), and the coalitions only it held here, calling `forget`
- * with it first so its push registration goes (#99). A restored copy that
- * hasn't heard from its group (#231) sends nothing, so it forgets nothing:
- * `markArchived` drops its registration, which the relay lets expire.
+ * with it first so its push registration goes, within the day (#99, #356).
+ * A restored copy that hasn't heard from its group (#231) sends nothing, so
+ * it forgets nothing: `markArchived` drops its registration, which the relay
+ * lets expire.
  */
-async function archiveRemoved(store: Store, group: Group, forget: (group: Group) => void) {
-  if (group.archived === undefined) forget(group);
+async function archiveRemoved(store: Store, group: Group, forget: (group: Group) => Promise<void>) {
+  if (group.archived === undefined) await forget(group);
   await store.markArchived(group.groupId, 'removed');
   await retireCoalitionsOf(store, group);
 }
@@ -55,7 +57,7 @@ export async function settleRemoval(
   store: Store,
   groupId: string,
   clock: () => number,
-  forget: (group: Group) => void = () => undefined,
+  forget: (group: Group) => Promise<void> = () => Promise.resolve(),
 ): Promise<void> {
   const group = await store.getGroup(groupId);
   if (group === undefined || isArchive(group.archived)) return;

@@ -25,6 +25,7 @@
  * its scores and plans with it.
  */
 import { base64url } from '../crypto/base64url';
+import { drawBelow, type Random } from '../crypto/random';
 import { newBallotSalt } from '../crypto/salt';
 import { can } from '../engine/capabilities';
 import { MAX_LEVEL, RESULT_GRACE_MINUTES } from '../engine/coalition';
@@ -49,18 +50,10 @@ import {
   type Store,
 } from './db';
 
+export type { Random };
+
 /** How long a score is kept after the last decision on its Dispatch: 30 days. */
 export const KEEP_DAYS = 30;
-
-/** A source of random bytes: `crypto/random.ts`'s `randomBytes` on a device, fixed bytes in a test. */
-export type Random = (length: number) => Uint8Array;
-
-/**
- * How many random bytes one draw reads: 48 bits, so no minute of a window
- * of up to 2^16 minutes, 45 days, is likelier than another by more than one
- * part in 2^32.
- */
-const DRAW_BYTES = 6;
 
 /** A carried score to schedule (#126): which Dispatch, the score, and the minutes left to cast it in. */
 export interface CarryWindow {
@@ -72,15 +65,10 @@ export interface CarryWindow {
   readonly deadline: number;
 }
 
-/** The whole number `bytes` spell, big-endian. */
-function drawn(bytes: Uint8Array): number {
-  return bytes.reduce((value, byte) => value * 256 + byte, 0);
-}
-
 /**
  * The relay minute a carried score is cast at (#126; ADR-0037): drawn
- * uniformly from `from` up to, but not including, `deadline`, from
- * {@link DRAW_BYTES} bytes of `random`.
+ * uniformly from `from` up to, but not including, `deadline`, by
+ * `drawBelow` (`crypto/random.ts`).
  *
  * @throws {RangeError} when no minute is left before the deadline.
  */
@@ -89,7 +77,7 @@ export function scheduleCarried(carry: CarryWindow, random: Random): { readonly 
   if (!Number.isSafeInteger(span) || span < 1) {
     throw new RangeError('No minute is left before the deadline.');
   }
-  return { castAt: carry.from + (drawn(random(DRAW_BYTES)) % span) };
+  return { castAt: carry.from + drawBelow(span, random) };
 }
 
 /** A note as {@link copiedNote} compares it: NFC, trimmed, its spaces run together, in lower case. */

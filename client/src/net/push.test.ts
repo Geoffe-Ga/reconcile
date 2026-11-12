@@ -73,16 +73,8 @@ describe('the relay’s push routes (#89, #99)', () => {
       JSON.stringify({ endpoint: ENDPOINT }),
       JSON.stringify({ endpoint: ENDPOINT }),
     ]);
-  });
-
-  it('sends a Leave’s forget with keepalive, so it outlives the page', async () => {
-    const fake = createFakeRelay();
-    const push = createPushRelay({ fetch: fake.fetch });
-
-    await push.unregister(mailbox, ENDPOINT, { keepalive: true });
-    await push.unregister(mailbox, ENDPOINT);
-
-    expect(fake.requests.map((r) => r.keepalive)).toEqual([true, undefined]);
+    // A forget waits for an open page now (#356), so none asks to outlive it.
+    expect(fake.requests.map((r) => r.keepalive)).toEqual([undefined, undefined]);
   });
 
   it('schedules a nudge with a body holding only its relay minute', async () => {

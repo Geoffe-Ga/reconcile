@@ -76,9 +76,11 @@
  *
  * A group this device is leaving (#77) goes once the relay returns a seq for
  * its leave and the pass has read its mailboxes once more, to see where the
- * leave landed: the pass fires a `keepalive` DELETE of its push registration,
- * without waiting (#99), purges it from the store and reads nothing more for
- * it. Until then it stays, leaving, through failures and reloads. When that
+ * leave landed: the pass notes the DELETEs of its push registration the
+ * device owes, which push upkeep sends at a random minute within the next
+ * day, never in this pass (#99, #356), purges it from the store and reads
+ * nothing more for it. Until then it stays, leaving, through failures and
+ * reloads. When that
  * read brings a key change that came before the leave and checks out here,
  * the leave reached the old epoch's mailbox too late to count (#225): the
  * device moves to the new epoch, as any device does, and posts the leave
@@ -91,8 +93,10 @@
  * archives the group, or posts this member's `dissolve` when a dissolve
  * Proposal's pass has become final. `settleRemoval` (./removal.ts) does the
  * same for a removal (#115): it archives the group once a `remove` naming
- * this member folds, forgetting its push registration first, or posts this
- * member's `remove` when a removal's pass has become final.
+ * this member folds, noting the DELETEs of its push registration first, as a
+ * leave does, or posts this member's `remove` when a removal's pass has
+ * become final. Those DELETEs are the only requests that name an archived
+ * group's mailboxes again, each once, within the day.
  *
  * A group a restore brought back reads only until it hears from the group
  * (#231; ADR-0051's 2026-11-11 amendment), since it may have dissolved after
@@ -350,7 +354,7 @@ export interface SyncOptions {
   timers?: Timers;
   /** The chat bot, run after each group syncs (#119); without one, nothing posts. */
   chatBot?: Pick<ChatBot, 'run'>;
-  /** Push's nudges, upkeep and Leave's forget (#99); without it, nothing is registered or nudged. */
+  /** Push's nudges, upkeep and the forget of a group left or removed from (#99, #356); without it, nothing is registered or nudged. */
   push?: PushUpkeep;
   /** The front door's keeper (#121); without it, no page is kept and no inbox or reply read. */
   door?: DoorUpkeep;
@@ -433,10 +437,13 @@ export function createSync(options: SyncOptions): Sync {
     return { taken, left: false };
   }
 
-  /** Lets go of a group this device has left (#77): forgets its push registration (#99), then purges it. */
+  /**
+   * Lets go of a group this device has left (#77): notes the DELETEs of its
+   * push registration it owes, sent within the day (#99, #356), then purges it.
+   */
   async function letGo(groupId: string): Promise<'left'> {
     const current = await store.getGroup(groupId);
-    if (current !== undefined) push?.forget(current);
+    if (current !== undefined) await push?.forget(current);
     await store.purgeGroup(groupId);
     return 'left';
   }
@@ -575,7 +582,9 @@ export function createSync(options: SyncOptions): Sync {
     if (group.kind !== undefined) return;
     if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
       await settleDissolve(store, group.groupId, clock);
-      await settleRemoval(store, group.groupId, clock, (removed) => push?.forget(removed));
+      await settleRemoval(store, group.groupId, clock, (removed) =>
+        push === undefined ? Promise.resolve() : push.forget(removed),
+      );
     }
   }
 
