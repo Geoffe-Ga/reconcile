@@ -146,6 +146,22 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
+      # Playwright's browsers, restored so the install below downloads none.
+      # The key names the locked Playwright, the runner's Ubuntu (WebKit is
+      # built for each release) and the browsers. On a hit the install still
+      # runs: it adds the system packages the browsers need.
+      - name: Name the browser cache
+        id: browsers
+        run: |
+          version="$(python3 -c "import json; print(json.load(open('client/package-lock.json'))['packages']['node_modules/playwright-core']['version'])")"
+          echo "key=playwright-${version}-${ImageOS}-chromium-webkit" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.browsers.outputs.key }}
+
       # Usually 1-2 min. Ubuntu's mirror has stalled --with-deps for 26, 46 and
       # 96 minutes; a stall now fails here, and a re-run gets a fresh runner.
       - name: Install locked dependencies and both browsers
