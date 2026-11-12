@@ -37,6 +37,26 @@ export function GroupArchived({
 }
 
 /**
+ * Shown in place of a screen that writes while a restored copy hasn't heard
+ * from its group (#231): it may have dissolved since the backup was made.
+ */
+export function GroupUnconfirmed({
+  groupId,
+  name,
+}: {
+  readonly groupId: string;
+  readonly name: string;
+}) {
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'group', groupId }} label={name} />
+      <PageHeader title={messages.unconfirmed.readOnlyTitle} pageTitle={messages.home.pageTitle} />
+      <p className="lede">{messages.unconfirmed.readOnly}</p>
+    </main>
+  );
+}
+
+/**
  * Shown while a group's genesis waits in the outbox: folded state comes from
  * relay records only (spec §7), so the group appears once the relay has it.
  */

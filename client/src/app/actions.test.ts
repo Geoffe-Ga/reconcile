@@ -501,6 +501,22 @@ describe('makeInvite', () => {
     await expect(linkTo(ana, 'nope')).rejects.toThrow('No such group');
   });
 
+  it.each([
+    ['dissolved (#108)', { reason: 'dissolved' }],
+    ['back from a backup and unheard from since (#231)', { reason: 'unconfirmed', since: 1 }],
+  ] as const)(
+    'refuses a copy kept read-only, %s, posting nothing: its link would vouch for a live group',
+    async (_why, archived) => {
+      const fake = createFakeRelay();
+      const { ana, groupId } = await anaWithGroup(fake);
+      await putGroup('ana', { ...(await stored(ana, groupId)), archived });
+      fake.requests.length = 0;
+
+      await expect(linkTo(ana, groupId)).rejects.toThrow('This group is read-only on this device.');
+      expect(fake.requests).toEqual([]);
+    },
+  );
+
   it('sends no group secret, seed or key in any spelling, in any path, query or body', async () => {
     const fake = createFakeRelay();
     const { ana, groupId } = await anaWithGroup(fake);
