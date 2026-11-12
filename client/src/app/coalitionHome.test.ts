@@ -22,6 +22,7 @@ import {
   threeLevels,
 } from '../test/coalitions';
 import { authorOf, testKeys } from '../test/keys';
+import { senderOf } from './dispatchLines';
 import {
   coalitionById,
   coalitionHome,
@@ -206,10 +207,13 @@ describe('coalitionHome’s Dispatches (#126)', () => {
     expect(before?.dispatches).toEqual([]);
 
     const final = R + 30 + 2 * WEEK;
-    const view = coalitionHome(heldBy(logs, final, 'kim'), []);
+    const held = heldBy(logs, final, 'kim');
+    const view = coalitionHome(held, []);
     expect(view?.dispatches).toEqual([
-      { id: p, title: words.title, text: words.text, from: 'Riverside', received: final },
+      { id: p, by: { proposal: m }, ...words, doc: null, received: final },
     ]);
+    // Its card names the seat that passed it below, as a person's names them (#124's card).
+    expect(senderOf(held.state, { proposal: m })).toEqual({ kind: 'seat', name: 'Riverside' });
     // Its vote opens in Oak St, and never in Riverside, which passed it already.
     const riverside = deviceGroup(logs, 'A', final, 'ana');
     const oak = deviceGroup(logs, 'B', final, 'cy');

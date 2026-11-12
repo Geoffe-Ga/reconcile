@@ -38,12 +38,13 @@ interface PartProps {
 /**
  * "From Ana", or "From the Proposal ‘<title>’", the title linking to the
  * Proposal in a group, and plain in a coalition, whose motions are voted on
- * inside each member group (#124).
+ * inside each member group (#124). A Dispatch a coalition passed as it rose
+ * reads "From <seat>", the seat that passed it below (#126).
  */
 function SenderLine({ state, dispatch, place }: PartProps) {
   const sender = senderOf(state, dispatch.by);
   const { from, fromProposal } = messages.dispatches;
-  if (sender.kind === 'person') {
+  if (sender.kind !== 'proposal') {
     return (
       <span>
         <Named parts={from} name={sender.name} />
@@ -133,38 +134,6 @@ export function DispatchCard({ state, dispatch, level, place = 'group' }: Dispat
       </p>
       <Text text={dispatch.text} />
       <OpenDocument state={state} doc={dispatch.doc} place={place} />
-    </article>
-  );
-}
-
-/** Props for {@link RisenDispatchCard}. */
-export interface RisenDispatchCardProps {
-  readonly title: string;
-  readonly text: string;
-  /** The seat that passed it below, as the coalition names it. */
-  readonly from: string;
-  readonly received: number;
-}
-
-/**
- * A Dispatch a coalition passed and sent out (#126), on the coalition's home:
- * its title, "From <seat> · <date>", and its text. It points to no
- * Document, since a Document link stays in the group it started in.
- */
-export function RisenDispatchCard({ title, text, from, received }: RisenDispatchCardProps) {
-  const heading = useId();
-  return (
-    <article className="card dispatch" aria-labelledby={heading}>
-      <Title id={heading} level={3} title={title} />
-      <p className="dispatch-meta">
-        <span>
-          <Named parts={messages.dispatches.from} name={from} />
-        </span>
-        <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>
-        <span aria-hidden="true">{messages.dispatches.dateSeparator}</span>
-        <time dateTime={minuteIso(received)}>{formatDay(received)}</time>
-      </p>
-      <Text text={text} />
     </article>
   );
 }
