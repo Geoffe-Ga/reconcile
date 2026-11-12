@@ -237,6 +237,7 @@ describe('useGroup', () => {
       suggestBackup: false,
       loaded: true,
       cleared: null,
+      newShares: [],
       applications: [],
       coalitions: [],
     });

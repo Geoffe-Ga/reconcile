@@ -297,6 +297,122 @@ describe('keepRooms', () => {
   });
 });
 
+/**
+ * Eastside formed of A (kim) and B (zed), then Elm Row (C, dee) asked in
+ * with a card that carried no inner, and both seats passed its admission.
+ * Returns the logs and the minute Elm Row takes its seat.
+ */
+function asksIn(): { built: Logs; seated: number } {
+  const built = logs();
+  built.group('C', R, ['dee'], 'Elm Row');
+  const proposal = built.reconcile('C', R + 30, 'dee', 'C', { inner: false });
+  built.vote('C', R + 31, 'dee', proposal, 4);
+  const seated = built.admitted(R + 40, 'dee', 'C', 'Elm Row', [
+    ['kim', 'A'],
+    ['zed', 'B'],
+  ]);
+  return { built, seated };
+}
+
+/** Keeps Elm Row as dee's, and the coalition's entry as dee's, both pulled at `relayNow`. */
+async function admittedDevice(store: Store, built: Logs, relayNow: number) {
+  const c = built.ids.C ?? '';
+  await store.addGroup({
+    groupId: c,
+    secret: new Uint8Array(32).fill(9),
+    signingKey: testKeys('dee').secretKey,
+    me: { author: authorOf('dee'), name: 'Dee' },
+  });
+  await store.applyPull(c, pullOf(built.logs.C ?? [], relayNow), eventIdOf);
+  await store.addGroup({
+    kind: 'coalition',
+    groupId: ENTRY,
+    secret: SECRET,
+    signingKey: testKeys('dee').secretKey,
+    me: { author: authorOf('dee'), name: 'Dee' },
+  });
+  await store.applyPull(ENTRY, pullOf(built.logs.coalition ?? [], relayNow), eventIdOf);
+}
+
+/** The room `inner` dee's device reads for the coalition now, through its live groups. */
+async function innerOnDevice(store: Store): Promise<Uint8Array | null> {
+  const [entry] = await store.listCoalitions();
+  const coalition = fold(entry?.log ?? [], entry?.relayNow ?? null);
+  const groups = (await store.listGroups()).map((group) => ({
+    state: fold(group.log, group.relayNow),
+    live: true,
+  }));
+  return innerFor(coalition, groups);
+}
+
+describe('a group admitted into the coalition (#313)', () => {
+  it('keeps no room while its admission is decided, with no inner anywhere on the device', async () => {
+    const store = await device();
+    const { built, seated } = asksIn();
+    await admittedDevice(store, built, seated - 1);
+
+    await keepRooms(store);
+
+    expect(await store.listRooms()).toEqual([]);
+    expect(await innerOnDevice(store)).toBeNull();
+    const held = JSON.stringify(await store.listGroups(), (_key, value: unknown) =>
+      value instanceof Uint8Array ? new TextDecoder().decode(value) : value,
+    );
+    expect(held).not.toContain(testSecret('inner'));
+  });
+
+  it('keeps none once seated until a seated group’s participant wraps inner to its seat, then the room', async () => {
+    const store = await device();
+    const { built, seated } = asksIn();
+    built.join(seated + 1, 'dee', 'C');
+    await admittedDevice(store, built, seated + 2);
+    await keepRooms(store);
+    expect(await store.listRooms()).toEqual([]);
+
+    const wrap = built.wrap(seated + 3, 'kim', 'C');
+    await store.applyPull(ENTRY, pullOf(built.logs.coalition ?? [], seated + 4), eventIdOf);
+    await keepRooms(store);
+
+    const [room, ...more] = await store.listRooms();
+    expect(more).toEqual([]);
+    expect(room?.groupId).toBe(ROOM);
+    expect(list(room?.secret)).toEqual(list(INNER));
+    expect(room?.me.author).toBe(authorOf('dee'));
+    expect(wrap).toBeDefined();
+  });
+
+  it('takes the first wrap that opens, past one that doesn’t and one made for another coalition', async () => {
+    const store = await device();
+    const { built, seated } = asksIn();
+    built.wrap(seated + 1, 'zed', 'C', 'A'.repeat(139));
+    built.wrap(seated + 2, 'kim', 'C', built.wrapFor('C', 'another-coalition'));
+    await admittedDevice(store, built, seated + 3);
+    expect(await innerOnDevice(store)).toBeNull();
+
+    built.join(seated + 4, 'ben', 'A');
+    built.wrap(seated + 5, 'ben', 'C');
+    await store.applyPull(ENTRY, pullOf(built.logs.coalition ?? [], seated + 6), eventIdOf);
+
+    expect(await innerOnDevice(store)).toEqual(INNER);
+  });
+
+  it('opens no wrap made before it was seated: the fold ignores it, so the room stays shut', async () => {
+    const store = await device();
+    const { built, seated } = asksIn();
+    built.wrap(seated - 10, 'kim', 'C');
+    built.join(seated + 1, 'dee', 'C');
+    await admittedDevice(store, built, seated + 2);
+
+    await keepRooms(store);
+
+    const [entry] = await store.listCoalitions();
+    const coalition = fold(entry?.log ?? [], entry?.relayNow ?? null).coalition;
+    expect(coalition?.seats.map((seat) => seat.name)).toContain('Elm Row');
+    expect(coalition?.wraps).toEqual([]);
+    expect(await store.listRooms()).toEqual([]);
+  });
+});
+
 describe('a room’s log across devices', () => {
   it('shows every device the same messages in the same order, whatever batches each pulled them in', () => {
     const built = logs();
