@@ -8,10 +8,13 @@
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
+import { seatKxOf, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
+import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import { motionsFor, seatIn } from '../engine/crossing';
 import type { EventDraft, GroupResultValue } from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
 import { authorOf, signedAs } from './keys';
 
 const encoder = new TextEncoder();
@@ -97,7 +100,11 @@ export class Logs {
   /** A group founded by `members[0]`, the others joining: the first three hold voting rights at once. */
   group(log: string, received: number, members: readonly string[], name = 'Riverside'): string {
     const [founder = 'ana', ...joiners] = members;
-    const body = { name, founder, title: 'House rules', atoms: ['Quiet after 11pm.'] };
+    const body = {
+      name,
+      founder,
+      documents: [{ title: 'House rules', atoms: ['Quiet after 11pm.'] }],
+    };
     const id = this.add(log, received, founder, { type: 'genesis', body });
     joiners.forEach((joiner, i) => {
       this.add(log, received + 1 + i, joiner, { type: 'join', body: { name: joiner } });
@@ -105,22 +112,26 @@ export class Logs {
     return id;
   }
 
-  /** `proposer`'s reconcile Proposal in `log`, for the seat `seat`, with `title` and `why` the group reads. */
+  /**
+   * `proposer`'s reconcile Proposal in `log`, for the seat `seat`, with `title`
+   * and `why` the group reads. It carries `inner` unless `inner` is false, as
+   * a group asking into a formed coalition writes it (#313).
+   */
   reconcile(
     log: string,
     received: number,
     proposer: string,
     seat: string,
-    { title = 'Reconcile', why = 'We share a river.' } = {},
+    { title = 'Reconcile', why = 'We share a river.', inner = true } = {},
   ): string {
     const target = {
       kind: 'reconcile',
       secret: testSecret('coalition'),
-      inner: testSecret('inner'),
       seat: base64url(seatSecret(seat)),
       ...COALITION_STATEMENT,
     } as const;
-    return this.add(log, received, proposer, { type: 'proposal', body: { target, title, why } });
+    const body = { target: inner ? { ...target, inner: testSecret('inner') } : target, title, why };
+    return this.add(log, received, proposer, { type: 'proposal', body });
   }
 
   /** `voter`'s ballot in `log` scoring `proposal`'s one version, with `note`. */
@@ -142,9 +153,11 @@ export class Logs {
 
   /** A coalition genesis by `author`, which isn't a participant, naming `seats`. */
   coalition(received: number, seats: readonly string[], author = 'kim'): string {
+    const { name, title, atoms } = COALITION_STATEMENT;
     const body = {
       kind: 'coalition',
-      ...COALITION_STATEMENT,
+      name,
+      documents: [{ title, atoms }],
       seats: seats.map((seat) => ({ name: seat, key: seatKey(seat) })),
     } as const;
     return this.add('coalition', received, author, { type: 'genesis', body });
@@ -171,15 +184,63 @@ export class Logs {
     const proof = base64url(
       signSeatProof(seatSecret(seat), coalition, fromBase64url(authorOf(who))),
     );
-    const target = { kind: 'admit', seat: { name, key: seatKey(seat) }, proof } as const;
+    const kx = seatKxOf(seatSecret(seat));
+    const target = { kind: 'admit', seat: { name, key: seatKey(seat) }, proof, kx } as const;
     const body = { target, title: `Admit ${name}`, why: 'They share the river.' };
     return this.add('coalition', received, who, { type: 'proposal', body });
   }
 
-  /** `who`'s motion in the coalition: new text for its first Atom. */
-  motion(received: number, who: string, text = 'We keep the river and its banks clean.'): string {
+  /**
+   * Admits the group whose seat is `seat` as `name` (#313): `who` proposes it,
+   * then each of `deciders`, a participant and the seat they're bound to,
+   * reports a pass. Returns the relay minute the group takes its seat, when
+   * the pass is final.
+   */
+  admitted(
+    received: number,
+    who: string,
+    seat: string,
+    name: string,
+    deciders: readonly (readonly [string, string])[],
+  ): number {
+    const motion = this.admit(received, who, seat, name);
+    deciders.forEach(([participant, from], i) =>
+      this.result(received + 1 + i, participant, motion, from, 'pass'),
+    );
+    return received + DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES;
+  }
+
+  /** `who` posts `wrap` for `seat`'s room `inner` (#313): {@link wrapFor}'s unless given. */
+  wrap(received: number, who: string, seat: string, wrap = this.wrapFor(seat)): string {
+    const body = { seat: seatKey(seat), wrap };
+    return this.add('coalition', received, who, { type: 'room-wrap', body });
+  }
+
+  /** The test `inner`, wrapped to seat `seat`'s key in this coalition (#313). */
+  wrapFor(seat: string, coalitionId = this.ids.coalition ?? ''): string {
+    return wrapInner({
+      coalitionId,
+      seat: seatKey(seat),
+      kx: seatKxOf(seatSecret(seat)),
+      inner: fromBase64url(testSecret('inner')),
+    });
+  }
+
+  /** `who`'s motion in the coalition: new text for its first Atom, carrying `dispatch` when given (#124). */
+  motion(
+    received: number,
+    who: string,
+    text = 'We keep the river and its banks clean.',
+    dispatch?: { readonly title: string; readonly text: string },
+  ): string {
     const atom = `${this.ids.coalition ?? ''}.0`;
-    const body = { atom, title: 'Banks too', why: 'The banks matter.', text };
+    const body = {
+      atom,
+      title: 'Banks too',
+      why: 'The banks matter.',
+      text,
+      ...(dispatch === undefined ? {} : { dispatch }),
+    };
     return this.add('coalition', received, who, { type: 'proposal', body });
   }
 

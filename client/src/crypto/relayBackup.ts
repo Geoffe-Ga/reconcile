@@ -8,7 +8,11 @@
  *
  * - the backup's id, `reconcile/v1/backup-id`, in unpadded base64url: 43
  *   characters, as unrelated to any mailbox id as two HKDF labels make it;
- * - the seal key, `reconcile/v1/backup-seal`.
+ * - the seal key, `reconcile/v1/backup-seal`;
+ * - a group's tag (#327), `reconcile/v1/backup-group-tag`, a zero byte, the
+ *   group id, a zero byte and the member's author, which the relay never
+ *   sees: the device's record keeps it in place of the group's id, so it
+ *   names no group to anyone without the key.
  *
  * A blob is exactly one of five sizes, so the relay learns only which:
  *
@@ -30,7 +34,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { concatBytes, randomBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
 import { base64url } from './base64url';
-import { hkdf32 } from './hkdf';
+import { hkdf32, type Info } from './hkdf';
 import { unframeBody } from './seal';
 
 /** A backup key's length in bytes. */
@@ -41,6 +45,15 @@ export const BACKUP_ID_INFO = 'reconcile/v1/backup-id';
 
 /** The HKDF label of the key a backup is sealed under. */
 export const BACKUP_SEAL_INFO = 'reconcile/v1/backup-seal';
+
+/** The HKDF label of a group's tag in the device's record of what it uploaded (#327). */
+export const BACKUP_GROUP_TAG_INFO = 'reconcile/v1/backup-group-tag';
+
+/** A group id or a member's author: 32 bytes in unpadded base64url, 43 characters. */
+const ID_TEXT = /^[A-Za-z0-9_-]{43}$/;
+
+/** The byte between a group tag's label, group id and author. */
+const SEPARATOR = new Uint8Array([0]);
 
 /** A backup blob's sizes in bytes, smallest first: 64 KiB, 256 KiB, 1 MiB, 4 MiB and 16 MiB. */
 export const RELAY_BACKUP_SIZES = [65536, 262144, 1048576, 4194304, 16777216] as const;
@@ -74,8 +87,19 @@ export function newBackupKey(): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(randomBytes(BACKUP_KEY_BYTES));
 }
 
+/**
+ * 65,536 random bytes from the platform's CSPRNG, the smallest backup size:
+ * what a device PUTs to a relay backup id its key no longer names (#109), in
+ * place of the backup there, so the shares of that old key open nothing. The
+ * relay can tell it from a backup, which starts with the magic, and learns
+ * only that the id was retired.
+ */
+export function newScrubBlob(): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(randomBytes(RELAY_BACKUP_SIZES[0]));
+}
+
 /** HKDF-SHA-256 of `key` under `info`, after checking the key's length. */
-function derive(key: Uint8Array, info: string): Uint8Array<ArrayBuffer> {
+function derive(key: Uint8Array, info: Info): Uint8Array<ArrayBuffer> {
   if (key.length !== BACKUP_KEY_BYTES) {
     throw new RangeError('A backup key is 32 bytes.');
   }
@@ -90,6 +114,31 @@ function derive(key: Uint8Array, info: string): Uint8Array<ArrayBuffer> {
  */
 export function backupIdFor(key: Uint8Array): string {
   return base64url(derive(key, BACKUP_ID_INFO));
+}
+
+/**
+ * A group's tag under the backup key (#327): the unpadded base64url of
+ * HKDF-SHA-256 of `key` under utf8(`reconcile/v1/backup-group-tag`) ‖ 0x00 ‖
+ * utf8(`groupId`) ‖ 0x00 ‖ utf8(`author`), 43 characters. A device notes the
+ * tag of each group it uploads, as the member `author` names, so a later
+ * upload leaves out one it no longer holds. It never goes to the relay, and
+ * without the key it names no group.
+ *
+ * @throws {RangeError} when `key` isn't 32 bytes, or `groupId` or `author`
+ *   isn't 43 base64url characters.
+ */
+export function groupTagFor(key: Uint8Array, groupId: string, author: string): string {
+  if (!ID_TEXT.test(groupId) || !ID_TEXT.test(author)) {
+    throw new RangeError('A group id and an author are each 43 base64url characters.');
+  }
+  const info = concatBytes(
+    utf8ToBytes(BACKUP_GROUP_TAG_INFO),
+    SEPARATOR,
+    utf8ToBytes(groupId),
+    SEPARATOR,
+    utf8ToBytes(author),
+  );
+  return base64url(derive(key, info));
 }
 
 /** The smallest backup size that holds a plaintext of `length` bytes, or null when none does. */

@@ -5,6 +5,7 @@
  */
 import type { DispatchBody, ParsedEvent } from '../engine/event';
 import type { DispatchSender } from '../engine/dispatches';
+import { documentTitle as titleOf } from '../engine/documents';
 import type { GroupState } from '../engine/fold';
 import { displayName } from '../engine/names';
 
@@ -24,12 +25,11 @@ export function senderOf(state: GroupState, by: DispatchSender): Sender {
 }
 
 /**
- * The title of the Document a Dispatch points to, or null for none. In the
- * MVP a group has one Document, whose id is the genesis id and whose title
- * genesis set.
+ * The title of the Document a Dispatch points to, or null for none: any of
+ * the group's Documents (#92), by its id.
  */
 export function documentTitle(state: GroupState, doc: string | null): string | null {
-  return doc !== null && doc === state.group ? state.title : null;
+  return titleOf(state, doc);
 }
 
 /** A Dispatch of this device's still in the outbox: its event id and body. */

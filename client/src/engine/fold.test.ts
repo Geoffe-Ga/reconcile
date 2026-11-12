@@ -26,7 +26,8 @@ class TestLog {
   }
 
   genesis(received: number, chat?: string): string {
-    const body = { name: 'Riverside', founder: 'Ana', title: 'House rules', atoms: ['A0', 'A1'] };
+    const documents = [{ title: 'House rules', atoms: ['A0', 'A1'] }];
+    const body = { name: 'Riverside', founder: 'Ana', documents };
     const withChat = chat === undefined ? body : { ...body, chat };
     const ts = received * 60_000;
     this.group = this.add(received, 'ana', { type: 'genesis', group: '', ts, body: withChat });
@@ -90,7 +91,7 @@ describe('fold', () => {
       optIns: { chatBot: null, frontDoor: false },
       name: '',
       chat: null,
-      title: '',
+      documents: [],
       members: [],
       former: [],
       atoms: [],
@@ -98,10 +99,14 @@ describe('fold', () => {
       at: 0,
       stewards: EMPTY_SEATS,
       suspensions: [],
+      removals: [],
+      responses: [],
       narrowings: [],
       vouches: [],
       chatPosts: [],
       doorInvites: [],
+      doorClosure: null,
+      exposedDoors: [],
       chatThreads: [],
       dispatches: [],
       epoch: 0,
@@ -111,6 +116,9 @@ describe('fold', () => {
       rotationDue: false,
       strandedLeaves: [],
       dissolved: null,
+      recoveryShares: [],
+      recoveryAlerts: [],
+      recoveryCancels: [],
       coalitions: [],
       coalition: null,
       focus: null,
@@ -189,6 +197,7 @@ describe('fold', () => {
         member: authorOf('kim'),
         reason: '  <b>Threats</b> in chat  ',
         until: R + 10 + 10_080,
+        removal: null,
       },
     ]);
   });

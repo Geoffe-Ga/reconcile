@@ -10,6 +10,7 @@ import {
   Text,
 } from 'react-aria-components';
 
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { StewardValues } from '../app/proposals';
 import { motionFor } from '../app/stewardLines';
@@ -182,7 +183,7 @@ function StewardForm({ state, seat, recall, onPropose }: FormProps) {
           {stewards.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {recall ? stewards.recallSubmit : stewards.submit}
         </Button>

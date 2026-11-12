@@ -34,9 +34,17 @@ const KEPT = {
   lastSyncAt: null,
 };
 
-/** A fresh state for `key`: nothing uploaded, nothing checked. */
+/** A fresh state for `key`: nothing uploaded or checked yet, no Document (#247) and no group (#327). */
 function fresh(key: Uint8Array): RelayBackupState {
-  return { key, digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
+  return {
+    key,
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+    uploaded: [],
+    uploadedGroups: [],
+  };
 }
 
 describe('the relay backup’s state', () => {
@@ -50,7 +58,8 @@ describe('the relay backup’s state', () => {
     const store = await openStore();
 
     const none = await store.setRelayBackupKey(KEY);
-    await store.updateRelayBackup(KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9 });
+    const uploaded = ['Q2FuYXJ5IHN0YXRlbWVudA'];
+    await store.updateRelayBackup(KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9, uploaded });
     const previous = await store.setRelayBackupKey(NEW_KEY);
 
     expect(none).toBeUndefined();
@@ -59,6 +68,7 @@ describe('the relay backup’s state', () => {
       digest: 'd1',
       checkedDay: 7,
       uploadedAt: 9,
+      uploaded,
     });
     expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(NEW_KEY)));
   });

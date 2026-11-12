@@ -35,3 +35,20 @@ export function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
   const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
+
+/**
+ * The bytes `value` spells in canonical unpadded base64url, or null for
+ * anything else: not a string, padding, another alphabet, whitespace, spare
+ * bits set in the last character, or a length no base64 has. Each byte string
+ * has exactly one spelling it accepts.
+ */
+export function canonicalBytes(value: unknown): Uint8Array<ArrayBuffer> | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const bytes = fromBase64url(value);
+    return base64url(bytes) === value ? bytes : null;
+  } catch {
+    // A length no base64 has, such as one character.
+    return null;
+  }
+}

@@ -28,6 +28,7 @@ import { clearExpiredBallots, foldGroup } from './expiry';
 import type { PersonalDocument, ShareState } from './personal';
 import {
   backedUpGroups,
+  decodeRelayCopy,
   decodeSnapshot,
   deviceSnapshot,
   encodeSnapshot,
@@ -649,6 +650,102 @@ describe('personal Documents in a backup (#93)', () => {
   });
 });
 
+describe('decodeRelayCopy: what the relay backup reads of the relay copy (#247, #327)', () => {
+  /** A group entry as a linked device's upload holds it: only its id and author are ever read. */
+  const ENTRY = {
+    groupId: base64url(new Uint8Array(32).fill(0x47)),
+    signingKey: 'not a key: this device never reads it',
+    me: { author: base64url(new Uint8Array(32).fill(0x41)), name: 'Ana' },
+    log: 'not a log either: this device never checks, folds or syncs it',
+    futureField: { kept: true },
+  };
+  const plaintext = (json: unknown) => utf8(JSON.stringify(json));
+
+  it('reads each Document as a restore checks it, and of each group only its id and author', () => {
+    const shared = { ...canaryStatement(), share: SHARE };
+    const encoded = encodeSnapshot({ groups: [], personal: [shared, READING] });
+    const { personal } = JSON.parse(text(encoded)) as { personal: unknown };
+
+    const copy = decodeRelayCopy(plaintext({ format: 2, groups: [ENTRY], personal }));
+
+    expect(plain(copy?.personal)).toEqual(plain([shared, READING]));
+    expect(copy?.groups).toEqual([
+      { groupId: ENTRY.groupId, author: ENTRY.me.author, entry: ENTRY },
+    ]);
+    // A copy from before #93 holds no personal Documents.
+    expect(decodeRelayCopy(plaintext({ format: 2, groups: [] }))).toEqual({
+      personal: [],
+      groups: [],
+    });
+  });
+
+  it('reads nothing from a plaintext a restore wouldn’t, or a Document that doesn’t check out', () => {
+    const untitled = { ...READING, title: '' };
+
+    expect(decodeRelayCopy(plaintext({ format: 3, groups: [], personal: [READING] }))).toBeNull();
+    expect(decodeRelayCopy(plaintext([READING]))).toBeNull();
+    expect(decodeRelayCopy(utf8('not JSON'))).toBeNull();
+    expect(decodeRelayCopy(plaintext({ format: 2, groups: [], personal: [untitled] }))).toBeNull();
+    expect(
+      decodeRelayCopy(plaintext({ format: 2, groups: [], personal: [READING, READING] })),
+    ).toBeNull();
+  });
+
+  it('reads nothing from a format 1 copy: every relay copy is format 2, and a format 1 group in one wouldn’t restore', () => {
+    expect(decodeRelayCopy(plaintext({ format: 1, groups: [], personal: [] }))).toBeNull();
+  });
+
+  it.each([
+    ['groups that aren’t a list', { [ENTRY.groupId]: ENTRY }],
+    ['an entry that isn’t an object', [ENTRY, 'a group']],
+    ['an entry without a group id', [{ ...ENTRY, groupId: undefined }]],
+    ['a group id that isn’t one', [{ ...ENTRY, groupId: 'not a group id' }]],
+    ['an entry without its member', [{ ...ENTRY, me: undefined }]],
+    ['an author that isn’t one', [{ ...ENTRY, me: { ...ENTRY.me, author: 7 } }]],
+    ['a short author', [{ ...ENTRY, me: { ...ENTRY.me, author: 'QW5h' } }]],
+    ['two entries for one group', [ENTRY, { ...ENTRY, me: { ...ENTRY.me, name: 'Ana again' } }]],
+  ])('reads nothing from a copy with %s', (_, groups) => {
+    expect(decodeRelayCopy(plaintext({ format: 2, groups, personal: [] }))).toBeNull();
+  });
+});
+
+describe('encodeSnapshot with group entries carried from the relay copy (#327)', () => {
+  it('writes each after the device’s own groups, as the copy held it, so a restore reads the group the other device kept', async () => {
+    const other = await openStore('laptop');
+    await keepCanary(other);
+    const theirs = await snapshotOf(other);
+    const copy = decodeRelayCopy(theirs);
+    if (copy === null) throw new Error('Expected the copy to read.');
+    const device = await openStore('phone');
+    await keepSections(device);
+    const own = await deviceSnapshot(device);
+    expect(own.groups).toHaveLength(1);
+
+    const encoded = encodeSnapshot({ ...own, carried: copy.groups });
+
+    const written = JSON.parse(text(encoded)) as { groups: { groupId: string }[] };
+    const held = JSON.parse(text(theirs)) as { groups: unknown[] };
+    expect(written.groups.map((group) => group.groupId)).toEqual([
+      ...own.groups.map((group) => group.groupId),
+      ...copy.groups.map((group) => group.groupId),
+    ]);
+    expect(written.groups.slice(1)).toEqual(held.groups);
+    const restored = decodeSnapshot(encoded);
+    expect(plain(restored?.groups.slice(1))).toEqual(plain(decodeSnapshot(theirs)?.groups));
+    other.close();
+    device.close();
+  });
+
+  it('writes nothing more when nothing is carried', async () => {
+    const device = await openStore('ana');
+    await keepCanary(device);
+    const own = await deviceSnapshot(device);
+
+    expect(text(encodeSnapshot({ ...own, carried: [] }))).toBe(text(encodeSnapshot(own)));
+    device.close();
+  });
+});
+
 /** The canary statement's share by link (#105): its own seed and keys, posted twice. */
 const SHARE_KEYS = newSigningKeys();
 const SHARE: ShareState = {
@@ -678,7 +775,7 @@ function plain(value: unknown): unknown {
 }
 
 describe('a shared Document in a backup (#105)', () => {
-  it('brings its share back whole, so the restored device keeps the same link and counts on', async () => {
+  it('brings its share back whole, paused until the person keeps it (#328), so the restored device keeps the same link and counts on', async () => {
     const device = await openStore('ana');
     await keepShared(device);
     await device.savePersonal(READING);
@@ -688,7 +785,7 @@ describe('a shared Document in a backup (#105)', () => {
     await importGroups(fresh, file, PASSPHRASE);
 
     expect(plain(await fresh.listPersonal())).toEqual(
-      plain([{ ...canaryStatement(), share: SHARE }, READING]),
+      plain([{ ...canaryStatement(), share: { ...SHARE, paused: true } }, READING]),
     );
   });
 
@@ -861,7 +958,7 @@ describe('a shared Document in a link bundle (#96, #105)', () => {
     );
   });
 
-  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97)', async () => {
+  it('keeps a share from a backup’s plaintext, as from the relay’s copy (#97), paused (#328)', async () => {
     const device = await openStore('ana');
     await keepShared(device);
     const fresh = await openStore('fresh');
@@ -869,7 +966,7 @@ describe('a shared Document in a link bundle (#96, #105)', () => {
     await importSnapshot(fresh, await snapshotOf(device));
 
     expect(plain(await fresh.listPersonal())).toEqual(
-      plain([{ ...canaryStatement(), share: SHARE }]),
+      plain([{ ...canaryStatement(), share: { ...SHARE, paused: true } }]),
     );
   });
 });
@@ -1260,6 +1357,8 @@ describe('replaceWithBackup: Restore when the passkey no longer unlocks the vaul
       checkedDay: null,
       uploadedAt: null,
       tooLarge: false,
+      uploaded: [],
+      uploadedGroups: [],
     });
   });
 
@@ -1616,6 +1715,8 @@ describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
       checkedDay: null,
       uploadedAt: null,
       tooLarge: false,
+      uploaded: [],
+      uploadedGroups: [],
     });
   });
 
@@ -1726,11 +1827,12 @@ describe('importSnapshot', () => {
 });
 
 describe('a coalition’s entry in a backup (#114)', () => {
-  /** A formed coalition's entry, kept on `store` with a key of its own and its log. */
-  async function keepCoalition(store: Store) {
+  /** A formed coalition's entry, kept on `store` with a key of its own and its log, followed or not (#124). */
+  async function keepCoalition(store: Store, following = false) {
     const logs = new Logs();
     logs.formed(29_000_000, ['A', 'B'], ['kim', 'zed']);
-    const entry = newEntry(fromBase64url(testSecret('coalition')), { name: 'Kim K.' });
+    const plan = following ? { following } : { name: 'Kim K.' };
+    const entry = newEntry(fromBase64url(testSecret('coalition')), plan);
     await store.addGroup(entry);
     const records = logs.logs.coalition ?? [];
     const pull = { records, cursor: 40, relayNow: 29_000_100, instance: 'i', lastSyncAt: 1 };
@@ -1758,6 +1860,38 @@ describe('a coalition’s entry in a backup (#114)', () => {
     to.close();
   });
 
+  it('keeps that a coalition is only followed (#124), and an entry that isn’t says nothing', async () => {
+    const from = await openStore('from');
+    const to = await openStore('to');
+    const entry = await keepCoalition(from, true);
+
+    const { plaintext } = await takeSnapshot(from);
+    const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
+    expect(json.groups.map((group) => group.following)).toEqual([true]);
+    await importSnapshot(to, plaintext);
+
+    const [restored] = await to.listCoalitions();
+    expect(restored?.groupId).toBe(entry.groupId);
+    expect(restored?.following).toBe(true);
+    const plain = await openStore('plain');
+    await keepCoalition(plain);
+    const kept = JSON.parse(text((await takeSnapshot(plain)).plaintext)) as typeof json;
+    expect(kept.groups.map((group) => 'following' in group)).toEqual([false]);
+    for (const each of [from, to, plain]) each.close();
+  });
+
+  it('refuses a file whose group, not a coalition, says it’s only followed (#124)', async () => {
+    const store = await openStore('device');
+    await keepCanary(store);
+    const { plaintext } = await takeSnapshot(store);
+    const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
+    expect(decodeSnapshot(plaintext)).not.toBeNull();
+    json.groups = json.groups.map((group) => ({ ...group, following: true }));
+
+    expect(decodeSnapshot(utf8(JSON.stringify(json)))).toBeNull();
+    store.close();
+  });
+
   it('leaves out an entry whose genesis hasn’t come back yet', async () => {
     const store = await openStore('device');
     await store.addGroup(newEntry(fromBase64url(testSecret('coalition'))));
@@ -1769,6 +1903,7 @@ describe('a coalition’s entry in a backup (#114)', () => {
   it.each([
     ['whose id isn’t the one its secret makes', { groupId: 'A'.repeat(43) }],
     ['of a kind it doesn’t know', { kind: 'federation' }],
+    ['followed by anything but true', { following: 'yes' }],
   ])('refuses a file with a coalition entry %s', async (_label, change) => {
     const store = await openStore('device');
     await keepCoalition(store);

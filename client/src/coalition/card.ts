@@ -10,15 +10,20 @@
  * each is padded to one of four sizes, and the relay keeps it 1 day, which it
  * rounds up to 24–48 hours.
  *
- * - The header is JSON `{secret, inner, seat, name, title, atoms,
+ * - The header is JSON `{secret, inner?, seat, name, title, atoms,
  *   chunkCount}`: the coalition secret and `inner`, each 32 bytes in
  *   base64url, the maker's seat (their group's name there and its public
  *   seat key, never its seat secret, which stays in the group's own sealed
- *   log), and the coalition's name and statement.
+ *   log), and the coalition's name and statement. Only a card that founds a
+ *   coalition carries `inner`: a card from a formed one asks a group in, and
+ *   the group receives `inner` through its seat once admitted, so it can't
+ *   read the coalition's room while it's being decided on (#313).
  * - A card for a coalition still to form carries no log. A card from a
  *   formed coalition (admitting a group) carries the coalition's log, packed
  *   as an invite packs a group's (`invite/envelope.ts`), so the device that
- *   brings it reads the coalition whatever the relay has dropped since.
+ *   brings it reads the coalition whatever the relay has dropped since. No
+ *   entry is marked kept (#269): a coalition's own log takes no result, so
+ *   it keeps none.
  *
  * Opening is all or nothing, as an invite's is: anything wrong reads as one
  * expired or damaged card. Everything here is pure: the caller does the
@@ -31,14 +36,17 @@ import { MAX_PLAINTEXT_BYTES, type Seal } from '../crypto/seal';
 import type { SeatEntry } from '../engine/event';
 import type { LogRecord } from '../engine/fold';
 import { codePointLength } from '../engine/text';
-import { NAME_MAX, packEntries, unpackChunk } from '../invite/envelope';
+import { NAME_MAX, openChunked, packEntries, sealChunked, unmarked } from '../invite/envelope';
 
 /** What a card carries. */
 export interface Card {
   /** The 32-byte coalition secret, from which the coalition's mailboxes and seal key derive. */
   readonly secret: Uint8Array;
-  /** The coalition's 32 `inner` bytes, which followers never get (#100). */
-  readonly inner: Uint8Array;
+  /**
+   * The coalition's 32 `inner` bytes, which followers never get (#100), on a
+   * card that founds the coalition; none on a card from a formed one (#313).
+   */
+  readonly inner?: Uint8Array;
   /** The maker's seat: their group's name in the coalition and its public seat key. */
   readonly seat: SeatEntry;
   /** The coalition's name, 1–120 code points. */
@@ -104,7 +112,7 @@ function encodeHeader(header: CardHeader): Uint8Array {
   return encoder.encode(
     JSON.stringify({
       secret: base64url(secret),
-      inner: base64url(inner),
+      ...(inner === undefined ? {} : { inner: base64url(inner) }),
       seat: { name: seat.name, key: seat.key },
       name,
       title,
@@ -141,12 +149,13 @@ function parseAtoms(value: unknown): string[] | null {
   return atoms.every((atom) => typeof atom === 'string') ? atoms : null;
 }
 
-/** The secrets in a header, as bytes, or null. */
+/** The secrets in a header, as bytes, or null: a missing `inner` is none, a malformed one damage. */
 function parseSecrets(raw: Json): Pick<Card, 'secret' | 'inner'> | null {
   const secret = key32(raw.secret);
-  const inner = key32(raw.inner);
+  const inner = raw.inner === undefined ? undefined : key32(raw.inner);
   if (secret === null || inner === null) return null;
-  return { secret: fromBase64url(secret), inner: fromBase64url(inner) };
+  const secrets = { secret: fromBase64url(secret) };
+  return inner === undefined ? secrets : { ...secrets, inner: fromBase64url(inner) };
 }
 
 /** A title of at most {@link NAME_MAX} code points, or null. */
@@ -182,42 +191,32 @@ function decodeHeader(bytes: Uint8Array): CardHeader | null {
  */
 export function sealCard(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   card: Card,
 ): Uint8Array<ArrayBuffer>[] {
   const chunks = packEntries(card.entries);
   const header = encodeHeader({ ...card, chunkCount: chunks.length });
   if (header.length > MAX_PLAINTEXT_BYTES) throw new CardTooLarge();
-  return [header, ...chunks].map((plaintext) => seal.seal(mailbox, key, plaintext));
+  return sealChunked(seal, channel, header, chunks);
 }
 
 /**
  * The card in `blobs`, its mailbox's records in relay order, or null unless
  * every blob opens, the first is a header, and exactly its chunk count of
- * chunks follow, each holding whole entries.
+ * chunks follow, each holding whole entries, none marked kept (#269).
  */
 export function openCard(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   blobs: readonly Uint8Array[],
 ): Card | null {
-  const opened: Uint8Array[] = [];
-  for (const blob of blobs) {
-    const plaintext = seal.open(mailbox, key, blob);
-    if (plaintext === null) return null;
-    opened.push(plaintext);
-  }
-  const [first, ...chunks] = opened;
-  const header = first === undefined ? null : decodeHeader(first);
-  if (header === null || header.chunkCount !== chunks.length) return null;
-  const entries: LogRecord[] = [];
-  for (const chunk of chunks) {
-    const read = unpackChunk(chunk);
-    if (read === null) return null;
-    entries.push(...read);
-  }
-  const { secret, inner, seat, name, title, atoms } = header;
-  return { secret, inner, seat, name, title, atoms, entries };
+  const opened = openChunked(seal, channel, blobs, decodeHeader);
+  if (opened === null) return null;
+  const entries = unmarked(opened.entries);
+  if (entries === null) return null;
+  const { secret, inner, seat, name, title, atoms } = opened.header;
+  const card = { secret, seat, name, title, atoms, entries };
+  return inner === undefined ? card : { ...card, inner };
 }
 
 /** The link to send: the app's origin, then the seed after `#reconcile/`. */

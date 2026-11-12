@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_BACKUP_BYTES, type Restored } from '../store/snapshot';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { messages } from './messages';
 import { RestoreBackup } from './RestoreBackup';
 
@@ -153,5 +154,21 @@ describe('RestoreBackup', () => {
 
     expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
     expect(screen.queryByText(messages.restore.older)).not.toBeInTheDocument();
+  });
+
+  it('restores once when Restore is tapped again while it restores and the backup doesn’t open (#193)', async () => {
+    const restoring = held<Restored>();
+    const { user, onRestore } = setup(vi.fn<OnRestore>(() => restoring.promise));
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'the wrong passphrase');
+    const restore = screen.getByRole('button', { name: 'Restore' });
+    await user.click(restore);
+    expect(restore).toBeDisabled();
+    await user.click(restore);
+    restoring.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(restore).toBeEnabled();
+    expect(onRestore).toHaveBeenCalledTimes(1);
   });
 });

@@ -150,8 +150,7 @@ async function decidedTogether(quiet = false): Promise<Decided> {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
       kx: testKx('ana').kx,
     },
   });
@@ -441,6 +440,23 @@ describe('resultsDue', () => {
     expect(resultsDue(state, { me: kim, relayNow })).toEqual([]);
     const ana = { author: authorOf('ana'), name: 'Ana' };
     expect(resultsDue(state, { me: ana, relayNow, leaving: utf8('leave') })).toEqual([]);
+  });
+
+  it('names none for a suspended member, nor the person a passed removal names (#102, #115), whose results the fold ignores', () => {
+    const log = groupLog({ members: ['Ben', 'Cal', 'Dee', 'Kim'] });
+    const edit = log.propose('ana');
+    for (const voter of ['Ana', 'Ben', 'Cal', 'Dee', 'Kim']) log.vote(voter, edit, 4);
+    const removal = log.proposeRemoval('Ana', 'Kim');
+    for (const voter of ['Ana', 'Ben', 'Cal', 'Dee']) log.vote(voter, removal, 4);
+    log.suspend('Ana', 'Dee');
+    log.minute += 1;
+    const state = log.state();
+    const relayNow = log.minute;
+    const due = (name: string) =>
+      resultsDue(state, { me: { author: authorOf(name), name }, relayNow }).map((p) => p.id);
+    expect(due('ben')).toEqual([edit, removal]);
+    expect(due('dee')).toEqual([]);
+    expect(due('kim')).toEqual([]);
   });
 
   it('names none whose result already waits in the outbox, so none is queued twice', () => {

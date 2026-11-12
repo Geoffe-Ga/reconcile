@@ -16,8 +16,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -48,6 +47,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add guests",
@@ -144,8 +144,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -176,6 +175,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": null
               },
               "title": "Add a heading",
@@ -262,8 +262,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -294,6 +293,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add X",
@@ -314,6 +314,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@3"
               },
               "title": "Add Y",
@@ -334,6 +335,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.9"
               },
               "title": "Add Z",
@@ -388,6 +390,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@3"
               },
               "title": "Add Y",
@@ -491,8 +494,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -523,6 +525,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add nothing",
@@ -543,6 +546,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add guests",
@@ -682,8 +686,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -714,6 +717,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.1"
               },
               "title": "Add C",
@@ -877,8 +881,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -909,6 +912,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add X",
@@ -930,6 +934,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add X",

@@ -42,8 +42,7 @@ function founding(name: string, fill: number) {
     body: {
       name,
       founder: 'Ana',
-      title: `${name} rules`,
-      atoms: [`${name}: be kind.`],
+      documents: [{ title: `${name} rules`, atoms: [`${name}: be kind.`] }],
       kx: testKx('ana').kx,
     },
   });
@@ -197,7 +196,7 @@ describe('leaving a group on this device', () => {
     expect(fake.requests).toHaveLength(after);
   });
 
-  it('stays, leaving, when the read after its leave fails, and goes on the next pass without posting the leave again (#225)', async () => {
+  it('stays, leaving, when the read after its leave fails, then posts the leave again, which folds once, and goes (#225, #349)', async () => {
     const fake = createFakeRelay();
     let puts = 0;
     const relay = createRelay({
@@ -213,14 +212,24 @@ describe('leaving a group on this device', () => {
     await keep(store, sync, group);
     const flaky = createSync({ store, relay, seal: xchachaSeal, clock: () => TS });
     opened.push(flaky);
-    await store.markLeaving(group.genesis.id, anaSays(group.genesis, 'leave').record);
+    const leave = anaSays(group.genesis, 'leave');
+    await store.markLeaving(group.genesis.id, leave.record);
 
     expect(await flaky.syncOnce()).toBe(false);
     const held = await store.getGroup(group.genesis.id);
-    expect([held?.leaving !== undefined, held?.outbox]).toEqual([true, []]);
+    // No pull read the leave back, so it stays queued, as every entry does until its pull (#349).
+    const queued = held?.outbox.map((bytes) => parseRecord(bytes)?.id);
+    expect([held?.leaving !== undefined, queued]).toEqual([true, [leave.id]]);
 
     expect(await sync.syncOnce()).toBe(true);
-    expect(onRelay(fake, group)).toEqual(['genesis', 'leave']);
+    // The next pass posts it again and reads where it landed; both copies are one event, which folds once.
+    expect(onRelay(fake, group)).toEqual(['genesis', 'leave', 'leave']);
+    const copies = fake.blobs(group.mailbox).slice(1);
+    expect(
+      copies.map(
+        (blob) => parseRecord(open(group.mailbox, group.key, blob) ?? new Uint8Array())?.id,
+      ),
+    ).toEqual([leave.id, leave.id]);
     expect(await store.getGroup(group.genesis.id)).toBeUndefined();
   });
 });

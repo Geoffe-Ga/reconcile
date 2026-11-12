@@ -107,8 +107,7 @@ async function group(names: readonly string[], calHasDevice: boolean) {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.'] }],
       kx: testKx('ana').kx,
     },
   });

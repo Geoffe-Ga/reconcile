@@ -16,8 +16,12 @@ export interface StoredGroup {
   readonly kxKey: number[] | null;
   /** The epoch of `secret` (#98): 0 until the group's key first changes. */
   readonly epoch: number;
+  /** Why the group only reads on this device (#108, #115), or null while it goes on. */
+  readonly archived: string | null;
   /** `coalition` for a coalition's entry (#114), null for a group. */
   readonly kind: string | null;
+  /** The relay minute its last sync read (#110), or null before any. */
+  readonly relayNow: number | null;
 }
 
 /** HKDF-SHA-256 of `secret` with an empty salt, by Node's own crypto: spec §3's derivations. */
@@ -76,16 +80,20 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         kxKey?: Uint8Array;
         epoch?: number;
         me: { author: string };
+        archived?: { reason: string };
         kind?: string;
+        relayNow: number | null;
       }[];
       return groups.map((group) => ({
         kind: group.kind ?? null,
+        relayNow: group.relayNow,
         groupId: group.groupId,
         secret: Array.from(group.secret),
         signingKey: Array.from(group.signingKey),
         author: group.me.author,
         kxKey: group.kxKey === undefined ? null : Array.from(group.kxKey),
         epoch: group.epoch ?? 0,
+        archived: group.archived?.reason ?? null,
       }));
     } finally {
       db.close();

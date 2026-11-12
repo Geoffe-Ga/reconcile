@@ -37,7 +37,7 @@ export const messages = {
     inviteHeading: 'Have an invite link?',
     inviteLabel: 'Invite link',
     inviteHint:
-      'Paste the link someone in your group sent you, or a reconcile card from another group.',
+      'Paste the link someone in your group sent you, a reconcile card from another group, or a coalition’s follow link.',
     openInvite: 'Join with an invite link',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
@@ -49,6 +49,10 @@ export const messages = {
     settings: 'Settings',
     personal: 'Personal',
     personalHint: 'Your mission statement and other Documents of your own, on this device only.',
+    recoverHeading: 'Lost every device?',
+    recover: 'Recover with my contacts',
+    /** The coalitions this device follows (#124), each with its member groups. */
+    followingHeading: 'Following',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -115,7 +119,7 @@ export const messages = {
     pageTitle: 'Create a group',
     eyebrow: 'New group',
     title: 'Create a group',
-    lede: 'You write the first draft of your group’s Document. After that, it changes only when a Proposal passes your group’s vote.',
+    lede: 'You write the first draft of your group’s Documents. After that, each one changes only when a Proposal passes your group’s vote.',
     groupName: 'Group name',
     groupNameMissing: 'Give your group a name.',
     yourName: 'Your name',
@@ -124,17 +128,27 @@ export const messages = {
     chat: 'Chat link (optional)',
     chatHint: 'Where your group already talks, such as a Discord, Signal or WhatsApp group.',
     chatInvalid: 'Use a web link that starts with https:// or http://.',
+    /** Each Document block's heading (#92), numbered from 1. */
+    documentBlock: (number: number) => `Document ${String(number)}`,
+    /** The first block's title until the founder changes it (#92). */
+    defaultTitle: 'Mission statement',
     documentTitle: 'Document title',
     documentTitleHint: 'For example, House rules or Our mission.',
     documentTitleMissing: 'Give the Document a title.',
+    documentTitleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    addDocument: 'Add another Document',
+    removeDocument: 'Remove',
+    /** A block's Remove starts with its visible word (WCAG 2.5.3). */
+    removeDocumentLabel: (number: number) => `Remove Document ${String(number)}`,
     documentText: 'Document text',
     documentTextHint:
       'Leave a blank line between sections. Your group proposes changes one section at a time.',
     documentTextMissing: 'Write at least one section.',
-    section: (section: number) => `Section ${String(section)}`,
     tooLarge: 'This Document is too long to send. Shorten it, then try again.',
-    visibility:
-      'Everyone you invite sees the group name, your name, the chat link and this Document.',
+    /** Said under the longest block's text when the Documents fit only apart (#92). */
+    tooLargeTogether: 'Together, your Documents are too long to send. Shorten one, then try again.',
+    visibility: (documents: number) =>
+      `Everyone you invite sees the group name, your name, the chat link and ${documents === 1 ? 'this Document' : 'these Documents'}.`,
     submit: 'Create group',
     failed: 'Your group couldn’t be saved on this device. Try again.',
   },
@@ -195,7 +209,9 @@ export const messages = {
   home: {
     pageTitle: 'Your group',
     eyebrow: 'Your group',
-    documentLabel: 'Document',
+    /** Over the list of the group's Documents (#92). */
+    documentsLabel: 'Documents',
+    proposeDocument: 'Propose a new Document',
     needsYourVote: 'Needs your vote',
     openProposals: 'Open Proposals',
     /** The open Proposals after 'Needs your vote', when it lists any. */
@@ -319,6 +335,26 @@ export const messages = {
       'If your group passes this, everyone in it gets the Dispatch. Voters see it on the ballot first.',
     /** Where a carried Dispatch's title starts: the Document's own title, set in the field. */
     dispatchTitle: (document: string) => `Updated: ${document}`,
+    /** Where a new Document's carried Dispatch title starts (#92). */
+    dispatchNewTitle: (document: string) => `New Document: ${document}`,
+    newDocumentPageTitle: 'Propose a new Document',
+    newDocumentTitle: 'Propose a new Document',
+    newDocumentLede:
+      'If your group passes it, your group has a new Document, listed after the others. What you write here becomes its first sections.',
+    documentTitleLabel: 'Document title',
+    documentTitleHint: 'For example, Budget or Chores.',
+    documentTitleMissing: 'Give the new Document a title.',
+    documentTitleTooLong: (max: number) =>
+      `Keep the Document title to ${count(max)} characters or fewer.`,
+    sectionsLabel: 'First sections',
+    sectionsHint: 'Leave a blank line between sections.',
+    sectionsMissing: 'Write at least one section.',
+    section: (section: number) => `Section ${String(section)}`,
+    newDocumentSubmit: 'Propose this Document',
+    newDocumentVersionLede:
+      'This new Document has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+    newDocumentVersionHint:
+      'If your group passes it, these become the new Document’s first sections. Leave a blank line between sections.',
     dispatchTitleLabel: 'Dispatch title',
     dispatchTextLabel: 'Dispatch text (optional)',
   },
@@ -359,6 +395,8 @@ export const messages = {
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
     newSection: 'New section',
+    /** What a new Document's ballot shows: its first sections, wholly added (#92). */
+    firstSections: 'First sections',
     removes: 'Removes this section',
     addsAfter: (words: string) => `Adds a section after ‘${words}’`,
     addsAtStart: 'Adds a section at the start',
@@ -414,6 +452,9 @@ export const messages = {
     averageLine: (line: string) => `needs ${line}`,
     /** The share of zeros it must stay under, from the bar, such as "under 8%". */
     zeroLine: (line: string) => `under ${line}`,
+    /** Removal's zeros line (ADR-0075 §3): "one at most, or under 5%". */
+    zeroLineOr: (allowed: number, line: string) =>
+      `${allowed === 1 ? 'one' : count(allowed)} at most, or under ${line}`,
     percent: (percent: number) => `${count(percent)}%`,
     /** A bar's value, then how it stands against its line: "1.9 · Short by 0.1". */
     reading: (value: string, standing: string) => `${value} · ${standing}`,
@@ -433,6 +474,10 @@ export const messages = {
     passedRemoval: 'This passed. The Document no longer has this section.',
     passedVersionRemoval: (version: number) =>
       `Version ${String(version)} passed. The Document no longer has this section.`,
+    /** A new Document's pass (#92), before its first sections. */
+    passedDocument: 'This passed. The new Document reads:',
+    passedVersionDocument: (version: number) =>
+      `Version ${String(version)} passed. The new Document reads:`,
     failed: 'This didn’t pass.',
     failedVersions: 'No version passed.',
     lapsed: 'Not enough people weighed in. This isn’t a no.',
@@ -596,6 +641,13 @@ export const messages = {
     notProposing: 'You vote on changes here. Choose Co-Creator to propose them.',
     change: 'Change your involvement',
   },
+  /** Several Documents per group (#92): what leads a Proposal that changes or creates one. */
+  documents: {
+    /** Before a new Document's title, as in "New Document: Budget". */
+    newPrefix: 'New Document:',
+    missingTitle: 'This Document isn’t in this group',
+    missing: 'Go back to your group to see its Documents.',
+  },
   document: {
     pageTitle: 'Document',
     eyebrow: 'Document',
@@ -647,9 +699,14 @@ export const messages = {
     suspend: 'Suspend',
     suspendLabel: (name: string) => `Suspend ${name}`,
     suspendedUntil: (date: string) => `Suspended until ${date}.`,
+    /** A suspension a removal vote extends (ADR-0059): it ends when that vote closes. */
+    suspendedUntilVote: (date: string) =>
+      `Suspended until the vote on removing them closes, by ${date}.`,
     reasonPrefix: 'Reason:',
     youAreSuspended: (date: string) =>
       `A steward suspended you until ${date}. You can read, but not post, propose or vote.`,
+    youAreSuspendedUntilVote: (date: string) =>
+      `A steward suspended you until the vote on removing you closes, by ${date}. You can read and post one response on that vote, but not propose or vote.`,
     dialogTitle: { before: 'Suspend', after: '?' },
     dialogLine: (days: number) =>
       `Everyone in the group will see this. It ends after ${count(days)} days.`,
@@ -720,6 +777,61 @@ export const messages = {
     passed: 'This passed. Your group has dissolved.',
   },
   /** A dissolved group's read-only copy on this device (#108). */
+  removal: {
+    /** On a person's row in the People list, read with their name: "Propose removing Kim". */
+    propose: 'Propose removing',
+    proposeLabel: (name: string) => `Propose removing ${name}`,
+    pageTitle: 'Propose removing someone',
+    eyebrow: 'Removal',
+    title: 'Propose a removal',
+    /** What the title starts as: what the ballot will say. */
+    titleDefault: (name: string) => `Remove ${name}`,
+    /** The bar in words, from the engine: "an average of at least 3.0, and no more than one 0 unless fewer than 5% scored 0". */
+    bar: (average: string, allowed: number, zeros: string) =>
+      `This needs a higher bar: an average of at least ${average}, and no more than ${
+        allowed === 1 ? 'one 0' : `${count(allowed)} 0s`
+      } unless fewer than ${zeros} scored 0.`,
+    /** After the bar, read after their name: "<name> can’t vote on it, but can post one response." */
+    cantVote: 'can’t vote on it, but can post one response.',
+    runs: (days: number) => `Voting runs ${count(days)} days, and nobody can make it shorter.`,
+    titleHint: 'It starts as what the ballot will say. Change it if you like.',
+    whyHint:
+      'Say what happened and what your group has tried. Everyone in the group reads it, including the person you’d remove.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose this removal',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'You can’t propose this removal now',
+    notAllowed: 'Your place in this group doesn’t include proposing a removal.',
+    notMember: 'They aren’t in this group now. Go back to your group to see who is.',
+    yourself: 'You can’t propose removing yourself. To go, choose Leave this group.',
+    alreadyOpen:
+      'A vote on removing them is already open, or has passed. Go back to your group to see it.',
+    ballotTitle: { before: 'Remove', after: 'from the group' },
+    ballotLine:
+      'If this passes, they leave the group, and the group gets a new key, so they see nothing new. They keep what they already had.',
+    ownRemoval:
+      'This Proposal would remove you, so you don’t vote on it. You can post one response.',
+    /** Read right after their name, over the response: "Kim’s response". */
+    responseOf: '’s response',
+    /** Read after their name while the vote is open and they haven’t: "Kim hasn’t posted a response." */
+    noResponse: 'hasn’t posted a response.',
+    respondLabel: 'Your response',
+    respondHint:
+      'Everyone in the group reads it on the ballot. You can post one, and can’t change it after.',
+    respond: 'Post your response',
+    respondEmpty: 'Write your response first.',
+    respondTooLong: (max: number) => `Keep your response to ${count(max)} characters or fewer.`,
+    respondFailed: 'Your response couldn’t be saved on this device. Try again.',
+    passed: { before: 'This passed.', after: 'is no longer in this group.' },
+    passedYou: 'This passed. You’re no longer in this group.',
+    eyebrowRemoved: 'Removed',
+    removedOn: (date: string) =>
+      `You were removed from this group by a vote on ${date}. You keep what’s already on this device, but you won’t see anything new.`,
+    stillOpen: 'Open when you were removed',
+    stillOpenLine: 'You won’t see how this ends',
+    readOnlyTitle: 'You were removed from this group',
+    readOnly: 'This is a read-only copy. Nothing new can be proposed or voted on.',
+  },
   archive: {
     eyebrow: 'Dissolved',
     dissolvedOn: (date: string) => `This group dissolved on ${date}. This is a read-only copy.`,
@@ -773,6 +885,8 @@ export const messages = {
     homeHeading: 'Rules',
     homeLink: 'Chat bot and front door',
     homeSummary: (bot: string, door: string) => `Chat bot: ${bot} · Front door: ${door}`,
+    /** Group home's word for the front door once a membership's end closed it (#288). */
+    closedByLeave: 'Closed when a member left',
     /** What each change does, as its ballot is headed and its title starts. */
     motions: {
       chatBot: {
@@ -822,6 +936,18 @@ export const messages = {
     narrowedBallot: {
       before: 'Steward',
       after: 'turned this off at once. It stays off while your group votes.',
+    },
+    /** Group rules' front door, once a membership's end closed it (#288). */
+    doorClosedByLeave:
+      'The front door closed because a member left, and they still have its keys. A new Proposal to open it reopens it, with new keys and a new link.',
+    /**
+     * A front door Proposal that was open when a member left (#288): what
+     * passing it does, after its line, and its pass, which opens no door.
+     */
+    exposed: {
+      line: 'A member left while this vote was open, and they have the keys it carries, so if it passes the front door stays closed. A new Proposal to open it reopens it.',
+      passed:
+        'This passed, but the front door stays closed: a member left while the vote was open, and they have its keys. A new Proposal to open it reopens it.',
     },
     composerPageTitle: 'Propose a rules change',
     nowTitle: (motion: string) => `${motion} now`,
@@ -930,10 +1056,18 @@ export const messages = {
     pageTitle: 'Personal',
     title: 'Personal',
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
+    /** Personal's line on where Documents go, while the device keeps no relay backup key. */
     privacy:
       'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+    /** In place of privacy once the device keeps a relay backup key (#97, #248): its sealed copy carries them. */
+    privacyRelayBackup:
+      'They stay on this device. Nothing here goes to your groups. A backup file you save includes them, and so does your sealed relay backup.',
+    /** The editor's line on where its Document goes, while the device keeps no relay backup key. */
     documentPrivacy:
       'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+    /** In place of documentPrivacy once the device keeps a relay backup key (#97, #248). */
+    documentPrivacyRelayBackup:
+      'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
     missionTitle: 'My mission statement',
     missionPrompt: 'What do you stand for, and what are you working toward?',
     newDocument: 'New document',
@@ -963,9 +1097,16 @@ export const messages = {
       'Sharing couldn’t be stopped, so nothing was deleted. Check your connection, then try again.',
     /** Under a shared Document's title on Personal (#105). */
     sharedLine: 'Shared by link',
+    /** In place of sharedLine while a restore has paused the Document's share (#328). */
+    pausedLine: 'Link paused after a restore',
+    /** In place of sharedLine once this device hasn't posted to the share for 30 days (#339). */
+    idleLine: 'Link paused after 30 days without an update',
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
+    /** In place of sharedPrivacy once the device keeps a relay backup key (#97, #248). */
+    sharedPrivacyRelayBackup:
+      'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it, and so does your sealed relay backup.',
     /**
      * Share link (#105; ADR-0074's personal page at level 2): one Document,
      * read-only, by a link whose key only its holders have.
@@ -1005,6 +1146,44 @@ export const messages = {
         'Sharing stopped. People who opened the link may have kept a copy, and earlier copies stay on the relay, still sealed, until they expire within a month.',
       stopFailed:
         'Sharing couldn’t be stopped, so nothing changed and the link still works. Stopping needs the relay. Check your connection, then try again.',
+      /**
+       * In place of the link while a restore has paused the share (#328): the
+       * backup may predate Stop sharing, so nothing is sent until the person chooses.
+       */
+      paused: 'This link was live when the backup was made. Keep sharing?',
+      /**
+       * In place of paused once this device hasn't posted to the share for 30
+       * days (#339): another device may have stopped it, and its tombstone lapsed.
+       */
+      pausedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device. Keep sharing?',
+      pausedNote:
+        'Nothing goes to the link until you choose. Keep sharing sends it this Document’s latest version.',
+      keep: 'Keep sharing',
+      keeping: 'Updating the link…',
+      kept: 'Still shared. The link shows this Document’s latest version.',
+      keptPending: 'Still shared. The link hasn’t caught up with this Document yet.',
+      keepStopped: 'This link had already been stopped, so it stays off.',
+      pausedStopFailed:
+        'Sharing couldn’t be stopped, so the link stays paused. Stopping needs the relay. Check your connection, then try again.',
+      /** In place of the link while the device's keys are locked with a passkey, which holds its seed (#255). */
+      locked:
+        'This Document is shared by link, but your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to see the link, stop sharing or delete this Document.',
+      /**
+       * In place of the paused question while the device's keys are locked (#255, #328):
+       * keeping or stopping a share needs its keys, and nothing goes to the link meanwhile.
+       */
+      lockedPaused:
+        'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /**
+       * In place of pausedIdle while the device's keys are locked (#255, #339): this device
+       * hasn't posted to the share for 30 days, and nothing goes to the link meanwhile.
+       */
+      lockedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
+      lockedNow:
+        'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
     },
   },
   /**
@@ -1065,6 +1244,7 @@ export const messages = {
     title: 'Settings',
     notifyHeading: 'Notifications',
     backupHeading: 'Back up your groups',
+    recoveryHeading: 'Recovery contacts',
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
     passkeyHeading: 'Lock with a passkey',
@@ -1294,6 +1474,122 @@ export const messages = {
     noCamera: 'The camera can’t be used here. Paste the code instead.',
     notLinkCode: 'That isn’t a Reconcile linking code.',
   },
+  /**
+   * Recovery contacts (#109; ADR-0043 §1, ADR-0008, ADR-0075 §4): framed as
+   * trust, never growth. `pick` is the picker's copy, word for word as the
+   * issue gives it. Nothing here counts people or invites anyone.
+   */
+  recovery: {
+    pageTitle: 'Recovery contacts',
+    title: 'Choose recovery contacts',
+    againTitle: 'Choose again',
+    lede: 'If you lose every device, people you trust can help you get back into your groups. Each holds a share of a key, and no one share opens anything on its own.',
+    pick: 'Pick people who know you and would answer a call from you. Pick people you’d trust with all your groups at once. If you pick the same person in two groups, they can tell both names are you.',
+    again:
+      'Choosing again gives everyone you pick a new share. Every share you gave before stops working, even for people you pick again.',
+    howMany: 'People to pick',
+    needed: 'Needed to help you back in',
+    fewer: '−',
+    more: '+',
+    anyOf: (t: number, n: number) =>
+      `Any ${String(t)} of the ${String(n)} people you pick can help you back in together.`,
+    picked: (picked: number, n: number) => `${String(picked)} of ${String(n)} picked.`,
+    tooMany: (picked: number, n: number) =>
+      `${String(picked)} picked. Pick ${String(n)}, or change how many people to pick.`,
+    nobody:
+      'No one in your groups can hold a share yet. Once someone joins a group with you, you can pick them here.',
+    inGroupBefore: 'People in',
+    save: 'Save recovery contacts',
+    saving: 'Backing up your groups and sending each share…',
+    failed: 'Your recovery contacts couldn’t be saved. Try again.',
+    none: 'You haven’t chosen anyone yet.',
+    choose: 'Choose recovery contacts',
+    chooseAgain: 'Choose again',
+    status: (n: number, t: number) => `${String(n)} recovery contacts · ${String(t)} needed`,
+    inGroupOf: 'in',
+    gone: 'No longer in a shared group',
+    belowThreshold: (t: number) =>
+      `Fewer than ${String(t)} of your recovery contacts still share a group with you. Choose again so they can help you back in.`,
+    holdingBefore: 'You’re holding a recovery share for',
+    groupOpen: '(',
+    groupClose: ')',
+    holdingHeading: 'Shares you hold',
+    dismiss: 'OK',
+    help: 'Help someone recover',
+    /** After a recovery (#118): the contacts who helped know the key, so the person chooses again. */
+    recovered:
+      'You’re back in. Choose your recovery contacts again: it makes a new key, and the shares that brought you back stop working.',
+  },
+  /**
+   * Recovering with contacts, on the new device (#118; ADR-0043 §2): the
+   * code to send, the number to read out, and the wait. `check` is the
+   * issue's words.
+   */
+  recover: {
+    pageTitle: 'Recover with your contacts',
+    title: 'Recover with your contacts',
+    lede: 'If you’ve lost every device, the people you chose as recovery contacts can bring your groups back to this one.',
+    codeLabel: 'Your recovery code',
+    codeHint: 'Send it to your recovery contacts by message or email.',
+    share: 'Share the code',
+    shared: 'Shared.',
+    copied: 'Copied. Send it to your recovery contacts.',
+    blocked: 'The code couldn’t be shared or copied. Select it and copy it instead.',
+    /** What Share sends beside the code; the app's address goes with it. */
+    message: 'My Reconcile recovery code:',
+    check: 'Send this code to your recovery contacts, then call them and read them this number.',
+    wait: 'Once a contact approves, their device waits 72 hours, then sends their share here. If you still have a device, it can cancel. Come back to this page: your code stays the same.',
+    waiting: 'Waiting for your contacts.',
+    arrived: (shares: number, needed: number) =>
+      `${count(shares)} of ${count(needed)} shares have arrived.`,
+    unreachable: 'Can’t reach the relay right now. Still trying.',
+    stop: 'Stop recovering',
+    stopNote: 'Stopping forgets this code, so no share sent to it can be read.',
+  },
+  /** A recovery contact's side (#118): the code, whose share, the call and the number. */
+  helpRecover: {
+    pageTitle: 'Help someone recover',
+    title: 'Help someone recover',
+    lede: 'Someone who chose you as a recovery contact has lost their devices. Their new device shows a code for them to send you.',
+    none: 'You don’t hold anyone’s recovery share on this device.',
+    codeLabel: 'Their recovery code',
+    codeHint: 'It starts with RR1.',
+    notACode: 'That isn’t a recovery code. Ask them to send it again.',
+    next: 'Continue',
+    who: 'Which person?',
+    /** One option: "<name> (<group>)". */
+    person: (name: string, group: string) => `${name} (${group})`,
+    /** "Call <name> or meet them. Make sure it's really them." around the name. */
+    callBefore: 'Call',
+    callAfter: 'or meet them. Make sure it’s really them.',
+    numberLabel: 'The number they read out',
+    numberHint: 'Six digits, from their new device.',
+    wrongNumber:
+      'That number doesn’t match this code. Check it’s the code they sent, and ask them to read the number again.',
+    approve: 'Approve',
+    approving: 'Approving…',
+    failed: 'This couldn’t be approved. Try again.',
+    back: 'Back',
+    heldHeading: 'Recoveries you’re helping with',
+    /** "Holding <name>'s share until <date>. Open Reconcile after then to send it." */
+    holdingBefore: 'Holding',
+    holdingUntil: (date: string) => `’s share until ${date}. Open Reconcile after then to send it.`,
+    holdingSoon: '’s share. The 72 hours start once the relay has your approval.',
+    readyAfter: '’s share goes to their new device the next time Reconcile syncs.',
+    sentAfter: '’s share went to their new device.',
+    stoppedAfter: '’s share stays with you: this recovery was cancelled.',
+    another: 'Help someone else',
+    settings: 'Settings',
+  },
+  /** The person's devices (#118): the alert on Start and every group home, and Cancel. The issue's words. */
+  recoveryAlert: {
+    body: (date: string) =>
+      `Someone asked your recovery contacts to restore your Reconcile on a new device. If this wasn’t you, cancel now. It completes ${date}.`,
+    cancel: 'Cancel this recovery',
+    cancelling: 'Cancelling…',
+    failed: 'The recovery couldn’t be cancelled. Try again.',
+    cancelled: 'You cancelled this recovery. Your contacts keep their shares.',
+  },
   /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
   backupCard: {
     body: 'Save a backup so you can get this group back if you lose your phone.',
@@ -1370,6 +1666,34 @@ export const messages = {
     offlineTitle: 'Can’t open the card yet',
     offline: 'Can’t reach the relay right now. Check your connection, then try again.',
     retry: 'Try again',
+  },
+  /**
+   * Following a coalition from its link (#124; ADR-0053, ADR-0075 §5). Every
+   * word of the preview came from a participant's device, so the screen sets
+   * each name in `<bdi>`, as plain text.
+   */
+  follow: {
+    pageTitle: 'Follow a coalition',
+    loading: 'Opening the link…',
+    eyebrow: 'Follow a coalition',
+    groupsLabel: 'Its member groups',
+    statementLabel: 'From its statement',
+    question: 'Follow this coalition?',
+    /** Where M2-03's name hint sits on Join: what following shows of you, which is nothing. */
+    hint: 'You’ll read its Documents, what it decides and its Dispatches on this device. Following adds nothing to the coalition: no name of yours, and no one sees that you follow. You won’t see inside any member group.',
+    submit: 'Follow',
+    notNow: 'Not now',
+    notNowHint: 'You can open the link again while it lasts.',
+    failed: 'Following didn’t finish. Try again.',
+    badLinkTitle: 'This follow link doesn’t work',
+    badLink:
+      'This follow link has expired or is damaged. Ask someone in the coalition for a new one.',
+    offlineTitle: 'Can’t open the link yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+    heldTitle: 'This coalition is already on this device',
+    held: 'Anything this device was missing from its history is here now.',
+    open: 'Open the coalition',
   },
   /** Group home's Coalitions, and what a reconcile Proposal says of its coalition (#114). */
   coalitions: {
@@ -1468,5 +1792,59 @@ export const messages = {
     composerLinkHint: 'Where the groups can talk it over.',
     composerVisibility:
       'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
+    /** Under "Send a Dispatch if this passes" on a coalition's composer (#124). */
+    composerDispatchHint:
+      'If the coalition passes this, the Dispatch goes out once the pass is final, a week after voting ends. Everyone who reads the coalition gets it: its followers, and people in its groups who open it.',
+    /** The coalition home of someone who only follows it (#124). */
+    followingEyebrow: 'Following',
+    /** Between member groups' names under a followed coalition's name: "Riverside Tenants · Oak St Co-op". */
+    groupsSeparator: '·',
+    /** Share a follow link (#124; ADR-0053). */
+    followers: 'Followers',
+    share: 'Share a follow link',
+    shareWarning:
+      'Anyone who opens this link in the next 2 days can read this coalition from then on, including the names its participants chose and which group each comes from. They won’t see inside any member group.',
+    shareField: 'Follow link',
+    sharing: 'Making your follow link…',
+    shareFailed:
+      'The follow link couldn’t be made, so nothing was copied. Making one needs the relay. Check your connection, then try again.',
+    shareCopied: 'Copied. Send it to the people you want to follow this coalition.',
+    /** Unfollow (#124): it works like Leave, and posts nothing. */
+    unfollow: 'Unfollow',
+    unfollowTitle: 'Unfollow this coalition?',
+    unfollowBody:
+      'Unfollowing removes this coalition and everything this device read of it. Nothing is sent, so no one learns you followed it or stopped. To follow it again, you’ll need a new follow link.',
+    unfollowCancel: 'Cancel',
+    unfollowFailed: 'Unfollowing couldn’t be saved on this device. Try again.',
+  },
+  /** A coalition's room (#125): one small encrypted room where its member groups' people talk. */
+  room: {
+    /** The room's entry on the coalition's home. */
+    homeTitle: 'Room',
+    open: 'Open the room',
+    homeLine: 'Where people from every member group talk. Only the member groups can read it.',
+    eyebrow: 'Room',
+    pageTitle: 'Room',
+    /** Under the room's heading: who can read it, and the 30-day rule. */
+    note: 'Only people in the coalition’s member groups can read this room. The relay can’t, and neither can anyone who only follows the coalition. Each device deletes a message 30 days after the relay received it.',
+    listLabel: 'Messages',
+    empty: 'No messages yet.',
+    /** The polite announcement of messages that arrive while the person is at the bottom. */
+    newFrom: (name: string, text: string) => `New message from ${name}: ${text}`,
+    newMessages: (n: number) => `${count(n)} new messages`,
+    messageLabel: 'Message',
+    messageHint:
+      'Plain text. Everyone in the coalition’s member groups sees it under your coalition name.',
+    send: 'Send',
+    emptyMessage: 'Write a message first.',
+    longMessage: 'A message can be up to 2,000 characters.',
+    failed: 'That didn’t save. Try again.',
+    takePartFirst: 'To write here, take part in the coalition first.',
+    joining: 'You can write here once you’ve joined the coalition. That happens at the next sync.',
+    reads:
+      'People who take part in the coalition write here. To take part, you need to be able to propose in your group.',
+    missingTitle: 'There’s no room for you here',
+    missing:
+      'Only people in the coalition’s member groups can read its room. Go back to the coalition’s home.',
   },
 } as const;

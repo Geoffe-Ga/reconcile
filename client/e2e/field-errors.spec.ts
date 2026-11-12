@@ -43,7 +43,7 @@ test('one submit click acts when its blur shows or clears a field error', async 
   });
 
   await test.step('Composer: the click that shows the new text’s error submits', async () => {
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await expect(heading(page, 'Propose a change')).toBeVisible();
     await page.getByRole('textbox', { name: 'Title' }).fill('Later quiet hours on weekends');

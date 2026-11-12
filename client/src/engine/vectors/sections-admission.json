@@ -16,8 +16,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -78,6 +77,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "A new section",
@@ -115,6 +115,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.1"
               },
               "title": "A new section",

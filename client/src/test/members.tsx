@@ -21,10 +21,17 @@ export interface TestMembers {
 }
 
 /** The founding Document: two sections. */
-export const FOUNDING = {
-  groupName: 'Riverside Tenants',
+const FOUNDING_DOCUMENT = {
   title: 'House rules',
   text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+};
+
+/** The group a test founds: its name, and its one Document (#92). */
+export const FOUNDING = {
+  groupName: 'Riverside Tenants',
+  documents: [FOUNDING_DOCUMENT],
+  title: FOUNDING_DOCUMENT.title,
+  text: FOUNDING_DOCUMENT.text,
 };
 
 /** The level the helpers join at unless a test names one: the creating level, so joiners can do all the founder can. */
@@ -45,7 +52,9 @@ export async function members(
   const [founder, ...joiners] = devices;
   const [founderName = ''] = names;
   if (founder === undefined) throw new Error('A group needs a founder.');
-  const created = await createGroup(founder.services, { ...FOUNDING, yourName: founderName, chat });
+  const { groupName, documents } = FOUNDING;
+  const values = { groupName, documents, yourName: founderName, chat };
+  const created = await createGroup(founder.services, values);
   if (created.outcome !== 'created') throw new Error('Expected a group.');
   const { groupId } = created;
   await founder.services.sync.syncOnce();
@@ -76,8 +85,10 @@ async function joinFrom(
 
 /** `device` founds another group as `founder`, with the founding Document, and syncs; returns its id. */
 export async function foundAnother(device: TestDevice, founder: string): Promise<string> {
+  const { groupName, documents } = FOUNDING;
   const created = await createGroup(device.services, {
-    ...FOUNDING,
+    groupName,
+    documents,
     yourName: founder,
     chat: null,
   });
@@ -98,6 +109,28 @@ export async function joinLater(
   await joinFrom(founder, groupId, device, name, level);
   return device;
 }
+
+/**
+ * Waits until `device` has posted everything it queued: the pass running now
+ * and the one after it, or one pass when none runs. An action sends its event
+ * in a pass the test doesn't wait for, so a test settles the device before
+ * another device reads what it just did; otherwise that device could sync
+ * before the pass has posted it.
+ */
+export async function settle(device: TestDevice): Promise<void> {
+  await act(() => device.services.sync.syncOnce());
+}
+
+/**
+ * The user-event options for whole apps, as `userEvent.setup(APP_USER)`. Its
+ * clicks skip moving the pointer onto each control first: React Aria
+ * re-renders every control the pointer enters or leaves for its hover state,
+ * which no test of the whole app reads, and that came to over a quarter of a
+ * loop test's time (#260). A test of hovering still calls `user.hover`. Only
+ * test files import Testing Library (dependency-cruiser's
+ * no-test-imports-in-prod), so each makes its own session from these.
+ */
+export const APP_USER = { skipHover: true } as const;
 
 /** One device's app, mounted in its own container with its own React id prefix. */
 export interface MountedApp {
@@ -180,8 +213,27 @@ export async function proposeFrom(
   await user.click(where.getByRole('button', { name: 'Propose this change' }));
 }
 
-/** Picks a score pill on an app's open ballot and sends the ballot. */
+/**
+ * Picks a score pill on an app's open ballot and sends the ballot. It waits
+ * for the pills' group, whose name is quick to read, then finds the pill
+ * once: a pill's name is its label's whole text, which a wait would read again
+ * for every pill on every render while the ballot loads (#260).
+ */
 export async function score(where: AppQueries, user: Typist, pill: string): Promise<void> {
-  await user.click(await where.findByRole('radio', { name: pill }));
+  await where.findByRole('radiogroup', { name: /^Score for version/ });
+  await user.click(where.getByRole('radio', { name: pill }));
   await user.click(where.getByRole('button', { name: /your vote$/ }));
+}
+
+/**
+ * What each row of the People list says about its person, in order: its
+ * text without the row's actions, Suspend (#102) and Propose removing (#115),
+ * which belong to whoever is looking.
+ */
+export function personRows(people: HTMLElement): (string | null)[] {
+  return Array.from(people.querySelectorAll('li.person'), (item) => {
+    const copy = item.cloneNode(true) as HTMLElement;
+    for (const action of copy.querySelectorAll('button, .person-action')) action.remove();
+    return copy.textContent;
+  });
 }

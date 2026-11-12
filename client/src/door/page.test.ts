@@ -15,6 +15,8 @@ import {
   doorLinkOf,
   encodePage,
   excerptOf,
+  FINAL,
+  isFinal,
   latestCopy,
   openPage,
   PAGE_TTL_DAYS,
@@ -119,6 +121,34 @@ describe('pageFor: what the page says, and nothing else', () => {
     expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Everyone is welcome here.\n');
   });
 
+  it('takes its excerpt from the first Document only, even once that Document has no sections (#92)', () => {
+    const log = groupLog({
+      members: ['Ben', 'Cal'],
+      documents: [
+        { title: 'Mission statement', atoms: ['We keep rents **fair**.\n'] },
+        { title: 'House rules', atoms: ['Bins go out on **Sunday**.\n'] },
+      ],
+    });
+    const door = log.rules('Ana', 'frontDoor', DOOR, { title: 'Open a front door' });
+    const removal = log.propose('Ana', { atom: 0, text: '', title: 'Drop the mission' });
+    for (const name of ['Ana', 'Ben', 'Cal']) {
+      log.vote(name, door, 4);
+      log.vote(name, removal, 4);
+    }
+    log.minute += 1;
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('');
+    const added = log.newDocument('Ana', 'Budget', { text: 'We **share** costs.\n' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, added, 4);
+    log.minute += 1;
+    const state = log.state();
+    expect(state.atoms.map((atom) => atom.documentId)).toEqual([`${log.group}:1`, added]);
+    expect(pageFor(state, DOOR, plain).excerpt).toBe('');
+    const restored = log.addSection('Ana', null, { text: 'Everyone is **welcome**.\n' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, restored, 4);
+    log.minute += 1;
+    expect(pageFor(log.state(), DOOR, plain).excerpt).toBe('Everyone is welcome.\n');
+  });
+
   it('shows the member count only when the group chose to', () => {
     const state = opened(COUNTED).state();
     expect(pageFor(state, COUNTED, plain)).toMatchObject({ count: 3 });
@@ -156,9 +186,24 @@ describe('encodePage and parsePage', () => {
     }
   });
 
+  it('write and read a final page, a closed one for good (#288)', () => {
+    expect(FINAL).toEqual({ v: 1, open: false, final: true });
+    expect(textOf(encodePage(FINAL))).toBe('{"v":1,"open":false,"final":true}');
+    expect(parsePage(encodePage(FINAL))).toEqual(FINAL);
+    expect(isFinal(FINAL)).toBe(true);
+    expect(isFinal({ v: 1, open: false })).toBe(false);
+    expect(isFinal(open)).toBe(false);
+  });
+
   it.each([
     ['another version', '{"v":2,"open":false}'],
     ['a closed page with a name', '{"v":1,"open":false,"name":"R"}'],
+    ['a final that is not true', '{"v":1,"open":false,"final":false}'],
+    ['a final page with a name', '{"v":1,"open":false,"final":true,"name":"R"}'],
+    [
+      'an open page that says final',
+      `{"v":1,"open":true,"name":"R","excerpt":"E","box":"${BOX}","final":true}`,
+    ],
     ['an open page with no box', '{"v":1,"open":true,"name":"R","excerpt":"E"}'],
     ['a box that is not a key', '{"v":1,"open":true,"name":"R","excerpt":"E","box":"short"}'],
     [
@@ -285,5 +330,107 @@ describe('publishing and reading the page', () => {
 
   it('opens nothing from a record that isn’t a page', () => {
     expect(openPage(new Uint8Array(10), address)).toBeNull();
+  });
+});
+
+describe('a final page closes its door for good (#288, #277)', () => {
+  const services = (fake = createFakeRelay()) => ({
+    fake,
+    relay: createRelay({ fetch: fake.fetch }),
+    seal: xchachaSeal,
+  });
+  const address = addressOf(DOOR);
+  const page = { v: 1, open: true, name: 'Riverside', excerpt: 'Fair rents.', box: BOX } as const;
+  /** The PUTs the fake relay took. */
+  const puts = (fake: ReturnType<typeof createFakeRelay>) =>
+    fake.requests.filter((request) => request.method === 'PUT');
+
+  /** An open page signed with the door's own key, as anyone holding `sign` could post one. */
+  async function postSigned(
+    { relay, seal }: Omit<ReturnType<typeof services>, 'fake'>,
+    signed: Parameters<typeof encodePage>[0],
+  ) {
+    const { page: mailbox, pageKey } = doorChannelsOf(address);
+    const keys = doorKeysOf(fromBase64url(DOOR.sign), fromBase64url(DOOR.box)).signing;
+    await relay.putBlob(
+      mailbox,
+      seal.seal(mailbox, pageKey, signDoorRecord(keys, encodePage(signed))),
+    );
+  }
+
+  it('reads closed once any valid copy is final, whatever valid copy comes after it', async () => {
+    const { fake, relay, seal } = services();
+    await publishPage({ relay, seal }, DOOR, page, fake.minute);
+    const [genuine] = fake.blobs(doorChannelsOf(address).page);
+    expect(await publishPage({ relay, seal }, DOOR, FINAL, fake.minute)).toEqual({
+      kind: 'posted',
+    });
+    // Someone who left holds `sign`: a forged open page with their own box, then a replay of the old one.
+    await postSigned({ relay, seal }, { ...page, box: base64url(new Uint8Array(32).fill(0x66)) });
+    await relay.putBlob(doorChannelsOf(address).page, Uint8Array.from(genuine ?? []));
+    expect(fake.blobs(doorChannelsOf(address).page)).toHaveLength(4);
+    expect(await readDoor({ relay, seal }, address)).toEqual({ kind: 'closed' });
+    expect((await latestCopy({ relay, seal }, address))?.page).toEqual(FINAL);
+  });
+
+  it('still lets the last copy decide while no copy is final, so a narrowing can reopen', async () => {
+    const { fake, relay, seal } = services();
+    await publishPage({ relay, seal }, DOOR, page, fake.minute);
+    await publishPage({ relay, seal }, DOOR, { v: 1, open: false }, fake.minute);
+    expect(await readDoor({ relay, seal }, address)).toEqual({ kind: 'closed' });
+    await publishPage({ relay, seal }, DOOR, page, fake.minute);
+    expect(await readDoor({ relay, seal }, address)).toEqual({ kind: 'open', page });
+  });
+
+  it('goes by the newest final copy when there are several', async () => {
+    const { fake, relay, seal } = services();
+    await publishPage({ relay, seal }, DOOR, FINAL, fake.minute);
+    const first = fake.minute;
+    fake.minute += REFRESH_MINUTES;
+    await publishPage({ relay, seal }, DOOR, FINAL, fake.minute);
+    await postSigned({ relay, seal }, page);
+    expect(await latestCopy({ relay, seal }, address)).toMatchObject({
+      received: first + REFRESH_MINUTES,
+      page: FINAL,
+    });
+  });
+
+  it('posts a final page where no copy is, keeps it while under 7 days old, then posts it again', async () => {
+    const { fake, relay, seal } = services();
+    expect(await publishPage({ relay, seal }, DOOR, FINAL, fake.minute)).toEqual({
+      kind: 'posted',
+    });
+    const posted = fake.minute;
+    fake.minute += REFRESH_MINUTES - 1;
+    expect(await publishPage({ relay, seal }, DOOR, FINAL, fake.minute)).toEqual({
+      kind: 'current',
+      received: posted,
+    });
+    fake.minute += 1;
+    expect(await publishPage({ relay, seal }, DOOR, FINAL, fake.minute)).toEqual({
+      kind: 'posted',
+    });
+    expect(puts(fake)).toHaveLength(2);
+  });
+
+  it('posts a final page over an open copy and over a plain closed one', async () => {
+    const { fake, relay, seal } = services();
+    await publishPage({ relay, seal }, DOOR, page, fake.minute);
+    await publishPage({ relay, seal }, DOOR, { v: 1, open: false }, fake.minute);
+    expect(await publishPage({ relay, seal }, DOOR, FINAL, fake.minute)).toEqual({
+      kind: 'posted',
+    });
+    expect(puts(fake)).toHaveLength(3);
+  });
+
+  it('keeps a plain closed page current beside a final copy, and an open page never', async () => {
+    const { fake, relay, seal } = services();
+    await publishPage({ relay, seal }, DOOR, FINAL, fake.minute);
+    expect(await publishPage({ relay, seal }, DOOR, { v: 1, open: false }, fake.minute)).toEqual({
+      kind: 'current',
+      received: fake.minute,
+    });
+    expect(await publishPage({ relay, seal }, DOOR, page, fake.minute)).toEqual({ kind: 'posted' });
+    expect(await readDoor({ relay, seal }, address)).toEqual({ kind: 'closed' });
   });
 });

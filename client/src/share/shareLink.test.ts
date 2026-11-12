@@ -8,15 +8,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
 import { deriveSealKey, newGroupSecret } from '../crypto/groupKeys';
+import { vaultKeyFromPrf } from '../crypto/keyVault';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { xchachaSeal } from '../crypto/seal';
 import { shareChannelOf, signShareRecord } from '../crypto/share';
 import { newSigningKeys } from '../crypto/sign';
 import { createRelay } from '../net/relay';
 import type { Store } from '../store/db';
-import { openStore } from '../store/db';
+import { openStore, VaultLocked } from '../store/db';
 import { mailboxAt } from '../store/mailbox';
-import type { PersonalDocument } from '../store/personal';
+import type { PersonalDocument, ShareState } from '../store/personal';
 import { exportGroups, importGroups } from '../store/snapshot';
 import { TEST_NOW, TEST_ORIGIN } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -24,7 +25,9 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { encodeCopy, type ShareCopy } from './copy';
 import {
   keepSharesAlive,
+  keepSharing,
   parseShareLink,
+  pauseOf,
   postCopy,
   postEdits,
   readShare,
@@ -526,13 +529,14 @@ describe('postCopy', () => {
     await importGroups(restored.store, file, PASSPHRASE);
     expect((await restored.store.getPersonal(statement().id))?.share?.n).toBe(1);
 
-    expect(await postCopy(restored.services, statement().id)).toBe('posted');
+    // A restored share waits for the person (#328); once they keep it, it counts on.
+    expect(await keepSharing(restored.services, statement().id)).toBe('posted');
 
     expect((await restored.store.getPersonal(statement().id))?.share?.n).toBe(4);
     expect(await shownText(fake, link)).toBe('Real.\n');
   });
 
-  it('finds the tombstone after a backup made before Stop sharing is restored, drops the share and posts nothing', async () => {
+  it('finds the tombstone once the person keeps a share restored from a backup made before Stop sharing, drops it and posts nothing', async () => {
     const fake = createFakeRelay();
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
@@ -542,7 +546,8 @@ describe('postCopy', () => {
     await importGroups(restored.store, file, PASSPHRASE);
     const before = puts(fake).length;
 
-    expect(await postCopy(restored.services, statement().id)).toBe('stopped');
+    expect(await postCopy(restored.services, statement().id)).toBe('paused');
+    expect(await keepSharing(restored.services, statement().id)).toBe('stopped');
 
     expect(puts(fake)).toHaveLength(before);
     expect((await restored.store.getPersonal(statement().id))?.share).toBeUndefined();
@@ -781,6 +786,23 @@ describe('keepSharesAlive', () => {
     ]);
   });
 
+  it('posts a share last posted just under 30 days ago, and pauses one posted 30 days ago, which may have been stopped elsewhere (#339)', async () => {
+    const fake = createFakeRelay();
+    const { services, clock } = await owner(fake);
+    expect(SHARE_TTL_DAYS).toBe(30);
+    const older = await sharedLink(services);
+    clock.now = TEST_NOW + 1;
+    const other = statement({ id: 'T3RoZXIgc3RhdGVtZW50IQ', title: 'Other' });
+    const newer = await sharedLink(services, other);
+    clock.now = TEST_NOW + SHARE_TTL_DAYS * DAY_MS;
+
+    expect(await keepSharesAlive(services)).toEqual([[other.id, 'posted']]);
+    expect(await postCopy(services, statement().id)).toBe('paused');
+
+    expect(blobsOf(fake, older)).toHaveLength(1);
+    expect(blobsOf(fake, newer)).toHaveLength(2);
+  });
+
   it('posts an edit made while the relay was down at the next run, and clears pending', async () => {
     const fake = createFakeRelay();
     const { store, services } = await owner(fake);
@@ -816,5 +838,99 @@ describe('keepSharesAlive', () => {
 
     expect(puts(fake)).toHaveLength(before + 1);
     expect(await shownText(fake, otherLink)).toBe('Other, edited.\n');
+  });
+});
+
+describe('pauseOf', () => {
+  const live: ShareState = {
+    seed: new Uint8Array(32).fill(1),
+    secretKey: new Uint8Array(32).fill(2),
+    publicKey: new Uint8Array(32).fill(3),
+    n: 3,
+    lastPostedAt: TEST_NOW,
+    pending: false,
+  };
+  const lifetime = SHARE_TTL_DAYS * DAY_MS;
+
+  it('is null for a share last posted under 30 days ago, and idle from 30 days on (#339)', () => {
+    expect(pauseOf(live, TEST_NOW + lifetime - 1)).toBeNull();
+    expect(pauseOf(live, TEST_NOW + lifetime)).toBe('idle');
+    expect(pauseOf({ ...live, pending: true }, TEST_NOW + lifetime + DAY_MS)).toBe('idle');
+  });
+
+  it('says restored for a share a restore paused, however recently it was posted (#328)', () => {
+    expect(pauseOf({ ...live, paused: true }, TEST_NOW)).toBe('restored');
+    expect(pauseOf({ ...live, paused: true }, TEST_NOW + lifetime)).toBe('restored');
+  });
+
+  it('is null for a share never posted, whose link no one could have opened', () => {
+    expect(pauseOf({ ...live, lastPostedAt: null }, TEST_NOW + lifetime)).toBeNull();
+  });
+});
+
+describe('a device whose keys are locked with a passkey (#255)', () => {
+  const SALT = new Uint8Array(32).fill(0x33);
+  const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+  const LOCK = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+  /** Ana's device with one Document shared, sealed, then opened again and still locked. */
+  async function lockedOwner(fake: FakeRelay) {
+    const { services, store } = await owner(fake);
+    const link = await sharedLink(services);
+    await services.store.savePersonal({
+      ...statement(),
+      text: 'Edited.\n',
+      updatedAt: TEST_NOW + 1,
+    });
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+    return { link, ...(await owner(fake)) };
+  }
+
+  it('posts nothing, starts nothing and stops nothing, saying it’s locked', async () => {
+    const fake = createFakeRelay();
+    const { link, services, store } = await lockedOwner(fake);
+    await store.savePersonal({ ...statement({ id: 'T3RoZXIgc3RhdGVtZW50IQ' }), title: 'Other' });
+    const requests = fake.requests.length;
+
+    expect(await stopSharing(services, statement().id)).toBe('locked');
+    expect(await startSharing(services, 'T3RoZXIgc3RhdGVtZW50IQ')).toEqual({ kind: 'locked' });
+    await expect(postCopy(services, statement().id)).rejects.toThrow(VaultLocked);
+    await expect(postEdits(services, statement().id)).rejects.toThrow(VaultLocked);
+    await expect(keepSharesAlive(services)).rejects.toThrow(VaultLocked);
+
+    expect(fake.requests).toHaveLength(requests);
+    expect(await shownText(fake, link)).toBe('Real.\n');
+    expect((await store.listPersonalEntries()).map((entry) => entry.share?.pending)).toEqual([
+      undefined,
+      true,
+    ]);
+  });
+
+  it('fails with any other error the lock check meets, sending nothing', async () => {
+    const fake = createFakeRelay();
+    const { services } = await owner(fake);
+    const broken = new Error('IndexedDB refused.');
+    const failing: OwnerServices = {
+      ...services,
+      store: Object.assign(Object.create(services.store) as Store, {
+        requireUnlocked: () => Promise.reject(broken),
+      }),
+    };
+
+    await expect(startSharing(failing, statement().id)).rejects.toBe(broken);
+    await expect(stopSharing(failing, statement().id)).rejects.toBe(broken);
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('posts, then stops, with the share’s keys from the vault once unlocked', async () => {
+    const fake = createFakeRelay();
+    const { link, services, store } = await lockedOwner(fake);
+    expect(await store.unlock(KEY)).toBe(true);
+
+    expect(await keepSharesAlive(services)).toEqual([[statement().id, 'posted']]);
+    expect(await shownText(fake, link)).toBe('Edited.\n');
+    expect(await stopSharing(services, statement().id)).toBe('stopped');
+    expect(await readShare(reader(fake), link)).toEqual({ kind: 'gone' });
   });
 });

@@ -6,6 +6,9 @@ import { navigate, parseRoute, replaceRoute, routeHref, type Route, useRoute } f
 const GROUP = 'g'.repeat(43);
 const ATOM = `${GROUP}.0`;
 const PROPOSAL = 'p'.repeat(43);
+/** The group's second founding Document (#92), and one of its sections. */
+const SECOND = `${GROUP}:1`;
+const SECOND_ATOM = `${SECOND}.0`;
 /** A personal Document's id (#93): 16 bytes in unpadded base64url. */
 const PERSONAL = 'Q2FuYXJ5IHN0YXRlbWVudA';
 /** A share link's payload (#105): its seed and public key, 43 base64url characters each. */
@@ -27,6 +30,9 @@ describe('parseRoute', () => {
     ['#/me/A-_aAAAAAAAAAAAAAAAAAA', { name: 'personalDocument', id: 'A-_aAAAAAAAAAAAAAAAAAA' }],
     ['#/link-new', { name: 'linkNew' }],
     ['#/link-this', { name: 'linkThis' }],
+    ['#/recovery', { name: 'recovery' }],
+    ['#/recover', { name: 'recover' }],
+    ['#/help-recover', { name: 'helpRecover' }],
     ['#/join', { name: 'join', payload: null }],
     ['#/join/abc.def', { name: 'join', payload: 'abc.def' }],
     ['#join/abc-def', { name: 'join', payload: 'abc-def' }],
@@ -42,6 +48,20 @@ describe('parseRoute', () => {
     ['#door/abc/def', { name: 'door', payload: 'abc/def' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
+    [`#/g/${GROUP}/doc/${GROUP}`, { name: 'document', groupId: GROUP, documentId: GROUP }],
+    [`#/g/${GROUP}/doc/${SECOND}`, { name: 'document', groupId: GROUP, documentId: SECOND }],
+    [`#/g/${GROUP}/doc/${PROPOSAL}`, { name: 'document', groupId: GROUP, documentId: PROPOSAL }],
+    [`#/g/${GROUP}/doc/new`, { name: 'newDocument', groupId: GROUP }],
+    [
+      `#/g/${GROUP}/add-first/${SECOND}`,
+      { name: 'add', groupId: GROUP, after: null, document: SECOND },
+    ],
+    [`#/g/${GROUP}/add/${SECOND_ATOM}`, { name: 'add', groupId: GROUP, after: SECOND_ATOM }],
+    [
+      `#/g/${GROUP}/propose/${SECOND_ATOM}`,
+      { name: 'propose', groupId: GROUP, atomId: SECOND_ATOM },
+    ],
+    [`#/g/${GROUP}/remove/${SECOND_ATOM}`, { name: 'remove', groupId: GROUP, atomId: SECOND_ATOM }],
     [`#/g/${GROUP}/priority`, { name: 'priority', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
@@ -68,6 +88,11 @@ describe('parseRoute', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
+    // A member's removal (#115) has its own page: an added section's id is a Proposal's (#75).
+    [
+      `#/g/${GROUP}/remove-member/${PROPOSAL}`,
+      { name: 'removal', groupId: GROUP, member: PROPOSAL },
+    ],
     [`#/g/${GROUP}/dispatches`, { name: 'dispatches', groupId: GROUP }],
     [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
@@ -91,7 +116,7 @@ describe('parseRoute', () => {
     '#/g/',
     '#/g/has space',
     '#/g/%2e%2e',
-    `#/g/${GROUP}/doc/extra`,
+    `#/g/${GROUP}/doc/has space`,
     `#/g/${GROUP}/settings`,
     `#/g/${GROUP}/propose`,
     `#/g/${GROUP}/propose/`,
@@ -104,6 +129,17 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/again/${ATOM}`,
     `#/g/${GROUP}/again/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
+    `#/g/${GROUP}/doc/${SECOND_ATOM}`,
+    `#/g/${GROUP}/doc/${GROUP}:x`,
+    `#/g/${GROUP}/doc/${SECOND}:2`,
+    `#/g/${GROUP}/doc/new/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/extra`,
+    `#/g/${GROUP}/add-first`,
+    `#/g/${GROUP}/add-first/`,
+    `#/g/${GROUP}/add-first/${SECOND_ATOM}`,
+    `#/g/${GROUP}/add-first/${SECOND}/extra`,
+    `#/g/${GROUP}/propose/${SECOND}:2.0`,
+    `#/g/${GROUP}/propose/${GROUP}:.0`,
     `#/g/${GROUP}/priority/${PROPOSAL}`,
     `#/g/${GROUP}/add/`,
     `#/g/${GROUP}/add/has space`,
@@ -127,6 +163,11 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/narrow/toString`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
+    `#/g/${GROUP}/remove-member`,
+    `#/g/${GROUP}/remove-member/`,
+    `#/g/${GROUP}/remove-member/has space`,
+    `#/g/${GROUP}/remove-member/${ATOM}`,
+    `#/g/${GROUP}/remove-member/${PROPOSAL}/extra`,
     `#/g/${GROUP}/dispatch`,
     `#/g/${GROUP}/dispatch/`,
     `#/g/${GROUP}/dispatch/old`,
@@ -193,6 +234,15 @@ describe('reconcile cards (#114)', () => {
   );
 });
 
+describe('follow links (#124)', () => {
+  it.each([`#follow/abc/def`, `#follow/`, `#follow/a+b`, `#/follow/abc`])(
+    'sends %j to Start',
+    (hash) => {
+      expect(parseRoute(hash)).toEqual({ name: 'start' });
+    },
+  );
+});
+
 describe('coalitions (#120)', () => {
   const COALITION = 'c'.repeat(43);
 
@@ -207,6 +257,13 @@ describe('coalitions (#120)', () => {
       name: 'coalitionPropose',
       coalitionId: COALITION,
       atomId: `${COALITION}.2`,
+    });
+  });
+
+  it('reads a coalition’s room (#125)', () => {
+    expect(parseRoute(`#/c/${COALITION}/room`)).toEqual({
+      name: 'coalitionRoom',
+      coalitionId: COALITION,
     });
   });
 
@@ -227,6 +284,8 @@ describe('coalitions (#120)', () => {
     `#/c/${COALITION}/propose`,
     `#/c/${COALITION}/propose/a.b`,
     `#/c/${COALITION}/p/${COALITION}`,
+    `#/c/${COALITION}/room/${COALITION}`,
+    `#/c/${COALITION}/rooms`,
     '#/c/a+b',
   ])('sends %j to Start', (hash) => {
     expect(parseRoute(hash)).toEqual({ name: 'start' });
@@ -242,12 +301,21 @@ describe('routeHref', () => {
     [{ name: 'personalDocument', id: PERSONAL }, `#/me/${PERSONAL}`],
     [{ name: 'linkNew' }, '#/link-new'],
     [{ name: 'linkThis' }, '#/link-this'],
+    [{ name: 'recovery' }, '#/recovery'],
+    [{ name: 'recover' }, '#/recover'],
+    [{ name: 'helpRecover' }, '#/help-recover'],
     [{ name: 'join', payload: null }, '#/join'],
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'shared', payload: SHARE }, `#share/${SHARE}`],
     [{ name: 'door', payload: 'abc' }, '#door/abc'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
+    [{ name: 'document', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}`],
+    [{ name: 'newDocument', groupId: GROUP }, `#/g/${GROUP}/doc/new`],
+    [
+      { name: 'add', groupId: GROUP, after: null, document: SECOND },
+      `#/g/${GROUP}/add-first/${SECOND}`,
+    ],
     [{ name: 'priority', groupId: GROUP }, `#/g/${GROUP}/priority`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
     [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
@@ -267,11 +335,17 @@ describe('routeHref', () => {
       `#/g/${GROUP}/narrow/chatBot`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
+    [
+      { name: 'removal', groupId: GROUP, member: PROPOSAL },
+      `#/g/${GROUP}/remove-member/${PROPOSAL}`,
+    ],
     [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
     [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
     [{ name: 'reconcile', groupId: GROUP }, `#/g/${GROUP}/reconcile`],
     [{ name: 'card', payload: null }, '#/card'],
     [{ name: 'card', payload: 'abc-def' }, '#reconcile/abc-def'],
+    [{ name: 'follow', payload: null }, '#/follow'],
+    [{ name: 'follow', payload: 'abc-def' }, '#follow/abc-def'],
     [{ name: 'coalition', coalitionId: GROUP }, `#/c/${GROUP}`],
     [
       { name: 'coalitionDocument', coalitionId: GROUP, documentId: GROUP },
@@ -281,6 +355,7 @@ describe('routeHref', () => {
       { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
       `#/c/${GROUP}/propose/${ATOM}`,
     ],
+    [{ name: 'coalitionRoom', coalitionId: GROUP }, `#/c/${GROUP}/room`],
   ])('writes %j as %s, which parses back', (route, href) => {
     expect(routeHref(route)).toBe(href);
     expect(parseRoute(href)).toEqual(route);

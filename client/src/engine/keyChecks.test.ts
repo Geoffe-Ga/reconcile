@@ -118,7 +118,12 @@ describe('properties of a refusal (#224)', () => {
       type: 'genesis',
       group: '',
       ts: 1,
-      body: { name: 'G', founder: 'Ana', title: 'T', atoms: ['A.'], kx: testKx('ana').kx },
+      body: {
+        name: 'G',
+        founder: 'Ana',
+        documents: [{ title: 'T', atoms: ['A.'] }],
+        kx: testKx('ana').kx,
+      },
     });
     const group = genesis.id;
     const join = (name: string, seq: number): LogRecord =>

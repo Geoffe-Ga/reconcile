@@ -3,7 +3,7 @@
  * damaged link, a newcomer who reads the preview before anything is stored,
  * and a device away for over 28 days that catches up from a fresh link.
  */
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,6 +13,7 @@ import { TEST_NOW, type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { personRows } from '../test/members';
 import { createGroup, makeInvite } from './actions';
 import { App } from './App';
 import { messages } from './messages';
@@ -41,8 +42,9 @@ async function founded(device: TestDevice): Promise<string> {
     groupName: 'Riverside Tenants',
     yourName: 'Ana',
     chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+    documents: [
+      { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+    ],
   });
   if (result.outcome !== 'created') throw new Error('Expected a group.');
   await device.services.sync.syncOnce();
@@ -116,11 +118,10 @@ describe('opening an invite link', () => {
 
     const people = await screen.findByRole('region', { name: 'People' });
     await waitFor(() => {
-      expect(
-        within(people)
-          .getAllByRole('listitem')
-          .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Collaborator']);
+      expect(personRows(people)).toEqual([
+        'Ana, Co-Creator, Steward',
+        'Ben, invited by Ana, Collaborator',
+      ]);
     });
     expect((await ben.services.store.getGroup(groupId))?.log).toHaveLength(2);
   });
