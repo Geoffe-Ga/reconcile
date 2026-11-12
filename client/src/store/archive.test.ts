@@ -13,6 +13,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { base64url } from '../crypto/base64url';
 import { sealBackup } from '../crypto/backup';
 import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
@@ -27,11 +28,11 @@ import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { relayTook } from '../test/outbox';
 import { containsBytes, scanDb } from '../test/scanDb';
 import { LEVELS } from '../engine/capabilities';
-import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
+import { clearedArchive, MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import type { PersonalDocument } from './personal';
 import { fetchRelayBackup, startRelayBackup } from './relayBackup';
-import { encodeSnapshot, exportGroups, importGroups } from './snapshot';
+import { deviceSnapshot, encodeSnapshot, exportGroups, importGroups } from './snapshot';
 import { createSync, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -182,13 +183,19 @@ function mailboxRequests(fake: FakeRelay, group: Founded): number {
 /** A device clock at relay minute `minute`, in device milliseconds. */
 const clockAt = (minute: number) => () => minute * MINUTE_MS;
 
-/** Ana's device, in a group whose dissolve has folded and been archived. */
-async function dissolvedDevice(wipe: boolean) {
+/**
+ * Ana's device, in a group whose dissolve has folded and been archived, with
+ * the events `extra` makes for it sent before the motion's last ballot.
+ */
+async function dissolvedDevice(
+  wipe: boolean,
+  extra: (group: Founded) => readonly SignedEvent[] = () => [],
+) {
   const fake = createFakeRelay({ minute: START });
   const group = founding();
   const { events, edit, motion, last } = history(group, wipe);
   const { store, sync } = await openDevice(fake.fetch);
-  await keep(store, sync, group, [...events, last]);
+  await keep(store, sync, group, [...events, ...extra(group), last]);
   fake.minute = DISSOLVED;
   expect(await sync.syncOnce()).toBe(true);
   return { fake, group, store, sync, edit, motion, groupId: group.genesis.id };
@@ -333,6 +340,85 @@ describe('a dissolve that keeps read-only copies', () => {
     // A later launch changes nothing.
     await sweepArchives(store, clockAt(month + 400 * DAY_MINUTES));
     expect(await store.getGroup(groupId)).toEqual(cleared);
+  });
+});
+
+describe('a dissolve’s vouches (#222)', () => {
+  const month = DISSOLVED + 30 * DAY_MINUTES;
+
+  /** Ana's vouch for Ben: who knows whom, which nothing reads once the group has dissolved. */
+  const vouchFor = (group: Founded) =>
+    signedAs('ana', {
+      group: group.genesis.id,
+      ts: TS,
+      type: 'vouch',
+      body: { member: authorOf('ben') },
+    });
+
+  it('clears every vouch with the ballots and notes at 30 days, leaving none on the device', async () => {
+    let vouch: SignedEvent | undefined;
+    const { store, groupId } = await dissolvedDevice(false, (group) => {
+      vouch = vouchFor(group);
+      return [vouch];
+    });
+    if (vouch === undefined) throw new Error('Expected the vouch.');
+    const held = shownState((await store.getGroup(groupId)) ?? never());
+    expect(held.vouches.map((v) => [v.id, v.by, v.member])).toEqual([
+      [vouch.id, authorOf('ana'), authorOf('ben')],
+    ]);
+    // Until then the log holds the vouch's record.
+    expect(containsBytes((await scanDb(DB)).bytes, vouch.record)).toBe(true);
+
+    await sweepArchives(store, clockAt(month));
+
+    const cleared = (await store.getGroup(groupId)) ?? never();
+    expect(shownState(cleared).vouches).toEqual([]);
+    const after = await scanDb(DB);
+    expect(after.text).not.toContain(vouch.id);
+    expect(containsBytes(after.bytes, vouch.record)).toBe(false);
+    // Members keep when their rights arrived, a time, but nothing says who vouched for whom.
+    expect(shownState(cleared).members.map((m) => m.rightsAt)).toEqual(
+      held.members.map((m) => m.rightsAt),
+    );
+  });
+
+  it('leaves no vouch in a backup of the device once it has cleared the archive, though one held it while the group went on', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const group = founding();
+    const vouch = vouchFor(group);
+    const { events, last } = history(group, false);
+    const { store, sync } = await openDevice(fake.fetch);
+    await keep(store, sync, group, [...events, vouch, last]);
+    const plaintext = async () =>
+      new TextDecoder().decode(encodeSnapshot(await deviceSnapshot(store)));
+    expect(await plaintext()).toContain(base64url(vouch.record));
+
+    fake.minute = DISSOLVED;
+    expect(await sync.syncOnce()).toBe(true);
+    await sweepArchives(store, clockAt(month));
+
+    expect((await store.getGroup(group.genesis.id))?.archived?.cleared).toBeDefined();
+    const text = await plaintext();
+    expect(text).not.toContain(base64url(vouch.record));
+    expect(text).not.toContain(vouch.id);
+    expect((await exportGroups(store, PASSPHRASE, CHEAP)).groupIds).toEqual([]);
+  });
+
+  it('keeps no vouch in any cleared archive, a removed member’s copy (#115) included', () => {
+    const state = shownState({
+      groupId: 'g',
+      log: [],
+      relayNow: null,
+    } as unknown as Group);
+    const vouch = {
+      id: 'v',
+      seq: 9,
+      received: START,
+      by: authorOf('ana'),
+      member: authorOf('ben'),
+    };
+    const kept = clearedArchive({ ...state, vouches: [vouch] }, TS);
+    expect(kept.state.vouches).toEqual([]);
   });
 });
 
