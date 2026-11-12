@@ -117,6 +117,12 @@
  * pass first keeps the device's rooms from the store alone, so a room whose
  * last member group here is leaving, read-only or gone is purged at once,
  * even while the relay can't be reached.
+ *
+ * A group off the device leaves nothing in the loop's memory (#270): right
+ * after the rooms, every pass forgets, from the store alone, what the loop
+ * keeps of each group left, removed or wiped, and the result duty's notes of
+ * a read-only archive (#108), so nothing noted before comes due if the group
+ * comes back.
  */
 
 import { newKxKey } from '../crypto/box';
@@ -631,11 +637,28 @@ export function createSync(options: SyncOptions): Sync {
     await clearExpiredBallots(store, groupId, state);
   }
 
+  /**
+   * Forgets all the loop keeps in memory of each group not in `groups`, the
+   * device's groups: one left, removed or wiped (#270). That is the marks and
+   * folds the coalitions' and rooms' parts keep, and the result duty's notes,
+   * which go for a read-only archive (#108) too, since {@link settleExpiry}
+   * settles one no more: nothing noted of it ever comes due.
+   */
+  function forgetGone(groups: readonly Group[]): void {
+    forgetAllBut(groups, [scanned, roomReads]);
+    forgetAllBut(
+      groups.filter((group) => group.archived === undefined),
+      [settled, owed],
+    );
+  }
+
   async function pass(): Promise<boolean> {
     let ok = true;
     try {
       // First, from the store alone: a room this device may no longer read goes now, even offline (#125).
       await keepRooms(store, roomReads);
+      // And so does what the loop keeps of a group no longer on the device (#270).
+      forgetGone(await store.listGroups());
       ok = await eachGroup(syncGroup);
       // Only after a complete pass: a device that missed records mustn't write a key change.
       if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));
@@ -798,6 +821,19 @@ function cursorsAfter(
     ...Object.entries(cursors.held).filter(([mailbox]) => kept.has(mailbox)),
     ...reads.map((read) => [read.mailbox, read.records.at(-1)?.seq ?? read.after] as const),
   ]);
+}
+
+/** Deletes from each of `maps`, keyed by group id, every group but those of `groups` (#270). */
+function forgetAllBut(
+  groups: readonly Pick<Group, 'groupId'>[],
+  maps: readonly Map<string, unknown>[],
+): void {
+  const kept = new Set(groups.map((group) => group.groupId));
+  for (const map of maps) {
+    for (const groupId of map.keys()) {
+      if (!kept.has(groupId)) map.delete(groupId);
+    }
+  }
 }
 
 /** A log read straight from the relay, outside any store entry (#114). */

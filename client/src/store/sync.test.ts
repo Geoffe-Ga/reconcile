@@ -1858,6 +1858,91 @@ describe('the result duty (#111)', () => {
     expect(putTypes(fake, keys, from)).toEqual([]);
     expect((await ana.group()).outbox).toEqual([]);
   });
+
+  /** One way the group goes from `holder`'s device (#270), whose member there is `name`. */
+  type Goes = (holder: Device, founding: SignedEvent, name: string) => Promise<void>;
+
+  const WAYS: [string, Goes][] = [
+    [
+      'leaves it',
+      async (holder, founding, name) => {
+        const leave = signedAs(name, { type: 'leave', group: founding.id, ts: TS, body: {} });
+        await holder.store.markLeaving(GROUP, leave.record);
+        // The pass that posts the leave purges the group (#77).
+        await holder.sync.syncOnce();
+        expect(await holder.store.getGroup(GROUP)).toBeUndefined();
+      },
+    ],
+    ['is removed', (holder) => holder.store.purgeGroup(GROUP)],
+    ['dissolves', (holder) => holder.store.markArchived(GROUP, 'dissolved')],
+  ];
+
+  /**
+   * The group goes from `holder`'s device in `goes`, a pass runs, and the
+   * device then holds it again under Ben's keys, as linking his phone would
+   * (#96), in the same relay minute: the event type each PUT carried from
+   * when it went until then, and the device's outbox after each of the next
+   * two passes.
+   */
+  async function goesAndComesBack(
+    { fake, keys, founding }: Awaited<ReturnType<typeof closedEarly>>,
+    holder: Device,
+    goes: Goes,
+    name: string,
+  ) {
+    const from = fake.requests.length;
+    await goes(holder, founding, name);
+    await holder.sync.syncOnce();
+    const whileGone = putTypes(fake, keys, from);
+    // Remove from this device (#108): a dissolved group's archive goes before it can come back.
+    await holder.store.purgeGroup(GROUP);
+    const me = { author: authorOf(BEN), name: 'Ben' };
+    const { secretKey: signingKey } = testKeys(BEN);
+    const { kxKey } = testKx(BEN);
+    await holder.store.addGroup({ groupId: GROUP, secret: keys.secret, signingKey, kxKey, me });
+    const outboxes: string[][] = [];
+    for (let pass = 0; pass < 2; pass += 1) {
+      await holder.sync.syncOnce();
+      outboxes.push(types((await holder.group()).outbox.map((bytes) => ({ bytes }))));
+    }
+    return { whileGone, outboxes };
+  }
+
+  it.each(WAYS)(
+    'forgets the result it found due once the group %s, so none comes due at once when it is back (#270)',
+    async (_label, goes) => {
+      const held = await closedEarly();
+      const { fake, ana } = held;
+      fake.minute += 1;
+      await ana.sync.syncOnce();
+      // Found due, to queue on the next pass if it still is.
+      expect((await ana.group()).outbox).toEqual([]);
+
+      const { whileGone, outboxes } = await goesAndComesBack(held, ana, goes, ANA);
+
+      expect(whileGone).not.toContain('result');
+      // Queued only once the device has synced once more since it found the result due as Ben.
+      expect(outboxes).toEqual([[], ['result']]);
+    },
+  );
+
+  it.each(WAYS)(
+    'forgets the minute it settled once the group %s, so the duty runs in that minute when it is back (#270)',
+    async (_label, goes) => {
+      const held = await closedEarly();
+      const { fake, keys } = held;
+      // Kim's key isn't a member, so Kim's device settles this minute owing nothing.
+      const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+      fake.minute += 1;
+      await kim.sync.syncOnce();
+      expect((await kim.group()).outbox).toEqual([]);
+
+      const { whileGone, outboxes } = await goesAndComesBack(held, kim, goes, 'kim');
+
+      expect(whileGone).not.toContain('result');
+      expect(outboxes).toEqual([[], ['result']]);
+    },
+  );
 });
 
 /** Each signed record's event type, in order. */
