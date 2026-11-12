@@ -77,7 +77,7 @@ import {
   admitSeat,
   mayAdmit,
   newCoalition,
-  RESULT_GRACE_MINUTES,
+  settlesAt,
   recordResult,
   recordWrap,
   seatKeyFor,
@@ -1248,12 +1248,13 @@ function extendSuspension(
  * or admitting a group (#114, {@link applyAdmit}), with the seats it holds
  * now as the snapshot that decides it. Every other target waits: a steward,
  * rules or dissolve change would take effect in the fold while a pass can
- * still be contested, and reconciling a coalition is #122's. So does a motion
- * carrying a Dispatch (#112): its pass, once closed, can still be contested
- * into a fail, and a coalition's followers are #124's. An add (#75) has a
- * target, so it waits too, and so does a removal, an edit whose text is
- * `""`: for now a motion only rewords one of the coalition's Atoms. A
- * priority vote (#107) has a target too, so a coalition asks none.
+ * still be contested, and reconciling a coalition is #122's. An edit may
+ * carry a Dispatch for the coalition's readers (#124), which goes out only
+ * once its pass is final ({@link advanceMotionDispatches}); an admit carries
+ * none. An add (#75) has a target, so it waits too, and so does a removal,
+ * an edit whose text is `""`: for now a motion only rewords one of the
+ * coalition's Atoms. A priority vote (#107) has a target too, so a coalition
+ * asks none.
  */
 function applyMotion(
   draft: Draft,
@@ -1262,7 +1263,7 @@ function applyMotion(
   author: string,
   at: Receipt,
 ): boolean {
-  if (coalition.status !== 'formed' || body.dispatch !== undefined) return false;
+  if (coalition.status !== 'formed') return false;
   if ('target' in body)
     return isAdmitProposal(body) && applyAdmit(draft, coalition, body, author, at);
   // Nor does a removal (#75), whose `""` would take out one of the coalition's Atoms.
@@ -1293,6 +1294,8 @@ function applyAdmit(
   at: Receipt,
 ): boolean {
   if (draft.group === null || hasJoined(draft, author) || !fieldsAreValid(body)) return false;
+  // Admitting a group sends no Dispatch: the coalition's readers learn of it from its seats.
+  if (body.dispatch !== undefined) return false;
   // The room's inner is wrapped to its seat's kx once it's admitted (#313): it must take a box.
   if (usableKx(body.target.kx) === null) return false;
   if (!mayAdmit(coalition, draft.group, author, body.target)) return false;
@@ -2097,7 +2100,7 @@ function settleMotion(
   bar: Bar,
   relayNow: number | null,
 ): Proposal {
-  const expired = relayNow !== null && relayNow >= proposal.deadline + RESULT_GRACE_MINUTES;
+  const expired = relayNow !== null && relayNow >= settlesAt(proposal);
   const { kind } = motionOutcome(coalition, proposal.id, expired);
   const final = kind === 'fail' || expired;
   const outcome: TallyOutcome =
@@ -2267,6 +2270,10 @@ function documentOf(draft: Draft, proposal: OpenProposal): string | null {
  * it comes ahead of every record received from its close on.
  */
 function advanceDispatches(draft: Draft): void {
+  if (draft.coalition !== null) {
+    advanceMotionDispatches(draft, draft.coalition);
+    return;
+  }
   const carries = (proposal: OpenProposal) => proposal.dispatch !== null;
   for (const { proposal, passed } of newlyClosed(draft, draft.dispatched, carries)) {
     const { id, dispatch } = proposal;
@@ -2288,6 +2295,36 @@ function advanceAll(draft: Draft): void {
   advanceSeats(draft);
   advanceOptIns(draft);
   advanceDispatches(draft);
+}
+
+/**
+ * Brings a coalition's Dispatches up to `draft.at` (#124): each motion
+ * carrying one sends it once its pass is final, at deadline + 10,080, since
+ * until then a contest could still turn the pass into a fail (#100). They go
+ * out once each, in the order they turn final and then relay order, from the
+ * motion, under its id, pointing to the coalition's Document, received in
+ * that minute. A fail, a contest or a lapse sends nothing, and nor does a
+ * motion still open when the coalition is declined, since relay time stops.
+ */
+function advanceMotionDispatches(draft: Draft, coalition: CoalitionDraft): void {
+  const due = draft.proposals.filter(
+    (p) => p.dispatch !== null && !draft.dispatched.has(p.id) && draft.at >= settlesAt(p),
+  );
+  // `proposals` is in relay order and sort is stable, so equal deadlines keep relay order.
+  for (const proposal of due.sort((a, b) => a.deadline - b.deadline)) {
+    draft.dispatched.add(proposal.id);
+    const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
+    if (proposal.dispatch === null || settled.outcome.kind !== 'pass') continue;
+    const { id, dispatch } = proposal;
+    const doc = documentOf(draft, proposal);
+    draft.dispatches.push({
+      id,
+      by: { proposal: id },
+      ...dispatch,
+      doc,
+      received: settlesAt(proposal),
+    });
+  }
 }
 
 /**
@@ -2630,7 +2667,7 @@ function openMotion(draft: Draft, motion: Motion): void {
  */
 function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
   const due = coalition.motions
-    .filter((m) => m.admit !== null && draft.at >= m.deadline + RESULT_GRACE_MINUTES)
+    .filter((m) => m.admit !== null && draft.at >= settlesAt(m))
     .sort((a, b) => a.deadline - b.deadline);
   for (const motion of due) {
     const proposal = draft.proposals.find((p) => p.id === motion.id);
@@ -2638,7 +2675,7 @@ function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
     // Results on it have stopped counting, so its outcome is final here.
     const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
     if (settled.outcome.kind === 'pass') {
-      admitSeat(coalition, motion, motion.deadline + RESULT_GRACE_MINUTES);
+      admitSeat(coalition, motion, settlesAt(motion));
     }
   }
 }

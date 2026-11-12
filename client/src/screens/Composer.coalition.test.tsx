@@ -44,7 +44,7 @@ async function setup(standing: CoalitionStanding, state = coalition(), atom = '.
 }
 
 describe('CoalitionComposer', () => {
-  it('proposes new text for the section, with a voting time and no Dispatch', async () => {
+  it('proposes new text for the section, with a voting time and no Dispatch unless chosen', async () => {
     const { onPropose, user, state } = await setup({ kind: 'proposes', groupId: 'g' });
 
     expect(screen.getByRole('heading', { level: 1, name: 'Propose a change' })).toBeVisible();
@@ -53,7 +53,9 @@ describe('CoalitionComposer', () => {
       'href',
       `#/c/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
-    expect(screen.queryByRole('checkbox', { name: /Dispatch/ })).toBeNull();
+    const dispatch = screen.getByRole('checkbox', { name: 'Send a Dispatch if this passes' });
+    expect(dispatch).not.toBeChecked();
+    expect(dispatch).toHaveAccessibleDescription(messages.coalitions.composerDispatchHint);
     expect(screen.getByText(messages.coalitions.composerVisibility)).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Why' })).toHaveAccessibleDescription(
       messages.coalitions.composerWhyHint,
@@ -80,6 +82,30 @@ describe('CoalitionComposer', () => {
       }),
     );
     expect(onPropose.mock.calls[0]?.[0]).not.toHaveProperty('dispatch');
+  });
+
+  it('carries a Dispatch for the coalition’s readers once chosen (#124)', async () => {
+    const { onPropose, user } = await setup({ kind: 'proposes', groupId: 'g' });
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Banks too');
+    await user.type(screen.getByRole('textbox', { name: 'Why' }), 'The banks matter.');
+    const text = screen.getByRole('textbox', { name: 'New text' });
+    await user.clear(text);
+    await user.type(text, 'We keep the river and its banks clean.');
+    await user.click(screen.getByRole('checkbox', { name: 'Send a Dispatch if this passes' }));
+    expect(screen.getByRole('textbox', { name: 'Dispatch title' })).toHaveValue(
+      'Updated: Shared ground',
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: 'Dispatch text (optional)' }),
+      'The banks too, now.',
+    );
+    expect(await axeViolations()).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      dispatch: { title: 'Updated: Shared ground', text: 'The banks too, now.' },
+    });
   });
 
   it('offers no form to someone who hasn’t joined, or can’t propose', async () => {

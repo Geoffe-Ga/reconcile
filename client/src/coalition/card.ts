@@ -36,7 +36,7 @@ import { MAX_PLAINTEXT_BYTES, type Seal } from '../crypto/seal';
 import type { SeatEntry } from '../engine/event';
 import type { LogRecord } from '../engine/fold';
 import { codePointLength } from '../engine/text';
-import { NAME_MAX, packEntries, unpackChunk } from '../invite/envelope';
+import { NAME_MAX, openChunked, packEntries, sealChunked, unmarked } from '../invite/envelope';
 
 /** What a card carries. */
 export interface Card {
@@ -191,13 +191,13 @@ function decodeHeader(bytes: Uint8Array): CardHeader | null {
  */
 export function sealCard(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   card: Card,
 ): Uint8Array<ArrayBuffer>[] {
   const chunks = packEntries(card.entries);
   const header = encodeHeader({ ...card, chunkCount: chunks.length });
   if (header.length > MAX_PLAINTEXT_BYTES) throw new CardTooLarge();
-  return [header, ...chunks].map((plaintext) => seal.seal(mailbox, key, plaintext));
+  return sealChunked(seal, channel, header, chunks);
 }
 
 /**
@@ -207,25 +207,14 @@ export function sealCard(
  */
 export function openCard(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   blobs: readonly Uint8Array[],
 ): Card | null {
-  const opened: Uint8Array[] = [];
-  for (const blob of blobs) {
-    const plaintext = seal.open(mailbox, key, blob);
-    if (plaintext === null) return null;
-    opened.push(plaintext);
-  }
-  const [first, ...chunks] = opened;
-  const header = first === undefined ? null : decodeHeader(first);
-  if (header === null || header.chunkCount !== chunks.length) return null;
-  const entries: LogRecord[] = [];
-  for (const chunk of chunks) {
-    const read = unpackChunk(chunk);
-    if (read === null || read.some((entry) => entry.kept === true)) return null;
-    entries.push(...read);
-  }
-  const { secret, inner, seat, name, title, atoms } = header;
+  const opened = openChunked(seal, channel, blobs, decodeHeader);
+  if (opened === null) return null;
+  const entries = unmarked(opened.entries);
+  if (entries === null) return null;
+  const { secret, inner, seat, name, title, atoms } = opened.header;
   const card = { secret, seat, name, title, atoms, entries };
   return inner === undefined ? card : { ...card, inner };
 }

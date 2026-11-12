@@ -9,13 +9,7 @@
  * groups are still deciding, and, once the counts settle it, the outcome
  * `coalitionOutcome` gives.
  */
-import {
-  coalitionOutcome,
-  RESULT_GRACE_MINUTES,
-  seatCounts,
-  seatResult,
-  UNANIMOUS_UP_TO,
-} from './coalition';
+import { coalitionOutcome, settlesAt, seatCounts, seatResult, UNANIMOUS_UP_TO } from './coalition';
 import type { GroupResultValue } from './event';
 import type { GroupState } from './fold';
 
@@ -83,7 +77,7 @@ export function coalitionProgress(
   }));
   const { passes, fails } = seatCounts(results, motionId, motion.seats);
   const everySeat = motion.admit !== null;
-  const settles = motion.deadline + RESULT_GRACE_MINUTES;
+  const settles = settlesAt(motion);
   const expired = coalition.at >= settles;
   const { kind } = coalitionOutcome({ seats: groups.length, passes, fails, expired, everySeat });
   const mine = mySeat === undefined ? null : seatResult(results, motionId, mySeat);
