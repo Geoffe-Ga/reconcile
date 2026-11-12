@@ -7,6 +7,7 @@ import type { RoomView } from '../app/room';
 import { minuteIso } from '../app/time';
 import type { RoomMessage } from '../engine/room';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { CoalitionRoom, type CoalitionRoomProps } from './CoalitionRoom';
 
 const { room } = messages;
@@ -151,6 +152,25 @@ describe('CoalitionRoom', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(room.failed);
     expect(box).toHaveValue('Hello');
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sends once when Send is tapped again while it sends and the save fails (#193)', async () => {
+    const user = userEvent.setup();
+    const sending = held<undefined>();
+    const onSend = vi.fn(() => sending.promise);
+    render(<CoalitionRoom {...props({ onSend })} />);
+    const send = () => screen.getByRole('button', { name: room.send });
+
+    await user.type(screen.getByRole('textbox', { name: room.messageLabel }), 'Hello');
+    await user.click(send());
+    expect(send()).toBeDisabled();
+    await user.click(send());
+    sending.reject();
+    expect(await screen.findByRole('alert')).toHaveTextContent(room.failed);
+    await pastPressFallback();
+
+    expect(send()).toBeEnabled();
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it('offers Take part in place of the box to someone who hasn’t joined, and only reads otherwise', async () => {

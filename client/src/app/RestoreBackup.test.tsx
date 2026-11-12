@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_BACKUP_BYTES } from '../store/snapshot';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { RestoreBackup } from './RestoreBackup';
 
 type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<number>;
@@ -114,5 +115,21 @@ describe('RestoreBackup', () => {
     await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
     await user.click(screen.getByRole('button', { name: 'Restore' }));
     expect(await screen.findByText('This backup holds no groups.')).toBeVisible();
+  });
+
+  it('restores once when Restore is tapped again while it restores and the backup doesn’t open (#193)', async () => {
+    const restoring = held<number>();
+    const { user, onRestore } = setup(vi.fn<OnRestore>(() => restoring.promise));
+    await user.upload(fileInput(), FILE);
+    await user.type(screen.getByLabelText('Its passphrase'), 'the wrong passphrase');
+    const restore = screen.getByRole('button', { name: 'Restore' });
+    await user.click(restore);
+    expect(restore).toBeDisabled();
+    await user.click(restore);
+    restoring.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(restore).toBeEnabled();
+    expect(onRestore).toHaveBeenCalledTimes(1);
   });
 });

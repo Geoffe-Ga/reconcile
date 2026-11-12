@@ -10,6 +10,7 @@ import {
   whyNoForm,
 } from '../app/compose';
 import { latestLink } from '../app/latestLink';
+import { holdPresses } from '../app/holdPresses';
 import { isHttpLink } from '../app/links';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
@@ -500,7 +501,7 @@ export function ProposalForm(props: ProposalFormProps) {
             {messages.composer.failed}
           </p>
         ) : null}
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
           <Button type="submit" className="button button-primary" isDisabled={running}>
             {words.submit}
           </Button>
@@ -632,7 +633,7 @@ function VersionForm({ state, section, proposal, drafts, onAddVersion }: Version
             {messages.composer.versionFailed}
           </p>
         ) : null}
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
           <Button type="submit" className="button button-primary" isDisabled={running}>
             {messages.composer.versionSubmit}
           </Button>
