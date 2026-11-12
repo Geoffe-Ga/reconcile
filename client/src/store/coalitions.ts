@@ -698,9 +698,16 @@ export interface Holdings {
   readonly logs: readonly FoldedLog[];
 }
 
-/** This device's {@link Holdings}, as the store holds them now. */
-export async function holdings(store: Pick<Store, 'listCoalitions' | 'listGroups'>) {
+/**
+ * This device's {@link Holdings}, as the store holds them now. With no
+ * coalition on the device there is nothing to settle or carry, so it reads
+ * and folds no group, as a pass did before #126.
+ */
+export async function holdings(
+  store: Pick<Store, 'listCoalitions' | 'listGroups'>,
+): Promise<Holdings> {
   const entries = await store.listCoalitions();
+  if (entries.length === 0) return { entries, coalitions: [], groups: [], logs: [] };
   const coalitions = foldCoalitions(entries);
   const groups = (await store.listGroups()).filter(
     (group) => group.archived === undefined && group.leaving === undefined,

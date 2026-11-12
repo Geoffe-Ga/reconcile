@@ -4,7 +4,7 @@
  * and folded through the engine (`test/coalitions.ts`); each test keeps them
  * in a real store.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
@@ -29,6 +29,7 @@ import {
   ensureEntries,
   foldWithCoalitions,
   heldCoalitions,
+  holdings,
   newEntry,
   outsideFor,
   retireCoalitionsOf,
@@ -565,6 +566,31 @@ describe('a group whose ballots have expired (#111)', () => {
     expect(kept.proposals.find((p) => p.id === reconcile)?.cleared).toBe(false);
     expect(cleared.coalitions.map((c) => c.key)).toEqual(kept.coalitions.map((c) => c.key));
     expect(cleared.proposals.map((p) => p.id)).toContain(motion);
+  });
+});
+
+describe('holdings (#126)', () => {
+  it('reads and folds no group on a device with no coalition, as a pass did before #126', async () => {
+    const store = await device();
+    const logs = new Logs();
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    groupA(logs);
+    await keepGroup(store, 'B', 'ana', logs.logs.A ?? []);
+    const listGroups = vi.fn(() => store.listGroups());
+    const held = await holdings({ listCoalitions: () => store.listCoalitions(), listGroups });
+    expect(held).toEqual({ entries: [], coalitions: [], groups: [], logs: [] });
+    expect(listGroups).not.toHaveBeenCalled();
+  });
+
+  it('folds every group that goes on once a coalition is on the device', async () => {
+    const store = await device();
+    const logs = new Logs();
+    groupA(logs);
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    await keepEntry(store, logs, 'kim');
+    const held = await holdings(store);
+    expect(held.entries.map((entry) => entry.groupId)).toEqual([ENTRY]);
+    expect(held.logs.map(({ group }) => group.groupId)).toEqual(['A', ENTRY]);
   });
 });
 
