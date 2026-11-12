@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useId } from 'react';
+import { type ReactNode, type SyntheticEvent, useId } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
 import { parseInviteLink } from '../app/invite';
@@ -60,6 +60,8 @@ export interface StartProps {
   readonly persistence?: Persistence | null;
   /** Restores a backup file (#78); without it, Start offers no Restore. */
   readonly onRestore?: RestoreBackupProps['onRestore'];
+  /** The recovery alert (#118), first on the page while a recovery of this person waits; none when absent. */
+  readonly alert?: ReactNode;
 }
 
 function GroupItem({ group }: { readonly group: StartGroup }) {
@@ -286,6 +288,23 @@ function LinkSection() {
   );
 }
 
+/** "Lost every device?", and Recover with my contacts under it (#118). */
+function RecoverSection() {
+  const heading = useId();
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <h2 id={heading} className="heading-3">
+        {messages.start.recoverHeading}
+      </h2>
+      <div>
+        <Link className="button button-secondary" href={routeHref({ name: 'recover' })}>
+          {messages.start.recover}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 /**
  * Start (`#/`): every group on this device by name, each marked while its
  * leave waits for the relay (#77), Create group, the coalitions this device
@@ -293,12 +312,14 @@ function LinkSection() {
  * invite they sent (#121), a card that opens Personal (#93), Join with an
  * invite link, a field to paste one, a card or a follow link into, a
  * field for a front door link (#121), Restore a backup (#78), Link to my
- * other device (#96), and a quiet link to Settings. The app reads the clipboard only through that paste. When the
+ * other device (#96), Recover with my contacts (#118), and a quiet link to
+ * Settings. While a recovery of this person waits, its alert comes first
+ * (#118). The app reads the clipboard only through that paste. When the
  * browser may clear the app's data, one quiet line says so (ADR-0029).
  */
 export function Start(props: StartProps) {
   const { groups, requests = [], onOpenInvite, onOpenDoor } = props;
-  const { persistence = null, onRestore } = props;
+  const { persistence = null, onRestore, alert } = props;
   const inviteHeading = useId();
 
   const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -315,6 +336,7 @@ export function Start(props: StartProps) {
         pageTitle={messages.start.pageTitle}
       />
       <div className="stack">
+        {alert}
         {groups.length === 0 ? (
           <p className="lede">{messages.start.empty}</p>
         ) : (
@@ -352,6 +374,7 @@ export function Start(props: StartProps) {
       {onOpenDoor === undefined ? null : <DoorSection onOpenDoor={onOpenDoor} />}
       {onRestore === undefined ? null : <RestoreSection onRestore={onRestore} />}
       <LinkSection />
+      <RecoverSection />
       {persistence === null || persistence === 'granted' ? null : (
         <p className="caption">{messages.start.mayClear}</p>
       )}
