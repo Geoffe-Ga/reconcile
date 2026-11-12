@@ -27,7 +27,7 @@ Keep it there when you edit.
   tokens at the top mirror [`DESIGN.md`](../DESIGN.md).
 - `paint.py`: paints the background. See below.
 - `img/wide/`, `img/tall/`: the painting, cut into one WebP per section. `wide` is for windows
-  1100px and up, `tall` for phones and narrow windows.
+  1200px and up, `tall` for phones and narrow windows.
 - `fonts/`: self-hosted Newsreader and Public Sans (see `fonts/README.md`).
 
 ### How the painting is made

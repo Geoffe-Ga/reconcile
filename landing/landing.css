@@ -294,7 +294,7 @@ a {
 /* Tall painting: each piece's height in widths matches `TALL.heights` in paint.py. */
 .sky {
   --piece: url('img/tall/sky.webp');
-  aspect-ratio: 100 / 270;
+  aspect-ratio: 100 / 300;
   background-color: var(--sky);
   background-position: center bottom;
 }
@@ -305,7 +305,7 @@ a {
 }
 .understory {
   --piece: url('img/tall/trunks.webp');
-  aspect-ratio: 100 / 370;
+  aspect-ratio: 100 / 390;
   background-color: var(--mist);
 }
 .soil {
@@ -317,15 +317,15 @@ a {
 .deep {
   --tint: var(--tint-earth);
   --piece: url('img/tall/deep.webp');
-  aspect-ratio: 100 / 410;
+  aspect-ratio: 100 / 440;
   background-color: var(--deep);
 }
 
 /* Wide painting: `WIDE.heights` in paint.py. */
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .sky {
     --piece: url('img/wide/sky.webp');
-    aspect-ratio: 100 / 80;
+    aspect-ratio: 100 / 90;
   }
   .canopy {
     --piece: url('img/wide/canopy.webp');
@@ -349,7 +349,7 @@ a {
 
 .sky {
   /* Keep the words clear of the treetops at the bottom of this piece. */
-  padding-bottom: 74vw;
+  padding-bottom: 48vw;
   color: var(--sky-text);
 }
 
@@ -358,8 +358,17 @@ a {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px 24px;
+  gap: 8px;
   padding-block: 12px;
+}
+
+/* The top links get paper under them too, for the same reason as the intro. */
+.topbar .quiet-link {
+  padding: 0 14px;
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
 }
 
 .hero {
@@ -380,6 +389,15 @@ a {
   color: var(--sky-text);
 }
 
+/* The words under the title sit on paper, like every other block of text:
+   small type straight on the brushwork is hard to read. Only the title, which
+   is very large, sits on the sky itself. */
+.intro {
+  display: grid;
+  gap: 16px;
+  max-width: 38rem;
+}
+
 .lede {
   max-width: 34rem;
   font: 400 clamp(19px, 2.2vw, 22px) / 1.5 var(--font-serif);
@@ -398,7 +416,7 @@ a {
 }
 
 .hero .actions {
-  padding-top: 8px;
+  padding-top: 4px;
 }
 
 /* ---------- Canopy ---------- */
@@ -567,9 +585,9 @@ a {
   line-height: 1.4;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .sky {
-    padding-bottom: 28vw;
+    padding-bottom: 16vw;
   }
   .canopy {
     padding-block: 6vw 10vw;
