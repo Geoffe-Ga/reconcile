@@ -1186,7 +1186,7 @@ function applyRemovalProposal(
     versions: [{ id: at.id, author, text: '' }],
   });
   // The suspension of them running now, if any, lasts until this vote closes:
-  // a cleared one's early close comes from its result, read ahead (#111).
+  // a cleared one's early close comes once the fold reaches it (#111, #289).
   extendSuspension(draft, proposal, (s) => s.member === member && draft.at < s.until);
   return true;
 }
@@ -2660,13 +2660,18 @@ function passedClose(body: ResultBody, at: number, seq: number): boolean {
  * the fold has passed that close (#111, #289), so a cleared Proposal closes
  * at the same point in relay order as one whose ballots are held: the rules
  * that ask whether it is open ({@link isOpenAt}) find it open before the
- * closing ballot's place and closed from there on.
+ * closing ballot's place and closed from there on. As the closing ballot
+ * would, a removal's close then ends the suspension it extended at the later
+ * of its own end and that close (ADR-0059, #115).
  */
 function closeReadAhead(draft: Draft, seq: number): void {
   for (const proposal of draft.proposals) {
     const body = proposal.readAhead?.body;
     const early = body !== undefined && body.closedAt < proposal.deadline;
-    if (early && passedClose(body, draft.at, seq)) proposal.closedAt = body.closedAt;
+    if (proposal.closedAt === null && early && passedClose(body, draft.at, seq)) {
+      proposal.closedAt = body.closedAt;
+      extendSuspension(draft, proposal, (s) => s.removal === proposal.id);
+    }
   }
 }
 
