@@ -241,7 +241,10 @@ describe('removing a member on this device (#115)', () => {
     const push: PushUpkeep = {
       nudge: () => Promise.resolve(),
       upkeep: () => Promise.resolve(),
-      forget: (held) => forgot.push(held),
+      forget: (held) => {
+        forgot.push(held);
+        return Promise.resolve();
+      },
     };
     const device = await openDevice(fake.fetch, push);
     await keep(device, group, 'cal', [...events, last]);
@@ -694,7 +697,10 @@ describe('a removal in a restored copy that hasn’t heard from its group (#231)
       store,
       group.genesis.id,
       () => TS,
-      (held) => forgot.push(held),
+      (held) => {
+        forgot.push(held);
+        return Promise.resolve();
+      },
     );
 
     expect((await store.getGroup(group.genesis.id))?.archived).toEqual({ reason: 'removed' });

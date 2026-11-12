@@ -1195,7 +1195,7 @@ describe('a new group key when someone leaves (#98)', () => {
     const push: PushUpkeep = {
       nudge: () => Promise.resolve(),
       upkeep: () => seen('upkeep'),
-      forget: () => undefined,
+      forget: () => Promise.resolve(),
     };
     const sync = createSync({
       store: ana.store,
@@ -1225,7 +1225,7 @@ describe('a new group key when someone leaves (#98)', () => {
         return Promise.resolve();
       },
       upkeep,
-      forget: () => undefined,
+      forget: () => Promise.resolve(),
     };
     sync = createSync({ store: ana.store, relay, seal: xchachaSeal, push, afterPass });
     opened.push(sync);

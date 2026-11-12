@@ -14,7 +14,10 @@
  * or the new one. Everything the device keeps about a group lives in that one
  * record, so Leave deletes the group with a single delete (#77), the chat
  * bot's claims (#119), what it learned of the group's webhook (#123) and its
- * push registration (#99) included. A backup file's groups come back in one
+ * push registration (#99) included. Only the push DELETEs the device still
+ * owes the relay outlive it (#356): the endpoint and each mailbox id, no
+ * secret or name, in a device record of their own until each is sent, within
+ * the day. A backup file's groups come back in one
  * transaction too (#78), and the store closes itself when another tab
  * deletes or upgrades its database, so Erase never waits on a connection
  * left open. Personal Documents (#93) sit in a store of their own beside the
@@ -775,6 +778,30 @@ export interface RecoveryStore {
 }
 
 /**
+ * One push DELETE this device still owes the relay (#356): `endpoint`'s
+ * registration under `mailbox`, a weekly mailbox of a group this device left
+ * or was removed from, sent at the first push upkeep at or after `due`, a
+ * device time in milliseconds drawn at random within the next day.
+ */
+export interface PushForget {
+  readonly endpoint: string;
+  readonly mailbox: string;
+  readonly due: number;
+}
+
+/**
+ * The push DELETEs this device owes (#356): one device-wide record in no
+ * group, so it outlives the Leave that purges its group, and a reload. It
+ * holds no key, so it stays out of the vault, and no listener hears of it.
+ */
+export interface PushForgetStore {
+  /** Every DELETE owed, in the order kept. */
+  listPushForgets(): Promise<PushForget[]>;
+  /** Keep `edit` of the DELETEs owed in place of them, in one transaction; none left drops the record. */
+  updatePushForgets(edit: (held: readonly PushForget[]) => readonly PushForget[]): Promise<void>;
+}
+
+/**
  * The relay backup's one device-wide record (#97). Its key is a secret like a
  * group's (#95): with a vault, every call opens it, and each one fails with
  * {@link VaultLocked}, reading and writing nothing, while it's locked.
@@ -821,7 +848,7 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
  * sent (#121).
  */
 export interface Store
-  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, SentStore {
+  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, PushForgetStore, SentStore {
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
@@ -1101,13 +1128,23 @@ interface RetiredMark {
   readonly retiredAt: number;
 }
 
+/** The push DELETEs a device owes (#356). */
+interface PushForgets {
+  readonly forgets: readonly PushForget[];
+}
+
 /**
  * A record of the device store, each under its own key: the relay backup's
- * (#97), the recovery contacts' (#109), and a recovering device's request and
- * the mark it leaves (#118).
+ * (#97), the recovery contacts' (#109), a recovering device's request and
+ * the mark it leaves (#118), and the push DELETEs it owes (#356).
  */
 type DeviceRecord =
-  StoredRelayBackup | RecoveryPlan | StoredRecoverRequest | RecoveredMark | RetiredMark;
+  | StoredRelayBackup
+  | RecoveryPlan
+  | StoredRecoverRequest
+  | RecoveredMark
+  | RetiredMark
+  | PushForgets;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -1142,6 +1179,11 @@ function retiredAtIn(record: DeviceRecord | undefined): number | undefined {
   return record !== undefined && 'retiredAt' in record ? record.retiredAt : undefined;
 }
 
+/** The push DELETEs owed in a device record read from their key, or none (#356). */
+function pushForgetsIn(record: DeviceRecord | undefined): PushForget[] {
+  return record !== undefined && 'forgets' in record ? [...record.forgets] : [];
+}
+
 /**
  * The schema version. Version 7 adds the store of front-door applications
  * this device sent (#121), version 6 the key vault (#95), version 5 the
@@ -1172,6 +1214,8 @@ const RECOVER_REQUEST = 'recover-request';
 const RECOVERED = 'recovered';
 /** The device store's key for the mark a device keeps once its backup key was retired (#272). */
 const RELAY_BACKUP_RETIRED = 'relay-backup-retired';
+/** The device store's key for the push DELETEs a device owes (#356): a key of its own, so no new version. */
+const PUSH_FORGETS = 'push-forgets';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -1535,6 +1579,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...recoveryStore(db, session, () => {
       notify(RECOVERY_CHANGED);
     }),
+    ...pushForgetStore(db),
     async readVault() {
       const vault = await db.get(VAULT, VAULT_ID);
       return vault === undefined
@@ -1769,6 +1814,20 @@ function relayBackupStore(
       return result.wrote;
     },
     getRelayBackupRetiredAt: async () => retiredAtIn(await db.get(DEVICE, RELAY_BACKUP_RETIRED)),
+  };
+}
+
+/** The push DELETEs owed, one record in `db`'s device store (#356); no listener hears of a change. */
+function pushForgetStore(db: IDBPDatabase<Schema>): PushForgetStore {
+  return {
+    listPushForgets: async () => pushForgetsIn(await db.get(DEVICE, PUSH_FORGETS)),
+    async updatePushForgets(edit) {
+      const tx = db.transaction(DEVICE, 'readwrite');
+      const forgets = [...edit(pushForgetsIn(await tx.store.get(PUSH_FORGETS)))];
+      if (forgets.length === 0) await tx.store.delete(PUSH_FORGETS);
+      else await tx.store.put({ forgets }, PUSH_FORGETS);
+      await tx.done;
+    },
   };
 }
 

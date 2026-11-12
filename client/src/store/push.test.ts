@@ -6,9 +6,10 @@
  * the endpoint; off with a DELETE; nudges once each; upkeep on a fake clock;
  * and a scan showing push requests carry only an endpoint or a relay minute.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
+import type { Random } from '../crypto/random';
 import { xchachaSeal } from '../crypto/seal';
 import { LEVELS } from '../engine/capabilities';
 import { type EventBodies, type EventType, signEvent } from '../engine/event';
@@ -27,9 +28,10 @@ import {
 } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { FOUNDING, foundAnother, members } from '../test/members';
-import type { Group } from './db';
+import { MINUTE_MS } from './archive';
+import { type Group, openStore, type Store } from './db';
 import { mailboxAt, type MailboxAt, mailboxesFrom } from './mailbox';
-import { createPush, RENEW_MINUTES, REST_MS } from './push';
+import { createPush, FORGET_WINDOW_MINUTES, RENEW_MINUTES, REST_MS } from './push';
 import { createSync } from './sync';
 
 freshIndexedDBPerTest();
@@ -663,58 +665,236 @@ describe('upkeep, after each sync pass (#99)', () => {
   });
 });
 
-describe('Leave (#77, #99)', () => {
-  it('fires a keepalive DELETE for each mailbox before the group is purged, doesn’t wait for them, then ends the subscription', async () => {
+/** Random bytes that spell `value`, big-endian, as `drawBelow` reads them (#356). */
+function spelling(value: number): Random {
+  return (length) => {
+    const bytes = new Uint8Array(length);
+    let rest = value;
+    for (let index = length - 1; index >= 0; index -= 1) {
+      bytes[index] = rest % 256;
+      rest = Math.floor(rest / 256);
+    }
+    return bytes;
+  };
+}
+
+/** The URL a fetch was called with. */
+const urlOf = (input: Parameters<Fetch>[0]): string =>
+  typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+/** A device clock a test moves, in milliseconds. */
+interface Clock {
+  now: number;
+}
+
+/**
+ * `device`'s push and sync loop over its store on `fetch`, as its own are
+ * made, on `clock` and drawing `value` for each forget's minute (#356).
+ */
+function loopOf(
+  device: TestDevice,
+  clock: Clock,
+  value: number,
+  fetch: Fetch,
+  store: Store = device.services.store,
+) {
+  const push = createPush({
+    store,
+    relay: createPushRelay({ fetch }),
+    port: browserPushPort(device.push.environment),
+    clock: () => clock.now,
+    random: spelling(value),
+  });
+  const relay = createRelay({ fetch });
+  const sync = createSync({ store, relay, seal: xchachaSeal, push, clock: () => clock.now });
+  return { push, sync };
+}
+
+/** The push DELETEs among `fake`'s requests since `from`, as `[method, path]`. */
+const deletesSince = (fake: FakeRelay, from: number) =>
+  pushRequests(fake, from)
+    .filter((request) => request.method === 'DELETE')
+    .map(line);
+
+/** The DELETEs of `endpoint` a device owes under each of `mailboxes`, due at `due` (#356). */
+const owedUnder = (mailboxes: readonly string[], due: number, endpoint = fakeEndpoint(1)) =>
+  mailboxes.map((mailbox) => ({ endpoint, mailbox, due }));
+
+describe('Leave (#77, #99, #356)', () => {
+  it('sends no DELETE in the pass that lets the group go, owing one per mailbox, and ends the subscription once no group is on', async () => {
     const { fake, ana, groupId, mailbox, mailboxes } = await group();
     await ana.services.push.turnOn(groupId);
-    const order: string[] = [];
-    const deletes: RequestInit[] = [];
-    let release: () => void = () => undefined;
-    const answered = new Promise<Response>((resolve) => {
-      release = () => {
-        resolve(new Response(null, { status: 204 }));
-      };
-    });
-    // Every DELETE hangs until the test lets it go: the purge mustn't wait on it.
-    const hanging: Fetch = (input, init) => {
-      if (init?.method !== 'DELETE') return fake.fetch(input, init);
-      order.push('delete');
-      deletes.push(init);
-      return answered;
-    };
-    const { store } = ana.services;
-    const push = createPush({
-      store,
-      relay: createPushRelay({ fetch: hanging }),
-      port: browserPushPort(ana.push.environment),
-    });
-    const watched = {
-      ...store,
-      purgeGroup: (id: string) => {
-        order.push('purge');
-        return store.purgeGroup(id);
-      },
-    };
-    const sync = createSync({
-      store: watched,
-      relay: createRelay({ fetch: fake.fetch }),
-      seal: xchachaSeal,
-      push,
-    });
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(ana, clock, 41, fake.fetch);
+    const before = fake.requests.length;
 
     // Queued straight in the store: Leave's own sync would race this one.
     await queueLeave(ana, groupId);
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect(await ana.services.store.getGroup(groupId)).toBeUndefined();
+    expect(deletesSince(fake, before)).toEqual([]);
+    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
+    expect(await ana.services.store.listPushForgets()).toEqual(
+      owedUnder(mailboxes, TEST_NOW + 42 * MINUTE_MS),
+    );
+    expect(ana.push.subscription).toBeNull();
+    expect(ana.push.made[0]?.unsubscribed).toBe(true);
+  });
+
+  it.each([
+    [0, 1],
+    [41, 42],
+    [1_439, 1_440],
+  ])(
+    'with a draw of %i, sends the DELETEs %i minutes on, at the first pass at or after then, and once',
+    async (value, minutes) => {
+      const { fake, ana, groupId, mailbox, mailboxes } = await group();
+      await ana.services.push.turnOn(groupId);
+      const clock = { now: TEST_NOW };
+      const { sync } = loopOf(ana, clock, value, fake.fetch);
+      await queueLeave(ana, groupId);
+      await sync.syncOnce();
+      const due = TEST_NOW + minutes * MINUTE_MS;
+
+      clock.now = due - 1;
+      let before = fake.requests.length;
+      expect(await sync.syncOnce()).toBe(true);
+      expect(deletesSince(fake, before)).toEqual([]);
+
+      clock.now = due;
+      before = fake.requests.length;
+      expect(await sync.syncOnce()).toBe(true);
+      expect(pushRequests(fake, before).map(line)).toEqual(each('DELETE', mailboxes));
+      expect(fake.endpoints(mailbox)).toEqual([]);
+      expect(await ana.services.store.listPushForgets()).toEqual([]);
+
+      before = fake.requests.length;
+      clock.now += DAY_MINUTES * MINUTE_MS;
+      await sync.syncOnce();
+      expect(pushRequests(fake, before)).toEqual([]);
+    },
+  );
+
+  it('owes the DELETEs across a restart, and the next loop sends them once due', async () => {
+    const { fake, ana, groupId, mailbox, mailboxes } = await group();
+    await ana.services.push.turnOn(groupId);
+    const clock = { now: TEST_NOW };
+    await queueLeave(ana, groupId);
+    await loopOf(ana, clock, 99, fake.fetch).sync.syncOnce();
+    ana.services.store.close();
+
+    const reopened = await openStore('ana');
+    try {
+      clock.now = TEST_NOW + 100 * MINUTE_MS;
+      const before = fake.requests.length;
+      await loopOf(ana, clock, 0, fake.fetch, reopened).sync.syncOnce();
+
+      expect(pushRequests(fake, before).map(line)).toEqual(each('DELETE', mailboxes));
+      expect(fake.endpoints(mailbox)).toEqual([]);
+      expect(await reopened.listPushForgets()).toEqual([]);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it('keeps owing a DELETE the relay didn’t take, and sends it once upkeep’s hour of rest is over', async () => {
+    const { fake, ana, groupId, mailbox, mailboxes } = await group();
+    await ana.services.push.turnOn(groupId);
+    let down = true;
+    const fetch: Fetch = (input, init) =>
+      down && init?.method === 'DELETE'
+        ? Promise.resolve(new Response(null, { status: 503 }))
+        : fake.fetch(input, init);
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(ana, clock, 0, fetch);
+    await queueLeave(ana, groupId);
+    await sync.syncOnce();
+    const due = TEST_NOW + MINUTE_MS;
+
+    clock.now = due;
+    await sync.syncOnce();
+    expect(await ana.services.store.listPushForgets()).toEqual(owedUnder(mailboxes, due));
+    down = false;
+    clock.now = due + REST_MS - 1;
+    let before = fake.requests.length;
+    await sync.syncOnce();
+    expect(deletesSince(fake, before)).toEqual([]);
+
+    clock.now = due + REST_MS;
+    before = fake.requests.length;
+    await sync.syncOnce();
+    expect(deletesSince(fake, before)).toEqual(each('DELETE', mailboxes));
+    expect(fake.endpoints(mailbox)).toEqual([]);
+    expect(await ana.services.store.listPushForgets()).toEqual([]);
+  });
+
+  it('owes no more a DELETE the relay refused for good', async () => {
+    const { fake, ana, groupId, mailboxes } = await group();
+    await ana.services.push.turnOn(groupId);
+    const [first = '', ...rest] = mailboxes;
+    const fetch: Fetch = (input, init) =>
+      init?.method === 'DELETE' && urlOf(input).endsWith(first)
+        ? Promise.resolve(new Response(null, { status: 400 }))
+        : fake.fetch(input, init);
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(ana, clock, 0, fetch);
+    await queueLeave(ana, groupId);
     await sync.syncOnce();
 
-    expect(order).toEqual([...mailboxes.map(() => 'delete'), 'purge']);
-    expect(deletes.map((init) => init.keepalive)).toEqual(mailboxes.map(() => true));
+    clock.now = TEST_NOW + MINUTE_MS;
+    const before = fake.requests.length;
+    await sync.syncOnce();
+
+    expect(deletesSince(fake, before)).toEqual(each('DELETE', rest));
+    expect(await ana.services.store.listPushForgets()).toEqual([]);
+  });
+
+  it('lets the group go even when the store can’t note the DELETEs, which then lapse at the relay', async () => {
+    const { fake, ana, groupId, mailbox } = await group();
+    await ana.services.push.turnOn(groupId);
+    const { store } = ana.services;
+    const failing: Store = {
+      ...store,
+      updatePushForgets: () => Promise.reject(new Error('The disk is full.')),
+    };
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(ana, clock, 0, fake.fetch, failing);
+    await queueLeave(ana, groupId);
+    const before = fake.requests.length;
+
+    expect(await sync.syncOnce()).toBe(true);
+    clock.now += FORGET_WINDOW_MINUTES * MINUTE_MS;
+    expect(await sync.syncOnce()).toBe(true);
+
     expect(await store.getGroup(groupId)).toBeUndefined();
+    expect(ana.push.subscription).toBeNull();
+    expect(deletesSince(fake, before)).toEqual([]);
+    expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
+  });
+
+  it('keeps the subscription, and the other group’s registration, while another group has push on', async () => {
+    const { fake, ana, groupId, mailboxes } = await group();
+    const other = await foundAnother(ana, 'Ana');
+    await ana.services.push.turnOn(groupId);
+    await ana.services.push.turnOn(other);
+    const kept = (await ana.services.store.getGroup(other))?.push?.mailboxes ?? never();
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(ana, clock, 0, fake.fetch);
+    await queueLeave(ana, groupId);
+    await sync.syncOnce();
+
     expect(ana.push.subscription).not.toBeNull();
-    release();
-    await vi.waitFor(() => {
-      expect(ana.push.subscription).toBeNull();
-    });
-    expect(mailbox).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(await ana.services.store.listPushForgets()).toEqual(
+      owedUnder(mailboxes, TEST_NOW + MINUTE_MS),
+    );
+    clock.now = TEST_NOW + MINUTE_MS;
+    const before = fake.requests.length;
+    await sync.syncOnce();
+
+    expect(deletesSince(fake, before)).toEqual(each('DELETE', mailboxes));
+    expect(kept.map((box) => fake.endpoints(box))).toEqual(kept.map(() => [fakeEndpoint(1)]));
+    expect(ana.push.subscription).not.toBeNull();
   });
 
   it('sends nothing for a group whose push was off', async () => {
@@ -867,42 +1047,92 @@ describe('push across a key change (#98)', () => {
     expect(fake.nudges(next)).toHaveLength(2);
   });
 
-  it('still fires Leave’s keepalive DELETEs while a key change holds the outbox', async () => {
+  it('owes Leave’s DELETEs while a key change holds the outbox, and sends them within the day', async () => {
     const { fake, groupId, ana, cal, mailbox, mailboxes } = await threeWithPush();
     await calLeaves(cal, groupId);
     // Ana's device reads Cal's leave, but the relay turns its key change away, so the outbox freezes.
     let refuse = true;
     const fetch: Fetch = (input, init) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const blob = init?.method === 'PUT' && url.startsWith('/v1/mailbox/');
+      const blob = init?.method === 'PUT' && urlOf(input).startsWith('/v1/mailbox/');
       if (refuse && blob) return Promise.resolve(new Response(null, { status: 503 }));
       return fake.fetch(input, init);
     };
-    const { store } = ana.services;
-    const deletes: RequestInit[] = [];
-    const watching: Fetch = (input, init) => {
-      if (init?.method === 'DELETE') deletes.push(init);
-      return fake.fetch(input, init);
-    };
-    const push = createPush({
-      store,
-      relay: createPushRelay({ fetch: watching }),
-      port: browserPushPort(ana.push.environment),
-    });
-    const sync = createSync({ store, relay: createRelay({ fetch }), seal: xchachaSeal, push });
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(ana, clock, 41, fetch);
     expect(await sync.syncOnce()).toBe(false);
+    const { store } = ana.services;
     const held = await store.getGroup(groupId);
     expect([fold(held?.log ?? [], null).rotationDue, held?.epoch ?? 0]).toEqual([true, 0]);
     refuse = false;
 
     await queueLeave(ana, groupId);
+    const before = fake.requests.length;
     await sync.syncOnce();
 
     expect(await store.getGroup(groupId)).toBeUndefined();
-    expect(deletes.map((init) => init.keepalive)).toEqual(mailboxes.map(() => true));
-    await vi.waitFor(() => {
-      expect(fake.endpoints(mailbox)).toEqual([]);
+    expect(deletesSince(fake, before)).toEqual([]);
+    clock.now = TEST_NOW + 42 * MINUTE_MS;
+    await sync.syncOnce();
+    expect(deletesSince(fake, before)).toEqual(each('DELETE', mailboxes));
+    expect(fake.endpoints(mailbox)).toEqual([]);
+  });
+});
+
+/** `device`'s member key in `groupId`. */
+async function authorOn(device: TestDevice, groupId: string): Promise<string> {
+  return ((await device.services.store.getGroup(groupId)) ?? never()).me.author;
+}
+
+/** `voter` scores `proposal` 4 in `groupId`, then syncs. */
+function fourFrom(voter: TestDevice, groupId: string, proposal: string): Promise<string> {
+  return say(voter, groupId, { type: 'vote', body: { proposal, scores: { [proposal]: 4 } } });
+}
+
+describe('push for a member a vote removes (#115, #356)', () => {
+  it('sends no DELETE in the pass that archives the group at the key change, then sends them within the day', async () => {
+    const fake = createFakeRelay();
+    const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
+    opened.push(...devices);
+    const [ana, ben, cal] = devices as [TestDevice, TestDevice, TestDevice];
+    cal.push.answer = 'granted';
+    expect(await cal.services.push.turnOn(groupId)).toBe('on');
+    const registered = (await cal.services.store.getGroup(groupId))?.push?.mailboxes ?? never();
+    const clock = { now: TEST_NOW };
+    const { sync } = loopOf(cal, clock, 41, fake.fetch);
+
+    // Ana and Ben, the two who vote on it, pass Cal's removal, and Ana's device posts the
+    // remove a minute on, then the key change that leaves Cal out (#98).
+    const member = await authorOn(cal, groupId);
+    const target = { kind: 'remove', member } as const;
+    const removal = await say(ana, groupId, {
+      type: 'proposal',
+      body: { target, title: 'Remove Cal', why: 'Moved away.' },
     });
+    await ben.services.sync.syncOnce();
+    await fourFrom(ben, groupId, removal);
+    await fourFrom(ana, groupId, removal);
+    fake.minute += 1;
+    for (let pass = 0; pass < 3; pass += 1) await ana.services.sync.syncOnce();
+    expect((await ana.services.store.getGroup(groupId))?.epoch).toBe(1);
+
+    // Cal's next pass reads the remove and the key change together, and archives the group.
+    const before = fake.requests.length;
+    expect(await sync.syncOnce()).toBe(true);
+    expect((await cal.services.store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
+    expect(deletesSince(fake, before)).toEqual([]);
+    expect(fake.endpoints(registered[0] ?? never())).toEqual([fakeEndpoint(1)]);
+    expect(await cal.services.store.listPushForgets()).toEqual(
+      owedUnder(registered, TEST_NOW + 42 * MINUTE_MS),
+    );
+    expect(cal.push.subscription).toBeNull();
+
+    clock.now = TEST_NOW + 42 * MINUTE_MS - 1;
+    await sync.syncOnce();
+    expect(deletesSince(fake, before)).toEqual([]);
+    clock.now += 1;
+    await sync.syncOnce();
+    expect(deletesSince(fake, before)).toEqual(each('DELETE', registered));
+    expect(registered.map((box) => fake.endpoints(box))).toEqual(registered.map(() => []));
   });
 });
 

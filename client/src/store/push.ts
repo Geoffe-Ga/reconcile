@@ -9,8 +9,18 @@
  *   the group as on.
  * - **Turning one off** forgets it here at once and sends a best-effort
  *   DELETE. Once no group is on, the device ends its subscription.
- * - **Leave** fires a `keepalive` DELETE just before the sync loop purges the
- *   group (`forget`), and doesn't wait for it.
+ * - **Leave and a removal** (`forget`, #356): just before the sync loop
+ *   purges a group this device left, or archives one a vote removed this
+ *   member from, the device notes a DELETE it owes under each of the group's
+ *   registered mailboxes, due at a minute drawn at random from the CSPRNG
+ *   within the next day ({@link FORGET_WINDOW_MINUTES}). Upkeep sends them at
+ *   its first run at or after then, never in the pass that let the group go,
+ *   so the relay can't line an endpoint's unregistering up with the group's
+ *   key change. The device store keeps them (`PushForgetStore`), so they
+ *   outlive the purge and a reload. One the relay didn't take is owed still,
+ *   after upkeep's rest. The subscription ends at once, as before, if no
+ *   other group has push on, which the relay hears of only if it pushes to
+ *   the endpoint again.
  * - **Nudges:** after each group syncs, this device asks the relay to wake the
  *   group a day before each of its own open Proposals closes and at its
  *   deadline (`engine/nudges.ts`), each once, in the mailbox of the week the
@@ -27,7 +37,7 @@
  *   endpoint is forgotten as the new one is registered. After a failure the
  *   upkeep rests for an hour, so a refusal never repeats every few seconds.
  *
- * Registrations and nudges take their mailbox only from `mailboxAt`
+ * Registrations, nudges and forgets take their mailbox only from `mailboxAt`
  * (./mailbox.ts). The relay hears only endpoints and relay minutes: the
  * request bodies hold `endpoint` or `not_before` and nothing else.
  *
@@ -38,12 +48,14 @@
  * the service worker ends the subscription, so the push service refuses the
  * relay's next push and the relay forgets the endpoint everywhere.
  */
+import { drawBelow, type Random, randomBytes } from '../crypto/random';
 import { nudgeKey, nudgesFor, type Nudge } from '../engine/nudges';
 import { DAY_MINUTES } from '../engine/rules';
 import type { PushRelay } from '../net/push';
 import { RelayError } from '../net/relay';
 import type { DeviceSubscription, PushPort } from '../platform/pushPort';
-import type { Group, Store } from './db';
+import { MINUTE_MS } from './archive';
+import type { Group, PushForget, Store } from './db';
 import { foldGroup } from './expiry';
 import { mailboxAt as defaultMailboxAt, type MailboxAt, mailboxesFrom } from './mailbox';
 
@@ -52,6 +64,13 @@ export const RENEW_MINUTES = 7 * DAY_MINUTES;
 
 /** How long upkeep rests after a failure, in device milliseconds. */
 export const REST_MS = 3_600_000;
+
+/**
+ * The minutes a forgotten group's DELETEs wait at most (#356): a day. They
+ * go 1 to 1,440 minutes after the pass that let the group go, each minute as
+ * likely as another.
+ */
+export const FORGET_WINDOW_MINUTES = DAY_MINUTES;
 
 /** Whether this device can get push now: not at all, blocked in its settings, or ready to ask. */
 export type PushAvailability = 'unsupported' | 'blocked' | 'ready';
@@ -62,15 +81,20 @@ export type TurnOnOutcome = 'on' | 'blocked' | 'dismissed' | 'unavailable' | 'fa
 /** What push needs. */
 export interface PushOptions {
   /** The device's groups. */
-  readonly store: Pick<Store, 'getGroup' | 'listGroups' | 'setPush' | 'markNudged'>;
+  readonly store: Pick<
+    Store,
+    'getGroup' | 'listGroups' | 'setPush' | 'markNudged' | 'listPushForgets' | 'updatePushForgets'
+  >;
   /** The relay's push routes. */
   readonly relay: PushRelay;
   /** The browser's notifications and Push API. */
   readonly port: PushPort;
   /** A group's mailbox at a relay minute (default: the store's one seam). */
   readonly mailboxAt?: MailboxAt;
-  /** The device clock in milliseconds, for upkeep's rest (default: `Date.now`). */
+  /** The device clock in milliseconds, for upkeep's rest and a forget's minute (default: `Date.now`). */
   readonly clock?: () => number;
+  /** Random bytes for a forget's minute (#356): the platform's CSPRNG (default: `crypto/random.ts`). */
+  readonly random?: Random;
 }
 
 /** What Settings asks of push. */
@@ -87,10 +111,16 @@ export interface PushControls {
 export interface PushUpkeep {
   /** Posts the nudges due for this device's own open Proposals in `groupId`, each once. */
   nudge(groupId: string): Promise<void>;
-  /** Keeps every group with push on registered at the relay. Never rejects. */
+  /** Keeps every group with push on registered at the relay, and sends the DELETEs due. Never rejects. */
   upkeep(): Promise<void>;
-  /** Fires a `keepalive` DELETE of `group`'s registration, before the group is purged; doesn't wait. */
-  forget(group: Group): void;
+  /**
+   * Notes a DELETE owed under each of `group`'s registered mailboxes, due at
+   * a random minute within the next day (#356), before the group is purged or
+   * archived, and ends the subscription if no other group has push on. Never
+   * rejects: when the store can't note them, the registration is left to
+   * lapse at the relay within 30 days, as a dissolved group's is (#108).
+   */
+  forget(group: Group): Promise<void>;
 }
 
 /** Push: Settings' controls and the sync loop's upkeep. */
@@ -107,6 +137,11 @@ function isLive(group: Group): boolean {
  */
 function isOn(group: Group): group is Group & Required<Pick<Group, 'push'>> {
   return group.push !== undefined && isLive(group);
+}
+
+/** True when `a` and `b` are the same DELETE owed (#356). */
+function sameForget(a: PushForget, b: PushForget): boolean {
+  return a.endpoint === b.endpoint && a.mailbox === b.mailbox;
 }
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
@@ -150,22 +185,51 @@ class PushServiceRefused extends Error {
 /** Push over `options.store`, the relay's push routes and the browser's port. */
 export function createPush(options: PushOptions): Push {
   const { store, relay, port, mailboxAt = defaultMailboxAt, clock = Date.now } = options;
+  const random = options.random ?? randomBytes;
   /** Each group's log length when its nudges were last all posted: nothing is due until it grows. */
   const posted = new Map<string, number>();
   let restUntil = -Infinity;
 
   /** Best-effort DELETEs of `endpoint` under each mailbox; never rejects. */
-  function forgetAt(mailboxes: readonly string[], endpoint: string, keepalive = false) {
+  function forgetAt(mailboxes: readonly string[], endpoint: string) {
     const each = mailboxes.map((mailbox) =>
-      relay.unregister(mailbox, endpoint, { keepalive }).catch(() => undefined),
+      relay.unregister(mailbox, endpoint).catch(() => undefined),
     );
     return Promise.all(each);
   }
 
-  /** Ends this device's subscription once no group has push on. */
-  async function unsubscribeIfNoneOn(): Promise<void> {
-    if ((await store.listGroups()).some(isOn)) return;
+  /** Ends this device's subscription once no group but `except`, if given, has push on. */
+  async function unsubscribeIfNoneOn(except?: string): Promise<void> {
+    const groups = await store.listGroups();
+    if (groups.some((group) => group.groupId !== except && isOn(group))) return;
     await (await port.subscription())?.unsubscribe();
+  }
+
+  /** Sends one owed DELETE (#356); true once it needn't be sent again. */
+  async function sendForget(forget: PushForget): Promise<boolean> {
+    try {
+      await relay.unregister(forget.mailbox, forget.endpoint);
+      return true;
+    } catch (error) {
+      return isFinal(error);
+    }
+  }
+
+  /**
+   * Sends each owed DELETE that is due (#356), and owes no more each the
+   * relay took or refused for good. Rejects after any other failure, so
+   * upkeep rests before it tries again.
+   */
+  async function sendForgetsDue(): Promise<void> {
+    const now = clock();
+    const due = (await store.listPushForgets()).filter((forget) => forget.due <= now);
+    if (due.length === 0) return;
+    const done = await Promise.all(due.map(sendForget));
+    const sent = due.filter((_, index) => done[index]);
+    await store.updatePushForgets((held) =>
+      held.filter((forget) => !sent.some((gone) => sameForget(gone, forget))),
+    );
+    if (sent.length < due.length) throw new Error('The relay didn’t take every DELETE due.');
   }
 
   /**
@@ -308,17 +372,29 @@ export function createPush(options: PushOptions): Push {
     },
     async upkeep() {
       if (clock() < restUntil) return;
-      await keepUp().catch(() => {
-        restUntil = clock() + REST_MS;
-      });
+      const kept = await keepUp().then(
+        () => true,
+        () => false,
+      );
+      const sent = await sendForgetsDue().then(
+        () => true,
+        () => false,
+      );
+      if (!kept || !sent) restUntil = clock() + REST_MS;
     },
-    forget(group) {
+    async forget(group) {
       const { push } = group;
       if (push === undefined) return;
-      // The DELETEs start now, before the purge; nothing waits on them.
-      void forgetAt(push.mailboxes, push.endpoint, true)
-        .then(unsubscribeIfNoneOn)
+      // 1 to 1,440 minutes on, so the upkeep that ends this pass, moments later, finds none due.
+      const due = clock() + (1 + drawBelow(FORGET_WINDOW_MINUTES, random)) * MINUTE_MS;
+      const owed = push.mailboxes.map((mailbox) => ({ endpoint: push.endpoint, mailbox, due }));
+      await store
+        .updatePushForgets((held) => [
+          ...held,
+          ...owed.filter((forget) => !held.some((kept) => sameForget(kept, forget))),
+        ])
         .catch(() => undefined);
+      await unsubscribeIfNoneOn(group.groupId).catch(() => undefined);
     },
   };
 }

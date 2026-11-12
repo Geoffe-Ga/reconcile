@@ -39,6 +39,7 @@ Every member of a group, at any level, can read its log. So the group's coalitio
   - Push stays off by default, one switch per group. The switch's disclosure says this in plain words before anything is sent.
 - **Accept: polling links a phone's groups live.** A device polls all its groups' mailboxes from one IP address every few seconds. Whoever watches the relay live can tie those groups together. Weekly mailboxes protect stored data, not a live watcher. The pilot notice already says the relay sees which mailboxes a device checks. This ADR records the risk so the outside review covers it.
 - **Revisit** before groups outside the founder's circle use the app: a separate push address per group, if browsers support it in installed iOS apps, or no push for a group that asks for none.
+- **Amendment (2026-11-12, #356):** a group's push address is taken back at a random minute within the day after the device leaves or is removed, not at the key change. See the amendment below.
 
 ### 3. Stewards
 
@@ -280,3 +281,33 @@ How the split travels: the plan's split id, 16 random bytes that every contact's
   - For up to a relay day, an upload that lands just after the overwrite revives the old backup, until the choosing device's next pass.
   - Two devices that choose at nearly the same time each retire only the key they held, so both new plans stay live. The person sorts that out by choosing once more.
   - Once a choosing device is lost for good, its old ids expire 180 days after its last write. A later restore of a backup file holding one of those keys would upload under it.
+
+## Amendment (2026-11-12): Push Is Unregistered Within the Day, Not at the Key Change (#356)
+
+**Decided by an agent under the founder's standing "go with your recommendations" instruction, taking [#356](https://github.com/Geoffe-Ga/reconcile/issues/356)'s recommended option. The founder hasn't reviewed it yet.**
+
+### Context
+
+A device that leaves a group (#77), or that a vote removes (#115), took its push address back from the group's mailboxes (§2) in the same pass that let the group go: one `DELETE` per mailbox, around the moment the group's key changed. The relay could read that as "someone just left or was removed here", and tie the address to the group at that moment.
+
+### Options considered
+
+1. **Accept it,** with a pilot-risk note. The leaver's device stops reading the group anyway, so a watcher could infer it, but more slowly.
+2. **Chosen: delay and jitter the `DELETE`s.** They go at a random minute within the next day. It's small, and it changes nothing the relay stores.
+3. **Send no `DELETE`,** and let the registration lapse after the relay's 30 days. The address would stay under the old mailboxes for up to a month, so a nudge already scheduled there could wake a phone that had left.
+
+### Decision
+
+- **When.** The device notes a `DELETE` under each mailbox the registration names, all due at one moment, 1 to 1,440 minutes on. The minute comes from 6 bytes of the platform's CSPRNG, as #126's carried scores draw theirs (`drawBelow`, `client/src/crypto/random.ts`). Push upkeep sends them at its first run at or after that moment, never in the pass that let the group go. A device that's closed then sends them later still.
+- **Kept on the device.** One device record, outside any group, holds each `DELETE` owed (the endpoint, the mailbox id and the moment), so it outlives the Leave that purges the group, and a reload. It holds no key, name or secret. No backup file or link carries it. Erase deletes it with everything else and sends nothing (#78).
+- **Failures.** A `DELETE` the relay took, or refused with a 4xx, is owed no more. Any other failure keeps it owed, and upkeep rests for an hour first, as after any upkeep failure.
+- **Other groups.** Their registrations and upkeep don't change. The subscription ends at once, as before, once no other group has push on.
+- **Why a day.** A key change follows a leave or removal within a pass or so. Over a day, the `DELETE`s are a few requests among everything else the relay sees in 1,440 minutes, not a mark at that moment. A day is still short beside the 7-day renewal and 30-day expiry, so the address doesn't sit under a group it left for long. A longer window would hide little more, since the relay sees the `DELETE`s whenever they go, and would leave the address under the old mailboxes longer.
+
+**Privacy.** Nothing new reaches the relay. It gets the same `DELETE`s, holding only `{"endpoint"}`, at a different time.
+
+### Accepted pilot risks added
+
+- **A day, not never.** The relay can still guess that an address left a group within a day of its key change. In a small pilot, with few key changes a day, that may still narrow it down. #356's option 3 or a longer window are the next steps, if a pilot finds this matters.
+- **An ended subscription can show.** When no other group has push on, the push service refuses the relay's next push to the address. The relay sees that only at a wake someone else's Proposal, Dispatch or nudge asks for. A leave and a key change ask none.
+- **One stray notification.** For up to a day, a wake under the old mailboxes, such as a nudge already scheduled, still reaches a phone whose subscription lives on for another group. It shows the one content-free notification.
