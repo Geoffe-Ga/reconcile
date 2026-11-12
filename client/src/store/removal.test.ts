@@ -27,6 +27,7 @@ import { COALITION_STATEMENT, seatSecret, testSecret } from '../test/coalitions'
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
+import { relayTook } from '../test/outbox';
 import { MINUTE_MS, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import { foldGroup } from './expiry';
@@ -281,7 +282,7 @@ describe('removing a member on this device (#115)', () => {
     await device.store.enqueue(groupId, last.record);
     await device.sync.syncOnce();
     const outbox = (await device.store.getGroup(groupId))?.outbox ?? [];
-    await device.store.markSent(groupId, outbox[0] ?? new Uint8Array());
+    await relayTook(device.store, groupId, outbox.slice(0, 1));
     await device.store.markLeaving(groupId, leave.record);
     await settleRemoval(device.store, groupId, () => TS);
     expect((await outboxOf(device.store, groupId)).map((e) => e?.type)).toEqual(['leave']);

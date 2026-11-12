@@ -286,31 +286,6 @@ describe('enqueueAll', () => {
   });
 });
 
-describe('markSent', () => {
-  it('removes only the first entry with those bytes', async () => {
-    const store = await openStore();
-    await store.addGroup(group);
-    for (const n of [1, 2, 1]) {
-      await store.enqueue(group.groupId, utf8(`{"n":${String(n)}}`));
-    }
-
-    await store.markSent(group.groupId, utf8('{"n":1}'));
-
-    expect((await store.getGroup(group.groupId))?.outbox.map(text)).toEqual(['{"n":2}', '{"n":1}']);
-  });
-
-  it('leaves the outbox alone when the entry is already gone', async () => {
-    const store = await openStore();
-    await store.addGroup(group);
-    await store.enqueue(group.groupId, utf8('{"n":1}'));
-
-    await store.markSent(group.groupId, utf8('{"n":10}'));
-    await store.markSent(group.groupId, utf8('{"n":'));
-
-    expect((await store.getGroup(group.groupId))?.outbox.map(text)).toEqual(['{"n":1}']);
-  });
-});
-
 describe('applyPull', () => {
   it('appends records whose id is new, in order, and saves the sync state', async () => {
     const store = await openStore();
@@ -368,6 +343,17 @@ describe('applyPull', () => {
     const saved = await store.getGroup(group.groupId);
     expect(saved?.log.map((record) => text(record.bytes))).toEqual(['{"n":1}']);
     expect(saved?.outbox.map(text)).toEqual(['{"n":2}', '{"n":1}']);
+  });
+
+  it('leaves the outbox alone when no entry has a sent record’s exact bytes (#349)', async () => {
+    const store = await openStore();
+    await store.addGroup(group);
+    await store.enqueue(group.groupId, utf8('{"n":1}'));
+
+    const sent = [utf8('{"n":10}'), utf8('{"n":')];
+    await store.applyPull(group.groupId, { ...pull([], 1), sent }, idOf);
+
+    expect((await store.getGroup(group.groupId))?.outbox.map(text)).toEqual(['{"n":1}']);
   });
 
   it('puts a record that reached last week’s mailbox late before the later records read first (#110)', async () => {
@@ -1464,7 +1450,6 @@ describe('every change', () => {
     const changes = [
       () => store.addGroup(group),
       () => store.enqueue(group.groupId, utf8('{"n":1}')),
-      () => store.markSent(group.groupId, utf8('{"n":1}')),
       () => store.applyPull(group.groupId, pull([], 1), idOf),
       () =>
         store.claimChat(group.groupId, utf8('{"claim":1}'), {
