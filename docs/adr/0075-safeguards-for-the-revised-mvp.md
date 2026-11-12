@@ -114,7 +114,7 @@ None. The founder answered both on 2026-11-09 (§3 and §6).
 
 ## Amendment (2026-11-11): A Key Change That Doesn't Open (#224)
 
-**Decided by an agent under the founder's standing "go with your recommendations" instruction. The founder hasn't reviewed it yet.**
+**Proposed by an agent under the founder's standing "go with your recommendations" instruction, and confirmed by the founder on 2026-11-12, as built ([#325](https://github.com/Geoffe-Ga/reconcile/issues/325)). The encrypt-with-hash construction stays in the outside review's scope ([#132](https://github.com/Geoffe-Ga/reconcile/issues/132)).**
 
 ### Context
 
