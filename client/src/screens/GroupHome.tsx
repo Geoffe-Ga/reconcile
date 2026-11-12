@@ -77,6 +77,11 @@ export interface GroupHomeProps {
    */
   readonly backupCard?: ReactNode;
   /**
+   * The quiet card of recovery shares this device holds here (#109), shown
+   * once each; none when absent, or once the group has dissolved (#108).
+   */
+  readonly recoveryCard?: ReactNode;
+  /**
    * The front door's applications (#121), under their own heading before
    * Invite people: given only while the door is open and this member may
    * invite.
@@ -184,7 +189,7 @@ interface OpenListsProps {
   readonly groupId: string;
   /** What goes right under Needs your vote: the current focus (#107). */
   readonly children?: ReactNode;
-  /** What goes right after the last list of open Proposals: the backup card (#78). */
+  /** What goes right after the last list of open Proposals: the quiet cards (#78, #109). */
   readonly after?: ReactNode;
   /** What waits on this person; nothing while they're leaving. */
   readonly needsYourVote: readonly Proposal[];
@@ -1023,7 +1028,10 @@ interface OpenSectionsProps {
   readonly removed: boolean;
   /** The current focus (#107), right under Needs your vote. */
   readonly children: ReactNode;
-  /** The backup card (#78), after the open Proposals; none in a read-only copy. */
+  /**
+   * The quiet cards, a backup (#78) and recovery shares held here (#109),
+   * after the open Proposals; none in a read-only copy.
+   */
   readonly after: ReactNode;
   /** Each coalition's name, for its motions' tags (#120). */
   readonly names?: CoalitionNames | undefined;
@@ -1099,9 +1107,26 @@ function HomeTop({ props, removed, readOnly }: HomeTopProps) {
 }
 
 /**
+ * The quiet cards a group that goes on may show: a backup (#78), then the
+ * recovery shares this device holds there (#109). None once it has
+ * dissolved: no backup file carries its read-only copy, and no share held
+ * there can go back to anyone (#108).
+ */
+function QuietCards({ props }: { readonly props: GroupHomeProps }) {
+  if (props.state.dissolved !== null) return null;
+  return (
+    <>
+      {props.backupCard}
+      {props.recoveryCard}
+    </>
+  );
+}
+
+/**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
- * group's current focus (#107), the other open Proposals and the backup card
- * under them (#78), the latest Dispatch (#112), the group's Document, the
+ * group's current focus (#107), the other open Proposals and, under them, the
+ * backup card (#78) and the recovery shares held here (#109), the latest
+ * Dispatch (#112), the group's Document, the
  * Decided list of closed ones, its Coalitions (#114), its people with their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
@@ -1138,8 +1163,9 @@ export function GroupHome(props: GroupHomeProps) {
           now={now}
           leaving={leaving}
           removed={removed}
-          // No backup file carries a dissolved group's read-only copy, nor a removed one's, so none is suggested (#108, #115).
-          after={dissolved === null ? props.backupCard : null}
+          // No backup file carries a dissolved group's read-only copy, nor a removed one's, so
+          // none is suggested, and no share held there goes back to anyone (#108, #109, #115).
+          after={<QuietCards props={props} />}
           names={props.coalitionNames}
         >
           <Focus state={state} me={me} readOnly={readOnly} />

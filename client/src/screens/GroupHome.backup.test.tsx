@@ -1,6 +1,7 @@
 /**
- * Group home's slot for the backup card (#78): right after the open Proposals, ahead of the focus
- * when it would follow them (#107), and before the Document.
+ * Group home's slots for the backup card (#78) and the recovery card (#109):
+ * right after the open Proposals, ahead of the focus when it would follow them
+ * (#107), and before the Document.
  */
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -68,5 +69,29 @@ describe('GroupHome', () => {
     renderHome();
 
     expect(screen.queryByText('The backup card')).not.toBeInTheDocument();
+  });
+
+  it('shows the recovery card it’s given after the backup card, before the Document (#109)', () => {
+    renderHome({ backupCard: <p>The backup card</p>, recoveryCard: <p>The recovery card</p> });
+
+    const backup = screen.getByText('The backup card');
+    const recovery = screen.getByText('The recovery card');
+    const documentSection = screen.getByRole('region', { name: 'Document' });
+    expect(
+      backup.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      recovery.compareDocumentPosition(documentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('shows no recovery card once the group has dissolved (#108, #109)', () => {
+    const { state } = testGroup();
+    renderHome({
+      state: { ...state, dissolved: { received: START_MINUTE, wipe: false } },
+      recoveryCard: <p>The recovery card</p>,
+    });
+
+    expect(screen.queryByText('The recovery card')).not.toBeInTheDocument();
   });
 });

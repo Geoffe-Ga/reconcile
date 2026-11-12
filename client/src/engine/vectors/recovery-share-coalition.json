@@ -1,0 +1,72 @@
+{
+  "kind": "coalition",
+  "vectors": [
+    {
+      "name": "recovery-share-coalition: a coalition's log takes no recovery-share, even from a participant, since a share travels only in a group the person shares with their contact (#109)",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "level": "member",
+                "kx": "&kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "recovery-share",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": { "box": { "$base64url": [6, 6, 6, 6, 6, 6, 6, 6, 6] } }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375020,
+      "expect": {
+        "coalition": {
+          "members": [{ "author": "%kim", "seq": 2 }],
+          "recoveryShares": [],
+          "ignored": [{ "seq": 3, "id": "@3" }]
+        }
+      },
+      "unchangedWithout": { "coalition": [3] }
+    }
+  ]
+}

@@ -93,6 +93,8 @@ describe('vector files', () => {
       'priority-rank.json',
       'priority-suspend.json',
       'proposal-number.json',
+      'recovery-share-coalition.json',
+      'recovery-share.json',
       'removal-bar.json',
       'removal-priority.json',
       'removal-proposal.json',
@@ -206,6 +208,8 @@ describe('vector files', () => {
       'fold',
       'tally',
       'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -490,6 +494,9 @@ describe('vector files', () => {
     'after the group turns an off-Proposal down, a narrow 30 × 1,440 minutes later is ignored and one a minute after that holds',
     'a narrow from a steward facing an open recall is ignored',
     "a steward closes the front door at once the same way, and the chat bot isn't touched",
+    'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
     'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
     'priority-options: a priority vote with 7 options opens',
     'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
@@ -782,9 +789,13 @@ describe('fold vectors', () => {
     expect(state).toMatchObject(resolve(vector.expect, ids) as object);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
-    expect({ ...fold(kept, vector.relayNow, [], cleared), ignored: [] }).toEqual({
-      ...state,
-      ignored: [],
-    });
+    // `ignored` always differs, and so may whatever `unchangedExcept` names (#109's recoveryShares).
+    const apart = (folded: object): object =>
+      Object.fromEntries(
+        Object.entries(folded).filter(
+          ([key]) => key !== 'ignored' && !(vector.unchangedExcept ?? []).includes(key),
+        ),
+      );
+    expect(apart(fold(kept, vector.relayNow, [], cleared))).toEqual(apart(state));
   });
 });
