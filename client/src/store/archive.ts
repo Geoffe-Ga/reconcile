@@ -16,12 +16,15 @@
  * and note `ballotExpiryDays` after it, keeping each outcome and its totals
  * from this device's own tally. That clearing is a device-local stand-in for
  * #111's expiry, which can't run here: it needs a `result` in the log, and a
- * dissolved group posts nothing.
+ * dissolved group posts nothing. A removed member's copy (#115), which no
+ * longer syncs, clears the same way, `ballotExpiryDays` after the `remove`,
+ * removal responses included.
  */
 import { can, isSuspended } from '../engine/capabilities';
 import { clearMinute, dissolveDue, wipeMinute } from '../engine/dissolve';
 import { parseRecord, signEvent } from '../engine/event';
 import { type GroupState, proposalTally } from '../engine/fold';
+import { removedClearMinute, removedFrom } from '../engine/removal';
 import type { ClearedArchive, Group, Store } from './db';
 import { foldGroup } from './expiry';
 
@@ -72,33 +75,51 @@ export async function settleDissolve(
 
 /**
  * The state to keep once an archive's ballots and notes are cleared: every
- * Proposal with no ballot, and each decided one's totals and outcome from
- * this device's tally. `at` is the device clock in ms.
+ * Proposal with no ballot, no removal response, which expires with them
+ * (#111, #115), and each decided one's totals and outcome from this device's
+ * tally. `at` is the device clock in ms.
  */
 export function clearedArchive(state: GroupState, at: number): ClearedArchive {
   const decided = state.proposals.filter((proposal) => proposal.final);
   const tallies = Object.fromEntries(decided.map((p) => [p.id, proposalTally(p)]));
   const proposals = state.proposals.map((proposal) => ({ ...proposal, ballots: [] }));
-  return { at, state: { ...state, proposals, ignored: [] }, tallies };
+  return { at, state: { ...state, proposals, responses: [], ignored: [] }, tallies };
+}
+
+/**
+ * The relay minute an unwiped archive's ballots and notes clear at, by the
+ * device clock: `ballotExpiryDays` after the dissolve (#108), or after the
+ * `remove` that took this device's member out (#115). Null for a group that
+ * is neither.
+ */
+function clearMinuteOf(state: GroupState, me: string): number | null {
+  if (state.dissolved !== null) return clearMinute(state.rules, state.dissolved);
+  const removal = removedFrom(state, me);
+  return removal === undefined ? null : removedClearMinute(state.rules, removal);
 }
 
 /**
  * At launch (#108): for each dissolved archive not yet cleared, erases it
  * once the device clock reaches a week after the dissolve's receipt when its
  * vote chose to wipe, and otherwise clears its ballots and notes once it
- * reaches `ballotExpiryDays` after it. `clock` is the device clock in ms.
+ * reaches `ballotExpiryDays` after it. A removed member's copy (#115) clears
+ * the same way, `ballotExpiryDays` after the `remove`: it no longer syncs, so
+ * #111's expiry, which runs in relay time, never reaches it. `clock` is the
+ * device clock in ms.
  */
 export async function sweepArchives(store: Store, clock: () => number = Date.now): Promise<void> {
   for (const group of await store.listGroups()) {
     if (group.archived === undefined || group.archived.cleared !== undefined) continue;
     const state = foldGroup(group);
-    const { dissolved } = state;
-    if (dissolved === null) continue;
     const now = clock();
     const minute = Math.floor(now / MINUTE_MS);
-    if (dissolved.wipe) {
+    const { dissolved } = state;
+    if (dissolved?.wipe === true) {
       if (minute >= wipeMinute(dissolved)) await store.purgeGroup(group.groupId);
-    } else if (minute >= clearMinute(state.rules, dissolved)) {
+      continue;
+    }
+    const clearAt = clearMinuteOf(state, group.me.author);
+    if (clearAt !== null && minute >= clearAt) {
       await store.clearArchive(group.groupId, clearedArchive(state, now));
     }
   }

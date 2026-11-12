@@ -7,6 +7,7 @@ import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { groupLog } from '../test/votes';
 import { DissolveComposer, type DissolveComposerProps } from './DissolveComposer';
 
@@ -22,7 +23,7 @@ type OnPropose = DissolveComposerProps['onPropose'];
 interface Options {
   readonly me?: string;
   readonly leaving?: boolean;
-  readonly outcome?: SendOutcome | Error;
+  readonly outcome?: SendOutcome | Error | Promise<SendOutcome>;
 }
 
 function renderComposer(state: GroupState, options: Options = {}) {
@@ -141,6 +142,21 @@ describe('DissolveComposer', () => {
       await screen.findByText('This is too long to send. Shorten it, then try again.'),
     ).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Why' })).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('proposes once when it is tapped again while it proposes and the save fails (#193)', async () => {
+    const proposing = held<SendOutcome>();
+    const { user, onPropose } = renderComposer(group().state(), { outcome: proposing.promise });
+    await fill(user, 'Dissolve', 'Done.');
+    const propose = screen.getByRole('button', { name: 'Propose dissolving' });
+    await user.click(propose);
+    expect(propose).toBeDisabled();
+    await user.click(propose);
+    proposing.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(propose).toBeEnabled();
+    expect(onPropose).toHaveBeenCalledTimes(1);
   });
 });
 

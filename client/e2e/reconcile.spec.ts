@@ -18,51 +18,22 @@
  * both see that the coalition passed it, to take effect a week after its
  * deadline. Its title, why and text are canaries too.
  *
- * Admitting a third group, and the coalition's text changing once a pass is
- * final, aren't here: each is final only a week after its deadline (#100),
- * and these specs never move the clock, so `src/app/reconcileFlow.test.tsx`
- * and `src/screens/coalitionLoop.test.tsx` cover them on a fake relay.
+ * Admitting a third group isn't here: it is final only a week after its
+ * deadline (#100), so `src/app/reconcileFlow.test.tsx` covers it on a fake
+ * relay. `coalition.spec.ts` (#127) sees a coalition's text change once a
+ * pass is final, and a change fail in one group.
  */
-import { randomBytes } from 'node:crypto';
+import { expect, expectAccessible, heading, test } from './support/fixtures';
+import { bringCard, coalitionKeys, makeCard, type NewCoalition } from './support/coalition';
+import { type Canary, describeFinding, putControl, scan, tag, textCanary } from './support/scan';
+import { found, vote } from './support/steps';
+import { storedGroups } from './support/stored';
 
-import {
-  acceptNotice,
-  expect,
-  expectAccessible,
-  heading,
-  type Person,
-  pick,
-  test,
-  visit,
-} from './support/fixtures';
-import { type Canary, describeFinding, keyCanaries, scan, textCanary } from './support/scan';
-import { derive, groupMailboxes, storedGroups } from './support/stored';
+/** Each founding group's one Document. */
+const DOCUMENT = { title: 'House rules', atoms: ['Quiet hours start at ten.'] };
 
-/** A random tag, so no two runs plant the same canaries. */
-function tag(): string {
-  return randomBytes(8).toString('hex');
-}
-
-/** Founds `group` as `founder` from a fresh profile's first run, and waits for its home. */
-async function found(person: Person, group: string, founder: string): Promise<void> {
-  const { page } = person;
-  await page.goto('/#/create');
-  await acceptNotice(person);
-  await page.getByRole('textbox', { name: 'Group name' }).fill(group);
-  await page.getByRole('textbox', { name: 'Your name' }).fill(founder);
-  await page.getByRole('textbox', { name: 'Document title' }).fill('House rules');
-  await page.getByRole('textbox', { name: 'Document text' }).fill('Quiet hours start at ten.');
-  await page.getByRole('button', { name: 'Create group' }).click();
-  await expect(heading(page, group)).toBeVisible();
-}
-
-/** Scores the open Proposal 4 and sends the ballot. */
-async function passes(person: Person): Promise<void> {
-  const { page } = person;
-  await pick(page, '4 · Strongly supportive');
-  await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
-}
+/** The pill both groups pass with. */
+const FOUR = '4 · Strongly supportive';
 
 test('two groups reconcile by a card, both pass, and the relay keeps none of it readable', async ({
   openProfile,
@@ -83,72 +54,47 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
     motionText: `CANARY-MOTION-TEXT-${run}`,
   };
   const control = `CONTROL-${tag()}`;
+  const coalition: NewCoalition = {
+    name: words.coalition,
+    statement: [words.statement, 'We meet on the first Sunday.'],
+    why: words.why,
+    yourName: words.anaName,
+  };
   const ana = await openProfile('Ana');
   const ben = await openProfile('Ben');
   let cardLink = '';
 
   await test.step('the control: one readable 1,024-byte blob, PUT straight to a throwaway mailbox', async () => {
-    const blob = Buffer.alloc(1024);
-    blob.write(control, 100, 'utf8');
-    const throwaway = randomBytes(32).toString('base64url');
-    const response = await request.put(`/v1/mailbox/${throwaway}?ttl_days=1`, {
-      data: blob,
-      headers: { 'Content-Type': 'application/octet-stream' },
-    });
-    expect(response.status()).toBe(201);
+    await putControl(request, control);
   });
 
   await test.step('Ana founds Riverside, and Ben founds Oak St', async () => {
-    await found(ana, words.riverside, 'Ana');
-    await found(ben, words.oak, 'Ben');
+    await found(ana, { ...DOCUMENT, name: words.riverside, founder: 'Ana' });
+    await found(ben, { ...DOCUMENT, name: words.oak, founder: 'Ben' });
   });
 
   await test.step('Ana makes a card from Riverside’s home, and its link shows once the relay has it', async () => {
-    const { page } = ana;
-    const coalitions = page.getByRole('region', { name: 'Coalitions' });
-    await coalitions.getByRole('link', { name: /Reconcile with another group/ }).click();
-    await expect(heading(page, 'Reconcile with another group')).toBeVisible();
-    await expectAccessible(ana, 'Reconcile with another group');
-    await page.getByRole('textbox', { name: 'The coalition’s name' }).fill(words.coalition);
-    await page
-      .getByRole('textbox', { name: 'Its first statement' })
-      .fill(`${words.statement}\n\nWe meet on the first Sunday.`);
-    await page.getByRole('textbox', { name: 'Why' }).fill(words.why);
-    await page.getByRole('textbox', { name: 'Your name in the coalition' }).fill(words.anaName);
-    await page.getByRole('button', { name: 'Make the card' }).click();
-    const link = page.getByRole('textbox', { name: 'Card link' });
-    await expect(link).toHaveValue(/^https?:\/\/[^#]+\/#reconcile\/[A-Za-z0-9_-]{43}$/);
-    await expect(page.getByText('Anyone who opens this link in the next 2 days')).toBeVisible();
-    await expectAccessible(ana, 'the card’s link');
-    cardLink = await link.inputValue();
+    cardLink = await makeCard(ana, coalition);
   });
 
   await test.step('Ben opens the card, sees it as plain text, and brings it to Oak St', async () => {
-    const { page } = ben;
-    await visit(page, cardLink);
-    await expect(heading(page, words.coalition)).toBeVisible();
-    await expect(page).toHaveURL(/#\/card$/);
-    await expect(page.getByText(words.statement)).toBeVisible();
-    await expect(page.getByText(`From ${words.riverside}`)).toBeVisible();
-    const picker = page.getByRole('radiogroup', { name: 'Your group' });
-    await expect(picker.getByRole('radio', { name: words.oak })).toBeChecked();
-    await expectAccessible(ben, 'Bring a card');
-    await page.getByRole('textbox', { name: 'Your name in the coalition' }).fill(words.benName);
-    await page.getByRole('button', { name: 'Bring to my group' }).click();
-    await expect(heading(page, `Reconcile into ${words.coalition}`)).toBeVisible();
-    const statement = page.getByRole('region', { name: 'The coalition’s statement' });
-    await expect(statement).toContainText(`Reconcile with ${words.riverside}`);
+    await bringCard(ben, cardLink, {
+      coalition,
+      from: words.riverside,
+      to: words.oak,
+      yourName: words.benName,
+    });
   });
 
   await test.step('each group passes its own reconcile Proposal', async () => {
-    await passes(ben);
+    await vote(ben, FOUR);
     const { page } = ana;
     await page.getByRole('link', { name: 'Open your group’s Proposal' }).click();
     await expect(heading(page, `Reconcile into ${words.coalition}`)).toBeVisible();
     await expect(page.getByRole('region', { name: 'The coalition’s statement' })).toContainText(
       `Reconcile with ${words.oak}`,
     );
-    await passes(ana);
+    await vote(ana, FOUR);
   });
 
   await test.step('both group homes list the coalition as formed, with both groups', async () => {
@@ -199,7 +145,7 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
       '0 of 2 groups have passed.',
     );
     await expectAccessible(ben, 'a coalition vote');
-    await passes(ben);
+    await vote(ben, FOUR);
   });
 
   await test.step('once Riverside passes it too, the coalition has passed it, to take effect in a week', async () => {
@@ -209,7 +155,7 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
       .getByRole('region', { name: 'Needs your vote' })
       .getByRole('link', { name: new RegExp(words.motionTitle) })
       .click();
-    await passes(ana);
+    await vote(ana, FOUR);
     const result = page.getByRole('region', { name: 'The coalition’s result' });
     await expect(result).toContainText('The coalition passed this. It takes effect on', {
       timeout: 45_000,
@@ -219,12 +165,8 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
 
   const held = [...(await storedGroups(ana.page)), ...(await storedGroups(ben.page))];
   const entries = held.filter((group) => group.kind === 'coalition');
-  const [entry] = entries;
-  if (entry === undefined || entries.length !== 2) {
-    throw new Error('Expected each device to hold the one coalition.');
-  }
-  const secret = Uint8Array.from(entry.secret);
-  const seed = Buffer.from(new URL(cardLink).hash.slice('#reconcile/'.length), 'base64url');
+  expect(entries, 'each device holds the one coalition').toHaveLength(2);
+  const keys = coalitionKeys(entries, cardLink);
 
   await test.step('the relay stops, and nothing it kept holds a canary', async () => {
     for (const { page } of [ana, ben]) await page.context().setOffline(true);
@@ -232,24 +174,16 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
     const files = [relay.db, `${relay.db}-wal`, `${relay.db}-shm`, relay.log];
     const canaries: Canary[] = [
       ...Object.entries(words).map(([field, text]) => textCanary(field, text)),
-      ...keyCanaries('the coalition secret', secret),
-      ...keyCanaries('the coalition’s seal key', derive(secret, 'reconcile/v1/seal-key')),
-      ...keyCanaries('the card seed', seed),
-      ...keyCanaries('the card key', derive(seed, 'reconcile/v1/card-key')),
-      ...entries.flatMap((each, i) => [
-        ...keyCanaries(`coalition key ${String(i + 1)}`, Uint8Array.from(each.signingKey)),
-        ...keyCanaries(`coalition id ${String(i + 1)}`, Buffer.from(each.groupId, 'base64url')),
-      ]),
+      ...keys.canaries,
     ];
     expect(scan(files, canaries).map(describeFinding)).toEqual([]);
 
     // The controls: the scan reads what the relay stored.
     const controls = scan(files, [textCanary('control', control)]);
     expect(controls.map(({ encoding }) => encoding)).toContain('bytes');
-    const ids = groupMailboxes(secret).map((id) => textCanary('the coalition’s mailbox id', id));
+    const ids = keys.mailboxes.map((id) => textCanary('the coalition’s mailbox id', id));
     expect(scan(files, ids).map(({ encoding }) => encoding)).toContain('bytes');
-    const card = derive(seed, 'reconcile/v1/card-mailbox').toString('base64url');
-    const cardId = scan(files, [textCanary('the card’s mailbox id', card)]);
+    const cardId = scan(files, [textCanary('the card’s mailbox id', keys.cardMailbox)]);
     expect(cardId.map(({ encoding }) => encoding)).toContain('bytes');
   });
 });

@@ -13,6 +13,7 @@ import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { groupLog } from '../test/votes';
 import { SendDispatch } from './SendDispatch';
 
@@ -23,12 +24,16 @@ interface Options {
   readonly me?: string;
   readonly leaving?: boolean;
   readonly fails?: boolean;
+  /** What every send returns, in place of `fails`. */
+  readonly sending?: Promise<void>;
 }
 
 function renderSend(state: GroupState, options: Options = {}) {
-  const { me = 'ana', leaving = false, fails = false } = options;
-  const onSend = vi.fn<(values: DispatchValues) => Promise<void>>(() =>
-    fails ? Promise.reject(new Error('IndexedDB refused the write.')) : Promise.resolve(),
+  const { me = 'ana', leaving = false, fails = false, sending } = options;
+  const onSend = vi.fn<(values: DispatchValues) => Promise<void>>(
+    () =>
+      sending ??
+      (fails ? Promise.reject(new Error('IndexedDB refused the write.')) : Promise.resolve()),
   );
   render(<SendDispatch state={state} me={authorOf(me)} leaving={leaving} onSend={onSend} />);
   return { user: userEvent.setup(), onSend };
@@ -130,6 +135,20 @@ describe('SendDispatch', () => {
     expect(submit()).toBeEnabled();
     await user.click(submit());
     expect(onSend).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends once when it is tapped again while it sends and the save fails (#193)', async () => {
+    const sending = held<undefined>();
+    const { user, onSend } = renderSend(group().state(), { sending: sending.promise });
+    await fill(user, 'Meet on Sunday');
+    await user.click(submit());
+    expect(submit()).toBeDisabled();
+    await user.click(submit());
+    sending.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(submit()).toBeEnabled();
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it.each([
