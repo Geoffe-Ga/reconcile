@@ -14,6 +14,7 @@ import { type EventDraft, parseRecord } from '../engine/event';
 import { fold, type GroupState, keyHolders, type LogRecord } from '../engine/fold';
 import { utf8 } from '../test/bytes';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
+import { groupLog } from '../test/votes';
 import type { Group } from './db';
 import {
   adoptionFor,
@@ -65,7 +66,11 @@ class Log {
 }
 
 /** `name`'s device holding `log`, at epoch `epoch`, with its keys. */
-function device(name: string, log: Log, extra: Partial<Group> = {}): Group {
+function device(
+  name: string,
+  log: { readonly group: string; readonly records: readonly LogRecord[] },
+  extra: Partial<Group> = {},
+): Group {
   return {
     groupId: log.group,
     secret: newGroupSecret(),
@@ -149,6 +154,21 @@ describe('the duty', () => {
     expect(hasDuty(device('ben', Log.founded('ben')), Log.founded('ben').state())).toBe(false);
     const rotated = afterRotation();
     expect(hasDuty(device('ben', rotated), rotated.state())).toBe(false);
+  });
+
+  it('never falls to a member a removal has passed against, though no remove has landed yet (#372)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal', 'Kim'] });
+    const removal = log.proposeRemoval('Ana', 'Kim');
+    for (const voter of ['Ana', 'Ben', 'Cal']) log.vote(voter, removal, 4);
+    log.minute += 1;
+    log.leave('Cal');
+    const state = log.state();
+    expect([state.rotationDue, state.removals.map((r) => r.member)]).toEqual([
+      true,
+      [authorOf('kim')],
+    ]);
+    expect(hasDuty(device('ben', log), state)).toBe(true);
+    expect(hasDuty(device('kim', log), state)).toBe(false);
   });
 
   it('never falls to a read-only archive, even with a key change due (#108)', () => {

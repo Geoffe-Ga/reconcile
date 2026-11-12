@@ -14,9 +14,9 @@ import type {
   ResultBody,
   Score,
 } from '../engine/event';
-import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import { fold, type GroupState, keyHolders, type LogRecord } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
-import { authorOf, signedAs } from './keys';
+import { authorOf, signedAs, testKx } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
 const [, , CREATING] = LEVELS;
@@ -61,11 +61,22 @@ export interface LogBuilder {
   /** Adds `name`'s leave. */
   leave(name: string): void;
   /**
-   * Adds `name`'s key change into the next epoch (#98), wrapped to nobody, as
-   * no test member holds an encryption key; later records are read from that
-   * epoch's mailboxes.
+   * Adds `name`'s key change into the next epoch (#98), returning its id,
+   * wrapped to each current member with an encryption key (none unless the
+   * group starts with `kx`), in bytes the fold never opens; later records are
+   * read from that epoch's mailboxes.
    */
-  rotate(name: string): void;
+  rotate(name: string): string;
+  /**
+   * Adds `name`'s `unwrap-failed` or `key-taken` naming the key change
+   * `rotation` (#224), read from `epoch`'s mailbox.
+   */
+  keyCheck(
+    name: string,
+    type: 'unwrap-failed' | 'key-taken',
+    rotation: string,
+    epoch: number,
+  ): string;
   /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
   /**
@@ -155,6 +166,8 @@ export interface GroupStart {
   /** The Documents genesis founds (#92); one, House rules with `atoms`, when left out. */
   readonly documents?: readonly FoundingDocument[];
   readonly chat?: string;
+  /** Whether the founder and everyone who joins carry an encryption key (#98); nobody does when left out. */
+  readonly kx?: boolean;
 }
 
 /** Starts a log with a genesis by `founder` (default Ana), then a join for each other member. */
@@ -168,23 +181,26 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     records,
     epoch: 0,
   };
-  const add = (name: string, draft: EventDraft): string => {
+  const add = (name: string, draft: EventDraft, from = builder.epoch): string => {
     const { record, id } = signedAs(name.toLowerCase(), draft);
-    const epoch = builder.epoch === 0 ? {} : { epoch: builder.epoch };
+    const epoch = from === 0 ? {} : { epoch: from };
     records.push({ seq: records.length + 1, received: builder.minute, bytes: record, ...epoch });
     return id;
   };
+  /** `name`'s encryption key, when the group starts with `kx`. */
+  const kxOf = (name: string) => (start.kx === true ? { kx: testKx(name.toLowerCase()).kx } : {});
   const body = {
     name: 'Riverside Tenants',
     founder,
     documents: start.documents ?? [{ title: 'House rules', atoms }],
     ...(chat === undefined ? {} : { chat }),
+    ...kxOf(founder),
   };
   builder.group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   const { group } = builder;
   const log: LogBuilder = Object.assign(builder, {
     join(name: string, level: Level = CREATING) {
-      add(name, { type: 'join', group, ts: 0, body: { name, level } });
+      add(name, { type: 'join', group, ts: 0, body: { name, level, ...kxOf(name) } });
     },
     level(name: string, level: string) {
       add(name, { type: 'level', group, ts: 0, body: { level } });
@@ -195,8 +211,14 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     rotate(name: string) {
       const epoch = builder.epoch + 1;
       const commit = 'rotation-commit-of-this-test-logAAAAAAAAAAA';
-      add(name, { type: 'key-rotate', group, ts: 0, body: { epoch, commit, wraps: {} } });
+      const holders = keyHolders(fold(records, builder.minute));
+      const wraps = Object.fromEntries(holders.map((m) => [m.author, 'AA']));
+      const id = add(name, { type: 'key-rotate', group, ts: 0, body: { epoch, commit, wraps } });
       builder.epoch = epoch;
+      return id;
+    },
+    keyCheck(name: string, type: 'unwrap-failed' | 'key-taken', rotation: string, epoch: number) {
+      return add(name, { type, group, ts: 0, body: { rotation } }, epoch);
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {
