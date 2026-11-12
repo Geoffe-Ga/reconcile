@@ -149,10 +149,11 @@ describe('fold', () => {
     expect(state.founding).toEqual({
       received: R,
       author: authorOf('ana'),
+      // Every founded section is ordinary (#116).
       atoms: [
-        { id: `${group}.0`, documentId: group, text: 'A0' },
-        { id: `${group}.1`, documentId: group, text: 'A1' },
-        { id: `${group}:1.0`, documentId: `${group}:1`, text: 'B0' },
+        { id: `${group}.0`, documentId: group, text: 'A0', class: 'ordinary' },
+        { id: `${group}.1`, documentId: group, text: 'A1', class: 'ordinary' },
+        { id: `${group}:1.0`, documentId: `${group}:1`, text: 'B0', class: 'ordinary' },
       ],
     });
   });
@@ -164,7 +165,14 @@ describe('fold', () => {
     expect(founding).toEqual({
       received: R,
       author: null,
-      atoms: [{ id: `${coalition}.0`, documentId: coalition, text: 'We keep the river clean.' }],
+      atoms: [
+        {
+          id: `${coalition}.0`,
+          documentId: coalition,
+          text: 'We keep the river clean.',
+          class: 'ordinary',
+        },
+      ],
     });
   });
 

@@ -5,7 +5,7 @@
  * Under the Document's title, every change that passed in it, newest first:
  * each row its Proposal's title, what it did ("Changed ‘Quiet hours
  * start…’", "Added a section", "Removed ‘Bins go out…’", "Moved after ‘Quiet
- * hours start…’", #103) and the day it was
+ * hours start…’", #103, "Made eternal", #116) and the day it was
  * decided, ending with the Document's beginning, its founding text or the
  * Proposal that started it. Each change opens its section's history in the
  * side sheet, a removed section's included. It's read from the log on this
@@ -14,7 +14,7 @@
 import { Button } from 'react-aria-components';
 
 import { documentNamed } from '../app/documentLines';
-import { movedLine } from '../app/historyLines';
+import { keptTextLine } from '../app/historyLines';
 import { groupHistory, type HistorySource } from '../app/historySource';
 import { messages } from '../app/messages';
 import type { Route } from '../app/router';
@@ -42,7 +42,8 @@ function changeWords(change: Change): string | null {
     case 'removed':
       return words.removed(firstWords(change.quote));
     case 'moved':
-      return movedLine(change.to);
+    case 'class-changed':
+      return keptTextLine(change);
   }
 }
 

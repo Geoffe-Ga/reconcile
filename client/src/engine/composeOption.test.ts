@@ -32,6 +32,12 @@ describe('optionFor', () => {
     expect(optionFor({ versions: [1, 2, 3, 4] })).toBe('ballot-full');
   });
 
+  it('says a section’s protection is being decided while a class Proposal is open on it, whatever its ballot holds (#116)', () => {
+    expect(optionFor({ versions: [1], target: { kind: 'class' } })).toBe('protecting');
+    expect(optionFor({ versions: [], target: { kind: 'class' } })).toBe('protecting');
+    expect(optionFor({ versions: [1, 2, 3], target: { kind: 'class' } })).toBe('protecting');
+  });
+
   it('says a section is moving while a move is open on it, whatever its ballot holds (#103)', () => {
     expect(optionFor({ versions: [1], target: { kind: 'move' } })).toBe('moving');
     expect(optionFor({ versions: [1], target: { kind: 'edit' } })).toBe('add-version');
@@ -75,6 +81,17 @@ describe('composeOption', () => {
     expect(composeOption(log.state(), `${log.group}.1`)).toBe('propose');
     log.vote('Ana', move, 4);
     log.vote('Ben', move, 4);
+    expect(composeOption(log.state(), atom)).toBe('propose');
+  });
+
+  it('says a section with an open class Proposal is being protected, takes no version, and is free once it closes (#116)', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const atom = `${log.group}.0`;
+    const protect = log.protect('Ana', atom, 'entrenched');
+    expect(composeOption(log.state(), atom)).toBe('protecting');
+    expect(composeOption(log.state(), `${log.group}.1`)).toBe('propose');
+    log.vote('Ana', protect, 4);
+    log.vote('Ben', protect, 4);
     expect(composeOption(log.state(), atom)).toBe('propose');
   });
 

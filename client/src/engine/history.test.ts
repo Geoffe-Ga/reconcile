@@ -468,6 +468,87 @@ describe('describeChange', () => {
   });
 });
 
+describe('a passed class change (#116)', () => {
+  it('describes what a class Proposal gives its section, or nothing once the section had gone', () => {
+    const log = threeOfUs({ atoms: ['One.', 'Two.', 'Three.'] });
+    const { group } = log;
+    const entrench = log.protect('Ana', `${group}.0`, 'entrenched');
+    const eternal = log.protect('Ana', `${group}.1`, 'eternal');
+    const state = log.state();
+    const passed = (id: string, before: string | null) => {
+      const proposal = proposalIn(state, id);
+      const outcome = { kind: 'pass', version: id, bar: proposal.outcome.bar } as const;
+      const held = new Map(before === null ? [] : [[proposal.atom, before]]);
+      return describeChange({ ...proposal, outcome }, held);
+    };
+    expect(passed(entrench, 'One.')).toEqual({ kind: 'class-changed', to: 'entrenched' });
+    expect(passed(eternal, 'Two.')).toEqual({ kind: 'class-changed', to: 'eternal' });
+    expect(passed(eternal, null)).toBeNull();
+  });
+
+  /** Three sections: Quiet hours is entrenched, then made eternal; Bins is entrenched, then lifted. */
+  function classes() {
+    const log = threeOfUs({
+      atoms: ['Quiet hours start at ten.', 'Bins go out on Tuesday.', 'Guests leave by 11pm.'],
+    });
+    const { group } = log;
+    const steps = [
+      log.protect('Ana', `${group}.0`, 'entrenched', { title: 'Protect quiet hours' }),
+    ];
+    everyone(log, steps[0] ?? '', 4);
+    log.minute += 5;
+    steps.push(log.protect('Ben', `${group}.0`, 'eternal', { title: 'Quiet hours forever' }));
+    everyone(log, steps[1] ?? '', 4);
+    log.minute += 5;
+    steps.push(log.protect('Cal', `${group}.1`, 'entrenched', { title: 'Protect bins' }));
+    everyone(log, steps[2] ?? '', 4);
+    log.minute += 5;
+    steps.push(log.protect('Cal', `${group}.1`, 'ordinary', { title: 'Bins are ours' }));
+    everyone(log, steps[3] ?? '', 4);
+    const [entrench, eternal, bins, lift] = steps;
+    return { group, entrench, eternal, bins, lift, state: log.state(log.minute + 1) };
+  }
+
+  it('lists each class change in its section’s history, newest first, with the text it still reads', () => {
+    const { group, entrench, eternal, state } = classes();
+    expect(state.atoms.map((atom) => [atom.id, atom.class])).toEqual([
+      [`${group}.0`, 'eternal'],
+      [`${group}.1`, 'ordinary'],
+      [`${group}.2`, 'ordinary'],
+    ]);
+    const passed = sectionHistory(state, `${group}.0`).passed;
+    expect(passed.map((entry) => [entry.proposalId, entry.change, entry.text])).toEqual([
+      [eternal, { kind: 'class-changed', to: 'eternal' }, 'Quiet hours start at ten.'],
+      [entrench, { kind: 'class-changed', to: 'entrenched' }, 'Quiet hours start at ten.'],
+      [null, { kind: 'founded' }, 'Quiet hours start at ten.'],
+    ]);
+    expect(passed[0]).toMatchObject({ title: 'Quiet hours forever', author: authorOf('ben') });
+  });
+
+  it('logs each class change in its Document, newest first, naming the section it opens', () => {
+    const { group, entrench, eternal, bins, lift, state } = classes();
+    expect(changeLog(state, group).map((row) => [row.proposalId, row.change, row.section])).toEqual(
+      [
+        [lift, { kind: 'class-changed', to: 'ordinary' }, `${group}.1`],
+        [bins, { kind: 'class-changed', to: 'entrenched' }, `${group}.1`],
+        [eternal, { kind: 'class-changed', to: 'eternal' }, `${group}.0`],
+        [entrench, { kind: 'class-changed', to: 'entrenched' }, `${group}.0`],
+        [null, { kind: 'founded' }, null],
+      ],
+    );
+  });
+
+  it('carries no voter’s name or note, only the author of the class change', () => {
+    const { group, state } = classes();
+    // Quiet hours forever: Ben's class change, which Ana, Ben and Cal scored.
+    const [forever] = sectionHistory(state, `${group}.0`).passed;
+    const shown = JSON.stringify([forever, changeLog(state, group)]);
+    expect(shown).toContain(authorOf('ben'));
+    expect(shown).not.toContain(authorOf('ana'));
+    expect(shown).not.toContain(authorOf('cal'));
+  });
+});
+
 describe('a passed move in history and the change log (#103)', () => {
   /** Three sections: Guests moves after Quiet hours, then Bins moves to the top. */
   function moves() {

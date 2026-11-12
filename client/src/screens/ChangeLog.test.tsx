@@ -140,6 +140,38 @@ describe('GroupChangeLog', () => {
     expect(screen.getByRole('dialog', { name: messages.history.title(1) })).toBeVisible();
   });
 
+  it('says what each passed class change gave its section: entrenched, made eternal or lifted (#116)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'], atoms: ['Quiet hours.', 'Bins.', 'Guests.'] });
+    const { group } = log;
+    const steps: [string, string, string][] = [
+      ['0', 'entrenched', 'Protect quiet'],
+      ['0', 'eternal', 'Quiet forever'],
+      ['1', 'entrenched', 'Protect bins'],
+      ['1', 'ordinary', 'Bins are ours'],
+    ];
+    for (const [atom, to, title] of steps) {
+      const id = log.protect('Ana', `${group}.${atom}`, to, { title });
+      everyone(log, id, 4);
+      log.minute += 5;
+    }
+    changeLog(log.state(log.minute + 1), group);
+    const { classChanged } = messages.history;
+    expect(rows().map((row) => row.querySelector('.log-change')?.textContent)).toEqual([
+      classChanged.ordinary,
+      classChanged.entrenched,
+      classChanged.eternal,
+      classChanged.entrenched,
+      undefined,
+    ]);
+    expect([classChanged.entrenched, classChanged.eternal, classChanged.ordinary]).toEqual([
+      'Entrenched',
+      'Made eternal',
+      'Protection lifted',
+    ]);
+    expect(document.body.textContent).not.toMatch(/Ben|Cal|scored|average/i);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('says nothing has changed a Document since it began', () => {
     const fresh = groupLog({ members: ['Ben'] });
     changeLog(fresh.state(), fresh.group);
