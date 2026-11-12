@@ -294,6 +294,16 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
 }
 
 /**
+ * Whether the device keeps a relay backup key (#97), kept current as the
+ * store changes, or null until the store answers: what Personal and each
+ * personal Document's line on where they go depends on (#248).
+ */
+function useKeepsRelayBackup(store: AppServices['store']): boolean | null {
+  const status = useRelayBackupStatus(store);
+  return status === null ? null : status.kind !== 'off';
+}
+
+/**
  * Choose recovery contacts (#109): the picker, from the people in this
  * device's groups. Saving chooses them, then goes back to Settings, where
  * their status shows.
@@ -315,9 +325,12 @@ function RecoveryScreen({ services }: { readonly services: AppServices }) {
 /** Personal (#93): this device's personal Documents, and the id a new one opens at. */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
+  const relayBackup = useKeepsRelayBackup(services.store);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
-  return documents === null ? null : <Personal documents={documents} newId={newId} />;
+  return documents === null ? null : (
+    <Personal documents={documents} newId={newId} relayBackup={relayBackup} />
+  );
 }
 
 interface PersonalDocumentScreenProps {
@@ -331,6 +344,7 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
     replaceRoute({ name: 'personal' });
   }, []);
   const sharing = useMemo(() => personalSharing(services), [services]);
+  const relayBackup = useKeepsRelayBackup(services.store);
   return (
     <PersonalDocument
       id={id}
@@ -338,6 +352,7 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
       now={services.now}
       onDeleted={onDeleted}
       sharing={sharing}
+      relayBackup={relayBackup}
     />
   );
 }

@@ -73,8 +73,11 @@ afterEach(() => {
   fetchSpy.mockClear();
 });
 
-/** Renders the editor for `id` on the test's store, as `#/me/{id}` does. */
-function open(id = ID, onDeleted = vi.fn()) {
+/**
+ * Renders the editor for `id` on the test's store, as `#/me/{id}` does, on a
+ * device that keeps a relay backup key (#97) when `relayBackup` says so.
+ */
+function open(id = ID, onDeleted = vi.fn(), relayBackup: boolean | null = false) {
   const view = render(
     <PersonalDocument
       id={id}
@@ -82,6 +85,7 @@ function open(id = ID, onDeleted = vi.fn()) {
       now={() => clock}
       onDeleted={onDeleted}
       sharing={sharing()}
+      relayBackup={relayBackup}
     />,
   );
   return { ...view, onDeleted, user: userEvent.setup() };
@@ -346,6 +350,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={onDeleted}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
     await user.type(await screen.findByRole('textbox', { name: 'Text' }), ' Kept.');
@@ -380,6 +385,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
     const box = await screen.findByRole('textbox', { name: 'Text' });
@@ -411,6 +417,7 @@ describe('PersonalDocument', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={sharing()}
+        relayBackup={false}
       />,
     );
 
@@ -433,6 +440,29 @@ describe('PersonalDocument', () => {
         'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
       ),
     ).toBeVisible();
+  });
+
+  it('says the sealed relay backup has it too, once the device keeps one (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    open(ID, vi.fn(), true);
+
+    expect(
+      await screen.findByText(
+        'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(messages.personal.documentPrivacy)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of where it’s kept until the device has said whether it keeps a relay backup (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    open(ID, vi.fn(), null);
+
+    await screen.findByRole('textbox', { name: 'Text' });
+    const { documentPrivacy, documentPrivacyRelayBackup } = messages.personal;
+    expect(screen.queryByText(documentPrivacy)).not.toBeInTheDocument();
+    expect(screen.queryByText(documentPrivacyRelayBackup)).not.toBeInTheDocument();
   });
 
   it('sends no request while a Document is created, edited, previewed or deleted', async () => {
@@ -622,6 +652,24 @@ describe('PersonalDocument, shared by link (#105)', () => {
     expect(await screen.findByText(share.tooLargeShared)).toBeVisible();
   });
 
+  it('says the sealed relay backup has a shared Document too, once the device keeps one (#248)', async () => {
+    await store.savePersonal(STATEMENT);
+    const { user } = open(ID, vi.fn(), true);
+    await user.click(within(await shareSection()).getByRole('button', { name: share.start }));
+    await screen.findByText(share.copied);
+
+    expect(
+      screen.getByText(
+        'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it, and so does your sealed relay backup.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(messages.personal.sharedPrivacy)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(messages.personal.documentPrivacyRelayBackup),
+    ).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('Stop sharing posts a tombstone, says what it can’t recall, and Share link then makes a new link', async () => {
     await store.savePersonal(STATEMENT);
     const { user } = open();
@@ -730,6 +778,7 @@ describe('PersonalDocument, shared by link (#105)', () => {
         now={() => clock}
         onDeleted={vi.fn()}
         sharing={unsure}
+        relayBackup={false}
       />,
     );
 

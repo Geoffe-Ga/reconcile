@@ -380,20 +380,44 @@ export async function replaceWithBackup(
   return snapshot.groups.length;
 }
 
-/** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
-export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
+/** A backup plaintext's JSON object, or null when it isn't one of a format a restore reads. */
+function snapshotJson(plaintext: Uint8Array): Record<string, unknown> | null {
   const json = parseJson(plaintext);
   if (!isObject(json)) return null;
-  const { format } = json;
-  if (format !== SNAPSHOT_FORMAT && format !== FORMAT_1) return null;
-  const groups = groupsIn(json.groups, format === FORMAT_1 ? groupIn : groupWithKeysIn);
-  // A file from before #93 has no personal field: it holds no personal Documents.
-  const personal = json.personal === undefined ? [] : personalIn(json.personal);
+  return json.format === SNAPSHOT_FORMAT || json.format === FORMAT_1 ? json : null;
+}
+
+/**
+ * The personal Documents in a backup's `json`, or null when any doesn't
+ * check out. A file from before #93 has no `personal` field: it holds none.
+ */
+function personalOf(json: Record<string, unknown>): PersonalDocument[] | null {
+  return json.personal === undefined ? [] : personalIn(json.personal);
+}
+
+/** Everything in a backup's plaintext, or null when anything in it doesn't check out. */
+export function decodeSnapshot(plaintext: Uint8Array): Snapshot | null {
+  const json = snapshotJson(plaintext);
+  if (json === null) return null;
+  const groups = groupsIn(json.groups, json.format === FORMAT_1 ? groupIn : groupWithKeysIn);
+  const personal = personalOf(json);
   if (groups === null || personal === null) return null;
   if (!('backupKey' in json)) return { groups, personal };
   // A file from before #97 has no key; one that has a key holds a well-formed one.
   const backupKey = keyIn(json.backupKey);
   return backupKey === null ? null : { groups, personal, backupKey };
+}
+
+/**
+ * Only the personal Documents in a backup's plaintext, each checked as a
+ * restore checks it, or null when the plaintext isn't a snapshot a restore
+ * reads or any of them doesn't check out. The relay backup reads the relay
+ * copy with it before an upload (#247): it merges only that copy's
+ * Documents, so it checks none of its groups.
+ */
+export function decodePersonal(plaintext: Uint8Array): PersonalDocument[] | null {
+  const json = snapshotJson(plaintext);
+  return json === null ? null : personalOf(json);
 }
 
 /** Each of `values` read by `read`, or null when any is null or two share a key. */

@@ -11,6 +11,19 @@ export interface PersonalProps {
   readonly documents: readonly PersonalEntry[];
   /** The id a new Document opens at; nothing is stored under it until its first save. */
   readonly newId: string;
+  /**
+   * Whether the device keeps a relay backup key (#97), whose sealed copy
+   * carries every personal Document, or null until the store has said: then
+   * no line on where they go shows, since a wrong one is worse than none
+   * (#248).
+   */
+  readonly relayBackup: boolean | null;
+}
+
+/** Personal's line on where its Documents go, as the relay backup has them or not (#248). */
+function privacyLine(relayBackup: boolean): string {
+  const { privacy, privacyRelayBackup } = messages.personal;
+  return relayBackup ? privacyRelayBackup : privacy;
 }
 
 /** A card that opens `#/me/{id}`: a title, and an optional line under it. */
@@ -39,7 +52,7 @@ function DocumentCard({
 }
 
 /** Every Document by title, a shared one marked as such (#105), then New document. */
-function DocumentList({ documents, newId }: PersonalProps) {
+function DocumentList({ documents, newId }: Pick<PersonalProps, 'documents' | 'newId'>) {
   return (
     <div className="stack">
       <ul className="card-list">
@@ -68,9 +81,11 @@ function DocumentList({ documents, newId }: PersonalProps) {
  * Documents, one list, each opening at `#/me/{id}`, then New document. With
  * none yet, it offers My mission statement with one prompt line, and nothing
  * is stored until its first save. A Document shared by link says so under
- * its title (#105). One line says what stays on this device.
+ * its title (#105). One line says what stays on this device, and, once the
+ * device keeps a relay backup key, that its sealed relay backup has them too
+ * (#248).
  */
-export function Personal({ documents, newId }: PersonalProps) {
+export function Personal({ documents, newId, relayBackup }: PersonalProps) {
   const { personal } = messages;
   return (
     <main className="shell">
@@ -82,7 +97,7 @@ export function Personal({ documents, newId }: PersonalProps) {
       ) : (
         <DocumentList documents={documents} newId={newId} />
       )}
-      <p className="caption">{personal.privacy}</p>
+      {relayBackup === null ? null : <p className="caption">{privacyLine(relayBackup)}</p>}
     </main>
   );
 }

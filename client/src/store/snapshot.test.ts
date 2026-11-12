@@ -28,6 +28,7 @@ import { clearExpiredBallots, foldGroup } from './expiry';
 import type { PersonalDocument, ShareState } from './personal';
 import {
   backedUpGroups,
+  decodePersonal,
   decodeSnapshot,
   deviceSnapshot,
   encodeSnapshot,
@@ -647,6 +648,35 @@ describe('personal Documents in a backup (#93)', () => {
   });
 });
 
+describe('decodePersonal: only the personal Documents of a relay copy (#247)', () => {
+  it('reads each Document as a restore checks it, and none of the groups', () => {
+    const shared = { ...canaryStatement(), share: SHARE };
+    const groups = [{ groupId: 'not a group id' }];
+    const plaintext = (json: object) => utf8(JSON.stringify(json));
+    const encoded = encodeSnapshot({ groups: [], personal: [shared, READING] });
+    const { personal } = JSON.parse(text(encoded)) as { personal: unknown };
+
+    // A group that wouldn't restore doesn't matter here: the merge keeps this device's groups.
+    expect(plain(decodePersonal(plaintext({ format: 2, groups, personal })))).toEqual(
+      plain([shared, READING]),
+    );
+    expect(decodePersonal(plaintext({ format: 1, groups: [] }))).toEqual([]);
+  });
+
+  it('reads nothing from a plaintext a restore wouldn’t, or a Document that doesn’t check out', () => {
+    const plaintext = (json: unknown) => utf8(JSON.stringify(json));
+    const untitled = { ...READING, title: '' };
+
+    expect(decodePersonal(plaintext({ format: 3, personal: [READING] }))).toBeNull();
+    expect(decodePersonal(plaintext([READING]))).toBeNull();
+    expect(decodePersonal(utf8('not JSON'))).toBeNull();
+    expect(decodePersonal(plaintext({ format: 2, groups: [], personal: [untitled] }))).toBeNull();
+    expect(
+      decodePersonal(plaintext({ format: 2, groups: [], personal: [READING, READING] })),
+    ).toBeNull();
+  });
+});
+
 /** The canary statement's share by link (#105): its own seed and keys, posted twice. */
 const SHARE_KEYS = newSigningKeys();
 const SHARE: ShareState = {
@@ -1263,6 +1293,7 @@ describe('replaceWithBackup: Restore when the passkey no longer unlocks the vaul
       checkedDay: null,
       uploadedAt: null,
       tooLarge: false,
+      uploaded: [],
     });
   });
 
@@ -1619,6 +1650,7 @@ describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
       checkedDay: null,
       uploadedAt: null,
       tooLarge: false,
+      uploaded: [],
     });
   });
 

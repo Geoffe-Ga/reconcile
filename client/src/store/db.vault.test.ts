@@ -94,7 +94,14 @@ function backupOf(state: RelayBackupState | undefined) {
 
 /** A fresh relay backup state for `key`, as `backupOf` spells it. */
 function freshBackup(key: Uint8Array) {
-  return { key: local(key), digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
+  return {
+    key: local(key),
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+    uploaded: [],
+  };
 }
 
 /** A group's keys and name, in the test's realm, so `toEqual` can compare them. */
@@ -514,6 +521,7 @@ describe('#97’s relay backup key under the vault', () => {
       'checkedDay',
       'digest',
       'tooLarge',
+      'uploaded',
       'uploadedAt',
     ]);
     expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));

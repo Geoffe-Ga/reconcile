@@ -441,9 +441,12 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
         expect(fields).not.toContain('kxKey');
       }
     }
-    // Ana's relay backup record keeps its state, and the vault its key.
+    // Ana's relay backup record keeps its state, the ids of the Documents it uploaded (#247),
+    // and the vault its key.
     const anas = await rawDatabase(ana.page);
-    expect(anas.backupFields).toEqual([['checkedDay', 'digest', 'tooLarge', 'uploadedAt']]);
+    expect(anas.backupFields).toEqual([
+      ['checkedDay', 'digest', 'tooLarge', 'uploaded', 'uploadedAt'],
+    ]);
     // Her statement keeps its share's mark, and her application what Your groups shows (#255, #265).
     expect(anas.shareFields).toEqual([['lastPostedAt', 'n', 'pending']]);
     expect(anas.sentFields).toEqual([['door', 'groupName', 'id', 'sentAt']]);

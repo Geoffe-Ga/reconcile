@@ -372,6 +372,7 @@ describe('after each complete sync pass', DEVICES, () => {
         put.push(`${id} ${String(blob.length)}`);
         return id === 'refused' ? Promise.reject(new TypeError('offline')) : Promise.resolve();
       },
+      getBackup: () => Promise.resolve(null),
     };
 
     await afterSyncPass({ store, relay, now: ana.services.now });
@@ -388,6 +389,7 @@ describe('after each complete sync pass', DEVICES, () => {
         put.push(id);
         return Promise.resolve();
       },
+      getBackup: () => Promise.resolve(null),
     };
     await afterSyncPass({ store: device('Ana').services.store, relay, now: () => 0 });
     expect(put).toEqual([]);
