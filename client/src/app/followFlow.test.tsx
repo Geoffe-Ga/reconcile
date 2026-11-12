@@ -9,7 +9,7 @@
  * Fay unfollows, which leaves nothing of the coalition on her device, and
  * the coalition carries on for its groups.
  */
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -39,6 +39,7 @@ import { type Canary, findCanaries, keyCanaries, textCanary } from '../test/scan
 import { containsBytes, scanDb } from '../test/scanDb';
 import { App } from './App';
 import { followCoalition, lookupFollow, shareFollowLink, unfollow } from './follow';
+import { messages } from './messages';
 import { propose } from './proposals';
 
 freshIndexedDBPerTest();
@@ -94,6 +95,24 @@ function openApp(device: TestDevice, hash: string): void {
   render(<App services={device.services} />);
 }
 
+/**
+ * The axe violations on the screen whose page title is `page`, once it is
+ * that page's title. PageHeader sets the title in an effect that can run
+ * after the heading is in the document, and axe's document-title rule reads
+ * the title as it stands: with none yet, or a stale one, it checks the wrong
+ * page.
+ */
+async function axeOn(page: string): Promise<string[]> {
+  // A loaded machine can run the effect late (#260); a longer wait for the right title hides nothing.
+  await waitFor(
+    () => {
+      expect(document.title).toBe(messages.app.pageTitle(page));
+    },
+    { timeout: 5_000 },
+  );
+  return axeViolations();
+}
+
 /** The coalition formed, Ana's follow link to it, and Fay following it on a fresh device. */
 async function fayFollows(fake: FakeRelay) {
   const groups = await formedCoalition(fake, { ...CARD_VALUES, name: CANARY_NAME });
@@ -139,7 +158,7 @@ describe('following a coalition (#124)', SLOW, () => {
       'No Dispatches yet.',
     );
     expect(screen.queryByRole('button', { name: /Take part|Share/ })).not.toBeInTheDocument();
-    expect(await axeViolations()).toEqual([]);
+    expect(await axeOn(messages.coalitions.homePageTitle)).toEqual([]);
     await user.click(
       within(screen.getByRole('region', { name: 'Documents' })).getByRole('link', {
         name: /Mission statement/,
@@ -147,7 +166,7 @@ describe('following a coalition (#124)', SLOW, () => {
     );
     expect(await screen.findByText('Everyone on the east side has a safe home.')).toBeVisible();
     expect(screen.queryByRole('button', { name: /Propose/ })).not.toBeInTheDocument();
-    expect(await axeViolations()).toEqual([]);
+    expect(await axeOn(messages.document.pageTitle)).toEqual([]);
 
     const proposed = await propose(
       ana.services,
@@ -181,7 +200,7 @@ describe('following a coalition (#124)', SLOW, () => {
     expect(await within(dispatches).findByRole('article')).toHaveTextContent(
       'Fair homes, now in writing.',
     );
-    expect(await axeViolations()).toEqual([]);
+    expect(await axeOn(messages.coalitions.homePageTitle)).toEqual([]);
     expect(puts(fake)).toBeGreaterThan(following.posted);
     expect((await entryOn(fay)).outbox).toEqual([]);
   });
@@ -257,7 +276,7 @@ describe('following a coalition (#124)', SLOW, () => {
     const section = await screen.findByRole('region', { name: 'Following' });
     const link = within(section).getByRole('link', { name: new RegExp(CANARY_NAME) });
     expect(link).toHaveTextContent('Riverside Tenants·Oak St Co-op');
-    expect(await axeViolations()).toEqual([]);
+    expect(await axeOn(messages.start.pageTitle)).toEqual([]);
     await user.click(link);
     expect(window.location.hash).toBe(`#/c/${coalitionId}`);
     expect(await screen.findByRole('heading', { level: 1, name: CANARY_NAME })).toBeVisible();
