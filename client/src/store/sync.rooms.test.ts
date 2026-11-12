@@ -12,8 +12,9 @@ import { deriveCoalitionEntryId } from '../crypto/card';
 import { deriveSealKey, deriveWeekMailboxId, WEEK_MINUTES, weekOf } from '../crypto/groupKeys';
 import { deriveRoomEntryId } from '../crypto/room';
 import { xchachaSeal } from '../crypto/seal';
-import { createRelay, type Relay } from '../net/relay';
+import { createRelay, type Fetch, type Relay } from '../net/relay';
 import { ROOM_KEEP_MINUTES } from '../engine/room';
+import { local } from '../test/bytes';
 import { Logs, testSecret } from '../test/coalitions';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -150,6 +151,46 @@ describe('a room in the sync loop', () => {
     expect(
       xchachaSeal.open(mailbox, deriveSealKey(SECRET), blobs[1] ?? new Uint8Array()),
     ).toBeNull();
+  });
+
+  it('keeps a message the relay took queued while the pull that reads it back fails, then holds it once (#343)', async () => {
+    const fake = createFakeRelay({ minute: MINUTE });
+    const { built } = await setUp(fake);
+    const { store, sync } = await device(fake, 'ana', built);
+    expect(await sync.syncOnce()).toBe(true);
+    const mailbox = deriveWeekMailboxId(INNER, weekOf(fake.minute));
+    // The relay takes the room's message, then the next request fails, as when the network drops.
+    let dropNext = false;
+    const flaky: Fetch = async (input, init) => {
+      if (dropNext) {
+        dropNext = false;
+        throw new TypeError('Failed to fetch');
+      }
+      const response = await fake.fetch(input, init);
+      const last = fake.requests.at(-1);
+      dropNext = last?.method === 'PUT' && last.url.includes(mailbox);
+      return response;
+    };
+    const dropping = createSync({
+      store,
+      relay: createRelay({ fetch: flaky }),
+      seal: xchachaSeal,
+      clock: () => 1,
+    });
+    const record = message(built, 'kim', 'Thursday works for Oak St.');
+    await store.enqueue(ROOM, record);
+
+    expect(await dropping.syncOnce()).toBe(false);
+    expect(fake.blobs(mailbox)).toHaveLength(1);
+    // Still listed, from the outbox, though the relay has it.
+    expect((await store.getGroup(ROOM))?.outbox.map(local)).toEqual([record]);
+
+    expect(await sync.syncOnce()).toBe(true);
+    const room = await store.getGroup(ROOM);
+    expect(room?.outbox).toEqual([]);
+    // Posted again, as after a reply that never came: the log keeps one, by its event id.
+    expect(fake.blobs(mailbox)).toHaveLength(2);
+    expect(room?.log.map((r) => local(r.bytes))).toEqual([record]);
   });
 
   it('deletes a message 30 days and 1 minute old from IndexedDB on the next sync, keeping one 30 days old', async () => {

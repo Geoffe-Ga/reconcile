@@ -51,7 +51,12 @@ export interface RoomView {
   readonly name: string;
   /** The messages, oldest first. */
   readonly messages: readonly RoomMessage[];
-  /** What this device wrote that the relay doesn't have yet, oldest first. */
+  /**
+   * What this device wrote that the room's log doesn't hold yet, oldest
+   * first: each stays queued until the pull that reads it back is saved, in
+   * the same change (#343), so a message is in this list or in `messages`,
+   * never both and never neither.
+   */
   readonly pending: readonly PendingMessage[];
   /** This person's key in the coalition, which signs what they write. */
   readonly me: string;

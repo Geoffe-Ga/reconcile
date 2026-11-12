@@ -12,7 +12,8 @@
  *    gives the relay's week, so a device back from a long absence never
  *    writes to a stale week. The week comes from the relay only;
  * 2. posts the outbox in order to this week's mailbox, each record sealed for
- *    it, removing an entry only once the relay accepts it. A Proposal, or a
+ *    it, removing an entry only once the relay accepts it (a room's, only in
+ *    the change that saves the pull reading it back, #343). A Proposal, or a
  *    ballot after which this device's fold closes one early, goes with
  *    `wake=1` (#99, `engine/wake.ts`), whether or not this device's own push
  *    is on: the wake is for the others' phones;
@@ -113,10 +114,13 @@
  * then each coalition's room (#125, ./rooms.ts), synced as a group is under
  * keys from the coalition's `inner`: no key change, no `kx`, chat bot, door
  * or nudges, and no wake. A room never read before reads its last 5 weeks,
- * and each pull deletes what is more than 30 days of relay time old. Every
- * pass first keeps the device's rooms from the store alone, so a room whose
- * last member group here is leaving, read-only or gone is purged at once,
- * even while the relay can't be reached.
+ * and each pull deletes what is more than 30 days of relay time old. A
+ * message the relay took leaves the room's outbox in the change that adds
+ * the relay's copy to its log (#343), so the room lists it once throughout;
+ * a pass that fails between the two posts it again, and the log's dedupe by
+ * event id keeps one. Every pass first keeps the device's rooms from the
+ * store alone, so a room whose last member group here is leaving, read-only
+ * or gone is purged at once, even while the relay can't be reached.
  *
  * A group off the device leaves nothing in the loop's memory (#270): right
  * after the rooms, every pass forgets, from the store alone, what the loop
@@ -353,18 +357,20 @@ export function createSync(options: SyncOptions): Sync {
    * Post the group's current outbox in order; an entry leaves only once the
    * relay accepts it. While `frozen` (#98), every entry but a `key-rotate` or
    * `leave` stays queued, in its place. Once the relay has returned a seq for
-   * the group's leave, the group is purged: `left`. Else `posted` when the
-   * relay took anything, `none` when it took nothing.
+   * the group's leave, the group is purged: `left`. Else the records the
+   * relay took, in order. A room's stay queued (#343): the pull that reads
+   * them back drops them in the change that saves it (`Pull.sent`), so the
+   * room lists each message from its outbox or its log at every moment.
    */
   async function postOutbox(
     groupId: string,
     { mailbox, key }: Channel,
     frozen: boolean,
-  ): Promise<'left' | 'posted' | 'none'> {
+  ): Promise<'left' | Uint8Array[]> {
     const current = await store.getGroup(groupId);
-    if (current === undefined) return 'none';
+    if (current === undefined) return [];
     let before: GroupState | null = null;
-    let posted: 'posted' | 'none' = 'none';
+    const taken: Uint8Array[] = [];
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
       // No phone registers under a coalition's or a room's mailboxes (#120, #284), so nothing
@@ -372,15 +378,22 @@ export function createSync(options: SyncOptions): Sync {
       const wake =
         current.kind === undefined && wakeForRecord((before ??= foldGroup(current)), bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
-      if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
-        push?.forget(current);
-        await store.purgeGroup(groupId);
-        return 'left';
-      }
-      await store.markSent(groupId, bytes);
-      posted = 'posted';
+      if (await leftWith(current, bytes)) return 'left';
+      if (!isRoomEntry(current)) await store.markSent(groupId, bytes);
+      taken.push(bytes);
     }
-    return posted;
+    return taken;
+  }
+
+  /**
+   * Whether `bytes`, which the relay just took, is the group's leave (#77):
+   * then its push registration is forgotten and the group purged.
+   */
+  async function leftWith(group: Group, bytes: Uint8Array): Promise<boolean> {
+    if (group.leaving === undefined || !sameBytes(bytes, group.leaving)) return false;
+    push?.forget(group);
+    await store.purgeGroup(group.groupId);
+    return true;
   }
 
   /** GETs week `week`'s mailbox of `secret`, after its cursor in `cursors` (#110). */
@@ -448,9 +461,9 @@ export function createSync(options: SyncOptions): Sync {
     const frozen = !room && isFrozen(foldGroup(group), group);
     const { first, cursors } = await firstRead(group);
     const week = weekOf(first.now);
-    const outcome = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
-    if (outcome === 'left') return 'left';
-    const pass = { first, cursors, week, posted: outcome === 'posted' };
+    const taken = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
+    if (taken === 'left') return 'left';
+    const pass = { first, cursors, week, posted: taken.length > 0 };
     const reads = await readWeeks(group, pass);
     const { records, relayNow } = openReads(seal, group, reads);
     const advance = room ? null : advanceFor(group, records, relayNow);
@@ -461,6 +474,8 @@ export function createSync(options: SyncOptions): Sync {
       instance: first.instance,
       lastSyncAt: clock(),
       ...(advance === null ? {} : { advance }),
+      // A room's messages leave its outbox as their relay copies join its log (#343).
+      ...(room ? { sent: taken } : {}),
     };
     await store.applyPull(group.groupId, pull, idOf);
     await settleAfter(group, pull);
