@@ -636,8 +636,11 @@ export function createSync(options: SyncOptions): Sync {
     if (!halted) await afterPass?.().catch(() => undefined);
   }
 
-  /** The relay minute each group's results and expiry were last settled at (#111). */
-  const settled = new Map<string, number | null>();
+  /**
+   * What each group's results and expiry were last settled for (#111): its
+   * relay minute, and whether it read only for now (`settleMark`).
+   */
+  const settled = new Map<string, string>();
   /** By group, the Proposals a settle found a result due for, which the next queues if still due. */
   const owed = new Map<string, readonly string[]>();
 
@@ -653,12 +656,14 @@ export function createSync(options: SyncOptions): Sync {
    * Folding costs a signature check per record, so a group already settled in
    * this relay minute, with nothing owed, is skipped, and one that just
    * queued results is settled again on the next pass, which clears by them.
+   * A restored copy that goes on in that minute is settled again at once, as
+   * the group it now is.
    */
   async function settleExpiry(groupId: string): Promise<void> {
     const group = await store.getGroup(groupId);
     if (group === undefined || isArchive(group.archived)) return;
     const noted = owed.get(groupId) ?? [];
-    if (settled.get(groupId) === group.relayNow && noted.length === 0) return;
+    if (settled.get(groupId) === settleMark(group) && noted.length === 0) return;
     const state = foldGroup(group);
     const due = resultsDue(state, group);
     const now = due.filter((p) => noted.includes(p.id));
@@ -670,7 +675,7 @@ export function createSync(options: SyncOptions): Sync {
       await store.enqueueAll(groupId, signResults(state, group, now, clock()));
       settled.delete(groupId);
     } else {
-      settled.set(groupId, group.relayNow);
+      settled.set(groupId, settleMark(group));
     }
     await clearExpiredBallots(store, groupId, state);
   }
@@ -938,6 +943,16 @@ export function openRecords(
     const bytes = seal.open(mailbox, key, data);
     return bytes === null ? [] : [{ seq, received, bytes, ...tag }];
   });
+}
+
+/**
+ * What a settle of `group`'s results and expiry holds for (#111): its relay
+ * minute, and whether it reads only for now (#231), so a restored copy that
+ * goes on is settled afresh in that same minute.
+ */
+function settleMark(group: Group): string {
+  const now = group.relayNow === null ? 'none' : String(group.relayNow);
+  return group.archived === undefined ? now : `${now} read-only`;
 }
 
 /**

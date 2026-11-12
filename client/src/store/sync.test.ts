@@ -29,7 +29,7 @@ import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { manualTimers } from '../test/timers';
 import type { ChatBot } from './chatBot';
 import { openStore } from './db';
-import type { Group, Pull, Store } from './db';
+import { type BackedUpGroup, type Group, HISTORY_GAP_MS, type Pull, type Store } from './db';
 import { eventIdOf } from './eventId';
 import { keyChangeOf } from './epochs';
 import type { PushUpkeep } from './push';
@@ -1943,6 +1943,87 @@ describe('the result duty (#111)', () => {
       expect(outboxes).toEqual([[], ['result']]);
     },
   );
+
+  /**
+   * A backup's copy of the group on `holder`'s device: synced later than the
+   * device's own, but last hearing from the group a minute more than #73's 28
+   * days of relay time before it, so a restore takes it back read-only for
+   * now, and a pass that reads nothing new leaves it so (#231).
+   */
+  async function olderCopy(holder: Device): Promise<BackedUpGroup> {
+    const held = await holder.group();
+    const { groupId, secret, signingKey, me, log, cursor, instance } = held;
+    return {
+      groupId,
+      secret,
+      signingKey,
+      ...(held.kxKey === undefined ? {} : { kxKey: held.kxKey }),
+      me,
+      log,
+      cursor,
+      relayNow: (held.relayNow ?? 0) - HISTORY_GAP_MS / 60_000 - 1,
+      instance,
+      lastSyncAt: (held.lastSyncAt ?? 0) + 1,
+      missingHistory: false,
+    };
+  }
+
+  /** The group comes back on `holder`'s device read-only for now, from a backup's older copy (#231). */
+  const readOnlyForNow: Goes = async (holder) => {
+    await holder.store.restoreGroups([await olderCopy(holder)]);
+    expect((await holder.group()).archived?.reason).toBe('unconfirmed');
+  };
+
+  it('owes no result while a copy back from a backup reads only for now, so none comes due at once when the group goes on (#231)', async () => {
+    const held = await closedEarly();
+    const { fake, ana } = held;
+    fake.minute += 1;
+    await ana.sync.syncOnce();
+    expect((await ana.group()).outbox).toEqual([]);
+
+    const { whileGone, outboxes } = await goesAndComesBack(held, ana, readOnlyForNow, ANA);
+
+    expect(whileGone).not.toContain('result');
+    expect(outboxes).toEqual([[], ['result']]);
+  });
+
+  it('settles a copy back read-only for now again once the group goes on, in that same minute (#231)', async () => {
+    const held = await closedEarly();
+    const { fake, keys } = held;
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    fake.minute += 1;
+    await kim.sync.syncOnce();
+
+    const { whileGone, outboxes } = await goesAndComesBack(held, kim, readOnlyForNow, 'kim');
+
+    expect(whileGone).not.toContain('result');
+    expect(outboxes).toEqual([[], ['result']]);
+  });
+
+  it('settles a copy back read-only for now once a relay minute, as a live group, keeping its notes between passes (#231)', async () => {
+    const { fake, keys, founding } = await closedEarly();
+    // Kim's key isn't a member, so his device owes nothing and settles once a minute.
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    const reads = vi.spyOn(kim.store, 'getGroup');
+    /** How many more times the first pass in a new relay minute reads the group than the next pass does. */
+    async function settleReads(): Promise<number> {
+      fake.minute += 1;
+      reads.mockClear();
+      await kim.sync.syncOnce();
+      const first = reads.mock.calls.length;
+      reads.mockClear();
+      await kim.sync.syncOnce();
+      return first - reads.mock.calls.length;
+    }
+    const live = await settleReads();
+
+    await readOnlyForNow(kim, founding, 'kim');
+    const readOnly = await settleReads();
+
+    expect((await kim.group()).archived?.reason).toBe('unconfirmed');
+    // A refold on every pass would read it as often on the second pass as on the first.
+    expect(readOnly).toBe(live);
+  });
 });
 
 /** Each signed record's event type, in order. */
