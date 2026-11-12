@@ -73,7 +73,7 @@ async function expectBensVersion(person: Person): Promise<void> {
   ]);
   await expectAccessible(person, 'Result');
   await page.getByRole('link', { name: GROUP }).click();
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     BEN_TEXT,
     SECOND_ATOM,
@@ -117,7 +117,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
   await test.step('A proposes on the first section and scores it', async () => {
     const { page } = ana;
     await expect(page.getByRole('region', { name: 'People', exact: true })).toContainText('Ben');
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekday evenings run later now.');
@@ -130,7 +130,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
 
   await test.step('B adds a version from the Document view', async () => {
     const { page } = ben;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Add your version to section 1' }).click();
     await expect(heading(page, 'Add your version')).toBeVisible();
     const text = page.getByRole('textbox', { name: 'Your version' });

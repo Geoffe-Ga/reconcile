@@ -5,6 +5,8 @@ import { ChatLink } from '../app/ChatLink';
 import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
 import { DispatchCard } from '../app/DispatchCard';
+import { DocumentLine } from '../app/DocumentLine';
+import { documentLead } from '../app/documentLines';
 import { holdPresses } from '../app/holdPresses';
 import { latestLink } from '../app/latestLink';
 import { LeaveDialog } from '../app/LeaveDialog';
@@ -85,6 +87,11 @@ export interface GroupHomeProps {
    */
   readonly recoveryCard?: ReactNode;
   /**
+   * The recovery alert (#118), while a recovery of this person waits, first
+   * among the quiet cards; none when absent, or once the group has dissolved.
+   */
+  readonly alertCard?: ReactNode;
+  /**
    * The front door's applications (#121), under their own heading before
    * Invite people: given only while the door is open and this member may
    * invite.
@@ -133,6 +140,7 @@ function Section({ title, children }: { readonly title: string; readonly childre
 }
 
 interface ProposalCardsProps {
+  readonly state: GroupState;
   readonly groupId: string;
   readonly proposals: readonly Proposal[];
   readonly now: number;
@@ -159,8 +167,12 @@ function MotionTag({ proposal, names }: { proposal: Proposal; names: CoalitionNa
   );
 }
 
-/** Open Proposals as cards, each with its title and countdown, opening its ballot. */
-function ProposalCards({ groupId, proposals, now, line, names }: ProposalCardsProps) {
+/**
+ * Open Proposals as cards, each led by the Document it changes or creates
+ * (#92), or by its coalition for a coalition vote (#120), with its title and
+ * countdown, opening its ballot.
+ */
+function ProposalCards({ state, groupId, proposals, now, line, names }: ProposalCardsProps) {
   return (
     <ul className="card-list">
       {proposals.map((proposal) => (
@@ -169,6 +181,7 @@ function ProposalCards({ groupId, proposals, now, line, names }: ProposalCardsPr
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <DocumentLine lead={documentLead(state, proposal)} />
             <MotionTag proposal={proposal} names={names} />
             <span className="card-link-title">
               <span className="heading-3">
@@ -191,6 +204,7 @@ function ProposalCards({ groupId, proposals, now, line, names }: ProposalCardsPr
 }
 
 interface OpenListsProps {
+  readonly state: GroupState;
   readonly groupId: string;
   /** What goes right under Needs your vote: the current focus (#107). */
   readonly children?: ReactNode;
@@ -213,7 +227,7 @@ interface OpenListsProps {
  * Needs your vote, ahead of the focus, when nothing else is open.
  */
 function OpenLists(props: OpenListsProps) {
-  const { groupId, needsYourVote, otherOpen, now, children, after, names } = props;
+  const { state, groupId, needsYourVote, otherOpen, now, children, after, names } = props;
   const { home } = messages;
   const waits = needsYourVote.length > 0;
   const others = otherOpen.length > 0;
@@ -223,14 +237,26 @@ function OpenLists(props: OpenListsProps) {
     <>
       {waits ? (
         <Section title={home.needsYourVote}>
-          <ProposalCards groupId={groupId} proposals={needsYourVote} now={now} names={names} />
+          <ProposalCards
+            state={state}
+            groupId={groupId}
+            proposals={needsYourVote}
+            now={now}
+            names={names}
+          />
         </Section>
       ) : null}
       {lastIsWaits ? after : null}
       {children}
       {others ? (
         <Section title={waits ? home.otherOpen : home.openProposals}>
-          <ProposalCards groupId={groupId} proposals={otherOpen} now={now} names={names} />
+          <ProposalCards
+            state={state}
+            groupId={groupId}
+            proposals={otherOpen}
+            now={now}
+            names={names}
+          />
         </Section>
       ) : null}
       {waits || others ? null : (
@@ -250,6 +276,7 @@ function OpenLists(props: OpenListsProps) {
  * they won't see how it ends. Nothing when there were none.
  */
 function Unfinished({
+  state,
   groupId,
   proposals,
   now,
@@ -261,6 +288,7 @@ function Unfinished({
   return (
     <Section title={removed ? removal.stillOpen : archive.unfinished}>
       <ProposalCards
+        state={state}
         groupId={groupId}
         proposals={proposals}
         now={now}
@@ -288,21 +316,22 @@ function TopOption({ proposal }: { readonly proposal: Proposal }) {
   );
 }
 
-/**
- * Decided: the group's history, each closed Proposal with its title, its
- * outcome in a word, and its close date, opening its result, and "Scores
- * cleared" once this device has deleted its individual ballots (#111). A
- * priority vote that passed also names its top option (#107).
- */
-function Decided({
-  groupId,
-  closed,
-  names,
-}: {
+interface DecidedProps {
+  readonly state: GroupState;
   readonly groupId: string;
   readonly closed: readonly Proposal[];
   readonly names?: CoalitionNames | undefined;
-}) {
+}
+
+/**
+ * Decided: the group's history, each closed Proposal led by the Document it
+ * changed or created (#92), or by its coalition for a coalition vote (#120),
+ * with its title, its outcome in a word, and its close date, opening its
+ * result, and "Scores cleared" once this device has deleted its individual
+ * ballots (#111). A priority vote, which changes no Document, has no Document
+ * line, and one that passed names its top option (#107).
+ */
+function Decided({ state, groupId, closed, names }: DecidedProps) {
   if (closed.length === 0) return <p>{messages.decided.empty}</p>;
   return (
     <ul className="card-list">
@@ -312,6 +341,7 @@ function Decided({
             className="card-link"
             href={routeHref({ name: 'proposal', groupId, proposalId: proposal.id })}
           >
+            <DocumentLine lead={documentLead(state, proposal)} />
             <MotionTag proposal={proposal} names={names} />
             <span className="card-link-title">
               <span className="heading-3">
@@ -988,6 +1018,7 @@ function OpenSections(props: OpenSectionsProps) {
     return (
       <>
         <Unfinished
+          state={state}
           groupId={groupId}
           proposals={lists.open}
           now={now}
@@ -1000,6 +1031,7 @@ function OpenSections(props: OpenSectionsProps) {
   }
   return (
     <OpenLists
+      state={state}
       groupId={groupId}
       needsYourVote={leaving ? [] : lists.needsYourVote}
       otherOpen={leaving ? lists.open : lists.otherOpen}
@@ -1012,12 +1044,65 @@ function OpenSections(props: OpenSectionsProps) {
   );
 }
 
+interface DocumentsProps {
+  readonly state: GroupState;
+  readonly me: string;
+  /** True while this member leaves, once the group has dissolved, or once a vote removed them (#115): nothing new is proposed. */
+  readonly readOnly: boolean;
+}
+
 interface HomeTopProps {
   readonly props: GroupHomeProps;
   /** Whether a vote removed this member (#115). */
   readonly removed: boolean;
   /** Whether the group takes nothing new on this device: leaving, dissolved or removed. */
   readonly readOnly: boolean;
+}
+
+/**
+ * The group's Documents (#92), in order, each opening its own view, then
+ * Propose a new Document for whoever may propose, unless the group takes
+ * nothing new: one content cell, as Dispatches has, so the button sits under
+ * the list and not in the section's label column.
+ */
+function Documents({ state, me, readOnly }: DocumentsProps) {
+  const groupId = state.group ?? '';
+  const { home } = messages;
+  return (
+    <Section title={home.documentsLabel}>
+      <div className="stack">
+        <ul className="card-list">
+          {state.documents.map(({ id, title }) => (
+            <li key={id}>
+              <Link
+                className="card-link"
+                href={routeHref({ name: 'document', groupId, documentId: id })}
+              >
+                <span className="card-link-title">
+                  <span className="heading-2">
+                    <bdi>{title}</bdi>
+                  </span>
+                  <span className="card-link-arrow" aria-hidden="true">
+                    {messages.app.forward}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        {!readOnly && can(state, me, 'propose') ? (
+          <div className="row">
+            <Link
+              className="button button-secondary"
+              href={routeHref({ name: 'newDocument', groupId })}
+            >
+              {home.proposeDocument}
+            </Link>
+          </div>
+        ) : null}
+      </div>
+    </Section>
+  );
 }
 
 /**
@@ -1046,16 +1131,18 @@ function HomeTop({ props, removed, readOnly }: HomeTopProps) {
 }
 
 /**
- * The quiet cards a group that goes on may show: a backup (#78), then the
- * recovery shares this device holds there (#109). No backup card once the
- * group's key changed past this device (#226). None once it has dissolved: no
- * backup file carries its read-only copy, and no share held there can go back
- * to anyone (#108).
+ * The quiet cards a group that goes on may show, after the last list of open
+ * Proposals: the recovery alert while a recovery of this person waits (#118),
+ * a backup (#78), then the recovery shares this device holds there (#109). No
+ * backup card once the group's key changed past this device (#226). None once
+ * it has dissolved: no backup file carries its read-only copy, and no share
+ * held there can go back to anyone (#108).
  */
 function QuietCards({ props }: { readonly props: GroupHomeProps }) {
   if (props.state.dissolved !== null) return null;
   return (
     <>
+      {props.alertCard}
       {backupCardOf(props)}
       {props.recoveryCard}
     </>
@@ -1066,8 +1153,9 @@ function QuietCards({ props }: { readonly props: GroupHomeProps }) {
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
  * group's current focus (#107), the other open Proposals and, under them, the
  * backup card (#78) and the recovery shares held here (#109), the latest
- * Dispatch (#112), the group's Document, the
- * Decided list of closed ones, its Coalitions (#114), its people with their levels, the viewer's own involvement and Leave this
+ * Dispatch (#112), the group's Documents with Propose a new Document (#92),
+ * the Decided list of closed ones, its Coalitions (#114), its people with
+ * their levels, the viewer's own involvement and Leave this
  * group, the Stewards (#102), the Rules (#117), then its invite link and its discussion, each shown only to members
  * whose capabilities allow it (`can()` is the only check), and last, for
  * whoever may propose it, Propose dissolving the group (#108). While the viewer's
@@ -1111,20 +1199,14 @@ export function GroupHome(props: GroupHomeProps) {
           <Focus state={state} me={me} readOnly={readOnly} />
         </OpenSections>
         {leads ? null : news}
-        <Section title={messages.home.documentLabel}>
-          <Link className="card-link" href={routeHref({ name: 'document', groupId })}>
-            <span className="card-link-title">
-              <span className="heading-2">
-                <bdi>{state.title}</bdi>
-              </span>
-              <span className="card-link-arrow" aria-hidden="true">
-                {messages.app.forward}
-              </span>
-            </span>
-          </Link>
-        </Section>
+        <Documents state={state} me={me} readOnly={readOnly} />
         <Section title={messages.decided.title}>
-          <Decided groupId={groupId} closed={lists.decided} names={props.coalitionNames} />
+          <Decided
+            state={state}
+            groupId={groupId}
+            closed={lists.decided}
+            names={props.coalitionNames}
+          />
         </Section>
         {props.coalitions}
         <MemberSections {...props} leaving={readOnly} />

@@ -210,7 +210,7 @@ describe('CoalitionHome', () => {
 
   it('lists the coalition’s Dispatches for a participant too, and offers no follow link unless bound', () => {
     const { state, id, dispatches } = coalitionWithDispatch();
-    const view = { ...VIEW, coalitionId: id, documents: [{ id, title: state.title }], dispatches };
+    const view = { ...VIEW, coalitionId: id, documents: state.documents, dispatches };
     render(<CoalitionHome {...props({ view, state })} />);
 
     const card = within(region('Dispatches')).getByRole('article');
@@ -273,7 +273,7 @@ describe('CoalitionHome for a follower (#124)', () => {
       { name: 'Riverside Tenants', mine: false, coalition: false },
       { name: '<i>Oak St</i> Co-op', mine: false, coalition: false },
     ],
-    documents: [{ id, title: state.title }],
+    documents: state.documents,
     standing: { kind: 'reads' },
     dispatches,
     follower: true,

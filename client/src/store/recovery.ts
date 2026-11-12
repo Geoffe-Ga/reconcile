@@ -13,7 +13,8 @@
  *   so the group sees only an opaque box from the person. A contact picked
  *   in two groups gets a share in each, and can then tell both names are the
  *   same person, as the picker says (ADR-0075 §4).
- * - **Choosing again.** Every later choice makes a new backup key, so the
+ * - **Choosing again.** Every later choice makes a new backup key, as does
+ *   the first on a device recovered with contacts (#118), so the
  *   relay copy moves to a new id. It sends the new shares, then overwrites
  *   the old id with 65,536 random bytes, so every older share, a dropped
  *   contact's included, rebuilds only a key whose backup is gone. An id the
@@ -78,7 +79,7 @@ export interface RecoveryChoice {
 export interface RecoveryServices extends RelayBackupServices {
   readonly store: RelayBackupServices['store'] &
     RetireServices['store'] &
-    Pick<Store, 'listGroups' | 'getGroup' | 'enqueueAll' | 'setRecoveryPlan'>;
+    Pick<Store, 'listGroups' | 'getGroup' | 'enqueueAll' | 'setRecoveryPlan' | 'getRecoveredAt'>;
   readonly relay: RelayBackupServices['relay'];
   /** The sync loop, run once so the new shares go before the old backup is overwritten. */
   readonly sync: Pick<Sync, 'syncOnce'>;
@@ -240,7 +241,8 @@ async function signedShares(
  * picked, each from {@link contactGroups}.
  *
  * It awaits the relay backup's start, with a new key when the device has
- * chosen before, splits that key, queues each contact's sealed share in
+ * chosen before or was recovered with contacts (#118), whose key the old
+ * contacts' shares still rebuild, splits that key, queues each contact's sealed share in
  * their group, keeps the plan, runs the sync loop once so the shares go,
  * and then overwrites the replaced key's relay backup ({@link retireOldBackups}).
  *
@@ -254,7 +256,9 @@ export async function chooseContacts(
   const { store } = services;
   const picked = checked(await store.listGroups(), choice);
   const held = await store.getRecoveryPlan();
-  const replaced = await startRelayBackup(services, { newKey: held !== undefined });
+  // A device recovered with contacts (#118) has no plan, but its key is one they held shares of.
+  const recovered = (await store.getRecoveredAt()) !== undefined;
+  const replaced = await startRelayBackup(services, { newKey: held !== undefined || recovered });
   const shares = await splitKey(await backupKey(store), picked.length, choice.t);
   const split = newSplitId();
   try {

@@ -8,6 +8,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { readShare, startSharing, stopSharing } from '../share/shareLink';
+import { exportGroups, importGroups } from '../store/snapshot';
 import { testDevice, type TestDevice, TEST_NOW } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
@@ -149,5 +151,79 @@ describe('Personal in the app', () => {
     expect(await screen.findByText('I show up.')).toBeVisible();
     expect(screen.getByText(messages.shared.note)).toBeVisible();
     expect(screen.getByRole('heading', { level: 1, name: 'My mission statement' })).toBeVisible();
+  });
+
+  it('marks a share a restored backup brought back as paused, and Keep sharing still honours a Stop made since (#328)', async () => {
+    const user = userEvent.setup();
+    const phone = await device('ana-phone');
+    const id = 'Q2FuYXJ5IHN0YXRlbWVudA';
+    await phone.services.store.savePersonal({
+      id,
+      title: 'My mission statement',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const started = await startSharing(phone.services, id);
+    if (started.kind !== 'shared') throw new Error(`Expected a share, not ${started.kind}.`);
+    const { file } = await exportGroups(phone.services.store, 'a long walk to the river', 4);
+    await stopSharing(phone.services, id);
+    // The new device restores the file and reaches the same relay, after the phone stopped sharing.
+    const laptop = await testDevice(phone.fake, 'ana-laptop');
+    devices.push(laptop);
+    await importGroups(laptop.services.store, file, 'a long walk to the river');
+    const posts = phone.fake.requests.filter(({ method }) => method === 'PUT').length;
+    window.history.replaceState(null, '', '#/me');
+    render(<App services={laptop.services} />);
+    const { share } = messages.personal;
+
+    const item = await screen.findByRole('link', { name: /My mission statement/ });
+    expect(item).toHaveTextContent(messages.personal.pausedLine);
+    expect(await axeViolations()).toEqual([]);
+    await user.click(item);
+    expect(await screen.findByText(share.paused)).toBeVisible();
+    expect(phone.fake.requests.filter(({ method }) => method === 'PUT')).toHaveLength(posts);
+
+    await user.click(screen.getByRole('button', { name: share.keep }));
+
+    // Within the tombstone's lifetime, Keep sharing finds it, so the link stays off.
+    expect(await screen.findByText(share.keepStopped)).toBeVisible();
+    expect(phone.fake.requests.filter(({ method }) => method === 'PUT')).toHaveLength(posts);
+    expect(await readShare(laptop.services, started.link)).toEqual({ kind: 'gone' });
+    await user.click(screen.getByRole('link', { name: /Personal/ }));
+    const listed = await screen.findByRole('link', { name: /My mission statement/ });
+    expect(listed).not.toHaveTextContent(messages.personal.pausedLine);
+    expect(listed).not.toHaveTextContent(messages.personal.sharedLine);
+  });
+});
+
+describe('Personal’s line on where Documents go, in the app (#248)', () => {
+  it('says the sealed relay backup has them once the device keeps a key, and follows the key as it comes', async () => {
+    const ana = await device('ana');
+    const id = 'Q2FuYXJ5IHN0YXRlbWVudA';
+    await ana.services.store.savePersonal({
+      id,
+      title: 'My mission statement',
+      text: 'I show up.\n',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const { privacy, privacyRelayBackup, documentPrivacy, documentPrivacyRelayBackup } =
+      messages.personal;
+    window.history.replaceState(null, '', '#/me');
+    render(<App services={ana.services} />);
+
+    expect(await screen.findByText(privacy)).toBeVisible();
+
+    // #109 keeps a key once someone chooses recovery contacts: the line follows at once.
+    await ana.services.store.setRelayBackupKey(new Uint8Array(32).fill(7));
+    expect(await screen.findByText(privacyRelayBackup)).toBeVisible();
+    expect(screen.queryByText(privacy)).not.toBeInTheDocument();
+
+    window.history.pushState(null, '', `#/me/${id}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(await screen.findByText(documentPrivacyRelayBackup)).toBeVisible();
+    expect(screen.queryByText(documentPrivacy)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
   });
 });

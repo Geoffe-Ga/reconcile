@@ -17,8 +17,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -77,8 +76,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -137,8 +135,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -276,8 +273,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -336,8 +332,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -396,8 +391,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -537,8 +531,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -597,8 +590,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -657,8 +649,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -803,8 +794,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -863,8 +853,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -923,8 +912,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1063,8 +1051,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1123,8 +1110,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1183,8 +1169,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1327,8 +1312,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1387,8 +1371,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1447,8 +1430,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1587,8 +1569,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1647,8 +1628,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1707,8 +1687,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1877,8 +1856,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           }
@@ -1896,8 +1874,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1986,8 +1963,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2030,8 +2006,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",

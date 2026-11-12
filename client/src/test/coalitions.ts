@@ -101,7 +101,11 @@ export class Logs {
   /** A group founded by `members[0]`, the others joining: the first three hold voting rights at once. */
   group(log: string, received: number, members: readonly string[], name = 'Riverside'): string {
     const [founder = 'ana', ...joiners] = members;
-    const body = { name, founder, title: 'House rules', atoms: ['Quiet after 11pm.'] };
+    const body = {
+      name,
+      founder,
+      documents: [{ title: 'House rules', atoms: ['Quiet after 11pm.'] }],
+    };
     const id = this.add(log, received, founder, { type: 'genesis', body });
     joiners.forEach((joiner, i) => {
       this.add(log, received + 1 + i, joiner, { type: 'join', body: { name: joiner } });
@@ -150,9 +154,11 @@ export class Logs {
 
   /** A coalition genesis by `author`, which isn't a participant, naming `seats`. */
   coalition(received: number, seats: readonly string[], author = 'kim'): string {
+    const { name, title, atoms } = COALITION_STATEMENT;
     const body = {
       kind: 'coalition',
-      ...COALITION_STATEMENT,
+      name,
+      documents: [{ title, atoms }],
       seats: seats.map((seat) => ({ name: seat, key: seatKey(seat) })),
     } as const;
     return this.add('coalition', received, author, { type: 'genesis', body });
@@ -287,9 +293,11 @@ export class NestedLogs extends Logs {
     statement: Statement = COALITION_STATEMENT,
     author = 'kim',
   ): string {
+    const { name, title, atoms } = statement;
     const body = {
       kind: 'coalition',
-      ...statement,
+      name,
+      documents: [{ title, atoms }],
       seats: seats.map(([seat, level]) => ({
         name: seat,
         key: seatKey(seat),

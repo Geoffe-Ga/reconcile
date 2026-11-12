@@ -11,9 +11,12 @@
  * one share, and the app's address, `location.origin + '/'`. It never carries
  * Document text, a group name, a member's name, a link fragment or a secret,
  * and Web Share never gets a `title`, because some apps use it as a subject line.
- * The one exception is Share link (#105, `personalSharing.ts`), whose whole
+ * The exceptions are Share link (#105, `personalSharing.ts`), whose whole
  * point is the link's fragment: it goes beside fixed words, never the
- * Document's title or text.
+ * Document's title or text; and a recovering device's code (#118), whose
+ * whole point is to reach the person's recovery contacts: it goes beside
+ * fixed words and the app's address, and the six digits read out on a call
+ * catch a code swapped on its way.
  */
 import { type ChatDetails, type ChatMoment, chatMessage } from './chatMessages';
 

@@ -5,6 +5,8 @@ import { Ballot, type Scores } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
 import { type ChatDetails, type ChatMoment, openMoment } from '../app/chatMessages';
 import { Countdown } from '../app/Countdown';
+import { DocumentLine } from '../app/DocumentLine';
+import { documentLead, sectionPlace } from '../app/documentLines';
 import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
@@ -37,6 +39,7 @@ import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
   isDissolveProposal,
+  isNewDocumentProposal,
   isPriorityProposal,
   isReconcileProposal,
   isRemovalProposal,
@@ -44,6 +47,7 @@ import {
   isStewardProposal,
   type ParsedEvent,
   type AddProposalBody,
+  type NewDocumentProposalBody,
   type ProposalBody,
   type ProposalEventBody,
   type RulesProposalBody,
@@ -161,43 +165,59 @@ interface Comparison {
 const OPTIONS: Comparison = { title: messages.proposal.options, current: null };
 
 /**
- * Each version is a word diff against the section's text now, or for an add
- * (`atom` null, #75), against nothing, so its whole text shows as added. Once
- * a pass has changed the section, or when the section is gone, each version
- * shows as it reads instead.
+ * Each version is a word diff against the section's text now, numbered within
+ * its Document (#92), or for an add (`atom` null, #75) or a new Document's
+ * first sections, against nothing, so its whole text shows as added under
+ * `adding`. Once a pass has changed the section, or when the section is gone,
+ * each version shows as it reads instead.
  */
-function comparisonFor(state: GroupState, atom: string | null, passed: boolean): Comparison {
+function comparisonFor(
+  state: GroupState,
+  atom: string | null,
+  passed: boolean,
+  adding: string = messages.proposal.newSection,
+): Comparison {
   if (passed) return { title: messages.proposal.onBallot, current: null };
-  if (atom === null) return { title: messages.proposal.newSection, current: '' };
-  const index = state.atoms.findIndex((candidate) => candidate.id === atom);
-  const now = state.atoms[index];
-  if (now === undefined) return { title: messages.proposal.proposed, current: null };
-  return { title: messages.proposal.changes(index + 1), current: now.text };
+  if (atom === null) return { title: adding, current: '' };
+  const place = sectionPlace(state, atom);
+  if (place === null) return { title: messages.proposal.proposed, current: null };
+  return { title: messages.proposal.changes(place.number), current: place.atom.text };
 }
 
 /** A steward or rules ballot shows what it decides, never a diff: it changes no section (#102, #117). */
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
 
-/** True for a Proposal with text: an edit or an add (#75), not a steward or rules one (#102, #117). */
+/**
+ * True for a Proposal with text: an edit, an add (#75) or a new Document
+ * (#92), not a steward or rules one (#102, #117).
+ */
 function writesText(proposal: Proposal): boolean {
   const { kind } = proposal.target;
-  return kind === 'edit' || kind === 'add';
+  return kind === 'edit' || kind === 'add' || kind === 'new-document';
 }
 
-/** The section a Proposal changes, or null when it adds one (#75). */
+/** The section a Proposal changes, or null when it adds one (#75) or a new Document (#92). */
 function changedAtom(proposal: Proposal): string | null {
-  return proposal.target.kind === 'add' ? null : proposal.atom;
+  const { kind } = proposal.target;
+  return kind === 'add' || kind === 'new-document' ? null : proposal.atom;
+}
+
+/** What a ballot of added text is headed: a new section (#75), or a new Document's first sections (#92). */
+function addingTitle(proposal: Pick<Proposal, 'target'>): string {
+  const { proposal: words } = messages;
+  return proposal.target.kind === 'new-document' ? words.firstSections : words.newSection;
 }
 
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
- * an add, whose whole text shows as added (#75), nothing for a steward one,
- * or for a priority vote, its options as they are (#107).
+ * an add or a new Document, whose whole text shows as added (#75, #92),
+ * nothing for a steward one, or for a priority vote, its options as they are
+ * (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
   if (isPriority(proposal)) return OPTIONS;
   return writesText(proposal)
-    ? comparisonFor(state, changedAtom(proposal), passed)
+    ? comparisonFor(state, changedAtom(proposal), passed, addingTitle(proposal))
     : STEWARD_BALLOT;
 }
 
@@ -481,7 +501,7 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
       : [],
   );
   if (mine.length === 0) return null;
-  const { current } = comparisonFor(state, changedAtom(proposal), false);
+  const { current } = comparisonFor(state, changedAtom(proposal), false, addingTitle(proposal));
   return (
     <Block title={messages.proposal.yourVersion} className="text-block">
       {mine.map(({ id, text }) =>
@@ -587,7 +607,9 @@ function CutOff(props: { props: ProposalViewProps; proposal: Proposal; words: Cu
         eyebrow={eyebrowOf(proposal, closed)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
-      />
+      >
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      </PageHeader>
       <div className="stack">
         <div className="meta-lines">
           <p className="meta">
@@ -763,7 +785,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   const cutOff = cutOffOf(props, proposal);
   if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
   const readOnly = props.leaving === true || isArchived(state, props.me);
-  const motion = motionView(proposal, state, props.coalitions ?? []);
+  const coalitions = props.coalitions ?? [];
+  const motion = motionView(proposal, state, coalitions);
   const names = motion?.state ?? state;
   const versions = versionViews(state, proposal, names);
   return (
@@ -778,7 +801,9 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
         }
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
-      />
+      >
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      </PageHeader>
       <MotionResult motion={motion} />
       {proposal.final ? (
         <ResultView
@@ -799,8 +824,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
       </div>
       <Response props={props} proposal={proposal} readOnly={readOnly} />
       <MotionProgress motion={motion} />
-      <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
-      <AdmitsCoalition words={motionWords(proposal, props.coalitions ?? [])} />
+      <ReconcileStatement view={reconcileView(proposal, coalitions)} />
+      <AdmitsCoalition words={motionWords(proposal, coalitions)} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
@@ -813,6 +838,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
 interface WaitingProps {
   readonly state: GroupState;
   readonly me: string;
+  /** The Proposal's event id, which is its id once the relay has it. */
+  readonly id: string;
   readonly body: ProposalEventBody;
   readonly pending: boolean;
   readonly reachable: boolean;
@@ -886,9 +913,14 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
   return null;
 }
 
-/** True for a Proposal whose versions hold text: an edit, a section's removal or an add (#75). */
-function changesText(body: ProposalEventBody): body is ProposalBody | AddProposalBody {
-  return !('target' in body) || isAddProposal(body);
+/**
+ * True for a Proposal whose versions hold text: an edit, a section's removal,
+ * an add (#75) or a new Document (#92).
+ */
+function changesText(
+  body: ProposalEventBody,
+): body is ProposalBody | AddProposalBody | NewDocumentProposalBody {
+  return !('target' in body) || isAddProposal(body) || isNewDocumentProposal(body);
 }
 
 /** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
@@ -898,12 +930,24 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   if (decided !== null) return decided;
   // An admit target is only ever a coalition's (#114), so it waits in no group's outbox.
   if (!changesText(body)) return { comparison: STEWARD_BALLOT, versions: [], optIn: null };
-  // An add's whole text shows as added, and it says where it goes (#75); a section's removal says so too.
-  const add = isAddProposal(body);
-  const comparison = comparisonFor(state, add ? null : body.atom, false);
-  const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
+  // An add's or a new Document's whole text shows as added, and an add says where it goes
+  // (#75, #92); a section's removal says so too.
+  const target = 'target' in body ? body.target : ({ kind: 'edit' } as const);
+  const atom = 'atom' in body ? body.atom : null;
+  const comparison = comparisonFor(state, atom, false, addingTitle({ target }));
+  const does = versionDoes(state, target, body.text);
   const version = { id: '', number: 1, author, text: body.text };
   return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
+}
+
+/** What a waiting Proposal changes or creates, as its page leads with it (#92), or null for none. */
+function waitingLead(state: GroupState, id: string, body: ProposalEventBody) {
+  if (isAddProposal(body) || isNewDocumentProposal(body)) {
+    return documentLead(state, { id, atom: id, target: body.target });
+  }
+  return 'atom' in body
+    ? documentLead(state, { id, atom: body.atom, target: { kind: 'edit' } })
+    : null;
 }
 
 /** A waiting reconcile Proposal's coalition, as its card set it: no other group is named yet (#114). */
@@ -914,7 +958,7 @@ function waitingReconcile(body: ProposalEventBody): ReconcileView | null {
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
-function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
+function Waiting({ state, me, id, body, pending, reachable }: WaitingProps) {
   const { comparison, versions, optIn } = waitingVersions(state, me, body);
   return (
     <Screen state={state}>
@@ -922,7 +966,9 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
         eyebrow={messages.proposal.eyebrowNew}
         title={body.title}
         pageTitle={messages.proposal.pageTitle}
-      />
+      >
+        <DocumentLine lead={waitingLead(state, id, body)} groupId={state.group ?? ''} />
+      </PageHeader>
       <Why why={body.why} />
       <ReconcileStatement view={waitingReconcile(body)} />
       <Block title={comparison.title} className="vote">
@@ -969,6 +1015,7 @@ export function ProposalView(props: ProposalViewProps) {
       <Waiting
         state={state}
         me={props.me}
+        id={proposalId}
         body={waiting.body}
         pending={waiting.pending}
         reachable={reachable}

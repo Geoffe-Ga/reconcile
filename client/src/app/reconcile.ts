@@ -37,6 +37,7 @@ import { genesisAtoms } from '../engine/atomText';
 import { can } from '../engine/capabilities';
 import { MAX_LEVEL } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
+import { atomsOf } from '../engine/documents';
 import { type SeatEntry, signEvent } from '../engine/event';
 import { fold, type GroupState, TITLE_MAX } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
@@ -396,8 +397,8 @@ function genesisRecord(entry: Group, card: Card, seat: SeatEntry, ts: number) {
   const body = {
     kind: 'coalition',
     name: card.name,
-    title: card.title,
-    atoms: card.atoms,
+    // A coalition founds exactly one Document, its statement (#92).
+    documents: [{ title: card.title, atoms: card.atoms }],
     rules: DEFAULT_RULES,
     seats: [card.seat, seat],
   } as const;
@@ -541,13 +542,15 @@ export async function admitCard(
   const coalition = foldGroup(entry);
   const holder = { group, id: groupId, state: foldGroup(group), inner: null };
   const key = seatIn(holder.state, coalition);
-  if (key === null) throw new Error('This group holds no seat here.');
+  // A coalition's statement is its one Document (#92).
+  const [statement] = coalition.documents;
+  if (key === null || statement === undefined) throw new Error('This group holds no seat here.');
   return {
     secret: entry.secret,
     seat: seatOf(holder, key),
     name: coalition.name,
-    title: coalition.title,
-    atoms: coalition.atoms.map((atom) => atom.text),
+    title: statement.title,
+    atoms: atomsOf(coalition, statement.id).map((atom) => atom.text),
     entries: entry.log,
   };
 }

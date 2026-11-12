@@ -13,6 +13,7 @@ import { MAX_LEVEL, seatLevel } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { type Dispatch, newestFirst } from '../engine/dispatches';
 import { openProposalOn } from '../engine/composeOption';
+import { atomsOf } from '../engine/documents';
 import { type ParsedEvent, parseRecord } from '../engine/event';
 import type { Atom, GroupState } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
@@ -124,16 +125,17 @@ export function coalitionById(
 }
 
 /**
- * The coalition's Documents, as #92 will list several: today its one, whose
- * id is its genesis id and whose title is its genesis title.
+ * The coalition's Documents (#92): its one, the statement its genesis founds,
+ * whose id is its genesis id. A coalition founds exactly one, and takes no
+ * new-Document Proposal.
  */
 export function coalitionDocuments(state: GroupState): DocumentRef[] {
-  return state.group === null ? [] : [{ id: state.group, title: state.title }];
+  return state.documents.map(({ id, title }) => ({ id, title }));
 }
 
 /** The sections of the coalition's Document `documentId`, in order. */
 export function documentAtoms(state: GroupState, documentId: string): Atom[] {
-  return state.atoms.filter((atom) => atom.documentId === documentId);
+  return atomsOf(state, documentId);
 }
 
 /** True when `group` holds `seatKey` through one of its reconcile Proposals. */

@@ -177,11 +177,12 @@ export interface RoomWrap {
  * `status` is as of the state's `at`. `declinedAt` is the relay minute it was
  * declined, at which relay time stops, or null. `seats` are the genesis's,
  * then each admitted group's, in the order they were admitted (#114), and
- * `founding` its name, title and Atoms as written, which each founding
- * group checks against the target it passed. `formsBy` is the relay minute
- * from which results on the genesis no longer count: the latest a founding
- * group's reconcile vote can close, `windows.ordinary.max` days after the
- * genesis, plus {@link RESULT_GRACE_MINUTES}. `bindings` holds every
+ * `founding` its name and its one Document's title and Atoms as written
+ * (#92), which each founding group checks against the target it passed.
+ * `formsBy` is the relay minute from which results on the genesis no longer
+ * count: the latest a founding group's reconcile vote can close,
+ * `windows.ordinary.max` days after the genesis, plus
+ * {@link RESULT_GRACE_MINUTES}. `bindings` holds every
  * participant's seat in join order, and `results` every valid result in relay
  * order. `motions` holds each motion's snapshot of seats, and `admitted`
  * each group admitted after the genesis, in order (#114). `wraps` holds each
@@ -194,13 +195,24 @@ export interface Coalition {
   readonly level: number;
   readonly declinedAt: number | null;
   readonly seats: readonly SeatEntry[];
-  readonly founding: Pick<CoalitionGenesisBody, 'name' | 'title' | 'atoms'>;
+  readonly founding: CoalitionStatement;
   readonly formsBy: number;
   readonly bindings: readonly SeatBinding[];
   readonly results: readonly GroupResult[];
   readonly motions: readonly MotionSeats[];
   readonly admitted: readonly Admission[];
   readonly wraps: readonly RoomWrap[];
+}
+
+/**
+ * What a coalition is founded on, as its genesis wrote it: its name, and its
+ * one Document's title and Atoms (#92), the statement each founding group's
+ * reconcile Proposal passed.
+ */
+export interface CoalitionStatement {
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
 }
 
 /** A {@link Coalition} while the fold runs. */
@@ -297,22 +309,25 @@ export function seatsAreValid(seats: readonly SeatEntry[]): boolean {
 
 /**
  * A coalition as its genesis founds it, forming, or null when its seats can't
- * found one: fewer than two distinct keys, or seats whose stated levels would
- * put it above {@link MAX_LEVEL} (#122).
+ * found one: fewer than two distinct keys, seats whose stated levels would
+ * put it above {@link MAX_LEVEL} (#122), or no Document. Its statement is its
+ * first Document; the fold founds a coalition only on exactly one (#92).
  */
 export function newCoalition(
   body: CoalitionGenesisBody,
   rules: Rules,
   received: number,
 ): CoalitionDraft | null {
-  if (!seatsAreValid(body.seats) || levelOf(body.seats) > MAX_LEVEL) return null;
-  const { name, title, atoms, seats } = body;
+  const [statement] = body.documents;
+  if (!seatsAreValid(body.seats) || statement === undefined) return null;
+  if (levelOf(body.seats) > MAX_LEVEL) return null;
+  const { name, seats } = body;
   return {
     status: 'forming',
     level: levelOf(seats),
     declinedAt: null,
     seats: [...seats],
-    founding: { name, title, atoms },
+    founding: { name, title: statement.title, atoms: statement.atoms },
     formsBy: received + rules.windows.ordinary.max * DAY_MINUTES + RESULT_GRACE_MINUTES,
     bindings: [],
     results: [],

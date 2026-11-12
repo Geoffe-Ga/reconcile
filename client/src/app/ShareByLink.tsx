@@ -6,7 +6,9 @@
  * sees, before anything is sent. 'Share link' posts the first copy, then
  * hands the link on with fixed words; on, the link shows as selectable text
  * beside its warning, with 'Stop sharing', which says plainly what it can't
- * call back. Every outcome is read out in a polite live region. While the
+ * call back. A share a restore brought back is paused (#328): it asks first,
+ * with 'Keep sharing' and 'Stop sharing', and shows no link until the person
+ * keeps it. Every outcome is read out in a polite live region. While the
  * device's keys are locked with a passkey, a share's seed waits in the vault
  * (#255): the section says it's on and how to unlock, with no link and no
  * button.
@@ -32,6 +34,11 @@ const STATUS_LINE: Readonly<Record<ShareStatus, string>> = {
   stopping: messages.personal.share.stopping,
   'stop-failed': messages.personal.share.stopFailed,
   stopped: messages.personal.share.stopped,
+  keeping: messages.personal.share.keeping,
+  kept: messages.personal.share.kept,
+  'kept-pending': messages.personal.share.keptPending,
+  'keep-stopped': messages.personal.share.keepStopped,
+  'paused-stop-failed': messages.personal.share.pausedStopFailed,
   locked: messages.personal.share.lockedNow,
 };
 
@@ -76,9 +83,21 @@ function ShareOff({ share }: Pick<ShareByLinkProps, 'share'>) {
   );
 }
 
-/** On, while the device's keys are locked (#255): that it's shared, how to unlock, and whether an edit waits. */
+/**
+ * On, while the device's keys are locked (#255): that it's shared, how to
+ * unlock, and whether an edit waits; or, for a share a restore paused
+ * (#328), that nothing goes to its link until the person unlocks and chooses.
+ */
 function ShareLocked({ view }: { readonly view: ShareView }) {
   const { personal } = messages;
+  // A paused share (#328) waits for a choice the keys must unlock, and sends nothing meanwhile.
+  if (view.paused) {
+    return (
+      <div className="stack">
+        <p className="lede">{personal.share.lockedPaused}</p>
+      </div>
+    );
+  }
   return (
     <div className="stack">
       <p className="lede">{personal.share.locked}</p>
@@ -138,21 +157,70 @@ function ShareOn({
   );
 }
 
-/** The section's body: off, on, or on with the device's keys locked (#255). */
-function ShareBody({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView | null }) {
-  if (view === null) return <ShareOff share={share} />;
-  const { link } = view;
-  return link === null ? (
-    <ShareLocked view={view} />
-  ) : (
-    <ShareOn share={share} view={{ ...view, link }} fits={fits} />
+/**
+ * Paused after a restore (#328): the question and what waits on it, then
+ * Keep sharing and Stop sharing, both quiet, so neither is pressed on the
+ * person. No link shows, so none is copied before they choose.
+ */
+function SharePaused({ share }: Pick<ShareByLinkProps, 'share'>) {
+  const question = useId();
+  const note = useId();
+  const { personal } = messages;
+  return (
+    <div className="stack">
+      <p id={question} className="lede">
+        {personal.share.paused}
+      </p>
+      <p id={note} className="caption">
+        {personal.share.pausedNote}
+      </p>
+      <div className="row">
+        <Button
+          className="button button-secondary"
+          onPress={() => {
+            void share.keep();
+          }}
+          isDisabled={share.busy}
+          aria-describedby={`${question} ${note}`}
+        >
+          {personal.share.keep}
+        </Button>
+        <Button
+          className="button button-secondary"
+          onPress={() => {
+            void share.stop();
+          }}
+          isDisabled={share.busy}
+          aria-describedby={question}
+        >
+          {personal.share.stop}
+        </Button>
+      </div>
+      <p role="status" className="status">
+        {STATUS_LINE[share.status]}
+      </p>
+    </div>
   );
 }
 
 /**
+ * The section's body for `view`: off; on with the device's keys locked
+ * (#255), paused or not, since neither choice can run without the keys;
+ * paused after a restore (#328); or on.
+ */
+function ShareBody({ share, view, fits }: ShareByLinkProps & { readonly view: ShareView | null }) {
+  if (view === null) return <ShareOff share={share} />;
+  const { link } = view;
+  if (link === null) return <ShareLocked view={view} />;
+  if (view.paused) return <SharePaused share={share} />;
+  return <ShareOn share={share} view={{ ...view, link }} fits={fits} />;
+}
+
+/**
  * The Share by link section of a personal Document's editor (#105): off
- * until 'Share link', then the link and 'Stop sharing'. Nothing shows until
- * the device has said whether the Document is shared.
+ * until 'Share link', then the link and 'Stop sharing', or, after a restore,
+ * the paused question (#328). Nothing shows until the device has said
+ * whether the Document is shared.
  */
 export function ShareByLink({ share, fits }: ShareByLinkProps) {
   const heading = useId();

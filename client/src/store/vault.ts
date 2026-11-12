@@ -19,9 +19,9 @@
  * key (#97) once it keeps one, and the secrets of records kept in other
  * stores (#255, #265): each by its store's name and the record's id, every
  * secret by its field's name. Today those are a shared personal Document's
- * share keys and a sent front-door application's reply keys (`./sealing.ts`
- * says which fields); #303's recovery request can join them as one more
- * store, with no new format. Format 1, as #95 sealed it, held no record's
+ * share keys, a sent front-door application's reply keys and a recovering
+ * device's request seed and secret key, in the device store (#118;
+ * `./sealing.ts` says which fields), with no new format. Format 1, as #95 sealed it, held no record's
  * secrets: it still opens, and the next write seals it as format 2, which an
  * older app refuses to open rather than drop secrets it doesn't know. Later
  * secrets (the recovery shares this device holds for others, #109) join them

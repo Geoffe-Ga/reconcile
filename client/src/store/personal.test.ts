@@ -18,6 +18,8 @@ import {
   PERSONAL_ID_BYTES,
   PERSONAL_TITLE_MAX,
   type PersonalDocument,
+  restoredCopy,
+  resumedShare,
   type ShareState,
 } from './personal';
 
@@ -109,6 +111,11 @@ describe('isShareState', () => {
     expect(isPersonalDocument(doc({ share: share() }))).toBe(true);
   });
 
+  it('accepts a share a restore paused (#328)', () => {
+    expect(isShareState(share({ paused: true }))).toBe(true);
+    expect(isPersonalDocument(doc({ share: share({ paused: true }) }))).toBe(true);
+  });
+
   it.each<[string, unknown]>([
     ['nothing', null],
     ['a seed of 31 bytes', share({ seed: new Uint8Array(31) })],
@@ -122,6 +129,8 @@ describe('isShareState', () => {
     ['a fractional post time', share({ lastPostedAt: 1.5 })],
     ['a post time that isn’t a number', { ...share(), lastPostedAt: '1' }],
     ['a pending that isn’t true or false', { ...share(), pending: 1 }],
+    ['a paused that is false, which a share never holds', { ...share(), paused: false }],
+    ['a paused that isn’t true', { ...share(), paused: 'yes' }],
   ])('refuses %s, alone and on a Document', (_name, value) => {
     expect(isShareState(value)).toBe(false);
     expect(isPersonalDocument({ ...doc(), share: value })).toBe(false);
@@ -134,6 +143,74 @@ describe('keepsHeldCopy', () => {
     expect(keepsHeldCopy(doc({ updatedAt: 5 }), doc({ updatedAt: 6 }))).toBe(false);
     expect(keepsHeldCopy(doc({ updatedAt: 6 }), doc({ updatedAt: 6 }))).toBe(true);
     expect(keepsHeldCopy(doc({ updatedAt: 7 }), doc({ updatedAt: 6 }))).toBe(true);
+  });
+});
+
+describe('restoredCopy (#105, #328)', () => {
+  const brought = share({ seed: new Uint8Array(32).fill(7), n: 4 });
+  const later = doc({ updatedAt: 1_762_650_000_500 });
+
+  it('pauses a share the backup brings, keeping everything else of it', () => {
+    expect(restoredCopy(undefined, { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+    expect(restoredCopy(doc(), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+  });
+
+  it('keeps the device’s own live share, marked pending, when the backup holds none', () => {
+    const own = share();
+
+    expect(restoredCopy(doc({ share: own }), later)).toEqual({
+      ...later,
+      share: { ...own, pending: true },
+    });
+  });
+
+  it('keeps the device’s own share live when the backup holds that same share', () => {
+    const own = share({ seed: brought.seed, n: 6 });
+
+    expect(restoredCopy(doc({ share: own }), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...own, pending: true },
+    });
+  });
+
+  it('pauses the backup’s share over the device’s when they’re different links, or the device’s is paused', () => {
+    const paused = share({ seed: brought.seed, paused: true });
+
+    expect(restoredCopy(doc({ share: share() }), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+    expect(restoredCopy(doc({ share: paused }), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+    expect(restoredCopy(doc({ share: paused }), later)).toEqual({
+      ...later,
+      share: { ...paused, pending: true },
+    });
+  });
+
+  it('brings a Document with no share back as it is', () => {
+    expect(restoredCopy(undefined, later)).toEqual(later);
+    expect(restoredCopy(doc(), later)).toEqual(later);
+  });
+});
+
+describe('resumedShare (#328)', () => {
+  it('drops the pause and marks the share pending, keeping the rest', () => {
+    const paused = share({ paused: true, n: 3 });
+
+    const resumed = resumedShare(paused);
+
+    expect(resumed).toEqual({ ...share({ n: 3 }), pending: true });
+    expect('paused' in resumed).toBe(false);
+    expect(paused.paused).toBe(true);
   });
 });
 

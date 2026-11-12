@@ -34,10 +34,10 @@ describe('dispatchFits (#112)', () => {
 });
 
 describe('documentIds', () => {
-  it('lists each Document once, in the order its first Atom comes', () => {
-    const atoms = [{ documentId: 'g' }, { documentId: 'g' }, { documentId: 'h' }];
-    expect(documentIds({ atoms })).toEqual(['g', 'h']);
-    expect(documentIds({ atoms: [] })).toEqual([]);
+  it('lists the group’s Documents in order, one with no sections left included (#92)', () => {
+    const documents = [{ id: 'g' }, { id: 'g:1' }, { id: 'p' }];
+    expect(documentIds({ documents })).toEqual(['g', 'g:1', 'p']);
+    expect(documentIds({ documents: [] })).toEqual([]);
   });
 });
 

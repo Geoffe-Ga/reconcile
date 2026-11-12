@@ -1,17 +1,16 @@
-import { type ReactNode, type SyntheticEvent, useRef, useState } from 'react';
+import { type SyntheticEvent, useRef, useState } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
 import { CopyLink } from '../app/CopyLink';
 import { messages } from '../app/messages';
 import type { CardValues } from '../app/reconcile';
 import { type Route, routeHref } from '../app/router';
-import { AtomText } from '../app/text/AtomText';
+import { sectionsCheck, sectionsPreview } from '../app/sectionsPreview';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
-import { genesisAtoms } from '../engine/atomText';
 import { WHY_MAX } from '../engine/fold';
 import { NAME_MAX } from '../invite/envelope';
-import { nfcLength, splitAtoms } from '../engine/text';
+import { nfcLength } from '../engine/text';
 
 /** Where making a card got to: refused as too large, or queued with its post still to run. */
 export type CardStep =
@@ -53,25 +52,7 @@ const { card } = messages;
 const checkName = required(card.nameMissing, NAME_MAX, card.nameTooLong(NAME_MAX));
 const checkWhy = required(card.whyMissing, WHY_MAX, card.whyTooLong(WHY_MAX));
 const checkYourName = (value: string) => (value.trim() === '' ? card.yourNameMissing : null);
-const checkStatement = (value: string) =>
-  splitAtoms(value).length === 0 ? card.statementMissing : null;
-
-/** The statement as its sections will read, split and normalized as the genesis will be. */
-function preview(value: string): ReactNode {
-  const atoms = genesisAtoms(value);
-  if (atoms.length === 0) return null;
-  return (
-    <div className="document">
-      {atoms.map((atom, index) => (
-        // Sections are numbered by position, as the Document view numbers them.
-        <div key={index} className="atom">
-          <p className="eyebrow">{messages.create.section(index + 1)}</p>
-          <AtomText text={atom} />
-        </div>
-      ))}
-    </div>
-  );
-}
+const checkStatement = sectionsCheck(card.statementMissing);
 
 function readValues(form: HTMLFormElement, statement: string): CardValues {
   const data = new FormData(form);
@@ -177,7 +158,7 @@ function CardForm({ onSubmit, refused, hints }: FormProps) {
         onChange={setStatement}
         isRequired
         validate={checkStatement}
-        preview={preview}
+        preview={sectionsPreview}
       />
       <Field
         name="why"
