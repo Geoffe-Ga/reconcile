@@ -62,11 +62,14 @@ describe('CoalitionComposer', () => {
     );
     expect(await axeViolations()).toEqual([]);
 
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Banks too');
-    await user.type(screen.getByRole('textbox', { name: 'Why' }), 'The banks matter.');
+    // Pasted, not typed key by key: each keystroke re-renders the whole form (#260).
+    await user.click(screen.getByRole('textbox', { name: 'Title' }));
+    await user.paste('Banks too');
+    await user.click(screen.getByRole('textbox', { name: 'Why' }));
+    await user.paste('The banks matter.');
     const text = screen.getByRole('textbox', { name: 'New text' });
     await user.clear(text);
-    await user.type(text, 'We keep the river and its banks clean.');
+    await user.paste('We keep the river and its banks clean.');
     await user.click(screen.getByRole('button', { name: 'Propose this change' }));
 
     expect(onPropose).toHaveBeenCalledWith(

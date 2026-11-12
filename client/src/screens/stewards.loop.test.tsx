@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { go, members, type MountedApp, mountApp } from '../test/members';
+import { go, members, type MountedApp, mountApp, settle } from '../test/members';
 
 freshIndexedDBPerTest();
 
@@ -73,6 +73,7 @@ describe('stewards in the app', () => {
     const { groupId, devices } = await members(fake, ['Ana', 'Ben', 'Cal']);
     opened.push(...devices);
     const [, ben, cal] = devices;
+    if (ben === undefined) throw new Error('Expected Ben.');
     go(`#/g/${groupId}`);
     const b = mount(ben, 'b');
     const c = mount(cal, 'c');
@@ -85,6 +86,8 @@ describe('stewards in the app', () => {
     await waitFor(() => {
       expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
     });
+    // The Proposal's pass finishes first, so it is on the relay before Cal syncs.
+    await settle(ben);
 
     await sync(cal);
     expect(
