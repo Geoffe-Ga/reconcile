@@ -95,6 +95,31 @@ const MESSAGES_ONLY = [
   `${TEXT_ATTRIBUTE} > JSXExpressionContainer > :matches(Literal, TemplateLiteral)`,
 ].map((selector) => ({ selector, message: 'Visible text comes from src/app/messages.ts.' }));
 
+/**
+ * No press starts on a disabled submit button (#193). React Aria's usePress starts one on
+ * pointerdown even while a button is disabled, and clicks the button itself 80 ms on; if
+ * the form's action ended by then, that click submits again. So a submit Button with
+ * `isDisabled` needs `onPointerDownCapture={holdPresses(…)}` on it or on a parent in the
+ * same JSX (src/app/holdPresses.ts). A plain button is safe: no `onPress` runs for a press
+ * that started while disabled.
+ */
+const HOLDS_PRESSES =
+  "JSXAttribute[name.name='onPointerDownCapture'] > JSXExpressionContainer > CallExpression[callee.name='holdPresses']";
+const HELD_SUBMIT = [
+  {
+    selector: [
+      "JSXOpeningElement[name.name='Button']",
+      ":has(> JSXAttribute[name.name='type'][value.value='submit'])",
+      ":has(> JSXAttribute[name.name='isDisabled'])",
+      // esquery takes one `>` step after a relative `:has(> …)`, so the hold nests a second `:has`.
+      `:not(:has(${HOLDS_PRESSES}))`,
+      `:not(JSXElement:has(> JSXOpeningElement:has(${HOLDS_PRESSES})) *)`,
+    ].join(''),
+    message:
+      'A submit Button that is disabled while its form sends needs holdPresses(…) as onPointerDownCapture on it or on a parent (#193): React Aria clicks a button pressed while disabled itself, 80 ms on, and that click sends the form again once the button is enabled.',
+  },
+];
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'reports', '.stryker-tmp', 'plans/architecture/*.cjs'] },
   {
@@ -164,7 +189,7 @@ export default tseslint.config(
   {
     files: ['src/app/**/*.tsx', 'src/screens/**/*.tsx'],
     ignores: ['**/*.test.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY, ...NO_RAW_HTML] },
+    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY, ...HELD_SUBMIT, ...NO_RAW_HTML] },
   },
   { files: ['eslint.config.js'], extends: [tseslint.configs.disableTypeChecked] },
 );

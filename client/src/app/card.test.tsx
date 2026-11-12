@@ -242,6 +242,8 @@ describe('what the relay sees of a card', SLOW, () => {
 
     const seats = await seatSecrets([ana, cy], [riverside, oak]);
     expect(seats).toHaveLength(2);
+    // A card that founds a coalition carries inner (#313).
+    if (card.inner === undefined) throw new Error('Expected the founding card’s inner.');
     const canaries: Canary[] = [
       ...keyCanaries('the coalition secret', card.secret),
       ...keyCanaries('inner', card.inner),

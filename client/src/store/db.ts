@@ -22,14 +22,15 @@
  * transaction; a shared one keeps its share state on its own record (#105).
  * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
- * cleared while its outcomes stay. The relay backup's key and state (#97) are
- * one record in a store of their own, in no group, so no group's record ever
- * holds the key. Under a vault that record keeps its state, and the vault
- * its key. A front door's applications (#121) stay on the device too: those
- * a member's device read from its group's inbox on the group's record, and
- * those this device sent, with the reply keys only it holds, in a store of
- * their own (`./applications.ts`), outside the vault for now, as a share's
- * keys are.
+ * cleared while its outcomes stay. So does a group a vote removed this
+ * member from (#115), which keeps what it already had. The relay backup's
+ * key and state (#97) are one record in a store of their own, in no group,
+ * so no group's record ever holds the key. Under a vault that record keeps
+ * its state, and the vault its key. A front door's applications (#121) stay
+ * on the device too: those a member's device read from its group's inbox on
+ * the group's record, and those this device sent, with the reply keys only
+ * it holds, in a store of their own (`./applications.ts`), outside the vault
+ * for now, as a share's keys are.
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
@@ -58,6 +59,7 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import { expiryKeyOf } from '../engine/expiry';
+import { keptInRoom } from '../engine/room';
 import { type DoorInbox, SENT_CHANGED, type SentApplication, type SentStore } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
@@ -164,8 +166,9 @@ export interface Admitting {
 }
 
 /**
- * Everything the device keeps about one group, or about one coalition whose
- * secret a group on the device holds (#114): its `kind` says which.
+ * Everything the device keeps about one group, about one coalition whose
+ * secret a group on the device holds (#114), or about one coalition's room
+ * (#125): its `kind` says which.
  */
 export interface Group extends CoalitionPlan {
   /**
@@ -175,9 +178,12 @@ export interface Group extends CoalitionPlan {
   groupId: string;
   /**
    * `coalition` for a coalition's entry (#114): its own log, cursors, outbox
-   * and `me`, synced like a group's. Absent for a group.
+   * and `me`, synced like a group's. `room` for a coalition's room (#125,
+   * `./rooms.ts`): its `secret` is the coalition's `inner`, its signing key
+   * and author the coalition entry's, and its log keeps 30 days of relay
+   * time. Absent for a group.
    */
-  kind?: 'coalition';
+  kind?: 'coalition' | 'room';
   /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
@@ -270,8 +276,9 @@ export interface Group extends CoalitionPlan {
    */
   nudged?: string[];
   /**
-   * Set once the group is read-only on this device (#108): absent while it
-   * goes on. Nothing is queued, claimed or synced for it from then on.
+   * Set once the group is read-only on this device: it dissolved (#108), or
+   * a vote removed this member (#115). Absent while it goes on. Nothing is
+   * queued, claimed or synced for it from then on.
    */
   archived?: Archive;
   /**
@@ -295,8 +302,8 @@ export interface Clearing {
   readonly keep: string;
 }
 
-/** Why a group only reads on this device: it dissolved (#108). #115 adds a removal. */
-export type ArchiveReason = 'dissolved';
+/** Why a group only reads on this device: it dissolved (#108), or a vote removed this member (#115). */
+export type ArchiveReason = 'dissolved' | 'removed';
 
 /**
  * A dissolved archive once this device has cleared its ballots and notes
@@ -313,7 +320,10 @@ export interface ClearedArchive {
   readonly tallies: Readonly<Record<string, TallyDetail>>;
 }
 
-/** A group this device keeps read-only (#108): why, and its cleared state once cleared. */
+/**
+ * A group this device keeps read-only: why (#108, #115), and its cleared
+ * state once a dissolved archive's ballots are cleared.
+ */
 export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
@@ -388,9 +398,14 @@ export const HISTORY_GAP_MS = 28 * 86_400_000;
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
   Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
 
-/** True for a coalition's entry (#114), false for a group. */
+/** True for a coalition's entry (#114), false for a group or a room. */
 export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {
   return group.kind === 'coalition';
+}
+
+/** True for a coalition's room (#125), false for a group or a coalition's entry. */
+export function isRoomEntry(group: Pick<Group, 'kind'>): boolean {
+  return group.kind === 'room';
 }
 
 /**
@@ -498,10 +513,12 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
  * (#97), and the front-door applications it sent (#121).
  */
 export interface Store extends DraftStore, PersonalStore, RelayBackupStore, SentStore {
-  /** Every group on the device: never a coalition's entry (#114). */
+  /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
   listCoalitions(): Promise<Group[]>;
+  /** Every coalition room on the device (#125). */
+  listRooms(): Promise<Group[]>;
   /** One group or coalition entry, or `undefined` when the device has none by that id. */
   getGroup(groupId: string): Promise<Group | undefined>;
   /** Keep a new group or coalition entry; refuses an id the device already has. */
@@ -565,12 +582,13 @@ export interface Store extends DraftStore, PersonalStore, RelayBackupStore, Sent
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
-   * Keep the group read-only on this device, in one change (#108; #115
-   * reuses it): drop its outbox, its drafts, any leave, the chat bot's
-   * claims (#119) and what it learned of the webhook (#123), and mark it
-   * archived for `reason`. From then on nothing is
-   * queued or claimed for it, and the sync loop sends, reads and posts
-   * nothing for it. A group already archived keeps its archive.
+   * Keep the group read-only on this device, in one change: once it has
+   * dissolved (#108), or a vote has removed this member (#115). Drop its
+   * outbox, its drafts, any leave, the chat bot's claims (#119) and what it
+   * learned of the webhook (#123), and mark it archived for `reason`. From
+   * then on nothing is queued or claimed for it, and the sync loop sends,
+   * reads and posts nothing for it. A group already archived keeps its
+   * archive.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
@@ -838,8 +856,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
 
   return {
     listGroups: async () =>
-      (await readWhole(db, session, null)).filter((group) => !isCoalitionEntry(group)),
+      (await readWhole(db, session, null)).filter((group) => group.kind === undefined),
     listCoalitions: async () => (await readWhole(db, session, null)).filter(isCoalitionEntry),
+    listRooms: async () => (await readWhole(db, session, null)).filter(isRoomEntry),
     getGroup: async (groupId) => {
       const [group] = await readWhole(db, session, groupId);
       return group;
@@ -931,7 +950,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // Its push registration is left to expire at the relay, so no request names the mailbox (#99).
         delete group.push;
         delete group.nudged;
-        // A dissolved group's front door has closed: its applications go (#121).
+        // A dissolved group's front door has closed, and a removed member reads it no more:
+        // its applications go (#121, #115).
         delete group.door;
       }),
     clearArchive: (groupId, cleared) =>
@@ -1149,12 +1169,20 @@ function sentStore(db: IDBPDatabase<Schema>, changed: () => void): SentStore {
   };
 }
 
-/** Saves what a sync pass read into `group`'s record: its new log records, in relay order, and sync state. */
+/**
+ * Saves what a sync pass read into `group`'s record: its new log records, in
+ * relay order, and sync state. A room (#125) then keeps only the records
+ * received at most 30 days of relay time before the pull's `now`, so each
+ * sync deletes the rest in the same change.
+ */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
     group.missingHistory = true;
   }
   takePull(group, pull, idOf);
+  if (isRoomEntry(group)) {
+    group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
+  }
   group.relayNow = pull.relayNow;
   group.instance = pull.instance;
   group.lastSyncAt = pull.lastSyncAt;

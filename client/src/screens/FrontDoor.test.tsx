@@ -16,6 +16,7 @@ import { createRelay } from '../net/relay';
 import { axeViolations } from '../test/axe';
 import { DOOR } from '../test/door';
 import { createFakeRelay } from '../test/fakeRelay';
+import { held, pastPressFallback } from '../test/press';
 import { FrontDoor } from './FrontDoor';
 
 const { door } = messages;
@@ -33,7 +34,7 @@ interface Options {
   readonly page?: OpenPage | typeof CLOSED | null;
   readonly payload?: string;
   readonly asked?: boolean;
-  readonly outcome?: 'sent' | 'failed';
+  readonly outcome?: 'sent' | 'failed' | Promise<'sent' | 'failed'>;
   readonly offline?: boolean;
 }
 
@@ -134,6 +135,23 @@ describe('FrontDoor: an open door', () => {
     await user.click(screen.getByRole('button', { name: door.send }));
     expect(await screen.findByRole('alert')).toHaveTextContent(door.failed);
     expect(screen.getByRole('button', { name: door.send })).toBeEnabled();
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends once when Send is tapped again while it sends and sending fails (#193)', async () => {
+    const sending = held<'sent' | 'failed'>();
+    const { user, onApply } = await setup({ outcome: sending.promise });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    await type(user, door.nameLabel, 'Kim');
+    await type(user, door.messageLabel, 'Hello.');
+    const send = screen.getByRole('button', { name: door.send });
+    await user.click(send);
+    expect(send).toBeDisabled();
+    await user.click(send);
+    sending.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(send).toBeEnabled();
     expect(onApply).toHaveBeenCalledTimes(1);
   });
 
