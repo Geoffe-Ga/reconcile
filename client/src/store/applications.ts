@@ -8,11 +8,17 @@
  *   ({@link SentApplication}) in a store of its own, in no group: the reply
  *   key and seed only it holds, so it can find and open a reply, for
  *   {@link SENT_DAYS} days. A reply's invite seed joins it once one opens.
+ *   On a device whose keys are locked with a passkey, those three live in
+ *   the vault ({@link replySealing}, #265), so a reply opens only once it's
+ *   unlocked.
  * - **A member's device** keeps the applications it read from its group's
  *   inbox ({@link DoorInbox}) on the group's own record, so Leave deletes them
  *   with the group and an archive drops them (#77, #108). Dismiss hides one
  *   on this device only.
  */
+
+import type { Sealing } from './sealing';
+import type { Secrets } from './vault';
 
 /** How long an applicant's device looks for a reply: the relay keeps the application this long. */
 export const SENT_DAYS = 30;
@@ -37,6 +43,39 @@ export interface SentApplication {
   /** The invite's 32-byte seed, once a reply with one opened. */
   readonly invite?: Uint8Array;
 }
+
+/**
+ * An application's secrets (#265): the reply seed and key, and the invite's
+ * seed once a reply opened, which together open the reply and join the group.
+ */
+export type ReplyKeys = Pick<SentApplication, 'seed' | 'replyKey' | 'invite'>;
+
+/**
+ * A sent application as IndexedDB keeps it: whole on a device with no vault,
+ * and without its reply keys under one, which holds them (#265). One kept
+ * before #265 holds them until the device seals or unlocks.
+ */
+export type StoredSent = Omit<SentApplication, keyof ReplyKeys> & Partial<ReplyKeys>;
+
+/**
+ * A sent application's sealing (#265): its reply seed, reply key and any
+ * invite's seed go into the vault, and its record keeps the door, the
+ * group's name and when it was sent.
+ */
+export const replySealing: Sealing<SentApplication, StoredSent> = {
+  hasSecrets: () => true,
+  split(sent) {
+    const { seed, replyKey, invite, ...kept } = sent;
+    if (!seed || !replyKey) return { kept: sent, secrets: null };
+    return { kept, secrets: { seed, replyKey, ...(invite ? { invite } : {}) } };
+  },
+  join(kept, secrets) {
+    const held: Secrets = secrets ?? {};
+    const { seed, replyKey, invite } = held;
+    if (!seed || !replyKey) return null;
+    return { ...kept, seed, replyKey, ...(invite ? { invite } : {}) };
+  },
+};
 
 /** An application a member's device read from its group's inbox. */
 export interface ReceivedApplication {

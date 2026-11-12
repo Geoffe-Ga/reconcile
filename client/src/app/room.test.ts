@@ -7,14 +7,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
+import { deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { deriveRoomEntryId } from '../crypto/room';
+import { xchachaSeal } from '../crypto/seal';
 import { LEVELS } from '../engine/capabilities';
 import { parseRecord } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
+import { createRelay, type Fetch } from '../net/relay';
 import type { HeldCoalition } from '../store/coalitions';
 import { type Group, openStore, type Store } from '../store/db';
 import { eventIdOf } from '../store/eventId';
+import { createSync } from '../store/sync';
 import { Logs, testSecret } from '../test/coalitions';
+import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import type { DeviceGroup } from './coalitionHome';
@@ -190,33 +195,37 @@ describe('roomStanding', () => {
   });
 });
 
+/**
+ * Kim's device: Riverside as ana's, and the coalition as kim's, both read at
+ * relay minute R + 100 from the relay `instance`; its room not made yet.
+ */
+async function kimsStore(logs: Logs, instance: string): Promise<Store> {
+  const store = await openStore('kim');
+  stores.push(store);
+  await store.addGroup({
+    groupId: logs.ids.A ?? '',
+    secret: new Uint8Array(32).fill(7),
+    signingKey: testKeys('ana').secretKey,
+    me: { author: authorOf('ana'), name: 'Ana' },
+  });
+  const pull = (records: LogRecord[]) => ({ records, relayNow: R + 100, instance, lastSyncAt: 1 });
+  await store.applyPull(logs.ids.A ?? '', pull(logs.logs.A ?? []), eventIdOf);
+  await store.addGroup({
+    kind: 'coalition',
+    groupId: ENTRY,
+    secret: SECRET,
+    signingKey: testKeys('kim').secretKey,
+    me: { author: authorOf('kim'), name: 'kim' },
+  });
+  await store.applyPull(ENTRY, pull(logs.logs.coalition ?? []), eventIdOf);
+  return store;
+}
+
 describe('sendMessage', () => {
-  /** A device in Riverside, holding the coalition as kim's, its room not made yet. */
+  /** Kim's device, with a sync that only counts its calls. */
   async function device() {
     const { logs } = formed();
-    const store = await openStore('kim');
-    stores.push(store);
-    await store.addGroup({
-      groupId: logs.ids.A ?? '',
-      secret: new Uint8Array(32).fill(7),
-      signingKey: testKeys('ana').secretKey,
-      me: { author: authorOf('ana'), name: 'Ana' },
-    });
-    const pull = (records: LogRecord[]) => ({
-      records,
-      relayNow: R + 100,
-      instance: 'i',
-      lastSyncAt: 1,
-    });
-    await store.applyPull(logs.ids.A ?? '', pull(logs.logs.A ?? []), eventIdOf);
-    await store.addGroup({
-      kind: 'coalition',
-      groupId: ENTRY,
-      secret: SECRET,
-      signingKey: testKeys('kim').secretKey,
-      me: { author: authorOf('kim'), name: 'kim' },
-    });
-    await store.applyPull(ENTRY, pull(logs.logs.coalition ?? []), eventIdOf);
+    const store = await kimsStore(logs, 'i');
     const syncOnce = vi.fn(() => Promise.resolve(true));
     return { logs, services: { store, sync: { syncOnce }, now: () => 1_762_650_000_000 } };
   }
@@ -249,5 +258,56 @@ describe('sendMessage', () => {
     );
     expect((await services.store.getGroup(ROOM))?.outbox ?? []).toEqual([]);
     expect(services.sync.syncOnce).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendMessage through the sync loop', () => {
+  it('lists a sent message exactly once throughout, though the pull that brings it back lands after the relay took it (#343)', async () => {
+    const { logs, at } = formed();
+    const fake = createFakeRelay({ minute: R + 100 });
+    const store = await kimsStore(logs, fake.instance);
+    const held = heldBy(logs, at, 'kim');
+    const groups = [deviceGroup(logs, 'A', at, 'ana')];
+    const mailbox = deriveWeekMailboxId(INNER, weekOf(fake.minute));
+    const text = 'Thursday works for Oak St.';
+    /** How many times the room lists the message now: from its outbox or from its log. */
+    const copies = async (): Promise<number> => {
+      const view = roomView(held, groups, await store.getGroup(ROOM));
+      return [...(view?.messages ?? []), ...(view?.pending ?? [])].filter((m) => m.text === text)
+        .length;
+    };
+    // Before each request goes out, the room is read as the store holds it then.
+    const seen: { method: string; url: string; copies: number }[] = [];
+    let watching = false;
+    const watched: Fetch = async (input, init) => {
+      const listed = watching ? await copies() : null;
+      const response = await fake.fetch(input, init);
+      const request = fake.requests.at(-1);
+      if (listed !== null && request !== undefined) {
+        seen.push({ method: request.method, url: request.url, copies: listed });
+      }
+      return response;
+    };
+    const sync = createSync({
+      store,
+      relay: createRelay({ fetch: watched }),
+      seal: xchachaSeal,
+      clock: () => 1,
+    });
+    expect(await sync.syncOnce()).toBe(true);
+
+    watching = true;
+    await sendMessage({ store, sync, now: () => 2 }, logs.ids.coalition ?? '', ROOM, text);
+    expect(await sync.syncOnce()).toBe(true);
+
+    // The relay took it, and the pull that reads it back went out after: the gap the room once showed.
+    const put = seen.findIndex((r) => r.method === 'PUT' && r.url.includes(mailbox));
+    expect(put).toBeGreaterThanOrEqual(0);
+    const after = seen.slice(put + 1);
+    expect(after.some((r) => r.method === 'GET' && r.url.includes(mailbox))).toBe(true);
+    expect([...seen.map((r) => r.copies), await copies()]).toEqual(seen.map(() => 1).concat(1));
+    const view = roomView(held, groups, await store.getGroup(ROOM));
+    expect(view?.pending).toEqual([]);
+    expect(view?.messages.map((m) => [m.name, m.text])).toEqual([['kim', text]]);
   });
 });
