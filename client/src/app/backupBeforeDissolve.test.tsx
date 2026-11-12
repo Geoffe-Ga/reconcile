@@ -171,96 +171,103 @@ function home(device: TestDevice, groupId: string) {
   return mount(device, 'home');
 }
 
-describe('a backup made before the dissolve, restored through the app (#231)', () => {
-  it('brings the group back read-only for now, never live, once the relay has let the dissolve go', async () => {
-    const { fake, devices, groupId, file, edit } = await riverside();
-    await dissolve(groupId, devices);
-    fake.minute += EXPIRED;
+// Three devices vote a dissolve and sync three passes, then a fourth seals, opens and restores a
+// backup, all with real crypto: about 2.5 s alone on a loaded machine, and past the default 5 s
+// beside the other files' tests, as removal.loop's three devices are.
+describe(
+  'a backup made before the dissolve, restored through the app (#231)',
+  { timeout: 30_000 },
+  () => {
+    it('brings the group back read-only for now, never live, once the relay has let the dissolve go', async () => {
+      const { fake, devices, groupId, file, edit } = await riverside();
+      await dissolve(groupId, devices);
+      fake.minute += EXPIRED;
 
-    const phone = await restoreOnPhone(fake, file);
-    const before = fake.requests.length;
-    fake.minute += 60;
-    await act(() => phone.services.sync.syncOnce());
+      const phone = await restoreOnPhone(fake, file);
+      const before = fake.requests.length;
+      fake.minute += 60;
+      await act(() => phone.services.sync.syncOnce());
 
-    expect(fake.requests.slice(before).every((request) => request.method === 'GET')).toBe(true);
-    const app = home(phone, groupId);
-    expect(await app.findByText('Read-only for now')).toBeVisible();
-    expect(app.getByText(NOTE)).toBeVisible();
-    expect(app.queryByText(/^This group dissolved on/)).toBeNull();
-    expect(app.queryByRole('link', { name: 'Propose dissolving the group' })).toBeNull();
-    expect(app.queryByRole('button', { name: 'Copy invite link' })).toBeNull();
-    expect(app.queryByRole('link', { name: /Reconcile with another group/ })).toBeNull();
-    unmountAll();
-    go(`#/g/${groupId}/propose/${groupId}.0`);
-    const composer = mount(phone, 'compose');
-    expect(
-      await composer.findByRole('heading', { level: 1, name: 'This group is read-only for now' }),
-    ).toBeVisible();
-    expect(composer.queryByRole('textbox')).toBeNull();
-    unmountAll();
-    // Ben's Proposal lapsed in the copy, which offers neither Propose again nor a chat message.
-    go(`#/g/${groupId}/p/${edit}`);
-    const proposal = mount(phone, 'proposal');
-    expect(await proposal.findByText(messages.result.lapsed)).toBeVisible();
-    expect(proposal.queryByRole('button', { name: 'Propose again' })).toBeNull();
-    expect(proposal.queryByRole('button', { name: 'Tell your group' })).toBeNull();
-  });
-
-  it('brings the group back as a dissolved copy while the relay still has the dissolve', async () => {
-    const { fake, devices, groupId, file } = await riverside();
-    await dissolve(groupId, devices);
-    fake.minute += 10 * DAY_MINUTES;
-
-    const phone = await restoreOnPhone(fake, file);
-
-    expect((await phone.services.store.getGroup(groupId))?.archived).toEqual({
-      reason: 'dissolved',
+      expect(fake.requests.slice(before).every((request) => request.method === 'GET')).toBe(true);
+      const app = home(phone, groupId);
+      expect(await app.findByText('Read-only for now')).toBeVisible();
+      expect(app.getByText(NOTE)).toBeVisible();
+      expect(app.queryByText(/^This group dissolved on/)).toBeNull();
+      expect(app.queryByRole('link', { name: 'Propose dissolving the group' })).toBeNull();
+      expect(app.queryByRole('button', { name: 'Copy invite link' })).toBeNull();
+      expect(app.queryByRole('link', { name: /Reconcile with another group/ })).toBeNull();
+      unmountAll();
+      go(`#/g/${groupId}/propose/${groupId}.0`);
+      const composer = mount(phone, 'compose');
+      expect(
+        await composer.findByRole('heading', { level: 1, name: 'This group is read-only for now' }),
+      ).toBeVisible();
+      expect(composer.queryByRole('textbox')).toBeNull();
+      unmountAll();
+      // Ben's Proposal lapsed in the copy, which offers neither Propose again nor a chat message.
+      go(`#/g/${groupId}/p/${edit}`);
+      const proposal = mount(phone, 'proposal');
+      expect(await proposal.findByText(messages.result.lapsed)).toBeVisible();
+      expect(proposal.queryByRole('button', { name: 'Propose again' })).toBeNull();
+      expect(proposal.queryByRole('button', { name: 'Tell your group' })).toBeNull();
     });
-    const app = home(phone, groupId);
-    expect(
-      await app.findByText(/^This group dissolved on .+\. This is a read-only copy\.$/),
-    ).toBeVisible();
-    expect(app.queryByText('Read-only for now')).toBeNull();
-  });
 
-  it('opens a group that goes on once someone in it posts anything', async () => {
-    const { fake, ben, groupId, file } = await riverside(['Ben']);
-    fake.minute += 40 * DAY_MINUTES;
-    const phone = await restoreOnPhone(fake, file);
-    const app = home(phone, groupId);
-    expect(await app.findByText('Read-only for now')).toBeVisible();
+    it('brings the group back as a dissolved copy while the relay still has the dissolve', async () => {
+      const { fake, devices, groupId, file } = await riverside();
+      await dissolve(groupId, devices);
+      fake.minute += 10 * DAY_MINUTES;
 
-    // Ben, who still syncs, moves to following: anything new from the group will do.
-    await chooseLevel(ben.services, groupId, FOLLOWING);
-    await act(() => ben.services.sync.syncOnce());
-    fake.minute += 1;
-    await act(() => phone.services.sync.syncOnce());
+      const phone = await restoreOnPhone(fake, file);
 
-    await waitFor(() => {
+      expect((await phone.services.store.getGroup(groupId))?.archived).toEqual({
+        reason: 'dissolved',
+      });
+      const app = home(phone, groupId);
+      expect(
+        await app.findByText(/^This group dissolved on .+\. This is a read-only copy\.$/),
+      ).toBeVisible();
       expect(app.queryByText('Read-only for now')).toBeNull();
     });
-    expect(app.getByRole('button', { name: 'Leave this group' })).toBeVisible();
-    expect(app.getByRole('link', { name: 'Propose dissolving the group' })).toBeVisible();
-    expect(app.getByRole('link', { name: /Reconcile with another group/ })).toBeVisible();
-  });
 
-  it('opens a quiet group that goes on once the person opens a new invite link from someone in it', async () => {
-    const { fake, ben, groupId, file } = await riverside(['Ben']);
-    fake.minute += 40 * DAY_MINUTES;
-    const phone = await restoreOnPhone(fake, file);
-    const app = home(phone, groupId);
-    expect(await app.findByText('Read-only for now')).toBeVisible();
+    it('opens a group that goes on once someone in it posts anything', async () => {
+      const { fake, ben, groupId, file } = await riverside(['Ben']);
+      fake.minute += 40 * DAY_MINUTES;
+      const phone = await restoreOnPhone(fake, file);
+      const app = home(phone, groupId);
+      expect(await app.findByText('Read-only for now')).toBeVisible();
 
-    const seed = parseInviteLink(await makeInvite(ben.services, groupId, ben.services.origin));
-    if (seed === null) throw new Error('Expected an invite link.');
-    expect(await act(() => lookupInvite(phone.services, seed))).toEqual({
-      kind: 'joined',
-      groupId,
+      // Ben, who still syncs, moves to following: anything new from the group will do.
+      await chooseLevel(ben.services, groupId, FOLLOWING);
+      await act(() => ben.services.sync.syncOnce());
+      fake.minute += 1;
+      await act(() => phone.services.sync.syncOnce());
+
+      await waitFor(() => {
+        expect(app.queryByText('Read-only for now')).toBeNull();
+      });
+      expect(app.getByRole('button', { name: 'Leave this group' })).toBeVisible();
+      expect(app.getByRole('link', { name: 'Propose dissolving the group' })).toBeVisible();
+      expect(app.getByRole('link', { name: /Reconcile with another group/ })).toBeVisible();
     });
 
-    await waitFor(() => {
-      expect(app.queryByText('Read-only for now')).toBeNull();
+    it('opens a quiet group that goes on once the person opens a new invite link from someone in it', async () => {
+      const { fake, ben, groupId, file } = await riverside(['Ben']);
+      fake.minute += 40 * DAY_MINUTES;
+      const phone = await restoreOnPhone(fake, file);
+      const app = home(phone, groupId);
+      expect(await app.findByText('Read-only for now')).toBeVisible();
+
+      const seed = parseInviteLink(await makeInvite(ben.services, groupId, ben.services.origin));
+      if (seed === null) throw new Error('Expected an invite link.');
+      expect(await act(() => lookupInvite(phone.services, seed))).toEqual({
+        kind: 'joined',
+        groupId,
+      });
+
+      await waitFor(() => {
+        expect(app.queryByText('Read-only for now')).toBeNull();
+      });
+      expect(app.getByRole('button', { name: 'Leave this group' })).toBeVisible();
     });
-    expect(app.getByRole('button', { name: 'Leave this group' })).toBeVisible();
-  });
-});
+  },
+);
