@@ -37,6 +37,7 @@ import {
   importSnapshot,
   MAX_BACKUP_BYTES,
   replaceWithBackup,
+  restorable,
   SNAPSHOT_FORMAT,
   takeSnapshot,
   withoutShares,
@@ -1996,17 +1997,96 @@ describe('a coalition’s entry in a backup (#114)', () => {
     for (const each of [from, to, plain]) each.close();
   });
 
-  it('refuses a file whose group, not a coalition, says it’s only followed (#124)', async () => {
+  it('leaves out a group, not a coalition, that says it’s only followed, and counts it (#124, #336)', async () => {
     const store = await openStore('device');
     await keepCanary(store);
     const { plaintext } = await takeSnapshot(store);
     const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
-    expect(decodeSnapshot(plaintext)).not.toBeNull();
+    expect(decodeSnapshot(plaintext)).toMatchObject({ skipped: 0 });
     json.groups = json.groups.map((group) => ({ ...group, following: true }));
 
-    expect(decodeSnapshot(utf8(JSON.stringify(json)))).toBeNull();
+    expect(decodeSnapshot(utf8(JSON.stringify(json)))).toMatchObject({ groups: [], skipped: 1 });
     store.close();
   });
+
+  /**
+   * The plaintext of a device holding the canary group and a coalition it
+   * only follows (#124), with `change` made to the entry of `kind`.
+   */
+  async function followedBesideGroup(kind: 'group' | 'coalition', change: object) {
+    const store = await openStore('device');
+    await keepCanary(store);
+    const coalition = await keepCoalition(store, true);
+    const { plaintext } = await takeSnapshot(store);
+    store.close();
+    const json = JSON.parse(text(plaintext)) as { groups: Record<string, unknown>[] };
+    json.groups = json.groups.map((entry) =>
+      (entry.kind === 'coalition') === (kind === 'coalition') ? { ...entry, ...change } : entry,
+    );
+    return { plaintext: utf8(JSON.stringify(json)), coalition };
+  }
+
+  /** What `store` holds after a restore: its groups' ids, and its coalitions' ids and following. */
+  async function heldOn(store: Store) {
+    const groups = (await store.listGroups()).map((group) => group.groupId);
+    const coalitions = (await store.listCoalitions()).map(({ groupId, following }) => ({
+      groupId,
+      following,
+    }));
+    return { groups, coalitions };
+  }
+
+  /** Every way a device restores a snapshot, each into a fresh store (#336). */
+  const restorePaths: readonly (readonly [
+    string,
+    (store: Store, plaintext: Uint8Array) => Promise<unknown>,
+  ])[] = [
+    [
+      'a backup file',
+      async (store, plaintext) =>
+        importGroups(store, await sealBackup(plaintext, PASSPHRASE, CHEAP), PASSPHRASE),
+    ],
+    [
+      'the unlock screen’s Restore',
+      async (store, plaintext) =>
+        replaceWithBackup(store, await sealBackup(plaintext, PASSPHRASE, CHEAP), PASSPHRASE),
+    ],
+    ['a link bundle', (store, plaintext) => importSnapshot(store, plaintext, 'link')],
+    ['the relay copy', (store, plaintext) => importSnapshot(store, plaintext, 'relay')],
+  ];
+
+  it.each(restorePaths)(
+    'leaves a group that says it’s only followed out of %s, counts it, and keeps the coalition followed (#124, #336)',
+    async (_path, restore) => {
+      const { plaintext, coalition } = await followedBesideGroup('group', { following: true });
+      const second = await openStore('second');
+
+      expect(await restore(second, plaintext)).toEqual({ groups: 1, skipped: 1 });
+      expect(await heldOn(second)).toEqual({
+        groups: [],
+        coalitions: [{ groupId: coalition.groupId, following: true }],
+      });
+      expect(restorable(decodeRelayCopy(plaintext)?.groups ?? [])).toEqual([
+        expect.objectContaining({ groupId: coalition.groupId }),
+      ]);
+      second.close();
+    },
+  );
+
+  it.each(restorePaths)(
+    'leaves a coalition followed by anything but true out of %s, counts it, and keeps the group (#124, #336)',
+    async (_path, restore) => {
+      const { plaintext } = await followedBesideGroup('coalition', { following: 'yes' });
+      const second = await openStore('second');
+      const { groupId } = canaryGroup();
+
+      expect(await restore(second, plaintext)).toEqual({ groups: 1, skipped: 1 });
+      expect(await heldOn(second)).toEqual({ groups: [groupId], coalitions: [] });
+      const carried = restorable(decodeRelayCopy(plaintext)?.groups ?? []);
+      expect(carried.map((group) => group.groupId)).toEqual([groupId]);
+      second.close();
+    },
+  );
 
   it('leaves out an entry whose genesis hasn’t come back yet', async () => {
     const store = await openStore('device');
