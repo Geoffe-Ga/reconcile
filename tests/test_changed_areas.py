@@ -162,6 +162,39 @@ def test_ci_gates_every_area_on_its_own_check_all_job() -> None:
         assert gated[0] in jobs["gate"]["needs"]
 
 
+def _ci_areas_step(repo: Path, force_all: str, base_ref: str) -> dict[str, str]:
+    """Run ci.yml's own area step in repo, with the env Actions would give it."""
+    steps = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["changes"]["steps"]
+    script = next(step["run"] for step in steps if step.get("id") == "areas")
+    env = {k: v for k, v in os.environ.items() if k != "BASE_REF"}
+    env.update(FORCE_ALL=force_all, BASE_REF=base_ref, GITHUB_OUTPUT=os.devnull)
+    out = subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+        cwd=repo,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return dict(line.split("=", 1) for line in out.split())
+
+
+def test_ci_area_step_checks_everything_when_it_has_no_base(repo: Path) -> None:
+    """A run on main with no base (a nightly one) checks every area.
+
+    The router alone diffs main against itself there and finds nothing, so
+    the step must not hand it an empty base.
+    """
+    assert _areas(repo, "") == NONE
+    assert _ci_areas_step(repo, force_all="false", base_ref="") == EVERY
+
+
+def test_ci_area_step_obeys_force_all_and_a_prs_base(repo: Path) -> None:
+    """FORCE_ALL runs every area; otherwise a PR's docs-only diff runs none."""
+    assert _ci_areas_step(repo, force_all="true", base_ref="HEAD~1") == EVERY
+    assert _ci_areas_step(repo, force_all="false", base_ref="HEAD~1") == NONE
+
+
 def test_ci_e2e_job_installs_and_runs_both_browsers() -> None:
     """CI's e2e job installs Chromium and WebKit and never narrows the run.
 
