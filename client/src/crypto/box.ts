@@ -18,8 +18,11 @@
  * `info` names what the box is for, and `aad` binds it to where it belongs, so
  * a box read for any other purpose or place never opens. `openBox` answers
  * `null` for every failure alike. A key change's wraps (`epoch.ts`) are boxes,
- * and #109's recovery shares will be too. `vectors/box.json` pins the format
- * with a box sealed outside @noble.
+ * and #109's recovery shares will be too. A wrap takes its ephemeral key and
+ * nonce from the secret it carries ({@link sealToWith}, #224), so whoever
+ * holds that secret can make every wrap again and check it; every other box
+ * draws both fresh. `vectors/box.json` pins the format with a box sealed
+ * outside @noble.
  */
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { x25519 } from '@noble/curves/ed25519.js';
@@ -92,6 +95,17 @@ function boxKey(dh: Uint8Array, ephemeralPublic: Uint8Array, publicKey: Uint8Arr
   return hkdf32(dh, info, concatBytes(ephemeralPublic, publicKey));
 }
 
+/** The ephemeral secret key and the nonce one box is sealed with: its coins. */
+export interface BoxCoins {
+  /** The ephemeral X25519 secret key, 32 bytes. */
+  readonly ephemeral: Uint8Array;
+  /** XChaCha20's nonce, 24 bytes. */
+  readonly nonce: Uint8Array;
+}
+
+/** A nonce's length in bytes: XChaCha20's. */
+export const BOX_NONCE_BYTES = NONCE_BYTES;
+
 /**
  * Seals `plaintext` to the X25519 `publicKey`: a fresh ephemeral key and
  * nonce, the key from HKDF over their exchange under `info`, and
@@ -106,16 +120,41 @@ export function sealTo(
   aad: Uint8Array,
 ): Uint8Array<ArrayBuffer> {
   const ephemeral = newKxKey();
-  const dh = sharedSecret(ephemeral, publicKey);
-  if (dh === null) {
+  try {
+    return sealToWith(publicKey, plaintext, info, aad, {
+      ephemeral,
+      nonce: randomBytes(NONCE_BYTES),
+    });
+  } finally {
     ephemeral.fill(0);
-    throw new RangeError('A box can’t be sealed to that key.');
   }
+}
+
+/**
+ * Seals `plaintext` to the X25519 `publicKey` as {@link sealTo} does, with
+ * `coins` in place of a fresh ephemeral key and nonce (#224). The caller
+ * derives them, each time anew, from a secret that only the plaintext's
+ * holders know, so the same plaintext to the same key makes the same box and
+ * no two boxes share coins. The caller wipes them.
+ *
+ * @throws {RangeError} when `publicKey` isn't 32 bytes or is of low order, or the coins are the wrong length.
+ */
+export function sealToWith(
+  publicKey: Uint8Array,
+  plaintext: Uint8Array,
+  info: string,
+  aad: Uint8Array,
+  coins: BoxCoins,
+): Uint8Array<ArrayBuffer> {
+  const { ephemeral, nonce } = coins;
+  if (ephemeral.length !== KX_KEY_BYTES || nonce.length !== NONCE_BYTES) {
+    throw new RangeError('A box’s coins are a 32-byte key and a 24-byte nonce.');
+  }
+  const dh = sharedSecret(ephemeral, publicKey);
+  if (dh === null) throw new RangeError('A box can’t be sealed to that key.');
   const ephemeralPublic = kxPublicKeyOf(ephemeral);
-  ephemeral.fill(0);
   const key = boxKey(dh, ephemeralPublic, publicKey, info);
   dh.fill(0);
-  const nonce = randomBytes(NONCE_BYTES);
   try {
     const sealed = xchacha20poly1305(key, nonce, aad).encrypt(plaintext);
     return Uint8Array.from(concatBytes(ephemeralPublic, nonce, sealed));

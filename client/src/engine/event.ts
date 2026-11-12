@@ -644,6 +644,17 @@ export interface KeyRotateBody {
 }
 
 /**
+ * Names a key change by its event id (#224): a member's `unwrap-failed` says
+ * their wrap in it doesn't open, or opens to a secret that doesn't make every
+ * other wrap (`crypto/epoch.ts`), and goes to the old epoch's mailbox; a
+ * `key-taken` says a device took it up all the same, and goes to the new
+ * epoch's. An id, unlike a commit, can't be copied into another key change.
+ */
+export interface KeyCheckBody {
+  readonly rotation: string;
+}
+
+/**
  * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
  * `box` is the share sealed to the contact's encryption key
  * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
@@ -733,6 +744,8 @@ export interface EventBodies {
   readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'unwrap-failed': KeyCheckBody;
+  readonly 'key-taken': KeyCheckBody;
   readonly 'recovery-share': RecoveryShareBody;
   readonly 'recovery-alert': RecoveryAlertBody;
   readonly 'recovery-cancel': RecoveryCancelBody;
@@ -1238,6 +1251,10 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseKeyCheck(body: Json): KeyCheckBody | null {
+  return isString(body.rotation) ? { rotation: body.rotation } : null;
+}
+
 /** A body that is one opaque box: a share (#109) or an alert (#118). Any other field is dropped. */
 function parseBox(body: Json): RecoveryShareBody | null {
   return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
@@ -1452,9 +1469,8 @@ function withRecoveryBody(head: Head, type: unknown, body: Json): GroupEvent | n
 }
 
 /**
- * {@link withBody} for #98's types, `kx` and `key-rotate`, #115's,
- * `removal-response` and `remove`, #100's `group-result`, #111's `result`,
- * #121's `door-invited`, #125's `message` and #313's `room-wrap`.
+ * {@link withBody} for the key types: #98's `kx` and `key-rotate`, and
+ * #224's `unwrap-failed` and `key-taken`.
  */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1462,6 +1478,21 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'unwrap-failed':
+    case 'key-taken':
+      return attach(parseKeyCheck(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withNewerBody(head, type, body);
+  }
+}
+
+/**
+ * {@link withBody} for #115's `removal-response` and `remove`, #100's
+ * `group-result`, #111's `result`, #121's `door-invited`, #125's `message`
+ * and #313's `room-wrap`.
+ */
+function withNewerBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
     case 'removal-response':
       return attach(parseRemovalResponse(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'remove':
