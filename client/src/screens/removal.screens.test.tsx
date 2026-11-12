@@ -18,6 +18,7 @@ import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { groupLog, type LogBuilder, START_MINUTE } from '../test/votes';
 import { GroupHome, type GroupHomeProps } from './GroupHome';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
@@ -252,6 +253,24 @@ describe('the removal composer', () => {
     }
   });
 
+  it('proposes once when it is tapped again while it saves and the save fails (#193)', async () => {
+    const saving = held<SendOutcome>();
+    const onPropose = vi.fn(() => saving.promise);
+    const { user } = renderComposer(five().state(), 'ana', 'kim', { onPropose });
+    const submit = () => screen.getByRole('button', { name: 'Propose this removal' });
+
+    await user.type(screen.getByRole('textbox', { name: 'Why' }), 'Threats.');
+    await user.click(submit());
+    expect(submit()).toBeDisabled();
+    await user.click(submit());
+    saving.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+
+    expect(submit()).toBeEnabled();
+    expect(onPropose).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [
       'yourself',
@@ -357,6 +376,26 @@ describe('a removal’s ballot', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Your response couldn’t be saved on this device. Try again.',
     );
+  });
+
+  it('posts her response once when it is tapped again while it saves and the save fails (#193)', async () => {
+    const log = five();
+    const removal = log.proposeRemoval('Ana', 'Kim');
+    const saving = held<undefined>();
+    const onRespond = vi.fn(() => saving.promise);
+    const user = renderProposal(log.state(), removal, 'kim', { onRespond });
+    const submit = () => screen.getByRole('button', { name: 'Post your response' });
+
+    await user.type(screen.getByRole('textbox', { name: 'Your response' }), 'I wasn’t there.');
+    await user.click(submit());
+    expect(submit()).toBeDisabled();
+    await user.click(submit());
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+
+    expect(submit()).toBeEnabled();
+    expect(onRespond).toHaveBeenCalledTimes(1);
   });
 
   it('offers the form to Kim while a steward has her suspended', () => {

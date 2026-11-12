@@ -17,6 +17,7 @@ import type { ParsedEvent } from '../engine/event';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { mayRespond, removalTarget, responseTo } from '../engine/removal';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { checkResponse } from './proposalFields';
 import { SendStatus } from './SendStatus';
@@ -91,7 +92,7 @@ function RespondForm({ onRespond }: { readonly onRespond: (text: string) => Prom
           {removal.respondFailed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-secondary" isDisabled={running}>
           {removal.respond}
         </Button>

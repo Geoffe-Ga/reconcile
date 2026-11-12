@@ -11,6 +11,7 @@ import { type SyntheticEvent, useState } from 'react';
 import { Button, Form } from 'react-aria-components';
 
 import { formatAverageLine, formatZeroLine } from '../app/format';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { checkTitle, checkWhy } from '../app/proposalFields';
 import type { RemovalValues } from '../app/proposals';
@@ -135,7 +136,7 @@ function RemovalForm({ member, name, onPropose }: FormProps) {
           {removal.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {removal.submit}
         </Button>
