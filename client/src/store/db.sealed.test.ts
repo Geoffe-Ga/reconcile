@@ -1,11 +1,13 @@
 /**
- * Share keys (#255) and reply keys (#265) under the passkey vault (#95): once
- * a device seals its keys, IndexedDB holds no shared personal Document's
- * seed, signing key or public key, and no sent application's reply seed,
- * reply key or invite seed, outside the vault. Every write of them goes
- * through the one key-writing path, every read that hands them back opens the
- * vault, a locked device refuses both, and records kept before #255 and #265
- * move into the vault the first time the device seals or unlocks.
+ * Share keys (#255), reply keys (#265) and a recovering device's request keys
+ * (#118) under the passkey vault (#95): once a device seals its keys,
+ * IndexedDB holds no shared personal Document's seed, signing key or public
+ * key, no sent application's reply seed, reply key or invite seed, and no
+ * recovery request's seed or X25519 secret key, outside the vault. Every
+ * write of them goes through the one key-writing path, every read that hands
+ * them back opens the vault, a locked device refuses both, and records kept
+ * before #255, #265 and #118's sealing move into the vault the first time the
+ * device seals or unlocks.
  */
 import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 import { openDB } from 'idb';
@@ -24,7 +26,15 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { type Canary, findCanaries, keyCanaries } from '../test/scan';
 import { scanDb } from '../test/scanDb';
 import { SENT_CHANGED, type SentApplication } from './applications';
-import { DATABASE_NAME, type NewGroup, openStore, type Store, VaultLocked } from './db';
+import {
+  DATABASE_NAME,
+  type NewGroup,
+  openStore,
+  RECOVERY_CHANGED,
+  type RecoverRequest,
+  type Store,
+  VaultLocked,
+} from './db';
 import { deviceSnapshot } from './snapshot';
 import type { PersonalDocument, ShareState } from './personal';
 import { openKeys, type VaultLock, type VaultRecord } from './vault';
@@ -296,8 +306,9 @@ describe('every later write of share and reply keys, with a vault', () => {
     expect(comparableDocument(await store.getPersonal(fresh.id))).toEqual(
       comparableDocument(added),
     );
+    // A share a restore brings back starts paused (#328).
     expect(comparableDocument(await store.getPersonal(restored.id))).toEqual(
-      comparableDocument(restored),
+      comparableDocument({ ...restored, share: { ...shareOf(60), paused: true } }),
     );
     expect([...((await openedVault()).records.get('personal')?.keys() ?? [])].sort()).toEqual(
       [SHARED.id, fresh.id, restored.id].sort(),
@@ -359,6 +370,34 @@ describe('every later write of share and reply keys, with a vault', () => {
 
     expect(snapshot.personal.map(comparableDocument)).toEqual(
       [SHARED, OTHER_SHARED, PLAIN_DOC].map(comparableDocument),
+    );
+  });
+});
+
+describe('a share a restore paused, on a device whose keys are sealed (#328)', () => {
+  it('keeps the pause on its record’s mark, with no key there, so it reads paused locked and unlocked', async () => {
+    const store = await sealedDevice();
+    const brought = documentOf(5, shareOf(60));
+    const paused = { ...brought, share: { ...shareOf(60), paused: true as const } };
+
+    await store.restoreGroups([], [brought]);
+
+    expect(comparableDocument(await store.getPersonal(brought.id))).toEqual(
+      comparableDocument(paused),
+    );
+    store.close();
+    const locked = await openStore();
+    const entries = await locked.listPersonalEntries();
+    expect(entries.find(({ id }) => id === brought.id)?.share).toEqual({
+      n: 1,
+      lastPostedAt: 100,
+      pending: false,
+      paused: true,
+    });
+    expect(await found(shareCanaries(brought))).toEqual([]);
+    expect(await locked.unlock(KEY)).toBe(true);
+    expect(comparableDocument(await locked.getPersonal(brought.id))).toEqual(
+      comparableDocument(paused),
     );
   });
 });
@@ -601,12 +640,12 @@ describe('an unlock whose move into the vault fails', () => {
 });
 
 describe('Restore on the unlock screen, with shares and sent applications', () => {
-  it('gives a Document whose share went with the vault the file’s share, or none, and forgets sent applications', async () => {
+  it('gives a Document whose share went with the vault the file’s share, paused, or none, and forgets sent applications', async () => {
     const store = await lockedDevice();
     const heard: string[] = [];
     store.subscribe((changed) => heard.push(changed));
     const fileShare = shareOf(10, 4);
-    // The file's copy is older, so the device's words stay, with the file's share.
+    // The file's copy is older, so the device's words stay, with the file's share, paused (#328).
     const fileCopy: PersonalDocument = {
       ...SHARED,
       text: 'Older.',
@@ -619,7 +658,7 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
     expect(await store.readVault()).toBeNull();
     const shared = await store.getPersonal(SHARED.id);
     expect(comparableDocument(shared)).toEqual(
-      comparableDocument({ ...SHARED, share: { ...fileShare, pending: true } }),
+      comparableDocument({ ...SHARED, share: { ...fileShare, pending: true, paused: true } }),
     );
     expect(await store.getPersonal(OTHER_SHARED.id)).toEqual(textOnly(OTHER_SHARED));
     expect(await store.getPersonal(PLAIN_DOC.id)).toEqual(PLAIN_DOC);
@@ -627,7 +666,7 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
     expect(heard).toContain(SENT_CHANGED);
   });
 
-  it('takes the file’s later copy whole, and leaves a plain device’s shares and applications alone', async () => {
+  it('takes the file’s later copy, its share paused, and leaves a plain device’s shares and applications alone', async () => {
     const locked = await lockedDevice();
     const later: PersonalDocument = {
       ...SHARED,
@@ -636,8 +675,9 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
       share: shareOf(10, 6),
     };
     await locked.replaceGroups([], [later]);
+    // Its share is the file's, so it comes back paused (#328).
     expect(comparableDocument(await locked.getPersonal(SHARED.id))).toEqual(
-      comparableDocument(later),
+      comparableDocument({ ...later, share: { ...shareOf(10, 6), paused: true } }),
     );
     locked.close();
 
@@ -656,5 +696,170 @@ describe('Restore on the unlock screen, with shares and sent applications', () =
     );
     expect((await plain.listSent()).map(comparableSent)).toEqual([comparableSent(SENT)]);
     expect(heard).not.toContain(SENT_CHANGED);
+  });
+});
+
+/** A recovering device's request (#118), its seed and secret key bytes no other key's are. */
+const REQUEST: RecoverRequest = {
+  seed: bytes32(80).slice(0, 16),
+  secretKey: bytes32(81),
+  startedAt: 1_762_650_000_000,
+};
+
+/** Every spelling of the request's seed and X25519 secret key. */
+const REQUEST_KEYS = [
+  ...keyCanaries('request seed', REQUEST.seed),
+  ...keyCanaries('request key', REQUEST.secretKey),
+];
+
+/** A request with every byte array in the test's realm, so `toEqual` can compare it. */
+function comparableRequest(request: RecoverRequest | undefined) {
+  if (request === undefined) return undefined;
+  return { ...request, seed: local(request.seed), secretKey: local(request.secretKey) };
+}
+
+/** The device store's request record as IndexedDB holds it, read with no store in between. */
+async function rawRequest(): Promise<Record<string, unknown> | undefined> {
+  const db = await openDB(DATABASE_NAME);
+  try {
+    return (await db.get('device', 'recover-request')) as Record<string, unknown> | undefined;
+  } finally {
+    db.close();
+  }
+}
+
+/** The names of the secrets the vault keeps for the request, or none. */
+async function sealedRequest(): Promise<string[]> {
+  const vault = await openedVault();
+  return Object.keys(vault.records.get('device')?.get('recover-request') ?? {}).sort();
+}
+
+/** A device that made its vault at the passkey offer, before anything else, as a new device may (#95). */
+async function offeredDevice(): Promise<Store> {
+  const store = await openStore();
+  await store.sealKeys(LOCK, KEY);
+  return store;
+}
+
+/** That device holding {@link REQUEST}, in a new session, still locked. */
+async function lockedRequest(): Promise<Store> {
+  const store = await offeredDevice();
+  await store.keepRecoverRequest(REQUEST);
+  store.close();
+  return openStore();
+}
+
+describe('a recovering device’s request under the vault (#118)', () => {
+  it('stays on its record on a device with no vault, as before, and the scan finds it', async () => {
+    const store = await openStore();
+
+    await store.keepRecoverRequest(REQUEST);
+
+    expect(await labelsFound(REQUEST_KEYS)).toEqual(rawLabels(REQUEST_KEYS));
+    expect(Object.keys((await rawRequest()) ?? {}).sort()).toEqual([
+      'secretKey',
+      'seed',
+      'startedAt',
+    ]);
+    expect(comparableRequest(await store.getRecoverRequest())).toEqual(comparableRequest(REQUEST));
+  });
+
+  it('goes into the vault on a device that made one at the passkey offer: its record keeps only when it started', async () => {
+    const store = await offeredDevice();
+
+    expect(await store.keepRecoverRequest(REQUEST)).toBe(REQUEST);
+
+    expect(await found(REQUEST_KEYS)).toEqual([]);
+    expect(await rawRequest()).toEqual({ startedAt: REQUEST.startedAt });
+    expect(await sealedRequest()).toEqual(['secretKey', 'seed']);
+    expect(comparableRequest(await store.getRecoverRequest())).toEqual(comparableRequest(REQUEST));
+    // A second start while one is kept gets the first back, whole, and writes nothing.
+    const before = await rawDatabase();
+    const again = await store.keepRecoverRequest({ ...REQUEST, seed: bytes32(90).slice(0, 16) });
+    expect(comparableRequest(again)).toEqual(comparableRequest(REQUEST));
+    expect(local(await rawDatabase())).toEqual(local(before));
+  });
+
+  it('moves into the vault when the device seals its keys during the wait', async () => {
+    const store = await openStore();
+    await store.keepRecoverRequest(REQUEST);
+
+    await store.sealKeys(LOCK, KEY);
+
+    expect(await found(REQUEST_KEYS)).toEqual([]);
+    expect(await rawRequest()).toEqual({ startedAt: REQUEST.startedAt });
+    expect(comparableRequest(await store.getRecoverRequest())).toEqual(comparableRequest(REQUEST));
+  });
+
+  it('is refused to a locked device, read, kept, dropped or finished, writing nothing, and reads whole once unlocked', async () => {
+    const store = await lockedRequest();
+    const before = await rawDatabase();
+
+    await expect(store.getRecoverRequest()).rejects.toThrow(VaultLocked);
+    await expect(store.keepRecoverRequest(REQUEST)).rejects.toThrow(VaultLocked);
+    await expect(store.dropRecoverRequest()).rejects.toThrow(VaultLocked);
+    await expect(store.finishRecovery(42)).rejects.toThrow(VaultLocked);
+    expect(local(await rawDatabase())).toEqual(local(before));
+
+    expect(await store.unlock(KEY)).toBe(true);
+    expect(local(await rawDatabase())).toEqual(local(before));
+    expect(comparableRequest(await store.getRecoverRequest())).toEqual(comparableRequest(REQUEST));
+  });
+
+  it('takes its keys out of the vault on Stop, and when a backup opens, leaving the recovered mark', async () => {
+    const stopped = await offeredDevice();
+    await stopped.keepRecoverRequest(REQUEST);
+    await stopped.dropRecoverRequest();
+    expect(await rawRequest()).toBeUndefined();
+    expect(await sealedRequest()).toEqual([]);
+    expect(await stopped.getRecoverRequest()).toBeUndefined();
+    stopped.close();
+
+    const finished = await openStore();
+    expect(await finished.unlock(KEY)).toBe(true);
+    await finished.keepRecoverRequest(REQUEST);
+    await finished.finishRecovery(42);
+    expect(await rawRequest()).toBeUndefined();
+    expect(await sealedRequest()).toEqual([]);
+    expect(await finished.getRecoveredAt()).toBe(42);
+  });
+
+  it('kept on its record before this, on a device with a vault, moves into the vault at the first unlock', async () => {
+    (await offeredDevice()).close();
+    const db = await openDB(DATABASE_NAME);
+    await db.put('device', REQUEST, 'recover-request');
+    db.close();
+    const store = await openStore();
+    expect(await found(REQUEST_KEYS)).not.toEqual([]);
+
+    expect(await store.unlock(KEY)).toBe(true);
+
+    expect(await found(REQUEST_KEYS)).toEqual([]);
+    expect(await sealedRequest()).toEqual(['secretKey', 'seed']);
+    expect(comparableRequest(await store.getRecoverRequest())).toEqual(comparableRequest(REQUEST));
+  });
+
+  it('is forgotten by Restore on the unlock screen, since its keys went with the vault', async () => {
+    const store = await lockedRequest();
+    const heard: string[] = [];
+    store.subscribe((changed) => heard.push(changed));
+
+    await store.replaceGroups([], []);
+
+    expect(await rawRequest()).toBeUndefined();
+    expect(await store.getRecoverRequest()).toBeUndefined();
+    expect(heard).toContain(RECOVERY_CHANGED);
+  });
+
+  it('stays through that Restore on a device with no vault, which holds its own keys', async () => {
+    const store = await openStore();
+    await store.keepRecoverRequest(REQUEST);
+    const heard: string[] = [];
+    store.subscribe((changed) => heard.push(changed));
+
+    await store.replaceGroups([], []);
+
+    expect(comparableRequest(await store.getRecoverRequest())).toEqual(comparableRequest(REQUEST));
+    expect(heard).not.toContain(RECOVERY_CHANGED);
   });
 });

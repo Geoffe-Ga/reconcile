@@ -1,4 +1,7 @@
-/** Recovery contacts as Settings and the picker show them (#109), kept current as the store changes. */
+/**
+ * Recovery contacts as Settings and the picker show them (#109), and whether
+ * this device was recovered with them (#118), kept current as the store changes.
+ */
 import { useEffect, useState } from 'react';
 
 import type { Store } from '../store/db';
@@ -16,6 +19,8 @@ export interface RecoveryView {
   readonly status: RecoveryStatus | null;
   readonly held: readonly HeldShare[];
   readonly groups: readonly ContactGroup[];
+  /** Whether this device came back through its recovery contacts (#118). */
+  readonly recovered: boolean;
 }
 
 /**
@@ -23,7 +28,7 @@ export interface RecoveryView {
  * again after every store change, or null until the store answers.
  */
 export function useRecovery(
-  store: Pick<Store, 'listGroups' | 'getRecoveryPlan' | 'subscribe'>,
+  store: Pick<Store, 'listGroups' | 'getRecoveryPlan' | 'getRecoveredAt' | 'subscribe'>,
 ): RecoveryView | null {
   const [view, setView] = useState<RecoveryView | null>(null);
   useEffect(() => {
@@ -32,14 +37,15 @@ export function useRecovery(
     const load = (): void => {
       latest += 1;
       const ticket = latest;
-      Promise.all([store.listGroups(), store.getRecoveryPlan()]).then(
-        ([groups, plan]) => {
+      Promise.all([store.listGroups(), store.getRecoveryPlan(), store.getRecoveredAt()]).then(
+        ([groups, plan, recoveredAt]) => {
           // Only the newest read counts: an older one may answer last.
           if (!live || ticket !== latest) return;
           setView({
             status: recoveryStatus(plan, groups),
             held: heldShares(groups),
             groups: contactGroups(groups),
+            recovered: recoveredAt !== undefined,
           });
         },
         // A failed read keeps the last view shown; the next change reads again.

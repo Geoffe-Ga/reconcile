@@ -22,10 +22,14 @@ function groupWith(chat: string | undefined, links: readonly (string | undefined
   const body = {
     name: 'Riverside Tenants',
     founder: 'Ana',
-    title: 'House rules',
-    atoms: [
-      'Quiet hours start at ten.',
-      ...links.map((_, index) => `Section ${String(index + 2)}.`),
+    documents: [
+      {
+        title: 'House rules',
+        atoms: [
+          'Quiet hours start at ten.',
+          ...links.map((_, index) => `Section ${String(index + 2)}.`),
+        ],
+      },
     ],
     ...(chat === undefined ? {} : { chat }),
   };

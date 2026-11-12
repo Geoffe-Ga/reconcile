@@ -64,8 +64,7 @@ async function anasGroup(fake: FakeRelay): Promise<string> {
     groupName: 'Riverside Tenants',
     yourName: 'Ana',
     chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.',
+    documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
   };
   const result = await createGroup(ana.services, values);
   if (result.outcome !== 'created') throw new Error('Expected a group.');
@@ -234,8 +233,9 @@ describe('Root', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: null,
-      title: 'House rules',
-      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+      documents: [
+        { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+      ],
     });
     if (created.outcome !== 'created') throw new Error('Expected a group.');
     await ana.services.sync.syncOnce();

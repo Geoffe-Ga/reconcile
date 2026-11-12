@@ -25,6 +25,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { encodeCopy, type ShareCopy } from './copy';
 import {
   keepSharesAlive,
+  keepSharing,
   parseShareLink,
   postCopy,
   postEdits,
@@ -527,13 +528,14 @@ describe('postCopy', () => {
     await importGroups(restored.store, file, PASSPHRASE);
     expect((await restored.store.getPersonal(statement().id))?.share?.n).toBe(1);
 
-    expect(await postCopy(restored.services, statement().id)).toBe('posted');
+    // A restored share waits for the person (#328); once they keep it, it counts on.
+    expect(await keepSharing(restored.services, statement().id)).toBe('posted');
 
     expect((await restored.store.getPersonal(statement().id))?.share?.n).toBe(4);
     expect(await shownText(fake, link)).toBe('Real.\n');
   });
 
-  it('finds the tombstone after a backup made before Stop sharing is restored, drops the share and posts nothing', async () => {
+  it('finds the tombstone once the person keeps a share restored from a backup made before Stop sharing, drops it and posts nothing', async () => {
     const fake = createFakeRelay();
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
@@ -543,7 +545,8 @@ describe('postCopy', () => {
     await importGroups(restored.store, file, PASSPHRASE);
     const before = puts(fake).length;
 
-    expect(await postCopy(restored.services, statement().id)).toBe('stopped');
+    expect(await postCopy(restored.services, statement().id)).toBe('paused');
+    expect(await keepSharing(restored.services, statement().id)).toBe('stopped');
 
     expect(puts(fake)).toHaveLength(before);
     expect((await restored.store.getPersonal(statement().id))?.share).toBeUndefined();

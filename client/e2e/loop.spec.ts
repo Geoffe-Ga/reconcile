@@ -64,7 +64,7 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   await expect(people).toHaveCount(PEOPLE.length);
   await expect(people).toContainText(PEOPLE);
   await expectAccessible(person, 'Group home');
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(heading(page, TITLE)).toBeVisible();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText(ATOMS);
   await expectAccessible(person, 'Document view');
@@ -121,7 +121,7 @@ async function expectUpdate(person: Person): Promise<void> {
   await expect(
     page.getByRole('region', { name: 'Decided' }).getByRole('link', { name: PROPOSAL }),
   ).toContainText('Passed');
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     NEW_TEXT,
     SECOND_ATOM,

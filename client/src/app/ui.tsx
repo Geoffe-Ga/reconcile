@@ -30,6 +30,8 @@ export interface PageHeaderProps {
    * a heading below takes it instead, as Join's Document heading does (#91).
    */
   readonly takesFocus?: boolean;
+  /** A line that belongs with the title, under it, such as the Document a Proposal changes (#92). */
+  readonly children?: ReactNode;
 }
 
 /**
@@ -38,7 +40,13 @@ export interface PageHeaderProps {
  * It names the tab and, unless told otherwise, takes focus when it appears,
  * so a screen reader announces each new screen of this single-page app.
  */
-export function PageHeader({ eyebrow, title, pageTitle, takesFocus = true }: PageHeaderProps) {
+export function PageHeader({
+  eyebrow,
+  title,
+  pageTitle,
+  takesFocus = true,
+  children,
+}: PageHeaderProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     document.title = messages.app.pageTitle(pageTitle);
@@ -52,6 +60,7 @@ export function PageHeader({ eyebrow, title, pageTitle, takesFocus = true }: Pag
       <h1 ref={heading} tabIndex={-1}>
         <bdi>{title}</bdi>
       </h1>
+      {children}
     </header>
   );
 }
