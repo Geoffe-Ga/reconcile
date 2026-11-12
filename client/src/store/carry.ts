@@ -80,16 +80,37 @@ export function scheduleCarried(carry: CarryWindow, random: Random): { readonly 
   return { castAt: carry.from + drawBelow(span, random) };
 }
 
-/** A note as {@link copiedNote} compares it: NFC, trimmed, its spaces run together, in lower case. */
+/**
+ * Punctuation that reads alike, each folded to one form (#378): single
+ * quotes and apostrophes, double quotes, dashes and hyphens, and the ellipsis.
+ */
+const PUNCTUATION_FOLDS: readonly (readonly [RegExp, string])[] = [
+  [/[\u2018\u2019\u201A\u201B\u2032\u0060\u00B4]/gu, "'"],
+  [/[\u201C\u201D\u201E\u201F\u2033\u00AB\u00BB]/gu, '"'],
+  [/[\u2010-\u2015\u2212]/gu, '-'],
+  [/\u2026/gu, '...'],
+];
+
+/**
+ * A note as {@link copiedNote} compares it: with no zero-width or other
+ * format character (`\p{Cf}`, #378), in NFKC, so a full-width or other
+ * compatibility form reads as its plain one, its punctuation folded
+ * ({@link PUNCTUATION_FOLDS}), trimmed, its spaces run together, in lower case.
+ */
 function comparable(note: string): string {
-  return note.normalize('NFC').trim().replace(/\s+/gu, ' ').toLowerCase();
+  const folded = PUNCTUATION_FOLDS.reduce(
+    (text, [from, to]) => text.replace(from, to),
+    note.replace(/\p{Cf}/gu, '').normalize('NFKC'),
+  );
+  return folded.trim().replace(/\s+/gu, ' ').toLowerCase();
 }
 
 /**
  * Whether `note` is one the person wrote elsewhere (#126; ADR-0065): the
- * same words as any of `elsewhere`, whatever the spacing, case or Unicode
- * form. A carried ballot never copies a note, and the ballot refuses a
- * reason typed out again, which would link the two identities.
+ * same words as any of `elsewhere`, whatever the spacing, case, Unicode form,
+ * zero-width characters or quote and dash styles (#378). A carried ballot
+ * never copies a note, and the ballot refuses a reason typed out again, which
+ * would link the two identities.
  */
 export function copiedNote(note: string, elsewhere: readonly string[]): boolean {
   const mine = comparable(note);
