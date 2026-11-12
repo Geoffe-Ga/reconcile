@@ -999,6 +999,45 @@ describe('PersonalDocument, a share a restore paused (#328)', () => {
     expect(await linkShows(link)).toEqual({ kind: 'gone' });
     expect(await store.listPersonal()).toEqual([]);
   });
+
+  describe('while this device’s keys are locked (#255)', () => {
+    const SALT = new Uint8Array(32).fill(0x33);
+    const KEY = vaultKeyFromPrf(new Uint8Array(32).fill(0x11), SALT);
+    const LOCK = { credentialId: Uint8Array.of(1, 2, 3, 4), prfSalt: SALT };
+
+    /** Locks the device's keys from another tab, as Settings there would, leaving this one locked. */
+    async function lockFromAnotherTab(): Promise<void> {
+      const other = await openStore();
+      await other.sealKeys(LOCK, KEY);
+      other.close();
+    }
+
+    it('says nothing changed when another tab locked the keys before Keep sharing or Stop sharing, sends nothing, and still asks', async () => {
+      const link = await restored();
+      const { user } = open();
+      const section = await shareSection();
+      await lockFromAnotherTab();
+      const requests = relay.requests.length;
+
+      await user.click(within(section).getByRole('button', { name: share.keep }));
+
+      expect(await within(section).findByText(share.lockedNow)).toBeVisible();
+      expect(within(section).getByText(share.paused)).toBeVisible();
+      expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+      expect(within(section).getByRole('button', { name: share.keep })).toBeEnabled();
+
+      await user.click(within(section).getByRole('button', { name: share.stop }));
+
+      await vi.waitFor(() => {
+        expect(within(section).getByRole('button', { name: share.stop })).toBeEnabled();
+      });
+      expect(within(section).getByText(share.lockedNow)).toBeVisible();
+      expect(within(section).getByText(share.paused)).toBeVisible();
+      expect(relay.requests).toHaveLength(requests);
+      expect(await linkShows(link)).toMatchObject({ kind: 'shown' });
+      expect((await store.listPersonalEntries())[0]?.share?.paused).toBe(true);
+    });
+  });
 });
 
 describe('PersonalDocument, shared, while this device’s keys are locked (#255)', () => {

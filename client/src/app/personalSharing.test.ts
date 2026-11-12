@@ -82,3 +82,11 @@ describe('personalSharing.read', () => {
     await expect(sharingWith(broken, [ENTRY]).read(ID)).rejects.toBe(broken);
   });
 });
+
+describe('personalSharing.keep', () => {
+  it('says locked, keeping and sending nothing, when the keys are locked (#328, #255)', async () => {
+    const sharing = sharingWith(new VaultLocked(), [ENTRY]);
+
+    expect(await sharing.keep(ID)).toBe('locked');
+  });
+});

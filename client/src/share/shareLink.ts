@@ -107,6 +107,12 @@ export type StartOutcome =
 export type PostOutcome = 'posted' | 'too-large' | 'failed' | 'stopped' | 'unshared' | 'paused';
 
 /**
+ * How Keep sharing went (#328): as its post went, or locked, when the
+ * device's keys are locked with a passkey (#255), so nothing was kept or sent.
+ */
+export type KeepOutcome = PostOutcome | 'locked';
+
+/**
  * How Stop sharing went: stopped, or failed and changed nothing, or found the
  * device's keys locked (#255) and sent nothing.
  */
@@ -419,9 +425,12 @@ export function startSharing(services: ShareServices, id: string): Promise<Start
  * (#328): records the person's choice, then posts the latest copy, which
  * still reads the mailbox first, so a tombstone there drops the share and
  * nothing goes. A post that fails leaves the share pending, so the next
- * launch sends it. A Document that isn't shared is left alone.
+ * launch sends it. A Document that isn't shared is left alone. While the
+ * device's keys are locked (#255), nothing is kept or sent, and the share
+ * stays paused.
  */
-export async function keepSharing(services: ShareServices, id: string): Promise<PostOutcome> {
+export async function keepSharing(services: ShareServices, id: string): Promise<KeepOutcome> {
+  if (await isLocked(services)) return 'locked';
   const kept = await services.store.updateShare(id, (held) =>
     held.share === undefined ? undefined : resumedShare(held.share),
   );

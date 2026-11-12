@@ -357,4 +357,27 @@ describe('a share a restore brings back onto a device whose keys were sealed (#3
     expect(await shows(fake, old)).toEqual({ kind: 'gone' });
     expect((await locked.store.getPersonal(STATEMENT.id))?.share?.paused).toBe(true);
   });
+
+  it('while the keys are locked, Keep sharing and Stop sharing send nothing and say so, and the share stays paused', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const link = await shared(ana);
+    const restore = await backupFile(ana);
+    const laptop = await device(fake, 'laptop');
+    await laptop.store.sealKeys(LOCK, KEY);
+    await restore(laptop);
+    laptop.store.close();
+    const locked = await device(fake, 'laptop');
+    const requests = fake.requests.length;
+
+    expect(await keepSharing(locked.services, STATEMENT.id)).toBe('locked');
+    expect(await stopSharing(locked.services, STATEMENT.id)).toBe('locked');
+
+    expect(fake.requests).toHaveLength(requests);
+    expect((await locked.store.listPersonalEntries())[0]?.share?.paused).toBe(true);
+    expect(await locked.store.unlock(KEY)).toBe(true);
+    expect(await keepSharesAlive(locked.services)).toEqual([]);
+    expect(await keepSharing(locked.services, STATEMENT.id)).toBe('posted');
+    expect(postsTo(fake, link)).toHaveLength(2);
+  });
 });

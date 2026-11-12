@@ -45,10 +45,11 @@ export type SharingStart =
 
 /**
  * How Keep sharing went (#328): posted; kept, but the link hasn't caught up,
- * as when the relay can't be reached, so the next launch sends it; or
- * stopped, when the mailbox held a tombstone and the share is gone.
+ * as when the relay can't be reached, so the next launch sends it; stopped,
+ * when the mailbox held a tombstone and the share is gone; or locked, when
+ * the device's keys are locked with a passkey (#255), so it's still paused.
  */
-export type SharingKeep = 'posted' | 'pending' | 'stopped';
+export type SharingKeep = 'posted' | 'pending' | 'stopped' | 'locked';
 
 /** Sharing by link, for one device's personal Documents. */
 export interface PersonalSharing {
@@ -111,7 +112,7 @@ export function personalSharing(services: SharingServices): PersonalSharing {
     stop: (id) => stopSharing(services, id),
     async keep(id) {
       const outcome = await keepSharing(services, id);
-      if (outcome === 'posted') return 'posted';
+      if (outcome === 'posted' || outcome === 'locked') return outcome;
       return outcome === 'stopped' || outcome === 'unshared' ? 'stopped' : 'pending';
     },
     leave(id) {

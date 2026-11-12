@@ -31,6 +31,7 @@ const KEPT: Readonly<Record<SharingKeep, ShareStatus>> = {
   posted: 'kept',
   pending: 'kept-pending',
   stopped: 'keep-stopped',
+  locked: 'locked',
 };
 
 /** One Document's share, as its editor holds it. */
@@ -116,10 +117,12 @@ export function useShareByLink(
   const keep = () =>
     once('keeping', async () => {
       const link = view?.link;
-      if (link === undefined) return 'idle';
+      if (!link) return 'idle';
       const kept = await sharing.keep(id);
-      const shared = { link, pending: kept === 'pending', paused: false };
-      if (live.current) setView(kept === 'stopped' ? null : shared);
+      // Locked (#255), nothing changed: the share still waits, paused.
+      if (live.current && kept !== 'locked') {
+        setView(kept === 'stopped' ? null : { link, pending: kept === 'pending', paused: false });
+      }
       return KEPT[kept];
     });
 
