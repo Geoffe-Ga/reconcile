@@ -2,6 +2,7 @@ import { type SyntheticEvent, useRef, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
 import { formatAverageLine, formatZeroLine } from '../app/format';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { RulesValues } from '../app/proposals';
 import { SuspendedNote } from '../app/stewards';
@@ -254,7 +255,7 @@ function OptInForm(props: OptInComposerProps) {
           {stewards.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {narrow ? optIns.submitNow : composer.submit}
         </Button>
